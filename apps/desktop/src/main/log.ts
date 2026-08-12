@@ -110,3 +110,39 @@ function rollOver(): void {
   if (statSync(path).size < MAX_BYTES) return;
   renameSync(path, `${path}.1`);
 }
+
+/**
+ * Mirrors a renderer's console into the log file.
+ *
+ * A packaged build has no console and no devtools, so an error thrown in the
+ * editor's own process has nowhere to go — which is exactly the situation a
+ * blank preview leaves you in. Main's console is already mirrored; this is the
+ * other half.
+ *
+ * Only warnings and errors. A renderer at 60 fps can say a great deal, and a
+ * log that has to be waded through is one nobody reads.
+ */
+export function mirrorConsole(contents: Electron.WebContents): void {
+  // Cast because the signature changed between Electron versions and the types
+  // describe only the current one; both shapes are handled below.
+  (contents.on as (event: string, listener: (...args: unknown[]) => void) => void)(
+    "console-message",
+    (...args: unknown[]) => {
+      // Electron changed this signature: older builds pass
+      // `(event, level, message, line, source)`, newer ones a single object.
+      const first = args[0] as { level?: unknown; message?: unknown } | undefined;
+      const structured = typeof first?.message === "string";
+
+      const level = structured ? first?.level : args[1];
+      const message = structured ? (first?.message as string) : (args[2] as string);
+      if (typeof message !== "string") return;
+
+      // Both spellings, for the same reason as above: older builds number the
+      // levels, newer ones name them.
+      const serious = level === 2 || level === 3 || level === "warning" || level === "error";
+      if (!serious) return;
+
+      log(level === 3 || level === "error" ? "error" : "warn", `[renderer] ${message}`);
+    },
+  );
+}

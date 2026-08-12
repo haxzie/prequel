@@ -111,6 +111,13 @@ float shapeDistance(vec2 p, vec2 halfSize, float radius, float n) {
   return (pow(value, 1.0 / n) - 1.0) * radius;
 }
 
+// The canvas compositor expects premultiplied colour; the exporter blends
+// straight alpha. Folding it in here rather than there keeps one blend mode on
+// each side and the same result from both.
+vec4 premultiplied(vec3 rgb, float alpha) {
+  return vec4(rgb * alpha, alpha);
+}
+
 void main() {
   vec2 halfSize = u_rect.zw * 0.5;
   vec2 p = v_local - halfSize;
@@ -120,7 +127,7 @@ void main() {
   // rather than the bounding box.
   if (u_mode == 3) {
     float softness = max(u_weight, 0.0001);
-    fragColor = vec4(u_colorA.rgb, u_colorA.a * (1.0 - smoothstep(-softness, softness, d)));
+    fragColor = premultiplied(u_colorA.rgb, u_colorA.a * (1.0 - smoothstep(-softness, softness, d)));
     return;
   }
 
@@ -128,7 +135,7 @@ void main() {
     // A stroke is the band either side of the edge.
     float halfWidth = max(u_weight, 0.5) * 0.5;
     float band = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, abs(d));
-    fragColor = vec4(u_colorA.rgb, u_colorA.a * band);
+    fragColor = premultiplied(u_colorA.rgb, u_colorA.a * band);
     return;
   }
 
@@ -142,7 +149,7 @@ void main() {
     // Mirroring first, so it flips the crop rather than moving it.
     uv = u_src.xy + uv * u_src.zw;
     vec4 sampled = texture(u_image, uv);
-    fragColor = vec4(sampled.rgb, sampled.a * coverage);
+    fragColor = premultiplied(sampled.rgb, sampled.a * coverage);
     return;
   }
 
@@ -151,11 +158,11 @@ void main() {
     // CSS measures them.
     float t = clamp(dot(v_uv - 0.5, u_gradient) + 0.5, 0.0, 1.0);
     vec4 color = mix(u_colorA, u_colorB, t);
-    fragColor = vec4(color.rgb, color.a * coverage);
+    fragColor = premultiplied(color.rgb, color.a * coverage);
     return;
   }
 
-  fragColor = vec4(u_colorA.rgb, u_colorA.a * coverage);
+  fragColor = premultiplied(u_colorA.rgb, u_colorA.a * coverage);
 }`;
 
 /** Uniform locations, looked up once — `getUniformLocation` is not free. */
@@ -182,6 +189,9 @@ export class WebGlCompositor {
   private readonly textures = new Map<string, WebGLTexture>();
   /** Which images have been uploaded, so a still one is not re-sent. */
   private readonly uploaded = new WeakSet<CanvasImageSource>();
+  /** Sources that would not upload, so the log says so once rather than at
+      sixty times a second. */
+  private readonly refused = new Set<string>();
 
   /**
    * Draws a plan.
@@ -240,16 +250,13 @@ export class WebGlCompositor {
       return this.gl;
     }
 
-    const gl = canvas.getContext("webgl2", {
-      // The preview is composited over the editor's own background, and the
-      // frame's corners are transparent.
-      alpha: true,
-      // Straight alpha, matching the shader and the exporter. Premultiplied
-      // would double-apply every coverage value the shader already folded in.
-      premultipliedAlpha: false,
-      antialias: false,
-      desynchronized: true,
-    });
+    // Deliberately plain. `desynchronized` puts the canvas on its own
+    // low-latency surface, which is finicky about being composited inside a
+    // transformed container, and `premultipliedAlpha: false` is a rarely
+    // travelled path in Chromium's compositor. Neither is worth a preview that
+    // might not appear; the shader premultiplies instead, which is the ordinary
+    // way to do this and blends identically.
+    const gl = canvas.getContext("webgl2", { alpha: true, antialias: false });
     if (!gl) {
       console.error("[editor] no WebGL2 context; the preview cannot draw");
       return null;
@@ -261,6 +268,9 @@ export class WebGlCompositor {
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     this.program = compile(gl);
+    // Said once, at the level the log actually keeps, so "is the preview even
+    // drawing" is answerable from a packaged build.
+    console.warn(`[editor] WebGL2 ready (${gl.getParameter(gl.VERSION) as string})`);
     // A vertex array is required in WebGL2 even with no attributes: the corner
     // comes from `gl_VertexID`, but a draw with no VAO bound is an error.
     this.vao = gl.createVertexArray();
@@ -428,7 +438,28 @@ export class WebGlCompositor {
       const size = sizeOf(image);
       if (size.width <= 0 || size.height <= 0) return null;
 
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image as TexImageSource);
+      try {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          image as TexImageSource,
+        );
+      } catch (cause) {
+        // One unusable image must not take the frame with it. `texImage2D`
+        // throws on cross-origin data rather than failing quietly, and this
+        // runs inside the render loop — an uncaught throw here stops
+        // everything else in the plan from being drawn, which reads as a
+        // preview that does not work at all rather than a background that did
+        // not load.
+        if (!this.refused.has(key)) {
+          this.refused.add(key);
+          console.error(`[editor] could not upload ${key}:`, cause);
+        }
+        return null;
+      }
       if (!live) this.uploaded.add(image);
     }
 

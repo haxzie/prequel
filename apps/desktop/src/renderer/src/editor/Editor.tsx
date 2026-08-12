@@ -394,6 +394,13 @@ function useEditorImages(
 
     for (const path of wanted) {
       const image = new Image();
+      // Before `src`, or the request is already in flight without it. The same
+      // reason the media elements carry it: `prequel-media:` is a different
+      // origin, and an image fetched without CORS is tainted. Canvas 2D merely
+      // taints the canvas back; WebGL *throws* on `texImage2D`, and the throw
+      // takes the whole frame down with it — a blank preview, from a missing
+      // attribute on a background nobody was looking at.
+      image.crossOrigin = "anonymous";
       image.src = mediaUrl(recordingName(session.dir), path);
 
       image.onload = () => {

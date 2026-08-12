@@ -14,6 +14,7 @@ import type { BrowserWindow } from "electron";
 import { IPC_CHANNELS } from "../../shared/contract.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../../shared/manifest.js";
 import { flushProject } from "../editor-project.js";
+import { mirrorConsole } from "../log.js";
 import { readEditorSession } from "../editor-session.js";
 import { createWindow, loadRoute } from "./base.js";
 
@@ -74,6 +75,10 @@ export class EditorWindows {
     // Pushed on load rather than encoded into the route: the hash has to
     // survive a reload and an HMR round trip, and a serialised manifest in it
     // would not. Re-sent on every load for the same reason.
+    // A packaged build has no devtools, so an error in the editor's own
+    // process would otherwise go nowhere at all.
+    mirrorConsole(window.webContents);
+
     window.webContents.on("did-finish-load", () => {
       void readEditorSession(dir)
         .then((session) => {
