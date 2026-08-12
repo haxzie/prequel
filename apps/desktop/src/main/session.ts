@@ -21,6 +21,7 @@ import type {
 } from "../shared/contract.js";
 import { MANIFEST_FILE_NAME } from "../shared/manifest.js";
 import type { Recorder, RecordingResult, StartRecordingRequest } from "./recorder.js";
+import { log } from "./log.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 
 export type { SessionState, SessionStatus, StartOptions };
@@ -73,7 +74,12 @@ export class RecordingSession {
   }
 
   async start(options: StartOptions): Promise<void> {
-    if (this.status !== "idle") return;
+    if (this.status !== "idle") {
+      // Said out loud. A start that returns quietly because the session is in
+      // some other state looks exactly like a button that does nothing.
+      log("warn", `start ignored: session is ${this.status}, not idle`);
+      return;
+    }
 
     this.status = "starting";
     this.error = null;

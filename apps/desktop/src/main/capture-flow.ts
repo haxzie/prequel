@@ -290,7 +290,13 @@ export class CaptureFlow {
 
     // Likewise: a cancelled run must not go on to record or to overwrite the
     // newer selection's answer.
-    if (run !== this.selectionRun) return this.state();
+    if (run !== this.selectionRun) {
+      log("info", "selection superseded; not recording", {
+        run,
+        current: this.selectionRun,
+      });
+      return this.state();
+    }
 
     // After `selecting` has been cleared, or `record` would start against a
     // panel that still believes an overlay is up.
@@ -325,7 +331,15 @@ export class CaptureFlow {
 
   /** Starts recording whatever the panel is set up to capture. */
   async record(): Promise<DockState> {
-    if (this.deps.session.isBusy()) return this.state();
+    // Every way out of this method that is not a recording says so. A record
+    // button that silently does nothing is indistinguishable from a broken
+    // one, and the difference is only visible in here.
+    if (this.deps.session.isBusy()) {
+      log("warn", "record ignored: a session is already busy", {
+        status: this.deps.session.snapshot().status,
+      });
+      return this.state();
+    }
 
     // Nothing chosen yet — fall back to the display the cursor is on rather
     // than making the user go and pick before they can press Record.
