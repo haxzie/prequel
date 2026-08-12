@@ -32,9 +32,6 @@ const MIN_SLICE_NS = 100_000_000;
 /** Shortest zoom worth having. Below this the ease alone would fill it. */
 const MIN_ZOOM_NS = 300_000_000;
 
-/** What a click on the timeline does. */
-export type TimelineTool = "select" | "slice" | "delete";
-
 export interface EditorState {
   project: Project;
   /** Which slice the inspector is editing, or null for the project defaults. */
@@ -47,8 +44,6 @@ export interface EditorState {
    * what does it override, what does it inherit — has no answer for a zoom.
    */
   selectedZoomId: string | null;
-  /** The active timeline tool. A view concern, so it is never persisted. */
-  tool: TimelineTool;
   /** Bumped on every change that should be persisted. */
   revision: number;
 }
@@ -56,7 +51,6 @@ export interface EditorState {
 export type EditorAction =
   | { type: "load"; project: Project }
   | { type: "select"; sliceId: string | null }
-  | { type: "setTool"; tool: TimelineTool }
   | { type: "setFrame"; frame: Project["frame"] }
   | { type: "split"; at: MediaTime }
   | { type: "deleteSlice"; sliceId: string }
@@ -80,7 +74,6 @@ export function initialState(project: Project): EditorState {
     project,
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
-    tool: "select",
     revision: 0,
   };
 }
@@ -98,10 +91,6 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case "selectZoom":
       return { ...state, selectedZoomId: action.zoomId, selectedSliceId: null };
-
-    case "setTool":
-      // Which tool is held is a view concern, not part of the edit.
-      return { ...state, tool: action.tool };
 
     case "setFrame":
       return edit(state, (project) => ({ ...project, frame: action.frame }));

@@ -4,14 +4,13 @@ import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import {
   ScissorsIcon,
-  CursorIcon,
   PauseIcon,
   PlayIcon,
   SkipEndIcon,
   SkipStartIcon,
   TrashIcon,
 } from "./icons";
-import type { EditorAction, TimelineTool } from "./state";
+import type { EditorAction } from "./state";
 import type { EditorPlayback } from "./useEditorPlayback";
 
 const BUTTON =
@@ -19,21 +18,12 @@ const BUTTON =
   "disabled:opacity-35 [&_svg]:size-[15px]";
 
 /**
- * Which tools the timeline offers, and the keys that reach them.
+ * Transport on the left, the two things you can do to a clip on the right.
  *
- * The shortcut is in the tooltip rather than only in a menu: these are the
- * three things done most often in an editor, and reaching for the mouse to
- * change tool is most of the cost of using one.
- */
-export const TOOLS: { tool: TimelineTool; label: string; key: string; Icon: typeof CursorIcon }[] =
-  [
-    { tool: "select", label: "Select", key: "V", Icon: CursorIcon },
-    { tool: "slice", label: "Slice", key: "C", Icon: ScissorsIcon },
-    { tool: "delete", label: "Delete", key: "D", Icon: TrashIcon },
-  ];
-
-/**
- * Transport on the left, timeline tools on the right.
+ * Buttons rather than modes. A tool that changes what a click means has to be
+ * held in your head, put back when you are done, and shows its effect only
+ * after you have already committed to it — for two actions on an already
+ * selected clip, that is a state machine standing in for a verb.
  *
  * No scrub bar: the timeline underneath is the scrubber now, and two of them
  * would be two playheads to keep in step and two places to look for the same
@@ -41,11 +31,19 @@ export const TOOLS: { tool: TimelineTool; label: string; key: string; Icon: type
  */
 export function PlaybackControls({
   media,
-  tool,
+  canSplit,
+  canDelete,
+  onSplit,
+  onDelete,
   dispatch,
 }: {
   media: EditorPlayback;
-  tool: TimelineTool;
+  /** A clip is selected, so there is something to cut. */
+  canSplit: boolean;
+  /** A clip or a zoom is selected, so there is something to remove. */
+  canDelete: boolean;
+  onSplit: () => void;
+  onDelete: () => void;
   dispatch: Dispatch<EditorAction>;
 }) {
   const { playback, playing, duration, onInteract } = media;
@@ -97,34 +95,58 @@ export function PlaybackControls({
 
       <span className="flex-1" />
 
-      <div
-        className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5"
-        role="radiogroup"
-        aria-label="Timeline tool"
-      >
-        {TOOLS.map(({ tool: value, label, key, Icon }) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={value === tool}
-            title={`${label} (${key})`}
-            className={cn(
-              "grid size-7 place-items-center rounded-md [&_svg]:size-[15px]",
-              // The same blue the dock marks a chosen capture mode with — one
-              // token, `--selected`, so "this is the active choice" looks the
-              // same in both windows. White on it, unlike the editor's light
-              // accent, which needs dark text.
-              value === tool
-                ? "bg-selected text-white"
-                : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
-            )}
-            onClick={() => dispatch({ type: "setTool", tool: value })}
-          >
-            <Icon />
-          </button>
-        ))}
+      <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+        <Action
+          label="Split at the playhead"
+          shortcut="S"
+          Icon={ScissorsIcon}
+          // Both act on the selection, so with nothing selected there is
+          // nothing for either to do. Disabled rather than hidden: they are
+          // where they will be when there is.
+          disabled={!canSplit}
+          onClick={onSplit}
+        />
+        <Action
+          label="Delete"
+          shortcut="⌫"
+          Icon={TrashIcon}
+          disabled={!canDelete}
+          onClick={onDelete}
+        />
       </div>
     </div>
+  );
+}
+
+/** One of the two verbs, with its shortcut in the tooltip. */
+function Action({
+  label,
+  shortcut,
+  Icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  shortcut: string;
+  Icon: () => React.JSX.Element;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={`${label} (${shortcut})`}
+      aria-label={label}
+      disabled={disabled}
+      className={cn(
+        "grid size-7 place-items-center rounded-md [&_svg]:size-[15px]",
+        disabled
+          ? "text-editor-muted/40"
+          : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
+      )}
+      onClick={onClick}
+    >
+      <Icon />
+    </button>
   );
 }

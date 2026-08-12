@@ -168,36 +168,6 @@ body {
   corner-shape: squircle;
 }
 
-/**
- * Timeline tool cursors.
- *
- * A tool that changes what a click does has to change how the pointer looks, or
- * the only way to know which one is held is to try it and undo. macOS has no
- * built-in scissors or trash cursor, so both are inlined as SVG — the same
- * Lucide geometry the toolbar buttons use, drawn twice: a heavy dark stroke
- * underneath and a white one over it, so the shape reads against both the dark
- * timeline and the clips sitting on it.
- *
- * The trailing numbers are the hotspot — the point that actually acts, not the
- * icon's corner. For the scissors that is where the blades cross, or a cut
- * lands a few pixels from where the pointer looks like it is aiming. `data:`
- * here is governed by `img-src`, which the CSP already allows for the picker's
- * app icons.
- */
-@utility cursor-scissors {
-  cursor:
-    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23111' stroke-width='4'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Cpath d='M8.12 8.12 12 12'/%3E%3Cpath d='M20 4 8.12 15.88'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M14.8 14.8 20 20'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='2'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Cpath d='M8.12 8.12 12 12'/%3E%3Cpath d='M20 4 8.12 15.88'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M14.8 14.8 20 20'/%3E%3C/g%3E%3C/svg%3E")
-      11 11,
-    crosshair;
-}
-
-@utility cursor-trash {
-  cursor:
-    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23111' stroke-width='4'%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='2'%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3C/g%3E%3C/svg%3E")
-      12 12,
-    pointer;
-}
-
 /* The surface a composition sits on.
    Dots rather than a flat fill or a chequerboard: the frame can be any size and
    any shape, and something regular behind it makes the edges of the output

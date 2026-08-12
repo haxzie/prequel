@@ -198,7 +198,22 @@ export function Editor() {
           />
         </div>
 
-        <PlaybackControls media={media} tool={state.tool} dispatch={dispatch} />
+        <PlaybackControls
+          media={media}
+          // Both act on the selection, and the two are mutually exclusive —
+          // only one of them is ever the thing being removed.
+          canSplit={state.selectedSliceId !== null}
+          canDelete={state.selectedSliceId !== null || state.selectedZoomId !== null}
+          onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
+          onDelete={() => {
+            if (state.selectedZoomId) {
+              dispatch({ type: "deleteZoom", zoomId: state.selectedZoomId });
+            } else if (state.selectedSliceId) {
+              dispatch({ type: "deleteSlice", sliceId: state.selectedSliceId });
+            }
+          }}
+          dispatch={dispatch}
+        />
         <TimelineStrip
           state={state}
           dispatch={dispatch}
@@ -469,19 +484,8 @@ function useShortcuts(
           media.playback.toggle();
           return;
 
-        // The tool keys, matching every other editor: V select, C cut, D delete.
-        case "KeyV":
-          dispatch({ type: "setTool", tool: "select" });
-          return;
-        case "KeyC":
-          dispatch({ type: "setTool", tool: "slice" });
-          return;
-        case "KeyD":
-          dispatch({ type: "setTool", tool: "delete" });
-          return;
-
-        // Splits at the playhead whichever tool is held: the blade is for
-        // cutting where the pointer is, this is for cutting where the head is.
+        // Cuts where the playhead is, which is the only place a cut happens
+        // now that there is no blade to aim with.
         case "KeyS":
           event.preventDefault();
           dispatch({ type: "split", at: media.playback.position() });

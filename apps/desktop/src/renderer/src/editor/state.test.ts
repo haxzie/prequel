@@ -268,30 +268,6 @@ describe("activeSettings", () => {
   });
 });
 
-describe("the timeline tool", () => {
-  it("starts on select", () => {
-    expect(start().tool).toBe("select");
-  });
-
-  it("switches", () => {
-    expect(run(start(), { type: "setTool", tool: "slice" }).tool).toBe("slice");
-    expect(run(start(), { type: "setTool", tool: "delete" }).tool).toBe("delete");
-  });
-
-  it("is not part of the edit", () => {
-    // Which tool is held is a view concern; persisting it would mean reopening
-    // a recording armed with the blade.
-    const state = start();
-    expect(run(state, { type: "setTool", tool: "delete" }).revision).toBe(state.revision);
-  });
-
-  it("survives an edit", () => {
-    const state = run(start(), { type: "setTool", tool: "slice" }, { type: "split", at: 4 * S });
-
-    expect(state.tool).toBe("slice");
-  });
-});
-
 describe("revision", () => {
   it("advances on a change worth saving", () => {
     const state = start();

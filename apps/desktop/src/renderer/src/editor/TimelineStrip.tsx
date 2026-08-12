@@ -19,11 +19,9 @@ import { fitZoom, ticks } from "./ruler";
 import {
   placedSlices,
   projectDuration,
-  splitPointAt,
   zoomSpanAt,
   type EditorAction,
   type EditorState,
-  type TimelineTool,
 } from "./state";
 import type { PlacedSlice } from "./timeline";
 import type { EditorPlayback } from "./useEditorPlayback";
@@ -74,7 +72,6 @@ export function TimelineStrip({
   const duration = projectDuration(state.project);
 
   const scroller = useRef<HTMLDivElement>(null);
-  const cut = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   /** Null means "fit the whole edit", which is what an editor should open on. */
@@ -163,9 +160,6 @@ export function TimelineStrip({
     return () => element.removeEventListener("wheel", onWheel);
   }, [changeZoom]);
 
-  const cursor =
-    state.tool === "slice" ? "cursor-scissors" : state.tool === "delete" ? "cursor-trash" : "";
-
   // Zooms are stored in *source* time, like everything else that describes the
   // recording; the strip measures project time. Cutting the composite shifts
   // one against the other, so the two conversions are kept here rather than
@@ -194,25 +188,15 @@ export function TimelineStrip({
   );
 
   /**
-   * Draws the cut line under the pointer, or hides it.
+   * Draws the outline of the zoom a click would add, or hides it.
    *
    * Written straight to the element rather than held in state: `pointermove`
    * fires far more often than a frame, and re-rendering the strip on each one
-   * would rebuild every clip and ruler tick to move a two-pixel line.
+   * would rebuild every clip and ruler tick to move an outline.
    *
-   * Hidden wherever a cut would not actually happen — on a boundary, off the
-   * end, or too close to an edge to leave a grabbable slice. `splitPointAt` is
-   * the same rule the reducer applies, so the line cannot promise a cut that is
-   * then declined.
-   */
-  /**
-   * Draws the outline of the zoom a click would add, or hides it.
-   *
-   * Written straight to the element for the same reason the cut line is:
-   * `pointermove` fires far more often than a frame. `zoomSpanAt` is the rule
-   * the reducer applies, so the ghost cannot offer a zoom that is then
-   * declined — over an existing one, or in a gap too small to hold it, nothing
-   * is drawn and nothing happens.
+   * `zoomSpanAt` is the rule the reducer applies, so the ghost cannot offer a
+   * zoom that is then declined — over an existing one, or in a gap too small to
+   * hold it, nothing is drawn and nothing happens.
    */
   const showGhost = useCallback(
     (clientX: number | null) => {
@@ -235,42 +219,9 @@ export function TimelineStrip({
     [state.project, sourceAt, projectAt, timeAt, duration],
   );
 
-  const showCut = useCallback(
-    (clientX: number | null) => {
-      const element = cut.current;
-      if (!element) return;
-
-      const at = clientX === null ? null : timeAt(clientX);
-      const point = at === null ? null : splitPointAt(state.project, at);
-
-      if (point === null || at === null) {
-        element.style.opacity = "0";
-        return;
-      }
-
-      element.style.transform = `translate3d(${(at / Math.max(duration, 1)) * contentWidth}px, 0, 0)`;
-      element.style.opacity = "1";
-    },
-    [state.project, timeAt, duration, contentWidth],
-  );
-
-  // Any tool but the blade, and there is nothing to preview.
-  useEffect(() => {
-    if (state.tool !== "slice") showCut(null);
-  }, [state.tool, showCut]);
-
   const onClipPointerDown = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
     media.onInteract();
-
-    if (state.tool === "slice") {
-      dispatch({ type: "split", at: timeAt(event.clientX) });
-      return;
-    }
-    if (state.tool === "delete") {
-      dispatch({ type: "deleteSlice", sliceId: slice.id });
-      return;
-    }
 
     dispatch({ type: "select", sliceId: slice.id });
     // Selecting also moves the playhead, so the preview shows the clip that is
@@ -284,11 +235,7 @@ export function TimelineStrip({
     <div className="flex flex-none flex-col border-t border-editor-line px-4 pt-3 pb-4">
       <div
         ref={attachScroller}
-        className={cn("no-scrollbar relative overflow-x-auto overflow-y-hidden", cursor)}
-        onPointerMove={(event) => {
-          if (state.tool === "slice") showCut(event.clientX);
-        }}
-        onPointerLeave={() => showCut(null)}
+        className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
       >
         <div className="relative" style={{ width: contentWidth }}>
           <Ruler
@@ -306,8 +253,8 @@ export function TimelineStrip({
             className="flex gap-px"
             style={{ height: CLIP_H }}
             onPointerDown={(event) => {
-              // The empty strip always seeks, whatever the tool: there is
-              // nothing there to slice or delete.
+              // Pressing the empty strip seeks: there is no clip there to
+              // select, and the playhead is what a cut acts on.
               media.onInteract();
               media.playback.seek(timeAt(event.clientX));
             }}
@@ -319,7 +266,6 @@ export function TimelineStrip({
                 duration={duration}
                 peaks={peaks}
                 cameraSpan={cameraSpan}
-                tool={state.tool}
                 selected={slice.id === state.selectedSliceId}
                 onPointerDown={(event) => onClipPointerDown(slice, event)}
                 onTrim={(edge, clientX) =>
@@ -384,17 +330,12 @@ export function TimelineStrip({
                   left={(from / Math.max(duration, 1)) * 100}
                   width={((to - from) / Math.max(duration, 1)) * 100}
                   selected={zoom.id === state.selectedZoomId}
-                  tool={state.tool}
                   target={zoom.target}
                   level={zoom.level}
                   sourceAt={(clientX) => sourceAt(timeAt(clientX))}
                   start={zoom.source.start}
                   onSelect={() => {
                     media.onInteract();
-                    if (state.tool === "delete") {
-                      dispatch({ type: "deleteZoom", zoomId: zoom.id });
-                      return;
-                    }
                     dispatch({ type: "selectZoom", zoomId: zoom.id });
                   }}
                   onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
@@ -411,7 +352,6 @@ export function TimelineStrip({
             })}
           </div>
 
-          <CutLine ref={cut} />
           <Playhead ref={media.playheadRef} />
         </div>
       </div>
@@ -500,32 +440,11 @@ function Playhead({ ref }: { ref: (element: HTMLElement | null) => void }) {
   );
 }
 
-/**
- * Where a cut would land, under the pointer.
- *
- * Deliberately the playhead's shape and full height so it reads as the same
- * kind of marker, and deliberately red so the two are never confused — one says
- * where you are, the other says what you are about to destroy. Running it
- * through the ruler is what lets you line a cut up against a tick.
- */
-function CutLine({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
-  return (
-    <div
-      ref={ref}
-      className="pointer-events-none absolute inset-y-0 left-0 z-10 w-0.5 bg-cut opacity-0 transition-opacity duration-75"
-      style={{ willChange: "transform" }}
-    >
-      <span className="absolute top-0 left-1/2 h-2 w-2.5 -translate-x-1/2 bg-cut [clip-path:polygon(50%_100%,0_0,100%_0)]" />
-    </div>
-  );
-}
-
 function Clip({
   slice,
   duration,
   peaks,
   cameraSpan,
-  tool,
   selected,
   onPointerDown,
   onTrim,
@@ -534,7 +453,6 @@ function Clip({
   duration: MediaTime;
   peaks: Float32Array | null;
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
-  tool: TimelineTool;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onTrim: (edge: "start" | "end", clientX: number) => void;
@@ -576,14 +494,7 @@ function Clip({
         // recede together — a full-strength border on a faded body reads as a
         // rendering glitch rather than as "not selected".
         selected ? "opacity-100" : "opacity-60",
-        // With the trash held, the clip under the pointer goes red and comes to
-        // full strength: this click destroys it, and the cursor alone leaves
-        // *which* clip up to the user's aim. The hover states are emitted
-        // exclusively — two `hover:opacity-*` classes would leave the winner to
-        // stylesheet order.
-        tool === "delete"
-          ? "hover:border-cut hover:bg-cut/30 hover:opacity-100"
-          : !selected && "hover:opacity-80",
+        !selected && "hover:opacity-80",
       )}
       style={{ width: `${(slice.duration / Math.max(duration, 1)) * 100}%` }}
       onPointerDown={onPointerDown}
@@ -630,15 +541,11 @@ function Clip({
         </span>
       </div>
 
-      {/* Trim handles only under the select tool: with the blade held, a click
-          near an edge should cut there, not resize.
-
-          Shown outright on the selected clip and on hover otherwise — the two
+      {/* Shown outright on the selected clip and on hover otherwise — the two
           bars are what says "these ends can be dragged", and a control that
           only appears once the pointer is already on it has to be discovered
           by accident. */}
-      {tool === "select" && (
-        <>
+      <>
           <Handle
             edge="start"
             selected={selected}
@@ -651,8 +558,7 @@ function Clip({
             onPointerDown={grab("end")}
             onPointerMove={move("end")}
           />
-        </>
-      )}
+      </>
     </div>
   );
 }
@@ -718,7 +624,6 @@ function Zoom({
   left,
   width,
   selected,
-  tool,
   target,
   level,
   start,
@@ -730,7 +635,6 @@ function Zoom({
   left: number;
   width: number;
   selected: boolean;
-  tool: TimelineTool;
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
   target: ZoomSlice["target"];
@@ -766,17 +670,13 @@ function Zoom({
         "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-2",
         "border-selected/60 bg-selected/25 transition-colors",
         selected && "border-selected bg-selected/40",
-        tool === "delete"
-          ? "hover:border-cut hover:bg-cut/40"
-          : "cursor-grab active:cursor-grabbing",
+        "cursor-grab active:cursor-grabbing",
       )}
       style={{ left: `${left}%`, width: `${width}%` }}
       onPointerDown={(event) => {
         // Stops the row underneath adding a second zoom on top of this one.
         event.stopPropagation();
         onSelect();
-
-        if (tool !== "select") return;
         grab.current = sourceAt(event.clientX) - start;
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -797,22 +697,18 @@ function Zoom({
         <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
       </span>
 
-      {tool === "select" && (
-        <>
-          <Handle
-            edge="start"
-            selected={selected}
-            onPointerDown={grabEdge("start")}
-            onPointerMove={moveEdge("start")}
-          />
-          <Handle
-            edge="end"
-            selected={selected}
-            onPointerDown={grabEdge("end")}
-            onPointerMove={moveEdge("end")}
-          />
-        </>
-      )}
+      <Handle
+        edge="start"
+        selected={selected}
+        onPointerDown={grabEdge("start")}
+        onPointerMove={moveEdge("start")}
+      />
+      <Handle
+        edge="end"
+        selected={selected}
+        onPointerDown={grabEdge("end")}
+        onPointerMove={moveEdge("end")}
+      />
     </div>
   );
 }
