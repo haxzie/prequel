@@ -83,6 +83,8 @@ export interface LayoutSettings {
   cursorVisible: boolean;
   /** Pointer height, as a fraction of the frame's shorter edge. */
   cursorSize: number;
+  /** Which pointer to draw. See `CURSOR_STYLES`. */
+  cursorStyle: string;
   /**
    * Hide the pointer once it has been still for a while.
    *
@@ -266,6 +268,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // About the size the pointer appears on screen in a 1080p frame, so an export
   // looks like the recording rather than like a diagram of it.
   cursorSize: 0.035,
+  cursorStyle: "light",
   cursorAutoHide: false,
   cursorHideAfter: 2,
 };

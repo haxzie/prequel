@@ -675,6 +675,8 @@ export interface CursorTrack {
   /** Image to draw, relative to the session directory. */
   path: string;
   hotspot: { x: number; y: number };
+  /** Press times, in source time, for the click animation. */
+  clicks?: readonly number[];
   samples: readonly { at: number; x: number; y: number }[];
   /** Size setting, as a fraction of the frame's shorter edge. */
   size: number;

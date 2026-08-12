@@ -18,6 +18,7 @@ import type {
 } from "../shared/contract.js";
 import { withoutDeviceIds } from "../shared/contract.js";
 import { iconsFor } from "./app-icons.js";
+import { log } from "./log.js";
 import type { Preferences } from "./preferences.js";
 import type { NativeCamera } from "./recorder.js";
 import { getRecorder } from "./recorder.js";
@@ -345,16 +346,38 @@ export class CaptureFlow {
     // be excluded, and the user may switch the camera on mid-recording.
     const camera = this.deps.camera.prepare();
 
-    await this.deps.session.start({
-      target: selection.target,
-      crop: selection.crop,
-      showCursor: preferences.bakeCursor,
-      systemAudio: preferences.systemAudio,
-      microphone: preferences.micId !== null,
-      // The bubble is only a preview; this is what writes `camera.mp4`.
-      camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
-      excludedWindowIds: this.excludedIds([dock, camera]),
+    log("info", "starting capture", {
+      target: `${selection.target.kind} ${String(selection.target.id)}`,
+      crop: selection.crop
+        ? `${String(Math.round(selection.crop.width))}×${String(Math.round(selection.crop.height))}` +
+          ` at ${String(Math.round(selection.crop.x))},${String(Math.round(selection.crop.y))}`
+        : "none",
+      bounds:
+        `${String(Math.round(selection.target.bounds.width))}×` +
+        `${String(Math.round(selection.target.bounds.height))}`,
     });
+
+    try {
+      await this.deps.session.start({
+        target: selection.target,
+        crop: selection.crop,
+        showCursor: preferences.bakeCursor,
+        systemAudio: preferences.systemAudio,
+        microphone: preferences.micId !== null,
+        // The bubble is only a preview; this is what writes `camera.mp4`.
+        camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
+        excludedWindowIds: this.excludedIds([dock, camera]),
+      });
+    } catch (cause) {
+      // Said out loud, and the panel put back. A start that fails silently
+      // leaves the app looking like it ignored the button — which is
+      // indistinguishable from a bug in the button.
+      console.error("[flow] could not start capturing:", cause);
+      this.deps.dock.setView("setup");
+      this.deps.dock.show();
+      this.emit();
+      throw cause;
+    }
 
     this.deps.dock.setView("recording");
     this.deps.dock.show();

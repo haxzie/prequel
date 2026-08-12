@@ -7,7 +7,12 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-import type { EditorSession, ExportProgress, ExportSlice } from "../../../shared/contract";
+import {
+  cursorStyle,
+  type EditorSession,
+  type ExportProgress,
+  type ExportSlice,
+} from "../../../shared/contract";
 import { buildRenderPlan, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import { resolveSettings, type Project } from "../../../shared/project";
@@ -94,6 +99,8 @@ function buildSlices(session: EditorSession, project: Project): ExportSlice[] {
         settings,
         session.cursor && {
           ...session.cursor,
+          path: cursorStyle(settings.layout.cursorStyle).file,
+          hotspot: cursorStyle(settings.layout.cursorStyle).hotspot,
           size: settings.layout.cursorSize,
           hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
         },

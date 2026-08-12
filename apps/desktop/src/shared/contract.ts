@@ -401,24 +401,31 @@ export interface DockState {
  * same way a selection overlay is set up: a hash route has to survive a reload
  * and an HMR round trip, and a serialised manifest in it would not.
  */
-/** The pointer image, as it is written into every recording that needs one. */
-export const CURSOR_FILE_NAME = "cursor.png";
-
 /**
- * Where the pointer's tip sits in its image, as a fraction of it.
+ * The pointers the editor can draw, and where each one actually points.
  *
- * Matches the outline inset in `scripts/make-cursor.mjs`, which is what the
- * arrow is drawn one of in from the top-left corner. Change one and the other
- * has to move with it, or the pointer lands down and to the right of whatever
- * it is pointing at.
+ * The hotspot is the part that acts, and it differs by shape: an arrow points
+ * with its tip, a hand with its fingertip, a dot with its middle. These numbers
+ * come from `scripts/make-cursor.mjs`, which prints them when it draws the
+ * images — change the artwork there and these follow.
  */
-export const CURSOR_HOTSPOT = { x: 0.055, y: 0.055 };
+export const CURSOR_STYLES = [
+  { id: "light", label: "Light", file: "cursor-light.png", hotspot: { x: 0.055, y: 0.055 } },
+  { id: "dark", label: "Dark", file: "cursor-dark.png", hotspot: { x: 0.055, y: 0.055 } },
+  { id: "hand", label: "Hand", file: "cursor-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+  { id: "dot", label: "Dot", file: "cursor-dot.png", hotspot: { x: 0.5, y: 0.5 } },
+] as const;
+
+export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
+
+export function cursorStyle(id: string): (typeof CURSOR_STYLES)[number] {
+  return CURSOR_STYLES.find((style) => style.id === id) ?? CURSOR_STYLES[0];
+}
 
 /** The pointer track, ready for the editor to lay out. */
 export interface CursorLayer {
-  /** Image name, relative to the recording directory. */
-  path: string;
-  hotspot: { x: number; y: number };
+  /** Positions of every press, in source time, for the click animation. */
+  clicks: MediaTime[];
   /** Positions as fractions of the captured frame, in source time. */
   samples: CursorSample[];
   /**

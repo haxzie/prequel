@@ -21,6 +21,51 @@ const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../resources")
 /** Drawn at this size, then scaled down at use. Large enough for a 4K frame. */
 const SIZE = 128;
 
+/**
+ * Every pointer the editor offers, and where each one actually points.
+ *
+ * The hotspot is the part that acts, and it is different for each: an arrow
+ * points with its tip, a hand with its fingertip, and a dot with its middle.
+ * Get it wrong and the pointer sits beside everything it is pointing at.
+ *
+ * Exported as JSON beside the images so `shared/contract.ts` does not have to
+ * repeat numbers that are decided here.
+ */
+const STYLES = [
+  { id: "light", shape: "arrow", fill: 255, stroke: 0, alpha: 255 },
+  { id: "dark", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
+  { id: "hand", shape: "hand", fill: 255, stroke: 0, alpha: 255 },
+  // No outline and half opaque: a marker that shows where the pointer is
+  // without hiding what is under it, for a recording where the content matters
+  // more than the pointing.
+  { id: "dot", shape: "dot", fill: 255, stroke: 255, alpha: 140 },
+];
+
+/**
+ * A pointing hand, as fractions of its own bounding box.
+ *
+ * Index finger up and to the left, thumb out, the other three curled — the
+ * silhouette macOS uses for a link. Drawn as one loop like the arrow.
+ */
+const HAND = [
+  [0.30, 0.00],
+  [0.42, 0.06],
+  [0.44, 0.42],
+  [0.52, 0.36],
+  [0.64, 0.40],
+  [0.66, 0.36],
+  [0.78, 0.42],
+  [0.80, 0.38],
+  [0.92, 0.46],
+  [0.94, 0.74],
+  [0.84, 0.96],
+  [0.46, 1.00],
+  [0.28, 0.84],
+  [0.06, 0.58],
+  [0.10, 0.48],
+  [0.30, 0.56],
+];
+
 /** Black outline, in image pixels. What keeps a white arrow visible on white. */
 const OUTLINE = SIZE * 0.055;
 
@@ -47,11 +92,15 @@ const ARROW = [
 const ASPECT = 0.56 / 0.86;
 
 /** Arrow scaled into the image, leaving room for the outline on every side. */
-function polygon() {
-  const height = SIZE - OUTLINE * 2;
-  const width = height * ASPECT;
+function polygon(shape) {
+  const span = SIZE - OUTLINE * 2;
 
-  return ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * height]);
+  if (shape === "hand") {
+    return HAND.map(([x, y]) => [OUTLINE + x * span, OUTLINE + y * span]);
+  }
+
+  const width = span * ASPECT;
+  return ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * span]);
 }
 
 /** Even-odd ray cast. The arrow is simple, so this needs no winding rule. */
@@ -90,9 +139,11 @@ function distance(points, px, py) {
  * with a white one drawn over it leaves a grey seam wherever the two edges
  * antialias against each other.
  */
-function draw() {
-  const points = polygon();
+function draw(style) {
+  const points = polygon(style.shape);
   const rgba = new Uint8Array(SIZE * SIZE * 4);
+  const centre = (SIZE - 1) / 2;
+  const dotRadius = SIZE * 0.34;
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
@@ -103,6 +154,13 @@ function draw() {
         for (let sx = 0; sx < SAMPLES; sx++) {
           const px = x + (sx + 0.5) / SAMPLES;
           const py = y + (sy + 0.5) / SAMPLES;
+
+          if (style.shape === "dot") {
+            // A plain disc, no outline: the shape is its own silhouette.
+            if (Math.hypot(px - centre, py - centre) <= dotRadius) white++;
+            continue;
+          }
+
           const within = inside(points, px, py);
           const d = distance(points, px, py);
 
@@ -118,11 +176,16 @@ function draw() {
       // Colour is the average of the samples that landed on something, so an
       // edge pixel is a blend of white and black rather than of white and
       // nothing — which would read as a gap in the outline.
-      const shade = covered === 0 ? 0 : Math.round((white / covered) * 255);
+      // Blended between the two, so an edge pixel is part fill and part
+      // outline rather than part fill and part nothing — which would read as a
+      // gap in the outline.
+      const shade =
+        covered === 0 ? 0 : Math.round((white * style.fill + black * style.stroke) / covered);
+
       rgba[at] = shade;
       rgba[at + 1] = shade;
       rgba[at + 2] = shade;
-      rgba[at + 3] = Math.round((covered / total) * 255);
+      rgba[at + 3] = Math.round((covered / total) * style.alpha);
     }
   }
 
@@ -169,12 +232,24 @@ function encodePng(rgba) {
   ]);
 }
 
+/** Where each shape actually points, as a fraction of its image. */
+function hotspot(shape) {
+  // The arrow's tip sits one outline in from the top-left corner.
+  if (shape === "arrow") return { x: OUTLINE / SIZE, y: OUTLINE / SIZE };
+  // The hand points with the top of its index finger.
+  if (shape === "hand") return { x: (OUTLINE + (SIZE - OUTLINE * 2) * 0.36) / SIZE, y: OUTLINE / SIZE };
+  // A dot points with its middle, which is the whole idea of it.
+  return { x: 0.5, y: 0.5 };
+}
+
 mkdirSync(OUT_DIR, { recursive: true });
 
-const file = resolve(OUT_DIR, "cursor.png");
-writeFileSync(file, encodePng(draw()));
+for (const style of STYLES) {
+  const file = resolve(OUT_DIR, `cursor-${style.id}.png`);
+  writeFileSync(file, encodePng(draw(style)));
 
-// The hotspot is the tip, which sits one outline in from the top-left corner.
-// Whatever draws this has to subtract it, or the pointer lands down and to the
-// right of everything it is pointing at.
-console.log(`wrote ${file} (${SIZE}px, hotspot ${(OUTLINE / SIZE).toFixed(4)})`);
+  const spot = hotspot(style.shape);
+  console.log(
+    `wrote ${file} (${SIZE}px, hotspot ${spot.x.toFixed(4)}, ${spot.y.toFixed(4)})`,
+  );
+}

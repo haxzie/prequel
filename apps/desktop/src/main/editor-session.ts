@@ -16,7 +16,7 @@ import { dialog, shell, type BrowserWindow } from "electron";
 import type { Manifest, TrackKind } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
 import type { CursorLayer } from "../shared/contract.js";
-import { CURSOR_FILE_NAME, CURSOR_HOTSPOT } from "../shared/contract.js";
+import { CURSOR_STYLES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import { FALLBACK_BACKGROUND } from "../shared/project.js";
 import { loadProject } from "./editor-project.js";
@@ -123,23 +123,30 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
   if (manifest.cursor_baked ?? true) return null;
   if (!manifest.cursor?.length) return null;
 
-  const target = join(dir, CURSOR_FILE_NAME);
-  if (!existsSync(target)) {
+  // Every style, not just the one selected: which is chosen is a project
+  // setting that changes after this runs, and they are a couple of kilobytes
+  // each.
+  for (const style of CURSOR_STYLES) {
+    const target = join(dir, style.file);
+    if (existsSync(target)) continue;
+
     try {
-      copyFileSync(fileURLToPath(new URL("../../resources/cursor.png", import.meta.url)), target);
+      copyFileSync(
+        fileURLToPath(new URL(`../../resources/${style.file}`, import.meta.url)),
+        target,
+      );
     } catch (cause) {
       // Without the image there is no pointer, which is a recording that looks
       // like it was made with the cursor hidden — not a broken editor.
-      console.warn(`[editor] could not provide a pointer image for ${dir}:`, cause);
+      console.warn(`[editor] could not provide ${style.file} for ${dir}:`, cause);
       return null;
     }
   }
 
   return {
-    path: CURSOR_FILE_NAME,
-    hotspot: CURSOR_HOTSPOT,
     samples: manifest.cursor,
     typing: manifest.typing ?? [],
+    clicks: (manifest.clicks ?? []).map((click) => click.at),
   };
 }
 
