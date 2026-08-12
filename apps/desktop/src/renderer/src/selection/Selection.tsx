@@ -23,6 +23,9 @@ type Rect = { x: number; y: number; width: number; height: number };
 /** Dark enough to read as modal, light enough to still see what you pick. */
 const OVERLAY = "fixed inset-0 cursor-crosshair bg-[rgba(6,7,9,0.4)]";
 
+/** The same sheet once a region is drawn: nothing left on it to aim at. */
+const OVERLAY_SETTLED = "fixed inset-0 cursor-default bg-[rgba(6,7,9,0.4)]";
+
 /**
  * The outline of what will be recorded.
  *
@@ -319,8 +322,14 @@ function AreaSelection({
 
   return (
     <div
-      className={OVERLAY}
+      className={settled ? OVERLAY_SETTLED : OVERLAY}
       onMouseDown={(event) => {
+        // Deaf once a region is drawn. This used to start a fresh drag from
+        // wherever it landed and clear `settled` on the way — so a press
+        // anywhere, including one aimed at the card sitting on top, wiped the
+        // selection and left an empty overlay. Escape starts again.
+        if (settled) return;
+
         const point = { x: event.clientX, y: event.clientY };
         // Kept in a ref as well as state: the next mousemove can arrive before
         // React has committed the render, and reading stale state there would
@@ -329,15 +338,16 @@ function AreaSelection({
         currentRef.current = point;
         setOrigin(point);
         setCurrent(point);
-        setSettled(false);
       }}
       onMouseMove={(event) => {
-        if (!originRef.current) return;
+        if (settled || !originRef.current) return;
         const point = { x: event.clientX, y: event.clientY };
         currentRef.current = point;
         setCurrent(point);
       }}
-      onMouseUp={commit}
+      onMouseUp={() => {
+        if (!settled) commit();
+      }}
     >
       {region && (
         <div
