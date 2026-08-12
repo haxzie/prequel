@@ -230,7 +230,15 @@ export class WebGlCompositor {
   }
 
   private context(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
-    if (this.gl) return this.gl;
+    // A context that has been disposed keeps its `gl` — `getContext` hands back
+    // the same object for the life of the canvas — but loses its program.
+    // Rebuilding here rather than only on first call is what stops a stray
+    // `dispose()` leaving this permanently unable to draw.
+    if (this.gl) {
+      this.program ??= compile(this.gl);
+      this.vao ??= this.gl.createVertexArray();
+      return this.gl;
+    }
 
     const gl = canvas.getContext("webgl2", {
       // The preview is composited over the editor's own background, and the

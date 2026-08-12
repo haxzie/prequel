@@ -150,14 +150,17 @@ export function Preview({
     };
 
     handle = requestAnimationFrame(render);
-    const painter = compositor.current;
-    return () => {
-      cancelAnimationFrame(handle);
-      // The context outlives the effect, but its textures should not: a
-      // recording closed with a 4K background still on the GPU leaks it.
-      painter.dispose();
-    };
+    return () => cancelAnimationFrame(handle);
   }, [media]);
+
+  // Released on unmount and *only* on unmount. The loop above re-runs on every
+  // render — `useEditorPlayback` hands back a new object each time — so
+  // disposing there tore the compositor down constantly, and it came back
+  // without a shader. A blank preview, from a cleanup that read as tidy.
+  useEffect(() => {
+    const painter = compositor.current;
+    return () => painter.dispose();
+  }, []);
 
   /**
    * Where a pointer is in the output frame, in its own pixels.
