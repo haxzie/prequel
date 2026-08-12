@@ -682,6 +682,22 @@ function AudioPanel({
 }
 
 /**
+ * Perspective presets.
+ *
+ * Small angles on purpose. Past about fifteen degrees a screen recording stops
+ * being readable and starts being a picture of a screen — which is a fine
+ * effect for a title card and a poor one for the thing being demonstrated.
+ */
+const TILTS = [
+  { label: "Flat", tilt: 0, yaw: 0 },
+  { label: "Lean back", tilt: 8, yaw: 0 },
+  { label: "Lean in", tilt: -8, yaw: 0 },
+  { label: "Left", tilt: 4, yaw: -10 },
+  { label: "Right", tilt: 4, yaw: 10 },
+  { label: "Hero", tilt: 12, yaw: -14 },
+] as const;
+
+/**
  * One zoom span's settings.
  *
  * `cursor` is the default because it is what a screen recording usually wants:
@@ -768,6 +784,59 @@ function ZoomPanel({
           // anyone actually has about a camera move.
           format={(value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`)}
           onChange={(speed) => onChange({ speed })}
+        />
+      </Field>
+
+      {/* Presets before the sliders, because nobody arrives wanting −8° of
+          yaw — they want "leaning back a bit". The sliders are for adjusting
+          what a preset got close to. */}
+      <Field label="Perspective">
+        <div className="grid grid-cols-3 gap-1">
+          {TILTS.map((preset) => {
+            const here =
+              Math.abs(zoom.tilt - preset.tilt) < 0.5 && Math.abs(zoom.yaw - preset.yaw) < 0.5;
+
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                aria-pressed={here}
+                className={cn(
+                  "rounded-md px-1 py-1.5 text-[10px] transition-colors",
+                  here
+                    ? "bg-selected text-white"
+                    : "bg-white/5 text-editor-muted hover:bg-white/10",
+                )}
+                onClick={() => onChange({ tilt: preset.tilt, yaw: preset.yaw })}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <Field label="Tilt">
+        <Slider
+          value={zoom.tilt}
+          min={-30}
+          max={30}
+          step={1}
+          // Degrees, and signed: the sign is the whole difference between
+          // leaning towards the viewer and away from them.
+          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+          onChange={(tilt) => onChange({ tilt })}
+        />
+      </Field>
+
+      <Field label="Yaw">
+        <Slider
+          value={zoom.yaw}
+          min={-30}
+          max={30}
+          step={1}
+          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+          onChange={(yaw) => onChange({ yaw })}
         />
       </Field>
 

@@ -35,7 +35,7 @@ const NS_PER_SECOND = 1_000_000_000;
 const RULER_H = 24;
 /** Space under the ruler, so its labels do not sit on top of the clips. */
 const TRACK_GAP = 10;
-const CLIP_H = 46;
+const CLIP_H = 38;
 
 /**
  * Zoom range, in pixels per second.
@@ -389,7 +389,7 @@ export function TimelineStrip({
                   selected={zoom.id === state.selectedZoomId}
                   tool={state.tool}
                   target={zoom.target}
-                  length={zoom.source.end - zoom.source.start}
+                  level={zoom.level}
                   sourceAt={(clientX) => sourceAt(timeAt(clientX))}
                   start={zoom.source.start}
                   onSelect={() => {
@@ -690,7 +690,7 @@ function Zoom({
   selected,
   tool,
   target,
-  length,
+  level,
   start,
   sourceAt,
   onSelect,
@@ -704,7 +704,9 @@ function Zoom({
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
   target: ZoomSlice["target"];
-  length: MediaTime;
+  /** How far in. The one number about a zoom worth reading from the strip —
+      how long it runs is already its width. */
+  level: number;
   /** Where this zoom currently starts, in source time. */
   start: MediaTime;
   /** Source time under a client x, so a drag can be measured in the timeline's
@@ -731,7 +733,7 @@ function Zoom({
   return (
     <div
       className={cn(
-        "group absolute inset-y-0 flex items-center overflow-hidden rounded-md border px-2",
+        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-md border px-2",
         "border-selected/60 bg-selected/25 transition-colors",
         selected && "border-selected bg-selected/40",
         tool === "delete"
@@ -762,7 +764,7 @@ function Zoom({
       <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
         <ZoomIcon />
         {target === "cursor" ? <CursorIcon /> : target === "typing" ? <TypingIcon /> : <FillIcon />}
-        <span className="truncate tabular-nums">{formatTimecode(length)}</span>
+        <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
       </span>
 
       {tool === "select" && (

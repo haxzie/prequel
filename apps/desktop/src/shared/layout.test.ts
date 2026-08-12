@@ -637,6 +637,8 @@ describe("zooming", () => {
     y: 0.75,
     level: 2,
     speed: 0.5,
+    tilt: 0,
+    yaw: 0,
     ...over,
   });
 
@@ -802,6 +804,8 @@ describe("following the cursor", () => {
           y: 0.5,
           level: 2,
           speed: 0.2,
+          tilt: 0,
+          yaw: 0,
         },
       ],
     );
@@ -873,6 +877,8 @@ describe("following typing", () => {
           y: 0.5,
           level: 2,
           speed: 0,
+          tilt: 0,
+          yaw: 0,
         },
       ],
     );
@@ -951,5 +957,63 @@ describe("the camera's own zoom", () => {
         5,
       );
     }
+  });
+});
+
+describe("perspective", () => {
+  const S = 1_000_000_000;
+
+  const cornersFor = (tilt: number, yaw: number) => {
+    const plan = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings(),
+      null,
+      [
+        {
+          id: "z",
+          source: { start: 0, end: 4 * S },
+          target: "region",
+          x: 0.5,
+          y: 0.5,
+          level: 1.5,
+          speed: 0,
+          tilt,
+          yaw,
+        },
+      ],
+    );
+    const item = plan.items.find(
+      (candidate) => candidate.kind === "image" && candidate.source === "screen",
+    )!;
+    if (item.kind !== "image") throw new Error("wrong item");
+    return rectAt(item.motion ?? [], 2 * S, item.dstRect, item.shape.radius).quad;
+  };
+
+  it("carries no corners when nothing is tilted", () => {
+    // Which is every zoom that only pushes in — twelve numbers a key for a
+    // transform that is the identity.
+    expect(cornersFor(0, 0)).toBeUndefined();
+  });
+
+  it("converges the edge that leans away", () => {
+    // The difference between perspective and a rotation: the far edge is
+    // genuinely further off, so it is drawn shorter.
+    const q = cornersFor(12, 0)!;
+    expect(q[3]! - q[0]!).toBeLessThan(q[9]! - q[6]!);
+  });
+
+  it("shortens the side that swings away", () => {
+    const q = cornersFor(0, 14)!;
+    expect(q[10]! - q[4]!).toBeLessThan(q[7]! - q[1]!);
+  });
+
+  it("carries a divisor with every corner", () => {
+    // Without `w` the GPU maps the texture across two flat triangles, which is
+    // the affine warp early 3D was famous for.
+    const q = cornersFor(10, 10)!;
+
+    expect(q).toHaveLength(12);
+    for (let index = 2; index < q.length; index += 3) expect(q[index]).toBeGreaterThan(0);
   });
 });

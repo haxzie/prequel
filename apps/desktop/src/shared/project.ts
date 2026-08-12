@@ -183,6 +183,17 @@ export interface ZoomSlice {
   level: number;
   /** Seconds the move in and the move out each take. */
   speed: number;
+  /**
+   * Pitch, in degrees. Positive leans the top of the picture away.
+   *
+   * A perspective tilt rather than a rotation: the far edge is genuinely
+   * further away, so it is drawn smaller and the picture converges. That is
+   * what makes it read as a camera looking at a screen rather than as a flat
+   * image on a slant.
+   */
+  tilt: number;
+  /** Yaw, in degrees. Positive swings the right edge away. */
+  yaw: number;
 }
 
 export const DEFAULT_ZOOM = {
@@ -193,6 +204,8 @@ export const DEFAULT_ZOOM = {
   // Long enough to read as a camera move rather than a cut, short enough not to
   // spend the first second of a two-second zoom still arriving.
   speed: 0.6,
+  tilt: 0,
+  yaw: 0,
 } as const;
 
 /** How long a zoom is when it is first dropped on the timeline. */
@@ -313,6 +326,10 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
       y: clamp(number(zoom?.["y"], DEFAULT_ZOOM.y), 0, 1),
       level: clamp(number(zoom?.["level"], DEFAULT_ZOOM.level), 1, 8),
       speed: clamp(number(zoom?.["speed"], DEFAULT_ZOOM.speed), 0, 5),
+      // Past about thirty degrees the far edge is short enough that the
+      // picture is more foreshortening than content.
+      tilt: clamp(number(zoom?.["tilt"], DEFAULT_ZOOM.tilt), -30, 30),
+      yaw: clamp(number(zoom?.["yaw"], DEFAULT_ZOOM.yaw), -30, 30),
     }))
     .filter((zoom) => zoom.source.end > zoom.source.start)
     .sort((a, b) => a.source.start - b.source.start);

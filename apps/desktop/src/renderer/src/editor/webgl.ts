@@ -55,6 +55,8 @@ precision highp float;
 
 uniform vec4 u_rect;
 uniform vec2 u_frame;
+// Twelve numbers as four (x, y, w) corners, or w = 0 for "not tilted".
+uniform vec3 u_quad[4];
 
 out vec2 v_local;
 out vec2 v_uv;
@@ -63,12 +65,19 @@ void main() {
   // Four corners from the vertex id, no buffer: the rectangle is a uniform.
   vec2 corner = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));
 
-  vec2 pixel = u_rect.xy + corner * u_rect.zw;
+  vec3 placed = u_quad[gl_VertexID];
+  // The tilted corner if there is one, otherwise the plain rectangle.
+  vec2 pixel = placed.z > 0.0 ? placed.xy : u_rect.xy + corner * u_rect.zw;
+  float w = placed.z > 0.0 ? placed.z : 1.0;
+
   // Pixels to clip space, with y flipped: clip space is bottom-up and every
   // rectangle in the plan is top-down.
   vec2 clip = (pixel / u_frame) * 2.0 - 1.0;
 
-  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  // Scaled by w, with w in the fourth component: the hardware divides by it
+  // per fragment, which is what makes the texture and the shape follow the
+  // perspective instead of being smeared across two flat triangles.
+  gl_Position = vec4(clip.x * w, -clip.y * w, 0.0, w);
   v_local = corner * u_rect.zw;
   v_uv = corner;
 }`;
@@ -178,6 +187,7 @@ interface Program {
   mode: WebGLUniformLocation | null;
   weight: WebGLUniformLocation | null;
   mirror: WebGLUniformLocation | null;
+  quad: WebGLUniformLocation | null;
 }
 
 export class WebGlCompositor {
@@ -295,12 +305,20 @@ export class WebGlCompositor {
       }
 
       case "shadow": {
-        const { rect, shape } = moving(item, at);
-        set(gl, p, { rect, shape, mode: MODE_SHADOW, colorA: item.color, weight: item.blur / 2 });
-        // Offset by its own `dy`, so the shadow falls rather than sitting
-        // exactly behind what casts it.
-        gl.uniform4f(p.rect, rect.x, rect.y + item.dy, rect.width, rect.height);
-        quad(gl);
+        const { rect, shape, quad } = moving(item, at);
+        // Dropped by its own `dy`, so the shadow falls rather than sitting
+        // exactly behind what casts it. Applied to the corners when the
+        // picture is tilted, or the shadow would stay flat under a leaning
+        // frame and give the whole thing away.
+        set(gl, p, {
+          rect: { ...rect, y: rect.y + item.dy },
+          shape,
+          quad: quad?.map((value, index) => (index % 3 === 1 ? value + item.dy : value)),
+          mode: MODE_SHADOW,
+          colorA: item.color,
+          weight: item.blur / 2,
+        });
+        drawQuad(gl);
         break;
       }
 
@@ -313,18 +331,25 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.source, source, true);
         if (!texture) break;
 
-        const { rect, shape } = moving(item, at);
+        const { rect, shape, quad } = moving(item, at);
         const src = normalised(item.srcRect, source.videoWidth, source.videoHeight);
 
-        set(gl, p, { rect, shape, mode: MODE_IMAGE, src, mirror: item.mirror });
-        quad(gl);
+        set(gl, p, { rect, shape, quad, mode: MODE_IMAGE, src, mirror: item.mirror });
+        drawQuad(gl);
         break;
       }
 
       case "stroke": {
-        const { rect, shape } = moving(item, at);
-        set(gl, p, { rect, shape, mode: MODE_STROKE, colorA: item.color, weight: item.width });
-        quad(gl);
+        const { rect, shape, quad } = moving(item, at);
+        set(gl, p, {
+          rect,
+          shape,
+          quad,
+          mode: MODE_STROKE,
+          colorA: item.color,
+          weight: item.width,
+        });
+        drawQuad(gl);
         break;
       }
 
@@ -348,7 +373,7 @@ export class WebGlCompositor {
           shape: { radius: 0, exponent: 2 },
           mode: MODE_IMAGE,
         });
-        quad(gl);
+        drawQuad(gl);
         break;
       }
     }
@@ -364,7 +389,7 @@ export class WebGlCompositor {
     switch (paint.kind) {
       case "solid":
         set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: paint.color });
-        quad(gl);
+        drawQuad(gl);
         return;
 
       case "gradient": {
@@ -378,7 +403,7 @@ export class WebGlCompositor {
           colorB: paint.to,
           gradient: [Math.cos(radians), Math.sin(radians)],
         });
-        quad(gl);
+        drawQuad(gl);
         return;
       }
 
@@ -388,7 +413,7 @@ export class WebGlCompositor {
         // hole that shows the editor's own chrome through the frame.
         if (!image) {
           set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: "#1c1e22" });
-          quad(gl);
+          drawQuad(gl);
           return;
         }
 
@@ -396,7 +421,7 @@ export class WebGlCompositor {
         if (!texture) return;
 
         set(gl, p, { rect, shape: square, mode: MODE_IMAGE, src: cover(rect, sizeOf(image)) });
-        quad(gl);
+        drawQuad(gl);
         return;
       }
     }
@@ -471,7 +496,7 @@ export class WebGlCompositor {
 function moving(
   item: Extract<PlanItem, { motion?: RectKey[] }>,
   at: number,
-): { rect: Rect; shape: Shape } {
+): { rect: Rect; shape: Shape; quad?: number[] } {
   const rect = "rect" in item ? item.rect : item.dstRect;
   if (!item.motion) return { rect, shape: item.shape };
 
@@ -479,13 +504,18 @@ function moving(
   return {
     rect: { x: key.x, y: key.y, width: key.width, height: key.height },
     shape: { radius: key.radius, exponent: item.shape.exponent },
+    ...(key.quad ? { quad: key.quad } : {}),
   };
 }
+
+/** Four zeroed corners: `w` of 0 means "no tilt", read by the vertex shader. */
+const FLAT = new Float32Array(12);
 
 interface Draw {
   rect: Rect;
   shape: Shape;
   mode: number;
+  quad?: number[];
   src?: [number, number, number, number];
   colorA?: string;
   colorB?: string;
@@ -511,9 +541,11 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
 
   const gradient = draw.gradient ?? [0, 1];
   gl.uniform2f(p.gradient, gradient[0], gradient[1]);
+
+  gl.uniform3fv(p.quad, draw.quad && draw.quad.length === 12 ? draw.quad : FLAT);
 }
 
-function quad(gl: WebGL2RenderingContext): void {
+function drawQuad(gl: WebGL2RenderingContext): void {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
@@ -635,6 +667,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     mode: at("u_mode"),
     weight: at("u_weight"),
     mirror: at("u_mirror"),
+    quad: at("u_quad"),
   };
 }
 

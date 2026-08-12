@@ -95,6 +95,23 @@ export interface RectKey {
   height: number;
   /** Corner radius, which grows with the picture rather than staying put. */
   radius: number;
+  /**
+   * The picture's four corners once tilted, as `x, y, w` each — twelve numbers,
+   * in the order top-left, top-right, bottom-left, bottom-right.
+   *
+   * Absent when nothing is tilted, which is every zoom that only pushes in.
+   *
+   * `w` is the projective divisor, and carrying it is what makes this correct
+   * rather than merely quadrilateral: a GPU interpolates in clip space, so
+   * handing it four screen positions and letting it map the texture across two
+   * triangles gives the affine warp that early 3D was famous for. With `w` the
+   * hardware does the perspective divide per pixel for free.
+   *
+   * Computed here, like everything else geometric, so the preview and the
+   * export cannot disagree about where a corner went — they each receive the
+   * answer and draw it.
+   */
+  quad?: number[];
 }
 
 export type PlanItem =
@@ -383,15 +400,24 @@ function rectFor(
     y: clamp(frame.height / 2 - (focal.y - base.y) * level, base.y + base.height - height, base.y),
   };
 
-  return {
-    at,
+  const moved: Rect = {
     x: lerp(base.x, target.x, amount),
     y: lerp(base.y, target.y, amount),
     width: lerp(base.width, width, amount),
     height: lerp(base.height, height, amount),
+  };
+
+  // Eased in with the rest of the move, so the picture leans over as it comes
+  // forward rather than snapping to an angle the moment the zoom begins.
+  const quad = tiltedQuad(moved, zoom.tilt * amount, zoom.yaw * amount);
+
+  return {
+    at,
+    ...moved,
     // The corners grow with the picture. Left alone they would tighten as it
     // scaled, which reads as the frame changing shape mid-move.
     radius: lerp(radius, radius * level, amount),
+    ...(quad ? { quad } : {}),
   };
 }
 
@@ -490,6 +516,70 @@ function cursorFraction(cursor: CursorTrack | null | undefined, at: number): Poi
 interface Point {
   x: number;
   y: number;
+}
+
+/**
+ * How far the eye is from the picture, in multiples of its longer edge.
+ *
+ * The only free parameter in a perspective projection, and it is what separates
+ * a lens from a caricature: close in, a modest tilt splays the near edge
+ * violently. Far enough back to read as a long lens looking at a screen.
+ */
+const EYE_DISTANCE = 2.6;
+
+/**
+ * The picture's corners after a tilt, in output pixels with their divisors.
+ *
+ * Rotated about its own centre — pitch first, then yaw — and projected. The
+ * rounded corners are deliberately *not* handled here: both rasterisers
+ * evaluate the shape in the picture's own flat space and let the projection
+ * carry it, which is what keeps a tilted frame's corners round instead of
+ * sheared.
+ *
+ * Returns undefined when there is nothing to tilt, so an ordinary zoom stays
+ * four numbers rather than sixteen.
+ */
+function tiltedQuad(rect: Rect, tilt: number, yaw: number): number[] | undefined {
+  if (Math.abs(tilt) < 0.01 && Math.abs(yaw) < 0.01) return undefined;
+
+  const pitch = (tilt * Math.PI) / 180;
+  const swing = (yaw * Math.PI) / 180;
+  const distance = Math.max(rect.width, rect.height) * EYE_DISTANCE;
+
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const halfWidth = rect.width / 2;
+  const halfHeight = rect.height / 2;
+
+  const out: number[] = [];
+
+  // Top-left, top-right, bottom-left, bottom-right — the order the vertex id
+  // walks a triangle strip.
+  for (const [sx, sy] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ]) {
+    const x = sx! * halfWidth;
+    const y = sy! * halfHeight;
+
+    // Yaw about the vertical axis, then pitch about the horizontal one.
+    const xa = x * Math.cos(swing);
+    const za = -x * Math.sin(swing);
+
+    const ya = y * Math.cos(pitch) - za * Math.sin(pitch);
+    const zb = y * Math.sin(pitch) + za * Math.cos(pitch);
+
+    // A corner behind the eye has no projection. Clamped rather than dropped:
+    // the tilt range does not reach it, and a picture that vanishes at an
+    // extreme is worse than one that flattens.
+    const w = distance / Math.max(distance - zb, distance * 0.2);
+
+    out.push(cx + xa * w, cy + ya * w, w);
+  }
+
+  return out;
 }
 
 /** Ease in and out, so a zoom reads as a camera move rather than a cut. */
@@ -658,6 +748,15 @@ export function rectAt(
   const span = b.at - a.at;
   const t = span > 0 ? (at - a.at) / span : 0;
 
+  // The quad rides along. Interpolating twelve numbers between two projections
+  // is not the same as projecting the interpolated angle, but at a thirtieth of
+  // a second apart the difference is far below a pixel — and it keeps both
+  // rasterisers ignorant of what a tilt even is.
+  const quad =
+    a.quad && b.quad && a.quad.length === b.quad.length
+      ? a.quad.map((value, index) => lerp(value, b.quad![index]!, t))
+      : (b.quad ?? a.quad);
+
   return {
     at,
     x: lerp(a.x, b.x, t),
@@ -665,6 +764,7 @@ export function rectAt(
     width: lerp(a.width, b.width, t),
     height: lerp(a.height, b.height, t),
     radius: lerp(a.radius, b.radius, t),
+    ...(quad ? { quad } : {}),
   };
 }
 
