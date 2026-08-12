@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { useState } from "react";
 
@@ -12,6 +12,19 @@ import { cn } from "../../lib/cn";
  * dependency for that would be a poor trade.
  */
 
+/**
+ * A value as a filled bar.
+ *
+ * The fill *is* the handle: its leading edge is what you drag, and the grip
+ * line sits just inside it. There is no separate thumb, which is what lets the
+ * control be this tall — a circle riding a hairline has to stay small to look
+ * like anything, and a small target is a fiddly one.
+ *
+ * Built from elements with the range input laid transparently over them, rather
+ * than from `::-webkit-slider-thumb`. The thumb pseudo-element cannot be the
+ * end of the track, and the track pseudo-element cannot contain anything, so
+ * this shape is not expressible in either.
+ */
 export function Slider({
   value,
   min,
@@ -30,24 +43,35 @@ export function Slider({
   disabled?: boolean;
   onChange: (value: number) => void;
 }) {
+  const fill = ((value - min) / Math.max(max - min, 1e-9)) * 100;
+
   return (
     <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
-      <input
-        type="range"
-        className="slider flex-1 enabled:cursor-pointer"
-        disabled={disabled}
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        // How far along the track is filled. Written as a custom property
-        // because the fill is a gradient stop on a pseudo-element, which is the
-        // only place a range input will let anything be drawn.
-        style={
-          { "--fill": `${((value - min) / Math.max(max - min, 1e-9)) * 100}%` } as CSSProperties
-        }
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
+      <div className="relative h-7 flex-1 overflow-hidden rounded-lg bg-white/10">
+        <div
+          className="absolute inset-y-0 left-0 rounded-lg bg-editor-accent transition-[width] duration-75"
+          // A floor, so the fill keeps its rounded end at zero instead of
+          // collapsing into a sliver against the left edge.
+          style={{ width: `max(0.75rem, ${fill}%)` }}
+        >
+          {/* Inside the fill rather than on top of the boundary: on the fill it
+              is always legible, and it is the only part of a bar this plain
+              that says it can be dragged. */}
+          <span className="absolute top-1/2 right-1.5 h-3 w-0.5 -translate-y-1/2 rounded-full bg-editor-bg/40" />
+        </div>
+
+        <input
+          type="range"
+          className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0 disabled:cursor-default"
+          disabled={disabled}
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+      </div>
+
       <span className="w-10 flex-none text-right text-[11px] tabular-nums text-editor-muted">
         {format ? format(value) : value.toFixed(2)}
       </span>
