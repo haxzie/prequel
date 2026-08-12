@@ -1,0 +1,16 @@
+[package]
+name = "prequel-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Deliberately free of Apple framework dependencies. Everything here is plain
+# arithmetic and state so it can be exhaustively unit-tested without a display,
+# a TCC grant, or a CI runner that has either.
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

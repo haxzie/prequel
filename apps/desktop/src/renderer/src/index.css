@@ -1,0 +1,304 @@
+@import "tailwindcss";
+
+/* Tailwind finds its sources by walking up from this file to a project root,
+   using .gitignore to prune. This tree is not a git repository, so that walk is
+   unreliable — the renderer's sources are named explicitly instead. */
+@source "./";
+
+/* Tokens ------------------------------------------------------------------- */
+
+:root {
+  --fg: #16171a;
+  --muted: #6b7076;
+  --bg: rgba(250, 250, 251, 0.9);
+  --surface: rgba(0, 0, 0, 0.05);
+  --border: rgba(0, 0, 0, 0.1);
+  --accent: #d7263d;
+  --on-accent: #fff;
+  /* The blue that marks a choice. Global rather than part of the panel's
+     palette below, because the selection overlay draws its highlight in the
+     same blue and lives in a different window entirely. */
+  --selected: #4296fc;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #f2f3f5;
+    --muted: #9aa0a6;
+    --bg: rgba(30, 31, 34, 0.9);
+    --surface: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.13);
+    --accent: #ff4d5e;
+  }
+}
+
+/* Mapped `inline`, which substitutes each `var()` into the utility itself
+   rather than copying its value. Two things depend on that: the dark-mode block
+   above keeps working with no `dark:` variants and no duplicated palette, and
+   `text-dock-fg` inside a panel resolves against that panel's own scoped
+   `--dock-fg` (see `dock-theme`). */
+@theme inline {
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-selected: var(--selected);
+
+  --color-dock-bg: var(--dock-bg);
+  --color-dock-line: var(--dock-line);
+  --color-dock-fg: var(--dock-fg);
+  --color-dock-muted: var(--dock-muted);
+  --color-dock-hover: var(--dock-hover);
+  --color-dock-selected: var(--dock-selected);
+  --color-dock-meter: var(--dock-meter);
+  --color-dock-record: var(--dock-record);
+  --color-dot-on: var(--dot-on);
+  --color-dot-live: var(--dot-live);
+  --color-dot-off: var(--dot-off);
+
+  --color-editor-bg: var(--editor-bg);
+  --color-editor-panel: var(--editor-panel);
+  --color-editor-line: var(--editor-line);
+  --color-editor-fg: var(--editor-fg);
+  --color-editor-muted: var(--editor-muted);
+  --color-editor-accent: var(--editor-accent);
+  --color-slice-fill: var(--slice-fill);
+  --color-slice-edge: var(--slice-edge);
+  --color-wave: var(--wave);
+  --color-indicator: var(--indicator);
+  --color-cut: var(--cut);
+  --color-export: var(--export);
+  --color-toggle: var(--toggle);
+
+  /* The window resizes between the panel's two shapes; fading the incoming view
+     in over that keeps the swap from reading as one panel being replaced by
+     another. */
+  --animate-view-in: view-in 200ms ease-out;
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  /* Duration comes from the element, which knows how long a step lasts. */
+  --animate-countdown-pop: countdown-pop var(--countdown-step, 1000ms) ease-out both;
+
+  @keyframes view-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes pulse-dot {
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  /* In from small, then on out through the viewer as it fades — a pulse that
+     reads at a glance without having to be watched. The transform is animated,
+     so the centring lives in the keyframes rather than fighting them. */
+  @keyframes countdown-pop {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.45);
+    }
+    22% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(1.75);
+    }
+  }
+}
+
+/* Base --------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* The dock's window is taller than the panel — headroom for an open drop-up —
+   and the panel sits at the bottom of it. Overlays position themselves. */
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+body {
+  color: var(--fg);
+  /* Transparent so the panel's rounded corners show through. Preflight leaves
+     the background alone, but anything painting one here would turn every one
+     of these transparent windows into an opaque rectangle. */
+  background: transparent;
+  font:
+    13px/1.4 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* App chrome, not a document: nothing here is text to select, and the pointer
+     should never suggest otherwise. Both inherit, which is what saves every
+     control from having to repeat them. */
+  user-select: none;
+  cursor: default;
+}
+
+/* Utilities ---------------------------------------------------------------- */
+
+/* Which parts of a frameless window drag it. Every control inside a draggable
+   region has to opt back out, or pressing it moves the window instead. */
+@utility drag {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* A superellipse rather than a rounded square: the curvature runs continuously
+   into the straight edges instead of meeting them at the visible seam a
+   circular corner leaves. Older engines ignore the property and fall back to
+   the rounded square, which is a fair approximation rather than a broken
+   layout. */
+@utility squircle {
+  corner-shape: squircle;
+}
+
+/**
+ * Timeline tool cursors.
+ *
+ * A tool that changes what a click does has to change how the pointer looks, or
+ * the only way to know which one is held is to try it and undo. macOS has no
+ * built-in scissors or trash cursor, so both are inlined as SVG — the same
+ * Lucide geometry the toolbar buttons use, drawn twice: a heavy dark stroke
+ * underneath and a white one over it, so the shape reads against both the dark
+ * timeline and the clips sitting on it.
+ *
+ * The trailing numbers are the hotspot — the point that actually acts, not the
+ * icon's corner. For the scissors that is where the blades cross, or a cut
+ * lands a few pixels from where the pointer looks like it is aiming. `data:`
+ * here is governed by `img-src`, which the CSP already allows for the picker's
+ * app icons.
+ */
+@utility cursor-scissors {
+  cursor:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23111' stroke-width='4'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Cpath d='M8.12 8.12 12 12'/%3E%3Cpath d='M20 4 8.12 15.88'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M14.8 14.8 20 20'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='2'%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Cpath d='M8.12 8.12 12 12'/%3E%3Cpath d='M20 4 8.12 15.88'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M14.8 14.8 20 20'/%3E%3C/g%3E%3C/svg%3E")
+      11 11,
+    crosshair;
+}
+
+@utility cursor-trash {
+  cursor:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23111' stroke-width='4'%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='2'%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3Cpath d='M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3C/g%3E%3C/svg%3E")
+      12 12,
+    pointer;
+}
+
+/* Reveals the glyph from the bottom as the level rises. `--level` is written
+   straight to the element by the meter, so a 60 fps signal never touches
+   React — which is why this reads the variable rather than baking a value. */
+@utility meter-fill {
+  clip-path: inset(calc(100% - var(--level, 0) * 100%) 0 0 0);
+}
+
+/* Scrolls, but shows no bar.
+   For the timeline, where a horizontal bar would sit across the bottom of the
+   clips and read as part of them — and where the ruler and the playhead
+   already say where you are. `overflow` stays `auto`: this hides the bar, it
+   does not stop the scrolling.
+
+   Both properties on purpose. `scrollbar-width` is the standard one and is
+   what current Chromium honours; the `-webkit-` pseudo-element is what every
+   older engine honours, and a pseudo-element with no matching engine is inert
+   rather than a broken rule. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* The panel's own palette, fixed rather than following the theme.
+   It floats over arbitrary content, so it has to read as one solid object no
+   matter what is behind it — a translucent, theme-following panel reads as part
+   of whatever it happens to be sitting on.
+
+   Translucent, but not blurred. `backdrop-filter` only samples what the page
+   itself drew, and the desktop behind a transparent window is not that — the
+   rule is silently a no-op here. Real window blur means an NSVisualEffectView
+   (Electron's `vibrancy`), which fills the whole window rectangle and would
+   paint over the transparent margin and the drop-up headroom. So: enough
+   opacity to stay readable over busy content, and no false blur. */
+/**
+ * The editor's palette, dark whatever the system theme is.
+ *
+ * Not a theming oversight: the window is mostly a video sitting on a chosen
+ * background, and a light surround changes how that footage reads — the same
+ * reason every editing tool commits to dark chrome. The recorder's panels do
+ * the same thing for a different reason (see `dock-theme`).
+ */
+@utility editor-theme {
+  --editor-bg: #16171a;
+  --editor-panel: #1c1e22;
+  --editor-line: #2a2d33;
+  --editor-fg: #eceef1;
+  --editor-muted: #8b9198;
+  /* What a switch, a slider or a selected control turns when it is active.
+     A light step off the surface rather than the recorder's blue: the panels
+     sit beside a preview of the user's own colours, and a saturated accent
+     competes with the thing being looked at. Paired with `--editor-bg` for
+     anything drawn *on* it, which is why it has to stay this light. */
+  --editor-accent: #c9ced6;
+
+  /* The timeline's own colours.
+     Clips are purple so the strip reads as a distinct surface from the panels
+     around it, and both tones are deliberately dark: a clip is a large block of
+     colour sitting directly under the preview, and a bright one pulls the eye
+     away from the footage it is describing. */
+  /* Named for the model's "slice" rather than the UI's "clip": `bg-clip-*` is
+     Tailwind's own `background-clip` namespace, and a `bg-clip-fill` of ours
+     sitting in it is a collision waiting to be introduced. */
+  --slice-fill: #3a2d5e;
+  --slice-edge: #6d4fd0;
+  /* The waveform standing along the bottom of a clip. A lighter step of the
+     clip's own purple rather than a colour of its own: it is a texture
+     describing the clip, not something to be read against it, and anything with
+     a hue of its own competes with the playhead crossing it. */
+  --wave: #c9b4f7;
+  /* The playhead. Blue against the purple clips: a hue away from everything it
+     crosses stays findable in a way a brighter shade of the same colour does
+     not. */
+  --indicator: #3b9dff;
+  /* Where a cut would land. Red because it is destructive and because it must
+     never be mistaken for the playhead sitting next to it. */
+  --cut: #ff4d5e;
+  /* Export. Dark enough to carry white text — the system green is tuned for
+     black-on-green, and white over it is the pairing that fails to read. */
+  --export: #30a46c;
+  /* A switch that is on. The same green, because both mean "this is live" —
+     and it is the one state worth spotting across a panel of controls. */
+  --toggle: #30a46c;
+}
+
+@utility dock-theme {
+  --dock-bg: rgba(40, 47, 56, 0.85);
+  /* Close to the background rather than a bright hairline: the edge should
+     define the shape without drawing attention to itself. */
+  --dock-line: #333b45;
+  --dock-fg: #eceef1;
+  --dock-muted: #98a0a9;
+  /* Lighter than the background, and translucent white rather than a fixed
+     tone so it stays lighter whatever is behind it. */
+  --dock-hover: rgba(255, 255, 255, 0.12);
+  --dock-selected: var(--selected);
+  --dock-meter: var(--selected);
+  --dock-record: #e5484d;
+  --dot-on: #34c759;
+  --dot-live: #f0b429;
+  --dot-off: #6f757c;
+}

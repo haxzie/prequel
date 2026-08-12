@@ -1,0 +1,33 @@
+[package]
+name = "prequel-capture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+prequel-encode = { workspace = true }
+prequel-session = { workspace = true }
+cidre = { workspace = true, features = [
+  "sc",          # ScreenCaptureKit
+  "app",         # NSRunningApplication, for an app's bundle path
+  "av",          # AVFoundation (encoder, camera)
+  "vt",          # VideoToolbox
+  "cat",         # CoreAudioTypes
+  "core_audio",
+  # CoreImage, only to write a captured frame out as a PNG.
+  #
+  # `mtl` is not used here and is enabled to work around cidre 0.20: its
+  # `ci::Image` imports `cf` behind `#[cfg(feature = "mtl")]` but *uses* it in
+  # the `cv` blocks, so `ci` + `cv` without `mtl` fails to compile inside cidre
+  # itself. Removing it will look harmless and will not build.
+  "ci",
+  "mtl",
+  "blocks",
+  "async",
+  "dispatch",
+  "macos_15_0",
+] }
+thiserror = { workspace = true }
+tracing = { workspace = true }

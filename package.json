@@ -1,0 +1,31 @@
+{
+  "name": "prequel",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "node scripts/setup-env.mjs",
+    "dev": "dotenv -e .env -- turbo run dev",
+    "dev:web": "dotenv -e .env -- turbo run dev --filter=@prequel/web",
+    "dev:desktop": "dotenv -e .env -- turbo run dev --filter=@prequel/desktop",
+    "build": "dotenv -e .env -- turbo run build",
+    "ship": "dotenv -e .env -- pnpm --filter @prequel/desktop ship",
+    "test": "pnpm test:rust && turbo run test",
+    "test:rust": "cargo test --workspace",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,css}\""
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "dotenv-cli": "^11.0.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.9",
+    "typescript": "^7.0.2"
+  }
+}

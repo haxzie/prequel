@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "packages/recorder"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+prequel-camera = { path = "crates/prequel-camera" }
+prequel-capture = { path = "crates/prequel-capture" }
+prequel-session = { path = "crates/prequel-session" }
+prequel-encode = { path = "crates/prequel-encode" }
+prequel-render = { path = "crates/prequel-render" }
+
+# Apple framework bindings. cidre covers ScreenCaptureKit, AVFoundation,
+# VideoToolbox and CoreMedia with one shared type system, so CMSampleBuffers
+# flow from capture into the encoder without conversion.
+#
+# Pinned to an exact version on purpose: cidre is a single-maintainer crate and
+# tracks Apple SDKs closely, so a floating minor could break the build.
+cidre = { version = "=0.20.0", default-features = false }
+
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

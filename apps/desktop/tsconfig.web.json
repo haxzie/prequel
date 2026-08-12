@@ -1,0 +1,17 @@
+{
+  "extends": "@prequel/typescript-config/react-library.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["./src/renderer/src/*"]
+    }
+  },
+  "include": [
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx",
+    "src/preload/index.ts",
+    "src/shared/**/*.ts"
+  ]
+}

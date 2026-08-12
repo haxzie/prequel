@@ -1,0 +1,25 @@
+[package]
+name = "prequel-camera"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+prequel-encode = { workspace = true }
+prequel-session = { workspace = true }
+cidre = { workspace = true, features = [
+  "av",       # AVCaptureSession, AVCaptureDevice
+  "cv",       # the pixel buffers frames arrive in
+  "cm",       # CMSampleBuffer and its timestamps
+  "blocks",
+  "async",
+  "dispatch", # the delegate's callback queue
+  "macos_15_0",
+] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+prequel-session = { workspace = true }

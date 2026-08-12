@@ -1,0 +1,42 @@
+{
+  "name": "@prequel/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-vite build && electron-builder",
+    "install:app": "node scripts/install.mjs",
+    "ship": "pnpm package && pnpm install:app",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "clean": "rm -rf out dist release .turbo node_modules *.tsbuildinfo",
+    "icons": "node scripts/make-tray-icons.mjs",
+    "cursor": "node scripts/make-cursor.mjs",
+    "app-icon": "node scripts/make-app-icon.mjs"
+  },
+  "dependencies": {
+    "@prequel/env": "workspace:*",
+    "@prequel/recorder": "workspace:*"
+  },
+  "devDependencies": {
+    "@prequel/typescript-config": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}

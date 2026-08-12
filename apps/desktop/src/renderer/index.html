@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: prequel-media:; media-src 'self' blob: prequel-media:; connect-src 'self' prequel-media:"
+    />
+    <!--
+      `img-src … data:` is what lets the picker draw app icons: they arrive as
+      data URLs because an app bundle's icon is not a web-reachable resource.
+      `media-src … blob:` covers the camera preview's `MediaStream`.
+      `prequel-media:` is how the editor reaches a recording on disk — a
+      renderer cannot read `file:` URLs, so the recordings are served over a
+      scheme of our own. It appears on `connect-src` as well because the
+      timeline `fetch`es the audio files to draw their waveforms, and a `fetch`
+      is governed by `connect-src` rather than by `media-src` — a distinction
+      that costs an afternoon if you assume the two are the same list. None of
+      these is implied by `default-src 'self'`, and the failure is silent — a
+      broken image and an empty video element, with nothing in the console
+      unless you go looking for the CSP violation.
+    -->
+    <title>Prequel Desktop</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

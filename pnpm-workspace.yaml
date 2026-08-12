@@ -1,0 +1,11 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  # Windows installer toolchain — only needed when packaging for Windows.
+  electron-winstaller: false
+  # Downloads the Electron binary for this platform.
+  electron: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@napi-rs/cli@3.8.5'

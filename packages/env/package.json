@@ -1,0 +1,22 @@
+{
+  "name": "@prequel/env",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./create-env": "./src/create-env.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo node_modules *.tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@prequel/typescript-config": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

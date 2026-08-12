@@ -1,0 +1,36 @@
+{
+  "name": "@prequel/recorder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "napi": {
+    "binaryName": "prequel-recorder",
+    "targets": [
+      "aarch64-apple-darwin"
+    ]
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release --esm --output-dir .",
+    "build:debug": "napi build --platform --esm --output-dir .",
+    "test": "vitest run",
+    "clean": "rm -rf .turbo node_modules *.node index.js index.d.ts"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.8.5",
+    "@types/node": "^26.2.0",
+    "vitest": "^4.1.10"
+  }
+}

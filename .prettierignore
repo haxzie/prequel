@@ -1,0 +1,10 @@
+# napi-rs generated bindings
+packages/recorder/index.js
+packages/recorder/index.d.ts
+
+# Build output
+dist/
+out/
+release/
+.next/
+target/

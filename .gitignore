@@ -1,0 +1,32 @@
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+release/
+.next/
+*.tsbuildinfo
+
+# Rust
+target/
+
+# napi-rs generated bindings (rebuilt by `pnpm build`)
+packages/recorder/*.node
+packages/recorder/index.js
+packages/recorder/index.d.ts
+
+# Turbo
+.turbo/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
