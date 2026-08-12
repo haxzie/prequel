@@ -245,6 +245,7 @@ export class CaptureFlow {
    * which screen, rather than silently taking whichever one the cursor was on.
    */
   async chooseMode(mode: ScreenMode): Promise<DockState> {
+    log("info", "choosing a source", { mode });
     this.deps.preferences.update({ mode });
 
     // The overlay covers the panel, so drop the stale selection first —
@@ -268,6 +269,17 @@ export class CaptureFlow {
         targets,
         mode === "window" ? await windowIcons(targets) : undefined,
       );
+      // Every outcome of the overlay, named. A cancel and a confirm look the
+      // same from outside — the overlay disappears either way — and only one of
+      // them goes on to record.
+      log("info", "selection closed", {
+        mode,
+        outcome: result ? (result.start === true ? "record" : "chosen") : "cancelled",
+        crop: result?.crop
+          ? `${String(Math.round(result.crop.width))}×${String(Math.round(result.crop.height))}`
+          : "none",
+      });
+
       if (result) {
         this.pending = { mode, target: result.target, crop: result.crop, label: result.label };
         start = result.start === true;
