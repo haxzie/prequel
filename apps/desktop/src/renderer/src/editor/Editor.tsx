@@ -10,6 +10,8 @@ import {
   type Project,
 } from "../../../shared/project";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
+import { cn } from "../lib/cn";
+import { PanelIcon } from "./icons";
 import type { Images } from "./webgl";
 import { ExportBar } from "./ExportBar";
 import { FrameBar } from "./FrameBar";
@@ -47,6 +49,9 @@ export function Editor() {
   const [session, setSession] = useState<EditorSession | null>(null);
   const [state, dispatch] = useReducer(editorReducer, newProject("", 0), initialState);
   const [images, setImages] = useState<Images>(new Map());
+  // Shown by default: the panel is where the editing happens, and an editor
+  // that opens with its controls put away is a puzzle.
+  const [panelOpen, setPanelOpen] = useState(true);
 
   useEffect(
     () =>
@@ -119,7 +124,28 @@ export function Editor() {
   }
 
   return (
-    <Shell name={session.name} actions={<ExportBar state={exportState} />}>
+    <Shell
+      name={session.name}
+      actions={
+        <>
+          <button
+            type="button"
+            aria-pressed={panelOpen}
+            title={panelOpen ? "Hide the panel" : "Show the panel"}
+            aria-label={panelOpen ? "Hide the panel" : "Show the panel"}
+            className={cn(
+              "no-drag grid size-7 place-items-center rounded-lg [&_svg]:size-4",
+              panelOpen ? "text-editor-fg" : "text-editor-muted",
+              "hover:bg-white/10 hover:text-editor-fg",
+            )}
+            onClick={() => setPanelOpen((open) => !open)}
+          >
+            <PanelIcon open={panelOpen} />
+          </button>
+          <ExportBar state={exportState} />
+        </>
+      }
+    >
       {/* The transport and the timeline run the full width under both panes.
           A timeline is a ruler for the whole edit, and boxing it into the
           column beside the inspector made it narrower than the thing it
@@ -154,48 +180,50 @@ export function Editor() {
             />
           </div>
 
-          <Inspector
-            state={state}
-            dispatch={dispatch}
-            present={present}
-            hasCursor={session.cursor !== null}
-            frame={state.project.frame}
-            cameraSource={cameraSource}
-            wallpaperUrl={mediaUrl(recordingName(session.dir), WALLPAPER_FILE_NAME)}
-            onPickWallpaper={async () => {
-              const result = await window.prequel.editor.wallpaper(session.dir);
-              if (result.ok && result.value) {
-                dispatch({
-                  type: "setSetting",
-                  section: "background",
-                  key: "background",
-                  value: { kind: "image", source: "wallpaper", path: result.value.path },
-                });
-              }
-            }}
-            onPickPreset={async (presetId) => {
-              const result = await window.prequel.editor.presetImage(session.dir, presetId);
-              if (result.ok && result.value) {
-                dispatch({
-                  type: "setSetting",
-                  section: "background",
-                  key: "background",
-                  value: { kind: "image", source: "preset", path: result.value.path },
-                });
-              }
-            }}
-            onPickImage={async () => {
-              const result = await window.prequel.editor.pickImage(session.dir);
-              if (result.ok && result.value) {
-                dispatch({
-                  type: "setSetting",
-                  section: "background",
-                  key: "background",
-                  value: { kind: "image", source: "file", path: result.value.path },
-                });
-              }
-            }}
-          />
+          {panelOpen && (
+            <Inspector
+              state={state}
+              dispatch={dispatch}
+              present={present}
+              hasCursor={session.cursor !== null}
+              frame={state.project.frame}
+              cameraSource={cameraSource}
+              wallpaperUrl={mediaUrl(recordingName(session.dir), WALLPAPER_FILE_NAME)}
+              onPickWallpaper={async () => {
+                const result = await window.prequel.editor.wallpaper(session.dir);
+                if (result.ok && result.value) {
+                  dispatch({
+                    type: "setSetting",
+                    section: "background",
+                    key: "background",
+                    value: { kind: "image", source: "wallpaper", path: result.value.path },
+                  });
+                }
+              }}
+              onPickPreset={async (presetId) => {
+                const result = await window.prequel.editor.presetImage(session.dir, presetId);
+                if (result.ok && result.value) {
+                  dispatch({
+                    type: "setSetting",
+                    section: "background",
+                    key: "background",
+                    value: { kind: "image", source: "preset", path: result.value.path },
+                  });
+                }
+              }}
+              onPickImage={async () => {
+                const result = await window.prequel.editor.pickImage(session.dir);
+                if (result.ok && result.value) {
+                  dispatch({
+                    type: "setSetting",
+                    section: "background",
+                    key: "background",
+                    value: { kind: "image", source: "file", path: result.value.path },
+                  });
+                }
+              }}
+            />
+          )}
         </div>
 
         <PlaybackControls

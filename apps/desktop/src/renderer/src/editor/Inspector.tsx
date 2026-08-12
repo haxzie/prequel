@@ -91,7 +91,7 @@ export function Inspector(props: InspectorProps) {
   const zoom = state.project.zooms.find((candidate) => candidate.id === state.selectedZoomId);
   if (zoom) {
     return (
-      <aside className="flex w-80 flex-none border-l border-editor-line bg-editor-panel">
+      <aside className={PANEL}>
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <header className="flex-none border-b border-editor-line px-4 py-3">
             <p className="text-[13px] font-medium">Zoom</p>
@@ -128,7 +128,7 @@ export function Inspector(props: InspectorProps) {
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
 
   return (
-    <aside className="flex w-80 flex-none border-l border-editor-line bg-editor-panel">
+    <aside className={PANEL}>
       {/* The rail. Icon over label rather than beside it: four items in a
           column of this width read as a list of destinations, which is what
           they are, and the labels stay legible at 10px because nothing has to
@@ -218,6 +218,19 @@ export function Inspector(props: InspectorProps) {
     </aside>
   );
 }
+
+/**
+ * The panel, floated off the window's edge.
+ *
+ * A margin and rounded corners rather than a full-height column with a rule
+ * down its side: the dotted surface runs behind and under it, which says the
+ * panel is *over* the composition rather than a second region of the window
+ * competing with it. `overflow-hidden` so the scrolling content stays inside
+ * the corners it is given.
+ */
+const PANEL =
+  "m-2 ml-0 flex w-80 flex-none overflow-hidden rounded-xl border border-editor-line " +
+  "bg-editor-panel shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
 
 /** The inspector's four destinations. */
 type CategoryId = "layout" | "camera" | "audio" | "cursor";

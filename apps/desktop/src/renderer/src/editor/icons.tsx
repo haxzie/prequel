@@ -298,3 +298,14 @@ export function TypingIcon() {
     </svg>
   );
 }
+
+/** Lucide `panel-right`. Filled when the panel is showing. */
+export function PanelIcon({ open }: { open: boolean }) {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
+      {open && <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z" fill="currentColor" />}
+    </svg>
+  );
+}
