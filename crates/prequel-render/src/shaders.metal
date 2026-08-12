@@ -20,6 +20,11 @@ struct Uniforms {
     // Without this the whole texture is stretched into the destination, which
     // squashes a 16:9 camera into a circle and ignores every crop.
     float4 src;
+    // Depth of field: xy is what stays sharp in output pixels, z how far
+    // around it, w the widest blur beyond. A w of 0 softens nothing.
+    float4 focus;
+    // One texel of the sampled image, so a blur is measured in its own pixels.
+    float2 texel;
     // Superellipse: x = radius, y = exponent.
     float2 shape;
     // Frame size in pixels, for converting to clip space.
@@ -43,6 +48,9 @@ struct Vertex {
     float4 position [[position]];
     float2 local;
     float2 uv;
+    // Where this point is in the output frame, so the fragment can measure its
+    // distance from what is in focus.
+    float2 screen;
 };
 
 // A full-quad pass over the destination rectangle. Four vertices, no buffer:
@@ -72,6 +80,7 @@ vertex Vertex composite_vertex(uint id [[vertex_id]],
     out.position = float4(clip.x * w, -clip.y * w, 0.0, w);
     out.local = corner * u.rect.zw;
     out.uv = corner;
+    out.screen = pixel;
     return out;
 }
 
@@ -102,6 +111,36 @@ static float shape_distance(float2 p, float2 half_size, float radius, float n) {
     float value = pow(q.x, n) + pow(q.y, n);
     float f = pow(value, 1.0 / n) - 1.0;
     return f * radius;
+}
+
+// The picture, softened by how far this pixel is from what is in focus.
+//
+// One pass with a per-pixel radius rather than the usual two with a fixed one:
+// a separable blur has a single kernel for the whole frame, and progressive
+// means the kernel changes everywhere. Sixteen taps on a spiral — enough that
+// the falloff reads as defocus rather than as rings.
+//
+// Mirrors `sampleFocused` in `apps/desktop/src/renderer/src/editor/webgl.ts`.
+static float4 sample_focused(texture2d<float> image, sampler smp, constant Uniforms &u,
+                             float2 uv, float2 screen) {
+    float away = max(distance(screen, u.focus.xy) - u.focus.z, 0.0);
+    float radius = u.focus.w * min(away / max(u.focus.z, 1.0), 1.0);
+    // Squared, so the sharp area has a soft border rather than an edge where
+    // the blur switches on.
+    radius *= radius / max(u.focus.w, 0.0001);
+
+    if (u.focus.w <= 0.0 || radius <= 0.5) {
+        return image.sample(smp, uv);
+    }
+
+    float4 total = float4(0.0);
+    for (int tap = 0; tap < 16; tap++) {
+        float turn = float(tap) * 2.399963;
+        float reach = sqrt(float(tap) + 0.5) / 4.0;
+        float2 offset = float2(cos(turn), sin(turn)) * reach * radius * u.texel;
+        total += image.sample(smp, uv + offset);
+    }
+    return total / 16.0;
 }
 
 fragment float4 composite_fragment(Vertex in [[stage_in]],
@@ -148,7 +187,7 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // whole texture being stretched across the destination. Mirroring is
         // applied first, so it flips the crop rather than moving it.
         uv = u.src.xy + uv * u.src.zw;
-        float4 sampled = image.sample(smp, uv);
+        float4 sampled = sample_focused(image, smp, u, uv, in.screen);
         return float4(sampled.rgb, sampled.a * coverage);
     }
 

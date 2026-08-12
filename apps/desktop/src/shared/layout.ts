@@ -104,6 +104,12 @@ export interface RectKey {
   /** Corner radius, which grows with the picture rather than staying put. */
   radius: number;
   /**
+   * Depth of field: `x`, `y` is what stays sharp in output pixels, `safe` how
+   * far around it, and `strength` the widest blur beyond. All zero when nothing
+   * is being softened, which is every zoom that does not ask for it.
+   */
+  focus?: { x: number; y: number; safe: number; strength: number };
+  /**
    * The picture's four corners once tilted, as `x, y, w` each — twelve numbers,
    * in the order top-left, top-right, bottom-left, bottom-right.
    *
@@ -420,6 +426,19 @@ function rectFor(
   // forward rather than snapping to an angle the moment the zoom begins.
   const quad = tiltedQuad(moved, zoom.tilt * amount, zoom.yaw * amount);
 
+  // Eased in with the move, so the surroundings soften as the shot arrives
+  // rather than snapping out of focus. Measured against the frame, not the
+  // picture, because it is the *viewer's* depth of field.
+  const shorter = Math.min(frame.width, frame.height);
+  const focus = zoom.blur
+    ? {
+        x: frame.width / 2,
+        y: frame.height / 2,
+        safe: zoom.blurSafe * shorter,
+        strength: zoom.blurStrength * shorter * amount,
+      }
+    : undefined;
+
   return {
     at,
     ...moved,
@@ -427,6 +446,7 @@ function rectFor(
     // scaled, which reads as the frame changing shape mid-move.
     radius: lerp(radius, radius * level, amount),
     ...(quad ? { quad } : {}),
+    ...(focus ? { focus } : {}),
   };
 }
 
@@ -816,6 +836,16 @@ export function rectAt(
       ? a.quad.map((value, index) => lerp(value, b.quad![index]!, t))
       : (b.quad ?? a.quad);
 
+  const focus =
+    a.focus && b.focus
+      ? {
+          x: lerp(a.focus.x, b.focus.x, t),
+          y: lerp(a.focus.y, b.focus.y, t),
+          safe: lerp(a.focus.safe, b.focus.safe, t),
+          strength: lerp(a.focus.strength, b.focus.strength, t),
+        }
+      : (b.focus ?? a.focus);
+
   return {
     at,
     x: lerp(a.x, b.x, t),
@@ -824,6 +854,7 @@ export function rectAt(
     height: lerp(a.height, b.height, t),
     radius: lerp(a.radius, b.radius, t),
     ...(quad ? { quad } : {}),
+    ...(focus ? { focus } : {}),
   };
 }
 

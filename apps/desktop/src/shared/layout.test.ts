@@ -639,6 +639,9 @@ describe("zooming", () => {
     speed: 0.5,
     tilt: 0,
     yaw: 0,
+    blur: false,
+    blurSafe: 0.28,
+    blurStrength: 0.012,
     ...over,
   });
 
@@ -806,6 +809,9 @@ describe("following the cursor", () => {
           speed: 0.2,
           tilt: 0,
           yaw: 0,
+          blur: false,
+          blurSafe: 0.28,
+          blurStrength: 0.012,
         },
       ],
     );
@@ -879,6 +885,9 @@ describe("following typing", () => {
           speed: 0,
           tilt: 0,
           yaw: 0,
+          blur: false,
+          blurSafe: 0.28,
+          blurStrength: 0.012,
         },
       ],
     );
@@ -980,6 +989,9 @@ describe("perspective", () => {
           speed: 0,
           tilt,
           yaw,
+          blur: false,
+          blurSafe: 0.28,
+          blurStrength: 0.012,
         },
       ],
     );

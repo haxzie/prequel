@@ -60,6 +60,7 @@ uniform vec3 u_quad[4];
 
 out vec2 v_local;
 out vec2 v_uv;
+out vec2 v_screen;
 
 void main() {
   // Four corners from the vertex id, no buffer: the rectangle is a uniform.
@@ -80,6 +81,9 @@ void main() {
   gl_Position = vec4(clip.x * w, -clip.y * w, 0.0, w);
   v_local = corner * u_rect.zw;
   v_uv = corner;
+  // Where this corner is in the output frame, so the fragment can measure its
+  // distance from what is in focus.
+  v_screen = pixel;
 }`;
 
 const FRAGMENT = `#version 300 es
@@ -94,11 +98,44 @@ uniform vec2 u_gradient;
 uniform int u_mode;
 uniform float u_weight;
 uniform int u_mirror;
+// Depth of field: xy is what stays sharp in output pixels, z how far around it
+// stays sharp, w the widest blur beyond. w of 0 means nothing is softened.
+uniform vec4 u_focus;
+uniform vec2 u_texel;
 uniform sampler2D u_image;
 
 in vec2 v_local;
 in vec2 v_uv;
+in vec2 v_screen;
 out vec4 fragColor;
+
+/**
+ * The picture, softened by how far this pixel is from what is in focus.
+ *
+ * One pass with a per-pixel radius rather than the usual two with a fixed one:
+ * a separable blur has a single kernel for the whole frame, and progressive
+ * means the kernel changes everywhere. Sixteen taps on a spiral — enough that
+ * the falloff reads as defocus rather than as rings, and cheap enough to do at
+ * export resolution.
+ */
+vec4 sampleFocused(vec2 uv) {
+  float away = max(distance(v_screen, u_focus.xy) - u_focus.z, 0.0);
+  // Squared, so the sharp area has a soft border instead of an edge where the
+  // blur switches on.
+  float radius = u_focus.w * min(away / max(u_focus.z, 1.0), 1.0);
+  radius *= radius / max(u_focus.w, 0.0001);
+
+  if (u_focus.w <= 0.0 || radius <= 0.5) return texture(u_image, uv);
+
+  vec4 total = vec4(0.0);
+  for (int tap = 0; tap < 16; tap++) {
+    float turn = float(tap) * 2.399963;
+    float reach = sqrt(float(tap) + 0.5) / 4.0;
+    vec2 offset = vec2(cos(turn), sin(turn)) * reach * radius * u_texel;
+    total += texture(u_image, uv + offset);
+  }
+  return total / 16.0;
+}
 
 // Signed distance to a superellipse-cornered rectangle. Negative inside,
 // positive outside, in pixels. Verbatim from the Metal shader.
@@ -157,7 +194,7 @@ void main() {
     if (u_mirror != 0) uv.x = 1.0 - uv.x;
     // Mirroring first, so it flips the crop rather than moving it.
     uv = u_src.xy + uv * u_src.zw;
-    vec4 sampled = texture(u_image, uv);
+    vec4 sampled = sampleFocused(uv);
     fragColor = premultiplied(sampled.rgb, sampled.a * coverage);
     return;
   }
@@ -188,6 +225,8 @@ interface Program {
   weight: WebGLUniformLocation | null;
   mirror: WebGLUniformLocation | null;
   quad: WebGLUniformLocation | null;
+  focus: WebGLUniformLocation | null;
+  texel: WebGLUniformLocation | null;
 }
 
 export class WebGlCompositor {
@@ -331,10 +370,21 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.source, source, true);
         if (!texture) break;
 
-        const { rect, shape, quad } = moving(item, at);
+        const { rect, shape, quad, focus } = moving(item, at);
         const src = normalised(item.srcRect, source.videoWidth, source.videoHeight);
 
-        set(gl, p, { rect, shape, quad, mode: MODE_IMAGE, src, mirror: item.mirror });
+        set(gl, p, {
+          rect,
+          shape,
+          quad,
+          focus,
+          // In the source's own texels, so a blur of a given strength looks the
+          // same whatever resolution the recording happens to be.
+          texel: [1 / Math.max(source.videoWidth, 1), 1 / Math.max(source.videoHeight, 1)],
+          mode: MODE_IMAGE,
+          src,
+          mirror: item.mirror,
+        });
         drawQuad(gl);
         break;
       }
@@ -500,7 +550,7 @@ export class WebGlCompositor {
 function moving(
   item: Extract<PlanItem, { motion?: RectKey[] }>,
   at: number,
-): { rect: Rect; shape: Shape; quad?: number[] } {
+): { rect: Rect; shape: Shape; quad?: number[]; focus?: RectKey["focus"] } {
   const rect = "rect" in item ? item.rect : item.dstRect;
   if (!item.motion) return { rect, shape: item.shape };
 
@@ -509,6 +559,7 @@ function moving(
     rect: { x: key.x, y: key.y, width: key.width, height: key.height },
     shape: { radius: key.radius, exponent: item.shape.exponent },
     ...(key.quad ? { quad: key.quad } : {}),
+    ...(key.focus ? { focus: key.focus } : {}),
   };
 }
 
@@ -526,6 +577,9 @@ interface Draw {
   gradient?: [number, number];
   weight?: number;
   mirror?: boolean;
+  focus?: { x: number; y: number; safe: number; strength: number };
+  /** One texel of the sampled image, so a blur is measured in its own pixels. */
+  texel?: [number, number];
 }
 
 function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
@@ -547,6 +601,10 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   gl.uniform2f(p.gradient, gradient[0], gradient[1]);
 
   gl.uniform3fv(p.quad, draw.quad && draw.quad.length === 12 ? draw.quad : FLAT);
+
+  const focus = draw.focus;
+  gl.uniform4f(p.focus, focus?.x ?? 0, focus?.y ?? 0, focus?.safe ?? 1, focus?.strength ?? 0);
+  gl.uniform2f(p.texel, draw.texel?.[0] ?? 0, draw.texel?.[1] ?? 0);
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -672,6 +730,8 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     weight: at("u_weight"),
     mirror: at("u_mirror"),
     quad: at("u_quad"),
+    focus: at("u_focus"),
+    texel: at("u_texel"),
   };
 }
 

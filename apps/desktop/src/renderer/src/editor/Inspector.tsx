@@ -856,6 +856,36 @@ function ZoomPanel({
         />
       </Field>
 
+      <Field label="Blur around" inline>
+        <Toggle value={zoom.blur} onChange={(blur) => onChange({ blur })} />
+      </Field>
+
+      <Field label="Sharp area">
+        <Slider
+          value={zoom.blurSafe}
+          min={0.05}
+          max={0.9}
+          step={0.01}
+          disabled={!zoom.blur}
+          format={percent}
+          onChange={(blurSafe) => onChange({ blurSafe })}
+        />
+      </Field>
+
+      <Field label="Strength">
+        <Slider
+          value={zoom.blurStrength}
+          min={0}
+          max={0.04}
+          step={0.001}
+          disabled={!zoom.blur}
+          // Against the default rather than as a fraction of the shorter edge,
+          // which is not a number anyone has an opinion about.
+          format={(value) => `${(value / 0.012).toFixed(1)}×`}
+          onChange={(blurStrength) => onChange({ blurStrength })}
+        />
+      </Field>
+
       <button
         type="button"
         className="rounded-lg bg-white/5 px-2 py-1.5 text-[11px] text-editor-muted hover:bg-cut/20 hover:text-editor-fg"

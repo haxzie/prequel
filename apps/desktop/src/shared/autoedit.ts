@@ -120,6 +120,12 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
       y: centre.y,
       level: levelFor(group),
       speed: DEFAULT_ZOOM.speed,
+      // Off, like the default. The first cut should read as a steadier version
+      // of the recording, not as a different sort of video — and softening what
+      // someone may have been reading is not a decision to make for them.
+      blur: DEFAULT_ZOOM.blur,
+      blurSafe: DEFAULT_ZOOM.blurSafe,
+      blurStrength: DEFAULT_ZOOM.blurStrength,
       ...tiltFor(centre),
     });
   }

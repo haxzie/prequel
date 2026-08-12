@@ -194,6 +194,19 @@ export interface ZoomSlice {
   tilt: number;
   /** Yaw, in degrees. Positive swings the right edge away. */
   yaw: number;
+  /**
+   * Soften everything outside the area being zoomed to.
+   *
+   * Depth of field, in effect: the shot is looking at one thing, and the rest
+   * of the screen is what it is looking past. Off by default — on a screen
+   * recording it is a strong effect, and one that hides content someone may
+   * have been reading.
+   */
+  blur: boolean;
+  /** How far from the middle stays sharp, as a fraction of the frame. */
+  blurSafe: number;
+  /** How soft it gets beyond that, as a fraction of the frame's shorter edge. */
+  blurStrength: number;
 }
 
 export const DEFAULT_ZOOM = {
@@ -206,6 +219,9 @@ export const DEFAULT_ZOOM = {
   speed: 0.6,
   tilt: 0,
   yaw: 0,
+  blur: false,
+  blurSafe: 0.28,
+  blurStrength: 0.012,
 } as const;
 
 /** How long a zoom is when it is first dropped on the timeline. */
@@ -330,6 +346,9 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
       // picture is more foreshortening than content.
       tilt: clamp(number(zoom?.["tilt"], DEFAULT_ZOOM.tilt), -30, 30),
       yaw: clamp(number(zoom?.["yaw"], DEFAULT_ZOOM.yaw), -30, 30),
+      blur: zoom?.["blur"] === true,
+      blurSafe: clamp(number(zoom?.["blurSafe"], DEFAULT_ZOOM.blurSafe), 0.05, 0.9),
+      blurStrength: clamp(number(zoom?.["blurStrength"], DEFAULT_ZOOM.blurStrength), 0, 0.04),
     }))
     .filter((zoom) => zoom.source.end > zoom.source.start)
     .sort((a, b) => a.source.start - b.source.start);

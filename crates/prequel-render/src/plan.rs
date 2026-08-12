@@ -156,6 +156,10 @@ pub struct RectKey {
     pub height: f64,
     /// Corner radius, which grows with the picture rather than staying put.
     pub radius: f64,
+    /// Depth of field: what stays sharp, how far around it, and how soft it
+    /// gets beyond. Absent when nothing is being softened.
+    #[serde(default)]
+    pub focus: Option<Focus>,
     /// The picture's four corners once tilted, as `x, y, w` each — twelve
     /// numbers, top-left, top-right, bottom-left, bottom-right.
     ///
@@ -165,6 +169,17 @@ pub struct RectKey {
     /// being smeared across two flat triangles.
     #[serde(default)]
     pub quad: Vec<f64>,
+}
+
+/// What a zoom keeps sharp, and how soft the rest becomes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Focus {
+    pub x: f64,
+    pub y: f64,
+    /// How far around the point stays sharp, in output pixels.
+    pub safe: f64,
+    /// The widest blur beyond it, in output pixels.
+    pub strength: f64,
 }
 
 /// The destination rectangle and radius at a moment.
@@ -177,9 +192,9 @@ pub fn rect_at(
     at: i64,
     fallback: Rect,
     fallback_radius: f64,
-) -> (Rect, f64, Vec<f64>) {
+) -> (Rect, f64, Vec<f64>, Option<Focus>) {
     let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
-        return (fallback, fallback_radius, Vec::new());
+        return (fallback, fallback_radius, Vec::new(), None);
     };
 
     let split = |key: &RectKey| {
@@ -192,6 +207,7 @@ pub fn rect_at(
             },
             key.radius,
             key.quad.clone(),
+            key.focus,
         )
     };
 
@@ -229,6 +245,16 @@ pub fn rect_at(
         b.quad.clone()
     };
 
+    let focus = match (a.focus, b.focus) {
+        (Some(from), Some(to)) => Some(Focus {
+            x: lerp(from.x, to.x),
+            y: lerp(from.y, to.y),
+            safe: lerp(from.safe, to.safe),
+            strength: lerp(from.strength, to.strength),
+        }),
+        (from, to) => to.or(from),
+    };
+
     (
         Rect {
             x: lerp(a.x, b.x),
@@ -238,6 +264,7 @@ pub fn rect_at(
         },
         lerp(a.radius, b.radius),
         quad,
+        focus,
     )
 }
 
@@ -572,6 +599,7 @@ mod tests {
                 height: 100.0,
                 radius: 10.0,
                 quad: Vec::new(),
+                focus: None,
             },
             RectKey {
                 at: 100,
@@ -581,6 +609,7 @@ mod tests {
                 height: 200.0,
                 radius: 20.0,
                 quad: Vec::new(),
+                focus: None,
             },
             RectKey {
                 at: 200,
@@ -590,6 +619,7 @@ mod tests {
                 height: 100.0,
                 radius: 10.0,
                 quad: Vec::new(),
+                focus: None,
             },
         ]
     }
@@ -606,7 +636,7 @@ mod tests {
         // The one piece of zoom arithmetic on this side. `rectAt` in
         // `layout.ts` answers the same, and a difference is a preview and an
         // export framed differently.
-        let (rect, radius, _) = rect_at(&motion_track(), 50, BASE, 10.0);
+        let (rect, radius, _, _) = rect_at(&motion_track(), 50, BASE, 10.0);
         assert_eq!(rect.width, 150.0);
         assert_eq!(rect.x, -25.0);
         // The corners grow with the picture rather than staying put.
@@ -623,7 +653,7 @@ mod tests {
     fn falls_back_when_nothing_zooms() {
         // Every item but a zoomed screen has no keys, and has to draw its own
         // rectangle rather than nothing.
-        let (rect, radius, quad) = rect_at(&[], 0, BASE, 7.0);
+        let (rect, radius, quad, _) = rect_at(&[], 0, BASE, 7.0);
         assert_eq!((rect, radius), (BASE, 7.0));
         assert!(quad.is_empty());
     }

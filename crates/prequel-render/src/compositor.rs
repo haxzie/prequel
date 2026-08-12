@@ -35,8 +35,20 @@ struct Uniforms {
     /// 16 bytes, and every field after them stays naturally aligned. Appending
     /// it after the `u32`s would silently shift the whole tail.
     src: [f32; 4],
+    /// Depth of field: what stays sharp in output pixels, how far around it,
+    /// and the widest blur beyond. A strength of 0 softens nothing.
+    focus: [f32; 4],
+    /// One texel of the sampled image, so a blur is measured in its own pixels.
+    texel: [f32; 2],
     shape: [f32; 2],
     frame: [f32; 2],
+    /// Padding to the next 16-byte boundary.
+    ///
+    /// Three `float2`s in a row leave the following `float4` at 136, and MSL
+    /// puts it at 144 — a mismatch that compiles, runs, and renders the wrong
+    /// colour. Rust aligns `[f32; 4]` to 4 bytes and will not insert this
+    /// itself.
+    _align: [f32; 2],
     color_a: [f32; 4],
     color_b: [f32; 4],
     gradient: [f32; 2],
@@ -240,8 +252,11 @@ impl Compositor {
             // The whole texture, which is right for everything but a cropped
             // image — those override it below.
             src: [0.0, 0.0, 1.0, 1.0],
+            focus: [0.0, 0.0, 1.0, 0.0],
+            texel: [0.0; 2],
             shape: [0.0, 2.0],
             frame,
+            _align: [0.0; 2],
             color_a: [0.0; 4],
             color_b: [0.0; 4],
             gradient: [0.0, 1.0],
@@ -312,7 +327,7 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad, _) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: [
@@ -352,7 +367,8 @@ impl Compositor {
 
                 alive.push(self.texture_for(buffer, None)?);
                 // A zoom moves, scales and tilts the whole picture over time.
-                let (dst, radius, quad) = rect_at(motion, at as i64, *dst_rect, shape.radius);
+                let (dst, radius, quad, focus) =
+                    rect_at(motion, at as i64, *dst_rect, shape.radius);
 
                 Some((
                     Uniforms {
@@ -362,6 +378,15 @@ impl Compositor {
                         // the whole point: a 16:9 camera cropped to a square
                         // and then sampled edge-to-edge comes out stretched.
                         src: normalised(src_rect, buffer.width(), buffer.height()),
+                        focus: focus.map_or([0.0, 0.0, 1.0, 0.0], |f| {
+                            [f.x as f32, f.y as f32, f.safe as f32, f.strength as f32]
+                        }),
+                        // In the source's own texels, so a given strength looks
+                        // the same whatever resolution was recorded.
+                        texel: [
+                            1.0 / buffer.width().max(1) as f32,
+                            1.0 / buffer.height().max(1) as f32,
+                        ],
                         shape: [radius as f32, shape.exponent as f32],
                         mode: MODE_IMAGE,
                         mirror: u32::from(*mirror),
@@ -378,7 +403,7 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad, _) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: rect_of(&rect),
@@ -584,17 +609,21 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, quad), 0);
         assert_eq!(offset_of!(Uniforms, rect), 64);
         assert_eq!(offset_of!(Uniforms, src), 80);
-        assert_eq!(offset_of!(Uniforms, shape), 96);
-        assert_eq!(offset_of!(Uniforms, frame), 104);
-        assert_eq!(offset_of!(Uniforms, color_a), 112);
-        assert_eq!(offset_of!(Uniforms, color_b), 128);
-        assert_eq!(offset_of!(Uniforms, gradient), 144);
-        assert_eq!(offset_of!(Uniforms, mode), 152);
-        assert_eq!(offset_of!(Uniforms, weight), 156);
-        assert_eq!(offset_of!(Uniforms, mirror), 160);
+        // `focus` is a `float4`, so it goes on a 16-byte boundary and the two
+        // `float2`s follow it.
+        assert_eq!(offset_of!(Uniforms, focus), 96);
+        assert_eq!(offset_of!(Uniforms, texel), 112);
+        assert_eq!(offset_of!(Uniforms, shape), 120);
+        assert_eq!(offset_of!(Uniforms, frame), 128);
+        assert_eq!(offset_of!(Uniforms, color_a), 144);
+        assert_eq!(offset_of!(Uniforms, color_b), 160);
+        assert_eq!(offset_of!(Uniforms, gradient), 176);
+        assert_eq!(offset_of!(Uniforms, mode), 184);
+        assert_eq!(offset_of!(Uniforms, weight), 188);
+        assert_eq!(offset_of!(Uniforms, mirror), 192);
 
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 168);
+        assert_eq!(size_of::<Uniforms>(), 200);
     }
 
     #[test]
