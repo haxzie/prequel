@@ -1008,6 +1008,18 @@ describe("perspective", () => {
     expect(q[10]! - q[4]!).toBeLessThan(q[7]! - q[1]!);
   });
 
+  it("gives the corner that leans away the larger divisor", () => {
+    // The bug this pins: storing the magnification here instead of the divisor
+    // inverts the correction. The outline stays right, so it looks *almost*
+    // correct — but the image inside bends the wrong way across the diagonal
+    // where the two triangles meet, which reads as a crease rather than a tilt.
+    const q = cornersFor(12, 0)!;
+
+    // Leaning back, so the top is further from the eye than the bottom.
+    expect(q[2]!).toBeGreaterThan(q[8]!);
+    expect(q[5]!).toBeGreaterThan(q[11]!);
+  });
+
   it("carries a divisor with every corner", () => {
     // Without `w` the GPU maps the texture across two flat triangles, which is
     // the affine warp early 3D was famous for.

@@ -101,11 +101,12 @@ export interface RectKey {
    *
    * Absent when nothing is tilted, which is every zoom that only pushes in.
    *
-   * `w` is the projective divisor, and carrying it is what makes this correct
-   * rather than merely quadrilateral: a GPU interpolates in clip space, so
-   * handing it four screen positions and letting it map the texture across two
-   * triangles gives the affine warp that early 3D was famous for. With `w` the
-   * hardware does the perspective divide per pixel for free.
+   * `w` is the projective *divisor* — proportional to the corner's distance
+   * from the eye, so a corner leaning away carries a larger one. Carrying it is
+   * what makes this a perspective rather than merely a quadrilateral: a GPU
+   * interpolates in clip space, so handing it four screen positions and letting
+   * it map the texture across two triangles gives the affine warp early 3D was
+   * famous for. With `w` the hardware does the divide per pixel for free.
    *
    * Computed here, like everything else geometric, so the preview and the
    * export cannot disagree about where a corner went — they each receive the
@@ -574,9 +575,17 @@ function tiltedQuad(rect: Rect, tilt: number, yaw: number): number[] | undefined
     // A corner behind the eye has no projection. Clamped rather than dropped:
     // the tilt range does not reach it, and a picture that vanishes at an
     // extreme is worse than one that flattens.
-    const w = distance / Math.max(distance - zb, distance * 0.2);
+    const depth = Math.max(distance - zb, distance * 0.2);
+    // How much nearer things look bigger. Multiplies the position.
+    const magnify = distance / depth;
 
-    out.push(cx + xa * w, cy + ya * w, w);
+    // The third number is the *divisor*, not the magnification — it has to be
+    // proportional to the corner's distance from the eye, because that is what
+    // a GPU divides the varyings by. Storing the magnification instead inverts
+    // the correction: the picture still has the right outline, but the image
+    // inside it bends the wrong way across the diagonal where the two triangles
+    // meet. That reads as a crease rather than as a tilt.
+    out.push(cx + xa * magnify, cy + ya * magnify, depth / distance);
   }
 
   return out;
