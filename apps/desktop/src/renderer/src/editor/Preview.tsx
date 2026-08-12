@@ -189,10 +189,7 @@ export function Preview({
   };
 
   return (
-    <div
-      ref={box}
-      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden bg-black/40 p-6"
-    >
+    <div ref={box} className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden p-6">
       <canvas
         ref={canvas}
         // `block` kills the inline baseline gap, which otherwise leaves a few

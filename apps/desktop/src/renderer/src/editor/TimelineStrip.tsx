@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import type { MediaTime } from "../../../shared/manifest";
-import { hasOverrides, type ZoomSlice } from "../../../shared/project";
+import type { ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { CameraIcon, CursorIcon, FillIcon, ScreenIcon, TypingIcon, ZoomIcon } from "./icons";
@@ -321,9 +321,6 @@ export function TimelineStrip({
                 cameraSpan={cameraSpan}
                 tool={state.tool}
                 selected={slice.id === state.selectedSliceId}
-                overridden={hasOverrides(
-                  state.project.tracks[0]?.slices.find((c) => c.id === slice.id)?.overrides,
-                )}
                 onPointerDown={(event) => onClipPointerDown(slice, event)}
                 onTrim={(edge, clientX) =>
                   dispatch({
@@ -530,7 +527,6 @@ function Clip({
   cameraSpan,
   tool,
   selected,
-  overridden,
   onPointerDown,
   onTrim,
 }: {
@@ -540,7 +536,6 @@ function Clip({
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
   tool: TimelineTool;
   selected: boolean;
-  overridden: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onTrim: (edge: "start" | "end", clientX: number) => void;
 }) {
@@ -575,7 +570,7 @@ function Clip({
   return (
     <div
       className={cn(
-        "group relative min-w-1 overflow-hidden rounded-md border",
+        "group relative min-w-1 overflow-hidden rounded-lg border",
         "border-slice-edge bg-slice-fill transition-[opacity,background-color,border-color]",
         // The whole clip dims rather than only its fill, so its label and edge
         // recede together — a full-strength border on a faded body reads as a
@@ -625,8 +620,7 @@ function Clip({
           beside rather than as news in itself. Tinted off the clip rather than
           off the panel: `--editor-muted` is picked to sit on a near-black
           surface and all but disappears on purple. */}
-      {/* Right padding clears the override dot, which sits in that corner. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1.5 py-1.5 pr-4 pl-1.5 text-white/70">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1.5 px-1.5 py-1 text-white/70">
         <span className="flex flex-none items-center gap-1 [&_svg]:size-3">
           <ScreenIcon />
           {hasCamera && <CameraIcon />}
@@ -635,12 +629,6 @@ function Clip({
           {formatTimecode(slice.duration)}
         </span>
       </div>
-
-      {/* Marks a clip with settings of its own, so "why does this bit look
-          different?" is answerable from the strip rather than by clicking each. */}
-      {overridden && (
-        <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-editor-accent" />
-      )}
 
       {/* Trim handles only under the select tool: with the blade held, a click
           near an edge should cut there, not resize.
@@ -693,7 +681,7 @@ function Handle({
         "absolute inset-y-0 grid w-3 cursor-ew-resize place-items-center bg-white/20 transition-opacity",
         // Rounded on the outside only, so the pair reads as caps on the clip
         // rather than as two pills sitting inside it.
-        edge === "start" ? "left-0 rounded-l-md" : "right-0 rounded-r-md",
+        edge === "start" ? "left-0 rounded-l-lg" : "right-0 rounded-r-lg",
         selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
       )}
       onPointerDown={onPointerDown}
@@ -775,7 +763,7 @@ function Zoom({
   return (
     <div
       className={cn(
-        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-md border px-2",
+        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-2",
         "border-selected/60 bg-selected/25 transition-colors",
         selected && "border-selected bg-selected/40",
         tool === "delete"
@@ -811,13 +799,15 @@ function Zoom({
 
       {tool === "select" && (
         <>
-          <span
-            className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100 hover:bg-white/40"
+          <Handle
+            edge="start"
+            selected={selected}
             onPointerDown={grabEdge("start")}
             onPointerMove={moveEdge("start")}
           />
-          <span
-            className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100 hover:bg-white/40"
+          <Handle
+            edge="end"
+            selected={selected}
             onPointerDown={grabEdge("end")}
             onPointerMove={moveEdge("end")}
           />

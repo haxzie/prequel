@@ -60,12 +60,16 @@ export function FrameBar({
   };
 
   return (
-    <div className="relative flex flex-none items-center gap-3 border-b border-editor-line px-4 py-2">
+    // No rule under it and no surface of its own: it sits on the same ground
+    // the composition does, so the eye goes to the frame rather than to a bar
+    // above it. Centred for the same reason — the controls belong to the thing
+    // in the middle, not to the left edge of the window.
+    <div className="relative flex flex-none items-center justify-center gap-3 px-4 py-2">
       <span className="text-[11px] tracking-wide text-editor-muted uppercase">Frame</span>
 
       <button
         type="button"
-        className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
+        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs hover:bg-white/10"
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -97,7 +101,9 @@ export function FrameBar({
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <ul
             className={
-              "absolute top-full left-4 z-20 mt-1 max-h-80 w-64 overflow-y-auto rounded-xl " +
+              // Anchored to the trigger now that the bar is centred, rather
+              // than to the window's left edge.
+              "absolute top-full left-1/2 z-20 mt-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
               "border border-editor-line bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
             }
             role="listbox"
@@ -178,7 +184,7 @@ function SizeField({
   return (
     <input
       aria-label={label}
-      className="w-16 rounded-md bg-white/5 px-2 py-1 text-center tabular-nums outline-none focus:bg-white/10"
+      className="w-16 rounded-md bg-transparent px-2 py-1 text-center tabular-nums outline-none hover:bg-white/5 focus:bg-white/10"
       value={draft ?? String(value)}
       // Held as text while being typed: committing on every keystroke would
       // clamp "10" to the minimum before "1080" could be finished.

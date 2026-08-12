@@ -131,7 +131,9 @@ export function Editor() {
             content — and the canvas reports an intrinsic 1920×1080. Without it
             the column grows past the row and the timeline is clipped away by
             the shell's `overflow-hidden`. */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* The frame bar and the composition share one surface, so the bar
+              reads as part of the canvas rather than as chrome above it. */}
+          <div className="dot-grid flex min-h-0 min-w-0 flex-1 flex-col bg-editor-bg">
             <FrameBar
               frame={state.project.frame}
               recorded={screenSource}

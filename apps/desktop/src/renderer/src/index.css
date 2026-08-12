@@ -198,6 +198,19 @@ body {
     pointer;
 }
 
+/* The surface a composition sits on.
+   Dots rather than a flat fill or a chequerboard: the frame can be any size and
+   any shape, and something regular behind it makes the edges of the output
+   readable without competing with the picture. Faint enough to read as paper
+   rather than as content — it is the one thing on screen that must never be
+   mistaken for part of the video. */
+@utility dot-grid {
+  background-image: radial-gradient(var(--editor-line) 1px, transparent 1px);
+  background-size: 16px 16px;
+  /* Half a cell, so the pattern is not clipped flush against the edges. */
+  background-position: 8px 8px;
+}
+
 /* Reveals the glyph from the bottom as the level rises. `--level` is written
    straight to the element by the meter, so a 60 fps signal never touches
    React — which is why this reads the variable rather than baking a value. */
