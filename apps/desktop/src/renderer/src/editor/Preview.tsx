@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 
 import type { CursorLayer } from "../../../shared/contract";
 import { buildRenderPlan, cameraRect, type Size } from "../../../shared/layout";
 import type { SliceSettings, ZoomSlice } from "../../../shared/project";
-import { isReady, PreviewCompositor, type Images, type Sources } from "./canvas";
+import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
 import type { EditorPlayback } from "./useEditorPlayback";
 
@@ -54,7 +54,7 @@ export function Preview({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const compositor = useRef(new PreviewCompositor());
+  const compositor = useRef(new WebGlCompositor());
   /** Offset from the bubble's centre to where it was picked up, or null. */
   const grab = useRef<{ x: number; y: number } | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
@@ -92,9 +92,6 @@ export function Preview({
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
-
-    const context = element.getContext("2d", { alpha: false });
-    if (!context) return;
 
     let handle = 0;
 
@@ -149,11 +146,17 @@ export function Preview({
 
       // Source time, because that is what the pointer track is indexed by —
       // the same clock the media elements are seeked on.
-      compositor.current.draw(context, plan, sources, loaded, backing, media.sourceAt(now) ?? 0);
+      compositor.current.draw(element, plan, sources, loaded, backing, media.sourceAt(now) ?? 0);
     };
 
     handle = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(handle);
+    const painter = compositor.current;
+    return () => {
+      cancelAnimationFrame(handle);
+      // The context outlives the effect, but its textures should not: a
+      // recording closed with a 4K background still on the GPU leaks it.
+      painter.dispose();
+    };
   }, [media]);
 
   /**

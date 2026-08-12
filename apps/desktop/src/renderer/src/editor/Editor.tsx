@@ -10,7 +10,7 @@ import {
   type Project,
 } from "../../../shared/project";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
-import type { Images } from "./canvas";
+import type { Images } from "./webgl";
 import { ExportBar } from "./ExportBar";
 import { FrameBar } from "./FrameBar";
 import { Inspector } from "./Inspector";
