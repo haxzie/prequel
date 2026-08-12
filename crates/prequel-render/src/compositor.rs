@@ -22,6 +22,12 @@ use crate::{Error, Result};
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct Uniforms {
+    /// Four tilted corners as `x, y, w, _`, or all zero when nothing is tilted.
+    ///
+    /// First in the struct on purpose: `float4[4]` is 16-byte aligned and 64
+    /// bytes long, so putting it here leaves every field after it at exactly
+    /// the offset it had before.
+    quad: [[f32; 4]; 4],
     rect: [f32; 4],
     /// Region of the source texture, normalised as (x, y, w, h).
     ///
@@ -229,6 +235,7 @@ impl Compositor {
         alive: &'a mut Vec<Held>,
     ) -> Result<Option<(Uniforms, Option<&'a mtl::Texture>)>> {
         let base = Uniforms {
+            quad: [[0.0; 4]; 4],
             rect: [0.0; 4],
             // The whole texture, which is right for everything but a cropped
             // image — those override it below.
@@ -305,7 +312,7 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: [
@@ -314,6 +321,9 @@ impl Compositor {
                             rect.width as f32,
                             rect.height as f32,
                         ],
+                        // Dropped by `dy` with the picture, or a tilted frame's
+                        // shadow stays flat underneath and gives it away.
+                        quad: corners_of(&quad, *dy),
                         shape: [radius as f32, shape.exponent as f32],
                         color_a: rgba(color),
                         mode: MODE_SHADOW,
@@ -341,12 +351,13 @@ impl Compositor {
                 };
 
                 alive.push(self.texture_for(buffer, None)?);
-                // A zoom moves and scales the whole picture over time.
-                let (dst, radius) = rect_at(motion, at as i64, *dst_rect, shape.radius);
+                // A zoom moves, scales and tilts the whole picture over time.
+                let (dst, radius, quad) = rect_at(motion, at as i64, *dst_rect, shape.radius);
 
                 Some((
                     Uniforms {
                         rect: rect_of(&dst),
+                        quad: corners_of(&quad, 0.0),
                         // Normalised against the source's real size, which is
                         // the whole point: a 16:9 camera cropped to a square
                         // and then sampled edge-to-edge comes out stretched.
@@ -367,10 +378,11 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: rect_of(&rect),
+                        quad: corners_of(&quad, 0.0),
                         shape: [radius as f32, shape.exponent as f32],
                         color_a: rgba(color),
                         mode: MODE_STROKE,
@@ -479,6 +491,25 @@ fn rect_of(rect: &Rect) -> [f32; 4] {
 ///
 /// Clamped, because a crop that runs a hair outside the source would otherwise
 /// sample the clamped edge and smear it — visible as a stripe down one side.
+/// A plan's twelve corner numbers as the shader's four `float4`s.
+///
+/// All zero when there is no tilt: the vertex function reads a `w` of zero as
+/// "use the rectangle", so an untilted primitive needs nothing set.
+fn corners_of(quad: &[f64], dy: f64) -> [[f32; 4]; 4] {
+    let mut out = [[0.0f32; 4]; 4];
+    if quad.len() != 12 {
+        return out;
+    }
+
+    for (index, corner) in out.iter_mut().enumerate() {
+        corner[0] = quad[index * 3] as f32;
+        corner[1] = (quad[index * 3 + 1] + dy) as f32;
+        corner[2] = quad[index * 3 + 2] as f32;
+    }
+
+    out
+}
+
 /// The part of an image a `cover` fill shows, in normalised texture space.
 ///
 /// The largest centred region with the destination's shape. Mirrors the
@@ -543,20 +574,23 @@ mod tests {
     fn the_uniform_block_matches_the_shader() {
         use std::mem::{align_of, offset_of, size_of};
 
-        // Every `float4` sits on a 16-byte boundary, as MSL requires.
-        assert_eq!(offset_of!(Uniforms, rect), 0);
-        assert_eq!(offset_of!(Uniforms, src), 16);
-        assert_eq!(offset_of!(Uniforms, shape), 32);
-        assert_eq!(offset_of!(Uniforms, frame), 40);
-        assert_eq!(offset_of!(Uniforms, color_a), 48);
-        assert_eq!(offset_of!(Uniforms, color_b), 64);
-        assert_eq!(offset_of!(Uniforms, gradient), 80);
-        assert_eq!(offset_of!(Uniforms, mode), 88);
-        assert_eq!(offset_of!(Uniforms, weight), 92);
-        assert_eq!(offset_of!(Uniforms, mirror), 96);
+        // Every `float4` sits on a 16-byte boundary, as MSL requires. The
+        // corner array leads, and is 64 bytes, so everything after it keeps the
+        // offset it had before perspective existed.
+        assert_eq!(offset_of!(Uniforms, quad), 0);
+        assert_eq!(offset_of!(Uniforms, rect), 64);
+        assert_eq!(offset_of!(Uniforms, src), 80);
+        assert_eq!(offset_of!(Uniforms, shape), 96);
+        assert_eq!(offset_of!(Uniforms, frame), 104);
+        assert_eq!(offset_of!(Uniforms, color_a), 112);
+        assert_eq!(offset_of!(Uniforms, color_b), 128);
+        assert_eq!(offset_of!(Uniforms, gradient), 144);
+        assert_eq!(offset_of!(Uniforms, mode), 152);
+        assert_eq!(offset_of!(Uniforms, weight), 156);
+        assert_eq!(offset_of!(Uniforms, mirror), 160);
 
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 104);
+        assert_eq!(size_of::<Uniforms>(), 168);
     }
 
     #[test]

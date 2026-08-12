@@ -10,6 +10,10 @@
 using namespace metal;
 
 struct Uniforms {
+    // Four tilted corners as (x, y, w, unused), or all zero when nothing is
+    // tilted. First in the struct because `float4[4]` is 16-byte aligned and
+    // 64 bytes long, so every field after it keeps the offset it had before.
+    float4 quad[4];
     // Destination rectangle in output pixels.
     float4 rect;
     // Region of the source texture to sample, normalised 0-1 as (x, y, w, h).
@@ -48,13 +52,24 @@ vertex Vertex composite_vertex(uint id [[vertex_id]],
     const float2 corners[4] = { float2(0, 0), float2(1, 0), float2(0, 1), float2(1, 1) };
     float2 corner = corners[id];
 
-    float2 pixel = u.rect.xy + corner * u.rect.zw;
+    // The tilted corner if there is one, otherwise the plain rectangle. A `w`
+    // of zero is what says "not tilted", so an ordinary primitive sets nothing.
+    float4 placed = u.quad[id];
+    bool tilted = placed.z > 0.0;
+
+    float2 pixel = tilted ? placed.xy : u.rect.xy + corner * u.rect.zw;
+    float w = tilted ? placed.z : 1.0;
+
     // Pixels to clip space, with y flipped: Metal's clip space is
     // bottom-up and every rectangle in the plan is top-down.
     float2 clip = (pixel / u.frame) * 2.0 - 1.0;
 
     Vertex out;
-    out.position = float4(clip.x, -clip.y, 0.0, 1.0);
+    // Scaled by w with w in the fourth component, so the hardware divides the
+    // varyings by it per fragment. Without that the texture and the shape are
+    // smeared flat across the quad's two triangles and crease along the
+    // diagonal between them.
+    out.position = float4(clip.x * w, -clip.y * w, 0.0, w);
     out.local = corner * u.rect.zw;
     out.uv = corner;
     return out;

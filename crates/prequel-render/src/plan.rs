@@ -143,7 +143,8 @@ pub struct CursorPoint {
 /// The destination rather than the source: a zoom scales the whole picture and
 /// lets it run past the edges of the frame, rather than cropping into the
 /// recording and leaving the frame the size it was.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+// No longer `Copy`: a tilted key carries its corners in a `Vec`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RectKey {
     pub at: i64,
     pub x: f64,
@@ -152,6 +153,15 @@ pub struct RectKey {
     pub height: f64,
     /// Corner radius, which grows with the picture rather than staying put.
     pub radius: f64,
+    /// The picture's four corners once tilted, as `x, y, w` each — twelve
+    /// numbers, top-left, top-right, bottom-left, bottom-right.
+    ///
+    /// Empty when nothing is tilted. `w` is the projective divisor,
+    /// proportional to the corner's distance from the eye, so the GPU divides
+    /// the varyings by it and the texture follows the perspective instead of
+    /// being smeared across two flat triangles.
+    #[serde(default)]
+    pub quad: Vec<f64>,
 }
 
 /// The destination rectangle and radius at a moment.
@@ -159,9 +169,14 @@ pub struct RectKey {
 /// Mirrors `rectAt` in `apps/desktop/src/shared/layout.ts`. Linear between
 /// keys: the easing is already in where the editor put them, which is what
 /// keeps a zoom from being implemented twice on either side of the boundary.
-pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) -> (Rect, f64) {
+pub fn rect_at(
+    keys: &[RectKey],
+    at: i64,
+    fallback: Rect,
+    fallback_radius: f64,
+) -> (Rect, f64, Vec<f64>) {
     let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
-        return (fallback, fallback_radius);
+        return (fallback, fallback_radius, Vec::new());
     };
 
     let split = |key: &RectKey| {
@@ -173,6 +188,7 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
                 height: key.height,
             },
             key.radius,
+            key.quad.clone(),
         )
     };
 
@@ -195,6 +211,21 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
     };
     let lerp = |from: f64, to: f64| from + (to - from) * t;
 
+    // The corners ride along. Interpolating twelve numbers between two
+    // projections is not the same as projecting the interpolated angle, but a
+    // thirtieth of a second apart the difference is far below a pixel.
+    let quad = if a.quad.len() == b.quad.len() {
+        a.quad
+            .iter()
+            .zip(&b.quad)
+            .map(|(from, to)| lerp(*from, *to))
+            .collect()
+    } else if b.quad.is_empty() {
+        a.quad.clone()
+    } else {
+        b.quad.clone()
+    };
+
     (
         Rect {
             x: lerp(a.x, b.x),
@@ -203,6 +234,7 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
             height: lerp(a.height, b.height),
         },
         lerp(a.radius, b.radius),
+        quad,
     )
 }
 
@@ -517,6 +549,7 @@ mod tests {
                 width: 100.0,
                 height: 100.0,
                 radius: 10.0,
+                quad: Vec::new(),
             },
             RectKey {
                 at: 100,
@@ -525,6 +558,7 @@ mod tests {
                 width: 200.0,
                 height: 200.0,
                 radius: 20.0,
+                quad: Vec::new(),
             },
             RectKey {
                 at: 200,
@@ -533,6 +567,7 @@ mod tests {
                 width: 100.0,
                 height: 100.0,
                 radius: 10.0,
+                quad: Vec::new(),
             },
         ]
     }
@@ -549,7 +584,7 @@ mod tests {
         // The one piece of zoom arithmetic on this side. `rectAt` in
         // `layout.ts` answers the same, and a difference is a preview and an
         // export framed differently.
-        let (rect, radius) = rect_at(&motion_track(), 50, BASE, 10.0);
+        let (rect, radius, _) = rect_at(&motion_track(), 50, BASE, 10.0);
         assert_eq!(rect.width, 150.0);
         assert_eq!(rect.x, -25.0);
         // The corners grow with the picture rather than staying put.
@@ -566,7 +601,9 @@ mod tests {
     fn falls_back_when_nothing_zooms() {
         // Every item but a zoomed screen has no keys, and has to draw its own
         // rectangle rather than nothing.
-        assert_eq!(rect_at(&[], 0, BASE, 7.0), (BASE, 7.0));
+        let (rect, radius, quad) = rect_at(&[], 0, BASE, 7.0);
+        assert_eq!((rect, radius), (BASE, 7.0));
+        assert!(quad.is_empty());
     }
 
     #[test]

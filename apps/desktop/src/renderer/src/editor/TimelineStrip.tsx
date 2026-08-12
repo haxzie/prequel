@@ -643,22 +643,64 @@ function Clip({
       )}
 
       {/* Trim handles only under the select tool: with the blade held, a click
-          near an edge should cut there, not resize. */}
+          near an edge should cut there, not resize.
+
+          Shown outright on the selected clip and on hover otherwise — the two
+          bars are what says "these ends can be dragged", and a control that
+          only appears once the pointer is already on it has to be discovered
+          by accident. */}
       {tool === "select" && (
         <>
-          <span
-            className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100 hover:bg-editor-accent"
+          <Handle
+            edge="start"
+            selected={selected}
             onPointerDown={grab("start")}
             onPointerMove={move("start")}
           />
-          <span
-            className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100 hover:bg-editor-accent"
+          <Handle
+            edge="end"
+            selected={selected}
             onPointerDown={grab("end")}
             onPointerMove={move("end")}
           />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * A draggable end of a clip.
+ *
+ * A white bar on a lightened band of the clip's own colour: light enough to
+ * read as a grip against the purple, and tied to the clip rather than being a
+ * colour of its own, so a row of them does not look like a separate track.
+ */
+function Handle({
+  edge,
+  selected,
+  onPointerDown,
+  onPointerMove,
+}: {
+  edge: "start" | "end";
+  selected: boolean;
+  onPointerDown: (event: PointerEvent<HTMLSpanElement>) => void;
+  onPointerMove: (event: PointerEvent<HTMLSpanElement>) => void;
+}) {
+  return (
+    <span
+      className={cn(
+        "absolute inset-y-0 grid w-3 cursor-ew-resize place-items-center bg-white/20 transition-opacity",
+        // Rounded on the outside only, so the pair reads as caps on the clip
+        // rather than as two pills sitting inside it.
+        edge === "start" ? "left-0 rounded-l-md" : "right-0 rounded-r-md",
+        selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+    >
+      <span className="h-1/2 w-0.5 rounded-full bg-white" />
+    </span>
   );
 }
 
