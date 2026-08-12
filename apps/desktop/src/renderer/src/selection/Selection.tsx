@@ -162,15 +162,6 @@ function WindowSelection({
     );
   }, [setup.windows, pointer]);
 
-  const choose = () => {
-    if (!hovered) return;
-    void window.prequel.selection.choose({
-      target: hovered.target,
-      crop: null,
-      label: label(hovered.target),
-    });
-  };
-
   const start = () => {
     if (!hovered) return;
     onStart({
@@ -189,7 +180,10 @@ function WindowSelection({
       className={OVERLAY}
       onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}
       onMouseLeave={() => setPointer(null)}
-      onClick={choose}
+      // Deliberately not clickable. The overlay covers the whole display, so a
+      // click anywhere on it used to choose — including a click meant for a
+      // button on top of it, and including one meant for nothing at all. The
+      // highlighted window and the Start button are the only things that act.
     >
       {hovered && (
         <div
@@ -240,14 +234,6 @@ function ScreenSelection({
 }) {
   const whole = { x: 0, y: 0, width: setup.width, height: setup.height };
 
-  const choose = () => {
-    void window.prequel.selection.choose({
-      target: setup.screenTarget,
-      crop: null,
-      label: "Entire screen",
-    });
-  };
-
   const start = () => {
     onStart({
       result: { target: setup.screenTarget, crop: null, label: "Entire screen", start: true },
@@ -256,7 +242,8 @@ function ScreenSelection({
   };
 
   return (
-    <div className={OVERLAY} onClick={choose}>
+    // Not clickable either — the Start button below is what confirms.
+    <div className={OVERLAY}>
       <div
         className={HIGHLIGHT}
         style={{ left: whole.x, top: whole.y, width: whole.width, height: whole.height }}

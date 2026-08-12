@@ -110,6 +110,14 @@ export class SelectionOverlay {
   ): BrowserWindow {
     const window = createPanel({ ...display.bounds, alwaysOnTop: true });
     window.setAlwaysOnTop(true, "screen-saver");
+
+    // Escape here rather than only in the overlay's own `keydown`. These are
+    // `screen-saver`-level panels and there is one per display, so which of
+    // them holds keyboard focus — if any does — is not something to depend on.
+    // `before-input-event` fires on the window whatever the DOM is doing.
+    window.webContents.on("before-input-event", (_event, input) => {
+      if (input.type === "keyDown" && input.key === "Escape") this.cancel();
+    });
     window.setFullScreenable(false);
 
     void loadRoute(window, "/selection").then(() => {
