@@ -19,6 +19,7 @@ use prequel_encode::{
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
+use crate::clicks::ClickSample;
 use crate::cursor::{CursorSample, CursorTrack, Region};
 use crate::error::{Error, Result};
 use crate::targets::{Bounds, Target, TargetKind};
@@ -120,6 +121,9 @@ pub struct RecordingSummary {
     pub cursor: Vec<CursorSample>,
     /// Where text was being typed. Empty without the Accessibility grant.
     pub typing: Vec<TypingSample>,
+    /// Where the pointer was pressed. The strongest signal in the recording
+    /// about what mattered and when.
+    pub clicks: Vec<ClickSample>,
 }
 
 impl RecordingSummary {
@@ -323,6 +327,9 @@ pub struct ScreenRecorder {
     /// application that does not answer would stall the recording rather than
     /// merely miss a sample.
     typing: Arc<Mutex<TypingTrack>>,
+    /// The captured rectangle, kept so the clicks can be put in its terms when
+    /// the recording stops.
+    sampled: Region,
     typing_stop: Arc<AtomicBool>,
     typing_thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -443,6 +450,12 @@ impl ScreenRecorder {
             cursor: CursorTrack::new(sampled),
         }));
 
+        // No permission of its own, so it simply starts. A tap that cannot be
+        // made is logged and the recording carries on without clicks.
+        if !crate::clicks::start() {
+            tracing::warn!("could not tap mouse events; no clicks will be recorded");
+        }
+
         let typing = Arc::new(Mutex::new(TypingTrack::new(sampled)));
         let typing_stop = Arc::new(AtomicBool::new(false));
         let typing_thread = spawn_typing(&typing, &typing_stop, clock.clone());
@@ -479,6 +492,7 @@ impl ScreenRecorder {
             typing,
             typing_stop,
             typing_thread,
+            sampled,
         })
     }
 
@@ -568,6 +582,7 @@ impl ScreenRecorder {
                 tracing::debug!("captured {} cursor samples", inner.cursor.len());
                 inner.cursor.take_samples()
             },
+            clicks: crate::clicks::stop(self.sampled, |host| self.clock.media_time(host).ok()),
             typing: self
                 .typing
                 .lock()

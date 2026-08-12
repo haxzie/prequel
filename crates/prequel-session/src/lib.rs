@@ -14,7 +14,7 @@ pub use clock::{
     HostTime, MediaTime, SampleDecision, SessionClock, SharedClock, TrackStats, TrackTimeline,
 };
 pub use manifest::{
-    CursorSample, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, ManifestError, SourceInfo, Track,
-    TrackKind, TypingSample,
+    ClickSample, CursorSample, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, ManifestError,
+    SourceInfo, Track, TrackKind, TypingSample,
 };
 pub use state::{Command, InvalidTransition, RecordingState};

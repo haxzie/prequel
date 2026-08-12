@@ -63,6 +63,7 @@ export type EditorAction =
     }
   | { type: "resetSection"; section: SettingsSection }
   | { type: "addZoom"; at: MediaTime }
+  | { type: "setZooms"; zooms: ZoomSlice[] }
   | { type: "selectZoom"; zoomId: string | null }
   | { type: "deleteZoom"; zoomId: string }
   | { type: "setZoom"; zoomId: string; patch: Partial<ZoomSlice> }
@@ -112,6 +113,12 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case "addZoom":
       return addZoom(state, action.at);
+
+    case "setZooms":
+      // Replaces the list wholesale, which only the first cut does. It counts
+      // as an edit, so the project is written and the cut is not remade next
+      // time the recording is opened.
+      return edit(state, (project) => ({ ...project, zooms: action.zooms }));
 
     case "deleteZoom":
       return {

@@ -112,6 +112,13 @@ pub struct Manifest {
     /// Pointer positions, as fractions of the captured frame.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cursor: Vec<CursorSample>,
+    /// Where the pointer was pressed, as fractions of the captured frame.
+    ///
+    /// Buttons only — never which one beyond left or right, and never a key.
+    /// The editor builds its automatic zooms from these: a click says what
+    /// mattered and when far more clearly than where the pointer travelled.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clicks: Vec<ClickSample>,
     /// Where text was being typed, as fractions of the captured frame.
     ///
     /// Empty unless the Accessibility grant was given, and empty for every
@@ -119,6 +126,14 @@ pub struct Manifest {
     /// of the field that had keyboard focus.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub typing: Vec<TypingSample>,
+}
+
+/// A press, sampled during the recording.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ClickSample {
+    pub at: MediaTime,
+    pub x: f64,
+    pub y: f64,
 }
 
 /// A focused text area, sampled during the recording.
@@ -207,6 +222,7 @@ mod tests {
                 },
             ],
             cursor_baked: false,
+            clicks: Vec::new(),
             typing: Vec::new(),
             cursor: vec![CursorSample {
                 at: 0,

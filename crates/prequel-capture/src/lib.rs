@@ -4,6 +4,7 @@
 //! ScreenCaptureKit — the legacy `CGDisplayStream` / `CGWindowListCreateImage`
 //! paths are deprecated and make modern macOS show the user a security warning.
 
+mod clicks;
 mod cursor;
 mod error;
 mod permission;
@@ -12,6 +13,7 @@ mod targets;
 mod typing;
 mod wallpaper;
 
+pub use clicks::ClickSample;
 pub use cursor::CursorSample;
 pub use error::{Error, Result};
 pub use permission::{PermissionStatus, request_screen_access, screen_access_status};

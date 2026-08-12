@@ -122,8 +122,8 @@ fn write_manifest(
     camera: Option<&camera::CameraSummary>,
 ) {
     use prequel_session::{
-        CursorSample, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, SourceInfo, TrackKind,
-        TypingSample,
+        ClickSample, CursorSample, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, SourceInfo,
+        TrackKind, TypingSample,
     };
 
     let mut tracks = vec![track(
@@ -184,6 +184,17 @@ fn write_manifest(
         },
         tracks,
         cursor_baked: plan.cursor_baked,
+        // Buttons only, never keys — the editor's automatic zooms are built
+        // from when and where, not from what.
+        clicks: screen
+            .clicks
+            .iter()
+            .map(|click| ClickSample {
+                at: click.at,
+                x: click.x,
+                y: click.y,
+            })
+            .collect(),
         // Bounds of whatever field had keyboard focus, never a keystroke.
         // Empty without the Accessibility grant.
         typing: screen

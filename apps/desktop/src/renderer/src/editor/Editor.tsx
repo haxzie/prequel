@@ -9,6 +9,7 @@ import {
   WALLPAPER_FILE_NAME,
   type Project,
 } from "../../../shared/project";
+import { autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
 import { PanelIcon, TrashIcon } from "./icons";
@@ -110,6 +111,7 @@ export function Editor() {
   }, [session]);
 
   useAutoFrame(state.project.frame, screenSource, dispatch);
+  useFirstCut(session, state, dispatch);
   usePersistence(session, state.project, state.revision);
   useAudioMix(media, state, session);
   useEditorImages(session, state.project, setImages);
@@ -363,6 +365,53 @@ function useAutoFrame(
 
     dispatch({ type: "setFrame", frame: { width, height, presetId: AUTO_PRESET_ID } });
   }, [frame, recorded, dispatch]);
+}
+
+/**
+ * Makes the first cut, once.
+ *
+ * Only on a project nobody has touched: revision 0, and no zooms of its own.
+ * Both conditions matter — the first stops it running again on every reopen,
+ * and the second means a recording whose zooms were all deleted stays that way
+ * rather than growing them back, which would be the app arguing.
+ *
+ * Everything it adds is an ordinary zoom, so disagreeing with it is dragging or
+ * deleting, not undoing something opaque.
+ */
+function useFirstCut(
+  session: EditorSession | null,
+  state: EditorState,
+  dispatch: Dispatch<EditorAction>,
+) {
+  const made = useRef(false);
+
+  useEffect(() => {
+    if (!session || made.current) return;
+    if (state.revision !== 0 || state.project.zooms.length > 0) return;
+
+    const moments: Moment[] = [
+      ...(session.manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
+      // The middle of the field, which is what a zoom would frame anyway.
+      ...(session.manifest.typing ?? []).map((span) => ({
+        at: span.at,
+        x: span.x + span.width / 2,
+        y: span.y + span.height / 2,
+        kind: "typing" as const,
+      })),
+    ];
+
+    // Marked before dispatching rather than after: `zooms.length > 0` only
+    // becomes true on the next render, and without this the effect would run
+    // again in between and add them twice.
+    made.current = true;
+    if (moments.length === 0) return;
+
+    const zooms = autoZooms(moments, {
+      duration: session.manifest.duration,
+      hasCursor: session.cursor !== null,
+    });
+    if (zooms.length > 0) dispatch({ type: "setZooms", zooms });
+  }, [session, state.revision, state.project.zooms.length, dispatch]);
 }
 
 /**

@@ -79,6 +79,13 @@ export interface CursorSample {
   y: number;
 }
 
+/** A press, sampled during the recording. */
+export interface ClickSample {
+  at: MediaTime;
+  x: number;
+  y: number;
+}
+
 /** A focused text area, sampled during the recording. */
 export interface TypingSample {
   at: MediaTime;
@@ -115,6 +122,14 @@ export interface Manifest {
    * recording made before it was asked for.
    */
   typing?: TypingSample[];
+  /**
+   * Where the pointer was pressed, as fractions of the captured frame.
+   *
+   * Buttons only — never which key, never what was typed. The editor's first
+   * cut is built from these: a click says what mattered and when far more
+   * clearly than where the pointer travelled.
+   */
+  clicks?: ClickSample[];
 }
 
 export class ManifestError extends Error {}
