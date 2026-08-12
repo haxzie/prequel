@@ -133,6 +133,9 @@ pub struct CursorPoint {
     pub at: i64,
     pub x: f64,
     pub y: f64,
+    /// How much larger the pointer is here than lying flat. 1 without a tilt.
+    #[serde(default = "one")]
+    pub scale: f64,
     /// False where the pointer had left the visible crop. Marked rather than
     /// omitted, so a gap is not interpolated straight through.
     pub visible: bool,
@@ -238,28 +241,34 @@ pub fn rect_at(
     )
 }
 
+fn one() -> f64 {
+    1.0
+}
+
 /// Where the pointer is at a source time, or None if it is not on screen.
 ///
 /// Mirrors `cursorAt` in `apps/desktop/src/shared/layout.ts`. The two are
 /// pinned together by the golden-pixel test rather than by inspection: this is
 /// the only arithmetic the two rasterisers each implement, and it exists on
 /// both sides because a plan cannot hold a position per output frame.
-pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Point> {
+pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
     let first = points.first()?;
     let last = points.last()?;
 
     // Before the first sample the pointer had not moved yet, so it was where
     // that sample says — not absent.
     if at <= first.at {
-        return first.visible.then_some(Point {
+        return first.visible.then_some(Placed {
             x: first.x,
             y: first.y,
+            scale: first.scale,
         });
     }
     if at >= last.at {
-        return last.visible.then_some(Point {
+        return last.visible.then_some(Placed {
             x: last.x,
             y: last.y,
+            scale: last.scale,
         });
     }
 
@@ -281,10 +290,19 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Point> {
         0.0
     };
 
-    Some(Point {
+    Some(Placed {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
+        scale: a.scale + (b.scale - a.scale) * t,
     })
+}
+
+/// A pointer position, with how big it is where it sits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Placed {
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -460,18 +478,21 @@ mod tests {
                 at: 0,
                 x: 0.0,
                 y: 0.0,
+                scale: 1.0,
                 visible: true,
             },
             CursorPoint {
                 at: 100,
                 x: 100.0,
                 y: 200.0,
+                scale: 1.0,
                 visible: true,
             },
             CursorPoint {
                 at: 200,
                 x: 0.0,
                 y: 0.0,
+                scale: 1.0,
                 visible: false,
             },
         ]
@@ -493,6 +514,7 @@ mod tests {
             at: 0,
             x: 7.0,
             y: 9.0,
+            scale: 1.0,
             visible: true,
         }];
         assert_eq!(cursor_at(&single, 9999).unwrap().x, 7.0);

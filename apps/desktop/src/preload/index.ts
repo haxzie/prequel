@@ -124,6 +124,15 @@ const api = {
     pickImage: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPickImage, dir),
 
+    /**
+     * Moves the whole recording to the Trash and closes its window.
+     *
+     * Resolves false when the user declines the confirmation, so the caller can
+     * tell "did not happen" from "failed".
+     */
+    deleteRecording: (dir: string): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorDeleteRecording, dir),
+
     /** Copies one of the shipped wallpapers into the recording. */
     presetImage: (dir: string, presetId: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPresetImage, dir, presetId),

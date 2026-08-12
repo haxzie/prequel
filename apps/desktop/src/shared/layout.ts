@@ -64,6 +64,14 @@ export interface CursorPoint {
   at: number;
   x: number;
   y: number;
+  /**
+   * How much larger the pointer is here than it would be lying flat.
+   *
+   * A tilted picture is nearer at one edge than the other, and a pointer drawn
+   * one size across all of it sits on top of the frame rather than in it. 1
+   * wherever nothing is tilted.
+   */
+  scale: number;
   /** False where the pointer was outside the visible crop, or off the screen
       entirely. Marked rather than omitted: a hole between two samples would be
       interpolated straight through. */
@@ -591,6 +599,38 @@ function tiltedQuad(rect: Rect, tilt: number, yaw: number): number[] | undefined
   return out;
 }
 
+/**
+ * Where a point on the picture lands once the picture is tilted.
+ *
+ * The rational bilinear the four corners define — perspective-correct, which an
+ * ordinary bilinear is not: on a tilted plane the middle of the texture is not
+ * the middle of the quad, and interpolating the corners directly puts the
+ * pointer visibly off whatever it is pointing at.
+ *
+ * `scale` falls out of the same sum. It is the local magnification, so a
+ * pointer near the leading edge is drawn larger than one at the far edge, which
+ * is what makes it read as lying on the picture rather than over it.
+ */
+function onPlane(quad: readonly number[], u: number, v: number): Point & { scale: number } {
+  const weights = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
+
+  let x = 0;
+  let y = 0;
+  let total = 0;
+
+  for (let corner = 0; corner < 4; corner += 1) {
+    // Divided by the corner's own divisor, which is what makes this projective
+    // rather than merely bilinear.
+    const share = weights[corner]! / Math.max(quad[corner * 3 + 2]!, 1e-6);
+    x += quad[corner * 3]! * share;
+    y += quad[corner * 3 + 1]! * share;
+    total += share;
+  }
+
+  if (total <= 0) return { x: 0, y: 0, scale: 1 };
+  return { x: x / total, y: y / total, scale: total };
+}
+
 /** Ease in and out, so a zoom reads as a camera move rather than a cut. */
 function smoothstep(t: number): number {
   const clamped = clamp(t, 0, 1);
@@ -671,11 +711,21 @@ function cursorItem(
       // moves under it is what put it somewhere the thing it was pointing at
       // was not — and the further a zoom went, the further out it was.
       const rect = rectAt(motion, at, dstRect, 0);
+      const u = (px - srcRect.x) / srcRect.width;
+      const v = (py - srcRect.y) / srcRect.height;
+
+      // On the tilted plane when there is one, so the pointer leans with the
+      // picture instead of floating flat above it — and, when a tilt is steep,
+      // instead of being placed clean off the frame.
+      const placed = rect.quad
+        ? onPlane(rect.quad, u, v)
+        : { x: rect.x + u * rect.width, y: rect.y + v * rect.height, scale: 1 };
 
       return {
         at,
-        x: rect.x + ((px - srcRect.x) / srcRect.width) * rect.width,
-        y: rect.y + ((py - srcRect.y) / srcRect.height) * rect.height,
+        x: placed.x,
+        y: placed.y,
+        scale: placed.scale,
         visible:
           px >= srcRect.x &&
           px <= srcRect.x + srcRect.width &&
@@ -788,7 +838,7 @@ export function rectAt(
 export function cursorAt(
   points: readonly CursorPoint[],
   at: number,
-): { x: number; y: number } | null {
+): { x: number; y: number; scale: number } | null {
   if (points.length === 0) return null;
 
   // Before the first sample the pointer had not moved yet, so it was wherever
@@ -816,7 +866,11 @@ export function cursorAt(
   const span = b.at - a.at;
   const t = span > 0 ? (at - a.at) / span : 0;
 
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    scale: a.scale + (b.scale - a.scale) * t,
+  };
 }
 
 /**

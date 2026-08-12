@@ -363,12 +363,16 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.path, image, false);
         if (!texture) break;
 
+        // Sized by where it sits on the picture, so a tilted frame's pointer
+        // grows towards the near edge with everything else on it.
+        const size = item.size * point.scale;
+
         set(gl, p, {
           rect: {
-            x: point.x - item.hotspot.x * item.size,
-            y: point.y - item.hotspot.y * item.size,
-            width: item.size,
-            height: item.size,
+            x: point.x - item.hotspot.x * size,
+            y: point.y - item.hotspot.y * size,
+            width: size,
+            height: size,
           },
           shape: { radius: 0, exponent: 2 },
           mode: MODE_IMAGE,

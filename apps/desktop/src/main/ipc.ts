@@ -26,6 +26,7 @@ import { cancelExport, startExport } from "./export.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
+import { deleteRecording } from "./editor-session.js";
 
 /** Runs an operation, turning a native failure into a tagged result. */
 async function attempt<T>(operation: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -128,6 +129,10 @@ export function registerIpc({ flow }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.editorPresetImage, (_event, dir: string, presetId: string) =>
     attempt(() => copyPresetBackground(dir, presetId)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.editorDeleteRecording, (event, dir: string) =>
+    attempt(() => deleteRecording(dir, BrowserWindow.fromWebContents(event.sender))),
   );
 
   ipcMain.handle(IPC_CHANNELS.exportStart, (_event, request: ExportRequest) =>

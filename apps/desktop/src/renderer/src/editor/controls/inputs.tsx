@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { useState } from "react";
 
@@ -34,12 +34,18 @@ export function Slider({
     <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
       <input
         type="range"
-        className="h-1 flex-1 appearance-none rounded-full bg-white/10 accent-editor-accent enabled:cursor-pointer"
+        className="slider flex-1 enabled:cursor-pointer"
         disabled={disabled}
         value={value}
         min={min}
         max={max}
         step={step}
+        // How far along the track is filled. Written as a custom property
+        // because the fill is a gradient stop on a pseudo-element, which is the
+        // only place a range input will let anything be drawn.
+        style={
+          { "--fill": `${((value - min) / Math.max(max - min, 1e-9)) * 100}%` } as CSSProperties
+        }
         onChange={(event) => onChange(Number(event.target.value))}
       />
       <span className="w-10 flex-none text-right text-[11px] tabular-nums text-editor-muted">

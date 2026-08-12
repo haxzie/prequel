@@ -511,20 +511,20 @@ describe("hiding a parked pointer", () => {
 
 describe("cursorAt", () => {
   const points = [
-    { at: 0, x: 0, y: 0, visible: true },
-    { at: 100, x: 100, y: 200, visible: true },
-    { at: 200, x: 0, y: 0, visible: false },
+    { at: 0, x: 0, y: 0, scale: 1, visible: true },
+    { at: 100, x: 100, y: 200, scale: 1, visible: true },
+    { at: 200, x: 0, y: 0, scale: 1, visible: false },
   ];
 
   it("interpolates between two samples", () => {
     // The track is sampled at 30 Hz and played at 60: without this the pointer
     // would move in visible steps.
-    expect(cursorAt(points, 50)).toEqual({ x: 50, y: 100 });
+    expect(cursorAt(points, 50)).toMatchObject({ x: 50, y: 100 });
   });
 
   it("holds still before the first sample and after the last", () => {
-    expect(cursorAt(points, -1000)).toEqual({ x: 0, y: 0, at: 0, visible: true });
-    expect(cursorAt([points[0]!], 9999)).toEqual({ x: 0, y: 0, at: 0, visible: true });
+    expect(cursorAt(points, -1000)).toMatchObject({ x: 0, y: 0 });
+    expect(cursorAt([points[0]!], 9999)).toMatchObject({ x: 0, y: 0 });
   });
 
   it("draws nothing across a span where the pointer had left", () => {

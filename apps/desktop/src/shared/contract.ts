@@ -201,6 +201,7 @@ export const IPC_CHANNELS = {
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
   editorPresetImage: "editor:presetImage",
+  editorDeleteRecording: "editor:deleteRecording",
   exportStart: "export:start",
   exportCancel: "export:cancel",
   /** Main → renderer broadcast. */

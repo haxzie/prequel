@@ -168,6 +168,55 @@ body {
   corner-shape: squircle;
 }
 
+/**
+ * The inspector's sliders.
+ *
+ * A native range input draws a hairline and a hollow handle, which reads as a
+ * scrollbar rather than as a value. This is the same control with a track worth
+ * seeing: filled up to where it sits, so the number is legible from across the
+ * panel without reading the figure beside it.
+ *
+ * The fill is a gradient with a hard stop rather than a second element, because
+ * a range input has nowhere to put one — `--fill` is written by the component
+ * and the stop follows it. Webkit pseudo-elements throughout: this is Chromium
+ * and only Chromium, so there is no second implementation to keep in step.
+ */
+@utility slider {
+  appearance: none;
+  height: 18px;
+  background: transparent;
+
+  &::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--editor-accent) 0 var(--fill, 0%),
+      rgb(255 255 255 / 0.12) var(--fill, 0%) 100%
+    );
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    /* The track is 6px and the thumb 14px, so it has to come up by the
+       difference to sit centred on it. */
+    margin-top: -4px;
+    border-radius: 999px;
+    background: #fff;
+    /* A ring of the panel's own colour rather than a border: it separates the
+       thumb from the fill underneath without darkening the white. */
+    box-shadow:
+      0 0 0 2px var(--editor-panel),
+      0 1px 3px rgb(0 0 0 / 0.5);
+  }
+
+  &:disabled::-webkit-slider-thumb {
+    background: var(--editor-muted);
+  }
+}
+
 /* The surface a composition sits on.
    Dots rather than a flat fill or a chequerboard: the frame can be any size and
    any shape, and something regular behind it makes the edges of the output

@@ -2,14 +2,7 @@ import type { Dispatch } from "react";
 
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
-import {
-  ScissorsIcon,
-  PauseIcon,
-  PlayIcon,
-  SkipEndIcon,
-  SkipStartIcon,
-  TrashIcon,
-} from "./icons";
+import { ScissorsIcon, PauseIcon, PlayIcon, SkipEndIcon, SkipStartIcon, TrashIcon } from "./icons";
 import type { EditorAction } from "./state";
 import type { EditorPlayback } from "./useEditorPlayback";
 

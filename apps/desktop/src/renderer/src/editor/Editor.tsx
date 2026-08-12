@@ -11,11 +11,11 @@ import {
 } from "../../../shared/project";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { PanelIcon } from "./icons";
+import { PanelIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import { ExportBar } from "./ExportBar";
 import { FrameBar } from "./FrameBar";
-import { Inspector } from "./Inspector";
+import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { Preview } from "./Preview";
 import {
@@ -142,6 +142,15 @@ export function Editor() {
           >
             <PanelIcon open={panelOpen} />
           </button>
+          <button
+            type="button"
+            title="Move this recording to the Trash"
+            aria-label="Move this recording to the Trash"
+            className="no-drag grid size-7 place-items-center rounded-lg text-editor-muted hover:bg-cut/20 hover:text-editor-fg [&_svg]:size-4"
+            onClick={() => void window.prequel.editor.deleteRecording(session.dir)}
+          >
+            <TrashIcon />
+          </button>
           <ExportBar state={exportState} />
         </>
       }
@@ -180,7 +189,20 @@ export function Editor() {
             />
           </div>
 
-          {panelOpen && (
+          {/* Always mounted, so it has something to animate out of. Width is
+              what moves rather than a transform: the composition beside it has
+              to take the space back as it goes, and a panel that slid away
+              leaving a gap would be worse than one that simply vanished.
+              `overflow-hidden` keeps the content its full width throughout, so
+              nothing reflows on the way past. */}
+          <div
+            aria-hidden={!panelOpen}
+            className={cn(
+              "flex flex-none overflow-hidden transition-[width,opacity] duration-200 ease-out",
+              panelOpen ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
+            style={{ width: panelOpen ? PANEL_WIDTH : 0 }}
+          >
             <Inspector
               state={state}
               dispatch={dispatch}
@@ -223,7 +245,7 @@ export function Editor() {
                 }
               }}
             />
-          )}
+          </div>
         </div>
 
         <PlaybackControls

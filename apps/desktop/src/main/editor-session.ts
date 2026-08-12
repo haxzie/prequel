@@ -11,6 +11,8 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { EditorSession, TrackMedia } from "../shared/contract.js";
+import { dialog, shell, type BrowserWindow } from "electron";
+
 import type { Manifest, TrackKind } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
 import type { CursorLayer } from "../shared/contract.js";
@@ -18,6 +20,7 @@ import { CURSOR_FILE_NAME, CURSOR_HOTSPOT } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import { FALLBACK_BACKGROUND } from "../shared/project.js";
 import { loadProject } from "./editor-project.js";
+import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
 import { getRecorder, type TrackProbe } from "./recorder.js";
 import { ensureWallpaper } from "./wallpaper.js";
@@ -69,6 +72,39 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     cursor: cursorLayer(dir, manifest),
     project: await withBackground(dir, loadProject(dir, manifest.id, manifest.duration)),
   };
+}
+
+/**
+ * Moves a whole recording to the Trash, and closes the window editing it.
+ *
+ * The Trash rather than `rm -rf`: this is minutes of someone's work and every
+ * file that made it, and an undo that only Finder can offer is worth far more
+ * than the tidiness of removing it outright.
+ *
+ * Confirmed first, and modal to the editor's own window so it cannot be missed
+ * behind it. Returns false when declined, so the caller can tell that from a
+ * failure.
+ */
+export async function deleteRecording(dir: string, window: BrowserWindow | null): Promise<boolean> {
+  const { response } = await dialog.showMessageBox(window ?? undefined!, {
+    type: "warning",
+    buttons: ["Move to Trash", "Cancel"],
+    defaultId: 1,
+    // Escape and the close button both land on Cancel: the destructive choice
+    // should never be the one a stray keypress takes.
+    cancelId: 1,
+    message: `Delete "${basename(dir)}"?`,
+    detail:
+      "The recording, its edit and everything exported from it move to the Trash. " +
+      "You can put them back from there.",
+  });
+
+  if (response !== 0) return false;
+
+  await shell.trashItem(dir);
+  log("info", `moved ${dir} to the Trash`);
+  window?.close();
+  return true;
 }
 
 /**

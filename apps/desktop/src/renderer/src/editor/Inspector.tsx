@@ -232,6 +232,9 @@ const PANEL =
   "m-2 ml-0 flex w-80 flex-none overflow-hidden rounded-xl border border-editor-line " +
   "bg-editor-panel shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
 
+/** The width the panel occupies when open: its own, plus the margin beside it. */
+export const PANEL_WIDTH = "21rem";
+
 /** The inspector's four destinations. */
 type CategoryId = "layout" | "camera" | "audio" | "cursor";
 

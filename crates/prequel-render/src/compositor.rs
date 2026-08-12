@@ -410,6 +410,10 @@ impl Compositor {
                     return Ok(None);
                 };
 
+                // Sized by where it sits on the picture, so a tilted frame's
+                // pointer grows towards the near edge with everything on it.
+                let size = size * point.scale;
+
                 Some((
                     Uniforms {
                         // The hotspot is the point that lands on the position:
@@ -418,8 +422,8 @@ impl Compositor {
                         rect: [
                             (point.x - hotspot.x * size) as f32,
                             (point.y - hotspot.y * size) as f32,
-                            *size as f32,
-                            *size as f32,
+                            size as f32,
+                            size as f32,
                         ],
                         mode: MODE_IMAGE,
                         ..base
