@@ -29,6 +29,14 @@ use crate::cursor::Region;
 /// in because both take typing; `AXStaticText` is deliberately out.
 const TEXT_ROLES: [&str; 4] = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"];
 
+/// How often a field that has not moved is recorded again.
+///
+/// Without this the track says only *when focus arrived somewhere*, and a
+/// minute of typing into one box is a single sample. Anything downstream then
+/// has no way to tell it from a field that was clicked once and abandoned —
+/// which is exactly the difference between holding a zoom and dropping it.
+const HEARTBEAT_NS: MediaTime = 1_000_000_000;
+
 /// How long to wait for an application to answer before giving up on it.
 ///
 /// Short on purpose. A missed sample is a zoom that holds its last position for
@@ -88,9 +96,12 @@ impl TypingTrack {
             height: rect.size.height / self.region.height,
         };
 
-        // A caret blinking in a field that has not moved is not news. Compared
-        // before the sample is stored so a still field costs one comparison.
+        // A caret blinking in a field that has not moved is not news — but a
+        // field that is *still* focused is, once a second. That heartbeat is
+        // what turns "focus arrived here" into "text was going in here from
+        // then until then", which is the only way to know how long to hold.
         if let Some(previous) = self.last
+            && at.saturating_sub(previous.at) < HEARTBEAT_NS
             && (previous.x - sample.x).abs() < f64::EPSILON
             && (previous.y - sample.y).abs() < f64::EPSILON
             && (previous.width - sample.width).abs() < f64::EPSILON

@@ -75,10 +75,26 @@ describe("clustering", () => {
     }
   });
 
-  it("declines a cluster too long to be a shot", () => {
+  it("declines a run of clicks too long to be a shot", () => {
     // Twenty seconds of steady clicking is the whole video, not a moment in it.
     const steady = Array.from({ length: 20 }, (_, index) => click(10 + index));
     expect(autoZooms(steady, OPTIONS)).toEqual([]);
+  });
+
+  it("holds through a long stretch of typing", () => {
+    // Filling in a form is one continuous act. Cutting away in the middle of it
+    // and coming back is worse than either holding or never zooming.
+    const filling = Array.from({ length: 20 }, (_, index) => typing(10 + index));
+    const zooms = autoZooms(filling, OPTIONS);
+
+    expect(zooms).toHaveLength(1);
+    // Right to the last keystroke, not a couple of seconds at the start.
+    expect(zooms[0]!.source.end).toBeGreaterThan(29 * S);
+  });
+
+  it("still lets go of a field left focused for the rest of the recording", () => {
+    const forgotten = Array.from({ length: 90 }, (_, index) => typing(10 + index));
+    expect(autoZooms(forgotten, { duration: 200 * S, hasCursor: true })).toEqual([]);
   });
 });
 

@@ -39,8 +39,21 @@ const LEAD_OUT = 1.1 * NS;
 /** Shorter than this and the ease alone would fill it. */
 const MIN_SPAN = 1.2 * NS;
 
-/** Longer than this and it stops being a shot and becomes the whole video. */
-const MAX_SPAN = 9 * NS;
+/**
+ * Longer than this and a click cluster stops being a shot and becomes the whole
+ * video.
+ */
+const MAX_CLICK_SPAN = 9 * NS;
+
+/**
+ * Typing gets much longer, because it is one continuous act.
+ *
+ * Someone filling in a form is doing a single thing for as long as it takes,
+ * and cutting away in the middle of it to come back afterwards is worse than
+ * either holding or never zooming at all. The cap exists only so a field left
+ * focused for the rest of a recording does not zoom the rest of the recording.
+ */
+const MAX_TYPING_SPAN = 45 * NS;
 
 /** Nothing closer together than this is worth two separate zooms. */
 const MIN_GAP = 0.6 * NS;
@@ -77,9 +90,18 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
     const first = group[0]!.at;
     const last = group[group.length - 1]!.at;
 
+    const typed = group.filter((moment) => moment.kind === "typing").length;
+    const typing = typed > group.length / 2;
+
     const start = Math.max(0, first - LEAD_IN);
     const end = Math.min(options.duration, Math.max(last + LEAD_OUT, start + MIN_SPAN));
-    if (end - start < MIN_SPAN || end - start > MAX_SPAN) continue;
+
+    // The zoom runs to the last thing that happened, so typing holds until the
+    // typing stops. That only works because the capture beats once a second
+    // while a field stays focused — without it a minute in one box is a single
+    // sample and this would be a two-second zoom at the start of it.
+    const longest = typing ? MAX_TYPING_SPAN : MAX_CLICK_SPAN;
+    if (end - start < MIN_SPAN || end - start > longest) continue;
 
     // Never over what came before. `sanitiseProject` would drop an overlap
     // anyway, and dropping is a worse answer than not making one.
@@ -87,14 +109,13 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
     if (previous && start < previous.source.end + MIN_GAP) continue;
 
     const centre = middleOf(group);
-    const typed = group.filter((moment) => moment.kind === "typing").length;
 
     zooms.push({
       id: `auto-${String(index)}`,
       source: { start, end },
       // Typing knows exactly which field to frame; a run of clicks is better
       // served by following the pointer, which is where the next one will be.
-      target: typed > group.length / 2 ? "typing" : options.hasCursor ? "cursor" : "region",
+      target: typing ? "typing" : options.hasCursor ? "cursor" : "region",
       x: centre.x,
       y: centre.y,
       level: levelFor(group),

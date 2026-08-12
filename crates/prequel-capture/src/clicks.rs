@@ -131,26 +131,43 @@ pub fn stop(region: Region, to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<
         unsafe { CFRunLoopStop(run_loop) };
     }
 
+    // Drained even when the region is unusable, or the next recording would
+    // inherit this one's presses.
+    let raw = CLICKS
+        .lock()
+        .map(|mut clicks| std::mem::take(&mut *clicks))
+        .unwrap_or_default();
+
+    convert(&raw, region, to_media)
+}
+
+/// Puts raw presses in the recording's terms.
+///
+/// Split out from `stop` so it can be tested without the process-wide buffer —
+/// two tests sharing that buffer race each other, and a test that fails only
+/// when its neighbour runs is worse than no test at all.
+fn convert(
+    raw: &[RawClick],
+    region: Region,
+    to_media: impl Fn(u64) -> Option<MediaTime>,
+) -> Vec<ClickSample> {
     if region.width <= 0.0 || region.height <= 0.0 {
         return Vec::new();
     }
 
-    let raw = CLICKS
-        .lock()
-        .map(|mut c| std::mem::take(&mut *c))
-        .unwrap_or_default();
-
-    raw.into_iter()
+    raw.iter()
         .filter_map(|click| {
             let at = to_media(click.host)?;
             let x = (click.x - region.x) / region.width;
             let y = (click.y - region.y) / region.height;
 
-            // Outside the frame is outside the recording.
-            (0.0..=1.0).contains(&x).then_some(())?;
-            (0.0..=1.0).contains(&y).then_some(())?;
-
-            Some(ClickSample { at, x, y })
+            // Outside the frame is outside the recording — a press on another
+            // display, or outside a cropped region.
+            ((0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y)).then_some(ClickSample {
+                at,
+                x,
+                y,
+            })
         })
         .collect()
 }
@@ -236,53 +253,45 @@ mod tests {
         height: 500.0,
     };
 
-    #[test]
-    fn stopping_without_starting_is_harmless() {
-        assert_eq!(stop(REGION, |_| Some(0)), vec![]);
-    }
-
-    #[test]
-    fn a_region_with_no_area_records_nothing() {
-        CLICKS.lock().unwrap().push(RawClick {
-            host: 1,
-            x: 10.0,
-            y: 10.0,
-        });
-
-        assert_eq!(stop(Region::default(), |_| Some(0)), vec![]);
-        // Drained even so, or the next recording would inherit them.
-        CLICKS.lock().unwrap().clear();
-    }
-
-    #[test]
-    fn drops_a_press_outside_the_captured_area() {
-        // A click on another display, or outside a cropped region. It happened,
-        // but not in this recording.
-        CLICKS.lock().unwrap().push(RawClick {
-            host: 1,
-            x: 4000.0,
-            y: 10.0,
-        });
-
-        assert_eq!(stop(REGION, |_| Some(0)), vec![]);
+    fn raw(x: f64, y: f64) -> RawClick {
+        RawClick { host: 7, x, y }
     }
 
     #[test]
     fn stores_a_press_as_a_fraction_of_the_region() {
-        CLICKS.lock().unwrap().push(RawClick {
-            host: 7,
-            x: 500.0,
-            y: 250.0,
-        });
-
-        let clicks = stop(REGION, |host| Some(host as MediaTime * 2));
         assert_eq!(
-            clicks,
+            convert(&[raw(500.0, 250.0)], REGION, |host| Some(
+                host as MediaTime * 2
+            )),
             vec![ClickSample {
                 at: 14,
                 x: 0.5,
                 y: 0.5
             }]
         );
+    }
+
+    #[test]
+    fn drops_a_press_outside_the_captured_area() {
+        // A press on another display, or outside a cropped region. It happened,
+        // but not in this recording.
+        assert!(convert(&[raw(4000.0, 10.0)], REGION, |_| Some(0)).is_empty());
+        assert!(convert(&[raw(10.0, -50.0)], REGION, |_| Some(0)).is_empty());
+    }
+
+    #[test]
+    fn drops_a_press_with_no_place_on_the_timeline() {
+        // Before the first frame, so there is no media time it belongs to.
+        assert!(convert(&[raw(10.0, 10.0)], REGION, |_| None).is_empty());
+    }
+
+    #[test]
+    fn a_region_with_no_area_records_nothing() {
+        assert!(convert(&[raw(10.0, 10.0)], Region::default(), |_| Some(0)).is_empty());
+    }
+
+    #[test]
+    fn stopping_without_starting_is_harmless() {
+        assert_eq!(stop(REGION, |_| Some(0)), vec![]);
     }
 }
