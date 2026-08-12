@@ -31,6 +31,15 @@ const NS_PER_SECOND = 1_000_000_000;
 
 /** Row geometry. */
 const RULER_H = 24;
+/**
+ * Clear space above the ruler's marks.
+ *
+ * Part of the ruler rather than padding on the strip around it. As padding it
+ * was a dozen pixels of nothing between the panel's edge and the first thing
+ * that responds — close enough to the ticks to aim at, and dead. Inside the
+ * ruler it seeks like the rest of it.
+ */
+const RULER_PAD = 12;
 /** Space under the ruler, so its labels do not sit on top of the clips. */
 const TRACK_GAP = 10;
 const CLIP_H = 38;
@@ -232,11 +241,8 @@ export function TimelineStrip({
   return (
     // Padded to match the transport above it, now that there is no track
     // column holding the strip off the window edge.
-    <div className="flex flex-none flex-col border-t border-editor-line px-4 pt-3 pb-4">
-      <div
-        ref={attachScroller}
-        className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
-      >
+    <div className="flex flex-none flex-col border-t border-editor-line px-4 pb-4">
+      <div ref={attachScroller} className="no-scrollbar relative overflow-x-auto overflow-y-hidden">
         <div className="relative" style={{ width: contentWidth }}>
           <Ruler
             duration={duration}
@@ -377,7 +383,7 @@ function Ruler({
       // a line as well boxes the ruler in rather than letting the ticks read as
       // marks on the timeline itself.
       className="relative cursor-default select-none"
-      style={{ height: RULER_H }}
+      style={{ height: RULER_H + RULER_PAD }}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
         onSeek(event.clientX);
@@ -386,30 +392,35 @@ function Ruler({
         if (event.currentTarget.hasPointerCapture(event.pointerId)) onSeek(event.clientX);
       }}
     >
-      {marks.map((mark) => (
-        <div
-          key={mark.at}
-          className="absolute inset-y-0"
-          style={{ left: `${(mark.at / Math.max(duration, 1)) * 100}%` }}
-        >
-          {/* Hung from the top edge, so every tick starts on the same line and
-              the ruler reads as a scale rather than as a row of stubs. */}
+      {/* The marks sit in the lower part of the box; the space above them is
+          the same control, just empty. */}
+      <div className="absolute inset-x-0 bottom-0" style={{ height: RULER_H }}>
+        {marks.map((mark) => (
           <div
-            className={cn(
-              "absolute top-0 w-px",
-              mark.major ? "h-2.5 bg-white/25" : "h-1.5 bg-white/12",
-            )}
-          />
+            key={mark.at}
+            className="absolute inset-y-0"
+            style={{ left: `${(mark.at / Math.max(duration, 1)) * 100}%` }}
+          >
+            {/* Hung from the top edge, so every tick starts on the same line
+                and the ruler reads as a scale rather than a row of stubs. */}
+            <div
+              className={cn(
+                "absolute top-0 w-px",
+                mark.major ? "h-2.5 bg-white/25" : "h-1.5 bg-white/12",
+              )}
+            />
 
-          {/* Under its own tick rather than beside it at the top: a label above
-              the mark it belongs to reads as belonging to the one before. */}
-          {mark.label && (
-            <span className="absolute bottom-0 left-1 text-[9px] leading-none tabular-nums text-editor-muted">
-              {mark.label}
-            </span>
-          )}
-        </div>
-      ))}
+            {/* Under its own tick rather than beside it at the top: a label
+                above the mark it belongs to reads as belonging to the one
+                before. */}
+            {mark.label && (
+              <span className="absolute bottom-0 left-1 text-[9px] leading-none tabular-nums text-editor-muted">
+                {mark.label}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -546,18 +557,18 @@ function Clip({
           only appears once the pointer is already on it has to be discovered
           by accident. */}
       <>
-          <Handle
-            edge="start"
-            selected={selected}
-            onPointerDown={grab("start")}
-            onPointerMove={move("start")}
-          />
-          <Handle
-            edge="end"
-            selected={selected}
-            onPointerDown={grab("end")}
-            onPointerMove={move("end")}
-          />
+        <Handle
+          edge="start"
+          selected={selected}
+          onPointerDown={grab("start")}
+          onPointerMove={move("start")}
+        />
+        <Handle
+          edge="end"
+          selected={selected}
+          onPointerDown={grab("end")}
+          onPointerMove={move("end")}
+        />
       </>
     </div>
   );
