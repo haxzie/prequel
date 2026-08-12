@@ -47,17 +47,23 @@ export function Slider({
 
   return (
     <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
-      <div className="relative h-7 flex-1 overflow-hidden rounded-lg bg-white/10">
+      <div className="group relative h-5 flex-1 overflow-hidden rounded-md bg-white/10">
         <div
-          className="absolute inset-y-0 left-0 rounded-lg bg-editor-accent transition-[width] duration-75"
+          className="absolute inset-y-0 left-0 rounded-md bg-white transition-[width] duration-75"
           // A floor, so the fill keeps its rounded end at zero instead of
           // collapsing into a sliver against the left edge.
           style={{ width: `max(0.75rem, ${fill}%)` }}
         >
-          {/* Inside the fill rather than on top of the boundary: on the fill it
-              is always legible, and it is the only part of a bar this plain
-              that says it can be dragged. */}
-          <span className="absolute top-1/2 right-1.5 h-3 w-0.5 -translate-y-1/2 rounded-full bg-editor-bg/40" />
+          {/* Inside the fill rather than on top of the boundary: on white it is
+              always legible, and it is the only part of a bar this plain that
+              says it can be dragged. Green on hover — the grip is the thing
+              being reached for, so it is the thing that should answer. */}
+          <span
+            className={cn(
+              "absolute top-1/2 right-1.5 h-2.5 w-0.5 -translate-y-1/2 rounded-full transition-colors",
+              disabled ? "bg-editor-bg/40" : "bg-editor-bg/40 group-hover:bg-toggle",
+            )}
+          />
         </div>
 
         <input
