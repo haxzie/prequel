@@ -6,6 +6,7 @@ import { env } from "@prequel/env";
 
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
+import { Wash } from "@/components/Wash";
 import { Rails } from "@/components/Rails";
 import { SITE } from "@/lib/site";
 
@@ -75,6 +76,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${sans.variable} ${mono.variable} ${serif.variable} ${script.variable}`}
     >
       <body>
+        <Wash />
         <Rails />
         <Nav />
         <main>{children}</main>

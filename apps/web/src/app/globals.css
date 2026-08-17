@@ -69,6 +69,47 @@
   --animate-cursor-drift: cursor-drift 5.5s ease-in-out infinite;
   --animate-converge: converge 5s ease-in-out infinite;
 
+  /* The wash at the top of the page. Three different periods, none a multiple of
+     another, so the circles never resynchronise into a loop you can see — what
+     changes is where they overlap, and so which hue the mix reads as. */
+  --animate-drift-a: drift-a 26s ease-in-out infinite;
+  --animate-drift-b: drift-b 34s ease-in-out infinite;
+  --animate-drift-c: drift-c 30s ease-in-out infinite;
+
+  /* The three hues sliding across each other. Modest distances on purpose: this
+     is meant to read as light shifting rather than as shapes moving, and a
+     hundred-pixel blur turns a small translation into a large change in the
+     blend. Transform only, so it stays on the compositor. */
+  @keyframes drift-a {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(90px, 40px) scale(1.12);
+    }
+  }
+
+  @keyframes drift-b {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1.06);
+    }
+    50% {
+      transform: translate(-70px, 34px) scale(0.94);
+    }
+  }
+
+  @keyframes drift-c {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(-60px, 52px) scale(1.1);
+    }
+  }
+
   /* Pushing in on the work. */
   @keyframes zoom-push {
     0%,
@@ -257,6 +298,15 @@
   }
 }
 
+/* The wash is decoration, so it stops entirely rather than slowing down. One rule
+   on the container's children rather than three utilities, since all three
+   animations want the same answer. */
+@media (prefers-reduced-motion: reduce) {
+  [data-wash] > * {
+    animation: none;
+  }
+}
+
 @utility brand-gradient {
   background-image: linear-gradient(115deg, var(--brand-from), var(--brand-to));
 }
@@ -277,9 +327,24 @@
     scroll-behavior: smooth;
   }
 
+  html {
+    /* No rubber-band at either end. On the root rather than on `body`, because
+       the viewport takes its overscroll behaviour from the root element and a
+       rule on `body` is simply ignored. */
+    overscroll-behavior: none;
+  }
+
   body {
     margin: 0;
     background: var(--bg);
+    /* So a negative-z child paints *above* this background instead of beneath
+       it. Without a stacking context here, `Wash`'s `-z-10` joins the root
+       context and is painted before the body background covers it — the wash
+       simply does not appear, with nothing in the DOM to suggest why.
+       `isolation` and not `position: relative`, because it creates the stacking
+       context without also making this the containing block for the fixed
+       rails. */
+    isolation: isolate;
     color: var(--fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
