@@ -16,8 +16,7 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
-use prequel_encode::VideoCodec;
-use prequel_render::{AudioMix, CancelFlag, ExportRequest, RenderPlan, SliceRender};
+use prequel_render::{AudioMix, CancelFlag, ExportRequest, OutputFormat, RenderPlan, SliceRender};
 
 /// One kept span of the recording, as the editor describes it.
 #[napi(object)]
@@ -42,8 +41,8 @@ pub struct ExportOptions {
     pub width: u32,
     pub height: u32,
     pub fps: u32,
-    /// `"h264"` or `"hevc"`.
-    pub codec: String,
+    /// `"h264"`, `"hevc"` or `"gif"`.
+    pub format: String,
     pub slices: Vec<ExportSlice>,
     /// Per-track offsets from the manifest, in nanoseconds. The only place a
     /// late start is recorded — every session file is written zero-based.
@@ -181,10 +180,13 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
         width: options.width,
         height: options.height,
         fps: options.fps,
-        codec: if options.codec == "hevc" {
-            VideoCodec::Hevc
-        } else {
-            VideoCodec::H264
+        // Anything unrecognised falls back to H.264 rather than failing: the
+        // format is a preference, and refusing to export because of one is a
+        // worse outcome than exporting in the format everything can play.
+        format: match options.format.as_str() {
+            "hevc" => OutputFormat::Mp4Hevc,
+            "gif" => OutputFormat::Gif,
+            _ => OutputFormat::Mp4,
         },
         slices,
         screen_offset: options.screen_offset.max(0.0) as u64,

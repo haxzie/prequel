@@ -19,7 +19,7 @@
 
 use std::ffi::c_void;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 
 use prequel_encode::host_now;
 use prequel_session::MediaTime;
@@ -56,16 +56,44 @@ static CLICKS: Mutex<Vec<RawClick>> = Mutex::new(Vec::new());
 /// The tap thread's run loop, so it can be stopped from the outside.
 static RUN_LOOP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+/// The tap itself, so the callback can switch it back on.
+///
+/// macOS disables a tap that takes too long to answer an event, and delivers a
+/// `kCGEventTapDisabledByTimeout` notification instead. Until `CGEventTapEnable`
+/// is called again the tap is **dead** — it keeps its run loop source and
+/// reports nothing, so there is no error anywhere and every press after that
+/// moment is simply missing from the recording.
+///
+/// The timeout is not generous and the window server counts the whole delivery
+/// chain, so a busy machine trips it on an ordinary recording. This is the first
+/// thing to suspect when a take comes back with too few clicks in it.
+static TAP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// How many times the window server switched the tap off during a recording.
+///
+/// Reported at the end rather than per event, because the interesting number is
+/// whether it happened at all. A take that comes back with one click and a
+/// non-zero count here was losing presses; one click and a zero count means one
+/// click, and the difference is otherwise unknowable after the fact.
+static DISABLES: AtomicU32 = AtomicU32::new(0);
+
 /// Starts listening for presses. Returns false if the tap could not be made.
 ///
-/// Needs no permission of its own: a listen-only *mouse* tap is created even
-/// with Accessibility switched off, unlike a keyboard tap, which needs Input
-/// Monitoring. Verified rather than assumed — `CGEventTapCreate` returns null
-/// when it is refused, which is what this reports.
+/// **A successful return does not mean presses will arrive.** `CGEventTapCreate`
+/// hands back a working tap to a process that has not been permitted to observe
+/// input, and that tap then receives only events aimed at this process — which
+/// during a recording is almost none of them. Nothing fails, nothing is logged
+/// by the system, and the take comes back with one or two clicks in it.
+///
+/// This was documented here as needing no permission at all. It does. The
+/// counter in `stop` is what makes the difference visible: a recording whose
+/// `pressed` count is far below what the user actually did has not lost the
+/// presses, it never saw them.
 pub fn start() -> bool {
     if let Ok(mut clicks) = CLICKS.lock() {
         clicks.clear();
     }
+    DISABLES.store(0, Ordering::Relaxed);
 
     let (started, ready) = std::sync::mpsc::channel();
 
@@ -97,12 +125,18 @@ pub fn start() -> bool {
             CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
             CGEventTapEnable(tap, true);
 
+            // Published before the loop runs, so the first notification the
+            // callback sees already has something to re-enable.
+            TAP.store(tap as *mut c_void, Ordering::Release);
             RUN_LOOP.store(run_loop as *mut c_void, Ordering::Release);
             let _ = started.send(true);
 
             // Returns when `stop` stops it.
             CFRunLoopRun();
 
+            // Cleared before the release below: the callback reads this pointer,
+            // and one that has been freed is worse than one that is missing.
+            TAP.store(std::ptr::null_mut(), Ordering::Release);
             RUN_LOOP.store(std::ptr::null_mut(), Ordering::Release);
             CFRunLoopRemoveSource(run_loop, source, kCFRunLoopCommonModes);
             CFRelease(source);
@@ -138,7 +172,19 @@ pub fn stop(region: Region, to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<
         .map(|mut clicks| std::mem::take(&mut *clicks))
         .unwrap_or_default();
 
-    convert(&raw, region, to_media)
+    let samples = convert(&raw, region, to_media);
+
+    // Both numbers, because the gap between them is the other way presses go
+    // missing: a press outside the captured window, or one whose host time
+    // falls in a paused stretch, is dropped by `convert` without a word.
+    tracing::info!(
+        "captured {} clicks ({} pressed, {} tap disables)",
+        samples.len(),
+        raw.len(),
+        DISABLES.load(Ordering::Relaxed),
+    );
+
+    samples
 }
 
 /// Puts raw presses in the recording's terms.
@@ -178,10 +224,31 @@ fn convert(
 /// is what is passed on to whatever was actually clicked.
 extern "C" fn on_event(
     _proxy: *const c_void,
-    _kind: u32,
+    kind: u32,
     event: *const c_void,
     _user: *mut c_void,
 ) -> *const c_void {
+    // Not a press at all, but the window server saying it has switched the tap
+    // off. Turning it back on is the entire fix, and skipping it costs every
+    // click for the rest of the recording. See `TAP`.
+    if kind == EVENT_TAP_DISABLED_BY_TIMEOUT || kind == EVENT_TAP_DISABLED_BY_USER_INPUT {
+        DISABLES.fetch_add(1, Ordering::Relaxed);
+        let tap = TAP.load(Ordering::Acquire);
+        if !tap.is_null() {
+            // Safety: cleared before the tap is released, so a non-null pointer
+            // here is still live.
+            unsafe { CGEventTapEnable(tap, true) };
+        }
+        return event;
+    }
+
+    // The mask should mean nothing else arrives, but a notification already
+    // proved otherwise, and `CGEventGetLocation` on one of those returns a
+    // position that would be recorded as a click nobody made.
+    if kind != EVENT_LEFT_MOUSE_DOWN && kind != EVENT_RIGHT_MOUSE_DOWN {
+        return event;
+    }
+
     // Safety: the event is owned by the caller and only read here.
     let point = unsafe { CGEventGetLocation(event) };
 
@@ -210,6 +277,13 @@ const HEAD_INSERT: u32 = 0;
 const LISTEN_ONLY: u32 = 1;
 const EVENT_LEFT_MOUSE_DOWN: u32 = 1;
 const EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
+
+/// `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput`.
+///
+/// Delivered to the callback as event *types*, outside the mask, and the only
+/// notice given that the tap has stopped working.
+const EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
+const EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {

@@ -29,7 +29,7 @@ mod export;
 mod image;
 mod reader;
 
-pub use export::{CancelFlag, ExportRequest, ExportSummary, Progress, Stage, export};
+pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};
 pub use plan::{Paint, PlanItem, PlanSource, Rect, RenderPlan, Shape, Size};
 pub use timeline::{AudioMix, SliceRender, Timeline};
 

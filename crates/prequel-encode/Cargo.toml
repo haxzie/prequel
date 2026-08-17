@@ -22,3 +22,8 @@ cidre = { workspace = true, features = [
 ] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+# GIF encoding, including the NeuQuant palette pass through its default
+# `color_quant` feature. No Apple framework writes GIF, so this is the one
+# format the app encodes in software.
+gif = "0.13"

@@ -450,10 +450,20 @@ impl ScreenRecorder {
             cursor: CursorTrack::new(sampled),
         }));
 
-        // No permission of its own, so it simply starts. A tap that cannot be
-        // made is logged and the recording carries on without clicks.
+        // A tap that cannot be made is logged and the recording carries on
+        // without clicks.
         if !crate::clicks::start() {
             tracing::warn!("could not tap mouse events; no clicks will be recorded");
+        } else if !crate::accessibility_trusted() {
+            // The tap exists and will still deliver nothing worth having. Said
+            // here because it is the difference between an automatic pass that
+            // found one moment and one that had one moment to find — and from
+            // the outside those look identical.
+            tracing::warn!(
+                "not trusted to observe input; the click tap will see almost nothing and \
+                 automatic zooms will be sparse. Grant Prequel Accessibility and Input \
+                 Monitoring in System Settings ▸ Privacy & Security."
+            );
         }
 
         let typing = Arc::new(Mutex::new(TypingTrack::new(sampled)));

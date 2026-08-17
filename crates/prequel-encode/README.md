@@ -1,12 +1,19 @@
 # prequel-encode
 
-Hardware video and audio encoding to MP4, plus reading a file's timeline back.
+Hardware video and audio encoding to MP4, software encoding to GIF, plus
+reading a file's timeline back.
 
 Uses `AVAssetWriter` rather than driving `VTCompressionSession` by hand. The
 writer sits on VideoToolbox for the actual encode — so this is still hardware
 H.264/HEVC on Apple Silicon — but it also handles MP4 muxing, interleaving and
 moov-atom placement, which is a meaningful amount of fiddly work to get right
 for no benefit.
+
+`GifWriter` is the exception and runs on the CPU: GIF is a 256-colour palette
+format with LZW compression, which no Apple encoder produces. It takes the same
+`CVPixelBuffer` the compositor hands the video writer, quantises each frame on
+its own — a shared palette bands both a light document and a dark terminal —
+and writes a fixed per-frame delay in centiseconds.
 
 Both writers have a **live** and an **offline** mode, and the difference is not
 cosmetic. Live sets `expectsMediaDataInRealTime` and drops a sample the encoder

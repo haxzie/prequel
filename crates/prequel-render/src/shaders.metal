@@ -41,7 +41,10 @@ struct Uniforms {
     float weight;
     // Non-zero mirrors the sampled image horizontally.
     uint mirror;
-    float _pad;
+    // How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
+    // In place of the tail padding this struct already carried, so every other
+    // field keeps the offset it had.
+    float vignette;
 };
 
 struct Vertex {
@@ -111,6 +114,29 @@ static float shape_distance(float2 p, float2 half_size, float radius, float n) {
     float value = pow(q.x, n) + pow(q.y, n);
     float f = pow(value, 1.0 / n) - 1.0;
     return f * radius;
+}
+
+/// How much this pixel keeps, given how far it is from the middle of the frame.
+///
+/// Measured against the frame, not the picture: a zoom pushes the picture past
+/// the frame's edges, and a vignette that followed the picture would drift off
+/// screen exactly when it was doing the most work. Normalised so a corner reads
+/// 1 whatever the aspect ratio, or a 9:16 export would be darker than a 16:9 one
+/// at the same setting.
+///
+/// Verbatim from `vignette` in `apps/desktop/src/renderer/src/editor/webgl.ts`.
+/// Both sides have to agree to the pixel: this is shading, not geometry, so the
+/// plan cannot carry the answer and each rasteriser works it out itself.
+static float vignette(constant Uniforms &u, float2 screen) {
+    if (u.vignette <= 0.0) {
+        return 1.0;
+    }
+
+    float2 fromCentre = screen / u.frame - 0.5;
+    float away = length(fromCentre) / 0.7071068;
+    // Starting well inside the corner, so the middle of the frame is untouched
+    // and the falloff has room to read as shading rather than as a hard edge.
+    return 1.0 - u.vignette * smoothstep(0.35, 1.0, away);
 }
 
 // The picture, softened by how far this pixel is from what is in focus.
@@ -188,7 +214,7 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // applied first, so it flips the crop rather than moving it.
         uv = u.src.xy + uv * u.src.zw;
         float4 sampled = sample_focused(image, smp, u, uv, in.screen);
-        return float4(sampled.rgb, sampled.a * coverage);
+        return float4(sampled.rgb * vignette(u, in.screen), sampled.a * coverage);
     }
 
     if (u.mode == 1) {

@@ -55,7 +55,11 @@ struct Uniforms {
     mode: u32,
     weight: f32,
     mirror: u32,
-    _pad: f32,
+    /// How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
+    ///
+    /// In place of the tail padding this struct already carried, so the layout
+    /// is byte-for-byte what it was and the MSL side needs no re-alignment.
+    vignette: f32,
 }
 
 const MODE_FILL: u32 = 0;
@@ -263,7 +267,9 @@ impl Compositor {
             mode: MODE_FILL,
             weight: 0.0,
             mirror: 0,
-            _pad: 0.0,
+            // No vignette unless the item being drawn asks for one, which only a
+            // zoomed picture does.
+            vignette: 0.0,
         };
 
         Ok(match item {
@@ -327,7 +333,7 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad, _) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad, _, _) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: [
@@ -367,7 +373,7 @@ impl Compositor {
 
                 alive.push(self.texture_for(buffer, None)?);
                 // A zoom moves, scales and tilts the whole picture over time.
-                let (dst, radius, quad, focus) =
+                let (dst, radius, quad, focus, vignette) =
                     rect_at(motion, at as i64, *dst_rect, shape.radius);
 
                 Some((
@@ -378,6 +384,7 @@ impl Compositor {
                         // the whole point: a 16:9 camera cropped to a square
                         // and then sampled edge-to-edge comes out stretched.
                         src: normalised(src_rect, buffer.width(), buffer.height()),
+                        vignette: vignette as f32,
                         focus: focus.map_or([0.0, 0.0, 1.0, 0.0], |f| {
                             [f.x as f32, f.y as f32, f.safe as f32, f.strength as f32]
                         }),
@@ -403,7 +410,7 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad, _) = rect_at(motion, at as i64, *rect, shape.radius);
+                let (rect, radius, quad, _, _) = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: rect_of(&rect),

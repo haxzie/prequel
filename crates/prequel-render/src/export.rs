@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use prequel_encode::{AudioWriter, AudioWriterConfig, VideoCodec, VideoWriter, VideoWriterConfig};
+use cidre::cv;
+use prequel_encode::{
+    AudioWriter, AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig,
+};
 use prequel_session::{MediaTime, TrackKind};
 
 use crate::compositor::Compositor;
@@ -30,6 +33,35 @@ const SAMPLE_RATE: f64 = 48_000.0;
 /// that fast.
 const PROGRESS_EVERY: u64 = 6;
 
+/// What the export is written as.
+///
+/// A format rather than a codec, because GIF is not one: it carries no audio,
+/// it is encoded on the CPU, and its frame timing is centiseconds rather than
+/// a presentation timestamp. Treating it as a third codec would have every one
+/// of those differences appear as a special case somewhere further down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OutputFormat {
+    #[default]
+    Mp4,
+    /// H.265 in an MP4. Smaller at the same quality, less widely playable.
+    Mp4Hevc,
+    Gif,
+}
+
+impl OutputFormat {
+    fn codec(self) -> VideoCodec {
+        match self {
+            Self::Mp4Hevc => VideoCodec::Hevc,
+            _ => VideoCodec::H264,
+        }
+    }
+
+    /// Whether a mixed audio track is written beside the picture.
+    fn carries_audio(self) -> bool {
+        !matches!(self, Self::Gif)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExportRequest {
     pub session_dir: PathBuf,
@@ -37,7 +69,7 @@ pub struct ExportRequest {
     pub width: u32,
     pub height: u32,
     pub fps: u32,
-    pub codec: VideoCodec,
+    pub format: OutputFormat,
     pub slices: Vec<SliceRender>,
     /// Per-track offsets from the manifest, in nanoseconds.
     ///
@@ -144,14 +176,7 @@ fn run(
             Err(err) => tracing::warn!("could not load {}: {err}", full.display()),
         }
     }
-    let mut writer = VideoWriter::create(
-        &request.output,
-        // Offline: no frame may be dropped. Frames come from a file, so the
-        // writer waits for the encoder rather than skipping ahead.
-        &VideoWriterConfig::new(request.width, request.height)
-            .with_codec(request.codec)
-            .offline(),
-    )?;
+    let mut writer = Sink::create(request)?;
 
     let screen_path = request.session_dir.join(TrackKind::Screen.file_name());
     let camera_path = request.session_dir.join(TrackKind::Camera.file_name());
@@ -220,7 +245,9 @@ fn run(
 
     // Same reasoning as the background: a silent export beats no export, and
     // the video is already finished and on disk by this point.
-    if let Err(err) = write_audio(request, &timeline) {
+    if request.format.carries_audio()
+        && let Err(err) = write_audio(request, &timeline)
+    {
         tracing::warn!("could not write the exported audio: {err}");
     }
 
@@ -229,6 +256,77 @@ fn run(
         duration: timeline.duration(),
         output: request.output.clone(),
     })
+}
+
+/// Where composited frames go, whichever format was asked for.
+///
+/// One loop writes both. Splitting the export into a video path and a GIF path
+/// would mean two copies of the reader handling, the cut handling and the
+/// cancellation checks — and the moment those drift, an edit exports correctly
+/// as one format and wrongly as the other.
+enum Sink {
+    Video(VideoWriter),
+    /// Boxed: `GifWriter` carries a reusable megabytes-wide scratch buffer, and
+    /// an enum is as large as its largest variant everywhere it is moved.
+    Gif(Box<GifWriter>),
+}
+
+impl Sink {
+    fn create(request: &ExportRequest) -> Result<Self> {
+        Ok(match request.format {
+            OutputFormat::Gif => Self::Gif(Box::new(GifWriter::create(
+                &request.output,
+                request.width,
+                request.height,
+                request.fps,
+            )?)),
+            format => Self::Video(VideoWriter::create(
+                &request.output,
+                // Offline: no frame may be dropped. Frames come from a file, so
+                // the writer waits for the encoder rather than skipping ahead.
+                &VideoWriterConfig::new(request.width, request.height)
+                    .with_codec(format.codec())
+                    .offline(),
+            )?),
+        })
+    }
+
+    /// Appends one frame.
+    ///
+    /// The timestamp is ignored by GIF, which has no concept of one — every
+    /// frame carries the same fixed delay instead, set when the file was
+    /// opened. That is only correct because the export loop emits frames on an
+    /// even grid; a variable-rate writer would need the delay per frame.
+    fn append(&mut self, image: &cv::PixelBuf, pts: MediaTime) -> Result<()> {
+        match self {
+            Self::Video(writer) => {
+                writer.append(image, pts)?;
+            }
+            Self::Gif(writer) => writer.append(image)?,
+        }
+        Ok(())
+    }
+
+    fn finish_at(self, pts: MediaTime) -> Result<()> {
+        match self {
+            Self::Video(writer) => {
+                writer.finish_at(pts)?;
+            }
+            Self::Gif(writer) => {
+                writer.finish()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn cancel(self) {
+        match self {
+            Self::Video(writer) => writer.cancel(),
+            // Nothing to tell the encoder: the half-written file is removed by
+            // `export` along with every other failure's leftovers.
+            Self::Gif(_) => {}
+        }
+    }
 }
 
 /// Every distinct background image a plan names, in order of first use.
