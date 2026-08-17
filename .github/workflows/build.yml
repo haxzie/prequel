@@ -1,0 +1,121 @@
+name: Build
+
+# Not on pull requests. Packaging produces a 100 MB disk image and takes several
+# minutes of macOS time on every push; the checks in `ci.yml` are what a PR needs.
+# Use the Run workflow button to get a build for a branch on demand.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: macos-15
+    permissions:
+      # Only so the tag path can create the release. Reads are implicit.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `gh release create --generate-notes` writes its changelog from the
+          # commits since the previous tag, which it cannot see in a shallow clone.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The Electron binary is ~100 MB and identical between runs, so it is worth
+      # not fetching twice. Keyed on the version in the lockfile: a bump has to
+      # miss the cache or the build would package the previous Electron.
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      # The version in the tag has to be the version electron-builder will stamp
+      # on the files, because it takes that from package.json and not from the ref.
+      # Without this check, tagging v0.2.0 without bumping first produces a release
+      # full of files called Prequel-0.1.0 — which looks like the wrong build was
+      # published, and is impossible to tell apart from one.
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match apps/desktop version $version."
+            echo "Bump the version, commit it, then tag that commit."
+            exit 1
+          fi
+          echo "tag and version agree on $version"
+
+      # Only the addon, not the whole workspace: the marketing site is not part of
+      # a desktop build, and `package` runs the desktop's own `electron-vite build`
+      # itself. The addon has to exist first — electron-builder packages the
+      # `.node` binary rather than producing it.
+      - name: Build the native addon
+        run: pnpm --filter @prequel/recorder build
+
+      # Nothing here is signed. `identity: null` in electron-builder.yml already
+      # says so, but without this electron-builder still goes looking for a
+      # certificate in a keychain that has none, which is a slow way to be told.
+      #
+      # An unsigned build is ad-hoc signed, so macOS will quarantine it on another
+      # machine. That is the honest state of this app today — see the note in
+      # electron-builder.yml about needing a Developer ID.
+      - name: Package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: pnpm --filter @prequel/desktop package
+
+      - name: Name the build
+        id: name
+        run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Kept for every run, tagged or not, so a build of main can be downloaded
+      # and opened without cutting a release for it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prequel-${{ steps.name.outputs.version }}-${{ github.sha }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error
+          # A disk image compresses no further, and these are ~100 MB each.
+          compression-level: 0
+          retention-days: 14
+
+      # `gh` rather than a third-party action: it is already on the runner and
+      # authenticated by the token, so this is one less thing to trust.
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            apps/desktop/release/*.dmg \
+            apps/desktop/release/*.zip \
+            --title "Prequel $GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

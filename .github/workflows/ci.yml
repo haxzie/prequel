@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So a run can be retried without pushing an empty commit.
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run pointless, and macOS
+# minutes bill at ten times the Linux rate — an abandoned run is worth cancelling.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Formatting needs no toolchain and no Apple framework, so it runs on the cheap
+  # image and fails in under a minute rather than behind a macOS build.
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm format:check
+
+  checks:
+    # macOS 15 on arm64, which is the only thing this ships for: the capture core
+    # is ScreenCaptureKit, AVFoundation and Metal, so none of it builds elsewhere.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `ffprobe` is not on the macOS image, and the encoder's tests shell out to
+      # it to check that what was written is actually playable. Without it those
+      # tests fail rather than skip.
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      # Seeds `.env` from `.env.example` through the root `prepare` script, which
+      # is what makes the env schema resolve without any secrets in CI.
+      - run: pnpm install --frozen-lockfile
+
+      # Builds the native addon as well as the apps: `@prequel/recorder` emits
+      # `index.d.ts` from the Rust, and the desktop typecheck reads it.
+      - run: pnpm build
+
+      - run: pnpm typecheck
+
+      - name: Test (JavaScript)
+        run: pnpm turbo run test
+
+      # Not `-D warnings`. Two warnings already stand in `prequel-capture` — two
+      # extern declarations that disagree with the SDK's own signatures — and
+      # failing on them would mean this job could never pass until they are fixed.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+      # The live capture tests skip themselves here rather than failing: hosted
+      # runners can never hold a Screen Recording grant, and the tests check for
+      # it. What does run is every pure test plus the Metal golden-pixel renders.
+      - name: Test (Rust)
+        run: cargo test --workspace
