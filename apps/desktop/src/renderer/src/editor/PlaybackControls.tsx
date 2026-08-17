@@ -2,7 +2,15 @@ import type { Dispatch } from "react";
 
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
-import { ScissorsIcon, PauseIcon, PlayIcon, SkipEndIcon, SkipStartIcon, TrashIcon } from "./icons";
+import {
+  ScissorsIcon,
+  PauseIcon,
+  PlayIcon,
+  SkipEndIcon,
+  SkipStartIcon,
+  TrashIcon,
+  UndoIcon,
+} from "./icons";
 import type { EditorAction } from "./state";
 import type { EditorPlayback } from "./useEditorPlayback";
 
@@ -26,8 +34,10 @@ export function PlaybackControls({
   media,
   canSplit,
   canDelete,
+  canUndo,
   onSplit,
   onDelete,
+  onUndo,
   dispatch,
 }: {
   media: EditorPlayback;
@@ -35,8 +45,11 @@ export function PlaybackControls({
   canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
   canDelete: boolean;
+  /** The timeline has been changed at least once, so there is a step back. */
+  canUndo: boolean;
   onSplit: () => void;
   onDelete: () => void;
+  onUndo: () => void;
   dispatch: Dispatch<EditorAction>;
 }) {
   const { playback, playing, duration, onInteract } = media;
@@ -89,6 +102,15 @@ export function PlaybackControls({
       <span className="flex-1" />
 
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+        {/* Hidden until there is a step back, not disabled like the two beside
+            it — those are always the verbs for the current selection, whereas
+            undo is a claim that something happened, and an empty history has
+            nothing to say. Because the group is pinned to the right by the
+            spacer above, appearing extends it leftwards and the cut and delete
+            buttons stay exactly where they were. */}
+        {canUndo && (
+          <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
+        )}
         <Action
           label="Split at the playhead"
           shortcut="S"

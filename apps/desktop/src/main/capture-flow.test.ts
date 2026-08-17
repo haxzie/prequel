@@ -71,6 +71,7 @@ function makeFlow(
 ) {
   const dockCalls: DockCalls = { shown: 0, hidden: 0, visible: false };
   const editors = { opened: [] as string[] };
+  const welcome = { closed: 0 };
   let stored: RecordingPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
   const selection = {
     opened: 0,
@@ -135,9 +136,10 @@ function makeFlow(
     } as never,
     onChange: () => undefined,
     editors: { open: (dir: string) => editors.opened.push(dir) },
+    welcome: { close: () => (welcome.closed += 1) },
   });
 
-  return { flow, camera, selection, editors, dockCalls, preferences: () => stored };
+  return { flow, camera, selection, editors, welcome, dockCalls, preferences: () => stored };
 }
 
 let requests: StartRecordingRequest[] = [];
@@ -461,5 +463,30 @@ describe("choosing a source", () => {
 
       expect(flow.state().devicesLive).toBe(true);
     });
+  });
+});
+
+describe("the welcome flow", () => {
+  it("remembers it was finished, closes the window, and shows the panel", () => {
+    const { flow, welcome, dockCalls, preferences } = makeFlow({ welcomed: false });
+
+    flow.finishWelcome();
+
+    expect(preferences().welcomed).toBe(true);
+    expect(welcome.closed).toBe(1);
+    expect(dockCalls.shown).toBe(1);
+  });
+
+  it("records it as finished even when a permission was refused", () => {
+    // The flag answers "has this been seen", nothing more. Whether the app can
+    // actually record is asked of macOS on every launch, and the window opens
+    // again on its own for as long as the answer is no — so writing this only
+    // on success would mean two records of the same thing, and one of them
+    // eventually wrong.
+    const { flow, preferences } = makeFlow({ welcomed: false });
+
+    flow.finishWelcome();
+
+    expect(preferences().welcomed).toBe(true);
   });
 });

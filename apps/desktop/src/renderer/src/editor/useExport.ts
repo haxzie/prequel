@@ -5,7 +5,7 @@
  * preview draws with, so the exporter receives geometry rather than settings —
  * see `shared/layout.ts` for why that matters.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   cursorStyle,
@@ -15,21 +15,56 @@ import {
 } from "../../../shared/contract";
 import { buildRenderPlan, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
-import { resolveSettings, type Project } from "../../../shared/project";
+import { mediaUrl, recordingName } from "../../../shared/media-url";
+import {
+  outputFrame,
+  resolveSettings,
+  type OutputSettings,
+  type Project,
+} from "../../../shared/project";
 import { slicesOf } from "./state";
+
+/** A finished export, in the form the dialog needs to show and hand it on. */
+export interface ExportResult {
+  /** Absolute path, for Finder, the pasteboard and the drag. */
+  path: string;
+  /** A `prequel-media://` URL, which is the only way the renderer can show it. */
+  url: string;
+  /**
+   * Whether this is a GIF, which is shown as an image rather than played.
+   *
+   * Read off the extension rather than from the settings the export was started
+   * with: those can be changed while it runs, and a `<video>` pointed at a GIF
+   * shows nothing at all.
+   */
+  isGif: boolean;
+}
 
 export interface ExportState {
   progress: ExportProgress | null;
   running: boolean;
+  /** The finished file, until the dialog is dismissed. */
+  result: ExportResult | null;
+  /** The frame this export would be written at, once the format is applied. */
+  frame: Size;
   start: () => Promise<void>;
   cancel: () => void;
   dismiss: () => void;
 }
 
-export function useExport(session: EditorSession | null, project: Project): ExportState {
+export function useExport(
+  session: EditorSession | null,
+  project: Project,
+  output: OutputSettings,
+): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
   useEffect(() => window.prequel.editor.export.onProgress(setProgress), []);
+
+  const frame = useMemo(
+    () => outputFrame(project.frame, output.shortEdge),
+    [project.frame, output.shortEdge],
+  );
 
   const start = useCallback(async () => {
     if (!session) return;
@@ -44,13 +79,17 @@ export function useExport(session: EditorSession | null, project: Project): Expo
       error: null,
     });
 
+    const size = outputFrame(project.frame, output.shortEdge);
+
     const result = await window.prequel.editor.export.start({
       dir: session.dir,
-      width: project.frame.width,
-      height: project.frame.height,
-      fps: project.output.fps,
-      codec: project.output.codec,
-      slices: buildSlices(session, project),
+      width: size.width,
+      height: size.height,
+      fps: output.fps,
+      format: output.format,
+      // The plan is laid out inside the *export's* frame, not the editor's, so
+      // a scaled-down export is the same composition rather than a crop of it.
+      slices: buildSlices(session, project, size),
       offsets: offsetsOf(session),
     });
 
@@ -63,9 +102,22 @@ export function useExport(session: EditorSession | null, project: Project): Expo
         error: { code: result.code, message: result.message },
       });
     }
-  }, [session, project]);
+  }, [session, project, output]);
 
   const cancel = useCallback(() => void window.prequel.editor.export.cancel(), []);
+
+  // Held against the progress rather than in state of its own: "done" already
+  // carries the path, and a second copy could disagree with it after a retry.
+  const result = useMemo((): ExportResult | null => {
+    if (!session || progress?.stage !== "done" || !progress.outputPath) return null;
+
+    const name = progress.outputPath.split("/").pop() ?? "";
+    return {
+      path: progress.outputPath,
+      url: mediaUrl(recordingName(session.dir), name),
+      isGif: name.endsWith(".gif"),
+    };
+  }, [session, progress]);
 
   return {
     progress,
@@ -74,6 +126,8 @@ export function useExport(session: EditorSession | null, project: Project): Expo
       (progress.stage === "preparing" ||
         progress.stage === "rendering" ||
         progress.stage === "finalising"),
+    result,
+    frame,
     start,
     cancel,
     dismiss: () => setProgress(null),
@@ -81,8 +135,7 @@ export function useExport(session: EditorSession | null, project: Project): Expo
 }
 
 /** Resolves every slice into geometry and gain the exporter can render. */
-function buildSlices(session: EditorSession, project: Project): ExportSlice[] {
-  const frame: Size = { width: project.frame.width, height: project.frame.height };
+function buildSlices(session: EditorSession, project: Project, frame: Size): ExportSlice[] {
   const sources = sourceSizes(session);
 
   return slicesOf(project).map((slice) => {

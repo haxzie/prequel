@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from "react";
 
 import { cursorStyle, type CursorLayer } from "../../../shared/contract";
 import { buildRenderPlan, cameraRect, type Size } from "../../../shared/layout";
@@ -29,6 +36,14 @@ import type { EditorPlayback } from "./useEditorPlayback";
  * have, so a render-driven canvas would show a frozen frame between state
  * changes.
  */
+/**
+ * Grabs whatever the preview is showing, as a PNG data URL.
+ *
+ * Resolves null if the loop stops before the next frame — the caller has to be
+ * able to carry on without a picture rather than wait forever for one.
+ */
+export type Grab = () => Promise<string | null>;
+
 export function Preview({
   frame,
   settings,
@@ -37,6 +52,7 @@ export function Preview({
   cursor,
   cameraSource,
   zooms,
+  grab: grabRef,
   onMoveCamera,
 }: {
   frame: Size;
@@ -49,6 +65,13 @@ export function Preview({
   cameraSource: Size | null;
   /** Zoom spans, baked into the plan as a sampled crop. */
   zooms: readonly ZoomSlice[];
+  /**
+   * Filled in with a way to grab the current frame as a PNG data URL.
+   *
+   * A ref rather than a callback prop because the caller pulls: the export
+   * dialog wants one frame when it opens, not a stream of them.
+   */
+  grab?: RefObject<Grab | null>;
   /** Dragging the bubble. Both are fractions of the frame, at its centre. */
   onMoveCamera: (x: number, y: number) => void;
 }) {
@@ -57,6 +80,8 @@ export function Preview({
   const compositor = useRef(new WebGlCompositor());
   /** Offset from the bubble's centre to where it was picked up, or null. */
   const grab = useRef<{ x: number; y: number } | null>(null);
+  /** Waiting to be handed the next drawn frame, or null when nobody asked. */
+  const wanted = useRef<((shot: string | null) => void) | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
 
   // Read through refs so changing a setting does not restart the loop — the
@@ -149,11 +174,35 @@ export function Preview({
       // Source time, because that is what the pointer track is indexed by —
       // the same clock the media elements are seeked on.
       compositor.current.draw(element, plan, sources, loaded, backing, media.sourceAt(now) ?? 0);
+
+      // Read here and nowhere else. The context is created without
+      // `preserveDrawingBuffer`, so the drawing buffer is cleared as soon as
+      // the browser composites the frame — `toDataURL` from an event handler or
+      // an effect comes back fully transparent, with no error to say why.
+      if (wanted.current) {
+        const resolve = wanted.current;
+        wanted.current = null;
+        resolve(element.toDataURL("image/png"));
+      }
     };
 
     handle = requestAnimationFrame(render);
     return () => cancelAnimationFrame(handle);
   }, [media]);
+
+  useEffect(() => {
+    if (!grabRef) return;
+
+    grabRef.current = () => new Promise((resolve) => (wanted.current = resolve));
+
+    return () => {
+      grabRef.current = null;
+      // Nobody is going to draw another frame for this request, and a promise
+      // that never settles would leave the dialog waiting on a picture forever.
+      wanted.current?.(null);
+      wanted.current = null;
+    };
+  }, [grabRef]);
 
   // Released on unmount and *only* on unmount. The loop above re-runs on every
   // render — `useEditorPlayback` hands back a new object each time — so

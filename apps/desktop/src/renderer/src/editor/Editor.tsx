@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type Dispatch,
+} from "react";
 
 import { CURSOR_STYLES, type EditorSession } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
@@ -8,34 +16,49 @@ import {
   resolveSettings,
   WALLPAPER_FILE_NAME,
   type Project,
+  type ZoomSlice,
 } from "../../../shared/project";
-import { autoZooms, type Moment } from "../../../shared/autoedit";
+import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { PanelIcon, TrashIcon } from "./icons";
+import { PanelIcon, TrashIcon, WandIcon } from "./icons";
 import type { Images } from "./webgl";
-import { ExportBar } from "./ExportBar";
+import { ExportButton } from "./ExportButton";
+import { ExportDialog } from "./ExportDialog";
 import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
-import { Preview } from "./Preview";
+import { Preview, type Grab } from "./Preview";
 import {
   activeSettings,
+  canUndo,
   editorReducer,
   initialState,
   placedSlices,
   selectedSlice,
   slicesOf,
+  zoomInProject,
   type EditorAction,
   type EditorState,
 } from "./state";
-import { TimelineStrip } from "./TimelineStrip";
+import { CLIP_H, TimelineStrip } from "./TimelineStrip";
 import { useEditorPlayback } from "./useEditorPlayback";
 import { useExport } from "./useExport";
+import { useFilmstrip } from "./useFilmstrip";
 import { useWaveforms } from "./useWaveforms";
 
 /** How long editing pauses before the project is written. */
 const SAVE_DEBOUNCE_MS = 600;
+
+/**
+ * How long a zoom's controls sit still before its span is played back.
+ *
+ * Long enough to cover the gap between two deliberate changes — nudging a slider
+ * with the arrow keys, or picking a preset and then adjusting it — and short
+ * enough that letting go of a drag is followed by the preview rather than by a
+ * wait for it.
+ */
+const ZOOM_PREVIEW_SETTLE_MS = 400;
 
 /** Stable, so the waveform hook does not see a new list on every render. */
 const NO_MEDIA: EditorSession["media"] = [];
@@ -53,6 +76,10 @@ export function Editor() {
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
   const [panelOpen, setPanelOpen] = useState(true);
+  const [exportOpen, setExportOpen] = useState(false);
+  /** A still of the composition, taken when the export dialog opens. */
+  const [poster, setPoster] = useState<string | null>(null);
+  const grab = useRef<Grab | null>(null);
 
   useEffect(
     () =>
@@ -65,6 +92,10 @@ export function Editor() {
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
   const media = useEditorPlayback(session, slices);
+
+  // Off the manifest, so it is fixed for the recording. Recomputing it per
+  // render would rebuild an array of every click on every slider drag.
+  const autoMoments = useMemo(() => (session ? momentsOf(session) : []), [session]);
 
   const present = useMemo(
     () => new Set<TrackKind>((session?.media ?? []).map((track) => track.kind)),
@@ -85,10 +116,70 @@ export function Editor() {
     return resolveSettings(state.project.defaults, slice?.overrides);
   }, [state.project, slices, media.playback]);
 
-  const exportState = useExport(session, state.project);
+  // Latest, so the debounced preview below plays the zoom as it is when the
+  // timer fires rather than as it was when the first change landed.
+  const zoomToPreview = useRef<ZoomSlice | null>(null);
+  zoomToPreview.current =
+    state.project.zooms.find((candidate) => candidate.id === state.selectedZoomId) ?? null;
+
+  const previewTimer = useRef<number | null>(null);
+
+  /**
+   * Plays the selected zoom's span once, a moment after its controls settle.
+   *
+   * Debounced because a slider is a stream of changes, not one: playing on each
+   * would restart the span sixty times a second and never show any of it. The
+   * wait is what makes this read as "let go and watch it" rather than as
+   * playback fighting the drag.
+   */
+  const previewZoom = useCallback(() => {
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+
+    previewTimer.current = window.setTimeout(() => {
+      previewTimer.current = null;
+
+      const zoom = zoomToPreview.current;
+      if (!zoom) return;
+
+      // Null where the zoom straddles a cut, and there is no single span to play.
+      const span = zoomInProject(state.project, zoom);
+      if (span) media.playback.playRange(span.start, span.end);
+    }, ZOOM_PREVIEW_SETTLE_MS);
+  }, [state.project, media.playback]);
+
+  // Or a preview fires against an editor that has already been left.
+  useEffect(
+    () => () => {
+      if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    },
+    [],
+  );
+
+  const exportState = useExport(session, state.project, state.project.output);
+
+  /**
+   * Opens the dialog, then fills its picture in.
+   *
+   * The still cannot be taken by the dialog itself — it has to come out of the
+   * preview's own draw loop, which is the only place the WebGL buffer still
+   * holds anything. Opening first rather than awaiting first is deliberate: the
+   * grab resolves on the next drawn frame, and a preview that is not drawing
+   * would otherwise mean a button that does nothing at all.
+   */
+  const openExport = async () => {
+    setExportOpen(true);
+    setPoster((await grab.current?.()) ?? null);
+  };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
   const peaks = useWaveforms(session?.media ?? NO_MEDIA, session?.manifest.duration ?? 0);
+  // Indexed by source time for the same reason, so a cut neither moves the
+  // thumbnails nor asks for them to be extracted again.
+  const filmstrip = useFilmstrip(
+    session?.media ?? NO_MEDIA,
+    session?.manifest.duration ?? 0,
+    CLIP_H,
+  );
 
   // The span the camera actually covers, not just whether one was recorded.
   // It opens a few hundred ms after the screen, so a clip cut from the very
@@ -144,6 +235,32 @@ export function Editor() {
           >
             <PanelIcon open={panelOpen} />
           </button>
+          {/* Runs the automatic pass again over the edit as it stands. Enabled
+              only when the recording gave it something to work from — with no
+              clicks and no typing there is nothing to find, and a button that
+              visibly does nothing is worse than one that says it cannot. */}
+          <button
+            type="button"
+            disabled={autoMoments.length === 0}
+            title={
+              autoMoments.length === 0
+                ? "Nothing to work from: this recording has no clicks or typing"
+                : "Add zooms for anything not already covered"
+            }
+            aria-label="Add zooms automatically"
+            className="no-drag grid size-7 place-items-center rounded-lg text-editor-muted hover:bg-white/10 hover:text-editor-fg disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4"
+            onClick={() =>
+              dispatch({
+                type: "setZooms",
+                zooms: augmentZooms(state.project.zooms, autoMoments, {
+                  duration: session.manifest.duration,
+                  hasCursor: session.cursor !== null,
+                }),
+              })
+            }
+          >
+            <WandIcon />
+          </button>
           <button
             type="button"
             title="Move this recording to the Trash"
@@ -153,7 +270,7 @@ export function Editor() {
           >
             <TrashIcon />
           </button>
-          <ExportBar state={exportState} />
+          <ExportButton onOpen={() => void openExport()} />
         </>
       }
     >
@@ -184,6 +301,7 @@ export function Editor() {
               images={images}
               cursor={session.cursor}
               zooms={state.project.zooms}
+              grab={grab}
               onMoveCamera={(x, y) => {
                 dispatch({ type: "setSetting", section: "layout", key: "cameraX", value: x });
                 dispatch({ type: "setSetting", section: "layout", key: "cameraY", value: y });
@@ -212,6 +330,7 @@ export function Editor() {
               hasCursor={session.cursor !== null}
               frame={state.project.frame}
               cameraSource={cameraSource}
+              onPreviewZoom={previewZoom}
               wallpaperUrl={mediaUrl(recordingName(session.dir), WALLPAPER_FILE_NAME)}
               onPickWallpaper={async () => {
                 const result = await window.prequel.editor.wallpaper(session.dir);
@@ -256,6 +375,7 @@ export function Editor() {
           // only one of them is ever the thing being removed.
           canSplit={state.selectedSliceId !== null}
           canDelete={state.selectedSliceId !== null || state.selectedZoomId !== null}
+          canUndo={canUndo(state)}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
             if (state.selectedZoomId) {
@@ -264,6 +384,7 @@ export function Editor() {
               dispatch({ type: "deleteSlice", sliceId: state.selectedSliceId });
             }
           }}
+          onUndo={() => dispatch({ type: "undo" })}
           dispatch={dispatch}
         />
         <TimelineStrip
@@ -271,6 +392,7 @@ export function Editor() {
           dispatch={dispatch}
           media={media}
           peaks={peaks}
+          filmstrip={filmstrip}
           cameraSpan={cameraSpan}
         />
       </div>
@@ -308,6 +430,27 @@ export function Editor() {
           ),
         )}
       </div>
+
+      {/* Unmounted when closed rather than hidden. Its preview is a playing
+          `<video>` of the finished export, and one left decoding behind a
+          dismissed dialog is a whole media element's worth of work spent on
+          something nobody can see. */}
+      {exportOpen && (
+        <ExportDialog
+          state={exportState}
+          output={state.project.output}
+          poster={poster}
+          onChange={(output) => dispatch({ type: "setOutput", output })}
+          onClose={() => {
+            setExportOpen(false);
+            // A render still going keeps its progress, so pressing Export again
+            // reopens onto it rather than onto a fresh set of options. A
+            // finished one has been seen — closing is the acknowledgement, and
+            // without this the next open would still be showing the last file.
+            if (!exportState.running) exportState.dismiss();
+          }}
+        />
+      )}
     </Shell>
   );
 }
@@ -368,6 +511,25 @@ function useAutoFrame(
 }
 
 /**
+ * What happened in the recording, in the form the automatic pass reads.
+ *
+ * Shared by the first cut and the wand, so the two can never disagree about
+ * what counts as a moment.
+ */
+function momentsOf(session: EditorSession): Moment[] {
+  return [
+    ...(session.manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
+    // The middle of the field, which is what a zoom would frame anyway.
+    ...(session.manifest.typing ?? []).map((span) => ({
+      at: span.at,
+      x: span.x + span.width / 2,
+      y: span.y + span.height / 2,
+      kind: "typing" as const,
+    })),
+  ];
+}
+
+/**
  * Makes the first cut, once.
  *
  * Only on a project nobody has touched: revision 0, and no zooms of its own.
@@ -389,16 +551,7 @@ function useFirstCut(
     if (!session || made.current) return;
     if (state.revision !== 0 || state.project.zooms.length > 0) return;
 
-    const moments: Moment[] = [
-      ...(session.manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
-      // The middle of the field, which is what a zoom would frame anyway.
-      ...(session.manifest.typing ?? []).map((span) => ({
-        at: span.at,
-        x: span.x + span.width / 2,
-        y: span.y + span.height / 2,
-        kind: "typing" as const,
-      })),
-    ];
+    const moments = momentsOf(session);
 
     // Marked before dispatching rather than after: `zooms.length > 0` only
     // becomes true on the next render, and without this the effect would run
@@ -578,6 +731,14 @@ function useShortcuts(
       ) {
         return;
       }
+      // Before the guard below, which exists to keep single-key shortcuts from
+      // firing on system chords — and ⌘Z is exactly such a chord.
+      if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ" && !event.shiftKey) {
+        event.preventDefault();
+        dispatch({ type: "undo" });
+        return;
+      }
+
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
 
       switch (event.code) {

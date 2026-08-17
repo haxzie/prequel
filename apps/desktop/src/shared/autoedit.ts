@@ -29,21 +29,37 @@ const NS = 1_000_000_000;
  * into a single limp push. A second and a half is about the pause people leave
  * between finishing one thing and starting the next.
  */
-const CLUSTER_GAP = 1.5 * NS;
+const CLUSTER_GAP = 2.5 * NS;
 
-/** Held before the first event and after the last, so the move has somewhere to
-    happen and does not snap away the instant the click lands. */
-const LEAD_IN = 0.7 * NS;
-const LEAD_OUT = 1.1 * NS;
+/**
+ * Held before the first event and after the last.
+ *
+ * The move has to start before the thing it is moving to happens, or the shot
+ * arrives to find the click already over. The lead-out matters more: a viewer
+ * needs to see the *result* of a click, and pulling out the moment it lands
+ * shows them the press and hides the consequence.
+ *
+ * Both are generous on purpose. The failure people notice is a zoom that came
+ * and went before they could read anything; nobody complains that a shot was
+ * held a beat too long.
+ */
+const LEAD_IN = 1.1 * NS;
+const LEAD_OUT = 2.2 * NS;
 
-/** Shorter than this and the ease alone would fill it. */
-const MIN_SPAN = 1.2 * NS;
+/**
+ * Shorter than this and the ease alone would fill it.
+ *
+ * At the default speed a push takes the best part of a second at each end, so a
+ * span under about three is mostly travel with no time at rest in the middle.
+ */
+const MIN_SPAN = 2.8 * NS;
 
 /**
  * Longer than this and a click cluster stops being a shot and becomes the whole
- * video.
+ * video. A cluster that runs past it is trimmed rather than dropped — see
+ * `autoZooms`.
  */
-const MAX_CLICK_SPAN = 9 * NS;
+const MAX_CLICK_SPAN = 14 * NS;
 
 /**
  * Typing gets much longer, because it is one continuous act.
@@ -83,54 +99,181 @@ export interface AutoEditOptions {
  * movement to justify the feature.
  */
 export function autoZooms(moments: readonly Moment[], options: AutoEditOptions): ZoomSlice[] {
-  const clusters = cluster(moments);
   const zooms: ZoomSlice[] = [];
 
-  for (const [index, group] of clusters.entries()) {
-    const first = group[0]!.at;
-    const last = group[group.length - 1]!.at;
-
+  for (const group of cluster(moments)) {
     const typed = group.filter((moment) => moment.kind === "typing").length;
     const typing = typed > group.length / 2;
+    const span = group[group.length - 1]!.at - group[0]!.at;
 
-    const start = Math.max(0, first - LEAD_IN);
-    const end = Math.min(options.duration, Math.max(last + LEAD_OUT, start + MIN_SPAN));
+    // A field left focused for the rest of the recording is not a shot, and
+    // cutting it up would only make several shots of the same still frame.
+    if (typing && span > MAX_TYPING_SPAN) continue;
 
-    // The zoom runs to the last thing that happened, so typing holds until the
-    // typing stops. That only works because the capture beats once a second
-    // while a field stays focused — without it a minute in one box is a single
-    // sample and this would be a two-second zoom at the start of it.
-    const longest = typing ? MAX_TYPING_SPAN : MAX_CLICK_SPAN;
-    if (end - start < MIN_SPAN || end - start > longest) continue;
+    // A long run of clicking is the busiest stretch of the recording and the
+    // part that most wants a camera on it. It gets cut into shots that follow
+    // the action. Discarding it — which is what this did — left the automatic
+    // pass silent exactly where the most was happening, and a demo that is one
+    // continuous run of clicks came back with no zooms at all.
+    const chunks = typing ? [group] : split(group, MAX_CLICK_SPAN - LEAD_IN - LEAD_OUT);
 
-    // Never over what came before. `sanitiseProject` would drop an overlap
-    // anyway, and dropping is a worse answer than not making one.
-    const previous = zooms[zooms.length - 1];
-    if (previous && start < previous.source.end + MIN_GAP) continue;
+    for (const [index, chunk] of chunks.entries()) {
+      const first = chunk[0]!.at;
+      const last = chunk[chunk.length - 1]!.at;
 
-    const centre = middleOf(group);
+      const previous = zooms[zooms.length - 1];
+      const floor = previous ? previous.source.end + MIN_GAP : 0;
+      const start = Math.max(floor, first - LEAD_IN);
 
-    zooms.push({
-      id: `auto-${String(index)}`,
-      source: { start, end },
-      // Typing knows exactly which field to frame; a run of clicks is better
-      // served by following the pointer, which is where the next one will be.
-      target: typing ? "typing" : options.hasCursor ? "cursor" : "region",
-      x: centre.x,
-      y: centre.y,
-      level: levelFor(group),
-      speed: DEFAULT_ZOOM.speed,
-      // Off, like the default. The first cut should read as a steadier version
-      // of the recording, not as a different sort of video — and softening what
-      // someone may have been reading is not a decision to make for them.
-      blur: DEFAULT_ZOOM.blur,
-      blurSafe: DEFAULT_ZOOM.blurSafe,
-      blurStrength: DEFAULT_ZOOM.blurStrength,
-      ...tiltFor(centre),
-    });
+      // Trimmed against what came before rather than dropped: `sanitiseProject`
+      // discards an overlap outright, and a shot that starts a little late is a
+      // better answer than no shot.
+      //
+      // Except across separate actions. A later chunk of the *same* run is a
+      // re-frame with the camera already in, so it may start after its first
+      // click; a different cluster starting that late would be a push arriving
+      // to find the thing it came for already over.
+      if (index === 0 && start > first) continue;
+
+      // Runs to the last thing that happened, so typing holds until the typing
+      // stops. That only works because the capture beats once a second while a
+      // field stays focused — without it a minute in one box is a single sample
+      // and this would be a short zoom at the start of it.
+      const end = Math.min(options.duration, Math.max(last + LEAD_OUT, start + MIN_SPAN));
+      if (end - start < MIN_SPAN) continue;
+
+      const centre = middleOf(chunk);
+
+      zooms.push({
+        id: `auto-${String(zooms.length)}`,
+        source: { start, end },
+        // Typing knows exactly which field to frame; a run of clicks is better
+        // served by following the pointer, which is where the next one will be.
+        target: typing ? "typing" : options.hasCursor ? "cursor" : "region",
+        x: centre.x,
+        y: centre.y,
+        level: levelFor(chunk),
+        speed: DEFAULT_ZOOM.speed,
+        // The default distance. The automatic pass sets an angle but not how
+        // hard the lens sells it, which is a look rather than a reading of the
+        // recording.
+        depth: DEFAULT_ZOOM.depth,
+        // Both off, like the defaults. The first cut should read as a steadier
+        // version of the recording rather than as a different sort of video —
+        // softening what someone may have been reading is not a decision to make
+        // for them, and a vignette even less so.
+        vignette: DEFAULT_ZOOM.vignette,
+        blur: DEFAULT_ZOOM.blur,
+        blurSafe: DEFAULT_ZOOM.blurSafe,
+        blurStrength: DEFAULT_ZOOM.blurStrength,
+        // The default ease, which is the `smoothstep` the automatic pass has
+        // always moved with. Shaping a curve is a taste the recording says
+        // nothing about, so this is one of the settings it declines to guess.
+        easeInX: DEFAULT_ZOOM.easeInX,
+        easeInY: DEFAULT_ZOOM.easeInY,
+        easeOutX: DEFAULT_ZOOM.easeOutX,
+        easeOutY: DEFAULT_ZOOM.easeOutY,
+        ...tiltFor(centre),
+      });
+    }
   }
 
   return zooms;
+}
+
+/**
+ * The automatic pass, run again over an edit that already has zooms in it.
+ *
+ * `autoZooms` assumes an empty timeline and is what runs once when a recording
+ * is opened. This is the version for the button: it has to add shots to work
+ * somebody has already done, and the one unforgivable thing it could do is
+ * throw away a zoom they placed by hand.
+ *
+ * So nothing existing is ever moved, retargeted or deleted. A candidate that
+ * lands where a zoom already is **extends that zoom** rather than replacing it
+ * — the moment it found is real, and the zoom that is already there covering
+ * part of it should simply cover the rest. Everything else is inserted into the
+ * gaps, trimmed to fit them.
+ *
+ * A candidate spanning two or more existing zooms is dropped. Extending one of
+ * them would mean swallowing the other, and a stretch already carrying two
+ * hand-made shots is not a stretch that needs a third opinion.
+ */
+export function augmentZooms(
+  existing: readonly ZoomSlice[],
+  moments: readonly Moment[],
+  options: AutoEditOptions,
+): ZoomSlice[] {
+  const kept = [...existing].sort((a, b) => a.source.start - b.source.start);
+
+  for (const candidate of autoZooms(moments, options)) {
+    const overlapping = kept.filter(
+      (zoom) =>
+        zoom.source.start < candidate.source.end && candidate.source.start < zoom.source.end,
+    );
+
+    if (overlapping.length > 1) continue;
+
+    const index =
+      overlapping.length === 1
+        ? kept.indexOf(overlapping[0]!)
+        : kept.findIndex((zoom) => zoom.source.start >= candidate.source.end);
+
+    // Where this may reach without touching its neighbours. `sanitiseProject`
+    // drops an overlap outright, so staying clear of them is what keeps the
+    // result from being quietly smaller than it looks.
+    const at = index === -1 ? kept.length : index;
+    const before = kept[at - 1];
+    const after = overlapping.length === 1 ? kept[at + 1] : kept[at];
+    const floor = before ? before.source.end + MIN_GAP : 0;
+    const ceiling = after ? after.source.start - MIN_GAP : options.duration;
+
+    if (overlapping.length === 1) {
+      const current = overlapping[0]!;
+      const start = Math.max(floor, Math.min(current.source.start, candidate.source.start));
+      const end = Math.min(ceiling, Math.max(current.source.end, candidate.source.end));
+
+      // Only ever grows. A candidate entirely inside an existing shot leaves it
+      // exactly as it was rather than trimming it to the smaller span.
+      if (end - start > current.source.end - current.source.start) {
+        kept[at] = { ...current, source: { start, end } };
+      }
+      continue;
+    }
+
+    const start = Math.max(floor, candidate.source.start);
+    const end = Math.min(ceiling, candidate.source.end);
+    if (end - start < MIN_SPAN) continue;
+
+    kept.splice(at, 0, { ...candidate, id: `auto-${String(start)}`, source: { start, end } });
+  }
+
+  return kept;
+}
+
+/**
+ * Cuts one long run into shots no longer than `maxSpan`.
+ *
+ * Greedy from the front rather than at the widest internal gaps: the gaps
+ * inside a cluster are all under `CLUSTER_GAP` by construction, so none of them
+ * is a meaningfully better cut than any other, and picking the widest would
+ * make the shot boundaries jitter with the input for no visible gain.
+ */
+function split(group: readonly Moment[], maxSpan: MediaTime): Moment[][] {
+  const chunks: Moment[][] = [];
+  let current: Moment[] = [];
+
+  for (const moment of group) {
+    const first = current[0];
+    if (first && moment.at - first.at > maxSpan) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(moment);
+  }
+
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }
 
 /**

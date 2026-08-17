@@ -1,0 +1,124 @@
+import { useRef } from "react";
+
+import { cn } from "../../lib/cn";
+
+/**
+ * Tilt and yaw, set by dragging a picture of the result.
+ *
+ * Two sliders and a row of named presets was the previous answer, and the
+ * problem with it was not the range: nobody arrives knowing what −8° of pitch
+ * against +10° of yaw looks like, so setting an angle meant nudging a number,
+ * looking at the preview, and nudging it again.
+ *
+ * Every 3D tool solves this the same way and has for decades — Blender, Maya
+ * and Unity all let you grab the object and turn it, and Rotato does exactly
+ * this for device mockups. The control is the thing it controls.
+ *
+ * Horizontal is yaw and vertical is tilt, because that is the axis each one
+ * visibly moves. The plate inside is drawn with the same rotation the renderer
+ * will apply, so what is under the pointer is what the shot will look like.
+ */
+export function PerspectivePad({
+  tilt,
+  yaw,
+  depth,
+  limit,
+  onChange,
+}: {
+  tilt: number;
+  yaw: number;
+  /** 0 to 1. Drives the CSS `perspective` so the plate splays like the shot. */
+  depth: number;
+  /** Degrees at the edges, matching what the project will accept. */
+  limit: number;
+  onChange: (next: { tilt: number; yaw: number }) => void;
+}) {
+  const pad = useRef<HTMLDivElement>(null);
+
+  // Read once per gesture rather than per move: `getBoundingClientRect` inside
+  // a pointermove is a layout read on every frame of a drag.
+  const box = useRef<DOMRect | null>(null);
+
+  const apply = (event: { clientX: number; clientY: number }) => {
+    const rect = box.current;
+    if (!rect) return;
+
+    const across = (event.clientX - rect.left) / rect.width;
+    const down = (event.clientY - rect.top) / rect.height;
+
+    onChange({
+      yaw: Math.round(clamp((across - 0.5) * 2, -1, 1) * limit),
+      // Down on the pad leans the top away, which is what dragging the near
+      // edge towards you does to a real plate.
+      tilt: Math.round(clamp((down - 0.5) * 2, -1, 1) * limit),
+    });
+  };
+
+  // 260px maps the whole range across a pad this size at a comfortable rate;
+  // the number only sets how far the plate appears to lean, not the output.
+  const perspective = 1400 - depth * 1100;
+
+  return (
+    <div
+      ref={pad}
+      role="application"
+      aria-label="Perspective"
+      tabIndex={0}
+      className={cn(
+        "relative h-24 w-full cursor-grab touch-none overflow-hidden rounded-lg",
+        "border border-editor-line bg-black/25 active:cursor-grabbing",
+      )}
+      onPointerDown={(event) => {
+        box.current = event.currentTarget.getBoundingClientRect();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        apply(event);
+      }}
+      onPointerMove={(event) => {
+        if (event.buttons !== 0) apply(event);
+      }}
+      onPointerUp={() => {
+        box.current = null;
+      }}
+      onKeyDown={(event) => {
+        // Arrow keys, because a drag-only control is unreachable without a
+        // pointer and this is the only way to set an angle now.
+        const step = event.shiftKey ? 5 : 1;
+        const moves: Record<string, { tilt: number; yaw: number }> = {
+          ArrowLeft: { tilt: 0, yaw: -step },
+          ArrowRight: { tilt: 0, yaw: step },
+          ArrowUp: { tilt: -step, yaw: 0 },
+          ArrowDown: { tilt: step, yaw: 0 },
+        };
+
+        const move = moves[event.key];
+        if (!move) return;
+
+        event.preventDefault();
+        onChange({
+          tilt: clamp(tilt + move.tilt, -limit, limit),
+          yaw: clamp(yaw + move.yaw, -limit, limit),
+        });
+      }}
+    >
+      {/* Centre lines, so flat is findable without reading the numbers. */}
+      <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
+      <div className="absolute inset-y-0 left-1/2 w-px bg-white/10" />
+
+      <div className="absolute inset-0 grid place-items-center" style={{ perspective }}>
+        <div
+          className="h-12 w-20 rounded-[3px] border border-selected/70 bg-selected/25"
+          style={{
+            // Pitch then yaw, the order `tiltedQuad` composes them in. Reversing
+            // it gives a different result at large angles and the plate would
+            // stop matching the picture.
+            transform: `rotateX(${String(-tilt)}deg) rotateY(${String(yaw)}deg)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}

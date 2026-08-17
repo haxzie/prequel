@@ -110,6 +110,14 @@ export interface RectKey {
    */
   focus?: { x: number; y: number; safe: number; strength: number };
   /**
+   * How hard the frame darkens towards its edges, 0 to 1.
+   *
+   * Absent when nothing is being darkened, which is every zoom that does not ask
+   * for it — the same shape `focus` takes, so a plan carries neither field for
+   * the ordinary case.
+   */
+  vignette?: number;
+  /**
    * The picture's four corners once tilted, as `x, y, w` each — twelve numbers,
    * in the order top-left, top-right, bottom-left, bottom-right.
    *
@@ -391,7 +399,7 @@ function rectFor(
   // How far in, 0 at both edges of the span and 1 through the middle.
   const into = at - zoom.source.start;
   const left = zoom.source.end - at;
-  const amount = smoothstep(Math.min(ease > 0 ? into / ease : 1, ease > 0 ? left / ease : 1));
+  const amount = easeAt(zoom, Math.min(ease > 0 ? into / ease : 1, ease > 0 ? left / ease : 1));
   const level = Math.max(1, zoom.level);
 
   // The aim, as a point on screen right now — through the same
@@ -424,7 +432,10 @@ function rectFor(
 
   // Eased in with the rest of the move, so the picture leans over as it comes
   // forward rather than snapping to an angle the moment the zoom begins.
-  const quad = tiltedQuad(moved, zoom.tilt * amount, zoom.yaw * amount);
+  // The angle eases in with the move; the depth does not. Easing the distance
+  // as well would zoom the lens while the shot travels, which reads as a dolly
+  // and is not what anyone asked for by setting an angle.
+  const quad = tiltedQuad(moved, zoom.tilt * amount, zoom.yaw * amount, zoom.depth);
 
   // Eased in with the move, so the surroundings soften as the shot arrives
   // rather than snapping out of focus. Measured against the frame, not the
@@ -439,6 +450,11 @@ function rectFor(
       }
     : undefined;
 
+  // Eased in with the move for the same reason the blur is: a zoom should arrive
+  // wearing its vignette rather than the frame darkening before the camera has
+  // started travelling.
+  const vignette = zoom.vignette * amount;
+
   return {
     at,
     ...moved,
@@ -447,6 +463,7 @@ function rectFor(
     radius: lerp(radius, radius * level, amount),
     ...(quad ? { quad } : {}),
     ...(focus ? { focus } : {}),
+    ...(vignette > 0 ? { vignette } : {}),
   };
 }
 
@@ -557,6 +574,23 @@ interface Point {
 const EYE_DISTANCE = 2.6;
 
 /**
+ * The range `depth` picks the eye distance from.
+ *
+ * `FAR_EYE` is far enough that a tilt reads as an orthographic lean — the near
+ * and far edges stay near enough the same length to look like a slab turned on
+ * its side. `NEAR_EYE` is close enough for the same angle to splay violently,
+ * which is a look people want and could not previously reach at any angle.
+ *
+ * Their midpoint is `EYE_DISTANCE`, so `depth: 0.5` is exactly what every
+ * existing project was drawn at — pinned by a test, because the arithmetic is
+ * easy to get wrong in a way that still produces a picture. A symmetric
+ * expression around `EYE_DISTANCE` is how this was first written, and at a
+ * plausible `FAR_EYE` it put the eye *behind* the picture.
+ */
+const FAR_EYE = 4;
+const NEAR_EYE = 1.2;
+
+/**
  * The picture's corners after a tilt, in output pixels with their divisors.
  *
  * Rotated about its own centre — pitch first, then yaw — and projected. The
@@ -568,12 +602,17 @@ const EYE_DISTANCE = 2.6;
  * Returns undefined when there is nothing to tilt, so an ordinary zoom stays
  * four numbers rather than sixteen.
  */
-function tiltedQuad(rect: Rect, tilt: number, yaw: number): number[] | undefined {
+function tiltedQuad(rect: Rect, tilt: number, yaw: number, depth: number): number[] | undefined {
   if (Math.abs(tilt) < 0.01 && Math.abs(yaw) < 0.01) return undefined;
 
   const pitch = (tilt * Math.PI) / 180;
   const swing = (yaw * Math.PI) / 180;
-  const distance = Math.max(rect.width, rect.height) * EYE_DISTANCE;
+  // Near at 1, far at 0. Interpolated in eye distance rather than in field of
+  // view: distance is what the projection below actually divides by, and going
+  // through an angle would only be the same number with a trigonometric step
+  // in front of it.
+  const eye = FAR_EYE + (NEAR_EYE - FAR_EYE) * clamp(depth, 0, 1);
+  const distance = Math.max(rect.width, rect.height) * eye;
 
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
@@ -651,10 +690,80 @@ function onPlane(quad: readonly number[], u: number, v: number): Point & { scale
   return { x: x / total, y: y / total, scale: total };
 }
 
-/** Ease in and out, so a zoom reads as a camera move rather than a cut. */
-function smoothstep(t: number): number {
-  const clamped = clamp(t, 0, 1);
-  return clamped * clamped * (3 - 2 * clamped);
+/**
+ * A zoom's easing curve, evaluated at `t`.
+ *
+ * A cubic bézier through (0,0) and (1,1) with the zoom's two control points, so
+ * it is the curve CSS `cubic-bezier()` describes and the control draws. The
+ * first point shapes the entry, the second the exit.
+ *
+ * The x components have to be inverted before y can be read, because the curve
+ * is parametric — `t` here is progress along the *ramp*, not along the curve's
+ * own parameter, and the two only coincide for a straight x. Solved rather than
+ * approximated with a lookup: this runs 30 times per zoom second at plan time,
+ * not per frame, so the handful of iterations costs nothing measurable.
+ *
+ * The default control points make x(u) reduce to exactly u, and y to
+ * 3t² − 2t³ — the `smoothstep` this replaced, to the bit.
+ */
+export function easeAt(
+  curve: { easeInX: number; easeInY: number; easeOutX: number; easeOutY: number },
+  t: number,
+): number {
+  const x = clamp(t, 0, 1);
+  // The ends are exact by definition, and solving for them wastes iterations on
+  // the two values that matter most.
+  if (x === 0 || x === 1) return x;
+
+  const u = bezierParameterAt(curve.easeInX, curve.easeOutX, x);
+  return bezierAt(curve.easeInY, curve.easeOutY, u);
+}
+
+/** One component of a cubic bézier from 0 to 1, at parameter `u`. */
+function bezierAt(c1: number, c2: number, u: number): number {
+  const v = 1 - u;
+  return 3 * v * v * u * c1 + 3 * v * u * u * c2 + u * u * u;
+}
+
+/** Its slope, which is what makes Newton's method worth using here. */
+function bezierSlopeAt(c1: number, c2: number, u: number): number {
+  const v = 1 - u;
+  return 3 * v * v * c1 + 6 * v * u * (c2 - c1) + 3 * u * u * (1 - c2);
+}
+
+/**
+ * The parameter at which the curve's x reaches `x`.
+ *
+ * Newton's method, falling back to bisection. Newton alone is not safe: with the
+ * control points at an end the slope goes to zero, and a division by it throws
+ * the guess outside the curve entirely — which reads as a zoom that jumps rather
+ * than as a slightly wrong ease.
+ */
+function bezierParameterAt(x1: number, x2: number, x: number): number {
+  let u = x;
+
+  for (let step = 0; step < 8; step += 1) {
+    const slope = bezierSlopeAt(x1, x2, u);
+    if (Math.abs(slope) < 1e-6) break;
+
+    const error = bezierAt(x1, x2, u) - x;
+    if (Math.abs(error) < 1e-6) return u;
+
+    u -= error / slope;
+    if (u < 0 || u > 1) break;
+  }
+
+  let low = 0;
+  let high = 1;
+  // Twenty halvings put the answer inside a millionth, well under a pixel of
+  // movement at any zoom level.
+  for (let step = 0; step < 20; step += 1) {
+    const mid = (low + high) / 2;
+    if (bezierAt(x1, x2, mid) < x) low = mid;
+    else high = mid;
+  }
+
+  return (low + high) / 2;
 }
 
 function lerp(from: number, to: number, t: number): number {
@@ -848,6 +957,11 @@ export function rectAt(
         }
       : (b.focus ?? a.focus);
 
+  // Treated as zero where a key does not carry it, rather than falling back to
+  // the other key's value: the field is absent because there is no vignette
+  // there, so holding the neighbour's would darken a frame that asked not to be.
+  const vignette = lerp(a.vignette ?? 0, b.vignette ?? 0, t);
+
   return {
     at,
     x: lerp(a.x, b.x, t),
@@ -857,6 +971,7 @@ export function rectAt(
     radius: lerp(a.radius, b.radius, t),
     ...(quad ? { quad } : {}),
     ...(focus ? { focus } : {}),
+    ...(vignette > 0 ? { vignette } : {}),
   };
 }
 

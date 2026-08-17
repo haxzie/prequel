@@ -101,6 +101,14 @@ uniform int u_mirror;
 // Depth of field: xy is what stays sharp in output pixels, z how far around it
 // stays sharp, w the widest blur beyond. w of 0 means nothing is softened.
 uniform vec4 u_focus;
+// How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
+uniform float u_vignette;
+// The output frame, declared here as well as in the vertex stage: a uniform
+// belongs to the program, not to one shader, so both stages that name it have to
+// declare it. Without this the fragment shader fails to compile — and since the
+// compositor logs that once and then draws nothing, the symptom is an entirely
+// blank preview rather than a missing vignette.
+uniform vec2 u_frame;
 uniform vec2 u_texel;
 uniform sampler2D u_image;
 
@@ -164,6 +172,28 @@ vec4 premultiplied(vec3 rgb, float alpha) {
   return vec4(rgb * alpha, alpha);
 }
 
+/**
+ * How much this pixel keeps, given how far it is from the middle of the frame.
+ *
+ * Measured against the *frame*, not the picture: a zoom pushes the picture past
+ * the frame's edges, and a vignette that followed the picture would drift off
+ * screen exactly when it was doing the most work. Normalised so a corner reads 1
+ * whatever the aspect ratio, or a 9:16 export would be darker than a 16:9 one at
+ * the same setting.
+ *
+ * Mirrored verbatim by the same function in shaders.metal. No backticks in here:
+ * this whole shader is a template literal, and one would end it.
+ */
+float vignette(vec2 screen) {
+  if (u_vignette <= 0.0) return 1.0;
+
+  vec2 fromCentre = screen / u_frame - 0.5;
+  float away = length(fromCentre) / 0.7071068;
+  // Starting well inside the corner, so the middle of the frame is untouched and
+  // the falloff has room to read as shading rather than as a hard edge.
+  return 1.0 - u_vignette * smoothstep(0.35, 1.0, away);
+}
+
 void main() {
   vec2 halfSize = u_rect.zw * 0.5;
   vec2 p = v_local - halfSize;
@@ -195,7 +225,7 @@ void main() {
     // Mirroring first, so it flips the crop rather than moving it.
     uv = u_src.xy + uv * u_src.zw;
     vec4 sampled = sampleFocused(uv);
-    fragColor = premultiplied(sampled.rgb, sampled.a * coverage);
+    fragColor = premultiplied(sampled.rgb * vignette(v_screen), sampled.a * coverage);
     return;
   }
 
@@ -226,6 +256,7 @@ interface Program {
   mirror: WebGLUniformLocation | null;
   quad: WebGLUniformLocation | null;
   focus: WebGLUniformLocation | null;
+  vignette: WebGLUniformLocation | null;
   texel: WebGLUniformLocation | null;
 }
 
@@ -370,7 +401,7 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.source, source, true);
         if (!texture) break;
 
-        const { rect, shape, quad, focus } = moving(item, at);
+        const { rect, shape, quad, focus, vignette } = moving(item, at);
         const src = normalised(item.srcRect, source.videoWidth, source.videoHeight);
 
         set(gl, p, {
@@ -378,6 +409,7 @@ export class WebGlCompositor {
           shape,
           quad,
           focus,
+          vignette,
           // In the source's own texels, so a blur of a given strength looks the
           // same whatever resolution the recording happens to be.
           texel: [1 / Math.max(source.videoWidth, 1), 1 / Math.max(source.videoHeight, 1)],
@@ -550,7 +582,13 @@ export class WebGlCompositor {
 function moving(
   item: Extract<PlanItem, { motion?: RectKey[] }>,
   at: number,
-): { rect: Rect; shape: Shape; quad?: number[]; focus?: RectKey["focus"] } {
+): {
+  rect: Rect;
+  shape: Shape;
+  quad?: number[];
+  focus?: RectKey["focus"];
+  vignette?: number;
+} {
   const rect = "rect" in item ? item.rect : item.dstRect;
   if (!item.motion) return { rect, shape: item.shape };
 
@@ -560,6 +598,7 @@ function moving(
     shape: { radius: key.radius, exponent: item.shape.exponent },
     ...(key.quad ? { quad: key.quad } : {}),
     ...(key.focus ? { focus: key.focus } : {}),
+    ...(key.vignette ? { vignette: key.vignette } : {}),
   };
 }
 
@@ -578,6 +617,8 @@ interface Draw {
   weight?: number;
   mirror?: boolean;
   focus?: { x: number; y: number; safe: number; strength: number };
+  /** How hard the frame darkens towards its edges, 0 to 1. */
+  vignette?: number;
   /** One texel of the sampled image, so a blur is measured in its own pixels. */
   texel?: [number, number];
 }
@@ -605,6 +646,7 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   const focus = draw.focus;
   gl.uniform4f(p.focus, focus?.x ?? 0, focus?.y ?? 0, focus?.safe ?? 1, focus?.strength ?? 0);
   gl.uniform2f(p.texel, draw.texel?.[0] ?? 0, draw.texel?.[1] ?? 0);
+  gl.uniform1f(p.vignette, draw.vignette ?? 0);
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -731,11 +773,47 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     mirror: at("u_mirror"),
     quad: at("u_quad"),
     focus: at("u_focus"),
+    vignette: at("u_vignette"),
     texel: at("u_texel"),
   };
 }
 
-/** Whether a video element has a frame worth drawing. */
+/**
+ * The `src` each element was last seen holding a decoded frame for.
+ *
+ * Keyed by `currentSrc` as well as by the element, because the elements are
+ * reused across sessions — they are rendered with `key={track.kind}`, so opening
+ * a second recording swaps `src` on the same `<video>`. A flag carried over from
+ * the previous take would hold a frame from the wrong recording.
+ */
+const decoded = new WeakMap<HTMLVideoElement, string>();
+
+/**
+ * Whether a video element has a frame worth drawing.
+ *
+ * Not simply `readyState >= 2`. Assigning `currentTime` — which `syncElement`
+ * does at a cut and at every scrub — drops `readyState` to 1 for the two or
+ * three frames the decoder needs to produce the new picture. Answering "no" for
+ * those frames takes the whole layer out of the plan, and since the background is
+ * a separate item, the preview flashes the background on its own.
+ *
+ * The last frame is still on the GPU: Chromium leaves a texture's contents alone
+ * when `texImage2D` is handed a video that has nothing new, so drawing the layer
+ * anyway holds the previous frame rather than showing black. That is what a video
+ * player does across a seek, and what the loop in `useEditorPlayback` already
+ * assumed happened.
+ *
+ * Only while `seeking`, and only once a frame has actually been decoded for this
+ * `src`: before the first one there is nothing to hold, and an incomplete texture
+ * samples as black.
+ */
 export function isReady(element: HTMLVideoElement | null): boolean {
-  return element !== null && element.readyState >= 2 && element.videoWidth > 0;
+  if (element === null || element.videoWidth === 0) return false;
+
+  if (element.readyState >= 2) {
+    decoded.set(element, element.currentSrc);
+    return true;
+  }
+
+  return element.seeking && decoded.get(element) === element.currentSrc;
 }

@@ -48,22 +48,22 @@ const STYLES = [
  * silhouette macOS uses for a link. Drawn as one loop like the arrow.
  */
 const HAND = [
-  [0.30, 0.00],
+  [0.3, 0.0],
   [0.42, 0.06],
   [0.44, 0.42],
   [0.52, 0.36],
-  [0.64, 0.40],
+  [0.64, 0.4],
   [0.66, 0.36],
   [0.78, 0.42],
-  [0.80, 0.38],
+  [0.8, 0.38],
   [0.92, 0.46],
   [0.94, 0.74],
   [0.84, 0.96],
-  [0.46, 1.00],
+  [0.46, 1.0],
   [0.28, 0.84],
   [0.06, 0.58],
-  [0.10, 0.48],
-  [0.30, 0.56],
+  [0.1, 0.48],
+  [0.3, 0.56],
 ];
 
 /** Black outline, in image pixels. What keeps a white arrow visible on white. */
@@ -237,7 +237,8 @@ function hotspot(shape) {
   // The arrow's tip sits one outline in from the top-left corner.
   if (shape === "arrow") return { x: OUTLINE / SIZE, y: OUTLINE / SIZE };
   // The hand points with the top of its index finger.
-  if (shape === "hand") return { x: (OUTLINE + (SIZE - OUTLINE * 2) * 0.36) / SIZE, y: OUTLINE / SIZE };
+  if (shape === "hand")
+    return { x: (OUTLINE + (SIZE - OUTLINE * 2) * 0.36) / SIZE, y: OUTLINE / SIZE };
   // A dot points with its middle, which is the whole idea of it.
   return { x: 0.5, y: 0.5 };
 }
@@ -249,7 +250,5 @@ for (const style of STYLES) {
   writeFileSync(file, encodePng(draw(style)));
 
   const spot = hotspot(style.shape);
-  console.log(
-    `wrote ${file} (${SIZE}px, hotspot ${spot.x.toFixed(4)}, ${spot.y.toFixed(4)})`,
-  );
+  console.log(`wrote ${file} (${SIZE}px, hotspot ${spot.x.toFixed(4)}, ${spot.y.toFixed(4)})`);
 }

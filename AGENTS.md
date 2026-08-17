@@ -169,6 +169,15 @@ there.
 
 ## Note on `apps/web`
 
+The public site. It shares nothing with the desktop app at runtime — no imports
+across the boundary, and in particular nothing from `shared/layout.ts`. The
+editor mock on the landing page is a picture drawn in CSS, and giving the real
+geometry module a marketing consumer would be a second reason for it to change.
+
+Its Tailwind is v4 through **PostCSS**, not the Vite plugin desktop uses, and
+`experimental.turbopackLocalPostcssConfig` is what makes Turbopack find the
+config in this workspace at all. Unstyled pages and no error is that flag.
+`apps/web/README.md` has the rest.
+
 `apps/web/AGENTS.md` is generated and re-added by `next dev`. Do not hand-edit
 it; committing it alongside your work is the way to keep the tree clean.
-`apps/web` is a scaffold and not part of the product surface.

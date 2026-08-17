@@ -58,7 +58,7 @@ export const MEDIA_SCHEME_PRIVILEGES = {
 } as const;
 
 /** Only what a session directory can legitimately contain. */
-const ALLOWED = /\.(mp4|m4a|png|jpg|jpeg)$/i;
+const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
 
 /**
  * Resolves a media URL to a path inside the recordings directory.
@@ -109,7 +109,16 @@ export function resolveMediaPath(url: string, root = RECORDINGS_DIR): string | n
  * of ours is not a path to be cleaned up, it is a request for something that
  * does not exist.
  */
+/** The app's own icon, which the welcome window shows. */
+const APP_ICON = "app-icon.png";
+
 function assetPath(fileName: string): string | null {
+  // Sits beside the backgrounds rather than in them, so it is served without
+  // becoming something the background picker offers as a wallpaper.
+  if (fileName === APP_ICON) {
+    return fileURLToPath(new URL(`../../resources/${APP_ICON}`, import.meta.url));
+  }
+
   if (!BACKGROUND_PRESETS.some((preset) => preset.file === fileName)) return null;
   return fileURLToPath(new URL(`../../resources/backgrounds/${fileName}`, import.meta.url));
 }
@@ -164,6 +173,7 @@ const CORS = {
 function contentType(path: string): string {
   if (path.endsWith(".mp4")) return "video/mp4";
   if (path.endsWith(".m4a")) return "audio/mp4";
+  if (path.endsWith(".gif")) return "image/gif";
   if (path.endsWith(".png")) return "image/png";
   return "image/jpeg";
 }

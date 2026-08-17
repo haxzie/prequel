@@ -1,23 +1,19 @@
-import { useState, type Dispatch } from "react";
+import { useEffect, useState, type Dispatch } from "react";
 
-import { BACKGROUND_PRESETS } from "../../../shared/backgrounds";
 import { cameraAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
-import { assetUrl } from "../../../shared/media-url";
-import { GRADIENT_PRESETS, SOLID_PRESETS } from "../../../shared/presets";
 import {
-  hasOverrides,
   overriddenKeys,
-  WALLPAPER_FILE_NAME,
   type Background,
   type SettingsSection,
   type SliceSettings,
   type ZoomSlice,
 } from "../../../shared/project";
-import { formatTimecode } from "../lib/format";
 import { cn } from "../lib/cn";
 import { CameraMap } from "./controls/CameraMap";
 import { Field, Section } from "./controls/Field";
+import { EasingPad } from "./controls/EasingPad";
+import { PerspectivePad } from "./controls/PerspectivePad";
 import {
   AudioIcon,
   CameraIcon,
@@ -29,10 +25,12 @@ import {
   ImageIcon,
   LayoutIcon,
   RoundedIcon,
+  ScreenIcon,
   SolidIcon,
   SquircleIcon,
-  TypingIcon,
+  TrashIcon,
   WideIcon,
+  ZoomIcon,
 } from "./icons";
 import { ColorField, percent, Segmented, Slider, Toggle } from "./controls/inputs";
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
@@ -49,6 +47,14 @@ export interface InspectorProps {
   frame: Size;
   /** The camera track's own dimensions, or null when there is no camera. */
   cameraSource: Size | null;
+  /**
+   * Play the selected zoom's span once, to show what a control just changed.
+   *
+   * Called on every change and expected to settle on its own: the panel does not
+   * know when a drag has finished, and a slider is a stream of changes rather
+   * than one.
+   */
+  onPreviewZoom: () => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
   onPickPreset: (presetId: string) => void;
@@ -91,23 +97,32 @@ export function Inspector(props: InspectorProps) {
   const zoom = state.project.zooms.find((candidate) => candidate.id === state.selectedZoomId);
   if (zoom) {
     return (
-      <aside className={PANEL}>
-        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <header className="flex-none border-b border-editor-line px-4 py-3">
-            <p className="text-[13px] font-medium">Zoom</p>
-            <p className="mt-0.5 text-[11px] text-editor-muted">
-              {formatTimecode(zoom.source.end - zoom.source.start)} of the recording
-            </p>
-          </header>
-          <ZoomPanel
-            zoom={zoom}
-            frame={props.frame}
-            hasCursor={props.hasCursor}
-            onChange={(patch) => dispatch({ type: "setZoom", zoomId: zoom.id, patch })}
-            onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
-          />
-        </div>
-      </aside>
+      <div className={SHELL}>
+        <aside className={PANEL}>
+          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+            <PanelHeader
+              title="Zoom"
+              icon={<ZoomIcon />}
+              // The blue a zoom is drawn in on the timeline. The panel and the
+              // chip it belongs to say the same thing about what is selected.
+              tone="border-selected/60 bg-selected/35 text-white"
+              onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
+              deleteLabel="Remove zoom"
+            />
+            <ZoomPanel
+              zoom={zoom}
+              frame={props.frame}
+              hasCursor={props.hasCursor}
+              // Every zoom control funnels through here, so this is the one
+              // place the preview has to be triggered from.
+              onChange={(patch) => {
+                dispatch({ type: "setZoom", zoomId: zoom.id, patch });
+                props.onPreviewZoom();
+              }}
+            />
+          </div>
+        </aside>
+      </div>
     );
   }
 
@@ -128,12 +143,12 @@ export function Inspector(props: InspectorProps) {
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
 
   return (
-    <aside className={PANEL}>
+    <div className={SHELL}>
       {/* The rail. Icon over label rather than beside it: four items in a
           column of this width read as a list of destinations, which is what
           they are, and the labels stay legible at 10px because nothing has to
           share the line with them. */}
-      <nav className="flex w-16 flex-none flex-col gap-1 border-r border-editor-line p-1.5">
+      <nav className={RAIL}>
         {categories.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -157,83 +172,114 @@ export function Inspector(props: InspectorProps) {
         ))}
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <header className="flex-none border-b border-editor-line px-4 py-3">
-          <p className="text-[13px] font-medium">{scoped ? "Clip" : "All clips"}</p>
-          <p className="mt-0.5 text-[11px] text-editor-muted">
-            {scoped
-              ? hasOverrides(slice?.overrides)
-                ? "Changes apply to this clip only"
-                : "Following the project defaults"
-              : "Changes apply everywhere they are not overridden"}
-          </p>
-        </header>
+      <aside className={PANEL}>
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <PanelHeader
+            title={scoped ? "Clip" : "All clips"}
+            icon={<ScreenIcon />}
+            // The purple a clip is drawn in on the timeline, and a neutral one
+            // for the defaults, which are not a thing on the timeline at all.
+            tone={
+              scoped
+                ? "border-slice-edge/70 bg-slice-edge/40 text-white"
+                : "border-editor-line bg-white/10 text-white"
+            }
+            // Only a selected clip can be removed. With nothing selected this
+            // panel is the project defaults, which are not a thing to delete.
+            onDelete={
+              scoped && slice
+                ? () => dispatch({ type: "deleteSlice", sliceId: slice.id })
+                : undefined
+            }
+            deleteLabel="Remove clip"
+          />
 
-        {active === "layout" && (
-          <>
-            <LayoutPanel
+          {active === "layout" && (
+            <>
+              <LayoutPanel
+                settings={settings}
+                field={field}
+                reset={sectionReset("layout")}
+                set={set}
+              />
+              <BackgroundPanel
+                settings={settings}
+                field={field}
+                reset={sectionReset("background")}
+                set={set}
+                onPickWallpaper={props.onPickWallpaper}
+                onPickImage={props.onPickImage}
+                onPickPreset={props.onPickPreset}
+                wallpaperUrl={props.wallpaperUrl}
+              />
+            </>
+          )}
+
+          {active === "camera" && (
+            <CameraPanel
+              settings={settings}
+              frame={props.frame}
+              cameraSource={props.cameraSource}
+              field={field}
+              reset={sectionReset("layout")}
+              set={set}
+            />
+          )}
+
+          {active === "audio" && (
+            <AudioPanel
+              settings={settings}
+              present={props.present}
+              field={field}
+              reset={sectionReset("audio")}
+              set={set}
+            />
+          )}
+
+          {active === "cursor" && (
+            <CursorPanel
               settings={settings}
               field={field}
               reset={sectionReset("layout")}
               set={set}
             />
-            <BackgroundPanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("background")}
-              set={set}
-              onPickWallpaper={props.onPickWallpaper}
-              onPickImage={props.onPickImage}
-              onPickPreset={props.onPickPreset}
-              wallpaperUrl={props.wallpaperUrl}
-            />
-          </>
-        )}
-
-        {active === "camera" && (
-          <CameraPanel
-            settings={settings}
-            frame={props.frame}
-            cameraSource={props.cameraSource}
-            field={field}
-            reset={sectionReset("layout")}
-            set={set}
-          />
-        )}
-
-        {active === "audio" && (
-          <AudioPanel
-            settings={settings}
-            present={props.present}
-            field={field}
-            reset={sectionReset("audio")}
-            set={set}
-          />
-        )}
-
-        {active === "cursor" && (
-          <CursorPanel settings={settings} field={field} reset={sectionReset("layout")} set={set} />
-        )}
-      </div>
-    </aside>
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
 /**
- * The panel, floated off the window's edge.
+ * The pair, floated off the window's edge.
  *
- * A margin and rounded corners rather than a full-height column with a rule
- * down its side: the dotted surface runs behind and under it, which says the
- * panel is *over* the composition rather than a second region of the window
- * competing with it. `overflow-hidden` so the scrolling content stays inside
- * the corners it is given.
+ * A margin and rounded corners rather than full-height columns with rules down
+ * their sides: the dotted surface runs behind and under both, which says they
+ * are *over* the composition rather than further regions of the window
+ * competing with it.
+ *
+ * `justify-end` anchors the controls to the window edge, so the panel does not
+ * slide sideways when the rail is absent — which it is for a selected zoom.
  */
+const SHELL = "m-2 ml-0 flex flex-1 justify-end gap-2";
+
+/**
+ * The rail, a panel in its own right beside the controls rather than a column
+ * inside them. `self-start` is what keeps it the height of its own buttons: as
+ * an ordinary flex item it would stretch to match the panel and be mostly empty
+ * surface.
+ */
+const RAIL =
+  "flex w-16 flex-none flex-col gap-1 self-start rounded-xl border border-editor-line " +
+  "bg-editor-panel p-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
+
+/** `overflow-hidden` so the scrolling content stays inside the corners. */
 const PANEL =
-  "m-2 ml-0 flex w-80 flex-none overflow-hidden rounded-xl border border-editor-line " +
+  "flex w-80 flex-none overflow-hidden rounded-xl border border-editor-line " +
   "bg-editor-panel shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
 
-/** The width the panel occupies when open: its own, plus the margin beside it. */
-export const PANEL_WIDTH = "21rem";
+/** What the pair occupies when open: rail, gap, panel, and the margin beside. */
+export const PANEL_WIDTH = "25.5rem";
 
 /** The inspector's four destinations. */
 type CategoryId = "layout" | "camera" | "audio" | "cursor";
@@ -496,74 +542,88 @@ function BackgroundPanel({
 
   const setPaint = (value: Background) => set("background", "background", value);
 
+  /**
+   * Which style's swatches are on show, which is not the same as which is
+   * applied.
+   *
+   * Switching to Solid used to *set* a solid background, so looking at what the
+   * colours were would replace the image you had — and the only way back was
+   * undo. The tabs now only change what the grid holds; pressing a swatch is
+   * the single thing that changes the frame.
+   */
+  const [style, setStyle] = useState<Background["kind"]>(paint.kind);
+
+  // Follows the project when the background changes from somewhere else — a
+  // different clip selected, a section reset, an undo — so the panel is never
+  // showing one style while the frame draws another.
+  useEffect(() => setStyle(paint.kind), [paint.kind]);
+
   return (
     <Section title="Background" onReset={reset}>
       <Field label="Style" {...field("background", "background")}>
         <Segmented
-          value={paint.kind}
+          value={style}
           options={[
             { value: "image", label: "Image", icon: <ImageIcon /> },
             { value: "solid", label: "Solid", icon: <SolidIcon /> },
             { value: "gradient", label: "Gradient", icon: <GradientIcon /> },
           ]}
-          onChange={(kind) => {
-            if (kind === paint.kind) return;
-            // Each style opens on a sensible default rather than on nothing, so
-            // switching to one always shows a background rather than a blank
-            // frame waiting to be configured.
-            if (kind === "solid") setPaint({ kind: "solid", color: SOLID_PRESETS[1]! });
-            if (kind === "gradient") setPaint({ kind: "gradient", ...GRADIENT_PRESETS[1]! });
-            if (kind === "image") {
-              setPaint({ kind: "image", source: "wallpaper", path: WALLPAPER_FILE_NAME });
-            }
-          }}
+          onChange={setStyle}
         />
       </Field>
 
-      {paint.kind === "solid" && (
-        <SolidSwatches value={paint.color} onChange={(color) => setPaint({ ...paint, color })} />
+      {/* Each grid is passed the applied value only when it is that grid's own
+          style. Otherwise nothing is marked as chosen — a colour highlighted
+          while the frame is showing an image would be claiming something
+          untrue. */}
+      {style === "solid" && (
+        <SolidSwatches
+          value={paint.kind === "solid" ? paint.color : null}
+          // A whole background rather than a patch of the old one: what is
+          // applied may not be a solid, so there is nothing to spread.
+          onChange={(color) => setPaint({ kind: "solid", color })}
+        />
       )}
 
-      {paint.kind === "gradient" && (
+      {style === "gradient" && (
         <>
           <GradientSwatches
-            value={paint}
+            value={paint.kind === "gradient" ? paint : null}
             onChange={(preset) => setPaint({ kind: "gradient", ...preset })}
           />
-          <Field label="Angle">
-            <Slider
-              value={paint.angle}
-              min={0}
-              max={360}
-              step={1}
-              format={(value) => `${Math.round(value)}°`}
-              onChange={(angle) => setPaint({ ...paint, angle })}
-            />
-          </Field>
+          {/* Only once one is applied. An angle slider for a gradient that is
+              not on screen has nothing to turn. */}
+          {paint.kind === "gradient" && (
+            <Field label="Angle">
+              <Slider
+                value={paint.angle}
+                min={0}
+                max={360}
+                step={1}
+                format={(value) => `${Math.round(value)}°`}
+                onChange={(angle) => setPaint({ ...paint, angle })}
+              />
+            </Field>
+          )}
         </>
       )}
 
-      {paint.kind === "image" && (
+      {style === "image" && (
         <Field label="Image">
           <div className="flex flex-col gap-1.5">
             <ImageSwatches
-              path={paint.path}
+              path={paint.kind === "image" ? paint.path : null}
               wallpaper={wallpaperUrl}
               onPickWallpaper={onPickWallpaper}
               onPickPreset={onPickPreset}
+              onPickImage={onPickImage}
             />
 
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                className="flex-1 rounded-lg bg-white/5 px-2 py-1.5 text-[11px] hover:bg-white/10"
-                onClick={onPickImage}
-              >
-                Choose…
-              </button>
-            </div>
-            <p className="truncate text-[11px] text-editor-muted" title={paint.path}>
-              {paint.path
+            <p
+              className="truncate text-[11px] text-editor-muted"
+              title={paint.kind === "image" ? paint.path : undefined}
+            >
+              {paint.kind === "image" && paint.path
                 ? // Copied into the recording, so the export is the same
                   // tomorrow even after the desktop picture changes.
                   paint.path
@@ -704,6 +764,69 @@ function AudioPanel({
  * being readable and starts being a picture of a screen — which is a fine
  * effect for a title card and a poor one for the thing being demonstrated.
  */
+/**
+ * The bar at the top of the panel: what is selected, and how to get rid of it.
+ *
+ * One line, no explanation. The description that used to sit under the title
+ * said the same thing on every recording, which is the definition of something
+ * nobody reads after the first time — and it cost a third of the panel's height
+ * before any control appeared.
+ *
+ * The colour is carried by the chip behind the icon, in whatever the thing is
+ * drawn in on the timeline, so the panel and the chip it belongs to agree at a
+ * glance. The glyph itself stays white: at 14px a tinted stroke on a tinted
+ * ground is two washes of the same hue and reads as neither.
+ */
+function PanelHeader({
+  title,
+  icon,
+  tone,
+  onDelete,
+  deleteLabel,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  /** Border, background and text classes, from the timeline's own palette. */
+  tone: string;
+  /** Absent when there is nothing deletable, which hides the button. */
+  onDelete?: () => void;
+  deleteLabel: string;
+}) {
+  return (
+    <header className="flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
+      <span
+        className={cn(
+          "grid size-6 flex-none place-items-center rounded-md border [&_svg]:size-3.5",
+          tone,
+        )}
+        aria-hidden
+      >
+        {icon}
+      </span>
+
+      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
+
+      {onDelete && (
+        <button
+          type="button"
+          title={deleteLabel}
+          aria-label={deleteLabel}
+          className={cn(
+            "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+            "transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-3.5",
+          )}
+          onClick={onDelete}
+        >
+          <TrashIcon />
+        </button>
+      )}
+    </header>
+  );
+}
+
+/** What `sanitiseZooms` clamps an angle to, so the pad cannot set one it drops. */
+const TILT_LIMIT = 30;
+
 const TILTS = [
   { label: "Flat", tilt: 0, yaw: 0 },
   { label: "Lean back", tilt: 8, yaw: 0 },
@@ -712,6 +835,65 @@ const TILTS = [
   { label: "Right", tilt: 4, yaw: 10 },
   { label: "Hero", tilt: 12, yaw: -14 },
 ] as const;
+
+/**
+ * The named eases, and the control points behind each.
+ *
+ * Presets because "ease out" is what anyone actually wants, and a pair of
+ * control points is what the renderer needs — asking for the second to express
+ * the first is the gap the pad alone would leave. Nudging a preset lands on
+ * control points no preset matches, which is what `easingName` reports.
+ */
+const EASINGS = [
+  {
+    name: "smooth" as const,
+    label: "Smooth",
+    // The `smoothstep` this control replaced, exactly. Also the default, so the
+    // segmented control reads as "Smooth" on every zoom made before it existed.
+    curve: { easeInX: 1 / 3, easeInY: 0, easeOutX: 2 / 3, easeOutY: 1 },
+  },
+  {
+    name: "linear" as const,
+    label: "Linear",
+    curve: { easeInX: 0, easeInY: 0, easeOutX: 1, easeOutY: 1 },
+  },
+  {
+    // Slow to leave, arriving at speed. Reads as the camera being pulled.
+    name: "in" as const,
+    label: "Slow in",
+    curve: { easeInX: 0.42, easeInY: 0, easeOutX: 1, easeOutY: 1 },
+  },
+  {
+    // Off the mark immediately and settling. The most useful of the four for a
+    // zoom that has to keep up with a click.
+    name: "out" as const,
+    label: "Slow out",
+    curve: { easeInX: 0, easeInY: 0, easeOutX: 0.58, easeOutY: 1 },
+  },
+];
+
+type EasingName = (typeof EASINGS)[number]["name"] | "custom";
+
+/** Which preset a zoom's curve is, or `custom` once it has been dragged. */
+function easingName(curve: {
+  easeInX: number;
+  easeInY: number;
+  easeOutX: number;
+  easeOutY: number;
+}): EasingName {
+  const match = EASINGS.find(
+    (preset) =>
+      // A pad drag lands on floats, so exact equality would never match and the
+      // row would forget which preset it started from. A thousandth is finer
+      // than the pad can resolve at this size.
+      Math.abs(preset.curve.easeInX - curve.easeInX) < 1e-3 &&
+      Math.abs(preset.curve.easeInY - curve.easeInY) < 1e-3 &&
+      Math.abs(preset.curve.easeOutX - curve.easeOutX) < 1e-3 &&
+      Math.abs(preset.curve.easeOutY - curve.easeOutY) < 1e-3,
+  );
+
+  return match?.name ?? "custom";
+}
 
 /**
  * One zoom span's settings.
@@ -726,17 +908,20 @@ function ZoomPanel({
   frame,
   hasCursor,
   onChange,
-  onDelete,
 }: {
   zoom: ZoomSlice;
   frame: Size;
   /** Whether this recording has a pointer track to follow. */
   hasCursor: boolean;
   onChange: (patch: Partial<ZoomSlice>) => void;
-  onDelete: () => void;
 }) {
   return (
     <Section title="Zoom">
+      {/* No `typing` option. It needs the Accessibility grant to have anything
+          to aim at and is absent without it, so most of the time it was a third
+          choice that silently behaved as the first. The automatic pass still
+          produces `typing` zooms where the track exists, and they keep working
+          — this only stops it being offered as something to pick by hand. */}
       <Field label="Follow">
         <Segmented
           value={zoom.target}
@@ -749,35 +934,32 @@ function ZoomPanel({
                 : "This recording has no pointer track",
               icon: <CursorIcon />,
             },
-            {
-              value: "typing",
-              label: "Typing",
-              title: "Frame whatever field has keyboard focus, falling back to the pointer",
-              icon: <TypingIcon />,
-            },
             { value: "region", label: "Region", icon: <FillIcon /> },
           ]}
           onChange={(target) => onChange({ target })}
         />
       </Field>
 
-      {/* Offered whichever mode is on, so switching to Region does not move
-          everything below it — and so the area can be picked before it is
-          switched to. Disabled under Cursor, where the pointer decides. */}
-      <Field label="Area">
-        <CameraMap
-          frame={frame}
-          shape="rounded"
-          // The share of the frame the zoom will show, which is exactly what
-          // the box on the map should be.
-          size={1 / Math.max(1, zoom.level)}
-          aspect={frame.width / frame.height}
-          x={zoom.x}
-          y={zoom.y}
-          disabled={zoom.target === "cursor"}
-          onChange={(x, y) => onChange({ x, y })}
-        />
-      </Field>
+      {/* Only under Region. Following the cursor means the pointer decides
+          where the shot sits, so a map of somewhere to put it is answering a
+          question that is not being asked — it used to sit there greyed out,
+          which reads as something broken rather than something irrelevant. */}
+      {zoom.target === "region" && (
+        <Field label="Area">
+          <CameraMap
+            frame={frame}
+            shape="rounded"
+            // The share of the frame the zoom will show, which is exactly what
+            // the box on the map should be.
+            size={1 / Math.max(1, zoom.level)}
+            aspect={frame.width / frame.height}
+            radius="5px"
+            x={zoom.x}
+            y={zoom.y}
+            onChange={(x, y) => onChange({ x, y })}
+          />
+        </Field>
+      )}
 
       <Field label="Level">
         <Slider
@@ -803,10 +985,39 @@ function ZoomPanel({
         />
       </Field>
 
-      {/* Presets before the sliders, because nobody arrives wanting −8° of
-          yaw — they want "leaning back a bit". The sliders are for adjusting
-          what a preset got close to. */}
+      {/* Directly under Speed, because the two answer halves of one question:
+          that one is how long the move takes, this one is what it feels like
+          over that time. Presets first — most people want "ease out" rather
+          than a particular pair of control points, and the curve then shows
+          what they picked and can be nudged from there. */}
+      <Field label="Ease">
+        <div className="flex flex-col gap-2">
+          <Segmented
+            value={easingName(zoom)}
+            options={EASINGS.map((preset) => ({ value: preset.name, label: preset.label }))}
+            onChange={(name) => {
+              const preset = EASINGS.find((candidate) => candidate.name === name);
+              if (preset) onChange(preset.curve);
+            }}
+          />
+          <EasingPad curve={zoom} onChange={onChange} />
+        </div>
+      </Field>
+
+      {/* Drag the picture, not the numbers. The sliders below stay for
+          precision and for saying what the angle currently is — the pad is how
+          anyone arrives at one. */}
       <Field label="Perspective">
+        <PerspectivePad
+          tilt={zoom.tilt}
+          yaw={zoom.yaw}
+          depth={zoom.depth}
+          limit={TILT_LIMIT}
+          onChange={onChange}
+        />
+      </Field>
+
+      <Field label="Angles">
         <div className="grid grid-cols-3 gap-1">
           {TILTS.map((preset) => {
             const here =
@@ -832,11 +1043,27 @@ function ZoomPanel({
         </div>
       </Field>
 
+      {/* The control the panel was missing. The angle says which way the
+          picture is turned; this says how much being turned costs it, and the
+          same 12° is a product shot at one end and a caricature at the other.
+          Every 3D tool separates the two — it is Rotato's "Perspective" and a
+          camera's field of view. */}
+      <Field label="Depth">
+        <Slider
+          value={zoom.depth}
+          min={0}
+          max={1}
+          step={0.01}
+          format={(value) => (value < 0.02 ? "Flat" : percent(value))}
+          onChange={(depth) => onChange({ depth })}
+        />
+      </Field>
+
       <Field label="Tilt">
         <Slider
           value={zoom.tilt}
-          min={-30}
-          max={30}
+          min={-TILT_LIMIT}
+          max={TILT_LIMIT}
           step={1}
           // Degrees, and signed: the sign is the whole difference between
           // leaning towards the viewer and away from them.
@@ -848,8 +1075,8 @@ function ZoomPanel({
       <Field label="Yaw">
         <Slider
           value={zoom.yaw}
-          min={-30}
-          max={30}
+          min={-TILT_LIMIT}
+          max={TILT_LIMIT}
           step={1}
           format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
           onChange={(yaw) => onChange({ yaw })}
@@ -886,13 +1113,20 @@ function ZoomPanel({
         />
       </Field>
 
-      <button
-        type="button"
-        className="rounded-lg bg-white/5 px-2 py-1.5 text-[11px] text-editor-muted hover:bg-cut/20 hover:text-editor-fg"
-        onClick={onDelete}
-      >
-        Remove zoom
-      </button>
+      {/* Beside the blur because the two are the same kind of thing — what the
+          shot does to everything that is not the subject — but on its own
+          switch-free row: a vignette of zero is already off, so a toggle in
+          front of it would be a second way to say the same thing. */}
+      <Field label="Vignette">
+        <Slider
+          value={zoom.vignette}
+          min={0}
+          max={1}
+          step={0.01}
+          format={(value) => (value === 0 ? "Off" : percent(value))}
+          onChange={(vignette) => onChange({ vignette })}
+        />
+      </Field>
     </Section>
   );
 }

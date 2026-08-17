@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { autoZooms, type Moment } from "./autoedit.js";
+import { augmentZooms, autoZooms, type Moment } from "./autoedit.js";
+import { DEFAULT_ZOOM, type ZoomSlice } from "./project.js";
 
 const S = 1_000_000_000;
 const OPTIONS = { duration: 60 * S, hasCursor: true };
@@ -75,10 +76,36 @@ describe("clustering", () => {
     }
   });
 
-  it("declines a run of clicks too long to be a shot", () => {
-    // Twenty seconds of steady clicking is the whole video, not a moment in it.
+  it("cuts a long run of clicking into shots rather than dropping it", () => {
+    // This used to return nothing: a run past the cap was discarded whole. A
+    // demo that is one continuous stream of clicks is the common case, and it
+    // came back with no zooms at all — the automatic pass was quietest exactly
+    // where the most was happening.
     const steady = Array.from({ length: 20 }, (_, index) => click(10 + index));
-    expect(autoZooms(steady, OPTIONS)).toEqual([]);
+    const zooms = autoZooms(steady, OPTIONS);
+
+    expect(zooms.length).toBeGreaterThan(1);
+
+    for (const zoom of zooms) {
+      // Still shots rather than one push over the whole run.
+      expect(zoom.source.end - zoom.source.start).toBeLessThanOrEqual(14 * S);
+    }
+  });
+
+  it("holds each shot long enough to read", () => {
+    // The complaint that started this: zooms that arrived and left before there
+    // was anything to see. A push takes the best part of a second at each end,
+    // so anything under about three is all travel and no dwell.
+    for (const zoom of autoZooms([click(10), click(10.6)], OPTIONS)) {
+      expect(zoom.source.end - zoom.source.start).toBeGreaterThanOrEqual(2.8 * S);
+    }
+  });
+
+  it("stays on screen after the click, not just up to it", () => {
+    // A viewer needs to see what the click *did*. Pulling out as it lands shows
+    // the press and hides the result.
+    const zooms = autoZooms([click(10)], OPTIONS);
+    expect(zooms[0]!.source.end - 10 * S).toBeGreaterThanOrEqual(2 * S);
   });
 
   it("holds through a long stretch of typing", () => {
@@ -172,5 +199,98 @@ describe("the lean", () => {
       expect(Math.abs(zoom.yaw)).toBeLessThanOrEqual(12);
       expect(Math.abs(zoom.tilt)).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+describe("running it again over an edit", () => {
+  const existing = (from: number, to: number, over: Partial<ZoomSlice> = {}): ZoomSlice => ({
+    // Spread first so a field added to a zoom later cannot break this fixture;
+    // every value spelled out below still wins over the default.
+    ...DEFAULT_ZOOM,
+    id: "mine",
+    source: { start: from * S, end: to * S },
+    target: "region",
+    x: 0.9,
+    y: 0.1,
+    level: 3,
+    speed: 1,
+    tilt: 20,
+    yaw: -20,
+    depth: 0.9,
+    blur: true,
+    blurSafe: 0.5,
+    blurStrength: 0.02,
+    ...over,
+  });
+
+  it("adds shots in the gaps without touching what is there", () => {
+    const mine = existing(40, 45);
+    const after = augmentZooms([mine], [click(10), click(10.6)], OPTIONS);
+
+    // Byte for byte: not moved, not retargeted, not restyled.
+    expect(after).toContainEqual(mine);
+    expect(after.length).toBeGreaterThan(1);
+  });
+
+  it("extends a zoom it lands on rather than replacing it", () => {
+    // The whole point. A hand-made shot carries settings nobody wants
+    // regenerated, so a moment overlapping it grows the span and leaves the
+    // rest. The clicks sit late enough that the candidate's lead-in reaches
+    // back inside the existing shot.
+    const mine = existing(10, 14);
+    const after = augmentZooms([mine], [click(15), click(15.5)], OPTIONS);
+
+    expect(after).toHaveLength(1);
+    expect(after[0]!.source.start).toBe(mine.source.start);
+    expect(after[0]!.source.end).toBeGreaterThan(mine.source.end);
+    // Everything that is not the span survives.
+    expect(after[0]!.level).toBe(3);
+    expect(after[0]!.tilt).toBe(20);
+    expect(after[0]!.blur).toBe(true);
+  });
+
+  it("never shrinks a zoom it lands inside", () => {
+    const mine = existing(8, 30);
+    const after = augmentZooms([mine], [click(15)], OPTIONS);
+
+    expect(after).toEqual([mine]);
+  });
+
+  it("leaves a stretch that already carries two shots alone", () => {
+    // Extending one would swallow the other, and two hand-made shots in a row
+    // is not a stretch asking for a third opinion.
+    const first = existing(10, 13, { id: "a" });
+    const second = existing(14, 17, { id: "b" });
+
+    // One cluster — a second apart, so they stay together — long enough that
+    // the candidate it makes spans both shots.
+    const run = [11, 12, 13, 14, 15].map((second_) => click(second_));
+    const after = augmentZooms([first, second], run, OPTIONS);
+
+    expect(after).toEqual([first, second]);
+  });
+
+  it("never produces an overlap", () => {
+    // `sanitiseProject` drops one of an overlapping pair, so an overlap here is
+    // a zoom that vanishes on the next save rather than a visible mistake.
+    const mine = [existing(10, 13, { id: "a" }), existing(20, 23, { id: "b" })];
+    const after = augmentZooms(
+      mine,
+      Array.from({ length: 30 }, (_, index) => click(index * 1.4)),
+      OPTIONS,
+    );
+
+    for (let index = 1; index < after.length; index += 1) {
+      expect(after[index]!.source.start).toBeGreaterThanOrEqual(after[index - 1]!.source.end);
+    }
+  });
+
+  it("is idempotent", () => {
+    // Pressing the button twice should not keep growing the same shots.
+    const moments = [click(10), click(10.6), click(30), click(30.5)];
+    const once = augmentZooms([], moments, OPTIONS);
+    const twice = augmentZooms(once, moments, OPTIONS);
+
+    expect(twice).toEqual(once);
   });
 });

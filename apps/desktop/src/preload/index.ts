@@ -8,6 +8,8 @@ import type {
   ExportProgress,
   ExportRequest,
   IpcResult,
+  PermissionId,
+  PermissionState,
   PermissionStatus,
   RecordingPreferences,
   ScreenMode,
@@ -26,6 +28,8 @@ export type {
   ExportProgress,
   ExportRequest,
   IpcResult,
+  PermissionId,
+  PermissionState,
   PermissionStatus,
   RecordingPreferences,
   ScreenMode,
@@ -38,12 +42,24 @@ const api = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC_CHANNELS.appInfo),
 
   permissions: {
-    screen: (): Promise<PermissionStatus> => ipcRenderer.invoke(IPC_CHANNELS.screenPermission),
-    requestScreen: (): Promise<PermissionStatus> =>
-      ipcRenderer.invoke(IPC_CHANNELS.requestScreenPermission),
+    /** Every permission's state. One call, so a list cannot be half-refreshed. */
+    list: (): Promise<PermissionState[]> => ipcRenderer.invoke(IPC_CHANNELS.permissionStates),
+
+    /** Asks for one, and answers with all of them as they stand afterwards. */
+    request: (id: PermissionId): Promise<PermissionState[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.requestPermission, id),
+
     /** Prompts for camera or mic access; device labels depend on it. */
     ensureDevice: (kind: "camera" | "microphone"): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.ensureDeviceAccess, kind),
+  },
+
+  welcome: {
+    /** Closes the welcome window and opens the panel. */
+    done: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.welcomeDone),
+
+    /** Quits and comes back, which is what a new Screen Recording grant needs. */
+    relaunch: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.relaunchApp),
   },
 
   dock: {
@@ -153,6 +169,24 @@ const api = {
         const handler = (_event: unknown, progress: ExportProgress) => listener(progress);
         ipcRenderer.on(IPC_CHANNELS.exportProgress, handler);
         return () => ipcRenderer.off(IPC_CHANNELS.exportProgress, handler);
+      },
+
+      /** Puts a finished export on the pasteboard as a file, not as its path. */
+      copy: (path: string): Promise<IpcResult<void>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.exportCopy, path),
+
+      /**
+       * Starts a native drag carrying a finished export.
+       *
+       * `send` rather than `invoke`, and called straight from `dragstart`:
+       * `webContents.startDrag` only takes hold while the mouse is still down,
+       * and a promise round trip is long enough to miss that window.
+       *
+       * `icon` is a PNG data URL and must not be empty — Electron throws on an
+       * empty one, and macOS shows nothing under the pointer without it.
+       */
+      drag: (path: string, icon: string): void => {
+        ipcRenderer.send(IPC_CHANNELS.exportDrag, path, icon);
       },
     },
   },

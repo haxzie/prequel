@@ -39,6 +39,7 @@ export function CameraMap({
   shape,
   size,
   aspect,
+  radius,
   x,
   y,
   disabled,
@@ -50,6 +51,16 @@ export function CameraMap({
   size: number;
   /** How much wider than tall the bubble is. 1 for every shape but `wide`. */
   aspect: number;
+  /**
+   * Overrides the shape's own radius.
+   *
+   * For the zoom area, which is not a camera bubble and has no shape of its
+   * own: the percentage radii above are resolved per axis, so on a box as wide
+   * as a 16:9 frame they stretch the corners into quarter-ellipses. A length
+   * keeps them the same size on both edges, which is what a rounded rectangle
+   * is meant to look like.
+   */
+  radius?: string;
   x: number;
   y: number;
   disabled?: boolean;
@@ -155,7 +166,7 @@ export function CameraMap({
           top: `${(at.y - height / 2) * 100}%`,
           width: `${width * 100}%`,
           height: `${height * 100}%`,
-          borderRadius: RADIUS[shape],
+          borderRadius: radius ?? RADIUS[shape],
         }}
       />
     </div>

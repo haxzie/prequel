@@ -9,16 +9,39 @@ import {
   type GradientPreset,
 } from "../../../../shared/presets";
 import { cn } from "../../lib/cn";
+import { ImageIcon } from "../icons";
 
 /**
- * A 5×3 grid of backgrounds to pick from.
+ * One swatch in the five-column grid.
  *
- * Fifteen cells either way, so both grids are the same shape and switching
- * between them does not move the controls underneath.
+ * The edge is a border and *only* a border. Selection used to add a `ring` in
+ * the same colour on top of one, and a ring sits outside the border box — so
+ * its corner radius is a pixel wider than the border's and the two arcs came
+ * apart, which is what made every chosen swatch look like it had a second,
+ * crooked outline around it.
+ *
+ * `bg-clip-padding` keeps the picture inside that edge. A translucent border
+ * paints over the background by default, so on an image swatch the keyline
+ * brightened and dimmed with whatever part of the photo it happened to cross.
+ *
+ * `hover:z-10` because the cell grows past its own grid track: without it the
+ * swatches that come after it in the DOM paint over the enlarged edge.
  */
 const CELL =
-  "relative aspect-square rounded border transition-transform hover:scale-110 " +
-  "focus-visible:outline-2 focus-visible:outline-editor-accent focus-visible:outline-offset-1";
+  "relative aspect-square rounded bg-clip-padding transition-transform " +
+  "hover:z-10 hover:scale-110 focus-visible:z-10 focus-visible:outline-2 " +
+  "focus-visible:outline-editor-accent focus-visible:outline-offset-1";
+
+/**
+ * Resting and chosen edges.
+ *
+ * The chosen one is thicker rather than merely brighter — `editor-accent` is a
+ * pale grey, and one pixel of it against `white/10` is not a difference you can
+ * find by scanning. Nothing moves: the box is border-box, so a second pixel of
+ * border comes out of the swatch rather than out of the grid.
+ */
+const EDGE = "border border-white/10";
+const EDGE_CHOSEN = "border-2 border-editor-accent";
 
 const GRID = "grid grid-cols-5 gap-1";
 
@@ -26,12 +49,14 @@ export function SolidSwatches({
   value,
   onChange,
 }: {
-  value: string;
+  /** The applied colour, or null when a solid is not what is applied. */
+  value: string | null;
   onChange: (color: string) => void;
 }) {
-  // A colour the user picked rather than one of the presets. Shown selected on
-  // the picker cell, so the grid never looks as though nothing is chosen.
-  const custom = !SOLID_PRESETS.some((preset) => preset.toLowerCase() === value.toLowerCase());
+  // A colour the user picked rather than one of the presets. Shown chosen on
+  // the picker cell, so the grid never looks as though nothing is set.
+  const custom =
+    value !== null && !SOLID_PRESETS.some((preset) => preset.toLowerCase() === value.toLowerCase());
 
   return (
     <div className={GRID}>
@@ -41,12 +66,8 @@ export function SolidSwatches({
           type="button"
           aria-label={color}
           title={color}
-          className={cn(
-            CELL,
-            color.toLowerCase() === value.toLowerCase()
-              ? "border-editor-accent ring-1 ring-editor-accent"
-              : "border-white/10",
-          )}
+          aria-pressed={color.toLowerCase() === value?.toLowerCase()}
+          className={cn(CELL, color.toLowerCase() === value?.toLowerCase() ? EDGE_CHOSEN : EDGE)}
           style={{ background: color }}
           onClick={() => onChange(color)}
         />
@@ -57,11 +78,7 @@ export function SolidSwatches({
           is stretched over it rather than sitting beside it — a separate hex
           field is a lot of chrome for something used rarely. */}
       <label
-        className={cn(
-          CELL,
-          "cursor-pointer overflow-hidden",
-          custom ? "border-editor-accent ring-1 ring-editor-accent" : "border-white/10",
-        )}
+        className={cn(CELL, "cursor-pointer overflow-hidden", custom ? EDGE_CHOSEN : EDGE)}
         title="Custom colour"
         style={{
           background:
@@ -72,7 +89,7 @@ export function SolidSwatches({
           type="color"
           aria-label="Custom colour"
           className="absolute inset-0 cursor-pointer opacity-0"
-          value={custom ? value : "#3b82f6"}
+          value={custom ? value! : "#3b82f6"}
           onChange={(event) => onChange(event.target.value)}
         />
         {/* A dot in the middle so the cell reads as a control rather than as a
@@ -87,13 +104,15 @@ export function GradientSwatches({
   value,
   onChange,
 }: {
-  value: Extract<Background, { kind: "gradient" }>;
+  /** The applied gradient, or null when a gradient is not what is applied. */
+  value: Extract<Background, { kind: "gradient" }> | null;
   onChange: (gradient: GradientPreset) => void;
 }) {
   return (
     <div className={GRID}>
       {GRADIENT_PRESETS.map((preset) => {
-        const selected =
+        const chosen =
+          value !== null &&
           preset.from.toLowerCase() === value.from.toLowerCase() &&
           preset.to.toLowerCase() === value.to.toLowerCase();
 
@@ -103,10 +122,8 @@ export function GradientSwatches({
             type="button"
             aria-label={preset.name}
             title={preset.name}
-            className={cn(
-              CELL,
-              selected ? "border-editor-accent ring-1 ring-editor-accent" : "border-white/10",
-            )}
+            aria-pressed={chosen}
+            className={cn(CELL, chosen ? EDGE_CHOSEN : EDGE)}
             style={{ background: gradientCss(preset) }}
             onClick={() => onChange(preset)}
           />
@@ -119,26 +136,38 @@ export function GradientSwatches({
 /**
  * The image backgrounds, in the same grid as the colours.
  *
- * Same cell, same five columns: switching between Solid, Gradient and Image
- * should change what is in the grid, not where the grid is — a different shape
- * per tab moves everything below it every time you look at another option.
+ * Same cell and the same five columns, so the swatches line up across the three
+ * styles even though there are fewer pictures than colours and the grid is two
+ * rows rather than three.
  *
  * The desktop picture comes first because it is the default a project opens
- * with, so the selected cell is where the eye already is.
+ * with, so the chosen cell is where the eye already is. Choosing a file of your
+ * own is the last cell rather than a button under the grid: it is one more
+ * background among the others, and a full-width button below them read as a
+ * separate step you had to take before the grid would do anything.
  */
 export function ImageSwatches({
   path,
   wallpaper,
   onPickWallpaper,
   onPickPreset,
+  onPickImage,
 }: {
-  /** The chosen image's file name inside the recording. */
-  path: string;
+  /** The applied image's file name, or null when an image is not applied. */
+  path: string | null;
   /** URL for the desktop picture inside the recording. */
   wallpaper: string | null;
   onPickWallpaper: () => void;
   onPickPreset: (presetId: string) => void;
+  onPickImage: () => void;
 }) {
+  // A file the user chose: an image is applied, and it is neither the desktop
+  // picture nor one of the shipped ones.
+  const own =
+    path !== null &&
+    path !== WALLPAPER_FILE_NAME &&
+    !BACKGROUND_PRESETS.some((preset) => preset.file === path);
+
   return (
     <div className={GRID}>
       <button
@@ -149,9 +178,7 @@ export function ImageSwatches({
         className={cn(
           CELL,
           "overflow-hidden bg-white/5 bg-cover bg-center",
-          path === WALLPAPER_FILE_NAME
-            ? "border-editor-accent ring-1 ring-editor-accent"
-            : "border-white/10",
+          path === WALLPAPER_FILE_NAME ? EDGE_CHOSEN : EDGE,
         )}
         // The URL is built whether or not the file is there yet — the desktop
         // picture is only captured on demand. A background image that 404s
@@ -171,9 +198,7 @@ export function ImageSwatches({
           className={cn(
             CELL,
             "overflow-hidden bg-cover bg-center",
-            path === preset.file
-              ? "border-editor-accent ring-1 ring-editor-accent"
-              : "border-white/10",
+            path === preset.file ? EDGE_CHOSEN : EDGE,
           )}
           // Drawn `cover` and centred, the same way the frame will draw it, so
           // the cell is a true sample of what lands behind the recording.
@@ -181,6 +206,24 @@ export function ImageSwatches({
           onClick={() => onPickPreset(preset.id)}
         />
       ))}
+
+      {/* A glyph rather than a sample, because there is nothing to sample yet.
+          It stays chosen once a file is picked, so the grid still answers
+          "which of these is applied" when the answer is not one of ours. */}
+      <button
+        type="button"
+        title="Choose an image…"
+        aria-label="Choose an image…"
+        aria-pressed={own}
+        className={cn(
+          CELL,
+          "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
+          own ? EDGE_CHOSEN : EDGE,
+        )}
+        onClick={onPickImage}
+      >
+        <ImageIcon />
+      </button>
     </div>
   );
 }

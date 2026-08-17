@@ -16,7 +16,7 @@ import {
   type RenderPlan,
   type Size,
 } from "./layout.js";
-import { DEFAULT_SETTINGS, type SliceSettings, type ZoomSlice } from "./project.js";
+import { DEFAULT_SETTINGS, DEFAULT_ZOOM, type SliceSettings, type ZoomSlice } from "./project.js";
 
 const LANDSCAPE: Size = { width: 1920, height: 1080 };
 const VERTICAL: Size = { width: 1080, height: 1920 };
@@ -630,6 +630,9 @@ describe("zooming", () => {
   const FRAME: Size = { width: 1920, height: 1080 };
 
   const region = (over: Partial<ZoomSlice> = {}): ZoomSlice => ({
+    // Spread first so a field added to a zoom later cannot break this fixture;
+    // every value spelled out below still wins over the default.
+    ...DEFAULT_ZOOM,
     id: "z",
     source: { start: 2 * S, end: 6 * S },
     target: "region",
@@ -639,6 +642,7 @@ describe("zooming", () => {
     speed: 0.5,
     tilt: 0,
     yaw: 0,
+    depth: 0.5,
     blur: false,
     blurSafe: 0.28,
     blurStrength: 0.012,
@@ -800,6 +804,9 @@ describe("following the cursor", () => {
       shaky(jitter),
       [
         {
+          // Spread first so a field added to a zoom later cannot break this fixture;
+          // every value spelled out below still wins over the default.
+          ...DEFAULT_ZOOM,
           id: "z",
           source: { start: 0, end: 4 * S },
           target: "cursor",
@@ -809,6 +816,7 @@ describe("following the cursor", () => {
           speed: 0.2,
           tilt: 0,
           yaw: 0,
+          depth: 0.5,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -876,6 +884,9 @@ describe("following typing", () => {
       },
       [
         {
+          // Spread first so a field added to a zoom later cannot break this fixture;
+          // every value spelled out below still wins over the default.
+          ...DEFAULT_ZOOM,
           id: "z",
           source: { start: 0, end: 6 * S },
           target,
@@ -885,6 +896,7 @@ describe("following typing", () => {
           speed: 0,
           tilt: 0,
           yaw: 0,
+          depth: 0.5,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -972,7 +984,7 @@ describe("the camera's own zoom", () => {
 describe("perspective", () => {
   const S = 1_000_000_000;
 
-  const cornersFor = (tilt: number, yaw: number) => {
+  const cornersFor = (tilt: number, yaw: number, depth = 0.5) => {
     const plan = buildRenderPlan(
       { width: 1920, height: 1080 },
       { screen: SCREEN, camera: null },
@@ -980,6 +992,9 @@ describe("perspective", () => {
       null,
       [
         {
+          // Spread first so a field added to a zoom later cannot break this fixture;
+          // every value spelled out below still wins over the default.
+          ...DEFAULT_ZOOM,
           id: "z",
           source: { start: 0, end: 4 * S },
           target: "region",
@@ -989,6 +1004,7 @@ describe("perspective", () => {
           speed: 0,
           tilt,
           yaw,
+          depth,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -1006,6 +1022,23 @@ describe("perspective", () => {
     // Which is every zoom that only pushes in — twelve numbers a key for a
     // transform that is the identity.
     expect(cornersFor(0, 0)).toBeUndefined();
+  });
+
+  it("converges harder at the near end of the depth range", () => {
+    // The control the panel was missing. Angle says which way the picture is
+    // turned; depth says how much being turned costs it, and the two are
+    // genuinely independent — the same 12° is a product shot or a caricature.
+    const near = cornersFor(12, 0, 1)!;
+    const far = cornersFor(12, 0, 0)!;
+
+    const convergence = (q: number[]) => (q[9]! - q[6]!) / (q[3]! - q[0]!);
+    expect(convergence(near)).toBeGreaterThan(convergence(far));
+  });
+
+  it("leaves the middle of the range where it always was", () => {
+    // Every project written before `depth` existed reads back at 0.5, and has
+    // to look exactly as it did. The default is the old constant.
+    expect(cornersFor(12, 0, 0.5)).toEqual(cornersFor(12, 0));
   });
 
   it("converges the edge that leans away", () => {

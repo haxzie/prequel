@@ -13,6 +13,7 @@ import {
   DEFAULT_SETTINGS,
   hasOverrides,
   newProject,
+  outputFrame,
   overriddenKeys,
   PROJECT_VERSION,
   resolveSettings,
@@ -137,6 +138,33 @@ describe("override bookkeeping", () => {
   });
 });
 
+describe("outputFrame", () => {
+  it("scales the shorter edge, whichever edge that is", () => {
+    // The whole point of measuring the shorter edge: "720p" has to be the same
+    // amount of detail in portrait as in landscape. Pinning the height instead
+    // would make the 9:16 export four times the pixels of the 16:9 one under
+    // the same label.
+    expect(outputFrame({ width: 1920, height: 1080 }, 720)).toEqual({ width: 1280, height: 720 });
+    expect(outputFrame({ width: 1080, height: 1920 }, 720)).toEqual({ width: 720, height: 1280 });
+  });
+
+  it("never upscales", () => {
+    // Four times the encode for pixels that carry no more detail than the
+    // frame already had.
+    expect(outputFrame({ width: 1280, height: 720 }, 1080)).toEqual({ width: 1280, height: 720 });
+    expect(outputFrame({ width: 1280, height: 720 }, null)).toEqual({ width: 1280, height: 720 });
+  });
+
+  it("always lands on even dimensions", () => {
+    // H.264 chroma subsampling needs them, and encoders round silently — which
+    // shows up much later as an export one pixel narrower than its plan.
+    const scaled = outputFrame({ width: 1918, height: 1078 }, 480);
+
+    expect(scaled.width % 2).toBe(0);
+    expect(scaled.height % 2).toBe(0);
+  });
+});
+
 describe("newProject", () => {
   it("starts as one slice covering the whole take", () => {
     const project = newProject(RECORDING, 10 * S);
@@ -244,14 +272,34 @@ describe("sanitiseProject", () => {
     expect(repaired.defaults.background).toEqual(DEFAULT_SETTINGS.background);
   });
 
-  it("clamps an implausible frame rate and unknown codec", () => {
-    const project = stored() as { output: { fps: number; codec: string } };
-    project.output = { fps: 100_000, codec: "vp9" };
+  it("clamps an implausible frame rate and unknown format", () => {
+    const project = stored() as { output: { fps: number; format: string } };
+    project.output = { fps: 100_000, format: "vp9" };
 
     const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
 
     expect(repaired.output.fps).toBe(120);
-    expect(repaired.output.codec).toBe("h264");
+    expect(repaired.output.format).toBe("h264");
+  });
+
+  it("holds a GIF to a size the format can carry", () => {
+    // A GIF stores a whole frame at a time, so "Full" on a 4K recording is a
+    // file measured in gigabytes. The dialog does not offer it; this stops a
+    // project that names it anyway from exporting one.
+    const project = stored() as { output: unknown };
+    project.output = { fps: 20, format: "gif", shortEdge: null };
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.output.shortEdge).toBe(720);
+  });
+
+  it("reads a pre-GIF project's codec as its format", () => {
+    // `format` was called `codec` before GIF joined it. Ignoring the old key
+    // would not fail anything — it would quietly move every existing HEVC
+    // project back to H.264 the first time it was opened.
+    const project = stored() as { output: unknown };
+    project.output = { fps: 60, codec: "hevc" };
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.output.format).toBe("hevc");
   });
 
   it("keeps per-slice overrides across a round trip", () => {

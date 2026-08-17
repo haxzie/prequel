@@ -8,6 +8,7 @@
  * Deliberately free of any `electron` or Node import: main persists it, the
  * renderer edits it, and the exporter is handed what it resolves to.
  */
+import type { ExportFormat } from "./contract.js";
 import type { MediaTime } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
 
@@ -186,6 +187,23 @@ export interface ZoomSlice {
   /** Seconds the move in and the move out each take. */
   speed: number;
   /**
+   * The easing curve, as a cubic bézier's two control points.
+   *
+   * The same shape CSS `cubic-bezier()` describes, and read the same way: the
+   * first point governs how the move leaves rest, the second how it arrives —
+   * the entry and the exit of the move. Applied to the move in and the move out
+   * alike, so `speed` still says how long each takes and this says what each
+   * one feels like.
+   *
+   * Four flat numbers rather than a nested pair of points, matching every other
+   * field here — and each is separately clamped on the way in, which a nested
+   * object would have made a special case.
+   */
+  easeInX: number;
+  easeInY: number;
+  easeOutX: number;
+  easeOutY: number;
+  /**
    * Pitch, in degrees. Positive leans the top of the picture away.
    *
    * A perspective tilt rather than a rotation: the far edge is genuinely
@@ -196,6 +214,29 @@ export interface ZoomSlice {
   tilt: number;
   /** Yaw, in degrees. Positive swings the right edge away. */
   yaw: number;
+  /**
+   * How strong the perspective is, 0 to 1, independent of the angle.
+   *
+   * The angle says which way the picture is turned; this says how much being
+   * turned costs it. At 0 the eye is far enough away that a tilt reads as an
+   * orthographic lean with the near and far edges near enough the same length;
+   * at 1 it is close, and the same angle splays the near edge dramatically.
+   *
+   * Two controls rather than one because they are genuinely independent — the
+   * same 12° looks like a product shot or like a caricature depending only on
+   * this — and folding them together was what made the lean impossible to
+   * predict from the numbers.
+   */
+  depth: number;
+  /**
+   * Darken the frame towards its edges, 0 to 1.
+   *
+   * Eased in with the move, like the blur, so a zoom arrives with its vignette
+   * rather than wearing one the whole time. Zero by default: it is a look, and
+   * one applied to a screen recording without being asked for reads as the
+   * export having gone wrong rather than as a choice.
+   */
+  vignette: number;
   /**
    * Soften everything outside the area being zoomed to.
    *
@@ -219,11 +260,23 @@ export const DEFAULT_ZOOM = {
   // Long enough to read as a camera move rather than a cut, short enough not to
   // spend the first second of a two-second zoom still arriving.
   speed: 0.6,
+  // Exactly the `smoothstep` this replaced, not an approximation of it. With
+  // x at a third and two thirds the bézier's own x(t) reduces to t, so y(x)
+  // becomes 3x² − 2x³ — the same polynomial, to the last bit. Every project made
+  // before the control existed therefore moves precisely as it did.
+  easeInX: 1 / 3,
+  easeInY: 0,
+  easeOutX: 2 / 3,
+  easeOutY: 1,
   tilt: 0,
   yaw: 0,
+  // The eye distance this was fixed at before the control existed, so every
+  // project made until now looks exactly as it did.
+  depth: 0.5,
   blur: false,
   blurSafe: 0.28,
   blurStrength: 0.012,
+  vignette: 0,
 } as const;
 
 /** How long a zoom is when it is first dropped on the timeline. */
@@ -231,8 +284,57 @@ export const DEFAULT_ZOOM_LENGTH: Ns = 2_000_000_000;
 
 export interface OutputSettings {
   fps: number;
-  /** `"h264"` or `"hevc"`. */
-  codec: string;
+  format: ExportFormat;
+  /**
+   * What the frame's *shorter* edge is scaled to, or null to export at the
+   * frame's own size.
+   *
+   * The shorter edge rather than the height, for the same reason every geometry
+   * setting is a fraction of it: "720p" has to mean the same amount of detail
+   * whether the frame is 16:9 or 9:16, and pinning the height would make a
+   * portrait export four times the pixels of a landscape one at the same label.
+   */
+  shortEdge: number | null;
+}
+
+/**
+ * The largest shorter edge a GIF is written at.
+ *
+ * Not a limit of the encoder — it will write any size — but a GIF stores a
+ * whole quantised frame each time, with no inter-frame prediction, so a minute
+ * of 1080p is gigabytes. Enforced here rather than only in the dialog so a
+ * project that arrives with a bigger size cannot start an export nobody would
+ * have asked for.
+ */
+export const GIF_MAX_SHORT_EDGE = 720;
+
+/**
+ * The frame an export is actually written at.
+ *
+ * Scaling here rather than anywhere downstream is what keeps the look intact:
+ * `buildRenderPlan` is handed this size and lays the composition out inside it,
+ * and every geometry setting is a fraction of the shorter edge — so a 720p
+ * export is the same picture as the 1080p one, not a cropped or re-composed
+ * version of it. Rescaling the plan's absolute pixels afterwards would be the
+ * second implementation of the geometry that `shared/layout.ts` exists to
+ * prevent.
+ */
+export function outputFrame(
+  frame: { width: number; height: number },
+  shortEdge: number | null,
+): { width: number; height: number } {
+  const shorter = Math.min(frame.width, frame.height);
+  // Never upscaled: asking for 1080p from a 720p frame would spend four times
+  // the encode on pixels that carry no more detail.
+  if (!shortEdge || shortEdge >= shorter) {
+    return { width: evenSize(frame.width), height: evenSize(frame.height) };
+  }
+
+  const scale = shortEdge / shorter;
+  return {
+    width: evenSize(frame.width * scale),
+    height: evenSize(frame.height * scale),
+  };
 }
 
 export interface Project {
@@ -345,10 +447,31 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
       y: clamp(number(zoom?.["y"], DEFAULT_ZOOM.y), 0, 1),
       level: clamp(number(zoom?.["level"], DEFAULT_ZOOM.level), 1, 8),
       speed: clamp(number(zoom?.["speed"], DEFAULT_ZOOM.speed), 0, 5),
+      // Both to the unit square. x because a bézier whose control points run
+      // backwards is not a timing function — it doubles back, and a zoom that
+      // briefly un-zooms mid-move is not something the control should be able to
+      // ask for.
+      //
+      // y for two reasons that agree. A value past the ends is overshoot, which
+      // would take the picture beyond the level the zoom says it reaches; and it
+      // would put the handle outside the pad that sets it, so the control could
+      // be dragged into a state it cannot then show. Anticipation and bounce are
+      // a real look, but they need a taller pad and a level that means "peak"
+      // rather than "arrival" — a bigger change than this one.
+      easeInX: clamp(number(zoom?.["easeInX"], DEFAULT_ZOOM.easeInX), 0, 1),
+      easeInY: clamp(number(zoom?.["easeInY"], DEFAULT_ZOOM.easeInY), 0, 1),
+      easeOutX: clamp(number(zoom?.["easeOutX"], DEFAULT_ZOOM.easeOutX), 0, 1),
+      easeOutY: clamp(number(zoom?.["easeOutY"], DEFAULT_ZOOM.easeOutY), 0, 1),
       // Past about thirty degrees the far edge is short enough that the
       // picture is more foreshortening than content.
       tilt: clamp(number(zoom?.["tilt"], DEFAULT_ZOOM.tilt), -30, 30),
       yaw: clamp(number(zoom?.["yaw"], DEFAULT_ZOOM.yaw), -30, 30),
+      // Absent in every project written before this existed, which is what the
+      // default is for: they read back at the distance they were drawn at.
+      depth: clamp(number(zoom?.["depth"], DEFAULT_ZOOM.depth), 0, 1),
+      // Absent in every project written before this existed, and the default is
+      // no vignette — so those all read back looking exactly as they did.
+      vignette: clamp(number(zoom?.["vignette"], DEFAULT_ZOOM.vignette), 0, 1),
       blur: zoom?.["blur"] === true,
       blurSafe: clamp(number(zoom?.["blurSafe"], DEFAULT_ZOOM.blurSafe), 0.05, 0.9),
       blurStrength: clamp(number(zoom?.["blurStrength"], DEFAULT_ZOOM.blurStrength), 0, 0.04),
@@ -383,7 +506,7 @@ export function newProject(recordingId: string, duration: Ns): Project {
         slices: [{ id: "take", source: { start: 0, end: duration }, overrides: {} }],
       },
     ],
-    output: { fps: 60, codec: "h264" },
+    output: { fps: 60, format: "h264", shortEdge: null },
   };
 }
 
@@ -527,11 +650,31 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         slices: slices.length > 0 ? slices : fresh.tracks[0]!.slices,
       },
     ],
-    output: {
-      fps: clamp(number(stored.output?.fps, 60), 1, 120),
-      codec: stored.output?.codec === "hevc" ? "hevc" : "h264",
-    },
+    output: outputSettings(stored.output),
   };
+}
+
+/** Repairs the output block, keeping the format and its limits consistent. */
+function outputSettings(stored: Partial<OutputSettings> | undefined): OutputSettings {
+  // `codec` is what `format` was called before GIF joined it. Read as a
+  // fallback so a project written by an older build keeps its HEVC choice
+  // rather than quietly reverting to H.264.
+  const format = exportFormat(stored?.format ?? (stored as { codec?: unknown } | undefined)?.codec);
+
+  const shortEdge =
+    typeof stored?.shortEdge === "number" ? clamp(Math.round(stored.shortEdge), 64, 4320) : null;
+
+  return {
+    fps: clamp(number(stored?.fps, 60), 1, 120),
+    format,
+    shortEdge:
+      format === "gif" ? Math.min(shortEdge ?? GIF_MAX_SHORT_EDGE, GIF_MAX_SHORT_EDGE) : shortEdge,
+  };
+}
+
+/** Narrows a stored string to a format, defaulting to the one everything plays. */
+function exportFormat(value: unknown): ExportFormat {
+  return value === "hevc" || value === "gif" ? value : "h264";
 }
 
 function number(value: unknown, fallback: number): number {

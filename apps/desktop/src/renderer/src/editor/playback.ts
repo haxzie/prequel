@@ -36,6 +36,15 @@ export class Playback {
   /** `performance.now()` at that same moment. */
   private anchorWall = 0;
   private duration: MediaTime = 0;
+  /**
+   * Where a one-off preview stops, or null when playing the whole edit.
+   *
+   * Held here rather than as a timer in the caller: the loop already asks this
+   * class whether playback has run out, and a timer would be a second authority
+   * on when to stop — one that keeps running when the clock is paused, and fires
+   * against a playhead that has since been dragged somewhere else.
+   */
+  private limit: MediaTime | null = null;
 
   private readonly listeners = new Set<(playing: boolean) => void>();
 
@@ -57,11 +66,16 @@ export class Playback {
     if (!this.playing) return this.anchorProject;
 
     const elapsed = (now - this.anchorWall) * NS_PER_MS;
-    return Math.min(this.anchorProject + elapsed, this.duration);
+    return Math.min(this.anchorProject + elapsed, this.stopsAt);
   }
 
   get isPlaying(): boolean {
     return this.playing;
+  }
+
+  /** Where this run of playback ends: a preview's limit, or the whole edit. */
+  private get stopsAt(): MediaTime {
+    return this.limit === null ? this.duration : Math.min(this.limit, this.duration);
   }
 
   /**
@@ -77,11 +91,32 @@ export class Playback {
   }
 
   play(): void {
+    // A deliberate play is the whole edit, so it cancels a preview's limit —
+    // cleared before the early return, or asking to play while a preview is
+    // still running would leave it stopping short at the preview's end.
+    this.limit = null;
     if (this.playing) return;
     // Restart from the top rather than sitting stuck at the end.
     if (this.anchorProject >= this.duration) this.anchorProject = 0;
 
     this.anchorWall = performance.now();
+    this.playing = true;
+    this.emit();
+  }
+
+  /**
+   * Plays one span once, from its start, and stops at its end.
+   *
+   * For previewing what a control just changed. Re-anchored rather than queued
+   * when one is already running, so touching a second control restarts the
+   * preview instead of leaving two of them fighting over the playhead.
+   */
+  playRange(from: MediaTime, to: MediaTime): void {
+    this.anchorProject = Math.min(Math.max(0, from), this.duration);
+    this.limit = Math.min(Math.max(this.anchorProject, to), this.duration);
+    this.anchorWall = performance.now();
+
+    if (this.playing) return;
     this.playing = true;
     this.emit();
   }
@@ -101,6 +136,9 @@ export class Playback {
   }
 
   seek(time: MediaTime): void {
+    // Moving the playhead ends a preview: it was showing one span, and the
+    // playhead is no longer in it.
+    this.limit = null;
     this.anchorProject = Math.min(Math.max(0, time), this.duration);
     this.anchorWall = performance.now();
   }
@@ -111,9 +149,9 @@ export class Playback {
     return () => this.listeners.delete(listener);
   }
 
-  /** True once the playhead has run past the end of the edit. */
+  /** True once the playhead has run past the end of this run of playback. */
   hasEnded(now?: number): boolean {
-    return this.duration > 0 && this.position(now) >= this.duration;
+    return this.stopsAt > 0 && this.position(now) >= this.stopsAt;
   }
 
   private emit(): void {
@@ -149,7 +187,13 @@ export function syncElement(
 
   // A slice boundary was crossed, or the user scrubbed: the element is not
   // behind, it is somewhere else entirely.
-  if (options.seek || magnitude > HARD_SEEK_NS) {
+  //
+  // The last clause is what makes a paused preview follow the playhead at all.
+  // Nudging works by letting a running element catch up, and a paused one is not
+  // running — so a drift the nudge branch claims to handle instead sits there
+  // untouched, and the preview shows a frame up to a quarter-second from where
+  // the playhead is. Paused, any drift worth noticing has to be a real seek.
+  if (options.seek || magnitude > HARD_SEEK_NS || (!playing && magnitude > IN_SYNC_NS)) {
     element.currentTime = target;
     setRate(element, 1);
   } else if (magnitude > IN_SYNC_NS) {
