@@ -33,7 +33,7 @@ export const PLANS: Plan[] = [
       "Webcam, microphone and system audio",
       "Cuts, backgrounds and the camera bubble",
       "Export to 1080p, H.264",
-      "Up to 10 minutes a recording",
+      "Up to 5 minutes a recording",
     ],
   },
   {
@@ -72,7 +72,7 @@ export const PLANS: Plan[] = [
 export const COMPARISON: [string, boolean | string, boolean | string, boolean | string][] = [
   ["Screen, window and region capture", true, true, true],
   ["Webcam and both audio sources", true, true, true],
-  ["Recording length", "10 min", "Unlimited", "Unlimited"],
+  ["Recording length", "5 min", "Unlimited", "Unlimited"],
   ["Maximum export", "1080p60", "4K120", "4K120"],
   ["Codecs", "H.264", "H.264 · HEVC", "H.264 · HEVC"],
   ["Automatic zooms", false, true, true],
