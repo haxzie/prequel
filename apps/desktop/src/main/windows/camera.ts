@@ -92,7 +92,11 @@ export class CameraWindow {
   }
 
   hide(): void {
-    this.window?.hide();
+    // `?.` covers "never opened", not "already destroyed", and a quit leaves
+    // exactly the second: Electron destroys the window while this still holds
+    // the reference, and calling anything on it then throws.
+    if (!this.window || this.window.isDestroyed()) return;
+    this.window.hide();
   }
 
   setSize(size: CameraSize): void {

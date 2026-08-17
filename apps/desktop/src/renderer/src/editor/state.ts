@@ -46,12 +46,31 @@ export interface EditorState {
   selectedZoomId: string | null;
   /** Bumped on every change that should be persisted. */
   revision: number;
+  /**
+   * Projects to step back through, oldest first.
+   *
+   * Whole projects rather than inverse operations. A cut, a trim and a zoom
+   * move all have different inverses, several of them lossy — undoing a delete
+   * has to put the slice back *in its place* — and a project is small enough
+   * that keeping copies is cheaper than getting five inverses right.
+   */
+  history: Project[];
+  /**
+   * What the last undoable edit was, so a drag collapses into one entry.
+   *
+   * Trimming an edge dispatches on every pointer move: without this a single
+   * drag would bank a hundred entries and undo would step back through the
+   * drag one pixel at a time. Matching keys reuse the entry already pushed,
+   * which holds the project as it was before the drag started.
+   */
+  coalesce: string | null;
 }
 
 export type EditorAction =
   | { type: "load"; project: Project }
   | { type: "select"; sliceId: string | null }
   | { type: "setFrame"; frame: Project["frame"] }
+  | { type: "setOutput"; output: Project["output"] }
   | { type: "split"; at: MediaTime }
   | { type: "deleteSlice"; sliceId: string }
   | { type: "trimSlice"; sliceId: string; edge: "start" | "end"; source: MediaTime }
@@ -68,7 +87,16 @@ export type EditorAction =
   | { type: "deleteZoom"; zoomId: string }
   | { type: "setZoom"; zoomId: string; patch: Partial<ZoomSlice> }
   | { type: "moveZoom"; zoomId: string; start: MediaTime }
-  | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime };
+  | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime }
+  | { type: "undo" }
+  /**
+   * A new drag is starting, so it must not join the previous one's undo entry.
+   *
+   * Dispatched on pointer-down by anything that then streams edits. Two drags of
+   * the same edge produce identical coalesce keys, and without this they would
+   * merge into a single undo step.
+   */
+  | { type: "beginEdit" };
 
 export function initialState(project: Project): EditorState {
   return {
@@ -76,10 +104,129 @@ export function initialState(project: Project): EditorState {
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
     revision: 0,
+    history: [],
+    coalesce: null,
   };
 }
 
+/**
+ * How deep undo goes.
+ *
+ * A project is a few kilobytes, so this is a bounded cost rather than a tuned
+ * one — deep enough to cover a session's worth of cutting, capped so a long
+ * afternoon of trimming cannot grow without limit.
+ */
+const HISTORY_LIMIT = 100;
+
+/**
+ * Every edit, with the undo history maintained around the outside.
+ *
+ * Kept here rather than in each case so that adding an action cannot forget to
+ * record it: `undoStep` is the single list of what is undoable, and the cases
+ * below stay pure edits that know nothing about history.
+ */
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  if (action.type === "undo") {
+    const previous = state.history.at(-1);
+    if (previous === undefined) return state;
+
+    return {
+      ...state,
+      project: previous,
+      history: state.history.slice(0, -1),
+      // A fresh entry for whatever comes next, or the edit after an undo would
+      // coalesce into the entry the undo just consumed.
+      coalesce: null,
+      // Counts as a change: the restored project has to reach the disk, or
+      // reopening the recording would bring back what was undone.
+      revision: state.revision + 1,
+      // A slice or zoom that only existed in the undone edit is no longer there
+      // to be selected, and the inspector cannot show settings for it.
+      selectedSliceId: selectionSurvives(previous, state.selectedSliceId)
+        ? state.selectedSliceId
+        : null,
+      selectedZoomId: previous.zooms.some((zoom) => zoom.id === state.selectedZoomId)
+        ? state.selectedZoomId
+        : null,
+    };
+  }
+
+  if (action.type === "beginEdit") return { ...state, coalesce: null };
+
+  const next = apply(state, action);
+  const step = undoStep(action);
+
+  // `revision` is the reducer's own answer to "did anything change" — a declined
+  // cut or an overlapping zoom returns the state untouched. Recording those
+  // would leave undo steps that visibly do nothing.
+  if (step === null || next.revision === state.revision) return next;
+
+  return {
+    ...next,
+    history:
+      step.coalesce !== null && step.coalesce === state.coalesce
+        ? state.history
+        : [...state.history, state.project].slice(-HISTORY_LIMIT),
+    coalesce: step.coalesce,
+  };
+}
+
+/** Whether a slice id still exists, so a selection can be kept across an undo. */
+function selectionSurvives(project: Project, sliceId: string | null): boolean {
+  return sliceId !== null && slicesOf(project).some((slice) => slice.id === sliceId);
+}
+
+/**
+ * Whether an action is undoable, and what collapses a drag of it into one step.
+ *
+ * Only what changes the shape of the timeline — cuts, trims, and the zooms laid
+ * along it. Appearance settings are deliberately absent: they are the
+ * inspector's, they stream from sliders at 60 Hz, and an undo button beside the
+ * cut tools that stepped back through colour changes would be a different
+ * feature wearing the same icon.
+ *
+ * `coalesce: null` means "always its own step" — one-shot actions, where two in
+ * a row are two separate things the user did.
+ */
+function undoStep(action: EditorAction): { coalesce: string | null } | null {
+  switch (action.type) {
+    case "split":
+    case "deleteSlice":
+    case "addZoom":
+    case "deleteZoom":
+    case "setZooms":
+      return { coalesce: null };
+
+    // Dragged, so every one of these arrives as a stream keyed by what is being
+    // dragged and which end of it.
+    case "trimSlice":
+      return { coalesce: `trimSlice:${action.sliceId}:${action.edge}` };
+    case "moveZoom":
+      return { coalesce: `moveZoom:${action.zoomId}` };
+    case "trimZoom":
+      return { coalesce: `trimZoom:${action.zoomId}:${action.edge}` };
+
+    default:
+      return null;
+  }
+}
+
+/** Whether there is anything to step back to. */
+export function canUndo(state: EditorState): boolean {
+  return state.history.length > 0;
+}
+
+/**
+ * The edits themselves, each one a pure change to the project.
+ *
+ * Typed without the two history actions so the switch below stays exhaustive:
+ * `undo` and `beginEdit` touch only the history and are handled before this is
+ * reached, and letting them in here would need two cases that do nothing.
+ */
+function apply(
+  state: EditorState,
+  action: Exclude<EditorAction, { type: "undo" } | { type: "beginEdit" }>,
+): EditorState {
   switch (action.type) {
     case "load":
       return initialState(action.project);
@@ -95,6 +242,13 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case "setFrame":
       return edit(state, (project) => ({ ...project, frame: action.frame }));
+
+    // Persisted with the rest of the edit rather than kept in the dialog: a
+    // recording exported once as a GIF is nearly always exported as a GIF the
+    // next time, and re-picking the format on every open is the sort of small
+    // repeated cost nobody reports.
+    case "setOutput":
+      return edit(state, (project) => ({ ...project, output: action.output }));
 
     case "split":
       return splitSlices(state, action.at);
@@ -292,6 +446,38 @@ export function placedSlices(project: Project): PlacedSlice[] {
 
 export function projectDuration(project: Project): MediaTime {
   return totalDuration(placedSlices(project));
+}
+
+/**
+ * Where a zoom sits in project time, or null when the stretch it covers was cut.
+ *
+ * A zoom is stored in source time because that is what survives an edit — cutting
+ * a clip earlier in the timeline must not move it — so anything that wants to put
+ * the playhead on one has to map it back through the slices first.
+ *
+ * The end is matched inclusively. Slices are half-open, so a zoom that runs
+ * exactly to the end of its clip would otherwise map to nothing, and a zoom
+ * ending on a cut is the normal way to zoom out into one.
+ */
+export function zoomInProject(
+  project: Project,
+  zoom: ZoomSlice,
+): { start: MediaTime; end: MediaTime } | null {
+  const placed = placedSlices(project);
+
+  const at = (source: MediaTime): MediaTime | null => {
+    const slice = placed.find(
+      (candidate) => source >= candidate.source.start && source <= candidate.source.end,
+    );
+    return slice ? slice.timelineStart + (source - slice.source.start) : null;
+  };
+
+  const start = at(zoom.source.start);
+  const end = at(zoom.source.end);
+
+  // Either edge landing in a cut means there is no one span to play: the zoom is
+  // split across the gap, and picking one half would preview the wrong thing.
+  return start === null || end === null ? null : { start, end };
 }
 
 /**

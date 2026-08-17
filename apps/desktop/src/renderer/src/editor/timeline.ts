@@ -135,6 +135,34 @@ export function toFileTime(track: TrackMedia, source: MediaTime): MediaTime | nu
  */
 const EDGE_TOLERANCE: MediaTime = 500_000_000;
 
+/**
+ * Source-time step that counts as landing somewhere else rather than playing on.
+ *
+ * Comfortably more than a frame — including the several a busy frame can drop at
+ * once — and far less than any cut that actually moves the playhead.
+ */
+const CONTINUITY: MediaTime = 100_000_000;
+
+/**
+ * Whether the playhead moved somewhere else between two ticks.
+ *
+ * The question a media element needs answered, because the answer decides
+ * between a seek and a rate nudge, and a seek flushes the decoder: `readyState`
+ * drops for the two or three frames it takes to produce the new picture.
+ *
+ * Asked of source time rather than of which slice is under the playhead. An
+ * ordinary cut is `splitAt` leaving its two halves *contiguous* in the source, so
+ * crossing one lands the decoder exactly where it already is — and flushing it
+ * there costs those frames for no change in what is shown.
+ *
+ * The first tick of a session has no previous time and is not a jump: nothing has
+ * moved yet, and the drift correction seeks to the start on its own.
+ */
+export function hasJumped(previous: MediaTime | null, source: MediaTime | null): boolean {
+  if (previous === null || source === null) return false;
+  return Math.abs(source - previous) > CONTINUITY;
+}
+
 /** Seconds, which is the unit `HTMLMediaElement.currentTime` speaks. */
 export function toSeconds(ns: MediaTime): number {
   return ns / 1_000_000_000;

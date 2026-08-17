@@ -13,6 +13,7 @@ import { env } from "@prequel/env";
 import type {
   DockState,
   IpcResult,
+  PermissionId,
   RecordingPreferences,
   ScreenMode,
   SelectionResult,
@@ -22,7 +23,8 @@ import type { ExportRequest } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { saveProject } from "./editor-project.js";
-import { cancelExport, startExport } from "./export.js";
+import { cancelExport, copyExport, dragExport, startExport } from "./export.js";
+import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
@@ -51,13 +53,16 @@ export function registerIpc({ flow }: IpcDeps): void {
     preferencesFile: flow.preferencesPath(),
   }));
 
-  ipcMain.handle(IPC_CHANNELS.screenPermission, async () =>
-    (await getRecorder()).screenAccessStatus(),
+  // ── permissions and the welcome flow ─────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.permissionStates, () => permissionStates());
+
+  ipcMain.handle(IPC_CHANNELS.requestPermission, (_event, id: PermissionId) =>
+    requestPermission(id),
   );
 
-  ipcMain.handle(IPC_CHANNELS.requestScreenPermission, async () =>
-    (await getRecorder()).requestScreenAccess(),
-  );
+  ipcMain.handle(IPC_CHANNELS.relaunchApp, () => relaunchApp());
+
+  ipcMain.handle(IPC_CHANNELS.welcomeDone, () => flow.finishWelcome());
 
   ipcMain.handle(IPC_CHANNELS.listSources, () =>
     attempt(async () => (await getRecorder()).listTargets()),
@@ -140,6 +145,16 @@ export function registerIpc({ flow }: IpcDeps): void {
   );
 
   ipcMain.handle(IPC_CHANNELS.exportCancel, () => attempt(() => cancelExport()));
+
+  ipcMain.handle(IPC_CHANNELS.exportCopy, (_event, path: string) =>
+    attempt(() => copyExport(path)),
+  );
+
+  // `on`, not `handle`: see the channel's own note. This one is cleaned up by
+  // `removeIpc`'s `removeAllListeners`, which `removeHandler` does not cover.
+  ipcMain.on(IPC_CHANNELS.exportDrag, (event, path: string, icon: string) => {
+    dragExport(event.sender, path, icon);
+  });
 }
 
 /** Pushes panel state to every live renderer. */
@@ -150,6 +165,12 @@ export function broadcastDockState(state: DockState): void {
 }
 
 export function removeIpc(): void {
-  for (const channel of Object.values(IPC_CHANNELS)) ipcMain.removeHandler(channel);
+  for (const channel of Object.values(IPC_CHANNELS)) {
+    ipcMain.removeHandler(channel);
+    // `removeHandler` only undoes `handle`. A channel registered with `on`
+    // would survive it and be registered a second time on the next
+    // `registerIpc`, so every drag would then start twice.
+    ipcMain.removeAllListeners(channel);
+  }
   for (const window of BrowserWindow.getAllWindows()) window.destroy();
 }

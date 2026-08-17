@@ -13,7 +13,7 @@ import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type TrackGain } from "./audio";
 import { Playback, syncElement } from "./playback";
-import { place, sliceAt, toFileTime, toSourceTime, totalDuration, type Slice } from "./timeline";
+import { hasJumped, place, toFileTime, toSourceTime, totalDuration, type Slice } from "./timeline";
 
 /** How close to the edge the playhead gets before the view follows it. */
 const FOLLOW_MARGIN = 80;
@@ -71,6 +71,17 @@ export interface EditorPlayback {
    * every frame.
    */
   sourceAt: (now?: number) => MediaTime | null;
+  /**
+   * Where the pointer is hovering the timeline, or null when it is not.
+   *
+   * The media and the preview follow this instead of the playhead while it is
+   * set, so hovering shows the frame under the cursor without moving the
+   * playhead to it. Ignored during playback — the frames are already going past.
+   *
+   * A setter over a ref rather than state: `pointermove` fires far more often
+   * than a frame, and holding it in React would re-render the editor on each one.
+   */
+  setHover: (at: MediaTime | null) => void;
   /** Called on every user-driven change so the audio context can resume. */
   onInteract: () => void;
   setGain: (kind: TrackKind, gain: TrackGain) => void;
@@ -90,8 +101,10 @@ export function useEditorPlayback(
   const playhead = useRef<HTMLElement | null>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const metrics = useRef({ content: 0, view: 0 });
-  /** The slice that was playing last tick, so a boundary crossing is a seek. */
-  const lastSlice = useRef<string | null>(null);
+  /** Where the last tick landed in source time, so a jump can be told from playing on. */
+  const lastSource = useRef<MediaTime | null>(null);
+  /** Project time the pointer is over, or null. See `setHover`. */
+  const hover = useRef<MediaTime | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [visible, setVisible] = useState<Set<TrackKind>>(new Set());
@@ -121,23 +134,29 @@ export function useEditorPlayback(
       frame = requestAnimationFrame(tick);
 
       const at = playback.position(now);
+      // What the *picture* should show, which is not always where the playhead
+      // is. Hovering the timeline previews a moment without committing to it, so
+      // the media follows the pointer while the playhead stays where it was.
+      // Only while paused: during playback the frames are already going past,
+      // and fighting the clock with the mouse would just stutter.
+      const showing = !playback.isPlaying && hover.current !== null ? hover.current : at;
       // Resolved a hair inside the edit. At exactly the end no slice contains
       // the playhead, so every track would report "no frame" at once — and
       // because the preview keeps drawing whatever the screen element last
       // decoded, only the camera actually vanished. The last frame holds for
       // all of them instead, which is what stopping on a frame should look
       // like.
-      const source = toSourceTime(placed, Math.min(at, Math.max(0, duration - 1)));
+      const source = toSourceTime(placed, Math.min(showing, Math.max(0, duration - 1)));
 
       // Running off the end stops the clock rather than leaving it counting
       // past media that is no longer there.
       if (playback.isPlaying && playback.hasEnded(now)) playback.pause();
 
-      const slice = sliceAt(placed, at);
-      // A cut moves every track somewhere else entirely, so it is a seek rather
-      // than something the rate nudge could ever catch up with.
-      const crossed = slice?.id !== lastSlice.current;
-      lastSlice.current = slice?.id ?? null;
+      // A seek only where the playhead actually landed somewhere else. Every
+      // slice boundary used to count, which flushed the decoder at ordinary cuts
+      // that need no seek at all — see `hasJumped`.
+      const jumped = hasJumped(lastSource.current, source);
+      lastSource.current = source;
 
       const nowVisible = new Set<TrackKind>();
 
@@ -148,7 +167,7 @@ export function useEditorPlayback(
         const fileTime = source === null ? null : toFileTime(track, source);
         if (fileTime !== null) nowVisible.add(kind);
 
-        syncElement(element, fileTime, playback.isPlaying, { seek: crossed });
+        syncElement(element, fileTime, playback.isPlaying, { seek: jumped });
       }
 
       // Only when it changes: this runs every frame, and a fresh Set each time
@@ -233,10 +252,21 @@ export function useEditorPlayback(
     metrics.current = { content, view };
   }, []);
 
+  // Hover-aware for the same reason the loop is: the compositor draws the cursor
+  // layer and the zoom motion at this moment, and it has to be the moment the
+  // frame under them was decoded for.
   const sourceAt = useCallback(
-    (now?: number) => toSourceTime(placed, playback.position(now)),
+    (now?: number) =>
+      toSourceTime(
+        placed,
+        !playback.isPlaying && hover.current !== null ? hover.current : playback.position(now),
+      ),
     [placed, playback],
   );
+
+  const setHover = useCallback((at: MediaTime | null) => {
+    hover.current = at;
+  }, []);
 
   const onInteract = useCallback(() => mixer.resume(), [mixer]);
   const setGain = useCallback((kind: TrackKind, gain: TrackGain) => mixer.set(kind, gain), [mixer]);
@@ -252,6 +282,7 @@ export function useEditorPlayback(
     scrollerRef,
     setTrackMetrics,
     sourceAt,
+    setHover,
     onInteract,
     setGain,
     visible,

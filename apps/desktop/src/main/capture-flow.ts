@@ -88,6 +88,13 @@ export interface CaptureFlowOptions {
    * and so a failure to open the editor cannot take the stop path down with it.
    */
   editors?: { open: (dir: string) => void };
+  /**
+   * The welcome window, for closing it once the flow is finished.
+   *
+   * Injected for the same reasons as `editors`, and optional for the same
+   * reason: nothing about capture depends on it existing.
+   */
+  welcome?: { close: () => void };
 }
 
 export class CaptureFlow {
@@ -122,6 +129,20 @@ export class CaptureFlow {
   /** Where preferences are stored. */
   preferencesPath(): string {
     return this.deps.preferences.path;
+  }
+
+  /**
+   * The welcome flow is finished: remember it, and get on with recording.
+   *
+   * The flag is written even when a permission was refused. It only answers
+   * "has this been seen", and the window opens again on its own for as long as
+   * Screen Recording is missing — so recording that fact twice would mean two
+   * places to keep in step and one of them eventually wrong.
+   */
+  finishWelcome(): void {
+    this.deps.preferences.update({ welcomed: true });
+    this.deps.welcome?.close();
+    this.open();
   }
 
   state(): DockState {

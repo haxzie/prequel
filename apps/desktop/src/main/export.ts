@@ -6,14 +6,15 @@
  * window cannot leave one running with nobody listening.
  */
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { webContents } from "electron";
+import { clipboard, nativeImage, webContents, type WebContents } from "electron";
 
-import type { ExportProgress, ExportRequest } from "../shared/contract.js";
+import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { log } from "./log.js";
 import { getRecorder } from "./recorder.js";
-import { fileTimestamp, revealRecordings } from "./session.js";
+import { fileTimestamp } from "./session.js";
 
 /**
  * What one export is called inside its recording's own folder.
@@ -22,9 +23,13 @@ import { fileTimestamp, revealRecordings } from "./session.js";
  * a different frame size, a tweaked background — and a fixed name would either
  * silently destroy the previous attempt or, worse, collide with it. Both
  * exports simply sit side by side, newest last.
+ *
+ * The extension is worked out here and nowhere else. Two places deciding it is
+ * how an export comes to be written as a GIF into a file called `.mp4`, which
+ * nothing on the system will open.
  */
-export function exportFileName(now = new Date()): string {
-  return `Export ${fileTimestamp(now)}.mp4`;
+export function exportFileName(format: ExportFormat, now = new Date()): string {
+  return `Export ${fileTimestamp(now)}.${format === "gif" ? "gif" : "mp4"}`;
 }
 
 /** The directory currently being exported, or null. */
@@ -46,14 +51,14 @@ export async function startExport(request: ExportRequest): Promise<void> {
     throw new Error("ALREADY_EXPORTING: an export is already running");
   }
 
-  const output = join(request.dir, exportFileName());
+  const output = join(request.dir, exportFileName(request.format));
   running = request.dir;
 
   log("info", "export started", {
     dir: request.dir,
     frame: `${request.width}×${request.height}`,
     fps: request.fps,
-    codec: request.codec,
+    format: request.format,
     slices: request.slices.length,
   });
 
@@ -67,7 +72,7 @@ export async function startExport(request: ExportRequest): Promise<void> {
         width: request.width,
         height: request.height,
         fps: request.fps,
-        codec: request.codec,
+        format: request.format,
         slices: request.slices.map((slice) => ({
           start: slice.start,
           end: slice.end,
@@ -117,6 +122,42 @@ export async function startExport(request: ExportRequest): Promise<void> {
   }
 }
 
+/**
+ * Puts a finished export on the pasteboard as a *file*.
+ *
+ * `public.file-url` rather than `clipboard.writeText`. macOS decides what a
+ * paste means from the pasteboard type: text pastes the path as characters, so
+ * Slack gets `/Users/…/Export 2026-08-17.mp4` written out as a message and
+ * Finder gets nothing at all. This is the type Finder itself writes on Copy,
+ * and Electron has no file-list API of its own — hence the raw buffer.
+ */
+export function copyExport(path: string): void {
+  clipboard.writeBuffer("public.file-url", Buffer.from(pathToFileURL(path).toString(), "utf8"));
+  log("info", "export copied to the pasteboard", path);
+}
+
+/**
+ * Hands a finished export to a native drag.
+ *
+ * The icon is not optional — Electron throws on an empty one — and it is also
+ * the whole point: what gets dragged is a file, and a drag with no image under
+ * the pointer reads as nothing having been picked up. The renderer sends the
+ * frame it is already showing, so the thing being dragged looks like the thing
+ * on screen.
+ */
+export function dragExport(sender: WebContents, path: string, icon: string): void {
+  const image = nativeImage.createFromDataURL(icon);
+  if (image.isEmpty()) {
+    console.warn("[export] drag skipped: the drag image could not be read");
+    return;
+  }
+
+  // Scaled down here rather than in the renderer: the preview is whatever size
+  // the pane happened to be, and a full-size frame under the pointer covers the
+  // window the user is trying to drop onto.
+  sender.startDrag({ file: path, icon: image.resize({ width: 160 }) });
+}
+
 /** Asks the running export to stop. Safe to call when nothing is running. */
 export async function cancelExport(): Promise<void> {
   if (!running) return;
@@ -135,13 +176,11 @@ function finish(update: ExportProgress): void {
     log("info", `export ${update.stage}`, update.outputPath ?? undefined);
   }
 
+  // Nothing is revealed here. The export dialog offers Show in Finder beside
+  // the finished file, and opening Finder on its own used to pull focus out of
+  // the editor the moment a render finished — often minutes after the user had
+  // moved on to something else.
   broadcast(update);
-
-  // Revealed rather than opened: the file is the thing the user wants, and
-  // showing it in place also shows them where their recordings live.
-  if (update.stage === "done" && update.outputPath) {
-    void revealRecordings(update.outputPath);
-  }
 }
 
 /**

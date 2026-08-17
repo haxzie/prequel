@@ -76,6 +76,7 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     systemAudio: value.systemAudio ?? DEFAULT_PREFERENCES.systemAudio,
     bakeCursor: value.bakeCursor ?? DEFAULT_PREFERENCES.bakeCursor,
     cameraPosition: point(value.cameraPosition),
+    welcomed: value.welcomed ?? DEFAULT_PREFERENCES.welcomed,
   };
 }
 

@@ -25,6 +25,23 @@ export type TargetKind = "Display" | "Window";
 
 export type PermissionStatus = "Granted" | "Denied";
 
+/**
+ * The four things macOS has to allow before a recording is what it should be.
+ *
+ * `accessibility` is the one that surprises people, including us: the click tap
+ * in `clicks.rs` is handed a *working* tap without it and then receives only
+ * events aimed at Prequel itself — so a take comes back with two clicks in it
+ * and nothing anywhere says why. Typing detection reads the Accessibility API
+ * outright. Both feed the automatic zoom pass, which is why it is asked for
+ * here rather than left to be discovered.
+ */
+export type PermissionId = "screen" | "camera" | "microphone" | "accessibility";
+
+export interface PermissionState {
+  id: PermissionId;
+  granted: boolean;
+}
+
 export interface Target {
   kind: TargetKind;
   /** `CGDirectDisplayID` for a display, `CGWindowID` for a window. */
@@ -85,6 +102,17 @@ export interface RecordingPreferences {
    * has been dragged, which is what keeps the default corner placement.
    */
   cameraPosition: { x: number; y: number } | null;
+  /**
+   * Whether the welcome flow has been finished.
+   *
+   * Not recording setup, and the only thing in here that is not — but this file
+   * is where the app already keeps what it remembers between launches, and a
+   * second store for one boolean would be a second thing to load, sanitise and
+   * keep in step. Missing permissions open the welcome window whatever this
+   * says; the flag is what stops it opening a second time for someone who has
+   * already granted everything.
+   */
+  welcomed: boolean;
 }
 
 export const DEFAULT_PREFERENCES: RecordingPreferences = {
@@ -96,6 +124,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   systemAudio: true,
   bakeCursor: false,
   cameraPosition: null,
+  welcomed: false,
 };
 
 export interface MediaDevice {
@@ -167,8 +196,14 @@ export interface PendingSelection {
 
 export const IPC_CHANNELS = {
   appInfo: "app:info",
-  screenPermission: "permissions:screen",
-  requestScreenPermission: "permissions:requestScreen",
+  /** Every permission's current state, in one call. */
+  permissionStates: "permissions:list",
+  /** Asks macOS for one, and answers with every state afterwards. */
+  requestPermission: "permissions:request",
+  /** Quits and comes back, which is what a new Screen Recording grant needs. */
+  relaunchApp: "app:relaunch",
+  /** The welcome flow finished. */
+  welcomeDone: "welcome:done",
   listSources: "sources:list",
   sessionState: "session:state",
   sessionStart: "session:start",
@@ -206,6 +241,17 @@ export const IPC_CHANNELS = {
   exportCancel: "export:cancel",
   /** Main → renderer broadcast. */
   exportProgress: "export:progress",
+  /** Puts a finished export on the pasteboard as a file. */
+  exportCopy: "export:copy",
+  /**
+   * Renderer → main, one-way: hands a finished export to a native drag.
+   *
+   * Not `invoke`. `webContents.startDrag` has to be called while the mouse is
+   * still down, and a round trip through a promise is long enough that the
+   * button is often already up by the time it lands — which reads as a drag
+   * that simply does not start.
+   */
+  exportDrag: "export:drag",
 } as const;
 
 /** One kept span, resolved and ready to render. */
@@ -226,14 +272,22 @@ export interface ExportSlice {
   systemVolume: number;
 }
 
+/**
+ * What an export is written as.
+ *
+ * A format rather than a codec, because GIF is not one: it carries no audio and
+ * is encoded on the CPU. The extension follows from this, and is worked out in
+ * exactly one place — `exportFileName` in `main/export.ts`.
+ */
+export type ExportFormat = "h264" | "hevc" | "gif";
+
 export interface ExportRequest {
   /** The recording's directory. The export lands inside it. */
   dir: string;
   width: number;
   height: number;
   fps: number;
-  /** `"h264"` or `"hevc"`. */
-  codec: string;
+  format: ExportFormat;
   slices: ExportSlice[];
   /**
    * Per-track offsets from the manifest, in nanoseconds.

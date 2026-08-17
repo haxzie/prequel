@@ -67,6 +67,22 @@ export function TrashIcon() {
   );
 }
 
+/** The automatic pass. A wand, with the sparks that say "and some judgement". */
+export function WandIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M15 4V2" />
+      <path d="M15 16v-2" />
+      <path d="M8 9h2" />
+      <path d="M20 9h2" />
+      <path d="M17.8 11.8 19 13" />
+      <path d="M17.8 6.2 19 5" />
+      <path d="m3 21 9-9" />
+      <path d="M12.2 6.2 11 5" />
+    </svg>
+  );
+}
+
 export function ExportIcon() {
   return (
     <svg
@@ -79,6 +95,43 @@ export function ExportIcon() {
       aria-hidden="true"
     >
       <path d="M12 15V3m0 0L8 7m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </svg>
+  );
+}
+
+/** Lucide `folder-open`. */
+export function FolderIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+/** Lucide `copy`. */
+export function CopyIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+/** Lucide `check`. */
+export function CheckIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** Lucide `x`. */
+export function CloseIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
 }
@@ -159,6 +212,77 @@ export function ResetIcon() {
       aria-hidden="true"
     >
       <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `undo-2`. An arrow turning back on itself.
+ *
+ * Distinct from `ResetIcon`'s full circle on purpose: that one puts a control
+ * back to its default, this one steps back through what was done. Two hooks in
+ * the same panel meaning different things would be worse than a plain label.
+ */
+export function UndoIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `command`. The looped square Apple prints on the key.
+ *
+ * The real glyph rather than the letters "Cmd": this is what is physically on
+ * the keyboard, and a shortcut is easier to find by matching the symbol than by
+ * translating a word back into one.
+ */
+export function CommandIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M15 6a3 3 0 1 1 3 3h-3zm0 0v12m0 0a3 3 0 1 0 3-3h-3zM9 6a3 3 0 1 0-3 3h3zm0 0v12m0 0a3 3 0 1 1-3-3h3z" />
+      <path d="M9 9h6v6H9z" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `arrow-big-up`, which is the ⇧ Apple prints on the Shift key.
+ *
+ * A hollow upward arrow rather than a plain chevron: the chevron is what the
+ * caret key carries, and the two sitting side by side in one shortcut would be
+ * indistinguishable at this size.
+ */
+export function ShiftIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 20v-8H5l7-8 7 8h-4v8z" />
     </svg>
   );
 }

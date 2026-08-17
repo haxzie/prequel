@@ -25,6 +25,8 @@ import {
 } from "./state";
 import type { PlacedSlice } from "./timeline";
 import type { EditorPlayback } from "./useEditorPlayback";
+import { thumbs, THUMB_WIDTH } from "./filmstrip";
+import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
 
 const NS_PER_SECOND = 1_000_000_000;
@@ -42,7 +44,14 @@ const RULER_H = 24;
 const RULER_PAD = 12;
 /** Space under the ruler, so its labels do not sit on top of the clips. */
 const TRACK_GAP = 10;
-const CLIP_H = 38;
+/**
+ * Clip row height, and so the height of a filmstrip cell.
+ *
+ * Exported because the strip's frames are extracted at exactly this size — the
+ * sheet is drawn unscaled, so the two have to agree or every cell shows part of
+ * its neighbour.
+ */
+export const CLIP_H = 38;
 
 /**
  * Zoom range, in pixels per second.
@@ -67,6 +76,7 @@ export function TimelineStrip({
   dispatch,
   media,
   peaks,
+  filmstrip,
   cameraSpan,
 }: {
   state: EditorState;
@@ -74,6 +84,8 @@ export function TimelineStrip({
   media: EditorPlayback;
   /** The recording's audio, for the clips to draw. Null while it decodes. */
   peaks: Float32Array | null;
+  /** Frame thumbnails for the whole recording, or null while they are built. */
+  filmstrip: Filmstrip | null;
   /** Source time the camera covers, or null if none was recorded. */
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
 }) {
@@ -82,6 +94,8 @@ export function TimelineStrip({
 
   const scroller = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
+  /** The hover line. Positioned straight on the element — see `showShadow`. */
+  const shadow = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   /** Null means "fit the whole edit", which is what an editor should open on. */
   const [zoom, setZoom] = useState<number | null>(null);
@@ -228,21 +242,70 @@ export function TimelineStrip({
     [state.project, sourceAt, projectAt, timeAt, duration],
   );
 
+  /**
+   * Moves the hover line, and points the preview at the same moment.
+   *
+   * Written straight to the element, for the reason `showGhost` is: `pointermove`
+   * fires far more often than a frame, and going through state would rebuild
+   * every clip, tick and thumbnail to move a one-pixel line.
+   *
+   * Nothing happens during playback. The preview is already showing frames as
+   * fast as it can, and a second indicator racing the playhead reads as two
+   * playheads disagreeing.
+   */
+  const showShadow = useCallback(
+    (clientX: number | null) => {
+      const element = shadow.current;
+      if (!element) return;
+
+      if (clientX === null || media.playing) {
+        element.style.opacity = "0";
+        media.setHover(null);
+        return;
+      }
+
+      const at = timeAt(clientX);
+      // Through the same mapping the playhead uses, so the two line up exactly
+      // rather than being a pixel apart at the same moment.
+      const x = (at / Math.max(duration, 1)) * contentWidth;
+
+      element.style.transform = `translate3d(${String(x)}px, 0, 0)`;
+      element.style.opacity = "1";
+      media.setHover(at);
+    },
+    [media, timeAt, duration, contentWidth],
+  );
+
+  // Playback starting has to clear it: the line was put there by a pointer that
+  // has not moved since, so nothing else would take it down.
+  useEffect(() => {
+    if (media.playing) showShadow(null);
+  }, [media.playing, showShadow]);
+
   const onClipPointerDown = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
     media.onInteract();
 
     dispatch({ type: "select", sliceId: slice.id });
-    // Selecting also moves the playhead, so the preview shows the clip that is
-    // now being edited rather than whatever was last under the head.
-    media.playback.seek(timeAt(event.clientX));
+    // To the clip's start, not to where it was clicked. Editing a clip means
+    // watching it from the beginning — landing wherever the pointer happened to
+    // be means judging a change against an arbitrary frame, and it costs the
+    // start of the clip, which is where most changes are actually visible.
+    media.playback.seek(slice.timelineStart);
   };
 
   return (
     // Padded to match the transport above it, now that there is no track
     // column holding the strip off the window edge.
     <div className="flex flex-none flex-col border-t border-editor-line px-4 pb-4">
-      <div ref={attachScroller} className="no-scrollbar relative overflow-x-auto overflow-y-hidden">
+      <div
+        ref={attachScroller}
+        className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
+        onPointerMove={(event) => showShadow(event.clientX)}
+        // `pointerleave` rather than `pointerout`, which also fires on the way
+        // into a child and would blink the line off over every clip.
+        onPointerLeave={() => showShadow(null)}
+      >
         <div className="relative" style={{ width: contentWidth }}>
           <Ruler
             duration={duration}
@@ -271,9 +334,12 @@ export function TimelineStrip({
                 slice={slice}
                 duration={duration}
                 peaks={peaks}
+                filmstrip={filmstrip}
+                contentWidth={contentWidth}
                 cameraSpan={cameraSpan}
                 selected={slice.id === state.selectedSliceId}
                 onPointerDown={(event) => onClipPointerDown(slice, event)}
+                onBeginEdit={() => dispatch({ type: "beginEdit" })}
                 onTrim={(edge, clientX) =>
                   dispatch({
                     type: "trimSlice",
@@ -344,6 +410,7 @@ export function TimelineStrip({
                     media.onInteract();
                     dispatch({ type: "selectZoom", zoomId: zoom.id });
                   }}
+                  onBeginEdit={() => dispatch({ type: "beginEdit" })}
                   onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
                   onTrim={(edge, clientX) =>
                     dispatch({
@@ -358,6 +425,7 @@ export function TimelineStrip({
             })}
           </div>
 
+          <Shadow ref={shadow} />
           <Playhead ref={media.playheadRef} />
         </div>
       </div>
@@ -451,26 +519,55 @@ function Playhead({ ref }: { ref: (element: HTMLElement | null) => void }) {
   );
 }
 
+/**
+ * The hover line: where the preview is looking, without having gone there.
+ *
+ * Deliberately not the playhead's own shape. It is thinner, dimmer and has no
+ * handle at the top, because the difference that matters is "this is a look, not
+ * a position" — two identical lines would leave the user hunting for which one
+ * the edit will act on. Drawn under the playhead so the real one wins when they
+ * meet.
+ */
+function Shadow({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
+  return (
+    <div
+      ref={ref}
+      className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indicator/40 opacity-0"
+      style={{ willChange: "transform, opacity" }}
+      aria-hidden="true"
+    />
+  );
+}
+
 function Clip({
   slice,
   duration,
   peaks,
+  filmstrip,
+  contentWidth,
   cameraSpan,
   selected,
   onPointerDown,
   onTrim,
+  onBeginEdit,
 }: {
   slice: PlacedSlice;
   duration: MediaTime;
   peaks: Float32Array | null;
+  filmstrip: Filmstrip | null;
+  /** The strip's full width in pixels, which is what the zoom actually sets. */
+  contentWidth: number;
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   onTrim: (edge: "start" | "end", clientX: number) => void;
+  /** A drag is beginning, so its stream of trims is one step to undo. */
+  onBeginEdit: () => void;
 }) {
   const grab = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    onBeginEdit();
   };
 
   const move = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
@@ -486,6 +583,20 @@ function Clip({
   const wave = useMemo(
     () => (peaks === null ? "" : wavePath(peaks, slice.source.start, slice.source.end)),
     [peaks, slice.source.start, slice.source.end],
+  );
+
+  // The clip's width in real pixels, which is the only thing the zoom changes
+  // about the strip. Derived rather than measured: reading it off the element
+  // would need a layout flush per clip per zoom step, and the number is already
+  // known — a clip's share of `contentWidth`.
+  const widthPx = duration > 0 ? (slice.duration / duration) * contentWidth : 0;
+
+  // Recomputed on zoom, which is the point: more room means more frames. Cheap
+  // enough to do in render — it is one loop over the columns that will be drawn,
+  // and it produces no images, only offsets into a sheet that already exists.
+  const strip = useMemo(
+    () => (filmstrip === null ? [] : thumbs(slice, widthPx, filmstrip.cadence)),
+    [filmstrip, slice, widthPx],
   );
 
   // Overlap rather than "was a camera recorded": a clip trimmed to the first
@@ -510,6 +621,39 @@ function Clip({
       style={{ width: `${(slice.duration / Math.max(duration, 1)) * 100}%` }}
       onPointerDown={onPointerDown}
     >
+      {/* The recording's frames, as the clip's own backdrop.
+
+          One sheet for the whole take, shifted per column — so zooming changes
+          how many of these there are and never asks for another decode. Each is
+          a plain div rather than an `img`: the sheet is one image the browser has
+          already decoded once, and `background-position` picks a frame out of it
+          without a second copy per thumbnail.
+
+          Behind everything else, and dimmed hard: this is orientation, not
+          content. At full strength it competes with the wave and makes the
+          label unreadable over a bright frame. */}
+      {filmstrip !== null &&
+        strip.map((thumb) => (
+          <div
+            key={thumb.x}
+            className="pointer-events-none absolute top-0 opacity-35"
+            style={{
+              left: thumb.x,
+              width: THUMB_WIDTH,
+              height: "100%",
+              backgroundImage: `url(${filmstrip.sheet})`,
+              // The sheet's own size, unscaled. Cells were cropped to exactly
+              // this box when they were drawn, so any scaling here would both
+              // resample the frame and put the sprite offsets out of step with
+              // it — the strip would show slivers of two frames per cell.
+              backgroundSize: "auto",
+              backgroundPosition: `-${String(thumb.index * THUMB_WIDTH)}px 0`,
+              backgroundRepeat: "no-repeat",
+            }}
+            aria-hidden="true"
+          />
+        ))}
+
       {/* The clip's audio, standing on its floor.
           `preserveAspectRatio="none"` is the whole trick: the path is built
           once in a 0–1 box and the browser stretches it to whatever width the
@@ -642,6 +786,7 @@ function Zoom({
   onSelect,
   onMove,
   onTrim,
+  onBeginEdit,
 }: {
   left: number;
   width: number;
@@ -660,6 +805,8 @@ function Zoom({
   onSelect: () => void;
   onMove: (start: MediaTime) => void;
   onTrim: (edge: "start" | "end", clientX: number) => void;
+  /** A drag is beginning, so its stream of moves or trims is one step to undo. */
+  onBeginEdit: () => void;
 }) {
   /** Distance from the zoom's start to where it was picked up, in source time. */
   const grab = useRef<MediaTime | null>(null);
@@ -667,6 +814,7 @@ function Zoom({
   const grabEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    onBeginEdit();
   };
 
   const moveEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
@@ -690,6 +838,7 @@ function Zoom({
         onSelect();
         grab.current = sourceAt(event.clientX) - start;
         event.currentTarget.setPointerCapture(event.pointerId);
+        onBeginEdit();
       }}
       onPointerMove={(event) => {
         if (grab.current === null) return;

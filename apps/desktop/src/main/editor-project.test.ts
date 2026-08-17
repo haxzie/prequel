@@ -103,10 +103,14 @@ describe("saveProject", () => {
     // Held in memory as well as written: reopening a recording must not read a
     // version older than the edit that was just made.
     const project = newProject(RECORDING, 10 * S);
-    project.output = { fps: 30, codec: "hevc" };
+    project.output = { fps: 30, format: "hevc", shortEdge: 720 };
     saveProject(dir, project);
 
-    expect(loadProject(dir, RECORDING, 10 * S).output).toEqual({ fps: 30, codec: "hevc" });
+    expect(loadProject(dir, RECORDING, 10 * S).output).toEqual({
+      fps: 30,
+      format: "hevc",
+      shortEdge: 720,
+    });
   });
 
   it("overwrites a previous save rather than appending", () => {

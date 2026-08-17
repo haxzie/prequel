@@ -96,7 +96,10 @@ export class DockWindow {
   hide(): void {
     this.menuOpen = false;
     this.stopAnimation();
-    this.window?.hide();
+    // As in `CameraWindow.hide`: `?.` does not cover a window Electron has
+    // already destroyed, which is what a quit leaves behind.
+    if (!this.window || this.window.isDestroyed()) return;
+    this.window.hide();
   }
 
   toggle(): void {

@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { newProject, overriddenKeys, resolveSettings } from "../../../shared/project";
 import {
   activeSettings,
+  canUndo,
   editorReducer,
   initialState,
   MIN_SLICE_NS,
@@ -363,5 +364,135 @@ describe("zooms", () => {
     const selected = run(state, { type: "select", sliceId: slicesOf(state.project)[0]!.id });
 
     expect(selected.selectedZoomId).toBeNull();
+  });
+});
+
+describe("undo", () => {
+  /** Applies a sequence of actions, as the editor would dispatch them. */
+  const run = (state: EditorState, ...actions: EditorAction[]): EditorState =>
+    actions.reduce(editorReducer, state);
+
+  it("has nothing to offer on a freshly opened recording", () => {
+    // Which is what hides the button: an untouched timeline has no step back.
+    expect(canUndo(start())).toBe(false);
+    // And asking anyway must be a no-op rather than a crash.
+    expect(editorReducer(start(), { type: "undo" }).project).toEqual(start().project);
+  });
+
+  it("steps a cut back", () => {
+    const before = start();
+    const cut = run(before, { type: "split", at: 5 * S });
+    expect(slicesOf(cut.project)).toHaveLength(2);
+    expect(canUndo(cut)).toBe(true);
+
+    const back = run(cut, { type: "undo" });
+    expect(slicesOf(back.project)).toHaveLength(1);
+    expect(back.project).toEqual(before.project);
+    expect(canUndo(back)).toBe(false);
+  });
+
+  it("steps back through several cuts one at a time", () => {
+    const state = run(start(), { type: "split", at: 3 * S }, { type: "split", at: 7 * S });
+    expect(slicesOf(state.project)).toHaveLength(3);
+
+    const once = run(state, { type: "undo" });
+    expect(slicesOf(once.project)).toHaveLength(2);
+
+    const twice = run(once, { type: "undo" });
+    expect(slicesOf(twice.project)).toHaveLength(1);
+    expect(canUndo(twice)).toBe(false);
+  });
+
+  it("collapses one trim drag into a single step", () => {
+    // A drag dispatches on every pointer move. Without coalescing this would
+    // bank an entry per pixel and undo would crawl back through the drag.
+    const before = start();
+    const slice = slicesOf(before.project)[0]!;
+
+    let dragged = run(before, { type: "beginEdit" });
+    for (let at = 9; at >= 5; at -= 1) {
+      dragged = run(dragged, {
+        type: "trimSlice",
+        sliceId: slice.id,
+        edge: "end",
+        source: at * S,
+      });
+    }
+
+    expect(dragged.history).toHaveLength(1);
+    expect(run(dragged, { type: "undo" }).project).toEqual(before.project);
+  });
+
+  it("keeps two separate drags as two steps", () => {
+    // `beginEdit` is the only thing distinguishing them: both produce the same
+    // coalesce key, so without it the second would join the first.
+    const before = start();
+    const slice = slicesOf(before.project)[0]!;
+    const trim = (source: number): EditorAction => ({
+      type: "trimSlice",
+      sliceId: slice.id,
+      edge: "end",
+      source,
+    });
+
+    const state = run(
+      before,
+      { type: "beginEdit" },
+      trim(9 * S),
+      { type: "beginEdit" },
+      trim(7 * S),
+    );
+
+    expect(state.history).toHaveLength(2);
+    // One undo returns to where the first drag left it, not all the way back.
+    expect(slicesOf(run(state, { type: "undo" }).project)[0]!.source.end).toBe(9 * S);
+  });
+
+  it("records nothing for an edit the reducer declined", () => {
+    // Cutting on a boundary is refused. An undo step that visibly does nothing
+    // is worse than no step at all.
+    const state = run(start(), { type: "split", at: 0 });
+
+    expect(state.history).toHaveLength(0);
+    expect(canUndo(state)).toBe(false);
+  });
+
+  it("ignores selection and appearance, which are not the timeline", () => {
+    const state = run(
+      start(),
+      { type: "select", sliceId: null },
+      { type: "setSetting", section: "background", key: "padding", value: 0.2 },
+    );
+
+    expect(canUndo(state)).toBe(false);
+  });
+
+  it("persists what it restored", () => {
+    // The revision is what makes the project reach the disk. Without bumping it,
+    // reopening the recording would bring back the undone edit.
+    const cut = run(start(), { type: "split", at: 5 * S });
+    const back = run(cut, { type: "undo" });
+
+    expect(back.revision).toBeGreaterThan(cut.revision);
+  });
+
+  it("drops a selection the undo removed", () => {
+    // The second half of a cut only exists in the edit being undone, and the
+    // inspector cannot show settings for a slice that is no longer there.
+    const cut = run(start(), { type: "split", at: 5 * S });
+    const created = slicesOf(cut.project)[1]!;
+    const selected = run(cut, { type: "select", sliceId: created.id });
+
+    const back = run(selected, { type: "undo" });
+
+    expect(back.selectedSliceId).toBeNull();
+  });
+
+  it("starts over when another recording is opened", () => {
+    const cut = run(start(), { type: "split", at: 5 * S });
+    const loaded = run(cut, { type: "load", project: newProject("other", 5 * S) });
+
+    // Undoing into the previous recording's project would be a different film.
+    expect(canUndo(loaded)).toBe(false);
   });
 });

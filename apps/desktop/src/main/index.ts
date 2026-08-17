@@ -5,6 +5,7 @@ import { validateEnv } from "@prequel/env";
 import { CaptureFlow } from "./capture-flow.js";
 import { broadcastDockState, registerIpc } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
+import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
 import { Preferences } from "./preferences.js";
@@ -14,6 +15,7 @@ import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { EditorWindows } from "./windows/editor.js";
 import { SelectionOverlay } from "./windows/selection.js";
+import { WelcomeWindow } from "./windows/welcome.js";
 
 // Without this, an unpackaged build takes its name from package.json and
 // stores settings under "@prequel/desktop" — a scoped-package path nobody
@@ -51,17 +53,48 @@ const selection = new SelectionOverlay();
 let tray: AppTray | null = null;
 let flow: CaptureFlow | null = null;
 
+/**
+ * True from `before-quit` onwards, so teardown is not mistaken for ordinary use.
+ *
+ * Quitting closes every window, and closing the last editor window normally
+ * means "the user finished editing, bring the recorder back". During a quit it
+ * means nothing of the sort, and acting on it reaches for a camera bubble
+ * Electron has already destroyed — which throws *between* `before-quit` and
+ * `will-quit`, and an exception there abandons the quit and strands the app
+ * running with no way out but `kill -9`.
+ */
+let quitting = false;
+
+/**
+ * Whether a real window of ours is on screen.
+ *
+ * A menu-bar app has no Dock icon, which is right until it owns a window the
+ * user has to be able to get back to — there is no Cmd-Tab entry either. Both
+ * the editor and the welcome window need one, so the icon is shown while either
+ * is open and hidden only once neither is.
+ */
+function syncDockIcon(): void {
+  if (editors.openCount > 0 || welcome.isOpen) void app.dock?.show();
+  else app.dock?.hide();
+}
+
+const welcome = new WelcomeWindow({
+  onOpen: () => syncDockIcon(),
+  onClose: () => syncDockIcon(),
+});
+
 const editors = new EditorWindows({
   onFirstOpen: () => {
     flow?.editorOpened();
-    // A menu-bar app has no Dock icon, which is right until it owns a real
-    // window: without one the editor cannot be reached from Cmd-Tab or the
-    // Dock, and hiding it again would minimise the editor out of reach.
-    void app.dock?.show();
+    syncDockIcon();
   },
   onLastClose: () => {
+    // The project is still flushed on the way out — that happens in the
+    // window's own `closed` handler, which runs either way.
+    if (quitting) return;
+
     flow?.editorClosed();
-    app.dock?.hide();
+    syncDockIcon();
   },
 });
 
@@ -86,24 +119,42 @@ void app.whenReady().then(() => {
     .catch((cause) => console.warn("[log] could not route native logs:", cause));
 
   // Constructed here: `Preferences` reads `app.getPath`, which throws earlier.
+  const preferences = new Preferences();
+
   flow = new CaptureFlow({
     session,
     dock,
     camera,
     selection,
-    preferences: new Preferences(),
+    preferences,
     onChange: broadcastDockState,
     editors,
+    welcome,
   });
 
   registerIpc({ flow });
   tray = new AppTray(session, flow);
 
-  // Launching a menu-bar app is a deliberate act, and the only reason to do it
-  // is to record something — so show the panel rather than making the user go
-  // and find the tray icon first. `open` uses `showInactive`, so this still
-  // does not steal focus from whatever they were doing.
-  flow.open();
+  /**
+   * The panel, or the welcome window in front of it.
+   *
+   * Launching a menu-bar app is a deliberate act, and the only reason to do it
+   * is to record something — so show the panel rather than making the user go
+   * and find the tray icon first. `open` uses `showInactive`, so this still
+   * does not steal focus from whatever they were doing.
+   *
+   * Unless the app cannot record. Without Screen Recording every part of the
+   * panel is present and none of it works, which reads as a broken app rather
+   * than as a missing permission — so the welcome window goes first, and the
+   * panel follows when it is done. Checked on every launch rather than only the
+   * first: a permission can be taken away again in System Settings.
+   */
+  void (async () => {
+    const granted = (await permissionStates()).find((state) => state.id === "screen")?.granted;
+
+    if (preferences.get().welcomed && granted) flow!.open();
+    else welcome.open();
+  })();
 
   // The tray title and the panel both show elapsed time, so it has to tick even
   // when nothing else is happening — and both have to be pushed, because
@@ -136,6 +187,7 @@ app.on("will-quit", () => {
     ["camera", () => camera.destroy()],
     ["dock", () => dock.destroy()],
     ["editors", () => editors.closeAll()],
+    ["welcome", () => welcome.close()],
     ["tray", () => tray?.destroy()],
   ] as const) {
     try {
@@ -148,7 +200,12 @@ app.on("will-quit", () => {
   log("info", "will-quit: done");
 });
 
-app.on("before-quit", () => log("info", "before-quit"));
+// Set here rather than in `will-quit`: the windows are closed between the two,
+// and it is those closures that must not be read as the user finishing up.
+app.on("before-quit", () => {
+  quitting = true;
+  log("info", "before-quit");
+});
 app.on("quit", (_event, code) => log("info", `quit with code ${code}`));
 
 // A menu-bar app has no windows most of the time; closing them must not quit.
