@@ -13,10 +13,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cidre::{arc, cv};
-use prequel_encode::{VideoCodec, VideoWriter, VideoWriterConfig};
+use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, Paint, PlanItem, PlanSource, Rect, RenderPlan, Shape,
-    Size, SliceRender, export,
+    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, PlanSource, Rect,
+    RenderPlan, Shape, Size, SliceRender, export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -181,7 +181,7 @@ fn request(dir: &Path, output: &Path, slices: Vec<SliceRender>) -> ExportRequest
         width: OUT_W,
         height: OUT_H,
         fps: FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices,
         screen_offset: 0,
         camera_offset: 0,

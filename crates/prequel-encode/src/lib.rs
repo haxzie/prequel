@@ -1,17 +1,22 @@
-//! Hardware video encoding to MP4.
+//! Hardware video encoding to MP4, and software encoding to GIF.
 //!
 //! Uses `AVAssetWriter` rather than driving `VTCompressionSession` by hand.
 //! The writer sits on VideoToolbox for the actual encode — so this is still
 //! hardware H.264/HEVC on Apple Silicon — but it also handles MP4 muxing,
 //! interleaving and moov-atom placement, which is a meaningful amount of
 //! fiddly work to get right for no benefit.
+//!
+//! GIF is the exception and is done on the CPU: it is a palette format with LZW
+//! compression, which no Apple encoder produces. See [`GifWriter`].
 
 mod audio;
+mod gif;
 mod probe;
 mod time;
 mod video;
 
 pub use audio::{AudioWriter, AudioWriterConfig, AudioWriterSummary};
+pub use gif::GifWriter;
 pub use probe::{TrackProbe, probe_file};
 pub use time::{host_nanos, host_now};
 pub use video::{VideoCodec, VideoWriter, VideoWriterConfig, VideoWriterSummary};

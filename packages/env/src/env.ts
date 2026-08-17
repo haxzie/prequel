@@ -22,6 +22,31 @@ export const server = {
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.url().optional(),
   API_SECRET: z.string().min(1).optional(),
+  /**
+   * Where the marketing site forwards a waitlist signup.
+   *
+   * Defaulted rather than optional, and not a secret: this is the public
+   * response endpoint of the "Prequel - Early access form" Google Form, which
+   * anyone who opens the form can read out of its HTML. The override exists so
+   * a fork or a staging deploy can point somewhere else without a code change.
+   */
+  WAITLIST_ENDPOINT: z
+    .url()
+    .default(
+      "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
+    ),
+
+  /**
+   * The form field the address goes into.
+   *
+   * Google Forms discards fields it does not recognise and still answers 200,
+   * so a wrong value here loses every signup with no error anywhere. It is not
+   * the question id visible in the form's HTML — those differ.
+   */
+  WAITLIST_FIELD: z
+    .string()
+    .regex(/^entry\.\d+$/)
+    .default("entry.348125812"),
 };
 
 /** Safe to ship to the client. Treat everything here as public. */
@@ -41,6 +66,8 @@ function build() {
       NODE_ENV: process.env.NODE_ENV,
       DATABASE_URL: process.env.DATABASE_URL,
       API_SECRET: process.env.API_SECRET,
+      WAITLIST_ENDPOINT: process.env.WAITLIST_ENDPOINT,
+      WAITLIST_FIELD: process.env.WAITLIST_FIELD,
       NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     },

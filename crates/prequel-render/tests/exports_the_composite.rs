@@ -13,10 +13,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cidre::{arc, cv};
-use prequel_encode::{VideoCodec, VideoWriter, VideoWriterConfig};
+use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, Paint, PlanItem, Rect, RenderPlan, Shape, SliceRender,
-    export,
+    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan, Shape,
+    SliceRender, export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -182,7 +182,7 @@ fn exports_only_the_slices_that_were_kept() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, S), slice(2 * S, 3 * S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -232,7 +232,7 @@ fn the_whole_take_exports_at_its_full_length() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -268,7 +268,7 @@ fn reports_progress_as_it_goes() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -302,7 +302,7 @@ fn cancelling_leaves_no_output_behind() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -336,7 +336,7 @@ fn refuses_an_edit_with_nothing_in_it() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![],
         screen_offset: 0,
         camera_offset: 0,
@@ -372,7 +372,7 @@ fn re_exporting_replaces_the_previous_file() {
         width: OUT_W,
         height: OUT_H,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, 2 * S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -416,7 +416,7 @@ fn a_failed_export_leaves_nothing_behind() {
         width: 0,
         height: 0,
         fps: OUT_FPS,
-        codec: VideoCodec::H264,
+        format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
         screen_offset: 0,
         camera_offset: 0,
@@ -428,6 +428,57 @@ fn a_failed_export_leaves_nothing_behind() {
     assert!(
         !output.exists(),
         "a failed export must not leave a file behind"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn exports_a_gif_that_loops_and_carries_no_audio() {
+    // GIF is the one format not written by an Apple encoder, so nothing about
+    // it is covered by the MP4 path: the quantiser, the centisecond delay, the
+    // loop flag and the absence of a sidecar are all specific to it.
+    let dir = scratch("prequel-export-gif");
+    record(&dir);
+
+    let output = dir.join("export.gif");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: 10,
+        format: OutputFormat::Gif,
+        slices: vec![slice(0, S)],
+        screen_offset: 0,
+        camera_offset: 0,
+        mic_offset: 0,
+        system_offset: 0,
+    };
+
+    let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
+    assert_eq!(summary.frames, 10, "a second at 10 fps is ten frames");
+
+    let probed = ffprobe(&output, "stream=width,height,nb_frames,codec_name");
+    assert!(probed.contains("codec_name=gif"), "got: {probed}");
+    assert!(probed.contains(&format!("width={OUT_W}")), "got: {probed}");
+    assert!(probed.contains(&format!("height={OUT_H}")), "got: {probed}");
+
+    // The delay is the part that is easy to get wrong and impossible to see in
+    // a still: written per frame in centiseconds, so 10 fps must come back as
+    // a second of playback rather than a tenth or ten.
+    let duration = ffprobe(&output, "format=duration")
+        .trim_start_matches("duration=")
+        .parse::<f64>()
+        .expect("duration should parse");
+    assert!(
+        (duration - 1.0).abs() < 0.15,
+        "a second of GIF should play for about a second, got {duration}"
+    );
+
+    assert!(
+        !dir.join("export.m4a").exists(),
+        "a GIF carries no sound, so no audio track should be written beside it"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

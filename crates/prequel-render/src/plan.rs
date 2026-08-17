@@ -160,6 +160,13 @@ pub struct RectKey {
     /// gets beyond. Absent when nothing is being softened.
     #[serde(default)]
     pub focus: Option<Focus>,
+    /// How hard the frame darkens towards its edges, 0 to 1.
+    ///
+    /// Absent when nothing is being darkened, which is every zoom that does not
+    /// ask for it — the same shape `focus` takes, so an ordinary plan carries
+    /// neither field.
+    #[serde(default)]
+    pub vignette: Option<f64>,
     /// The picture's four corners once tilted, as `x, y, w` each — twelve
     /// numbers, top-left, top-right, bottom-left, bottom-right.
     ///
@@ -192,9 +199,9 @@ pub fn rect_at(
     at: i64,
     fallback: Rect,
     fallback_radius: f64,
-) -> (Rect, f64, Vec<f64>, Option<Focus>) {
+) -> (Rect, f64, Vec<f64>, Option<Focus>, f64) {
     let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
-        return (fallback, fallback_radius, Vec::new(), None);
+        return (fallback, fallback_radius, Vec::new(), None, 0.0);
     };
 
     let split = |key: &RectKey| {
@@ -208,6 +215,7 @@ pub fn rect_at(
             key.radius,
             key.quad.clone(),
             key.focus,
+            key.vignette.unwrap_or(0.0),
         )
     };
 
@@ -255,6 +263,11 @@ pub fn rect_at(
         (from, to) => to.or(from),
     };
 
+    // Zero where a key does not carry it, rather than holding the neighbour's
+    // value: the field is absent because there is no vignette at that key, so
+    // falling back would darken a frame that asked not to be. Mirrors `rectAt`.
+    let vignette = lerp(a.vignette.unwrap_or(0.0), b.vignette.unwrap_or(0.0));
+
     (
         Rect {
             x: lerp(a.x, b.x),
@@ -265,6 +278,7 @@ pub fn rect_at(
         lerp(a.radius, b.radius),
         quad,
         focus,
+        vignette,
     )
 }
 
@@ -600,6 +614,7 @@ mod tests {
                 radius: 10.0,
                 quad: Vec::new(),
                 focus: None,
+                vignette: None,
             },
             RectKey {
                 at: 100,
@@ -610,6 +625,7 @@ mod tests {
                 radius: 20.0,
                 quad: Vec::new(),
                 focus: None,
+                vignette: None,
             },
             RectKey {
                 at: 200,
@@ -620,6 +636,7 @@ mod tests {
                 radius: 10.0,
                 quad: Vec::new(),
                 focus: None,
+                vignette: None,
             },
         ]
     }
@@ -636,7 +653,7 @@ mod tests {
         // The one piece of zoom arithmetic on this side. `rectAt` in
         // `layout.ts` answers the same, and a difference is a preview and an
         // export framed differently.
-        let (rect, radius, _, _) = rect_at(&motion_track(), 50, BASE, 10.0);
+        let (rect, radius, _, _, _) = rect_at(&motion_track(), 50, BASE, 10.0);
         assert_eq!(rect.width, 150.0);
         assert_eq!(rect.x, -25.0);
         // The corners grow with the picture rather than staying put.
@@ -653,7 +670,7 @@ mod tests {
     fn falls_back_when_nothing_zooms() {
         // Every item but a zoomed screen has no keys, and has to draw its own
         // rectangle rather than nothing.
-        let (rect, radius, quad, _) = rect_at(&[], 0, BASE, 7.0);
+        let (rect, radius, quad, _, _) = rect_at(&[], 0, BASE, 7.0);
         assert_eq!((rect, radius), (BASE, 7.0));
         assert!(quad.is_empty());
     }
