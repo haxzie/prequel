@@ -1,64 +1,307 @@
+/* Automatic source detection walks up to the git root, which here is the whole
+   monorepo — it would scan the Rust crates and the desktop renderer for class
+   names. `source(none)` turns that off and the one `@source` below points at
+   this app's own tree. */
+@import "tailwindcss" source(none);
+@source "../";
+
+/*
+  The palette is lifted from the app icon, which is itself a timeline: a rising
+  sun over a ruler, a blue playhead, a purple clip with lilac handles. Marketing
+  and product therefore agree on colour without sharing a stylesheet.
+
+  Dark only, on purpose. The site commits to one look, so `color-scheme` is
+  fixed rather than `light dark` and there is no `prefers-color-scheme` block to
+  keep in sync.
+*/
 :root {
-  color-scheme: light dark;
-  --fg: #111;
-  --muted: #666;
-  --bg: #fff;
+  color-scheme: dark;
+
+  --bg: #0b0d11; /* the icon's #0F1218, a shade deeper so surfaces read against it */
+  --surface: #14161b;
+  --elevated: #1a1d23;
+  --line: #22262e;
+  --fg: #eceef1;
+  --muted: #8b9198;
+
+  --brand-from: #e14b15; /* sun gradient start */
+  --brand-to: #ac1860; /* sun gradient end */
+  --accent: #4e84f9; /* the playhead */
+  --iris: #c000f0; /* the clip stroke */
+  --lilac: #eeacff; /* the clip handles */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fg: #ededed;
-    --muted: #999;
-    --bg: #0a0a0a;
+/* `inline` substitutes the var() into each utility rather than its value, which
+   is what lets a scoped override further down the tree resolve at the use site.
+   Same arrangement as the desktop renderer's stylesheet. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-brand-from: var(--brand-from);
+  --color-brand-to: var(--brand-to);
+  --color-accent: var(--accent);
+  --color-iris: var(--iris);
+  --color-lilac: var(--lilac);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-serif: var(--font-newsreader), ui-serif, Georgia, serif;
+  --font-script: var(--font-playwrite), ui-rounded, cursive;
+
+  /*
+    The feature-card illustrations. Every one of these animates `transform` or
+    `opacity` and nothing else: six of them loop forever, on screen at once, and
+    anything that triggered layout would keep the main thread busy for as long
+    as the section is in view.
+
+    Durations are deliberately coprime-ish rather than round, so the six do not
+    fall into step and start pulsing together.
+  */
+  --animate-zoom-push: zoom-push 4s ease-in-out infinite;
+  --animate-bubble-hop: bubble-hop 6.5s ease-in-out infinite;
+  --animate-swatch: swatch 6s linear infinite;
+  --animate-clip-cut: clip-cut 4.5s ease-in-out infinite;
+  --animate-clip-close: clip-close 4.5s ease-in-out infinite;
+  --animate-cursor-drift: cursor-drift 5.5s ease-in-out infinite;
+  --animate-converge: converge 5s ease-in-out infinite;
+
+  /* Pushing in on the work. */
+  @keyframes zoom-push {
+    0%,
+    12% {
+      transform: translate(-50%, -50%) scale(1);
+    }
+    52%,
+    76% {
+      transform: translate(-50%, -50%) scale(2.1);
+    }
+    100% {
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  /* The camera bubble moving corner to corner, changing shape as it goes.
+     Offsets are in rem against the fixed frame the illustration draws. */
+  @keyframes bubble-hop {
+    0%,
+    18% {
+      transform: translate(0, 0);
+      border-radius: 9999px;
+    }
+    30%,
+    48% {
+      transform: translate(5rem, 0);
+      border-radius: 32%;
+    }
+    60%,
+    78% {
+      transform: translate(5rem, -2rem);
+      border-radius: 9999px;
+    }
+    90%,
+    100% {
+      transform: translate(0, 0);
+      border-radius: 32%;
+    }
+  }
+
+  /* Backgrounds cycling behind the frame. Three layers share this with negative
+     delays a third of the duration apart, so one is always opaque. */
+  @keyframes swatch {
+    0%,
+    26% {
+      opacity: 1;
+    }
+    36%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* A slice collapsing, and the clip after it closing the gap. Two keyframes
+     rather than one animated width: scaling and translating keeps both off the
+     layout path. */
+  @keyframes clip-cut {
+    0%,
+    32% {
+      transform: scaleX(1);
+      opacity: 0.55;
+    }
+    58%,
+    100% {
+      transform: scaleX(0);
+      opacity: 0;
+    }
+  }
+
+  @keyframes clip-close {
+    0%,
+    32% {
+      transform: translateX(0);
+    }
+    58%,
+    100% {
+      transform: translateX(-2.75rem);
+    }
+  }
+
+  /* The pointer crossing the frame, then getting out of the way. */
+  @keyframes cursor-drift {
+    0% {
+      transform: translate(0, 0);
+      opacity: 1;
+    }
+    45%,
+    72% {
+      transform: translate(3.75rem, 1.5rem);
+      opacity: 1;
+    }
+    88%,
+    100% {
+      transform: translate(3.75rem, 1.5rem);
+      opacity: 0;
+    }
+  }
+
+  /* Preview and export landing on the same frame. One keyframe for both, with
+     the starting offset passed in as a custom property. */
+  @keyframes converge {
+    0%,
+    22% {
+      transform: translate(var(--dx, 0), var(--dy, 0));
+    }
+    62%,
+    100% {
+      transform: translate(0, 0);
+    }
   }
 }
 
-* {
-  box-sizing: border-box;
+/*
+  A superellipse rather than a rounded square: the curvature runs continuously
+  into the straight edges instead of meeting them at the visible seam a circular
+  corner leaves. Copied from the app's own stylesheet so the mark is the same
+  shape in both places. Engines without `corner-shape` — Safari and Firefox at
+  the time of writing — fall back to the rounded square, which is a fair
+  approximation rather than a broken layout.
+*/
+@utility squircle {
+  corner-shape: squircle;
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    sans-serif;
-  line-height: 1.6;
+/* Faint ruler ticks, the icon's other half. Used as a section backdrop. */
+@utility ruled {
+  background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 88px 100%;
+  mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
 }
 
-main {
-  max-width: 42rem;
-  margin: 0 auto;
-  padding: 4rem 1.5rem;
+/*
+  Film grain over a gradient, as an inline `feTurbulence` rather than an image.
+  A tiled PNG of noise is the usual way and costs a request plus a few hundred
+  kilobytes; this is a few hundred bytes and resolution independent.
+
+  `isolation` matters: without it the `overlay` blend below reaches past this
+  element and grains whatever the card is sitting on.
+*/
+@utility grain {
+  isolation: isolate;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    background-size: 160px 160px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
 }
 
-dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.25rem 1.5rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid color-mix(in srgb, var(--fg) 15%, transparent);
-  border-radius: 0.5rem;
+/*
+  Smooth open and close for a `<details>`.
+
+  `<details>` is the toggle here rather than React state precisely because a
+  collapsed panel keeps its content in the DOM — nothing is unmounted, so there
+  is nothing for a crawler to miss.
+
+  `::details-content` and `interpolate-size` are recent. Engines without them
+  snap open instead, which is what `<details>` has always done rather than
+  anything broken. `interpolate-size` is set here rather than on `:root` so
+  allowing keyword sizes to animate cannot leak into unrelated transitions.
+*/
+@utility faq-item {
+  interpolate-size: allow-keywords;
+
+  &::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 260ms ease,
+      content-visibility 260ms allow-discrete;
+  }
+
+  &[open]::details-content {
+    block-size: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::details-content {
+      transition: none;
+    }
+  }
 }
 
-dt {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.8125rem;
-  color: var(--muted);
+@utility brand-gradient {
+  background-image: linear-gradient(115deg, var(--brand-from), var(--brand-to));
 }
 
-dd {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.8125rem;
+/* A one-pixel top highlight, the thing that makes a dark card look lit rather
+   than flat. Cheap version of a two-layer border. */
+@utility lit {
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06);
 }
 
-code {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.875em;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: var(--bg);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--brand-to) 55%, transparent);
+    color: var(--fg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* The site is dark-only, so tell the form controls that too — otherwise the
+     autofill background lands as white-on-white in Chrome. */
+  input,
+  button,
+  textarea {
+    font: inherit;
+    color-scheme: dark;
+  }
 }
