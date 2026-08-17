@@ -25,7 +25,7 @@ const PRINCIPLES = [
   },
   {
     title: "Local by default",
-    body: "Recording, editing and export happen on your machine. There is no upload, no queue and no cloud render.",
+    body: "Recording, editing and export happen on your machine. There is no upload, no queue and no cloud render. Sharing a finished file is the one thing that reaches a server, and only when asked.",
   },
 ];
 

@@ -6,6 +6,11 @@
  *  Nothing is for sale yet — every plan's action is the waitlist — so these
  *  numbers exist to give the page a shape rather than to be paid. Change them
  *  here and the cards, the table and the FAQ all follow.
+ *
+ *  Two of the three are a one-off purchase rather than a subscription, which is
+ *  the whole shape of this page: the app is bought once and keeps working, and
+ *  the only recurring charge is for the part that costs money to run every month
+ *  — storage and bandwidth for a team's uploads.
  */
 
 export type Plan = {
@@ -20,7 +25,7 @@ export type Plan = {
 export const PLANS: Plan[] = [
   {
     name: "Free",
-    price: "£0",
+    price: "$0",
     cadence: "forever",
     summary: "The whole recorder, and enough editor to publish something.",
     features: [
@@ -32,10 +37,12 @@ export const PLANS: Plan[] = [
     ],
   },
   {
-    name: "Pro",
-    price: "£8",
-    cadence: "per month, billed yearly",
-    summary: "For anyone whose recordings are part of the job.",
+    name: "Personal",
+    price: "$39",
+    // Spelled out rather than left as "one-off", because the question anyone
+    // asks about a one-time licence is what stops working when the year is up.
+    cadence: "once · one Mac · a year of updates",
+    summary: "Buy it once. It keeps working after the update year ends.",
     featured: true,
     features: [
       "Everything in Free, without the length limit",
@@ -43,23 +50,25 @@ export const PLANS: Plan[] = [
       "Automatic zooms from clicks and typing",
       "Every frame preset, including the social sizes",
       "Per-slice overrides and keyframed zooms",
+      "One year of updates, and the version you have forever",
     ],
   },
   {
     name: "Team",
-    price: "£6",
-    cadence: "per seat, per month",
-    summary: "Shared presets, one invoice, five seats or more.",
+    price: "$19",
+    cadence: "per user, per month",
+    summary: "Everything in Personal, plus somewhere to put the finished file.",
     features: [
-      "Everything in Pro",
-      "Shared backgrounds and export presets",
+      "Everything in Personal, on every seat",
+      "Cloud uploads straight from the editor",
+      "Shareable links, with no download required to watch",
+      "Updates for as long as the subscription runs",
       "Centralised billing and seat management",
-      "Priority support",
     ],
   },
 ];
 
-/** Rows are `[feature, free, pro, team]`; `true` renders as a tick. */
+/** Rows are `[feature, free, personal, team]`; `true` renders as a tick. */
 export const COMPARISON: [string, boolean | string, boolean | string, boolean | string][] = [
   ["Screen, window and region capture", true, true, true],
   ["Webcam and both audio sources", true, true, true],
@@ -69,8 +78,10 @@ export const COMPARISON: [string, boolean | string, boolean | string, boolean | 
   ["Automatic zooms", false, true, true],
   ["Keyframed zooms and per-slice overrides", false, true, true],
   ["Frame and social presets", "16:9 only", true, true],
-  ["Shared presets across a team", false, false, true],
-  ["Priority support", false, false, true],
+  ["Macs per licence", "Any", "One", "One per seat"],
+  ["Updates", "While it is free", "One year", "While subscribed"],
+  ["Cloud uploads and shareable links", false, false, true],
+  ["Centralised billing and seat management", false, false, true],
 ];
 
 export const FAQ: { question: string; answer: string }[] = [
@@ -80,9 +91,14 @@ export const FAQ: { question: string; answer: string }[] = [
       "Not yet. Prequel is in development and nothing is for sale, which is why every button on this page joins the waitlist instead. The plans are here so it is clear what will be free when it does ship.",
   },
   {
+    question: "What happens after my year of updates?",
+    answer:
+      "Nothing stops. Personal is a one-off purchase, not a rental: the version you have keeps working for as long as macOS runs it. The year buys the updates released during it, and renewing is optional rather than the price of keeping what you paid for.",
+  },
+  {
     question: "Is the free plan watermarked?",
     answer:
-      "No. Free exports carry nothing that Pro exports do not — the limits are on length and output format, not on the file being usable.",
+      "No. Free exports carry nothing that a paid export does not — the limits are on length and output format, not on the file being usable.",
   },
   {
     question: "What do I need to run it?",
@@ -92,6 +108,6 @@ export const FAQ: { question: string; answer: string }[] = [
   {
     question: "Does anything leave my machine?",
     answer:
-      "Recording, editing and export all happen locally. There is no upload step and no cloud rendering — the export is your Mac's own media engine writing an MP4 to disk.",
+      "On Free and Personal, no: recording, editing and export all happen locally, on your Mac's own media engine. Team adds uploading — and only when you ask for it, on the file you have already exported. Nothing is sent anywhere to make a recording or to render one.",
   },
 ];

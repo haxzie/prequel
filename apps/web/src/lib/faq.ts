@@ -78,6 +78,6 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "Does my recording leave my machine?",
     answer:
-      "No. Recording, editing and export all happen locally, on your Mac's own media engine. There is no upload step and no cloud render.",
+      "Not to make one. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. The Team plan adds uploading a finished export to share it, which is a thing you ask for rather than something the app does on its own.",
   },
 ];
