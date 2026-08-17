@@ -15,7 +15,7 @@ export default function BlogIndex() {
     <Container className="py-20">
       <SectionHeading
         eyebrow="Blog"
-        title="Notes from building it"
+        title="Notes from building Prequel"
         lede="Capture, rendering, and the decisions that only look obvious once something has already gone wrong."
       />
 
