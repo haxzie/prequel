@@ -106,7 +106,11 @@ export default function Home() {
     <>
       <section className="pt-20 pb-16 sm:pt-28">
         <Container>
-          <div className="max-w-3xl">
+          {/* Centred, so `mx-auto` on every width-capped child rather than one
+              wrapper: the measures differ on purpose — the headline is allowed to
+              run wider than the paragraph, and the form narrower than both — and
+              a single `max-w` would flatten that into one column. */}
+          <div className="mx-auto max-w-3xl text-center">
             {/* Two shadows: a neutral one for depth and a warm one picking up
                 the icon's own sun gradient. On a flat background that warm
                 halo is the only colour above the fold, so it does the work the
@@ -120,12 +124,12 @@ export default function Home() {
               Create <span className="font-serif font-semibold italic">cinematic</span> screen
               recordings from Mac
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
               Record once. Prequel hands back a finished video — pushed in on the work, the camera
               framed, the dead air gone — and exports it at up to 4K.
             </p>
 
-            <div id="waitlist" className="mt-9 max-w-lg scroll-mt-28">
+            <div id="waitlist" className="mx-auto mt-9 max-w-lg scroll-mt-28">
               <WaitlistForm />
               {/* The platform used to be a badge above the headline. It still
                   belongs above the fold, so it rides with the small print. */}

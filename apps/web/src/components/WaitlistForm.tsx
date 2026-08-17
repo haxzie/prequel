@@ -65,7 +65,9 @@ export function WaitlistForm({ className = "" }: { className?: string }) {
           autoComplete="email"
           placeholder="you@example.com"
           aria-label="Email address"
-          className="h-11 min-w-0 flex-1 rounded-full border border-line bg-surface px-5 text-sm text-fg placeholder:text-muted/70 focus:border-accent focus:outline-none"
+          // `text-left` pinned rather than inherited: an address is read
+          // character by character, and this form now sits inside a centred hero.
+          className="h-11 min-w-0 flex-1 rounded-full border border-line bg-surface px-5 text-left text-sm text-fg placeholder:text-muted/70 focus:border-accent focus:outline-none"
         />
         <Button type="submit" disabled={state.status === "sending"}>
           {state.status === "sending" ? "Joining…" : "Join the waitlist"}
