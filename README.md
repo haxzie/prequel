@@ -5,14 +5,15 @@ core built on ScreenCaptureKit, AVFoundation, VideoToolbox and Metal.
 
 Record a screen, a window or a dragged region, with the webcam and both audio
 sources alongside it. Stop, and an editor opens on the take: composite the
-webcam over the screen against a background, cut, zoom, and export one MP4.
+webcam over the screen against a background, cut, zoom, and export an MP4 or a
+GIF.
 
 **Apple Silicon, macOS 14+.**
 
 ```
 apps/
   desktop/    @prequel/desktop — Electron 43 + Vite 8 + React 19
-  web/        @prequel/web — Next.js 16 marketing scaffold, not part of the product
+  web/        @prequel/web — Next.js 16 + Tailwind v4, the public site
 packages/
   recorder/   @prequel/recorder — napi-rs addon, the only bridge from Node to Rust
   env/        @prequel/env — Zod-validated environment variables  ← edit src/env.ts
@@ -82,6 +83,13 @@ Capture needs the macOS Screen Recording grant. It is a **TCC permission, not
 an entitlement** — no codesign flag turns it on, and macOS prompts at most once
 per app.
 
+The app asks for this itself: a launch with no Screen Recording grant opens the
+welcome window (`renderer/src/welcome/`) instead of the panel, which walks
+through all four permissions one at a time. It opens on a first run, and on any
+run where the grant is still missing — a recorder that produces nothing reads as
+broken rather than as unpermitted. `main/permissions.ts` is where the four are
+asked for, and why two of them can only be granted in System Settings.
+
 In development the grant is attached to the Electron binary, so grant it once:
 
 > System Settings ▸ Privacy & Security ▸ Screen Recording → enable **Electron**
@@ -93,11 +101,21 @@ app shows a prompt to fix it.
 Re-signing with a different identity silently revokes the grant, which is a
 classic "it worked yesterday" bug.
 
-Two things deliberately need **no** permission: the click tap that feeds
-automatic zooms is listen-only and mouse-only, which macOS allows without Input
-Monitoring; and the wallpaper is captured through the Screen Recording grant
-the app already holds. Only the typing track wants Accessibility, and it is
-absent rather than broken without it.
+The wallpaper is captured through the Screen Recording grant the app already
+holds, and needs nothing of its own.
+
+**The click tap does need a grant**, which this said for a long time that it did
+not. `CGEventTapCreate` succeeds for an untrusted process and hands back a tap
+that only ever sees events aimed at Prequel itself — so a recording comes back
+with one or two clicks instead of none, nothing is logged by the system, and the
+automatic zooms are simply thin. Grant **Accessibility** and **Input
+Monitoring** alongside Screen Recording. The recorder now warns when it starts a
+tap it does not expect to receive anything, and `stop` logs
+`captured N clicks (M pressed, K tap disables)` — an `M` far below what you
+actually did is this, not a bug in the editor.
+
+The typing track wants Accessibility too, and is absent rather than broken
+without it.
 
 ## Architecture
 
@@ -151,6 +169,12 @@ opened late all fall out for free, and the output is constant-frame-rate —
 which is what the preview assumes. Input-driven would need a resampler per
 source and would still get cuts wrong.
 
+One loop writes every format. MP4 goes to `AVAssetWriter` and GIF to a CPU
+quantiser, but both take the same composited frame from the same loop —
+splitting them would mean two copies of the reader handling, the cut handling
+and the cancellation checks, and the moment those drift an edit exports
+correctly as one format and wrongly as the other.
+
 ### Audio is mixed by hand
 
 A per-source multiply on `f32`, which is exactly what WebAudio's `GainNode`
@@ -201,6 +225,58 @@ tested without them — `prequel-session`, `prequel-render`'s
 For anything visual, assert pixels. Shape assertions — duration, frame count,
 dimensions — pass happily on output that looks wrong. See
 `crates/prequel-render/tests/renders_the_right_pixels.rs`.
+
+## Continuous integration and releases
+
+Two workflows, both on `macos-15` for the parts that need it — the capture core
+is ScreenCaptureKit, AVFoundation and Metal, so nothing but the formatting check
+builds anywhere else.
+
+**`.github/workflows/ci.yml`** runs on every push to `main` and every pull
+request: `format:check` on Linux for a fast failure, then build, typecheck,
+`vitest` and `cargo test`/`cargo clippy` on macOS. Two things about it are worth
+knowing rather than discovering:
+
+- The live capture tests **skip themselves** on a hosted runner. A GitHub runner
+  can never hold a Screen Recording grant, and the tests check for the grant
+  instead of failing without it. What still runs is every pure test plus the
+  Metal golden-pixel renders.
+- Clippy runs **without** `-D warnings`, because two warnings already stand in
+  `prequel-capture` — two `extern` declarations that disagree with the SDK's own
+  signatures. Fix those and the flag becomes worth adding.
+
+**`.github/workflows/build.yml`** packages the app. It runs on pushes to `main`,
+on `v*` tags, and on demand from the Actions tab — deliberately **not** on pull
+requests, where a 100 MB disk image per push buys nothing the checks do not
+already cover. Every run uploads the `.dmg` and `.zip` as an artifact kept for
+two weeks, so a build of `main` can be downloaded without cutting a release.
+
+### Cutting a release
+
+The version comes from `apps/desktop/package.json`, not from the tag — so the
+order matters:
+
+```bash
+# 1. Bump the version and commit it.
+npm --prefix apps/desktop version 0.2.0 --no-git-tag-version
+git commit -am "Release 0.2.0"
+
+# 2. Tag that commit and push both.
+git tag v0.2.0
+git push origin main --follow-tags
+```
+
+The workflow refuses a tag whose version disagrees with the package, because the
+alternative is a release full of files named after the _previous_ version — which
+looks exactly like the wrong build was published and cannot be told apart from
+one. It then creates the GitHub release with notes generated from the commits
+since the last tag.
+
+**Nothing published this way is signed or notarised.** `identity: null` in
+`electron-builder.yml` is what makes a build possible without a Developer ID, and
+the cost is that macOS quarantines the result on anyone else's machine. Turn on
+`hardenedRuntime`, set an identity and add `notarize` before handing a build to
+someone — see the note in `electron-builder.yml`.
 
 ## Diagnostics
 
