@@ -4,12 +4,23 @@ directories:
   buildResources: build
   output: release
 
+# The default UDZO (zlib) image leaves 9 MB on the table next to bzip2, which is
+# what `maximum` selects for a DMG. It costs build time and nothing at install
+# time — macOS mounts either without a plugin.
+compression: maximum
+
 files:
   - "out/**/*"
   # The tray icons are read from `out/main/../../resources`, so they have to
   # ship alongside the bundle rather than only existing in the source tree.
   - "resources/**/*"
   - "package.json"
+  # `zod` reaches the bundle only as a dependency of `@prequel/env`, which
+  # `externalizeDepsPlugin` is told to bundle rather than externalise — so every
+  # schema is already inlined into `out/main/index.js`. Nothing `require`s the
+  # package at runtime, but electron-builder collects production dependencies
+  # transitively and would ship 4 MB of it, source tree and tests included.
+  - "!node_modules/zod/**"
 
 # The native addon is a `.node` binary: it cannot be `dlopen`'d from inside an
 # asar archive, so it has to sit on the real filesystem.
@@ -21,6 +32,14 @@ asarUnpack:
   # image is an invisible menu-bar item, and since `LSUIElement` gives the app
   # no menu of its own, that leaves no way to quit it.
   - "resources/**"
+
+# Chromium ships a `locale.pak` for all 220 of its locales, 47 MB of the bundle.
+# The UI is English-only and none of it is translated, so the rest are dead
+# weight. This is the Chromium UI language, not the app's — keep `en-US` even if
+# the app is never localised, because an empty list makes Electron ship none and
+# Chromium then has no strings for its own menus and dialogs.
+electronLanguages:
+  - en-US
 
 mac:
   category: public.app-category.developer-tools
