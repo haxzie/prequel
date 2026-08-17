@@ -34,7 +34,11 @@ export function Nav() {
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-full px-3 py-2 text-sm text-muted transition-colors hover:text-fg"
+              // White rather than muted, so the row reads as navigation rather
+              // than as small print. The hover moves to a background instead of a
+              // colour: there is nowhere brighter than `--fg` for the text to go,
+              // and a link with no hover state at all reads as inert.
+              className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-white/8"
             >
               {item.label}
             </Link>
