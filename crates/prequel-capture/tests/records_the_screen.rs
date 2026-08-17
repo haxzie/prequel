@@ -20,11 +20,25 @@ const FPS: u32 = 30;
 
 /// Whether live capture can run here at all.
 ///
-/// Two things make it impossible, and neither is worth failing the suite over:
-/// no Screen Recording grant (hosted CI can never have one), and a sleeping
-/// display (ScreenCaptureKit omits those entirely, and a developer machine will
-/// doze off mid-run).
+/// Three things make it impossible, and none is worth failing the suite over.
+///
+/// `PREQUEL_NO_LIVE_CAPTURE` is set by CI, and the reason is not the one this
+/// comment used to give. A hosted macOS runner *does* hold the Screen Recording
+/// grant and *does* have a display, so the two checks below pass and these tests
+/// run for real — against a paravirtualised 1024px display that is not Retina and
+/// cannot sustain a frame rate. Two assertions then fail on facts about the
+/// hardware rather than about this code: that a display captures at physical
+/// resolution, and that audio and video stay within 0.6s of each other.
+///
+/// Detecting that display rather than being told about it was the alternative,
+/// and it is worse: "not Retina" and "slow" are both legitimate states for a real
+/// machine, so anything sharp enough to catch a runner would also quietly stop
+/// testing someone's actual Mac.
 fn cannot_capture() -> bool {
+    if std::env::var_os("PREQUEL_NO_LIVE_CAPTURE").is_some() {
+        eprintln!("SKIP: PREQUEL_NO_LIVE_CAPTURE is set; this display cannot be captured usefully");
+        return true;
+    }
     if screen_access_status() != PermissionStatus::Granted {
         eprintln!("SKIP: no Screen Recording grant; live capture cannot be tested here");
         return true;

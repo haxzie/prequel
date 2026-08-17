@@ -77,8 +77,16 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets
 
-      # The live capture tests skip themselves here rather than failing: hosted
-      # runners can never hold a Screen Recording grant, and the tests check for
-      # it. What does run is every pure test plus the Metal golden-pixel renders.
+      # A hosted runner turns out to hold the Screen Recording grant and offer a
+      # display, so the live capture tests do not skip themselves — they run
+      # against a paravirtualised 1024px display that is not Retina and cannot
+      # sustain a frame rate, and fail on both counts. `PREQUEL_NO_LIVE_CAPTURE`
+      # turns those four off; see the note in `records_the_screen.rs` for why the
+      # environment is told to skip rather than sniffed for.
+      #
+      # Everything else still runs, including the Metal golden-pixel renders,
+      # which do get a GPU here.
       - name: Test (Rust)
+        env:
+          PREQUEL_NO_LIVE_CAPTURE: "1"
         run: cargo test --workspace

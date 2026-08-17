@@ -237,10 +237,11 @@ request: `format:check` on Linux for a fast failure, then build, typecheck,
 `vitest` and `cargo test`/`cargo clippy` on macOS. Two things about it are worth
 knowing rather than discovering:
 
-- The live capture tests **skip themselves** on a hosted runner. A GitHub runner
-  can never hold a Screen Recording grant, and the tests check for the grant
-  instead of failing without it. What still runs is every pure test plus the
-  Metal golden-pixel renders.
+- The live capture tests are turned off with `PREQUEL_NO_LIVE_CAPTURE`. A hosted
+  runner does hold the Screen Recording grant and does offer a display, so they
+  do not skip on their own — they run against a paravirtualised 1024px display
+  that is not Retina and cannot sustain a frame rate, and fail on both. The Metal
+  golden-pixel renders do get a GPU there and run normally.
 - Clippy runs **without** `-D warnings`, because two warnings already stand in
   `prequel-capture` — two `extern` declarations that disagree with the SDK's own
   signatures. Fix those and the flag becomes worth adding.
