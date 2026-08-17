@@ -273,11 +273,54 @@ looks exactly like the wrong build was published and cannot be told apart from
 one. It then creates the GitHub release with notes generated from the commits
 since the last tag.
 
-**Nothing published this way is signed or notarised.** `identity: null` in
-`electron-builder.yml` is what makes a build possible without a Developer ID, and
-the cost is that macOS quarantines the result on anyone else's machine. Turn on
-`hardenedRuntime`, set an identity and add `notarize` before handing a build to
-someone — see the note in `electron-builder.yml`.
+**Nothing CI publishes is signed.** The config asks for a signed, notarised build
+— `hardenedRuntime: true`, `notarize: true`, and no pinned `identity` so
+electron-builder finds whichever Developer ID is in the keychain — but a runner
+holds no certificate, and `build.yml` sets `CSC_IDENTITY_AUTO_DISCOVERY=false` so
+it does not go looking. Its artifacts are ad-hoc signed, which macOS quarantines
+on anyone else's machine.
+
+A machine with no certificate is not a broken build: electron-builder logs
+`skipped macOS application code signing … 0 identities found` and produces an
+unsigned `.dmg` anyway.
+
+### Signing locally
+
+Needs an Apple Developer Program membership and a **Developer ID Application**
+certificate — not "Apple Development", which only runs locally, and not "Mac App
+Distribution", which is App Store only. Xcode → Settings → Accounts → Manage
+Certificates → **+** installs one into the login keychain. Check it took:
+
+```bash
+security find-identity -v -p codesigning   # want: Developer ID Application: … (TEAMID)
+```
+
+Notarisation needs separate credentials. Create an App Store Connect API key
+(Users and Access → Integrations → Keys) and keep the `.p8` outside the repo:
+
+```bash
+export APPLE_API_KEY=~/keys/AuthKey_XXXXXXXX.p8
+export APPLE_API_KEY_ID=XXXXXXXX
+export APPLE_API_ISSUER=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+pnpm --filter @prequel/desktop package     # slow: notarisation is a round trip to Apple
+```
+
+`APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` works too, and
+`APPLE_KEYCHAIN`/`APPLE_KEYCHAIN_PROFILE` if the credentials are already stored by
+`notarytool`. Then check the result, where the ticket is the part signing alone
+does not give you:
+
+```bash
+APP=apps/desktop/release/mac-arm64/Prequel.app
+codesign -dv --verbose=4 "$APP"   # Authority: Developer ID Application, flags include runtime
+xcrun stapler validate "$APP"     # the notarisation ticket
+spctl -a -vvv -t install "$APP"   # accepted, source=Notarized Developer ID
+```
+
+One side effect worth having: TCC keys the Screen Recording grant to the bundle's
+signature, and an ad-hoc signature changes on every build — which is why macOS
+asks again after each `pnpm ship`. A stable Developer ID makes it ask once.
 
 ## Diagnostics
 

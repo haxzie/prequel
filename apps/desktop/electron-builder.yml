@@ -62,11 +62,23 @@ mac:
     NSCameraUsageDescription: Prequel records your camera when you turn it on for a recording.
     NSMicrophoneUsageDescription: Prequel records your microphone when you turn it on for a recording.
     NSAudioCaptureUsageDescription: Prequel records your computer's audio when system audio is enabled.
-  # Hardened runtime and notarisation need a Developer ID, which this machine
-  # does not have. Left off so a local build succeeds; turn both on, together
-  # with `notarize`, before distributing to anyone else.
-  hardenedRuntime: false
-  identity: null
+  # Signed and notarised with a Developer ID.
+  #
+  # `identity` is deliberately absent rather than named: electron-builder then
+  # finds the Developer ID Application certificate in the keychain, so this file
+  # carries no team id and works for anyone with their own. A machine with no
+  # certificate gets an unsigned build and a warning, not a failure.
+  #
+  # Hardened runtime is what notarisation requires, and the entitlements below
+  # are what make it survivable — V8 needs executable memory, and the native
+  # recorder addon is not signed by Electron's team, so library validation has to
+  # be off or the app cannot load its own capture core.
+  hardenedRuntime: true
+  # Runs only when the credentials are in the environment: `APPLE_API_KEY`,
+  # `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`, or the Apple ID trio. CI sets none
+  # of them and sets `CSC_IDENTITY_AUTO_DISCOVERY=false` besides, so its builds
+  # stay unsigned rather than failing for want of a certificate it cannot hold.
+  notarize: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 
