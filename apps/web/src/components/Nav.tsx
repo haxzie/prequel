@@ -13,9 +13,19 @@ export function Nav() {
     <header>
       <Container className="flex h-20 items-center justify-between gap-4">
         {/* Playwrite VN, and only here. No weight or `tracking` utility on it:
-            the family stops at 400 and asking for more gets a synthesised bold,
-            and negative tracking closes up joins a handwriting face needs. */}
-        <Link href="/" className="font-script text-base text-fg" aria-label="Prequel home">
+            the family stops at 400 — `next/font` rejects 500 and up outright
+            rather than synthesising one — and negative tracking closes up joins a
+            handwriting face needs.
+
+            So the extra weight is a stroke on the glyphs rather than a heavier
+            cut. `currentColor` so it inherits, and a fraction of a pixel because
+            a handwriting face thickens fast: past about half a pixel the thin
+            upstrokes stop being thin and the hand goes out of it. */}
+        <Link
+          href="/"
+          className="font-script text-base text-fg [-webkit-text-stroke:0.4px_currentColor]"
+          aria-label="Prequel home"
+        >
           Prequel
         </Link>
 
