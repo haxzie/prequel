@@ -150,7 +150,7 @@ export default function Home() {
             Without a stacking context of its own it escapes to the root and
             paints behind the page background, which reads as the image simply
             not loading. */}
-        <div className="relative isolate mx-auto w-full max-w-6xl overflow-hidden border-y border-white/8 px-6 py-20 sm:px-14 sm:py-28">
+        <div className="relative isolate mx-auto w-full max-w-6xl overflow-hidden border-y border-dashed border-rule px-6 py-20 sm:px-14 sm:py-28">
           <Image
             src={stage}
             alt=""
@@ -195,7 +195,7 @@ export default function Home() {
         </Container>
       </section>
 
-      <section className="border-y border-line bg-surface/40 py-24">
+      <section className="border-y border-dashed border-rule bg-surface/40 py-24">
         <Container>
           <SectionHeading
             eyebrow="The editor"

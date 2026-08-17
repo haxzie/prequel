@@ -21,6 +21,11 @@
   --surface: #14161b;
   --elevated: #1a1d23;
   --line: #22262e;
+  /* The same line, brighter, for the dashed frame around the content — the rails,
+     the section bands, the footer. A 1px dashed border inks under half its length,
+     so at `--line` it reads as a smudge rather than a rule. Solid dividers *inside*
+     the content keep `--line`: they are drawn continuously and do not need it. */
+  --rule: #343a45;
   --fg: #eceef1;
   --muted: #8b9198;
 
@@ -39,6 +44,7 @@
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
   --color-line: var(--line);
+  --color-rule: var(--rule);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-brand-from: var(--brand-from);

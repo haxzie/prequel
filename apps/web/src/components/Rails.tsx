@@ -14,11 +14,9 @@
 export function Rails() {
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 z-40 flex justify-center">
-      {/* Dashed, and a shade brighter than a solid line would need. A 1px dashed
-          border is drawn as short segments with gaps between them, so less than
-          half the line is actually inked — at the solid line's opacity it read as
-          a smudge rather than as a rule. */}
-      <div className="w-full max-w-6xl border-x border-dashed border-white/18" />
+      {/* `--rule` rather than `--line`: see the token. The frame around the
+          content is dashed throughout, and dashes need the brighter of the two. */}
+      <div className="w-full max-w-6xl border-x border-dashed border-rule" />
     </div>
   );
 }
