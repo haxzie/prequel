@@ -23,7 +23,7 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
-import type { PlacedSlice } from "./timeline";
+import { spanInProject, toSourceTime, type PlacedSlice } from "./timeline";
 import type { EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
@@ -188,14 +188,14 @@ export function TimelineStrip({
   // one against the other, so the two conversions are kept here rather than
   // being re-derived at each use.
   const sourceAt = useCallback(
-    (project: MediaTime): MediaTime => {
-      const slice = placed.find(
-        (candidate) =>
-          project >= candidate.timelineStart &&
-          project < candidate.timelineStart + candidate.duration,
-      );
-      return slice ? slice.source.start + (project - slice.timelineStart) : project;
-    },
+    // `toSourceTime` rather than a second copy of the same arithmetic. The copy
+    // that used to live here matched slices half-open and fell through to the
+    // raw project time when nothing matched — and the far right of the strip is
+    // exactly that case, because the last clip ends there. It handed back a
+    // *project* time as though it were a *source* time, short by however much
+    // had been cut away, so dragging a zoom's end handle to the end of a cut
+    // recording moved it backwards instead of out to the end of the take.
+    (project: MediaTime): MediaTime => toSourceTime(placed, project) ?? project,
     [placed],
   );
 
@@ -392,9 +392,14 @@ export function TimelineStrip({
             <ZoomGhost ref={ghost} />
 
             {state.project.zooms.map((zoom) => {
-              const from = projectAt(zoom.source.start);
-              const to = projectAt(zoom.source.end);
-              if (to === null || from === null) return null;
+              // The whole span, not its two edges asked about separately. An
+              // automatic zoom is placed against the recording and a later cut
+              // can remove the moment it starts on — which used to leave the
+              // bar undrawn while the zoom still occupied its source range, so
+              // those seconds took clicks and did nothing at all.
+              const span = spanInProject(placed, zoom.source);
+              if (span === null) return null;
+              const { start: from, end: to } = span;
 
               return (
                 <Zoom

@@ -14,6 +14,7 @@ import {
   splitAt,
   toFileTime,
   toProjectTime,
+  spanInProject,
   toSourceTime,
   totalDuration,
   type Slice,
@@ -99,6 +100,17 @@ describe("project ↔ source", () => {
     expect(toSourceTime(placed, 3 * S)).toBe(5 * S);
   });
 
+  it("maps the very end of the edit to the end of the last clip", () => {
+    // The timeline is drawn as a half-open range, so the final pixel belongs to
+    // no clip. Falling through to the raw project time there hands back a
+    // *source* value that is short by however much was cut away — and dragging
+    // a zoom's end handle to the far right then collapses it backwards instead
+    // of pinning it to the end of the recording.
+    const placed = place(CUT);
+    expect(toSourceTime(placed, totalDuration(placed))).toBe(10 * S);
+    expect(toSourceTime(place(WHOLE), 10 * S)).toBe(10 * S);
+  });
+
   it("round-trips across a cut", () => {
     const placed = place(CUT);
 
@@ -106,6 +118,41 @@ describe("project ↔ source", () => {
       const source = toSourceTime(placed, time)!;
       expect(toProjectTime(placed, source)).toBe(time);
     }
+  });
+
+  it("keeps a span that starts in a cut", () => {
+    // The case that made a zoom invisible: an automatic zoom is placed against
+    // the whole recording, then a cut removes the moment it starts on. Asking
+    // about its edges one at a time answers "nowhere" and the bar is not drawn
+    // — while the zoom still occupies its source range, so every click on those
+    // seconds silently does nothing.
+    const placed = place(CUT);
+
+    // 3s of source is inside the removed 2s-4s. The span still covers 5s-8s of
+    // the source, which is the last 3s of the edit.
+    expect(spanInProject(placed, { start: 3 * S, end: 8 * S })).toEqual({
+      start: 2 * S,
+      end: 6 * S,
+    });
+  });
+
+  it("draws a span across a cut as one range", () => {
+    // It applies either side of the join, and two bars would read as two zooms.
+    expect(spanInProject(place(CUT), { start: 1 * S, end: 5 * S })).toEqual({
+      start: 1 * S,
+      end: 3 * S,
+    });
+  });
+
+  it("reports a span that survived nowhere as absent", () => {
+    expect(spanInProject(place(CUT), { start: 2 * S, end: 4 * S })).toBeNull();
+  });
+
+  it("agrees with the per-moment mapping when nothing was cut away", () => {
+    expect(spanInProject(place(WHOLE), { start: 3 * S, end: 7 * S })).toEqual({
+      start: 3 * S,
+      end: 7 * S,
+    });
   });
 
   it("reports a moment that was cut out as absent", () => {

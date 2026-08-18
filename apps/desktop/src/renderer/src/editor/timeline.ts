@@ -81,6 +81,43 @@ export function toSourceTime(placed: readonly PlacedSlice[], time: MediaTime): M
   return slice.source.start + into;
 }
 
+/**
+ * The part of the edit a source span still covers.
+ *
+ * `toProjectTime` answers for a single moment and says "nowhere" when that
+ * moment was cut out. A zoom is a *range*, and a range whose start was cut away
+ * usually still covers plenty of surviving footage — so asking about its edges
+ * one at a time throws away the whole span the moment either edge lands in a
+ * gap. That is how a zoom comes to be invisible on the timeline while still
+ * occupying the source range it was given, which reads as clicks that silently
+ * do nothing.
+ *
+ * Drawn as one bar across a cut rather than as a piece per clip: the zoom does
+ * apply either side of the join, and splitting it would suggest two zooms.
+ *
+ * Null only when the span survived nowhere at all.
+ */
+export function spanInProject(
+  placed: readonly PlacedSlice[],
+  source: { start: MediaTime; end: MediaTime },
+): { start: MediaTime; end: MediaTime } | null {
+  let start: MediaTime | null = null;
+  let end: MediaTime | null = null;
+
+  for (const slice of placed) {
+    const from = Math.max(source.start, slice.source.start);
+    const to = Math.min(source.end, slice.source.end);
+    // This clip keeps none of the span. An empty overlap is not a zero-length
+    // one: `to === from` is a clip that merely touches the span at a boundary.
+    if (to <= from) continue;
+
+    start ??= slice.timelineStart + (from - slice.source.start);
+    end = slice.timelineStart + (to - slice.source.start);
+  }
+
+  return start === null || end === null ? null : { start, end };
+}
+
 /** Source time → project time, or null when that moment was cut out. */
 export function toProjectTime(placed: readonly PlacedSlice[], source: MediaTime): MediaTime | null {
   for (const slice of placed) {

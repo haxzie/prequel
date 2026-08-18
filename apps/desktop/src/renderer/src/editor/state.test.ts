@@ -18,9 +18,11 @@ import {
   projectDuration,
   selectedSlice,
   slicesOf,
+  placedSlices,
   type EditorAction,
   type EditorState,
 } from "./state";
+import { toSourceTime, totalDuration } from "./timeline";
 
 const S = 1_000_000_000;
 const RECORDING = "2026-08-11T12-00-00";
@@ -287,6 +289,35 @@ describe("zooms", () => {
   const pair = () => run(start(), { type: "addZoom", at: 1 * S }, { type: "addZoom", at: 5 * S });
 
   const zoomsOf = (state: ReturnType<typeof start>) => state.project.zooms;
+
+  it("can be stretched to the end of a recording that has been cut", () => {
+    // The bug this pins: the strip measures *project* time and zooms are stored
+    // in *source* time, so a drag has to be mapped across the cuts. Dragging the
+    // end handle to the far right lands on the last pixel of the edit, which
+    // belongs to no clip — and a mapping that falls through to the raw project
+    // time there returns a source value short by everything that was cut away.
+    // The zoom then jumps backwards instead of reaching the end of the take.
+    // One 10s take with 4s-6s removed: 8s of edit over 10s of recording.
+    const edit = run(start(), { type: "split", at: 4 * S }, { type: "split", at: 6 * S });
+    const middle = slicesOf(edit.project)[1]!;
+    const trimmed = run(edit, { type: "deleteSlice", sliceId: middle.id });
+
+    const placed = placedSlices(trimmed.project);
+    expect(totalDuration(placed)).toBe(8 * S);
+
+    const zoomed = run(trimmed, { type: "addZoom", at: 7 * S });
+    const zoom = zoomed.project.zooms[0]!;
+
+    // What the strip does when the pointer is dragged past its right edge.
+    const dragged = run(zoomed, {
+      type: "trimZoom",
+      zoomId: zoom.id,
+      edge: "end",
+      source: toSourceTime(placed, totalDuration(placed))!,
+    });
+
+    expect(dragged.project.zooms[0]!.source.end).toBe(10 * S);
+  });
 
   it("drops one where the timeline was pressed", () => {
     const state = run(start(), { type: "addZoom", at: 3 * S });
