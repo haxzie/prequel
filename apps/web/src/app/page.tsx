@@ -121,8 +121,7 @@ export default function Home() {
               className="mb-8 shadow-[0_26px_50px_-16px_rgb(0_0_0_/_0.8),0_14px_46px_-14px_rgb(225_75_21_/_0.5)]"
             />
             <h1 className="text-[2rem] leading-[1.05] font-normal tracking-tight text-balance text-fg sm:text-6xl">
-              Create <span className="font-serif font-semibold italic">cinematic</span> screen
-              recordings from Mac
+              Create cinematic screen recordings from Mac
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted">
               Record once. Prequel hands back a finished video — pushed in on the work, the camera
