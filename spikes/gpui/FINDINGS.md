@@ -80,13 +80,21 @@ refresh rate, not the pipeline.** 4K costs roughly half a millisecond more than
 clears it with room to spare, in a **debug** build, and the composite includes
 `wait_until_completed()`, so that figure is real GPU time and not encode time.
 
-Read the numbers with two caveats:
+Release build, same 4K output: composite 2.2–3.1 ms, frame interval 8.3 ms,
+worst 16 ms. Optimisation barely moves it, which is the expected shape — the
+work is on the GPU and the Rust side is only building a plan and issuing draws.
+
+Read the numbers with three caveats:
 
 - **`Compositor::render` is synchronous.** It commits and blocks. Nothing is
   pipelined against the next frame, so the measurement is honest but the
   headroom is larger than it looks.
 - **The worst-case column is the reader, not the renderer.** The 33.5 ms outlier
   is `VideoReader::open` when playback loops. See below.
+- **The first run after a build stalls for about a second.** Measured once at
+  1154 ms and never again: two warm runs of the same binary peak at 16 ms. That
+  is Metal's pipeline cache being cold, paid once per built binary, and it is
+  worth knowing before reading a single cold run as a performance problem.
 
 ## ✅ The picture is right, not merely fast
 
@@ -110,6 +118,17 @@ quantisation plus 4:2:0 chroma subsampling and nothing else. And the top-left
 pixel is `0.165, 0.118, 0.239` — exactly `#2a1e3d`, the gradient colour the plan
 asked for, so the shared compositor is drawing the plan correctly and not merely
 drawing something.
+
+## Driving it
+
+`cargo run --release` with no arguments plays the newest recording in
+`~/Movies/Prequel`. A session path and an output width are optional positional
+arguments; `--verify` runs the pixel check headlessly instead of opening a
+window.
+
+Dragging anywhere in the window scrubs, rather than a thin bar along the bottom
+— the interesting part of the gesture is dragging *backwards*, and a 4 px target
+makes that awkward to try.
 
 ## ⚠️ `VideoReader` cannot go backwards
 
