@@ -26,8 +26,8 @@ use std::time::Instant;
 use anyhow::{Context as _, Result, anyhow, bail};
 use core_video::pixel_buffer::CVPixelBuffer;
 use gpui::{
-    App, Application, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px,
-    rgb, size, surface,
+    App, Application, Bounds, Context, MouseButton, MouseDownEvent, MouseMoveEvent, Window,
+    WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb, size, surface,
 };
 use prequel_render::compositor::Compositor;
 use prequel_render::plan::RectKey;
@@ -47,10 +47,10 @@ const DEFAULT_OUTPUT_WIDTH: u32 = 1920;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let dir = args
-        .next()
-        .ok_or_else(|| anyhow!("usage: gpui-spike <session directory> [output width]"))?;
-    let dir = PathBuf::from(shellexpand(&dir));
+    let dir = match args.next() {
+        Some(given) => PathBuf::from(shellexpand(&given)),
+        None => newest_session()?,
+    };
     let width: u32 = match args.next() {
         Some(text) => text.parse().context("output width must be a number")?,
         None => DEFAULT_OUTPUT_WIDTH,
@@ -87,6 +87,31 @@ fn main() -> Result<()> {
     });
 
     Ok(())
+}
+
+/// The most recent recording, so the spike runs with no arguments.
+///
+/// A session is a directory with a `session.json` in it — the stray `.mp4` files
+/// and `.DS_Store` that also live in `~/Movies/Prequel` are not sessions, and
+/// picking one by date alone would find them.
+fn newest_session() -> Result<PathBuf> {
+    let root = PathBuf::from(shellexpand("~/Movies/Prequel"));
+    let mut sessions: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&root)
+        .with_context(|| format!("could not read {}", root.display()))?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.join("session.json").is_file())
+        .filter_map(|path| {
+            let at = path.metadata().ok()?.modified().ok()?;
+            Some((at, path))
+        })
+        .collect();
+
+    sessions.sort_by_key(|(at, _)| *at);
+    sessions
+        .pop()
+        .map(|(_, path)| path)
+        .ok_or_else(|| anyhow!("no recordings in {}", root.display()))
 }
 
 /// `~` only. Enough for a path typed at a shell that did not expand it, and not
@@ -140,6 +165,31 @@ impl Source {
     }
 }
 
+/// Where playback is, and whether it is running.
+///
+/// Held as a start time plus an offset rather than as an `Instant` moved
+/// backwards: scrubbing to the very beginning of a recording a few seconds after
+/// launch would subtract more than the process has been alive, and `Instant`
+/// arithmetic that far back is not guaranteed to be representable.
+enum Clock {
+    Playing { since: Instant, from: u64 },
+    Held { at: u64 },
+}
+
+impl Clock {
+    fn at(&self, duration: u64) -> u64 {
+        match self {
+            Clock::Playing { since, from } => {
+                if duration == 0 {
+                    return 0;
+                }
+                (from + since.elapsed().as_nanos() as u64) % duration
+            }
+            Clock::Held { at } => *at,
+        }
+    }
+}
+
 struct Preview {
     source: Source,
     reader: VideoReader,
@@ -155,10 +205,15 @@ struct Preview {
     /// the compositor's pool to be drawn into again.
     frame: Option<CVPixelBuffer>,
 
-    started: Instant,
-    /// Where the last frame was taken from, to notice the loop wrapping.
+    clock: Clock,
+    /// Wall clock for the throughput figure, which must not move when scrubbing.
+    run_started: Instant,
+    /// Where the last frame was taken from, to notice the playhead going back.
     at: u64,
     last_frame: Option<Instant>,
+
+    /// Whether the pointer is currently dragging the playhead.
+    scrubbing: bool,
 
     frames: u64,
     /// Time inside `Compositor::render`, which commits and waits for the GPU.
@@ -184,9 +239,14 @@ impl Preview {
             yuv,
             plan,
             frame: None,
-            started: Instant::now(),
+            clock: Clock::Playing {
+                since: Instant::now(),
+                from: 0,
+            },
+            run_started: Instant::now(),
             at: 0,
             last_frame: None,
+            scrubbing: false,
             frames: 0,
             composite_ms: 0.0,
             present_ms: 0.0,
@@ -196,12 +256,7 @@ impl Preview {
 
     /// Pulls the recording to wherever the clock is and composites that moment.
     fn advance(&mut self) {
-        let elapsed = self.started.elapsed().as_nanos() as u64;
-        let at = if self.source.duration > 0 {
-            elapsed % self.source.duration
-        } else {
-            0
-        };
+        let at = self.clock.at(self.source.duration);
 
         // `VideoReader` only ever pulls forward — it is built for an export,
         // which never goes back. Looping means opening it again. Worth noticing
@@ -264,15 +319,41 @@ impl Preview {
         if self.frames.is_multiple_of(120) {
             println!(
                 "{:>5.1}s  {:>6} frames  ({:>4.0} fps overall)  composite {:>5.1} ms  frame {:>5.1} ms ({:>4.0} fps)  worst {:>5.1} ms",
-                self.started.elapsed().as_secs_f64(),
+                self.run_started.elapsed().as_secs_f64(),
                 self.frames,
-                self.frames as f64 / self.started.elapsed().as_secs_f64(),
+                self.frames as f64 / self.run_started.elapsed().as_secs_f64(),
                 self.composite_ms,
                 self.present_ms,
                 1000.0 / self.present_ms,
                 self.worst_ms
             );
         }
+    }
+}
+
+impl Preview {
+    /// Moves the playhead to where the pointer is, and holds it there.
+    ///
+    /// Dragging backwards is the interesting half. `VideoReader` was built for an
+    /// export and only pulls forward, so every backwards step reopens the file —
+    /// which is exactly the cost this spike needs to be able to feel rather than
+    /// reason about.
+    fn scrub_to(&mut self, x: f32, width: f32) {
+        if width <= 0.0 {
+            return;
+        }
+        let fraction = (x / width).clamp(0.0, 1.0) as f64;
+        self.clock = Clock::Held {
+            at: (fraction * self.source.duration as f64) as u64,
+        };
+    }
+
+    /// Lets go, from wherever the playhead was left.
+    fn resume(&mut self) {
+        self.clock = Clock::Playing {
+            since: Instant::now(),
+            from: self.at,
+        };
     }
 }
 
@@ -435,7 +516,7 @@ fn check_pixels(source: Source) -> Result<()> {
 }
 
 impl Render for Preview {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.advance();
         // Keeps the window redrawing with nothing else changing — GPUI is
         // otherwise entirely demand-driven and would draw one frame and stop.
@@ -447,17 +528,63 @@ impl Render for Preview {
             0.0
         };
 
+        let through = if self.source.duration > 0 {
+            self.at as f32 / self.source.duration as f32
+        } else {
+            0.0
+        };
+
         div()
             .flex()
             .flex_col()
             .size_full()
             .bg(rgb(0x0b0d12))
+            // Dragging anywhere in the window scrubs. Deliberately not a thin
+            // scrub bar: the point of the gesture here is to feel what a
+            // backwards seek costs, and a 4 px target makes that awkward to try.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.scrubbing = true;
+                    this.scrub_to(
+                        f32::from(event.position.x),
+                        f32::from(window.viewport_size().width),
+                    );
+                    cx.notify();
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                if !this.scrubbing {
+                    return;
+                }
+                this.scrub_to(
+                    f32::from(event.position.x),
+                    f32::from(window.viewport_size().width),
+                );
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.scrubbing = false;
+                    this.resume();
+                    cx.notify();
+                }),
+            )
             .child(
                 div().flex_1().child(
                     self.frame
                         .clone()
                         .map(|buffer| surface(buffer).size_full().into_any_element())
                         .unwrap_or_else(|| div().size_full().into_any_element()),
+                ),
+            )
+            .child(
+                div().h(px(4.0)).w_full().bg(rgb(0x232a38)).child(
+                    div()
+                        .h_full()
+                        .w(relative(through))
+                        .bg(rgb(if self.scrubbing { 0xf0a8ff } else { 0x6c8cff })),
                 ),
             )
             .child(
@@ -474,7 +601,12 @@ impl Render for Preview {
                     .child(format!("composite {:.1} ms", self.composite_ms))
                     .child(format!("frame {:.1} ms ({fps:.0} fps)", self.present_ms))
                     .child(format!("worst {:.1} ms", self.worst_ms))
-                    .child(format!("{} frames", self.frames)),
+                    .child(format!("{} frames", self.frames))
+                    .child(if self.scrubbing {
+                        "scrubbing"
+                    } else {
+                        "drag to scrub"
+                    }),
             )
     }
 }
