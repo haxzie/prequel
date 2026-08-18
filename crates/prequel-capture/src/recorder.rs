@@ -430,8 +430,12 @@ impl ScreenRecorder {
                 width,
                 height,
                 codec: options.codec,
+                // No audio track here. Capture deliberately writes each
+                // source to its own file so the mix can be changed after the
+                // fact; only the export muxes them together.
                 // Live capture: never block ScreenCaptureKit's delivery queue.
                 realtime: true,
+                audio: None,
             },
         )?;
 

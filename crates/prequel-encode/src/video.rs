@@ -3,6 +3,7 @@ use std::path::Path;
 use cidre::{arc, av, cm, cv, ns};
 use prequel_session::MediaTime;
 
+use crate::audio::{AudioWriterConfig, audio_settings, pcm_sample_buf, retime};
 use crate::{Error, Result};
 
 /// Timescale for presentation timestamps. Nanoseconds, matching
@@ -39,6 +40,13 @@ pub struct VideoWriterConfig {
     /// from a file, so the writer waits for the encoder instead of dropping
     /// them, and every frame reaches the output.
     pub realtime: bool,
+    /// An audio track in the same file, when the output has sound.
+    ///
+    /// It has to be declared here rather than added once the picture is done:
+    /// `AVAssetWriter` takes every input before `startWriting`, and refuses one
+    /// afterwards. Writing the sound to a sidecar instead is how an export comes
+    /// to be a silent video with an `.m4a` next to it that nothing plays.
+    pub audio: Option<AudioWriterConfig>,
 }
 
 impl VideoWriterConfig {
@@ -48,7 +56,14 @@ impl VideoWriterConfig {
             height,
             codec: VideoCodec::default(),
             realtime: true,
+            audio: None,
         }
+    }
+
+    /// Adds an audio track to the file.
+    pub fn with_audio(mut self, audio: AudioWriterConfig) -> Self {
+        self.audio = Some(audio);
+        self
     }
 
     pub fn with_codec(mut self, codec: VideoCodec) -> Self {
@@ -81,6 +96,8 @@ pub struct VideoWriter {
     writer: arc::R<av::AssetWriter>,
     adaptor: arc::R<av::asset::WriterInputPixelBufAdaptor>,
     input: arc::R<av::asset::WriterInput>,
+    /// The audio input, when this file carries sound.
+    audio: Option<AudioInput>,
     realtime: bool,
     session_open: bool,
     frames: u64,
@@ -135,6 +152,29 @@ impl VideoWriter {
             .add_input(&input)
             .map_err(|e| Error::Configuration(format!("{e:?}")))?;
 
+        // Before `start_writing`, which is the whole reason the audio format has
+        // to be known this early.
+        let audio = match &config.audio {
+            Some(settings) => {
+                let mut track = av::asset::WriterInput::with_media_type_and_output_settings(
+                    av::MediaType::audio(),
+                    Some(audio_settings(settings).as_ref()),
+                )
+                .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+                track.set_expects_media_data_in_real_time(config.realtime);
+
+                writer
+                    .add_input(&track)
+                    .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+
+                Some(AudioInput {
+                    input: track,
+                    channels: settings.channels,
+                })
+            }
+            None => None,
+        };
+
         if !writer.start_writing() {
             return Err(Error::Write(describe_writer_error(&writer)));
         }
@@ -143,6 +183,7 @@ impl VideoWriter {
             writer,
             adaptor,
             input,
+            audio,
             realtime: config.realtime,
             session_open: false,
             frames: 0,
@@ -150,6 +191,64 @@ impl VideoWriter {
             last_pts: None,
             dropped_not_ready: 0,
         })
+    }
+
+    /// Appends the whole audio track.
+    ///
+    /// Called once, after the frames, because the mix is built in one pass over
+    /// the timeline. `AVAssetWriter` interleaves what it is given when it
+    /// finalises, so one large buffer is written correctly — it is only
+    /// *efficiency* that wants roughly interleaved appends, and an export has no
+    /// deadline.
+    ///
+    /// Must come before `finish_at`, and after at least one frame: the session
+    /// opens at the first frame's timestamp, and opening it here instead would
+    /// pad the file with empty leading time.
+    pub fn append_audio(
+        &mut self,
+        samples: &[f32],
+        sample_rate: f64,
+        duration: MediaTime,
+    ) -> Result<()> {
+        let Some(channels) = self.audio.as_ref().map(|audio| audio.channels) else {
+            return Err(Error::Configuration(
+                "this writer was created without an audio track".to_owned(),
+            ));
+        };
+        if samples.is_empty() {
+            return Ok(());
+        }
+        if !self.session_open {
+            return Err(Error::NotReady);
+        }
+
+        let sample = pcm_sample_buf(samples, sample_rate, channels)?;
+
+        // Retimed to where the picture starts. The session opened at the first
+        // frame's timestamp, so a buffer left at zero would be stamped before the
+        // session began and the sound would land early.
+        let start = cm::Time::new(self.first_pts.unwrap_or(0) as i64, TIMESCALE);
+        let retimed = retime(&sample, start)?;
+
+        let realtime = self.realtime;
+        let audio = self.audio.as_mut().expect("checked above");
+        if !wait_until_ready(&audio.input, realtime) {
+            return Err(Error::NotReady);
+        }
+
+        let appended = audio
+            .input
+            .append_sample_buf(&retimed)
+            .map_err(|e| Error::Write(format!("{e:?}")))?;
+
+        if !appended {
+            return Err(Error::Write(describe_writer_error(&self.writer)));
+        }
+
+        // Past the last sample rather than exactly on it, which would clip the
+        // tail off the sound.
+        self.last_pts = Some(self.last_pts.unwrap_or(0).max(duration));
+        Ok(())
     }
 
     /// Appends a frame at an explicit media time.
@@ -194,21 +293,7 @@ impl VideoWriter {
     /// encoder means drop the frame and move on. Offline, it spins with a short
     /// sleep until the encoder drains, so no frame is lost.
     fn wait_until_ready(&self) -> bool {
-        if self.input.is_ready_for_more_media_data() {
-            return true;
-        }
-        if self.realtime {
-            return false;
-        }
-
-        let deadline = std::time::Instant::now() + READY_TIMEOUT;
-        while std::time::Instant::now() < deadline {
-            std::thread::sleep(READY_POLL_INTERVAL);
-            if self.input.is_ready_for_more_media_data() {
-                return true;
-            }
-        }
-        false
+        wait_until_ready(&self.input, self.realtime)
     }
 
     /// Convenience for appending straight from a capture sample buffer.
@@ -236,6 +321,11 @@ impl VideoWriter {
 
     fn finish_inner(mut self, end: Option<MediaTime>) -> Result<VideoWriterSummary> {
         self.input.mark_as_finished();
+        if let Some(audio) = &mut self.audio {
+            // Every input has to be marked finished, not just the picture:
+            // `finishWriting` waits on an input that was never closed.
+            audio.input.mark_as_finished();
+        }
 
         if let Some(last) = end {
             // Declaring the end time keeps the final frame's duration sane
@@ -282,6 +372,34 @@ impl VideoWriterSummary {
     pub fn duration(&self) -> MediaTime {
         self.last_pts.saturating_sub(self.first_pts)
     }
+}
+
+/// The audio side of an MP4 that carries both streams.
+#[derive(Debug)]
+struct AudioInput {
+    input: arc::R<av::asset::WriterInput>,
+    /// Kept so `append_audio` can describe the buffers it builds.
+    channels: i32,
+}
+
+/// Blocks until an input will take another buffer. Offline only — a realtime
+/// input that is busy is answered "no" so the caller can drop rather than stall.
+fn wait_until_ready(input: &av::asset::WriterInput, realtime: bool) -> bool {
+    if input.is_ready_for_more_media_data() {
+        return true;
+    }
+    if realtime {
+        return false;
+    }
+
+    let deadline = std::time::Instant::now() + READY_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(READY_POLL_INTERVAL);
+        if input.is_ready_for_more_media_data() {
+            return true;
+        }
+    }
+    false
 }
 
 fn video_settings(

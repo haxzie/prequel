@@ -202,63 +202,7 @@ impl AudioWriter {
             return Ok(());
         }
 
-        let channels = self.channels as usize;
-        let frames = samples.len() / channels;
-        let bytes = std::mem::size_of_val(samples);
-
-        let mut block =
-            cm::BlockBuf::with_mem_block(bytes).map_err(|e| Error::Write(format!("{e:?}")))?;
-        {
-            let target = block
-                .as_mut_slice()
-                .map_err(|e| Error::Write(format!("{e:?}")))?;
-            // Safety: `samples` is a packed `f32` slice, and `target` was
-            // allocated at exactly its byte length.
-            target.copy_from_slice(unsafe {
-                std::slice::from_raw_parts(samples.as_ptr().cast::<u8>(), bytes)
-            });
-        }
-
-        let asbd = pcm_asbd(sample_rate, self.channels);
-        let format =
-            cm::FormatDesc::with_asbd(&asbd).map_err(|e| Error::Write(format!("{e:?}")))?;
-
-        // Built through `create_in` rather than the convenience constructor:
-        // the encoder needs the sample count, the per-sample duration and the
-        // per-sample size, and only this entry point carries them. One timing
-        // entry and one size entry describe all of them, because PCM samples
-        // are uniform.
-        let timing = cm::SampleTimingInfo {
-            duration: cm::Time::new(1, sample_rate as i32),
-            pts: cm::Time::new(0, TIMESCALE),
-            dts: cm::Time::invalid(),
-        };
-        let size = 4 * channels;
-
-        let mut created = None;
-        // Safety: every pointer is either null or borrowed for the duration of
-        // the call, and `create_in` writes the new buffer into `created`.
-        let status = unsafe {
-            cm::SampleBuf::create_in(
-                None,
-                Some(&block),
-                true,
-                None,
-                std::ptr::null(),
-                Some(&format),
-                frames as cm::ItemCount,
-                1,
-                &timing,
-                1,
-                &size,
-                &mut created,
-            )
-        };
-        status.map_err(|e| Error::Write(format!("{e:?}")))?;
-
-        let sample = created
-            .ok_or_else(|| Error::Write("CMSampleBufferCreate returned nothing".to_owned()))?;
-
+        let sample = pcm_sample_buf(samples, sample_rate, self.channels)?;
         self.append(&sample, 0)?;
         // Recorded so `finish` can end the session past the last sample rather
         // than exactly on it, which would clip the tail.
@@ -312,7 +256,7 @@ impl AudioWriterSummary {
 /// `CMSampleBufferCreateCopyWithNewTiming` copies the timing metadata only —
 /// the sample data itself is shared, not duplicated, so this is cheap enough to
 /// run on every audio buffer.
-fn retime(sample: &cm::SampleBuf, pts: cm::Time) -> Result<arc::R<cm::SampleBuf>> {
+pub(crate) fn retime(sample: &cm::SampleBuf, pts: cm::Time) -> Result<arc::R<cm::SampleBuf>> {
     let timing = cm::SampleTimingInfo {
         // Invalid duration tells CoreMedia to keep the original.
         duration: cm::Time::invalid(),
@@ -337,7 +281,72 @@ fn retime(sample: &cm::SampleBuf, pts: cm::Time) -> Result<arc::R<cm::SampleBuf>
 ///
 /// Describes the buffers `append_pcm` builds, so the encoder knows how to read
 /// what the mixer produced.
-fn pcm_asbd(sample_rate: f64, channels: i32) -> cat::audio::StreamBasicDesc {
+/// Wraps interleaved `f32` PCM as one `CMSampleBuffer`.
+///
+/// Shared with [`crate::video::VideoWriter`], which needs exactly the same
+/// buffer for the audio track it muxes alongside the picture. Two copies of this
+/// would be two chances to describe the same samples differently, and a wrong
+/// `bytes_per_frame` here does not fail — it writes noise.
+pub(crate) fn pcm_sample_buf(
+    samples: &[f32],
+    sample_rate: f64,
+    channels: i32,
+) -> Result<arc::R<cm::SampleBuf>> {
+    let frames = samples.len() / channels as usize;
+    let bytes = std::mem::size_of_val(samples);
+
+    let mut block =
+        cm::BlockBuf::with_mem_block(bytes).map_err(|e| Error::Write(format!("{e:?}")))?;
+    {
+        let target = block
+            .as_mut_slice()
+            .map_err(|e| Error::Write(format!("{e:?}")))?;
+        // Safety: `samples` is a packed `f32` slice, and `target` was allocated
+        // at exactly its byte length.
+        target.copy_from_slice(unsafe {
+            std::slice::from_raw_parts(samples.as_ptr().cast::<u8>(), bytes)
+        });
+    }
+
+    let asbd = pcm_asbd(sample_rate, channels);
+    let format = cm::FormatDesc::with_asbd(&asbd).map_err(|e| Error::Write(format!("{e:?}")))?;
+
+    // Built through `create_in` rather than the convenience constructor: the
+    // encoder needs the sample count, the per-sample duration and the per-sample
+    // size, and only this entry point carries them. One timing entry and one size
+    // entry describe all of them, because PCM samples are uniform.
+    let timing = cm::SampleTimingInfo {
+        duration: cm::Time::new(1, sample_rate as i32),
+        pts: cm::Time::new(0, TIMESCALE),
+        dts: cm::Time::invalid(),
+    };
+    let size = 4 * channels as usize;
+
+    let mut created = None;
+    // Safety: every pointer is either null or borrowed for the duration of the
+    // call, and `create_in` writes the new buffer into `created`.
+    let status = unsafe {
+        cm::SampleBuf::create_in(
+            None,
+            Some(&block),
+            true,
+            None,
+            std::ptr::null(),
+            Some(&format),
+            frames as cm::ItemCount,
+            1,
+            &timing,
+            1,
+            &size,
+            &mut created,
+        )
+    };
+    status.map_err(|e| Error::Write(format!("{e:?}")))?;
+
+    created.ok_or_else(|| Error::Write("CMSampleBufferCreate returned nothing".to_owned()))
+}
+
+pub(crate) fn pcm_asbd(sample_rate: f64, channels: i32) -> cat::audio::StreamBasicDesc {
     let bytes_per_frame = 4 * channels as u32;
 
     cat::audio::StreamBasicDesc {
@@ -353,7 +362,9 @@ fn pcm_asbd(sample_rate: f64, channels: i32) -> cat::audio::StreamBasicDesc {
     }
 }
 
-fn audio_settings(config: &AudioWriterConfig) -> arc::R<ns::Dictionary<ns::String, ns::Id>> {
+pub(crate) fn audio_settings(
+    config: &AudioWriterConfig,
+) -> arc::R<ns::Dictionary<ns::String, ns::Id>> {
     ns::Dictionary::with_keys_values(
         &[
             av::audio::settings::all_formats_keys::id(),

@@ -10,9 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use cidre::cv;
-use prequel_encode::{
-    AudioWriter, AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig,
-};
+use prequel_encode::{AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig};
 use prequel_session::{MediaTime, TrackKind};
 
 use crate::compositor::Compositor;
@@ -135,7 +133,6 @@ pub fn export(
 
     if result.is_err() {
         let _ = std::fs::remove_file(&request.output);
-        let _ = std::fs::remove_file(request.output.with_extension("m4a"));
     }
 
     result
@@ -176,7 +173,20 @@ fn run(
             Err(err) => tracing::warn!("could not load {}: {err}", full.display()),
         }
     }
-    let mut writer = Sink::create(request)?;
+    // Before the writer exists, because the writer has to be told whether the
+    // file carries sound before it will take a single frame. A mix that fails is
+    // a silent export rather than a lost one: the footage is the part that cannot
+    // be remade.
+    let mixed = if request.format.carries_audio() {
+        mix_audio(request).unwrap_or_else(|err| {
+            tracing::warn!("could not mix the exported audio: {err}");
+            Vec::new()
+        })
+    } else {
+        Vec::new()
+    };
+
+    let mut writer = Sink::create(request, !mixed.is_empty())?;
 
     let screen_path = request.session_dir.join(TrackKind::Screen.file_name());
     let camera_path = request.session_dir.join(TrackKind::Camera.file_name());
@@ -239,17 +249,18 @@ fn run(
         frames_total: total,
     });
 
-    // Ended a frame past the last one, so the final frame has a duration rather
-    // than being a zero-length blip the player skips.
-    writer.finish_at(written.saturating_sub(1) * frame_duration + frame_duration)?;
-
-    // Same reasoning as the background: a silent export beats no export, and
-    // the video is already finished and on disk by this point.
-    if request.format.carries_audio()
-        && let Err(err) = write_audio(request, &timeline)
+    // Into the same file as the picture, before it is closed. Warned rather than
+    // failed for the same reason the mix is: the footage is worth keeping even
+    // when the sound is not there.
+    if !mixed.is_empty()
+        && let Err(err) = writer.append_audio(&mixed, timeline.duration())
     {
         tracing::warn!("could not write the exported audio: {err}");
     }
+
+    // Ended a frame past the last one, so the final frame has a duration rather
+    // than being a zero-length blip the player skips.
+    writer.finish_at(written.saturating_sub(1) * frame_duration + frame_duration)?;
 
     Ok(ExportSummary {
         frames: written,
@@ -272,7 +283,10 @@ enum Sink {
 }
 
 impl Sink {
-    fn create(request: &ExportRequest) -> Result<Self> {
+    /// `has_audio` decides whether the file gets a sound track at all, and has
+    /// to be known here: `AVAssetWriter` accepts inputs only before it starts
+    /// writing. That is why the mix happens before the first frame is drawn.
+    fn create(request: &ExportRequest, has_audio: bool) -> Result<Self> {
         Ok(match request.format {
             OutputFormat::Gif => Self::Gif(Box::new(GifWriter::create(
                 &request.output,
@@ -284,9 +298,20 @@ impl Sink {
                 &request.output,
                 // Offline: no frame may be dropped. Frames come from a file, so
                 // the writer waits for the encoder rather than skipping ahead.
-                &VideoWriterConfig::new(request.width, request.height)
-                    .with_codec(format.codec())
-                    .offline(),
+                &{
+                    let config = VideoWriterConfig::new(request.width, request.height)
+                        .with_codec(format.codec())
+                        .offline();
+                    if has_audio {
+                        // Offline here too: a busy encoder must not silently drop
+                        // a buffer and leave a hole in the sound.
+                        config.with_audio(
+                            AudioWriterConfig::new(SAMPLE_RATE, CHANNELS as i32).offline(),
+                        )
+                    } else {
+                        config
+                    }
+                },
             )?),
         })
     }
@@ -303,6 +328,18 @@ impl Sink {
                 writer.append(image, pts)?;
             }
             Self::Gif(writer) => writer.append(image)?,
+        }
+        Ok(())
+    }
+
+    /// Writes the mixed track, if this sink carries one.
+    ///
+    /// A GIF has no sound, so there is nothing to write and nothing to warn
+    /// about — the caller does not ask.
+    fn append_audio(&mut self, mixed: &[f32], duration: MediaTime) -> Result<()> {
+        match self {
+            Self::Video(writer) => writer.append_audio(mixed, SAMPLE_RATE, duration)?,
+            Self::Gif(_) => {}
         }
         Ok(())
     }
@@ -406,18 +443,22 @@ fn file_time(source: MediaTime, offset: MediaTime) -> Option<MediaTime> {
     (offset - source <= EDGE_TOLERANCE).then_some(0)
 }
 
-/// Mixes and writes the audio track.
+/// Mixes the audio track down to interleaved samples.
 ///
-/// Written as a separate `.m4a` beside the video for now: muxing a second
-/// stream into the same `AVAssetWriter` needs its input added before writing
-/// starts, which would mean knowing the audio format before the first frame is
-/// composited.
-fn write_audio(request: &ExportRequest, timeline: &Timeline) -> Result<()> {
+/// Mixing and writing are separate because the writer has to be told about the
+/// sound track before it starts taking frames — `AVAssetWriter` refuses an input
+/// added after `startWriting`. So this runs first, and its result decides whether
+/// the file gets an audio track at all.
+///
+/// Empty when the recording had no sound, every source was muted, or nothing
+/// would decode. The caller then writes a silent video, which is the honest
+/// outcome and was always the intent.
+fn mix_audio(request: &ExportRequest) -> Result<Vec<f32>> {
     let mic_path = request.session_dir.join(TrackKind::Microphone.file_name());
     let system_path = request.session_dir.join(TrackKind::SystemAudio.file_name());
 
     if !mic_path.exists() && !system_path.exists() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut mixed: Vec<f32> = Vec::new();
@@ -458,22 +499,7 @@ fn write_audio(request: &ExportRequest, timeline: &Timeline) -> Result<()> {
     // would distort a track that is only loud because another sits under it.
     mixer::clip(&mut mixed);
 
-    if mixed.is_empty() {
-        return Ok(());
-    }
-
-    let path = request.output.with_extension("m4a");
-    let mut writer = AudioWriter::create(
-        &path,
-        // Offline, so a busy encoder cannot silently drop a buffer and leave a
-        // hole in the exported sound.
-        &AudioWriterConfig::new(SAMPLE_RATE, CHANNELS as i32).offline(),
-    )?;
-
-    writer.append_pcm(&mixed, SAMPLE_RATE, timeline.duration())?;
-    writer.finish()?;
-
-    Ok(())
+    Ok(mixed)
 }
 
 #[cfg(test)]
