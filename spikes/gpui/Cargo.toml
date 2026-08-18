@@ -1,0 +1,31 @@
+# Its own workspace root, on purpose. Keeps GPUI — a large, pre-1.0 dependency
+# whose churn should not be able to break the app — out of `cargo test
+# --workspace`, out of CI, and out of the app's `target/`. The root manifest
+# needs no knowledge of this directory.
+[workspace]
+
+[package]
+name = "gpui-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Deliberately outside the workspace (see `exclude` in the root manifest), so
+# GPUI's build never lands in CI or in `cargo test --workspace`.
+
+[dependencies]
+# The real thing, not a copy. `spike` opens `compositor` and `reader`.
+prequel-render = { path = "../../crates/prequel-render", features = ["spike"] }
+prequel-session = { path = "../../crates/prequel-session" }
+
+gpui = "0.2.2"
+# GPUI's own Core Video binding. The bridge between this and cidre's `cv` is
+# proof 1's first question.
+# Pinned to exactly what gpui 0.2.2 resolves. A different minor is a *different*
+# `CVPixelBuffer` type and the bridge below will not typecheck — the classic way
+# two-binding-stack integrations fail.
+core-video = "=0.4.3"
+cidre = { version = "=0.20.0", default-features = false, features = ["cv", "cf", "ns", "mtl"] }
+
+core-foundation = "0.10"
+anyhow = "1"
