@@ -25,8 +25,8 @@
 //! minor is a *different* `CVPixelBuffer` type and none of this compiles.
 
 use cidre::cv;
-use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
 use core_foundation::base::TCFType;
+use core_video::pixel_buffer::{CVPixelBuffer, CVPixelBufferRef};
 
 /// Re-wraps a cidre pixel buffer as the one `gpui::surface()` takes.
 ///

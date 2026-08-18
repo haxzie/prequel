@@ -10,9 +10,6 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-# Deliberately outside the workspace (see `exclude` in the root manifest), so
-# GPUI's build never lands in CI or in `cargo test --workspace`.
-
 [dependencies]
 # The real thing, not a copy. `spike` opens `compositor` and `reader`.
 prequel-render = { path = "../../crates/prequel-render", features = ["spike"] }

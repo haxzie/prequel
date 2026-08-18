@@ -2191,6 +2191,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "cidre",
+ "core-foundation 0.10.0",
  "core-video",
  "gpui",
  "prequel-render",
