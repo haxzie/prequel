@@ -24,10 +24,22 @@ pub mod mixer;
 pub mod plan;
 pub mod timeline;
 
+// Private, except to the GPUI spike. The `spike` feature is off by default, so
+// the crate's public surface is unchanged for every ordinary build — but the
+// spike has to drive the *real* compositor and the *real* reader, because
+// proving a reimplementation of them would prove nothing at all.
+#[cfg(not(feature = "spike"))]
 mod compositor;
+#[cfg(feature = "spike")]
+pub mod compositor;
+
 mod export;
 mod image;
+
+#[cfg(not(feature = "spike"))]
 mod reader;
+#[cfg(feature = "spike")]
+pub mod reader;
 
 pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};
 pub use plan::{Paint, PlanItem, PlanSource, Rect, RenderPlan, Shape, Size};
