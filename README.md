@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/cover.png" alt="Prequel" width="820">
+</p>
+
 # prequel
 
 A macOS screen recorder and video editor. Electron shell over a native Rust
