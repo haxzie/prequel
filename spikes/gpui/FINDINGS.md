@@ -13,10 +13,10 @@ adapter that upstream does not provide.
 
 The premise proof 1 rests on. Checked by reading both crates, then by compiling:
 
-| | |
-|---|---|
-| cidre | `cv::PixelBuf = cv::ImageBuf = cv::Buf`, and `define_cf_type!` makes `Buf` a `#[repr(transparent)]` newtype over `cf::Type`. A `&cv::PixelBuf` **is** the CF pointer. |
-| core-video 0.4.3 | `CVPixelBufferRef = CVImageBufferRef = CVBufferRef = *mut __CVBuffer`; `pub struct CVPixelBuffer(CVPixelBufferRef)` with `Drop` → `CVPixelBufferRelease`. |
+|                  |                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cidre            | `cv::PixelBuf = cv::ImageBuf = cv::Buf`, and `define_cf_type!` makes `Buf` a `#[repr(transparent)]` newtype over `cf::Type`. A `&cv::PixelBuf` **is** the CF pointer. |
+| core-video 0.4.3 | `CVPixelBufferRef = CVImageBufferRef = CVBufferRef = *mut __CVBuffer`; `pub struct CVPixelBuffer(CVPixelBufferRef)` with `Drop` → `CVPixelBufferRelease`.             |
 
 Both are one `CVPixelBufferRef`. The bridge is a cast plus `wrap_under_get_rule`
 (which retains) — see `src/bridge.rs`. **No per-frame copy**, which was the
@@ -69,14 +69,14 @@ window, with a zoom animating.
 
 Measured on this machine (M4, 120 Hz display), debug build:
 
-| Output | Overall | Composite + convert | Frame interval | Worst |
-|---|---|---|---|---|
-| 1920×1200 | ~120 fps | 1.2–3.3 ms | 8.3 ms | 15.0 ms |
-| 3840×2400 | **119 fps** (2400 frames / 20.1 s) | 2.2–3.3 ms | 8.3 ms | 33.5 ms |
+| Output    | Overall                            | Composite + convert | Frame interval | Worst   |
+| --------- | ---------------------------------- | ------------------- | -------------- | ------- |
+| 1920×1200 | ~120 fps                           | 1.2–3.3 ms          | 8.3 ms         | 15.0 ms |
+| 3840×2400 | **119 fps** (2400 frames / 20.1 s) | 2.2–3.3 ms          | 8.3 ms         | 33.5 ms |
 
 Frame interval is pinned to the 120 Hz display, so **the ceiling here is the
 refresh rate, not the pipeline.** 4K costs roughly half a millisecond more than
-1080p. The kill criterion was *"sustained 4K playback misses 60 fps"* — it
+1080p. The kill criterion was _"sustained 4K playback misses 60 fps"_ — it
 clears it with room to spare, in a **debug** build, and the composite includes
 `wait_until_completed()`, so that figure is real GPU time and not encode time.
 
@@ -127,7 +127,7 @@ arguments; `--verify` runs the pixel check headlessly instead of opening a
 window.
 
 Dragging anywhere in the window scrubs, rather than a thin bar along the bottom
-— the interesting part of the gesture is dragging *backwards*, and a 4 px target
+— the interesting part of the gesture is dragging _backwards_, and a 4 px target
 makes that awkward to try.
 
 ## ⚠️ `VideoReader` cannot go backwards
@@ -138,7 +138,7 @@ file, which is the 33.5 ms outlier above.
 This matters more than it looks, because **scrubbing is the reason to want this
 architecture at all.** The pitch against `HTMLVideoElement` is frame-accuracy
 without `readyState` guesswork — but a reader that only pulls forward gives
-frame-accurate *playback* and pays a file reopen for every backwards scrub.
+frame-accurate _playback_ and pays a file reopen for every backwards scrub.
 `AVAssetReader` cannot seek; `set_time_range` is set at open. A real editor
 would need either a reader pool with overlapping ranges or a decoded-frame
 cache. **Not spiked, and it is the largest unmeasured piece of proof 1.**
@@ -169,12 +169,12 @@ GitHub's `macos-15` runners ship it — but it is a new cost for any contributor
 
 ## Still open
 
-| Proof | State |
-|---|---|
-| 1 — preview path | ✅ **passes**, with the YUV adapter and the backwards-seek gap noted |
-| 2 — tray, global hotkey, accessory mode | not started |
-| 3 — selection overlay window level | not started |
-| 4 — one control, for a velocity number | not started |
+| Proof                                   | State                                                                |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| 1 — preview path                        | ✅ **passes**, with the YUV adapter and the backwards-seek gap noted |
+| 2 — tray, global hotkey, accessory mode | not started                                                          |
+| 3 — selection overlay window level      | not started                                                          |
+| 4 — one control, for a velocity number  | not started                                                          |
 
 Proof 1 was the one that could end the spike, and it did not. The compositor
 unification is real: one plan, one shader, one geometry pass, feeding a live
