@@ -23,6 +23,12 @@ use crate::{Error, Result};
 /// so the mixer never has to reconcile two rates.
 const SAMPLE_RATE: f64 = 48_000.0;
 
+/// How far ahead of the picture the sound is written.
+///
+/// See the append in `run`: this is what keeps the writer's two inputs from
+/// waiting on each other.
+const AUDIO_LEAD: MediaTime = 1_000_000_000;
+
 /// How often progress is reported.
 ///
 /// Throttled here rather than in JavaScript: a per-frame callback for a
@@ -196,6 +202,8 @@ fn run(
     let mut screen: Option<VideoReader> = None;
     let mut camera: Option<VideoReader> = None;
     let mut written = 0u64;
+    // How much of the mix has reached the writer, as an index into it.
+    let mut sent = 0usize;
 
     for index in 0..total {
         if cancel.is_cancelled() {
@@ -231,8 +239,33 @@ fn run(
             .and_then(|(reader, at)| reader.frame_at(at));
 
         let composited = compositor.render(&slice.plan, screen_frame, camera_frame, source)?;
-        writer.append(&composited, index * frame_duration)?;
+        if !writer.append(&composited, index * frame_duration)? {
+            return Err(Error::Write {
+                path: request.output.display().to_string(),
+                reason: format!(
+                    "the encoder would not take the frame at {}ns",
+                    index * frame_duration
+                ),
+            });
+        }
         written += 1;
+
+        // Kept *ahead* of the picture, not level with it. `AVAssetWriter` holds an
+        // input not-ready until the others catch up, and this loop sleeps while
+        // waiting for the video input — so it never reaches the audio append that
+        // would release it. Video waits on audio, audio waits on video, and the
+        // export stops. Running the sound a second in front means the video input
+        // is never the one waiting.
+        if !mixed.is_empty() {
+            let upto = samples_upto(index * frame_duration + AUDIO_LEAD, mixed.len());
+            if upto > sent {
+                writer.append_audio(&mixed[sent..upto])?;
+                sent = upto;
+            }
+            if sent == mixed.len() {
+                writer.finish_audio();
+            }
+        }
 
         if index % PROGRESS_EVERY == 0 {
             on_progress(Progress {
@@ -249,13 +282,12 @@ fn run(
         frames_total: total,
     });
 
-    // Into the same file as the picture, before it is closed. Warned rather than
-    // failed for the same reason the mix is: the footage is worth keeping even
-    // when the sound is not there.
-    if !mixed.is_empty()
-        && let Err(err) = writer.append_audio(&mixed, timeline.duration())
+    // Whatever is left. The frame grid rarely lands exactly on the last sample,
+    // and dropping the remainder would clip the final fraction of a second.
+    if sent < mixed.len()
+        && let Err(err) = writer.append_audio(&mixed[sent..])
     {
-        tracing::warn!("could not write the exported audio: {err}");
+        tracing::warn!("could not write the last of the exported audio: {err}");
     }
 
     // Ended a frame past the last one, so the final frame has a duration rather
@@ -322,23 +354,35 @@ impl Sink {
     /// frame carries the same fixed delay instead, set when the file was
     /// opened. That is only correct because the export loop emits frames on an
     /// even grid; a variable-rate writer would need the delay per frame.
-    fn append(&mut self, image: &cv::PixelBuf, pts: MediaTime) -> Result<()> {
-        match self {
-            Self::Video(writer) => {
-                writer.append(image, pts)?;
+    /// Appends one frame, reporting whether the encoder took it.
+    ///
+    /// Offline, so "busy" is not a normal outcome — the writer waits rather than
+    /// skipping. `false` means it waited out its timeout and gave up, and the
+    /// caller must not ignore it: swallowing it writes a video shorter than the
+    /// edit with nothing anywhere to say why.
+    fn append(&mut self, image: &cv::PixelBuf, pts: MediaTime) -> Result<bool> {
+        Ok(match self {
+            Self::Video(writer) => writer.append(image, pts)?,
+            Self::Gif(writer) => {
+                writer.append(image)?;
+                true
             }
-            Self::Gif(writer) => writer.append(image)?,
-        }
-        Ok(())
+        })
     }
 
-    /// Writes the mixed track, if this sink carries one.
+    /// Writes the next run of the mixed track.
     ///
     /// A GIF has no sound, so there is nothing to write and nothing to warn
     /// about — the caller does not ask.
-    fn append_audio(&mut self, mixed: &[f32], duration: MediaTime) -> Result<()> {
+    fn finish_audio(&mut self) {
+        if let Self::Video(writer) = self {
+            writer.finish_audio();
+        }
+    }
+
+    fn append_audio(&mut self, mixed: &[f32]) -> Result<()> {
         match self {
-            Self::Video(writer) => writer.append_audio(mixed, SAMPLE_RATE, duration)?,
+            Self::Video(writer) => writer.append_audio(mixed, SAMPLE_RATE)?,
             Self::Gif(_) => {}
         }
         Ok(())
@@ -441,6 +485,16 @@ fn file_time(source: MediaTime, offset: MediaTime) -> Option<MediaTime> {
     // `apps/desktop/src/renderer/src/editor/timeline.ts`, so the preview and
     // the export show it over the same span.
     (offset - source <= EDGE_TOLERANCE).then_some(0)
+}
+
+/// Where a moment falls in the interleaved mix, as an index into it.
+///
+/// Rounded to a whole audio frame and clamped to what was mixed: a run that
+/// began mid-frame would interleave the channels the wrong way round from there
+/// on, which is heard as the stereo image collapsing rather than as an error.
+fn samples_upto(at: MediaTime, len: usize) -> usize {
+    let frames = (at as f64 / 1e9 * SAMPLE_RATE).round() as usize;
+    (frames * CHANNELS).min(len - len % CHANNELS)
 }
 
 /// Mixes the audio track down to interleaved samples.

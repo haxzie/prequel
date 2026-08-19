@@ -512,10 +512,20 @@ fn exports_the_sound_inside_the_video_file() {
         "expected about 2s of sound to match the edit, got {heard}s"
     );
 
-    // The picture is still there beside it.
+    // The picture is still there beside it, and all of it. Muxing is where a
+    // video quietly loses frames: `AVAssetWriter` stops declaring one input ready
+    // while another lags, so audio written in one lump at the end starves the
+    // video input until it times out and starts dropping. That leaves perfect
+    // sound over a picture a fraction of the right length, which every other
+    // assertion here would happily pass.
+    let picture = ffprobe(&output, "stream=codec_type,nb_frames,duration");
     assert!(
-        ffprobe(&output, "stream=codec_type").contains("codec_type=video"),
-        "the video track must survive muxing the audio in"
+        picture.contains("codec_type=video"),
+        "the video track must survive muxing the audio in, got: {picture:?}"
+    );
+    assert!(
+        picture.contains(&format!("nb_frames={}", 2 * OUT_FPS)),
+        "every frame of the edit must survive, got: {picture:?}"
     );
 
     // And no sidecar is left behind for the user to wonder about.

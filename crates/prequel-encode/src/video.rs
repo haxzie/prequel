@@ -170,6 +170,8 @@ impl VideoWriter {
                 Some(AudioInput {
                     input: track,
                     channels: settings.channels,
+                    frames: 0,
+                    finished: false,
                 })
             }
             None => None,
@@ -193,23 +195,25 @@ impl VideoWriter {
         })
     }
 
-    /// Appends the whole audio track.
+    /// Appends the next run of audio.
     ///
-    /// Called once, after the frames, because the mix is built in one pass over
-    /// the timeline. `AVAssetWriter` interleaves what it is given when it
-    /// finalises, so one large buffer is written correctly — it is only
-    /// *efficiency* that wants roughly interleaved appends, and an export has no
-    /// deadline.
+    /// Fed alongside the frames rather than in one go at the end, and that is not
+    /// a preference. `AVAssetWriter` stops declaring an input ready while another
+    /// input lags behind, so writing every frame and only then the sound leaves
+    /// the *video* input refusing data — each append then waits out
+    /// `READY_TIMEOUT` and the frame is dropped. The symptom is a file whose
+    /// sound is perfect and whose picture is a fraction of its length.
     ///
-    /// Must come before `finish_at`, and after at least one frame: the session
-    /// opens at the first frame's timestamp, and opening it here instead would
-    /// pad the file with empty leading time.
-    pub fn append_audio(
-        &mut self,
-        samples: &[f32],
-        sample_rate: f64,
-        duration: MediaTime,
-    ) -> Result<()> {
+    /// Where a run lands is counted here rather than passed in. Runs are
+    /// contiguous by definition, and a caller computing each timestamp in
+    /// nanoseconds would round every one of them — leaving a sliver of overlap
+    /// between consecutive buffers that the writer has to reconcile thirty times
+    /// a second. Counting frames and stamping in the sample rate's own timescale
+    /// is exact.
+    ///
+    /// Must come after at least one frame: the session opens at the first frame's
+    /// timestamp, and opening it here would pad the file with empty leading time.
+    pub fn append_audio(&mut self, samples: &[f32], sample_rate: f64) -> Result<()> {
         let Some(channels) = self.audio.as_ref().map(|audio| audio.channels) else {
             return Err(Error::Configuration(
                 "this writer was created without an audio track".to_owned(),
@@ -224,14 +228,16 @@ impl VideoWriter {
 
         let sample = pcm_sample_buf(samples, sample_rate, channels)?;
 
-        // Retimed to where the picture starts. The session opened at the first
-        // frame's timestamp, so a buffer left at zero would be stamped before the
-        // session began and the sound would land early.
-        let start = cm::Time::new(self.first_pts.unwrap_or(0) as i64, TIMESCALE);
-        let retimed = retime(&sample, start)?;
+        // Offset by the session's start as well: it opened at the first frame's
+        // timestamp, and a buffer stamped before that is discarded in silence.
+        let opened = (self.first_pts.unwrap_or(0) as f64 / 1e9 * sample_rate).round() as i64;
 
         let realtime = self.realtime;
         let audio = self.audio.as_mut().expect("checked above");
+
+        let start = cm::Time::new(opened + audio.frames as i64, sample_rate as i32);
+        let retimed = retime(&sample, start)?;
+
         if !wait_until_ready(&audio.input, realtime) {
             return Err(Error::NotReady);
         }
@@ -245,10 +251,28 @@ impl VideoWriter {
             return Err(Error::Write(describe_writer_error(&self.writer)));
         }
 
+        audio.frames += (samples.len() / channels as usize) as u64;
+        let heard = (audio.frames as f64 / sample_rate * 1e9) as MediaTime;
+
         // Past the last sample rather than exactly on it, which would clip the
         // tail off the sound.
-        self.last_pts = Some(self.last_pts.unwrap_or(0).max(duration));
+        self.last_pts = Some(self.last_pts.unwrap_or(0).max(heard));
         Ok(())
+    }
+
+    /// Says no more audio is coming.
+    ///
+    /// Needed as soon as the last run is in, not left to `finish`: while an input
+    /// is open the writer keeps pacing the others against it, and a *complete*
+    /// audio track that was never closed holds the video input not-ready
+    /// indefinitely. Idempotent, so `finish` can call it again.
+    pub fn finish_audio(&mut self) {
+        if let Some(audio) = &mut self.audio
+            && !audio.finished
+        {
+            audio.input.mark_as_finished();
+            audio.finished = true;
+        }
     }
 
     /// Appends a frame at an explicit media time.
@@ -269,6 +293,13 @@ impl VideoWriter {
         }
 
         if !self.wait_until_ready() {
+            // A writer that has already failed never reports itself ready again,
+            // so every later append looks like a busy encoder. Reporting "the
+            // encoder was slow" for what is actually a rejected sample buffer
+            // sends the reader looking in entirely the wrong place.
+            if self.writer.status() == av::AssetWriterStatus::Failed {
+                return Err(Error::Write(describe_writer_error(&self.writer)));
+            }
             self.dropped_not_ready += 1;
             return Ok(false);
         }
@@ -321,11 +352,9 @@ impl VideoWriter {
 
     fn finish_inner(mut self, end: Option<MediaTime>) -> Result<VideoWriterSummary> {
         self.input.mark_as_finished();
-        if let Some(audio) = &mut self.audio {
-            // Every input has to be marked finished, not just the picture:
-            // `finishWriting` waits on an input that was never closed.
-            audio.input.mark_as_finished();
-        }
+        // Every input has to be closed, not just the picture: `finishWriting`
+        // waits on one that was left open.
+        self.finish_audio();
 
         if let Some(last) = end {
             // Declaring the end time keeps the final frame's duration sane
@@ -380,6 +409,10 @@ struct AudioInput {
     input: arc::R<av::asset::WriterInput>,
     /// Kept so `append_audio` can describe the buffers it builds.
     channels: i32,
+    /// Audio frames written so far, which is where the next run starts.
+    frames: u64,
+    /// Whether the input has been closed, so it is closed exactly once.
+    finished: bool,
 }
 
 /// Blocks until an input will take another buffer. Offline only — a realtime
