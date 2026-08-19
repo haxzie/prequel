@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cidre::{arc, cv};
-use prequel_encode::{VideoWriter, VideoWriterConfig};
+use prequel_encode::{AudioWriter, AudioWriterConfig, VideoWriter, VideoWriterConfig};
 use prequel_render::{
     AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan, Shape,
     SliceRender, export,
@@ -89,6 +89,32 @@ fn record(dir: &Path) {
     writer.finish().expect("finish the source");
 }
 
+/// Writes a `system.m4a` beside the screen: four seconds of a quiet tone.
+///
+/// A tone rather than silence, because AAC encodes silence to almost nothing and
+/// a track that is present but empty would pass an "is there audio" check while
+/// telling us nothing about whether samples survived the mix.
+fn record_audio(dir: &Path) {
+    let mut writer = AudioWriter::create(
+        &dir.join("system.m4a"),
+        &AudioWriterConfig::new(48_000.0, 2).offline(),
+    )
+    .expect("create the source audio writer");
+
+    let frames = 4 * 48_000;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for index in 0..frames {
+        let value = ((index as f64 / 48_000.0) * 440.0 * std::f64::consts::TAU).sin() as f32 * 0.25;
+        samples.push(value);
+        samples.push(value);
+    }
+
+    writer
+        .append_pcm(&samples, 48_000.0, 4 * S)
+        .expect("append the source audio");
+    writer.finish().expect("finish the source audio");
+}
+
 /// A plan that fills the frame and draws the screen inside a margin.
 fn plan() -> RenderPlan {
     RenderPlan {
@@ -146,12 +172,16 @@ fn slice(start: u64, end: u64) -> SliceRender {
 }
 
 fn ffprobe(path: &Path, entries: &str) -> String {
+    probe_stream(path, "v:0", entries)
+}
+
+fn probe_stream(path: &Path, stream: &str, entries: &str) -> String {
     let output = Command::new("ffprobe")
         .args([
             "-v",
             "error",
             "-select_streams",
-            "v:0",
+            stream,
             "-show_entries",
             entries,
             "-of",
@@ -428,6 +458,80 @@ fn a_failed_export_leaves_nothing_behind() {
     assert!(
         !output.exists(),
         "a failed export must not leave a file behind"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn exports_the_sound_inside_the_video_file() {
+    // The bug this pins: the mix was written to an `.m4a` *beside* the video and
+    // never muxed in, so every export was a silent MP4 with an audio file next to
+    // it that no player would pick up. Muxing needs the audio input added before
+    // the writer starts, which is why the mix now runs before the first frame.
+    let dir = scratch("prequel-export-audio");
+    record(&dir);
+    record_audio(&dir);
+
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![slice(0, 2 * S)],
+        screen_offset: 0,
+        camera_offset: 0,
+        mic_offset: 0,
+        system_offset: 0,
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with audio");
+
+    let audio = probe_stream(&output, "a:0", "stream=codec_type,channels");
+    assert!(
+        audio.contains("codec_type=audio"),
+        "the exported video must carry its own audio track, got: {audio:?}"
+    );
+    assert!(
+        audio.contains("channels=2"),
+        "the mix is stereo, got: {audio:?}"
+    );
+
+    // Long enough to be the edit rather than a stub. The audio is retimed to the
+    // session's start, and a buffer stamped before the session opened is dropped
+    // silently — leaving a track that exists and is empty.
+    let heard = probe_stream(&output, "a:0", "stream=duration")
+        .trim_start_matches("duration=")
+        .parse::<f64>()
+        .expect("the audio duration should parse");
+    assert!(
+        (heard - 2.0).abs() < 0.15,
+        "expected about 2s of sound to match the edit, got {heard}s"
+    );
+
+    // The picture is still there beside it, and all of it. Muxing is where a
+    // video quietly loses frames: `AVAssetWriter` stops declaring one input ready
+    // while another lags, so audio written in one lump at the end starves the
+    // video input until it times out and starts dropping. That leaves perfect
+    // sound over a picture a fraction of the right length, which every other
+    // assertion here would happily pass.
+    let picture = ffprobe(&output, "stream=codec_type,nb_frames,duration");
+    assert!(
+        picture.contains("codec_type=video"),
+        "the video track must survive muxing the audio in, got: {picture:?}"
+    );
+    assert!(
+        picture.contains(&format!("nb_frames={}", 2 * OUT_FPS)),
+        "every frame of the edit must survive, got: {picture:?}"
+    );
+
+    // And no sidecar is left behind for the user to wonder about.
+    assert!(
+        !dir.join("export.m4a").exists(),
+        "the sound belongs in the video file, not in a second file beside it"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -129,8 +129,12 @@ impl Inner {
             width: image.width() as u32,
             height: image.height() as u32,
             codec: self.codec,
+            // No audio track here. Capture deliberately writes each
+            // source to its own file so the mix can be changed after the
+            // fact; only the export muxes them together.
             // Live capture: never block AVFoundation's delegate queue.
             realtime: true,
+            audio: None,
         };
 
         match VideoWriter::create(&self.path, &config) {
