@@ -189,6 +189,27 @@ describe("newProject", () => {
     a.defaults.layout.cameraVisible = false;
     expect(b.defaults.layout.cameraVisible).toBe(true);
   });
+
+  it("opens a whole screen filling the frame", () => {
+    // A window or a region is an object with edges and reads as one when it is
+    // inset on a background. A whole screen already fills the frame it was
+    // recorded in, and insetting it puts a border of desktop picture around a
+    // picture of a desktop while shrinking the thing being demonstrated.
+    const project = newProject(RECORDING, S, true);
+
+    expect(project.defaults.background.padding).toBe(0);
+    // The radius goes with it. Kept on a full-bleed picture it cuts four
+    // notches out of the corners with the background showing through, which
+    // reads as a bug rather than as a choice.
+    expect(project.defaults.background.cornerRadius).toBe(0);
+  });
+
+  it("still frames anything else on a background", () => {
+    const project = newProject(RECORDING, S, false);
+
+    expect(project.defaults.background.padding).toBeGreaterThan(0);
+    expect(project.defaults.background.cornerRadius).toBeGreaterThan(0);
+  });
 });
 
 describe("sanitiseProject", () => {

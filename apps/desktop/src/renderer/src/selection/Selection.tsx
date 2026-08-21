@@ -99,6 +99,16 @@ function Countdown({ rect, onDone }: { rect: Rect; onDone: () => void }) {
   const finish = useRef(onDone);
   finish.current = onDone;
 
+  // These three seconds are the camera's only warm-up. An `AVCaptureSession`
+  // opened when recording starts spends its first second or two settling on an
+  // exposure, and writes that darkness into `camera.mp4`; opened now, it is
+  // ready by the time there is a frame to keep. Told once, on mount, and not
+  // awaited — main decides whether there is a camera to open at all, and the
+  // countdown must run at the same speed either way.
+  useEffect(() => {
+    void window.prequel.selection.countdown();
+  }, []);
+
   useEffect(() => {
     if (remaining <= 0) {
       finish.current();

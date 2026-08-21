@@ -19,6 +19,8 @@ import type { CursorLayer } from "../shared/contract.js";
 import { CURSOR_STYLES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import { FALLBACK_BACKGROUND } from "../shared/project.js";
+import type { Transcript } from "../shared/transcript.js";
+import { TRANSCRIPT_FILE_NAME, parseTranscript } from "../shared/transcript.js";
 import { loadProject } from "./editor-project.js";
 import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
@@ -70,8 +72,40 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     manifest,
     media,
     cursor: cursorLayer(dir, manifest),
-    project: await withBackground(dir, loadProject(dir, manifest.id, manifest.duration)),
+    project: await withBackground(
+      dir,
+      // `area` and `window` both keep the card; only a whole screen drops it.
+      loadProject(dir, manifest.id, manifest.duration, manifest.source.kind === "display"),
+    ),
+    transcript: readTranscript(dir, manifest.id),
   };
+}
+
+/**
+ * The recording's transcript, or null when there is nothing usable beside it.
+ *
+ * Discarded rather than repaired. A transcript from a version this build does
+ * not know, or one carrying a different recording's id — a directory copied, a
+ * session restored from a backup — is not a file to salvage: transcribing again
+ * is cheap and produces something certainly correct, where a repair produces
+ * something plausibly wrong.
+ */
+function readTranscript(dir: string, recordingId: string): Transcript | null {
+  const file = join(dir, TRANSCRIPT_FILE_NAME);
+  if (!existsSync(file)) return null;
+
+  try {
+    const transcript = parseTranscript(readFileSync(file, "utf8"), recordingId);
+    if (!transcript) {
+      console.warn(`[editor] ignoring an unusable ${TRANSCRIPT_FILE_NAME} in ${dir}`);
+    }
+    return transcript;
+  } catch (cause) {
+    // Never fatal. The recording is still perfectly editable; it simply has no
+    // captions until it is transcribed again.
+    console.warn(`[editor] could not read ${TRANSCRIPT_FILE_NAME} in ${dir}:`, cause);
+    return null;
+  }
 }
 
 /**

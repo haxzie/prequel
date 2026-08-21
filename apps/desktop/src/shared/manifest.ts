@@ -55,7 +55,16 @@ export interface Track {
 }
 
 export interface SourceInfo {
-  /** `"display"` or `"window"`. */
+  /**
+   * `"display"`, `"area"` or `"window"`.
+   *
+   * `area` is a display capture with a crop, which ScreenCaptureKit cannot
+   * distinguish from a whole screen afterwards — the crop is applied during
+   * capture and never written down. Recordings made before the recorder told
+   * the two apart say `display` for both, so an old area grab opens framed as
+   * a whole screen. That only decides the defaults of a project nobody has
+   * edited yet, which is a wrong first impression rather than a wrong edit.
+   */
   kind: string;
   id: number;
   title: string;

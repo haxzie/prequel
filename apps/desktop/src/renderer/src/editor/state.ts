@@ -44,6 +44,17 @@ export interface EditorState {
    * what does it override, what does it inherit — has no answer for a zoom.
    */
   selectedZoomId: string | null;
+  /**
+   * How much recording there actually is, in source time.
+   *
+   * Held because nothing else in reach knows it. A `Project` is a description
+   * of an edit and carries no duration — `sanitiseProject` is handed one at
+   * load and clamps against it, then forgets it — so a reducer with only the
+   * project cannot tell a trim that has run off the end of the media from one
+   * that has not. Without this, dragging a clip's end past the last frame
+   * produced a slice describing footage that does not exist.
+   */
+  duration: MediaTime;
   /** Bumped on every change that should be persisted. */
   revision: number;
   /**
@@ -67,7 +78,7 @@ export interface EditorState {
 }
 
 export type EditorAction =
-  | { type: "load"; project: Project }
+  | { type: "load"; project: Project; duration: MediaTime }
   | { type: "select"; sliceId: string | null }
   | { type: "setFrame"; frame: Project["frame"] }
   | { type: "setOutput"; output: Project["output"] }
@@ -98,11 +109,16 @@ export type EditorAction =
    */
   | { type: "beginEdit" };
 
-export function initialState(project: Project): EditorState {
+export function initialState(project: Project, duration: MediaTime = 0): EditorState {
   return {
     project,
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
+    // Zero until a recording is opened, which is the honest answer: the
+    // placeholder project this starts on describes no media at all. Every trim
+    // is clamped against it, and clamping to zero is harmless because there is
+    // nothing on the timeline to drag yet.
+    duration,
     revision: 0,
     history: [],
     coalesce: null,
@@ -229,7 +245,7 @@ function apply(
 ): EditorState {
   switch (action.type) {
     case "load":
-      return initialState(action.project);
+      return initialState(action.project, action.duration);
 
     case "select":
       // Not a change worth persisting, so the revision stays put. Selecting a
@@ -377,7 +393,15 @@ function moveZoom(
 
   const length = zoom.source.end - zoom.source.start;
   const floor = zooms[index - 1]?.source.end ?? 0;
-  const ceiling = zooms[index + 1]?.source.start ?? sourceEnd(state.project);
+  // The next zoom, else the last frame of the edit — and never past the media
+  // itself. `sourceEnd` is the furthest any *clip* reaches, so before clips
+  // were bounded above it inherited their overrun and let a zoom follow them
+  // off the end. Kept as the tighter of the two rather than replaced: a zoom
+  // over a stretch no clip covers is a zoom that renders nothing.
+  const ceiling = Math.min(
+    zooms[index + 1]?.source.start ?? sourceEnd(state.project),
+    state.duration,
+  );
 
   const start = clampTo(action.start, floor, Math.max(floor, ceiling - length));
 
@@ -666,7 +690,12 @@ function trimSlice(
       ? Math.min(action.source, slice.source.end - MIN_SLICE_NS)
       : Math.max(action.source, slice.source.start + MIN_SLICE_NS);
 
-  const bounded = Math.max(0, source);
+  // Both ends of the media, not just the near one. The floor was here from the
+  // start and the ceiling was not, so an end handle could be dragged past the
+  // last frame — and the slice then claimed footage the file does not contain.
+  // Nothing downstream complains: the player runs out and holds the last frame,
+  // so it reads as a clip that mysteriously freezes rather than as a bad trim.
+  const bounded = clampTo(source, 0, state.duration);
   if (bounded === slice.source[action.edge]) return state;
 
   return edit(state, (project) =>

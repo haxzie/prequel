@@ -23,7 +23,9 @@ import type { ExportRequest } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { saveProject } from "./editor-project.js";
+import { opensAtLogin, setOpensAtLogin } from "./login-item.js";
 import { cancelExport, copyExport, dragExport, startExport } from "./export.js";
+import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
@@ -62,6 +64,16 @@ export function registerIpc({ flow }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.relaunchApp, () => relaunchApp());
 
+  // Read through to macOS rather than from a stored copy: Login Items is a
+  // System Settings pane the user can change at any time, and a remembered
+  // answer would start disagreeing with it the moment they did.
+  ipcMain.handle(IPC_CHANNELS.loginItem, () => opensAtLogin());
+
+  ipcMain.handle(IPC_CHANNELS.setLoginItem, (_event, enabled: boolean) => {
+    setOpensAtLogin(enabled);
+    return opensAtLogin();
+  });
+
   ipcMain.handle(IPC_CHANNELS.welcomeDone, () => flow.finishWelcome());
 
   ipcMain.handle(IPC_CHANNELS.listSources, () =>
@@ -89,6 +101,7 @@ export function registerIpc({ flow }: IpcDeps): void {
     flow.chooseSelection(result),
   );
   ipcMain.handle(IPC_CHANNELS.selectionCancel, () => flow.cancelSelection());
+  ipcMain.handle(IPC_CHANNELS.selectionCountdown, () => flow.warmCamera());
 
   /**
    * Asks macOS for camera or mic access.
@@ -149,6 +162,12 @@ export function registerIpc({ flow }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.exportCopy, (_event, path: string) =>
     attempt(() => copyExport(path)),
   );
+
+  ipcMain.handle(IPC_CHANNELS.transcribeStart, (_event, dir: string) =>
+    attempt(() => startTranscribe(dir)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.transcribeCancel, () => attempt(() => cancelTranscribe()));
 
   // `on`, not `handle`: see the channel's own note. This one is cleaned up by
   // `removeIpc`'s `removeAllListeners`, which `removeHandler` does not cover.

@@ -47,6 +47,20 @@ export const server = {
     .string()
     .regex(/^entry\.\d+$/)
     .default("entry.348125812"),
+
+  /**
+   * OpenAI, for the transcription endpoint on the marketing site.
+   *
+   * `/api/transcribe` forwards a recording's microphone track to Whisper with
+   * this key. The audio passes through the server, which is forced rather than
+   * chosen: OpenAI's ephemeral keys are scoped to the Realtime API, so there is
+   * no short-lived credential that would let the desktop app upload directly.
+   *
+   * Optional so the site still builds and deploys without it — the endpoint
+   * answers 503 and the editor says transcription is unavailable, which is a
+   * better failure than a site that will not build.
+   */
+  OPENAI_API_KEY: z.string().min(1).optional(),
 };
 
 /** Safe to ship to the client. Treat everything here as public. */
@@ -68,6 +82,7 @@ function build() {
       API_SECRET: process.env.API_SECRET,
       WAITLIST_ENDPOINT: process.env.WAITLIST_ENDPOINT,
       WAITLIST_FIELD: process.env.WAITLIST_FIELD,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     },

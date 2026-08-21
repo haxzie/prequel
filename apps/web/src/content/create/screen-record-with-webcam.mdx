@@ -1,0 +1,37 @@
+macOS will record your screen, and it will record your camera. It will not put
+both in one frame. The built-in answer is to record twice and composite them
+yourself, which is why this is one of the most asked questions about screen
+recording on a Mac.
+
+## Four tracks and a manifest
+
+Prequel captures the screen, the webcam, the microphone and the system audio at
+the same time, and writes each one as its own file alongside a manifest
+describing how they line up.
+
+That sounds like an implementation detail. It is the reason everything below is
+possible: because the camera is never burned into the screen recording, nothing
+about it has to be decided before you press record.
+
+## Decide the camera afterwards
+
+When the editor opens, the webcam's shape — circle, squircle, rounded or wide —
+its size, which corner it sits in and whether it is mirrored are all still
+open. So is whether it appears at all. A take recorded with the camera running
+can ship without it.
+
+It can also come and go. Layout is allowed to change across a take, so the
+camera can open the video, disappear while you demonstrate something that needs
+the whole frame, and return for the last twenty seconds.
+
+If the camera opened a few hundred milliseconds after the screen did — it
+usually does — that offset lives in the manifest and is handled for you.
+
+## And the audio
+
+Microphone and system audio are separate tracks with separate gains, so a
+notification arriving over your voice is a slider rather than a re-record.
+
+Everything runs on your Mac: capture, compositing in Metal, and hardware H.264
+or HEVC export at up to 4K. You will need the Screen Recording permission, and
+Accessibility if you want zooms driven by typing as well as clicking.

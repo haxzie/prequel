@@ -19,6 +19,14 @@ use crate::{Error, Result};
 /// The camera track's file name inside a session directory.
 pub const CAMERA_FILE: &str = "camera.mp4";
 
+/// The capture rate, in frames per second.
+///
+/// Named rather than written twice because the cap is applied by
+/// [`WarmCamera::open`] and *not* re-applied by [`CameraRecorder::begin`] — the
+/// device is already configured by then. Two different numbers would record at
+/// a rate nobody asked for, and nothing downstream would say so.
+pub const DEFAULT_FPS: u32 = 30;
+
 #[derive(Debug, Clone)]
 pub struct CameraOptions {
     /// `uniqueID` or `localizedName` of the camera to record.
@@ -38,7 +46,7 @@ impl CameraOptions {
         Self {
             device: device.into(),
             output: output.into(),
-            fps: 30,
+            fps: DEFAULT_FPS,
             codec: VideoCodec::H264,
         }
     }
@@ -208,30 +216,53 @@ pub struct CameraRecorder {
     sink: arc::R<FrameSink>,
     state: Arc<Mutex<Inner>>,
     queue: arc::R<dispatch::Queue>,
+    /// Kept only so the device outlives the session that is reading from it.
+    _device: arc::R<av::CaptureDevice>,
 }
 
-impl CameraRecorder {
-    /// Opens the camera and starts writing `camera.mp4`.
+/// A camera that is open, running and settled, but not yet recording.
+///
+/// The reason this is a separate phase at all: an `AVCaptureSession` reports
+/// itself running the moment the pipeline is live, which is well before the
+/// sensor has converged on an exposure. Frames from that window are dark, and
+/// attaching the writer immediately is what put a dark second or two at the
+/// head of every camera track. Opening the device while the countdown is on
+/// screen spends time that was being spent anyway.
+pub struct WarmCamera {
+    session: arc::R<av::CaptureSession>,
+    output: arc::R<av::capture::VideoDataOutput>,
+    /// Held so `begin` can cap the frame rate, which needs the device itself.
+    device: arc::R<av::CaptureDevice>,
+    /// What this was opened for, so a request for a different camera falls back
+    /// to opening that one rather than silently recording this one.
+    requested: String,
+}
+
+/// Safe for the same reason [`CameraRecorder`] is: every field is an
+/// Objective-C object with atomic refcounting, and nothing here is touched
+/// concurrently — the warm camera is moved from the thread that opened it to
+/// the one that starts recording, never shared between them.
+unsafe impl Send for WarmCamera {}
+
+impl WarmCamera {
+    /// Opens the device and leaves the session running, writing nothing.
     ///
-    /// `clock` must be the same clock the screen recorder was given — that is
-    /// the whole point, and passing a fresh one produces two files that cannot
-    /// be lined up.
-    ///
-    /// Blocks until the capture session is running, so a missing camera or a
-    /// refused permission surfaces here rather than as an empty file later.
-    pub fn start(options: &CameraOptions, clock: SharedClock) -> Result<Self> {
-        let mut device =
-            crate::devices::find(&options.device).ok_or_else(|| match camera_access() {
-                // A denied grant makes every camera invisible, which otherwise
-                // looks identical to "you unplugged it".
-                Some(status) if status != av::AuthorizationStatus::Authorized => {
-                    Error::DeviceUnavailable {
-                        name: options.device.clone(),
-                        reason: format!("camera access is {status:?}"),
-                    }
+    /// No delegate is attached, so AVFoundation discards the warm-up frames
+    /// rather than handing them to us — which is the whole point. Blocks until
+    /// the session is running, so a missing camera or a refused permission
+    /// surfaces here rather than as an empty file later.
+    pub fn open(requested: &str, fps: u32) -> Result<Self> {
+        let mut device = crate::devices::find(requested).ok_or_else(|| match camera_access() {
+            // A denied grant makes every camera invisible, which otherwise
+            // looks identical to "you unplugged it".
+            Some(status) if status != av::AuthorizationStatus::Authorized => {
+                Error::DeviceUnavailable {
+                    name: requested.to_owned(),
+                    reason: format!("camera access is {status:?}"),
                 }
-                _ => Error::DeviceNotFound(options.device.clone()),
-            })?;
+            }
+            _ => Error::DeviceNotFound(requested.to_owned()),
+        })?;
         let name = device.localized_name().to_string();
 
         let input =
@@ -239,11 +270,6 @@ impl CameraRecorder {
                 name: name.clone(),
                 reason: format!("{e:?}"),
             })?;
-
-        std::fs::create_dir_all(&options.output).map_err(|e| Error::Output {
-            path: options.output.display().to_string(),
-            reason: e.to_string(),
-        })?;
 
         let mut session = av::CaptureSession::new();
         session.begin_cfg();
@@ -277,6 +303,68 @@ impl CameraRecorder {
         }
         session.add_output(&output);
 
+        session.commit_cfg();
+
+        cap_frame_rate(&mut device, fps);
+
+        // Blocks until the session is running or has failed.
+        session.start_running();
+        if !session.is_running() {
+            return Err(Error::DeviceUnavailable {
+                name,
+                reason: "the capture session would not start".to_owned(),
+            });
+        }
+
+        Ok(Self {
+            session,
+            output,
+            device,
+            requested: requested.to_owned(),
+        })
+    }
+
+    /// Whether this was opened for `device`.
+    pub fn is_for(&self, device: &str) -> bool {
+        self.requested == device
+    }
+}
+
+impl CameraRecorder {
+    /// Opens the camera and starts writing `camera.mp4`.
+    ///
+    /// `clock` must be the same clock the screen recorder was given — that is
+    /// the whole point, and passing a fresh one produces two files that cannot
+    /// be lined up.
+    ///
+    /// Opens the device cold, so the first frames written are the sensor's
+    /// warm-up frames. Prefer [`WarmCamera::open`] followed by [`Self::begin`]
+    /// wherever there is any time to spend beforehand.
+    pub fn start(options: &CameraOptions, clock: SharedClock) -> Result<Self> {
+        Self::begin(
+            WarmCamera::open(&options.device, options.fps)?,
+            options,
+            clock,
+        )
+    }
+
+    /// Starts writing `camera.mp4` from an already-open camera.
+    ///
+    /// Attaching the delegate is what begins recording: until this runs, the
+    /// session has been dropping its own frames on the floor.
+    pub fn begin(warm: WarmCamera, options: &CameraOptions, clock: SharedClock) -> Result<Self> {
+        let WarmCamera {
+            session,
+            mut output,
+            device,
+            ..
+        } = warm;
+
+        std::fs::create_dir_all(&options.output).map_err(|e| Error::Output {
+            path: options.output.display().to_string(),
+            reason: e.to_string(),
+        })?;
+
         let state = Arc::new(Mutex::new(Inner {
             writer: None,
             path: options.path(),
@@ -293,25 +381,13 @@ impl CameraRecorder {
         let queue = dispatch::Queue::serial_with_ar_pool();
         output.set_sample_buf_delegate(Some(sink.as_ref()), Some(&queue));
 
-        session.commit_cfg();
-
-        cap_frame_rate(&mut device, options.fps);
-
-        // Blocks until the session is running or has failed.
-        session.start_running();
-        if !session.is_running() {
-            return Err(Error::DeviceUnavailable {
-                name,
-                reason: "the capture session would not start".to_owned(),
-            });
-        }
-
         Ok(Self {
             session,
             output,
             sink,
             state,
             queue,
+            _device: device,
         })
     }
 

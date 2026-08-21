@@ -11,6 +11,15 @@ import "./index.css";
 document.documentElement.style.setProperty("--panel-inset", `${PANEL_INSET}px`);
 document.documentElement.style.setProperty("--panel-height", `${PANEL_HEIGHT}px`);
 
+// Hover any element and press ⌘C to copy it, with its component stack and
+// source locations, for an agent to read.
+//
+// Dynamically imported behind `import.meta.env.DEV` rather than imported at the
+// top: Vite substitutes the flag at build time, so the whole branch — and with
+// it every byte of the package — is eliminated from a packaged build. A static
+// import would ship a development overlay inside the .dmg.
+if (import.meta.env.DEV) void import("react-grab");
+
 const container = document.getElementById("root");
 if (!container) throw new Error("Missing #root element");
 

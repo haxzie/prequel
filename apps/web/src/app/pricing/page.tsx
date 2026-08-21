@@ -1,41 +1,18 @@
 import type { Metadata } from "next";
 
 import { ButtonLink } from "@/components/Button";
+import { JsonLd } from "@/components/JsonLd";
+import { Cell } from "@/components/Table";
 import { Container, SectionHeading } from "@/components/Section";
 import { COMPARISON, FAQ, PLANS } from "@/lib/pricing";
+import { faqPageJsonLd, pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Pricing",
   description:
     "Prequel plans: a free tier with the whole recorder, Pro for 4K and automatic zooms, and Team for shared presets.",
-};
-
-function Tick({ on }: { on: boolean }) {
-  return on ? (
-    <svg width="14" height="14" viewBox="0 0 14 14" className="text-fg" aria-hidden>
-      <path
-        d="M2.5 7.5 5.5 10.5 11.5 3.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ) : (
-    <span className="block h-px w-3 bg-line" aria-hidden />
-  );
-}
-
-function Cell({ value }: { value: boolean | string }) {
-  if (typeof value === "string") return <span className="text-fg">{value}</span>;
-  return (
-    <>
-      <Tick on={value} />
-      <span className="sr-only">{value ? "Included" : "Not included"}</span>
-    </>
-  );
-}
+  path: "/pricing",
+});
 
 export default function Pricing() {
   return (
@@ -141,6 +118,9 @@ export default function Pricing() {
             ))}
           </dl>
         </Container>
+
+        {/* Off the same array as the markup above, so the two cannot drift. */}
+        <JsonLd data={faqPageJsonLd(FAQ)} />
       </section>
     </>
   );

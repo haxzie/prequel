@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -23,7 +24,13 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
-import { spanInProject, toSourceTime, type PlacedSlice } from "./timeline";
+import {
+  spanInProject,
+  toSourceTime,
+  trimmedTo,
+  type PlacedSlice,
+  type TrimGrab,
+} from "./timeline";
 import type { EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
@@ -90,7 +97,45 @@ export function TimelineStrip({
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
 }) {
   const placed = placedSlices(state.project);
-  const duration = projectDuration(state.project);
+  const edited = projectDuration(state.project);
+
+  /** The edge being dragged, and how long the edit was when it was picked up. */
+  const [trim, setTrim] = useState<{
+    sliceId: string;
+    edge: "start" | "end";
+    span: MediaTime;
+  } | null>(null);
+
+  /**
+   * Length the strip is drawn against, held still while an edge is dragged.
+   *
+   * At the fit zoom the strip is always exactly as wide as the edit, so a trim
+   * that shortens the edit also stretches what is left back out to fill the
+   * same room: the clip's edge stays pinned where it was, the frames slide
+   * about underneath it and the ruler renumbers itself — the cursor moves and
+   * nothing appears to follow it. Freezing the length for the drag lets the
+   * edge travel with the pointer and leaves the ruler still; the strip refits
+   * when the drag ends.
+   *
+   * Never *below* the edit, or a clip pulled out past the length the strip
+   * started at would overflow the row, and flex would shrink every clip to make
+   * it fit — the same rescale, arriving all at once.
+   */
+  const duration = Math.max(trim?.span ?? edited, edited);
+
+  /**
+   * Room the frozen length is holding open, which a head trim takes in front of
+   * its clip.
+   *
+   * Trimming a head is the one edit whose clip cannot move to meet the pointer:
+   * slices are laid end to end, so a clip's start is wherever the one before it
+   * finished, and shortening the head only pulls the clip's *far* edge inwards.
+   * Dragging right and watching the wrong end come towards you is the part that
+   * read as broken. The edit shrinks by exactly what the head lost, so putting
+   * that much space in front of the clip stands it still and lets its start edge
+   * travel with the pointer. It closes up when the drag ends and the strip refits.
+   */
+  const slack = duration - edited;
 
   const scroller = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
@@ -306,7 +351,20 @@ export function TimelineStrip({
         // into a child and would blink the line off over every clip.
         onPointerLeave={() => showShadow(null)}
       >
-        <div className="relative" style={{ width: contentWidth }}>
+        {/* Pressing anywhere that is not a clip, a zoom or one of their handles
+            seeks. Those three stop the event; everything else — the bands above
+            and below the clips, the empty end of a row, the stretch of the zoom
+            row where no zoom will fit — used to be dead, and there is more of it
+            than there is of the strip. A timeline that ignores a press has no
+            way of saying why, so it reads as the app having missed the click. */}
+        <div
+          className="relative"
+          style={{ width: contentWidth }}
+          onPointerDown={(event) => {
+            media.onInteract();
+            media.playback.seek(timeAt(event.clientX));
+          }}
+        >
           <Ruler
             duration={duration}
             pxPerSecond={pxPerSecond}
@@ -318,44 +376,34 @@ export function TimelineStrip({
 
           <div style={{ height: TRACK_GAP }} />
 
-          <div
-            className="flex gap-px"
-            style={{ height: CLIP_H }}
-            onPointerDown={(event) => {
-              // Pressing the empty strip seeks: there is no clip there to
-              // select, and the playhead is what a cut acts on.
-              media.onInteract();
-              media.playback.seek(timeAt(event.clientX));
-            }}
-          >
+          <div className="flex gap-px" style={{ height: CLIP_H }}>
             {placed.map((slice) => (
-              <Clip
-                key={slice.id}
-                slice={slice}
-                duration={duration}
-                peaks={peaks}
-                filmstrip={filmstrip}
-                contentWidth={contentWidth}
-                cameraSpan={cameraSpan}
-                selected={slice.id === state.selectedSliceId}
-                onPointerDown={(event) => onClipPointerDown(slice, event)}
-                onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                onTrim={(edge, clientX) =>
-                  dispatch({
-                    type: "trimSlice",
-                    sliceId: slice.id,
-                    edge,
-                    // Trimming moves an edge in *source* time, which is where
-                    // the slice's range lives — the project position it was
-                    // dragged to is only how that was expressed.
-                    source:
-                      edge === "start"
-                        ? slice.source.start + (timeAt(clientX) - slice.timelineStart)
-                        : slice.source.end +
-                          (timeAt(clientX) - slice.timelineStart - slice.duration),
-                  })
-                }
-              />
+              <Fragment key={slice.id}>
+                {slack > 0 && trim?.edge === "start" && trim.sliceId === slice.id && (
+                  <div
+                    className="flex-none"
+                    style={{ width: `${String((slack / Math.max(duration, 1)) * 100)}%` }}
+                  />
+                )}
+                <Clip
+                  slice={slice}
+                  duration={duration}
+                  peaks={peaks}
+                  filmstrip={filmstrip}
+                  contentWidth={contentWidth}
+                  cameraSpan={cameraSpan}
+                  selected={slice.id === state.selectedSliceId}
+                  onPointerDown={(event) => onClipPointerDown(slice, event)}
+                  onBeginEdit={(edge) => {
+                    dispatch({ type: "beginEdit" });
+                    setTrim({ sliceId: slice.id, edge, span: edited });
+                  }}
+                  onEndEdit={() => setTrim(null)}
+                  onTrim={(edge, source) =>
+                    dispatch({ type: "trimSlice", sliceId: slice.id, edge, source })
+                  }
+                />
+              </Fragment>
             ))}
           </div>
 
@@ -369,8 +417,10 @@ export function TimelineStrip({
             style={{ height: CLIP_H }}
             onPointerMove={(event) => showGhost(event.clientX)}
             onPointerLeave={() => showGhost(null)}
+            // Deliberately let through to the strip, which seeks: the playhead
+            // belongs on the zoom that has just been added, and where the gap
+            // is too small to hold one the press has to still do something.
             onPointerDown={(event) => {
-              media.onInteract();
               dispatch({ type: "addZoom", at: sourceAt(timeAt(event.clientX)) });
             }}
           >
@@ -458,6 +508,8 @@ function Ruler({
       className="relative cursor-default select-none"
       style={{ height: RULER_H + RULER_PAD }}
       onPointerDown={(event) => {
+        // Stops the strip underneath seeking to the same place a second time.
+        event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
         onSeek(event.clientX);
       }}
@@ -555,6 +607,7 @@ function Clip({
   onPointerDown,
   onTrim,
   onBeginEdit,
+  onEndEdit,
 }: {
   slice: PlacedSlice;
   duration: MediaTime;
@@ -565,20 +618,49 @@ function Clip({
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
-  onTrim: (edge: "start" | "end", clientX: number) => void;
+  /** An edge has been dragged to a source time. Clamping is the reducer's job. */
+  onTrim: (edge: "start" | "end", source: MediaTime) => void;
   /** A drag is beginning, so its stream of trims is one step to undo. */
-  onBeginEdit: () => void;
+  onBeginEdit: (edge: "start" | "end") => void;
+  /** The drag is over, so the strip can go back to following the edit. */
+  onEndEdit: () => void;
 }) {
+  /**
+   * Where the drag started. Null between drags.
+   *
+   * A ref rather than state: this is written on `pointerdown` and read on every
+   * `pointermove`, and re-rendering the clip to record where a gesture began
+   * would rebuild its filmstrip and wave for no visible change.
+   */
+  const grabbed = useRef<TrimGrab | null>(null);
+
   const grab = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    onBeginEdit();
+    grabbed.current = {
+      source: slice.source[edge],
+      clientX: event.clientX,
+      // The strip's scale, taken now and held for the drag — see `trimmedTo`.
+      perPixel: contentWidth > 0 ? duration / contentWidth : 0,
+    };
+    onBeginEdit(edge);
   };
 
   const move = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const from = grabbed.current;
+    if (from === null || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     event.stopPropagation();
-    onTrim(edge, event.clientX);
+    onTrim(edge, trimmedTo(from, event.clientX));
+  };
+
+  // `pointercancel` as well as `pointerup`: a drag that leaves through a
+  // gesture the system claims — a three-finger swipe over the trackpad — gets
+  // no `pointerup` at all, and the strip would stay frozen at the length it had
+  // when the drag began until the next one released it.
+  const release = () => {
+    if (grabbed.current === null) return;
+    grabbed.current = null;
+    onEndEdit();
   };
 
   // Rebuilt only when the clip's own span moves — trimming an edge, or a cut
@@ -711,12 +793,14 @@ function Clip({
           selected={selected}
           onPointerDown={grab("start")}
           onPointerMove={move("start")}
+          onRelease={release}
         />
         <Handle
           edge="end"
           selected={selected}
           onPointerDown={grab("end")}
           onPointerMove={move("end")}
+          onRelease={release}
         />
       </>
     </div>
@@ -735,11 +819,15 @@ function Handle({
   selected,
   onPointerDown,
   onPointerMove,
+  onRelease,
 }: {
   edge: "start" | "end";
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLSpanElement>) => void;
   onPointerMove: (event: PointerEvent<HTMLSpanElement>) => void;
+  /** The drag ended, however it ended. Absent on the zoom row, which has
+      nothing held open for the length of a drag to put back. */
+  onRelease?: () => void;
 }) {
   return (
     <span
@@ -752,6 +840,8 @@ function Handle({
       )}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerUp={onRelease}
+      onPointerCancel={onRelease}
     >
       <span className="h-1/2 w-0.5 rounded-full bg-white" />
     </span>

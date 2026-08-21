@@ -14,16 +14,20 @@ import { CameraMap } from "./controls/CameraMap";
 import { Field, Section } from "./controls/Field";
 import { EasingPad } from "./controls/EasingPad";
 import { PerspectivePad } from "./controls/PerspectivePad";
+import { PerspectivePlate } from "./controls/PerspectivePlate";
 import {
   AudioIcon,
   CameraIcon,
   CircleIcon,
   CursorIcon,
+  CloseIcon,
   FillIcon,
   FitIcon,
+  FocusIcon,
   GradientIcon,
   ImageIcon,
   LayoutIcon,
+  PerspectiveIcon,
   RoundedIcon,
   ScreenIcon,
   SolidIcon,
@@ -60,6 +64,15 @@ export interface InspectorProps {
   onPickPreset: (presetId: string) => void;
   /** URL for the desktop picture inside the recording, drawn on its cell. */
   wallpaperUrl: string | null;
+  /**
+   * Put the panel away and drop the selection with it.
+   *
+   * Both, because they are one thing to the person doing it: the panel is only
+   * ever showing something because that thing is selected, and leaving a clip
+   * selected behind a closed panel leaves the timeline lit up over an editor
+   * with no visible way to change it.
+   */
+  onClose: () => void;
 }
 
 /**
@@ -73,6 +86,7 @@ export interface InspectorProps {
 export function Inspector(props: InspectorProps) {
   const { state, dispatch } = props;
   const [tab, setTab] = useState<CategoryId>("layout");
+  const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
   const settings = activeSettings(state);
   const slice = selectedSlice(state);
   const scoped = slice !== undefined;
@@ -96,8 +110,35 @@ export function Inspector(props: InspectorProps) {
   // clip's questions — what does it override, what does it inherit — apply.
   const zoom = state.project.zooms.find((candidate) => candidate.id === state.selectedZoomId);
   if (zoom) {
+    // Every zoom control funnels through here, so this is the one place the
+    // preview has to be triggered from.
+    const change = (patch: Partial<ZoomSlice>) => {
+      dispatch({ type: "setZoom", zoomId: zoom.id, patch });
+      props.onPreviewZoom();
+    };
+    const panel = { zoom, frame: props.frame, hasCursor: props.hasCursor, onChange: change };
+
     return (
       <div className={SHELL}>
+        <nav className={RAIL}>
+          {ZOOM_TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              aria-current={id === zoomTab}
+              // The label the icon replaced, kept where it is still needed: as
+              // the accessible name, and as the tooltip that is now the only
+              // way to find out what a glyph means.
+              aria-label={label}
+              title={label}
+              className={railButton(id === zoomTab)}
+              onClick={() => setZoomTab(id)}
+            >
+              <Icon />
+            </button>
+          ))}
+        </nav>
+
         <aside className={PANEL}>
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             <PanelHeader
@@ -108,18 +149,11 @@ export function Inspector(props: InspectorProps) {
               tone="border-selected/60 bg-selected/35 text-white"
               onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
               deleteLabel="Remove zoom"
+              onClose={props.onClose}
             />
-            <ZoomPanel
-              zoom={zoom}
-              frame={props.frame}
-              hasCursor={props.hasCursor}
-              // Every zoom control funnels through here, so this is the one
-              // place the preview has to be triggered from.
-              onChange={(patch) => {
-                dispatch({ type: "setZoom", zoomId: zoom.id, patch });
-                props.onPreviewZoom();
-              }}
-            />
+            {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
+            {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
+            {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
           </div>
         </aside>
       </div>
@@ -144,30 +178,18 @@ export function Inspector(props: InspectorProps) {
 
   return (
     <div className={SHELL}>
-      {/* The rail. Icon over label rather than beside it: four items in a
-          column of this width read as a list of destinations, which is what
-          they are, and the labels stay legible at 10px because nothing has to
-          share the line with them. */}
       <nav className={RAIL}>
         {categories.map(({ id, label, Icon }) => (
           <button
             key={id}
             type="button"
             aria-current={id === active}
-            className={cn(
-              "flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] [&_svg]:size-4",
-              // The same blue the dock marks a chosen screen with, and the
-              // timeline its held tool: one colour across the app for "this is
-              // the one selected". White on it rather than the panel's text
-              // colour, which is tuned for a near-black surface.
-              id === active
-                ? "bg-selected text-white"
-                : "text-editor-muted hover:bg-white/5 hover:text-editor-fg",
-            )}
+            aria-label={label}
+            title={label}
+            className={railButton(id === active)}
             onClick={() => setTab(id)}
           >
             <Icon />
-            {label}
           </button>
         ))}
       </nav>
@@ -192,6 +214,7 @@ export function Inspector(props: InspectorProps) {
                 : undefined
             }
             deleteLabel="Remove clip"
+            onClose={props.onClose}
           />
 
           {active === "layout" && (
@@ -264,14 +287,31 @@ export function Inspector(props: InspectorProps) {
 const SHELL = "m-2 ml-0 flex flex-1 justify-end gap-2";
 
 /**
- * The rail, a panel in its own right beside the controls rather than a column
- * inside them. `self-start` is what keeps it the height of its own buttons: as
- * an ordinary flex item it would stretch to match the panel and be mostly empty
- * surface.
+ * The rail: icons over the editor's own background, with nothing behind them.
+ *
+ * It used to be a panel in its own right, which made two surfaces where the
+ * eye only has one thing to find — and the smaller of the two was introducing
+ * the larger. `self-start` is what keeps it the height of its own buttons: as
+ * an ordinary flex item it would stretch to match the panel beside it and hold
+ * a column of hover targets over nothing.
  */
-const RAIL =
-  "flex w-16 flex-none flex-col gap-1 self-start rounded-xl border border-editor-line " +
-  "bg-editor-panel p-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
+const RAIL = "flex flex-none flex-col gap-1 self-start";
+
+/**
+ * One destination on the rail.
+ *
+ * White whether or not it is the one showing. With no surface behind the rail
+ * there is nothing for a muted colour to read against, and a dimmed icon on the
+ * editor's own background looks disabled rather than merely unselected — so the
+ * fill behind the chosen one carries that on its own. The same blue the dock
+ * marks a chosen screen with and the timeline its held tool: one colour across
+ * the app for "this is the one".
+ */
+const railButton = (active: boolean) =>
+  cn(
+    "grid size-10 place-items-center rounded-lg text-white [&_svg]:size-5",
+    active ? "bg-selected" : "hover:bg-white/10",
+  );
 
 /** `overflow-hidden` so the scrolling content stays inside the corners. */
 const PANEL =
@@ -279,10 +319,27 @@ const PANEL =
   "bg-editor-panel shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
 
 /** What the pair occupies when open: rail, gap, panel, and the margin beside. */
-export const PANEL_WIDTH = "25.5rem";
+export const PANEL_WIDTH = "24rem";
 
 /** The inspector's four destinations. */
 type CategoryId = "layout" | "camera" | "audio" | "cursor";
+
+/**
+ * A selected zoom's destinations.
+ *
+ * Its own rail rather than more rows in one column. A zoom carries as many
+ * controls as a clip does, and they divide the same way: what the shot does,
+ * and two looks that are set once. Kept separate from `CategoryId` because the
+ * two rails never coexist — a zoom takes over the panel — and a single union
+ * would let a clip's tab be selected on a zoom and back again.
+ */
+type ZoomTabId = "motion" | "perspective" | "focus";
+
+const ZOOM_TABS: { id: ZoomTabId; label: string; Icon: () => React.ReactElement }[] = [
+  { id: "motion", label: "Zoom", Icon: ZoomIcon },
+  { id: "perspective", label: "Angle", Icon: PerspectiveIcon },
+  { id: "focus", label: "Focus", Icon: FocusIcon },
+];
 
 interface Category {
   id: CategoryId;
@@ -783,6 +840,7 @@ function PanelHeader({
   tone,
   onDelete,
   deleteLabel,
+  onClose,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -791,6 +849,7 @@ function PanelHeader({
   /** Absent when there is nothing deletable, which hides the button. */
   onDelete?: () => void;
   deleteLabel: string;
+  onClose: () => void;
 }) {
   return (
     <header className="flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
@@ -806,6 +865,16 @@ function PanelHeader({
 
       <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
 
+      {/* Delete first, close last. Close is the one that has to be in the same
+          place every time — it is on every panel, where delete comes and goes
+          with what is selected — and the corner is the place a pointer arrives
+          at to dismiss something. Putting the destructive button there instead,
+          and only sometimes, is how a clip gets removed by someone reaching to
+          put the panel away.
+
+          Red on hover where close stays neutral — the pair have to be
+          distinguishable at a glance, and at this size the colour is quicker to
+          read than the glyph. */}
       {onDelete && (
         <button
           type="button"
@@ -820,12 +889,34 @@ function PanelHeader({
           <TrashIcon />
         </button>
       )}
+
+      <button
+        type="button"
+        title="Close the panel"
+        aria-label="Close the panel"
+        className={cn(
+          "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+          "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+        )}
+        onClick={onClose}
+      >
+        <CloseIcon />
+      </button>
     </header>
   );
 }
 
 /** What `sanitiseZooms` clamps an angle to, so the pad cannot set one it drops. */
 const TILT_LIMIT = 30;
+
+/**
+ * How much the preset thumbnails splay.
+ *
+ * Fixed, and shallow: a 28px plate at the pad's near perspective turns into a
+ * wedge with one edge a couple of pixels tall, which reads as a rendering
+ * mistake rather than as an angle.
+ */
+const THUMB_PERSPECTIVE = 220;
 
 const TILTS = [
   { label: "Flat", tilt: 0, yaw: 0 },
@@ -903,7 +994,13 @@ function easingName(curve: {
  * answer when the interesting part of the frame is not where the pointer is —
  * a chart being talked about, a line of output.
  */
-function ZoomPanel({
+/**
+ * Where the shot goes and how fast it gets there.
+ *
+ * The tab that opens, because a zoom that points at nothing is not a zoom
+ * yet — the look of it only matters once there is something to look at.
+ */
+function ZoomMotionPanel({
   zoom,
   frame,
   hasCursor,
@@ -1003,7 +1100,32 @@ function ZoomPanel({
           <EasingPad curve={zoom} onChange={onChange} />
         </div>
       </Field>
+    </Section>
+  );
+}
 
+/**
+ * Which way the picture is turned, and how hard the turn is sold.
+ *
+ * Its own tab rather than five more rows under the motion controls. Every
+ * one of these is a look, set once and rarely returned to, while `Level`
+ * and `Speed` are what a zoom is adjusted by — and a column that mixes the
+ * two makes the frequent controls something to scroll past.
+ */
+function ZoomPerspectivePanel({
+  zoom,
+  frame,
+  hasCursor,
+  onChange,
+}: {
+  zoom: ZoomSlice;
+  frame: Size;
+  /** Whether this recording has a pointer track to follow. */
+  hasCursor: boolean;
+  onChange: (patch: Partial<ZoomSlice>) => void;
+}) {
+  return (
+    <Section title="Perspective">
       {/* Drag the picture, not the numbers. The sliders below stay for
           precision and for saying what the angle currently is — the pad is how
           anyone arrives at one. */}
@@ -1017,6 +1139,11 @@ function ZoomPanel({
         />
       </Field>
 
+      {/* Each preset shows the angle it sets rather than only naming it. "Hero"
+          and "Lean back" are labels you have to have learned; the plate above
+          them is the same picture the pad draws, so the row can be read instead
+          of memorised. The name stays underneath — it is what the two of you
+          call the setting once it is chosen. */}
       <Field label="Angles">
         <div className="grid grid-cols-3 gap-1">
           {TILTS.map((preset) => {
@@ -1029,13 +1156,33 @@ function ZoomPanel({
                 type="button"
                 aria-pressed={here}
                 className={cn(
-                  "rounded-md px-1 py-1.5 text-[10px] transition-colors",
+                  "flex flex-col items-center gap-1 rounded-md px-1 py-1.5",
+                  "text-[10px] transition-colors",
                   here
                     ? "bg-selected text-white"
                     : "bg-white/5 text-editor-muted hover:bg-white/10",
                 )}
                 onClick={() => onChange({ tilt: preset.tilt, yaw: preset.yaw })}
               >
+                {/* Fixed and shallower than the pad's. The pad splays with the
+                    zoom's depth because it is showing this shot; a thumbnail is
+                    showing the angle alone, and letting it move with an
+                    unrelated slider would make six buttons twitch whenever
+                    depth was dragged. */}
+                <span
+                  className="grid h-6 w-full place-items-center"
+                  style={{ perspective: THUMB_PERSPECTIVE }}
+                  aria-hidden="true"
+                >
+                  <PerspectivePlate
+                    tilt={preset.tilt}
+                    yaw={preset.yaw}
+                    className={cn(
+                      "h-4 w-7 rounded-[2px] border",
+                      here ? "border-white/70 bg-white/25" : "border-white/25 bg-white/10",
+                    )}
+                  />
+                </span>
                 {preset.label}
               </button>
             );
@@ -1082,7 +1229,32 @@ function ZoomPanel({
           onChange={(yaw) => onChange({ yaw })}
         />
       </Field>
+    </Section>
+  );
+}
 
+/**
+ * What the shot does to everything that is not the subject.
+ *
+ * Blur and vignette together under one heading, which is the grouping the
+ * code already argued for where the two sat adjacent. Called Focus rather
+ * than Blur: a vignette darkens, it does not blur, and a tab that names
+ * one of its two controls is a tab you look in the wrong place for.
+ */
+function ZoomFocusPanel({
+  zoom,
+  frame,
+  hasCursor,
+  onChange,
+}: {
+  zoom: ZoomSlice;
+  frame: Size;
+  /** Whether this recording has a pointer track to follow. */
+  hasCursor: boolean;
+  onChange: (patch: Partial<ZoomSlice>) => void;
+}) {
+  return (
+    <Section title="Focus">
       <Field label="Blur around" inline>
         <Toggle value={zoom.blur} onChange={(blur) => onChange({ blur })} />
       </Field>

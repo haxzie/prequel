@@ -30,7 +30,14 @@ function pathFor(dir: string): string {
  * would strand it. A file that cannot be used is replaced by defaults, which
  * the next save then overwrites.
  */
-export function loadProject(dir: string, recordingId: string, duration: Ns): Project {
+export function loadProject(
+  dir: string,
+  recordingId: string,
+  duration: Ns,
+  /** Whether the recording is of a whole screen — see `newProject`. Only
+      consulted when there is no project file yet. */
+  fullScreen = false,
+): Project {
   const held = pending.get(dir);
   if (held) return held;
 
@@ -40,16 +47,17 @@ export function loadProject(dir: string, recordingId: string, duration: Ns): Pro
   } catch {
     // Never edited. Not written yet either — an untouched recording folder
     // stays as the recorder left it.
-    return newProject(recordingId, duration);
+    return newProject(recordingId, duration, fullScreen);
   }
 
   try {
     return (
-      sanitiseProject(JSON.parse(raw), recordingId, duration) ?? newProject(recordingId, duration)
+      sanitiseProject(JSON.parse(raw), recordingId, duration) ??
+      newProject(recordingId, duration, fullScreen)
     );
   } catch (cause) {
     console.warn(`[editor] ignoring unreadable ${PROJECT_FILE_NAME} in ${dir}:`, cause);
-    return newProject(recordingId, duration);
+    return newProject(recordingId, duration, fullScreen);
   }
 }
 

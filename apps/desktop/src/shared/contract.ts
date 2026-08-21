@@ -10,6 +10,7 @@ import type { RecordingResult } from "@prequel/recorder";
 import type { CursorSample, Manifest, MediaTime, TrackKind, TypingSample } from "./manifest.js";
 import type { RenderPlan } from "./layout.js";
 import type { Project } from "./project.js";
+import type { Transcript } from "./transcript.js";
 
 export type { RecordingResult };
 
@@ -35,7 +36,12 @@ export type PermissionStatus = "Granted" | "Denied";
  * outright. Both feed the automatic zoom pass, which is why it is asked for
  * here rather than left to be discovered.
  */
-export type PermissionId = "screen" | "camera" | "microphone" | "accessibility";
+export const PERMISSION_IDS = ["screen", "camera", "microphone", "accessibility"] as const;
+
+// A value rather than only a type, because main has to check a
+// renderer-supplied string against the set at runtime — `media-protocol.ts`
+// serves one icon per id, and a type alone erases before it can guard anything.
+export type PermissionId = (typeof PERMISSION_IDS)[number];
 
 export interface PermissionState {
   id: PermissionId;
@@ -200,6 +206,10 @@ export const IPC_CHANNELS = {
   permissionStates: "permissions:list",
   /** Asks macOS for one, and answers with every state afterwards. */
   requestPermission: "permissions:request",
+  /** Whether macOS starts Prequel at login. */
+  loginItem: "app:loginItem",
+  /** Adds or removes the login item. */
+  setLoginItem: "app:setLoginItem",
   /** Quits and comes back, which is what a new Screen Recording grant needs. */
   relaunchApp: "app:relaunch",
   /** The welcome flow finished. */
@@ -213,6 +223,16 @@ export const IPC_CHANNELS = {
   closePopover: "popover:close",
   selectionChoose: "selection:choose",
   selectionCancel: "selection:cancel",
+  /**
+   * Renderer → main: the countdown has started, so open the camera now.
+   *
+   * The three seconds the countdown is on screen are the only warm-up an
+   * `AVCaptureSession` gets — opened when recording starts instead, it writes a
+   * dark second or two before the sensor settles. Main cannot infer this
+   * moment: the countdown lives entirely in the selection renderer, and until
+   * now it only ever said anything when it finished.
+   */
+  selectionCountdown: "selection:countdown",
   /** Main → selection renderer, once per overlay. */
   selectionSetup: "selection:setup",
   chooseMode: "dock:chooseMode",
@@ -252,6 +272,10 @@ export const IPC_CHANNELS = {
    * that simply does not start.
    */
   exportDrag: "export:drag",
+  transcribeStart: "transcribe:start",
+  transcribeCancel: "transcribe:cancel",
+  /** Main → renderer broadcast. */
+  transcribeProgress: "transcribe:progress",
 } as const;
 
 /** One kept span, resolved and ready to render. */
@@ -304,6 +328,26 @@ export interface ExportProgress {
   framesTotal: number;
   outputPath: string | null;
   error: { code: string | null; message: string } | null;
+}
+
+/**
+ * How a transcription is going.
+ *
+ * The same shape as `ExportProgress` in the one way that matters: completion is
+ * a terminal stage on this channel rather than a resolved promise, so there is
+ * one channel and no race between "finished" arriving twice by two routes.
+ *
+ * No frame counts. A provider reports nothing until it has finished, so a
+ * percentage here would be invented — and an invented bar that sits at 40% for
+ * a minute is worse than an honest indeterminate one.
+ */
+export interface TranscribeProgress {
+  /** Which recording this is about; the editor ignores progress for others. */
+  dir: string;
+  stage: "uploading" | "transcribing" | "done" | "failed" | "cancelled";
+  error: { code: string | null; message: string } | null;
+  /** Present only on `done`. */
+  transcript?: Transcript;
 }
 
 /** An image copied into a recording, ready to be used as a background. */
@@ -509,6 +553,14 @@ export interface EditorSession {
   cursor: CursorLayer | null;
   /** The edit, loaded from `project.json` or freshly made. */
   project: Project;
+  /**
+   * What was said, or null when the recording has not been transcribed.
+   *
+   * Null also covers a transcript this build cannot read and one that belongs
+   * to a different recording — from the editor's side those are the same thing,
+   * which is that it has no words to offer and should ask for some.
+   */
+  transcript: Transcript | null;
 }
 
 /** One track, as the renderer plays it. */

@@ -255,6 +255,18 @@ fn track(
 /// Camera failures get their own codes so the shell can tell "no such camera"
 /// (offer the picker again) from "access denied" (send them to System
 /// Settings) without string-matching a localized message.
+/// A poisoned lock, as a JS error.
+///
+/// Only reachable if a panic unwound while the slot was held, which would mean
+/// something worse has already happened — this exists so the camera path says
+/// so rather than panicking a second time inside `unwrap`.
+fn poisoned() -> Error {
+    Error::new(
+        Status::GenericFailure,
+        "CAMERA_UNAVAILABLE: the camera slot was poisoned".to_owned(),
+    )
+}
+
 fn to_camera_error(err: camera::Error) -> Error {
     let code = match err {
         camera::Error::DeviceNotFound(_) => "CAMERA_NOT_FOUND",
@@ -342,6 +354,64 @@ pub struct CameraDevice {
 }
 
 /// Lists attached cameras. Does not prompt and does not open any device.
+/// Opens a camera before there is anything to record with it.
+///
+/// Called when the countdown appears. An `AVCaptureSession` reports itself
+/// running long before the sensor has settled on an exposure, so a camera
+/// opened at the instant recording starts writes a dark second or two before it
+/// comes good. The countdown is three seconds that were being spent anyway.
+///
+/// Idempotent per device, and never fatal: the recording opens the camera
+/// itself if this was not called, failed, or was called for a different one.
+#[napi(ts_return_type = "Promise<void>")]
+pub fn prepare_camera(device: String) -> AsyncTask<PrepareCamera> {
+    AsyncTask::new(PrepareCamera { device })
+}
+
+pub struct PrepareCamera {
+    device: String,
+}
+
+impl Task for PrepareCamera {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        // Already warm for this camera: opening a second session on the same
+        // device would put the first one's frames and this one's in contention
+        // for no gain.
+        {
+            let warm = WARM_CAMERA.lock().map_err(|_| poisoned())?;
+            if warm.as_ref().is_some_and(|w| w.is_for(&self.device)) {
+                return Ok(());
+            }
+        }
+
+        // Opened before the lock is taken again so a slow device does not hold
+        // the slot shut against a cancel arriving on another thread.
+        let opened =
+            camera::WarmCamera::open(&self.device, camera::DEFAULT_FPS).map_err(to_camera_error)?;
+        *WARM_CAMERA.lock().map_err(|_| poisoned())? = Some(opened);
+        Ok(())
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// Closes a camera opened by [`prepare_camera`], if one is still open.
+///
+/// The camera light is on from the moment it is opened, so a countdown that is
+/// cancelled has to put it out again — otherwise Escape leaves the light on
+/// with nothing recording, which reads as the app spying.
+#[napi]
+pub fn release_camera() {
+    if let Ok(mut warm) = WARM_CAMERA.lock() {
+        warm.take();
+    }
+}
+
 #[napi]
 pub fn list_cameras() -> Vec<CameraDevice> {
     camera::list_cameras()
@@ -390,6 +460,14 @@ struct SessionPlan {
 }
 
 static RECORDER: Mutex<Option<Session>> = Mutex::new(None);
+
+/// A camera opened ahead of the recording, waiting to be handed to it.
+///
+/// Separate from `RECORDER` because it is filled and emptied on a different
+/// schedule: the shell opens the camera when the countdown appears and the
+/// recording claims it three seconds later, and a cancelled countdown has to be
+/// able to close it again with no recording ever existing.
+static WARM_CAMERA: Mutex<Option<camera::WarmCamera>> = Mutex::new(None);
 
 #[napi(string_enum)]
 #[derive(Debug)]
@@ -565,14 +643,28 @@ impl Task for StartRecording {
         // `AVCaptureSession` takes a few hundred milliseconds to warm up, and
         // starting it after the screen would waste all of that as head with no
         // camera in it. It still does not anchor the clock; the screen does.
+        // Whatever is in the slot goes, matching or not: a warm camera for a
+        // device this recording is not using is a light left on.
+        let warm = WARM_CAMERA.lock().ok().and_then(|mut slot| slot.take());
+
         let camera = match request.camera.as_deref() {
             None => None,
             Some(device) => {
                 let mut camera_options = camera::CameraOptions::new(device, &request.output_path);
                 camera_options.codec = options.codec;
                 Some(
-                    camera::CameraRecorder::start(&camera_options, clock.clone())
-                        .map_err(to_camera_error)?,
+                    match warm.filter(|w| w.is_for(device)) {
+                        // The common path: opened when the countdown appeared,
+                        // settled by now, and it only has to start writing.
+                        Some(warm) => {
+                            camera::CameraRecorder::begin(warm, &camera_options, clock.clone())
+                        }
+                        // No warm camera, or one for a device the user changed
+                        // their mind about. Opening cold costs the dark head
+                        // this exists to avoid, which still beats no camera.
+                        None => camera::CameraRecorder::start(&camera_options, clock.clone()),
+                    }
+                    .map_err(to_camera_error)?,
                 )
             }
         };
@@ -596,6 +688,15 @@ impl Task for StartRecording {
                 output: std::path::PathBuf::from(&request.output_path),
                 started_at: request.started_at.clone().unwrap_or_default(),
                 source_kind: match request.target_kind {
+                    // An area is a display capture with a crop on it, and
+                    // nothing else in the manifest can tell the two apart —
+                    // the crop is applied here and never written down. The
+                    // editor wants them framed oppositely: a whole screen
+                    // should fill the frame, a region wants to sit on a
+                    // background like a window does, so recording only
+                    // "display" for both left every area grab opening
+                    // edge-to-edge.
+                    TargetKind::Display if request.crop.is_some() => "area",
                     TargetKind::Display => "display",
                     TargetKind::Window => "window",
                 },

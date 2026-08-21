@@ -3,12 +3,14 @@ import Link from "next/link";
 
 import { Container, SectionHeading } from "@/components/Section";
 import { formatDate, posts } from "@/content/posts";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Blog",
   description:
     "How Prequel is built — capture, rendering and the decisions that only look obvious afterwards.",
-};
+  path: "/blog",
+});
 
 export default function BlogIndex() {
   return (

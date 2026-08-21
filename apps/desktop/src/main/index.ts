@@ -5,6 +5,7 @@ import { validateEnv } from "@prequel/env";
 import { CaptureFlow } from "./capture-flow.js";
 import { broadcastDockState, registerIpc } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
+import { seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
@@ -149,11 +150,27 @@ void app.whenReady().then(() => {
    * panel follows when it is done. Checked on every launch rather than only the
    * first: a permission can be taken away again in System Settings.
    */
+  // A Mac that has never run Prequel gets the login item, so the recorder is
+  // already in the menu bar the next time something worth capturing happens —
+  // nobody goes looking for a screen recorder *before* the thing they wanted to
+  // record. Seeded only while the welcome flow is unfinished, which is what
+  // stops it reinstating itself after someone has turned it off.
+  if (!preferences.get().welcomed) seedLoginItem();
+
   void (async () => {
     const granted = (await permissionStates()).find((state) => state.id === "screen")?.granted;
 
-    if (preferences.get().welcomed && granted) flow!.open();
-    else welcome.open();
+    if (!preferences.get().welcomed || !granted) {
+      welcome.open();
+      return;
+    }
+
+    // At login the app is starting because the Mac did, not because anyone
+    // asked it to — so it takes its place in the menu bar and stays out of the
+    // way. A panel over the desktop every time the machine boots is something
+    // to be dismissed, which is the opposite of what opening at login is for.
+    if (wasOpenedAtLogin()) log("info", "opened at login: staying in the menu bar");
+    else flow!.open();
   })();
 
   // The tray title and the panel both show elapsed time, so it has to tick even

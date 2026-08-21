@@ -77,6 +77,18 @@ const STUB_MP4 = Buffer.from(
 const CAMERA_START_MS = 250;
 
 /**
+ * The microphone's plausible warm-up.
+ *
+ * Non-zero for the same reason the camera's is. Every session media file is
+ * written zero-based, so a track's late start exists only in the manifest —
+ * and a transcript's word times are the provider's offsets into `mic.m4a` plus
+ * exactly this number. A fake that started the microphone at zero would let
+ * captions that are systematically a fifth of a second early pass every test
+ * and every manual check on this machine.
+ */
+const MIC_START_MS = 180;
+
+/**
  * Writes the session manifest, as the native recorder does on stop.
  *
  * The offsets matter more than the file bytes: the camera track starts late,
@@ -121,12 +133,17 @@ function writeManifest(
   for (const kind of ["system_audio", "microphone"] as const) {
     const requested = kind === "system_audio" ? request.systemAudio : request.microphone;
     if (!requested) continue;
+
+    // System audio is tapped from the same stream as the screen and starts with
+    // it; the microphone is a device and has to open first.
+    const start = kind === "microphone" ? MIC_START_MS * NS_PER_MS : 0;
+
     tracks.push({
       kind,
       file_name: TRACK_FILE_NAMES[kind],
-      start: 0,
+      start,
       end: duration,
-      samples: Math.round((summary.durationMs / 1000) * 48_000),
+      samples: Math.round(((summary.durationMs - start / NS_PER_MS) / 1000) * 48_000),
       dropped: 0,
     });
   }
@@ -171,6 +188,10 @@ export function createFakeRecorder(): Recorder {
     // Named as AVFoundation would, without Chromium's trailing USB ids, so the
     // name-matching the real flow depends on is exercised rather than bypassed.
     listCameras: () => [{ id: "fake-camera-0", name: "FaceTime HD Camera" }],
+    // No device to warm, and nothing that could fail: the fake exists so the
+    // whole flow runs on a machine with no camera at all.
+    prepareCamera: () => Promise.resolve(),
+    releaseCamera: () => {},
 
     startRecording: async (next) => {
       if (state !== "Idle") {

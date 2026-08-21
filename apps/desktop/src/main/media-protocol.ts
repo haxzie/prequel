@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { protocol } from "electron";
 
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
+import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, mediaUrl as urlFor } from "../shared/media-url.js";
 import { RECORDINGS_DIR } from "./session.js";
@@ -112,11 +113,32 @@ export function resolveMediaPath(url: string, root = RECORDINGS_DIR): string | n
 /** The app's own icon, which the welcome window shows. */
 const APP_ICON = "app-icon.png";
 
+/**
+ * `permission-camera.png` and its three siblings, which the welcome window's
+ * permission rows show.
+ *
+ * Flat names for what is a directory on disk, because the asset route takes a
+ * single path segment and nothing more — that is the whole reason it has
+ * nothing to traverse. Widening it to two would buy a tidier URL and give this
+ * handler a directory to be walked out of.
+ */
+const PERMISSION_ICON = /^permission-([a-z]+)\.png$/;
+
 function assetPath(fileName: string): string | null {
   // Sits beside the backgrounds rather than in them, so it is served without
   // becoming something the background picker offers as a wallpaper.
   if (fileName === APP_ICON) {
     return fileURLToPath(new URL(`../../resources/${APP_ICON}`, import.meta.url));
+  }
+
+  // Matched against the permission ids for the same reason the backgrounds are
+  // matched against the presets: an id that is not one of ours is not a name to
+  // be sanitised, it is a request for a file that does not exist.
+  const icon = PERMISSION_ICON.exec(fileName);
+  if (icon) {
+    const id = icon[1]!;
+    if (!(PERMISSION_IDS as readonly string[]).includes(id)) return null;
+    return fileURLToPath(new URL(`../../resources/permissions/${id}.png`, import.meta.url));
   }
 
   if (!BACKGROUND_PRESETS.some((preset) => preset.file === fileName)) return null;

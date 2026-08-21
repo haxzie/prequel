@@ -1,0 +1,39 @@
+This is the oldest complaint about screen recording on a Mac. macOS exposes no
+route to system audio through QuickTime, so the standard advice is to install a
+virtual audio driver like BlackHole, route your output through it, record, and
+then remember to route it back.
+
+It works. It is also a kernel-adjacent audio driver installed to solve a
+recording problem, and it silently breaks your speakers the first time you
+forget the last step.
+
+## Both, directly, as separate tracks
+
+Prequel captures system audio and your microphone alongside the screen, with no
+virtual device involved and nothing to switch back afterwards.
+
+They are separate tracks with separate gains. That distinction is worth more
+than it sounds. A notification landing at full volume over a sentence is a
+slider afterwards instead of a reason to record the whole thing again, and a
+demo where the app's own sound matters can have that sound sitting under your
+narration at whatever balance you want rather than whatever balance the room
+happened to produce.
+
+The webcam is a fourth track, captured at the same time and never burned into
+the screen recording.
+
+## Why your screen recording is black
+
+If you have arrived here from a recording that came out black: that is almost
+always the Screen Recording permission. macOS hands back empty frames rather
+than an error when it has not been granted, which reads as a broken app rather
+than a missing checkbox. Grant it under Privacy and Security in System
+Settings, then start the recording again.
+
+## What you get out
+
+One MP4, H.264 or HEVC, at up to 4K and up to 120 frames per second, at a
+constant frame rate — which is what keeps audio in sync after an upload.
+
+Recording, editing and export all happen locally, on your Mac's own media
+engine. Nothing is uploaded to produce the file.

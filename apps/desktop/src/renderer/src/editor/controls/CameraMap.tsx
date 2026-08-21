@@ -136,13 +136,21 @@ export function CameraMap({
         STOPS.map((left) => {
           const here = Math.abs(at.x - left) < 0.01 && Math.abs(at.y - top) < 0.01;
 
+          // Named once and used twice. A stop is six pixels across with nothing
+          // written on it, so the tooltip is the only way to find out what it
+          // does without pressing it — and it has to say the same thing the
+          // screen reader hears, which two copies of the expression would stop
+          // guaranteeing the first time one of them was edited.
+          const name = `Move to ${top === 0.5 ? "middle" : top < 0.5 ? "top" : "bottom"} ${
+            left === 0.5 ? "centre" : left < 0.5 ? "left" : "right"
+          }`;
+
           return (
             <button
               key={`${left}-${top}`}
               type="button"
-              aria-label={`Move to ${top === 0.5 ? "middle" : top < 0.5 ? "top" : "bottom"} ${
-                left === 0.5 ? "centre" : left < 0.5 ? "left" : "right"
-              }`}
+              aria-label={name}
+              title={name}
               className={cn(
                 "absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors",
                 here ? "bg-white/60" : "bg-white/20 hover:bg-white/40",

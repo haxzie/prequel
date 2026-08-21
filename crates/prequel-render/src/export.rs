@@ -238,6 +238,11 @@ fn run(
             .zip(file_time(source, request.camera_offset))
             .and_then(|(reader, at)| reader.frame_at(at));
 
+        // Immediately before the render and never inside it — see
+        // `load_captions`. Caption bitmaps are decoded on demand rather than
+        // preloaded, because there is one per cue rather than one per session.
+        compositor.load_captions(&request.session_dir, &slice.plan, source);
+
         let composited = compositor.render(&slice.plan, screen_frame, camera_frame, source)?;
         if !writer.append(&composited, index * frame_duration)? {
             return Err(Error::Write {
@@ -434,6 +439,10 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
                     ..
                 } => push(path, &mut paths),
                 crate::plan::PlanItem::Cursor { path, .. } => push(path, &mut paths),
+                // Captions are deliberately not here. They are decoded on
+                // demand by `Compositor::load_captions`, because there is one
+                // per cue rather than one per session and preloading a long
+                // take's worth at 4K is over a gigabyte of wired memory.
                 _ => {}
             }
         }

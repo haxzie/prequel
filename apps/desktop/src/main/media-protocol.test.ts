@@ -6,7 +6,8 @@
  * correct range handling a `<video>` cannot seek — playback works until the
  * buffer runs out and then simply stops, with nothing to say why.
  */
-import { assetUrl } from "../shared/media-url.js";
+import { assetUrl, permissionIconUrl } from "../shared/media-url.js";
+import { PERMISSION_IDS } from "../shared/contract.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -175,5 +176,26 @@ describe("shipped assets", () => {
     expect(resolveMediaPath(assetUrl("../../../etc/passwd"), ROOT)).toBeNull();
     expect(resolveMediaPath(assetUrl("secrets.jpg"), ROOT)).toBeNull();
     expect(resolveMediaPath("prequel-media://asset/a/b.jpg", ROOT)).toBeNull();
+  });
+
+  it("serves a permission icon for every permission the welcome window asks for", () => {
+    // Every id, not a sample: the welcome window draws one row per id and a
+    // name this route does not know is a row with a broken image in it.
+    for (const id of PERMISSION_IDS) {
+      const path = resolveMediaPath(permissionIconUrl(id), ROOT);
+
+      expect(path).not.toBeNull();
+      expect(path).toContain(`resources/permissions/${id}.png`);
+    }
+  });
+
+  it("refuses a permission icon that is not a permission", () => {
+    // The id is matched against `PERMISSION_IDS`, so the directory it names is
+    // never built from anything the renderer chose. Traversal is spelled out
+    // here because `permissions/` is a real directory to be walked out of,
+    // which the single-file `app-icon.png` branch above is not.
+    expect(resolveMediaPath(assetUrl("permission-secrets.png"), ROOT)).toBeNull();
+    expect(resolveMediaPath(assetUrl("permission-../../../etc/passwd.png"), ROOT)).toBeNull();
+    expect(resolveMediaPath(assetUrl("permission-.png"), ROOT)).toBeNull();
   });
 });

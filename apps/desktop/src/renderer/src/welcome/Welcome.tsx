@@ -1,17 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { AppInfo, PermissionId } from "../../../shared/contract";
-import { assetUrl } from "../../../shared/media-url";
+import { assetUrl, permissionIconUrl } from "../../../shared/media-url";
 import { cn } from "../lib/cn";
-import {
-  AudioIcon,
-  CameraIcon,
-  CheckIcon,
-  CommandIcon,
-  CursorIcon,
-  ScreenIcon,
-  ShiftIcon,
-} from "../editor/icons";
+import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
 import { usePermissions, type Permissions } from "./usePermissions";
 
 /**
@@ -33,31 +25,43 @@ const PERMISSIONS: {
   label: string;
   /** One line. Two wrap at this width, and a wrapped row reads as a warning. */
   detail: string;
-  icon: ReactNode;
+  /**
+   * Whether macOS decides this one once per process.
+   *
+   * Screen Recording and Accessibility are both read from a value the system
+   * fixes at launch — `AXIsProcessTrusted` caches for the life of the process
+   * exactly as the screen check does. An approval given in System Settings
+   * while Prequel is running therefore never reaches the running copy, and the
+   * row goes on saying no however many times it is re-read. Camera and
+   * microphone come back from a prompt and take effect at once, so offering
+   * them a restart would be telling the user to fix something that is not
+   * broken.
+   */
+  needsRestart: boolean;
 }[] = [
   {
     id: "screen",
     label: "Screen Recording",
     detail: "Everything Prequel records comes through it.",
-    icon: <ScreenIcon />,
+    needsRestart: true,
   },
   {
     id: "accessibility",
     label: "Accessibility",
     detail: "Lets the automatic zooms find your clicks and typing.",
-    icon: <CursorIcon />,
+    needsRestart: true,
   },
   {
     id: "camera",
     label: "Camera",
     detail: "For the webcam bubble, only when you turn it on.",
-    icon: <CameraIcon />,
+    needsRestart: false,
   },
   {
     id: "microphone",
     label: "Microphone",
     detail: "For your voice, only when you turn it on.",
-    icon: <AudioIcon />,
+    needsRestart: false,
   },
 ];
 
@@ -174,23 +178,30 @@ function Wash() {
 function Dots({ step, onStep }: { step: number; onStep: (step: number) => void }) {
   return (
     <div className="flex items-center gap-2" role="tablist" aria-label="Steps">
-      {Array.from({ length: STEPS }, (_, index) => (
-        <button
-          key={index}
-          type="button"
-          role="tab"
-          aria-selected={index === step}
-          aria-label={`Step ${index + 1} of ${STEPS}`}
-          disabled={index > step}
-          className={cn(
-            "size-2 rounded-full transition-colors",
-            index === step ? "bg-editor-fg" : "bg-white/20",
-            index < step && "hover:bg-white/40",
-            index > step && "cursor-default",
-          )}
-          onClick={() => onStep(index)}
-        />
-      ))}
+      {Array.from({ length: STEPS }, (_, index) => {
+        const name = `Step ${String(index + 1)} of ${String(STEPS)}`;
+
+        return (
+          <button
+            key={index}
+            type="button"
+            role="tab"
+            aria-selected={index === step}
+            aria-label={name}
+            // A dot carries no writing, so hovering one is the only way to find
+            // out which step it is before committing to going back to it.
+            title={name}
+            disabled={index > step}
+            className={cn(
+              "size-2 rounded-full transition-colors",
+              index === step ? "bg-editor-fg" : "bg-white/20",
+              index < step && "hover:bg-white/40",
+              index > step && "cursor-default",
+            )}
+            onClick={() => onStep(index)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -261,24 +272,34 @@ function PermissionRow({
     // of the window carries through the rows instead of stopping dead at the
     // first one.
     <li className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-3">
-      <span
-        className={cn(
-          "mt-0.5 grid size-7 flex-none place-items-center rounded-lg [&_svg]:size-4",
-          granted ? "bg-export/20 text-export" : "bg-white/5 text-editor-muted",
-        )}
-      >
-        {permission.icon}
-      </span>
+      {/* macOS's own icon for the pane this permission is granted in, so the
+          row and the System Settings window it sends you to show the same
+          picture — the artwork is the instruction for what to look for once you
+          are there, which a glyph of our own cannot be.
+
+          No tinted square behind it any more. These carry their own rounded
+          square and their own colour, and a second one around them read as an
+          icon inside a button. The grant state is the right-hand side of the
+          row, where it can be a word rather than a hue. */}
+      <img
+        src={permissionIconUrl(permission.id)}
+        alt=""
+        width={32}
+        height={32}
+        className="mt-0.5 size-8 flex-none"
+      />
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="text-xs font-medium">{permission.label}</p>
         <p className="text-[11px] leading-relaxed text-editor-muted">{permission.detail}</p>
 
         {/* Only where it can actually be the problem, and only while it is one.
-            macOS decides Screen Recording once per process, so an approval
-            given while Prequel is running does not reach the running copy —
-            the row stays red and the app looks broken. */}
-        {!granted && permission.id === "screen" && (
+            See `needsRestart` above: for these two, an approval given while
+            Prequel is running does not reach the running copy, so the row stays
+            red and the app looks broken. Without this the user has granted the
+            permission, can see that they have granted it, and is told they have
+            not — with nothing on screen to do about it. */}
+        {!granted && permission.needsRestart && (
           <p className="pt-1 text-[11px] text-editor-muted">
             Already allowed it in System Settings?{" "}
             <button
@@ -360,7 +381,59 @@ function ReadyStep({ permissions }: { permissions: Permissions }) {
         </li>
         <li>Stop, and the editor opens on what you just recorded.</li>
       </ul>
+
+      <LoginItemToggle />
     </div>
+  );
+}
+
+/**
+ * Opening at login, offered where the user first meets the app.
+ *
+ * Already on by default — main turns it on before this window opens — so this
+ * is a switch that says so rather than a request. It is worth the room: a
+ * menu-bar recorder that is not running has to be found and launched *before*
+ * the thing worth capturing happens, which is never when anyone thinks of it.
+ * And a default applied silently is the sort of thing users find later in
+ * System Settings and resent; put where they can see it, it is a choice.
+ *
+ * `null` until the first read lands, so the switch cannot draw itself off and
+ * then flick on — which would read as the app having changed it just then.
+ */
+function LoginItemToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void window.prequel.loginItem.get().then(setEnabled);
+  }, []);
+
+  if (enabled === null) return null;
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      className="flex w-fit items-center gap-2.5 text-sm text-editor-muted hover:text-editor-fg"
+      // Set from what main answers rather than from what was asked for: under
+      // `pnpm dev` there is no app bundle to register as a login item, and a
+      // switch that ticks anyway would be lying about it.
+      onClick={() => void window.prequel.loginItem.set(!enabled).then(setEnabled)}
+    >
+      {/* The same treatment a granted permission gets a step earlier, so "on"
+          means the same thing in both places. */}
+      <span
+        className={cn(
+          "grid size-[18px] flex-none place-items-center rounded-md ring-1 transition-colors ring-inset [&_svg]:size-3",
+          enabled
+            ? "bg-export/20 text-export ring-export/30"
+            : "bg-white/5 text-transparent ring-white/15",
+        )}
+      >
+        <CheckIcon />
+      </span>
+      Open Prequel at login
+    </button>
   );
 }
 

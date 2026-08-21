@@ -21,7 +21,7 @@ import {
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { PanelIcon, TrashIcon, WandIcon } from "./icons";
+import { TrashIcon, WandIcon } from "./icons";
 import type { Images } from "./webgl";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
@@ -76,6 +76,16 @@ export function Editor() {
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
   const [panelOpen, setPanelOpen] = useState(true);
+  /**
+   * What the panel is showing, and so what brings it back.
+   *
+   * The panel's own close button is the only way to put it away, and closing it
+   * clears the selection — so selecting anything again is both the natural way
+   * to want it back and proof that it is wanted. Without this, a click on a clip
+   * put that clip's settings somewhere the user could no longer reach, and the
+   * click read as doing nothing at all.
+   */
+  const selected = state.selectedSliceId ?? state.selectedZoomId;
   const [exportOpen, setExportOpen] = useState(false);
   /** A still of the composition, taken when the export dialog opens. */
   const [poster, setPoster] = useState<string | null>(null);
@@ -85,7 +95,10 @@ export function Editor() {
     () =>
       window.prequel.editor.onOpen((opened) => {
         setSession(opened);
-        dispatch({ type: "load", project: opened.project });
+        // The manifest's duration, which is the only place the recording's real
+        // length is known — the project itself does not carry one, and every
+        // trim is clamped against this.
+        dispatch({ type: "load", project: opened.project, duration: opened.manifest.duration });
       }),
     [],
   );
@@ -208,6 +221,10 @@ export function Editor() {
   useEditorImages(session, state.project, setImages);
   useShortcuts(media, dispatch, state);
 
+  useEffect(() => {
+    if (selected !== null) setPanelOpen(true);
+  }, [selected]);
+
   if (!session) {
     return (
       <Shell>
@@ -221,20 +238,6 @@ export function Editor() {
       name={session.name}
       actions={
         <>
-          <button
-            type="button"
-            aria-pressed={panelOpen}
-            title={panelOpen ? "Hide the panel" : "Show the panel"}
-            aria-label={panelOpen ? "Hide the panel" : "Show the panel"}
-            className={cn(
-              "no-drag grid size-7 place-items-center rounded-lg [&_svg]:size-4",
-              panelOpen ? "text-editor-fg" : "text-editor-muted",
-              "hover:bg-white/10 hover:text-editor-fg",
-            )}
-            onClick={() => setPanelOpen((open) => !open)}
-          >
-            <PanelIcon open={panelOpen} />
-          </button>
           {/* Runs the automatic pass again over the edit as it stands. Enabled
               only when the recording gave it something to work from — with no
               clicks and no typing there is nothing to find, and a button that
@@ -331,6 +334,15 @@ export function Editor() {
               frame={state.project.frame}
               cameraSource={cameraSource}
               onPreviewZoom={previewZoom}
+              // Deselects both kinds, rather than working out which one the
+              // panel is showing: only one can be set at a time, and clearing
+              // the other is free where asking which is live is a branch that
+              // has to be kept right.
+              onClose={() => {
+                dispatch({ type: "select", sliceId: null });
+                dispatch({ type: "selectZoom", zoomId: null });
+                setPanelOpen(false);
+              }}
               wallpaperUrl={mediaUrl(recordingName(session.dir), WALLPAPER_FILE_NAME)}
               onPickWallpaper={async () => {
                 const result = await window.prequel.editor.wallpaper(session.dir);

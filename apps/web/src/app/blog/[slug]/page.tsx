@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import { findPost, formatDate, posts } from "@/content/posts";
+import { blogPostingJsonLd, pageMetadata } from "@/lib/seo";
 
 export function generateStaticParams() {
   return posts.map((post) => ({ slug: post.slug }));
@@ -19,9 +21,10 @@ export async function generateMetadata({ params }: PageProps<"/blog/[slug]">): P
   const post = findPost(slug);
   if (!post) return {};
 
-  return {
+  return pageMetadata({
     title: post.title,
     description: post.excerpt,
+    path: `/blog/${post.slug}`,
     openGraph: {
       type: "article",
       title: post.title,
@@ -29,7 +32,7 @@ export async function generateMetadata({ params }: PageProps<"/blog/[slug]">): P
       publishedTime: post.date,
       url: `/blog/${post.slug}`,
     },
-  };
+  });
 }
 
 export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
@@ -64,6 +67,8 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
         {/* Element styling comes from src/mdx-components.tsx, so the MDX itself
             stays free of class names. */}
         <Body />
+
+        <JsonLd data={blogPostingJsonLd(post)} />
 
         <aside className="mt-16 rounded-2xl border border-line bg-surface p-7">
           <h2 className="text-base font-medium text-fg">Prequel is in development</h2>

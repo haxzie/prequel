@@ -16,6 +16,7 @@ import type {
   SelectionResult,
   SelectionSetup,
   Target,
+  TranscribeProgress,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
@@ -36,6 +37,7 @@ export type {
   SelectionResult,
   SelectionSetup,
   Target,
+  TranscribeProgress,
 };
 
 const api = {
@@ -60,6 +62,21 @@ const api = {
 
     /** Quits and comes back, which is what a new Screen Recording grant needs. */
     relaunch: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.relaunchApp),
+  },
+
+  loginItem: {
+    /** Whether macOS starts Prequel when the user logs in. */
+    get: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.loginItem),
+
+    /**
+     * Adds or removes the login item, and answers with what macOS ended up with.
+     *
+     * The answer rather than the request: under `pnpm dev` there is no bundle to
+     * register, so the switch has to show what actually happened instead of
+     * what was asked for.
+     */
+    set: (enabled: boolean): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.setLoginItem, enabled),
   },
 
   dock: {
@@ -113,6 +130,8 @@ const api = {
     choose: (result: SelectionResult): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.selectionChoose, result),
     cancel: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.selectionCancel),
+    /** The countdown has started; main opens the camera so it can warm up. */
+    countdown: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.selectionCountdown),
   },
 
   editor: {
@@ -187,6 +206,25 @@ const api = {
        */
       drag: (path: string, icon: string): void => {
         ipcRenderer.send(IPC_CHANNELS.exportDrag, path, icon);
+      },
+    },
+
+    transcribe: {
+      start: (dir: string): Promise<IpcResult<void>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.transcribeStart, dir),
+      cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.transcribeCancel),
+
+      /**
+       * Subscribes to transcription progress.
+       *
+       * The finished transcript arrives on the terminal event rather than from
+       * `start`, for the same reason the export's does: one channel, and no
+       * race between the result and the tick before it.
+       */
+      onProgress: (listener: (progress: TranscribeProgress) => void): (() => void) => {
+        const handler = (_event: unknown, progress: TranscribeProgress) => listener(progress);
+        ipcRenderer.on(IPC_CHANNELS.transcribeProgress, handler);
+        return () => ipcRenderer.off(IPC_CHANNELS.transcribeProgress, handler);
       },
     },
   },

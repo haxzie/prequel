@@ -34,6 +34,7 @@
     "electron-vite": "^5.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-grab": "^0.2.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",

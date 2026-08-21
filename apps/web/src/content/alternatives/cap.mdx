@@ -1,0 +1,62 @@
+## What is Cap, and what is it good at?
+
+Cap is an open-source screen recorder — AGPL v3, with the whole platform
+self-hostable through Docker — and it is the closest thing on this page to what
+Prequel does.
+
+Its Studio Mode has smart auto-zoom that follows clicks, cursor smoothing and
+click effects, custom backgrounds and rounded corners, separate control of
+microphone and system audio levels, and 4K 60 export. It states plainly that all
+recording and editing happen locally on your device, and it lets you connect
+your own S3 bucket or Google Drive instead of its cloud. It runs on macOS and
+Windows.
+
+There is a free tier covering Studio Mode and 4K 60 export for personal use,
+with shared links capped at five minutes. A desktop licence is $29 for a single
+user, and Cap Pro is $12 per user per month or $8.16 billed annually.
+
+That is a genuinely good product, honestly priced, and if open source is a
+requirement for you then the rest of this page is academic — choose Cap.
+
+## Where the usual argument does not work
+
+Most comparisons on this site lean on two things: the recording never leaves
+your machine, and there is no subscription. Neither is a difference here.
+
+Cap processes locally and says so. Cap has a one-off licence tier. Cap is more
+open than Prequel will ever be, because Prequel is not open source at all. A
+comparison page that claimed "local-only" as a differentiator against Cap would
+be wrong, and we would rather say that than hope you did not check.
+
+Worth noting one oddity in their own pricing copy: the $29 desktop licence is
+described as perpetual and as billed yearly in the same place. We are not going
+to resolve that for them — check before buying.
+
+## So why choose Prequel?
+
+Three specific things, and they are narrow.
+
+**It is macOS only, and built that way.** Capture is ScreenCaptureKit,
+compositing is Metal, encoding is VideoToolbox, and the core is Rust. There is
+no cross-platform abstraction in the middle, which is a real cost — no Windows
+build, ever — bought for a narrow benefit.
+
+**It exports higher.** Up to 4K at 120 frames per second, at a constant frame
+rate, against Cap's 4K 60.
+
+**Typing drives zooms.** Cap's auto-zoom follows clicks. Prequel also treats a
+burst of typing as a moment worth pushing into, with a zoom target that follows
+the text rather than the pointer. If you record code, terminals or forms, that
+is the difference between a push that tracks your edit and one that sits on the
+mouse.
+
+## What do you give up by switching?
+
+Windows, and the source code.
+
+Cap runs on both platforms; Prequel does not and will not. Cap can be audited,
+forked, self-hosted and kept running by you indefinitely; Prequel cannot. For a
+lot of people that is decisive on its own, and it should be.
+
+If neither matters to you and you are on a Mac, the argument narrows to export
+ceiling, the typing-driven zooms, and which one you prefer using.

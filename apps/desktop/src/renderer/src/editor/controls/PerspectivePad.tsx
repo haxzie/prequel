@@ -1,6 +1,7 @@
 import { useRef } from "react";
 
 import { cn } from "../../lib/cn";
+import { PerspectivePlate } from "./PerspectivePlate";
 
 /**
  * Tilt and yaw, set by dragging a picture of the result.
@@ -105,14 +106,10 @@ export function PerspectivePad({
       <div className="absolute inset-y-0 left-1/2 w-px bg-white/10" />
 
       <div className="absolute inset-0 grid place-items-center" style={{ perspective }}>
-        <div
+        <PerspectivePlate
+          tilt={tilt}
+          yaw={yaw}
           className="h-12 w-20 rounded-[3px] border border-selected/70 bg-selected/25"
-          style={{
-            // Pitch then yaw, the order `tiltedQuad` composes them in. Reversing
-            // it gives a different result at large angles and the plate would
-            // stop matching the picture.
-            transform: `rotateX(${String(-tilt)}deg) rotateY(${String(yaw)}deg)`,
-          }}
         />
       </div>
     </div>

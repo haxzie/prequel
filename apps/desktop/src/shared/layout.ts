@@ -171,7 +171,45 @@ export type PlanItem =
       /** Point of the image that lands on the position, as a fraction of it. */
       hotspot: { x: number; y: number };
       points: CursorPoint[];
+    }
+  | {
+      kind: "caption";
+      /** Bitmap to draw, relative to the session directory. */
+      path: string;
+      /**
+       * The bitmap's own size in pixels.
+       *
+       * Carried rather than read off the texture so `captionAt` is arithmetic
+       * on plain numbers, and so the two rasterisers cannot disagree about what
+       * a word box is measured against.
+       */
+      bitmap: Size;
+      /** Where the whole bitmap lands in the output frame, in output pixels. */
+      dstRect: Rect;
+      /** The source-time range the cue is on screen for. */
+      span: { start: number; end: number };
+      /**
+       * Empty draws the whole bitmap across the span — the unlit layer.
+       * Non-empty draws only the word active at the moment, cropped out of a
+       * bitmap laid out identically — the lit layer. Two items rather than one
+       * item emitting two draws, so every plan item stays one quad.
+       */
+      words: CaptionWord[];
     };
+
+/** One word's box within a caption bitmap, and when it is the spoken one. */
+export interface CaptionWord {
+  /** Source time this word becomes the active one. */
+  at: number;
+  end: number;
+  /** The word's box, in bitmap pixels. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** How much larger it is drawn than laid out, about its own centre. */
+  scale: number;
+}
 
 export type Paint =
   | { kind: "solid"; color: string }
@@ -212,7 +250,20 @@ export function buildRenderPlan(
   items.push({ kind: "fill", rect: full, paint: toPaint(background.background) });
 
   if (sources.screen) {
-    const padding = background.padding * unit;
+    // `cover` fills the frame, and the padding does not apply to it.
+    //
+    // Insetting first and then filling what was left made "Fill" crop a
+    // recording whose shape already matched the frame: the padding is a
+    // fraction of the *shorter* edge taken off all four sides, so the box left
+    // behind is always wider than the frame it sits in, and filling that box
+    // means cropping to a shape nothing was recorded in. A 16:9 screen in a
+    // 16:9 frame lost six per cent of its picture and still stopped short of
+    // the edges — a crop that bought nothing, which is exactly how it read.
+    //
+    // The two settings are answers to the same question. `contain` says show
+    // all of it, and padding is how much room to leave around it; `cover` says
+    // leave no gaps, and there is no room to leave.
+    const padding = layout.screenFit === "cover" ? 0 : background.padding * unit;
     const area: Rect = {
       x: padding,
       y: padding,
@@ -223,16 +274,22 @@ export function buildRenderPlan(
     const { dstRect, srcRect } = place(sources.screen, area, layout);
     const shape: Shape = { radius: background.cornerRadius * unit, exponent: 2 };
 
-    // One track, shared by everything that makes up the picture — the shadow
-    // under it, the image, and the border around it all move together, because
-    // they are one object.
-    const motion = zoomKeys(
+    // Room around the shadow for its blur to fall off in, in output pixels.
+    // Both rasterisers take it back off again to find the silhouette.
+    const blur = background.shadowBlur * unit;
+    const spread = (blur / 2) * SHADOW_SPREAD;
+
+    // One track for everything that makes up the picture — the image and the
+    // border around it move together, because they are one object — and a
+    // second for the shadow, which is the same shape with the bleed around it.
+    const { keys: motion, shadow: shadowMotion } = zoomKeys(
       zooms ?? [],
       frame,
       dstRect,
       srcRect,
       sources.screen,
       shape.radius,
+      spread,
       cursor,
     );
     const moving = motion.length > 0 ? { motion } : {};
@@ -240,12 +297,19 @@ export function buildRenderPlan(
     if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
-        rect: dstRect,
+        rect: {
+          x: dstRect.x - spread,
+          y: dstRect.y - spread,
+          width: dstRect.width + spread * 2,
+          height: dstRect.height + spread * 2,
+        },
+        // The picture's own radius, not the grown rectangle's: what is being
+        // drawn is the silhouette, and the bleed is only somewhere to draw it.
         shape,
-        blur: background.shadowBlur * unit,
+        blur,
         dy: background.shadowY * unit,
         color: rgba("#000000", background.shadowOpacity),
-        ...moving,
+        ...(shadowMotion.length > 0 ? { motion: shadowMotion } : {}),
       });
     }
 
@@ -280,6 +344,42 @@ export function buildRenderPlan(
   if (sources.camera && layout.cameraVisible) {
     const dstRect = cameraRect(frame, layout, sources.camera);
     const wide = layout.cameraShape === "wide";
+    const bubbleShape: Shape = {
+      // A circle is the degenerate case of the rounded rect, so there is one
+      // code path rather than a special case that could drift from it. The
+      // radius is measured off the shorter edge, or a wide bubble's corners
+      // would grow with its width and swallow the picture.
+      radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
+      exponent: SHAPE_EXPONENT[layout.cameraShape],
+    };
+
+    // The bubble's own shadow, which is what lifts it off the picture instead
+    // of leaving it stuck on like a sticker.
+    //
+    // Measured against the bubble rather than against the frame. Every other
+    // distance here is a fraction of the frame's shorter edge, and the bubble
+    // is a fraction of that again — so a blur sized for the screen is one this
+    // would vanish into, and a drop sized for the screen would put the shadow
+    // out from under it entirely. A small object casts a small tight shadow.
+    if (background.shadowOpacity > 0) {
+      const bubble = Math.min(dstRect.width, dstRect.height);
+      const bubbleBlur = background.shadowBlur * bubble;
+      const bubbleSpread = (bubbleBlur / 2) * SHADOW_SPREAD;
+
+      items.push({
+        kind: "shadow",
+        rect: {
+          x: dstRect.x - bubbleSpread,
+          y: dstRect.y - bubbleSpread,
+          width: dstRect.width + bubbleSpread * 2,
+          height: dstRect.height + bubbleSpread * 2,
+        },
+        shape: bubbleShape,
+        blur: bubbleBlur,
+        dy: background.shadowY * bubble,
+        color: rgba("#000000", background.shadowOpacity * CAMERA_SHADOW),
+      });
+    }
 
     items.push({
       kind: "image",
@@ -295,14 +395,7 @@ export function buildRenderPlan(
         layout.cameraZoom,
       ),
       dstRect,
-      shape: {
-        // A circle is the degenerate case of the rounded rect, so there is one
-        // code path rather than a special case that could drift from it. The
-        // radius is measured off the shorter edge, or a wide bubble's corners
-        // would grow with its width and swallow the picture.
-        radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
-        exponent: SHAPE_EXPONENT[layout.cameraShape],
-      },
+      shape: bubbleShape,
       mirror: layout.cameraMirror,
     });
   }
@@ -315,14 +408,110 @@ export function buildRenderPlan(
 const ZOOM_SAMPLE_NS = 1_000_000_000 / 30;
 
 /**
+ * The pointer's own shake, and nothing more, in seconds.
+ *
+ * A hand on a trackpad is not a camera operator: it overshoots, corrects and
+ * trembles, and a shot that reproduces that exactly is unwatchable. This is the
+ * time constant of the filter that stands between the two. It only has to
+ * swallow the tremble — where the shot goes is settled further down, by
+ * something that does not have to run backwards to do it.
+ */
+const JITTER_SECONDS = 0.15;
+
+/**
+ * The still area in the middle of the frame, as a fraction of the distance from
+ * the centre to the edge.
+ *
+ * The one thing that makes a followed zoom watchable. A camera that holds its
+ * subject dead centre is not steady, it is glued: every movement of the hand
+ * becomes `level` times as much movement of the entire picture, and the frame
+ * is never once allowed to rest. Real cameras keep their subject roughly in
+ * shot and move when it threatens to leave.
+ *
+ * A hard edge rather than a ramp. A ramp meant the camera was always answering
+ * *something* — a little at a quarter of the way out, more at a half — so the
+ * picture was never quite still and the box had no boundary anyone could point
+ * at. The step it puts in the target is not a step in the picture: a spring
+ * follows the target, and a spring's velocity is continuous even when what it
+ * is chasing jumps.
+ */
+const DEAD_ZONE = 0.28;
+
+/**
+ * How far from the middle the pointer may ever get, as the same fraction.
+ *
+ * The dead zone says when the camera starts moving; this says that it is not
+ * allowed to fall so far behind that the thing it is following leaves the shot.
+ * Zoomed in, a hand crossing the screen covers `level` times as much picture as
+ * it does desk, and a camera held to a dignified speed simply loses it — the
+ * pointer walks off the side of the frame and the shot is of nothing.
+ *
+ * Inside the frame with room to spare, so the pointer is caught before it
+ * reaches the edge rather than skidding along it.
+ */
+const KEEP_IN = 0.82;
+
+/**
  * How long the shot takes to catch up with the pointer, in seconds.
  *
- * A hand on a trackpad is not a camera operator: it overshoots, corrects, and
- * shakes, and a shot that copies it exactly is unwatchable. This is the time
- * constant of the filter that stands between the two — long enough to swallow a
- * twitch, short enough that a real move is not left behind.
+ * Slower than the filter it replaced, and causal rather than run in both
+ * directions. Both are affordable for the same reason: with a dead zone the
+ * pointer simply sits a little off centre while the camera closes the gap, and
+ * nobody reads that as a slow camera. Without one, any lag at all shows up as
+ * the pointer sliding out of the middle of the shot — which is why the filter
+ * that preceded this had to cheat, and why it moved before the hand did.
+ *
+ * Quick enough that `KEEP_IN` stays an emergency. A spring chasing a hand at a
+ * steady speed settles a fixed distance behind it — twice the speed over the
+ * natural frequency — and at three quarters of a second that lag plus the dead
+ * zone came to nearly the whole allowance, so an ordinary deliberate move was
+ * enough to trip the clamp and be dragged the rest of the way. The clamp is for
+ * flicks, not for someone crossing the screen on purpose.
  */
 const FOLLOW_SECONDS = 0.45;
+
+/**
+ * The fastest the picture may travel, in frame shorter-edges per second.
+ *
+ * A flick across the screen is someone going somewhere, not something to look
+ * at. Unbounded, the camera chases it at whatever speed the hand managed and
+ * the whole framing crosses in a few frames — the lurch that makes a followed
+ * zoom hard to watch even once the shake is gone.
+ *
+ * A shorter edge per second is a camera move; a flick is two orders of
+ * magnitude past it. Note that this bounds the *picture*, which travels `level`
+ * times as far as the hand does, so it bites well before the hand looks fast —
+ * that is the point, and the dead zone is what stops it reading as lag.
+ */
+const MAX_PAN = 0.9;
+
+/**
+ * How far past its own silhouette a shadow is drawn, in multiples of the blur.
+ *
+ * A blurred edge does not stop, it decays — but it was only ever rasterised as
+ * far as the shape casting it, and everything inside that shape is hidden under
+ * the picture. So the only part of the shadow anyone could see was the last
+ * sliver before the geometry ran out, at half opacity, ending on a hard line.
+ * That is what made it read as a slab of paint rather than as light.
+ *
+ * Three sigma is where the tail is under a hundredth of the peak and stopping
+ * is no longer something the eye can find.
+ *
+ * Both rasterisers subtract it back off to recover the silhouette — see
+ * `SHADOW_SPREAD` in `webgl.ts` and in `shaders.metal`. Changing it here alone
+ * moves the shadow relative to the thing casting it.
+ */
+export const SHADOW_SPREAD = 3;
+
+/**
+ * How much of the picture's shadow the camera bubble gets.
+ *
+ * Less than the picture's, which is a slab the size of the frame sitting on a
+ * background. A bubble is a small thing lying on top of that picture rather
+ * than on the backdrop, and a shadow as heavy as the one under the whole shot
+ * reads as a hole cut in it.
+ */
+const CAMERA_SHADOW = 0.7;
 
 /**
  * Turns zoom spans into a sampled destination rectangle.
@@ -342,9 +531,12 @@ function zoomKeys(
   srcRect: Rect,
   source: Size,
   radius: number,
+  /** How far the shadow's own track is grown past the picture's. */
+  spread: number,
   cursor?: CursorTrack | null,
-): RectKey[] {
+): { keys: RectKey[]; shadow: RectKey[] } {
   const keys: RectKey[] = [];
+  const shadow: RectKey[] = [];
 
   for (const zoom of zooms) {
     const span = zoom.source.end - zoom.source.start;
@@ -354,73 +546,100 @@ function zoomKeys(
     // a 0.6s ease on a 0.5s zoom would still be arriving when it has to leave.
     const ease = Math.min(zoom.speed * 1_000_000_000, span / 2);
     const steps = Math.max(2, Math.ceil(span / ZOOM_SAMPLE_NS));
+    const stepSeconds = span / steps / 1_000_000_000;
 
     const times = Array.from({ length: steps + 1 }, (_, step) =>
       Math.round(zoom.source.start + (span * step) / steps),
     );
 
-    // What the shot is aimed at, moment by moment. Smoothed for the pointer,
-    // because a hand's jitter is not something a camera should reproduce; a
-    // region is a fixed point and has nothing to smooth.
-    const aims =
+    const level = Math.max(1, zoom.level);
+
+    // How far the shot may look into the scaled picture before it pulls off the
+    // area the recording filled. Exactly the clamp `rectFor` used to apply to
+    // its own output, rearranged: with `target.x` being `frame.width / 2 -
+    // travel.x`, the two bounds on the rectangle are two bounds on the travel.
+    // The range comes out `base.width * (level - 1)` wide whatever the frame,
+    // and collapses to a point at `level === 1` — an un-zoomed shot has nowhere
+    // to pan to, which is correct.
+    const bounds = {
+      minX: frame.width / 2 - base.x,
+      maxX: frame.width / 2 - base.x + base.width * (level - 1),
+      minY: frame.height / 2 - base.y,
+      maxY: frame.height / 2 - base.y + base.height * (level - 1),
+    };
+
+    // What the shot is aimed at, moment by moment — mapped to output pixels
+    // here rather than followed as fractions of the capture. Mapping first is
+    // what lets the dead zone and the speed limit be stated against the frame,
+    // and it stops the steadying being stronger vertically than horizontally on
+    // every source that is not square.
+    const aims = times.map((at) => {
+      const point =
+        zoom.target === "region"
+          ? { x: zoom.x, y: zoom.y }
+          : zoom.target === "typing"
+            ? (typingCentre(cursor, at) ?? cursorFraction(cursor, at))
+            : cursorFraction(cursor, at);
+
+      return {
+        x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
+        y: ((point.y * source.height - srcRect.y) / srcRect.height) * base.height * level,
+      };
+    });
+
+    // A region is a fixed point: there is nothing to steady and nothing to
+    // catch up with, and putting it through the follow would only make the shot
+    // slide onto it after arriving.
+    const path =
       zoom.target === "region"
-        ? times.map(() => ({ x: zoom.x, y: zoom.y }))
-        : smoothPath(
-            times.map((at) =>
-              zoom.target === "typing"
-                ? (typingCentre(cursor, at) ?? cursorFraction(cursor, at))
-                : cursorFraction(cursor, at),
-            ),
-            span / steps / 1_000_000_000,
-          );
+        ? aims.map((aim) => ({
+            x: clamp(aim.x, bounds.minX, bounds.maxX),
+            y: clamp(aim.y, bounds.minY, bounds.maxY),
+          }))
+        : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds);
 
     for (let step = 0; step <= steps; step += 1) {
-      keys.push(
-        rectFor(zoom, times[step]!, aims[step]!, ease, frame, base, srcRect, source, radius),
-      );
+      const at = rectFor(zoom, times[step]!, path[step]!, ease, frame, base, radius, spread);
+      keys.push(at.key);
+      shadow.push(at.shadow);
     }
   }
 
-  return keys;
+  return { keys, shadow };
 }
 
 /** Where the picture sits, and how big it is, at one moment of one zoom. */
 function rectFor(
   zoom: ZoomSlice,
   at: number,
-  point: Point,
+  travel: Point,
   ease: number,
   frame: Size,
   base: Rect,
-  srcRect: Rect,
-  source: Size,
   radius: number,
-): RectKey {
+  spread: number,
+): { key: RectKey; shadow: RectKey } {
   // How far in, 0 at both edges of the span and 1 through the middle.
   const into = at - zoom.source.start;
   const left = zoom.source.end - at;
   const amount = easeAt(zoom, Math.min(ease > 0 ? into / ease : 1, ease > 0 ? left / ease : 1));
   const level = Math.max(1, zoom.level);
 
-  // The aim, as a point on screen right now — through the same
-  // source-to-destination mapping the picture itself is drawn with.
-  const focal = {
-    x: base.x + ((point.x * source.width - srcRect.x) / srcRect.width) * base.width,
-    y: base.y + ((point.y * source.height - srcRect.y) / srcRect.height) * base.height,
-  };
-
-  // Scaled about that point and then centred on it, so the thing being zoomed
-  // to ends up in the middle of the frame rather than wherever it happened to
-  // be. The picture is free to run past the edges — that is the difference
-  // between a camera pushing in and a still being cropped.
+  // Scaled about the aimed point and then centred on it, so the thing being
+  // zoomed to ends up in the middle of the frame rather than wherever it
+  // happened to be. The picture is free to run past the edges — that is the
+  // difference between a camera pushing in and a still being cropped.
   const width = base.width * level;
   const height = base.height * level;
 
-  // Clamped so the picture never pulls away from the area it filled: a zoom
-  // near an edge would otherwise show background where the recording was.
+  // `travel` is how far into the scaled picture the shot is looking, in output
+  // pixels, and `zoomKeys` has already held it inside the range that keeps the
+  // picture over the area it filled. The clamp stays as a guard rather than as
+  // the mechanism: doing it here is what used to stop the camera dead at an
+  // edge, and a stop is the one thing a smoothed path is supposed to be free of.
   const target = {
-    x: clamp(frame.width / 2 - (focal.x - base.x) * level, base.x + base.width - width, base.x),
-    y: clamp(frame.height / 2 - (focal.y - base.y) * level, base.y + base.height - height, base.y),
+    x: clamp(frame.width / 2 - travel.x, base.x + base.width - width, base.x),
+    y: clamp(frame.height / 2 - travel.y, base.y + base.height - height, base.y),
   };
 
   const moved: Rect = {
@@ -455,15 +674,41 @@ function rectFor(
   // started travelling.
   const vignette = zoom.vignette * amount;
 
+  // The corners grow with the picture. Left alone they would tighten as it
+  // scaled, which reads as the frame changing shape mid-move.
+  const grown = lerp(radius, radius * level, amount);
+
+  // The shadow's own rectangle: the same one, with room around it for the blur
+  // to fall off in. Projected here rather than inflated afterwards, because a
+  // tilted picture's corners are a perspective projection and there is no way
+  // to grow four projected corners by a distance in screen pixels — the angles
+  // are known at this point and nowhere downstream.
+  const bled: Rect = {
+    x: moved.x - spread,
+    y: moved.y - spread,
+    width: moved.width + spread * 2,
+    height: moved.height + spread * 2,
+  };
+  const bledQuad =
+    spread > 0 ? tiltedQuad(bled, zoom.tilt * amount, zoom.yaw * amount, zoom.depth) : quad;
+
   return {
-    at,
-    ...moved,
-    // The corners grow with the picture. Left alone they would tighten as it
-    // scaled, which reads as the frame changing shape mid-move.
-    radius: lerp(radius, radius * level, amount),
-    ...(quad ? { quad } : {}),
-    ...(focus ? { focus } : {}),
-    ...(vignette > 0 ? { vignette } : {}),
+    key: {
+      at,
+      ...moved,
+      radius: grown,
+      ...(quad ? { quad } : {}),
+      ...(focus ? { focus } : {}),
+      ...(vignette > 0 ? { vignette } : {}),
+    },
+    // No focus and no vignette: neither rasteriser reads them for a shadow, and
+    // carrying them would put the depth-of-field twice in every plan.
+    shadow: {
+      at,
+      ...bled,
+      radius: grown,
+      ...(bledQuad ? { quad: bledQuad } : {}),
+    },
   };
 }
 
@@ -503,25 +748,40 @@ function typingCentre(cursor: CursorTrack | null | undefined, at: number): Point
 const TYPING_STALE_NS = 3_000_000_000;
 
 /**
- * Smooths a path without moving it.
+ * Takes the shake out of a path without moving it.
  *
  * A one-pole filter run forwards and then backwards. Forwards alone lags — the
- * shot would trail the pointer by the length of the filter, which reads as the
- * camera being slow rather than steady. Running it both ways cancels that lag
- * exactly, at the cost of needing the whole path up front. Which is fine: it is
- * all known before a frame is drawn, and this is the reason a zoom is baked
- * into the plan rather than evaluated live.
+ * path would trail the pointer by the length of the filter — and running it
+ * both ways cancels that lag exactly, at the cost of needing the whole path up
+ * front. Which is fine: it is all known before a frame is drawn, and this is
+ * the reason a zoom is baked into the plan rather than evaluated live.
+ *
+ * Short on purpose, and no longer the only filter in the chain. Cancelling lag
+ * in both directions means the output also moves *before* the input does, and
+ * at the time constant this used to run at — three times the current one, with
+ * nothing else steadying the shot — the camera drifted towards a flick half a
+ * second before the hand made it. That pre-echo reads as the picture floating
+ * for no reason. Following is `followPath`'s job now, and it is causal.
  */
-function smoothPath(path: Point[], stepSeconds: number): Point[] {
+function deJitter(path: Point[], stepSeconds: number): Point[] {
   if (path.length < 3 || stepSeconds <= 0) return path;
 
   // The fraction of the gap closed per step, from the time constant.
-  const alpha = 1 - Math.exp(-stepSeconds / FOLLOW_SECONDS);
+  const alpha = 1 - Math.exp(-stepSeconds / JITTER_SECONDS);
+
+  // Seeded with the average of the samples the filter would have taken that
+  // long to absorb, rather than with the first one. A one-pole filter started
+  // on a single sample carries that sample's error until it settles, and run
+  // both ways that lands the error at *both* ends of the path — the first
+  // frames of a shot, which is exactly when the camera is deciding where to
+  // point and the only time a viewer is watching it decide.
+  const warm = Math.max(1, Math.min(path.length, Math.round(JITTER_SECONDS / stepSeconds)));
 
   const pass = (input: Point[]): Point[] => {
     const out: Point[] = [];
-    let x = input[0]!.x;
-    let y = input[0]!.y;
+    const seed = input.slice(0, warm);
+    let x = seed.reduce((total, point) => total + point.x, 0) / seed.length;
+    let y = seed.reduce((total, point) => total + point.y, 0) / seed.length;
 
     for (const point of input) {
       x += (point.x - x) * alpha;
@@ -532,6 +792,158 @@ function smoothPath(path: Point[], stepSeconds: number): Point[] {
   };
 
   return pass(pass(path).reverse()).reverse();
+}
+
+/**
+ * The camera: a soft frame, a damped follow and a speed limit.
+ *
+ * Everything is in output pixels of picture travel, and the arithmetic in
+ * `rectFor` makes that convenient — the aimed point lands in the middle of the
+ * frame when the picture has travelled exactly as far as the aim, so the
+ * difference between the two *is* the pointer's offset from the centre of the
+ * frame. The dead zone and the speed limit can therefore be stated in the units
+ * a viewer judges them in, with no mapping.
+ *
+ * Sequential, and therefore stateful, but still a pure function of the span: it
+ * starts from the span's own first sample and steps over fixed times, so the
+ * preview and the export get identical keys out of it.
+ */
+function followPath(
+  aims: readonly Point[],
+  /**
+   * The pointer as it will actually be drawn, before the shake was taken out.
+   *
+   * The follow steers by the steadied path, because a tremble is not a reason
+   * to move the camera. But "the pointer must stay in the shot" is about the
+   * pointer a viewer can see, and steadying moves it — over a flick the two are
+   * hundreds of pixels apart for a third of a second, which is exactly the
+   * moment the guarantee is needed. Checking the smoothed one instead is a
+   * guarantee about a position nothing ever draws.
+   */
+  drawn: readonly Point[],
+  stepSeconds: number,
+  frame: Size,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+): Point[] {
+  const first = aims[0];
+  if (!first || stepSeconds <= 0) return [...aims];
+
+  // Measured against each edge separately, so the box the pointer is free to
+  // move in has the frame's own proportions rather than being a square that
+  // reaches the sides of a landscape frame long before its top and bottom.
+  const still = { x: (DEAD_ZONE * frame.width) / 2, y: (DEAD_ZONE * frame.height) / 2 };
+  const keep = { x: (KEEP_IN * frame.width) / 2, y: (KEEP_IN * frame.height) / 2 };
+  // The shorter edge, like every other distance in this file, so a pan is the
+  // same speed in a landscape frame and a portrait one.
+  const reach = MAX_PAN * Math.min(frame.width, frame.height) * stepSeconds;
+
+  // Opens already framed rather than travelling in from wherever the last shot
+  // left off — the picture is un-zoomed at the start of the span anyway, so
+  // there is nothing on screen to catch up from and a lot to be wrong about.
+  let x = clamp(first.x, bounds.minX, bounds.maxX);
+  let y = clamp(first.y, bounds.minY, bounds.maxY);
+  let vx = 0;
+  let vy = 0;
+
+  const out: Point[] = [];
+
+  for (const [step, aim] of aims.entries()) {
+    const targetX = clamp(x + past(aim.x - x, still.x), bounds.minX, bounds.maxX);
+    const targetY = clamp(y + past(aim.y - y, still.y), bounds.minY, bounds.maxY);
+
+    const wasX = x;
+    const wasY = y;
+
+    [x, vx] = damp(x, vx, targetX, stepSeconds);
+    [y, vy] = damp(y, vy, targetY, stepSeconds);
+
+    // On the move as a whole rather than per axis: a diagonal flick is not
+    // licence to travel half again as fast as a straight one.
+    const travelled = Math.hypot(x - wasX, y - wasY);
+    if (travelled > reach) {
+      const scale = reach / travelled;
+      x = wasX + (x - wasX) * scale;
+      y = wasY + (y - wasY) * scale;
+      // Held back too, or the spring integrates against the limit for as long
+      // as the flick lasts and then arrives carrying speed it never used.
+      vx *= scale;
+      vy *= scale;
+    }
+
+    // And then the one thing that is not negotiable: the pointer stays in the
+    // shot. The speed limit is what a camera *should* do, this is what it must
+    // do — a hand can cross the screen faster than any watchable pan, and the
+    // choice there is between a camera that hurries and a shot of the wrong
+    // part of the screen. Held inside the pannable range as well, or catching
+    // the pointer would pull the picture off the area it filled; where the two
+    // disagree the pointer is at the edge of the recording and on screen
+    // anyway.
+    const sprungX = x;
+    const sprungY = y;
+    const real = drawn[step] ?? aim;
+    x = clamp(hold(x, real.x, keep.x), bounds.minX, bounds.maxX);
+    y = clamp(hold(y, real.y, keep.y), bounds.minY, bounds.maxY);
+
+    // Where a clamp moved the camera, the spring's own idea of how fast it was
+    // going is no longer true. Left alone it carries that speed for as long as
+    // the clamp is holding and then spends it all at once when it lets go,
+    // which is a lurch arriving after the thing that caused it.
+    if (x !== sprungX) vx = (x - wasX) / stepSeconds;
+    if (y !== sprungY) vy = (y - wasY) / stepSeconds;
+
+    out.push({ x, y });
+  }
+
+  return out;
+}
+
+/**
+ * How far outside the still area the pointer has got, and nothing while it is
+ * inside.
+ *
+ * The camera's whole reason to move. Aiming at this rather than at the pointer
+ * is what stops the shot re-centring after every excursion: it moves exactly
+ * far enough to put the pointer back on the boundary and then has nothing left
+ * to do, so wherever the pointer settles inside the box is where the picture
+ * stays.
+ */
+function past(error: number, half: number): number {
+  if (Math.abs(error) <= half) return 0;
+  return error - Math.sign(error) * half;
+}
+
+/**
+ * The camera, brought forward far enough that the pointer is no further than
+ * `half` from the middle of the frame.
+ *
+ * Never moves it away from the pointer, only towards — a camera that is already
+ * close enough is left exactly where the follow put it.
+ */
+function hold(value: number, aim: number, half: number): number {
+  return clamp(value, aim - half, aim + half);
+}
+
+/**
+ * One step of a critically damped spring, as its exact solution rather than an
+ * integration of it — so it is stable at any step length and never overshoots.
+ *
+ * A spring rather than the one-pole filter this file used to follow with,
+ * because a filter's velocity jumps the moment its target does, and the target
+ * here moves every time the pointer crosses the dead zone. Each jump is small;
+ * one per frame is a stutter.
+ */
+function damp(
+  value: number,
+  velocity: number,
+  target: number,
+  stepSeconds: number,
+): [number, number] {
+  const w = 2 / FOLLOW_SECONDS;
+  const gap = value - target;
+  const rate = velocity + w * gap;
+  const decay = Math.exp(-w * stepSeconds);
+
+  return [target + (gap + rate * stepSeconds) * decay, (velocity - rate * w * stepSeconds) * decay];
 }
 
 /** The pointer's position at a moment, as a fraction of the captured frame. */
@@ -972,6 +1384,63 @@ export function rectAt(
     ...(quad ? { quad } : {}),
     ...(focus ? { focus } : {}),
     ...(vignette > 0 ? { vignette } : {}),
+  };
+}
+
+/**
+ * What a caption item draws at a moment, or null if it draws nothing.
+ *
+ * The second piece of arithmetic that exists on both sides, after `cursorAt`,
+ * and for the same reason: a plan cannot hold a rectangle per output frame.
+ * `caption_at` in `crates/prequel-render/src/plan.rs` mirrors it, and the two
+ * are pinned together by fixtures that are deliberately identical.
+ *
+ * `src` comes back in bitmap pixels; normalising it against the texture is the
+ * caller's job, since only the caller knows what it bound.
+ */
+export function captionAt(
+  item: Extract<PlanItem, { kind: "caption" }>,
+  at: number,
+): { src: Rect; dst: Rect } | null {
+  const { bitmap, dstRect, span, words } = item;
+
+  // Half-open, so a cue ending exactly where the next begins does not draw
+  // both for one frame.
+  if (at < span.start || at >= span.end) return null;
+
+  if (words.length === 0) {
+    return {
+      src: { x: 0, y: 0, width: bitmap.width, height: bitmap.height },
+      dst: dstRect,
+    };
+  }
+
+  // Nothing between words: the gap is silence, and lighting the word either
+  // side of it through the gap reads as the highlight lagging the voice.
+  const word = words.find((candidate) => at >= candidate.at && at < candidate.end);
+  if (!word) return null;
+
+  if (bitmap.width <= 0 || bitmap.height <= 0) return null;
+
+  // The bitmap maps onto `dstRect` whole, so a box inside it maps by the same
+  // two factors. Nothing is re-derived: this is the one mapping, and it is the
+  // same arithmetic on the other side.
+  const sx = dstRect.width / bitmap.width;
+  const sy = dstRect.height / bitmap.height;
+
+  const width = word.width * sx * word.scale;
+  const height = word.height * sy * word.scale;
+
+  return {
+    src: { x: word.x, y: word.y, width: word.width, height: word.height },
+    // Grown about its own centre, so a pop swells the word in place rather
+    // than pushing it down and to the right.
+    dst: {
+      x: dstRect.x + word.x * sx - (width - word.width * sx) / 2,
+      y: dstRect.y + word.y * sy - (height - word.height * sy) / 2,
+      width,
+      height,
+    },
   };
 }
 

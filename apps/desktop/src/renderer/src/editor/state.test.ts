@@ -27,13 +27,76 @@ import { toSourceTime, totalDuration } from "./timeline";
 const S = 1_000_000_000;
 const RECORDING = "2026-08-11T12-00-00";
 
+/** A ten-second recording, and a state that knows it is ten seconds long. */
 function start(): EditorState {
-  return initialState(newProject(RECORDING, 10 * S));
+  return initialState(newProject(RECORDING, 10 * S), 10 * S);
 }
 
 function run(state: EditorState, ...actions: EditorAction[]): EditorState {
   return actions.reduce(editorReducer, state);
 }
+
+describe("the end of the recording", () => {
+  it("will not let a clip claim footage that was never recorded", () => {
+    // The drag reports wherever the pointer is, which on a zoomed-in timeline
+    // is easily seconds past the last frame. Left unclamped the slice described
+    // ten seconds of a six-second file, and nothing downstream objected: the
+    // player simply runs out and holds the last frame, so it reads as a clip
+    // that freezes rather than as a trim that went too far.
+    const only = slicesOf(start().project)[0]!;
+    const state = run(start(), {
+      type: "trimSlice",
+      sliceId: only.id,
+      edge: "end",
+      source: 30 * S,
+    });
+
+    expect(slicesOf(state.project)[0]!.source.end).toBe(10 * S);
+  });
+
+  it("still lets an edge move anywhere inside the recording", () => {
+    // The clamp has to be a ceiling and not a freeze — the same drag one frame
+    // short of the end is an ordinary trim.
+    const only = slicesOf(start().project)[0]!;
+    const state = run(start(), {
+      type: "trimSlice",
+      sliceId: only.id,
+      edge: "end",
+      source: 6 * S,
+    });
+
+    expect(slicesOf(state.project)[0]!.source.end).toBe(6 * S);
+  });
+
+  it("keeps the start edge off the front of the recording", () => {
+    // The floor was always here. Asserted alongside the ceiling so a rewrite
+    // that introduces one cannot quietly drop the other.
+    const only = slicesOf(start().project)[0]!;
+    const state = run(start(), {
+      type: "trimSlice",
+      sliceId: only.id,
+      edge: "start",
+      source: -5 * S,
+    });
+
+    expect(slicesOf(state.project)[0]!.source.start).toBe(0);
+  });
+
+  it("will not let a zoom run past the recording either", () => {
+    // Zooms were bounded by `sourceEnd` — the furthest any *clip* reached — so
+    // while clips could overrun, a zoom could follow them off the end.
+    const added = run(start(), { type: "addZoom", at: 2 * S });
+    const zoom = added.project.zooms[0]!;
+    const state = run(added, {
+      type: "trimZoom",
+      zoomId: zoom.id,
+      edge: "end",
+      source: 30 * S,
+    });
+
+    expect(state.project.zooms[0]!.source.end).toBeLessThanOrEqual(10 * S);
+  });
+});
 
 describe("splitting", () => {
   it("cuts the slice under the playhead in two", () => {
@@ -521,7 +584,11 @@ describe("undo", () => {
 
   it("starts over when another recording is opened", () => {
     const cut = run(start(), { type: "split", at: 5 * S });
-    const loaded = run(cut, { type: "load", project: newProject("other", 5 * S) });
+    const loaded = run(cut, {
+      type: "load",
+      project: newProject("other", 5 * S),
+      duration: 5 * S,
+    });
 
     // Undoing into the previous recording's project would be a different film.
     expect(canUndo(loaded)).toBe(false);

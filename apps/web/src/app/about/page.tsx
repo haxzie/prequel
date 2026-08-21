@@ -3,12 +3,14 @@ import type { Metadata } from "next";
 import { ButtonLink } from "@/components/Button";
 import { Container, SectionHeading } from "@/components/Section";
 import { CONTACT_EMAIL } from "@/lib/site";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "About",
   description:
     "Why Prequel is a native Rust capture core under an Electron shell, and the principles the app is built on.",
-};
+  path: "/about",
+});
 
 const PRINCIPLES = [
   {

@@ -13,7 +13,9 @@ mod devices;
 mod recorder;
 
 pub use devices::{CameraDevice, list_cameras};
-pub use recorder::{CAMERA_FILE, CameraOptions, CameraRecorder, CameraSummary};
+pub use recorder::{
+    CAMERA_FILE, CameraOptions, CameraRecorder, CameraSummary, DEFAULT_FPS, WarmCamera,
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

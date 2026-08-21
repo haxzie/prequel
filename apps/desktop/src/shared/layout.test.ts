@@ -10,8 +10,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRenderPlan,
+  captionAt,
   cursorAt,
   rectAt,
+  SHADOW_SPREAD,
+  type CaptionWord,
   type PlanItem,
   type RenderPlan,
   type Size,
@@ -161,7 +164,10 @@ describe("the camera", () => {
       buildRenderPlan(
         LANDSCAPE,
         { screen: SCREEN, camera: CAMERA },
-        settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraX, cameraY } }),
+        // The size is spelled out rather than inherited: these assert exact
+        // pixels, and a default nobody thought about this file when changing
+        // should not read as the geometry being wrong.
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraX, cameraY } }),
       ),
       "camera",
     )!;
@@ -201,7 +207,7 @@ describe("the camera", () => {
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: CAMERA },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraShape: "wide" } }),
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraShape: "wide" } }),
     );
     const { srcRect, dstRect } = image(plan, "camera")!;
 
@@ -239,16 +245,74 @@ describe("the camera", () => {
     expect(image(plan, "camera")!.mirror).toBe(true);
   });
 
-  it("is a true circle by default, and a superellipse when squircled", () => {
-    const circle = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
-    expect(image(circle, "camera")!.shape).toEqual({ radius: 237.6 / 2, exponent: 2 });
+  it("is a true circle when circled, and a superellipse when squircled", () => {
+    const shaped = (cameraShape: "circle" | "squircle") =>
+      image(
+        buildRenderPlan(
+          LANDSCAPE,
+          { screen: SCREEN, camera: CAMERA },
+          settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraShape } }),
+        ),
+        "camera",
+      )!.shape;
 
-    const squircle = buildRenderPlan(
-      LANDSCAPE,
-      { screen: SCREEN, camera: CAMERA },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraShape: "squircle" } }),
-    );
-    expect(image(squircle, "camera")!.shape.exponent).toBe(4);
+    // A circle is the rounded rectangle taken to its limit rather than a case
+    // of its own: the radius is half the bubble, and the exponent is the plain
+    // ellipse. Nothing here special-cases it.
+    expect(shaped("circle")).toEqual({ radius: 237.6 / 2, exponent: 2 });
+    expect(shaped("squircle").exponent).toBe(4);
+  });
+
+  it("stands off the corner it is parked in", () => {
+    // The defaults are three numbers that only work together: the position is
+    // the bubble's centre, so how much room is left is whatever half a bubble
+    // does not take. Set too far into the corner for its size, `cameraRect`
+    // clamps it and it sits flush on the edge — touching the frame, with a
+    // shadow it has nowhere to cast.
+    const { dstRect } = image(
+      buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings()),
+      "camera",
+    )!;
+    const unit = Math.min(LANDSCAPE.width, LANDSCAPE.height);
+
+    // Bottom right, and clear of both edges by a visible margin.
+    expect(dstRect.x).toBeGreaterThan(LANDSCAPE.width / 2);
+    expect(dstRect.y).toBeGreaterThan(LANDSCAPE.height / 2);
+    expect(LANDSCAPE.width - (dstRect.x + dstRect.width)).toBeGreaterThan(unit * 0.04);
+    expect(LANDSCAPE.height - (dstRect.y + dstRect.height)).toBeGreaterThan(unit * 0.04);
+  });
+
+  it("sits on a shadow of its own, drawn under it", () => {
+    // Without one the bubble is stuck to the picture like a sticker. It has to
+    // be the item immediately before the camera, or it is a dark shape floating
+    // over the thing it belongs to.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
+    const index = plan.items.findIndex((item) => item.kind === "image" && item.source === "camera");
+    const under = plan.items[index - 1]!;
+    if (under.kind !== "shadow") throw new Error("the camera casts no shadow");
+
+    const camera = image(plan, "camera")!;
+    const bleed = (under.blur / 2) * SHADOW_SPREAD;
+
+    expect(under.shape).toEqual(camera.shape);
+    expect(under.rect.x).toBeCloseTo(camera.dstRect.x - bleed, 6);
+    expect(under.rect.width).toBeCloseTo(camera.dstRect.width + bleed * 2, 6);
+  });
+
+  it("measures that shadow against the bubble, not against the frame", () => {
+    // Every other distance here is a fraction of the frame's shorter edge, and
+    // the bubble is a fraction of that again — so a blur sized for the screen
+    // is one the bubble disappears into, and a drop sized for the screen puts
+    // the shadow out from under it altogether.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
+    const shadows = plan.items.filter((item) => item.kind === "shadow");
+    const [picture, bubble] = shadows;
+    if (picture?.kind !== "shadow" || bubble?.kind !== "shadow") throw new Error("two expected");
+
+    expect(bubble.blur).toBeLessThan(picture.blur);
+    expect(bubble.dy).toBeLessThan(picture.dy);
+    // And lighter, because it lies on the picture rather than on the backdrop.
+    expect(bubble.color).not.toBe(picture.color);
   });
 
   it("is omitted when switched off", () => {
@@ -625,6 +689,110 @@ describe("the screen is never stretched", () => {
   });
 });
 
+describe("filling the frame", () => {
+  const shot = (screenFit: "contain" | "cover", padding: number) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, screenFit },
+        background: { ...DEFAULT_SETTINGS.background, padding },
+      }),
+    );
+
+  it("crops nothing from a recording already the shape of the frame", () => {
+    // The bug this pins. Padding is a fraction of the frame's *shorter* edge
+    // taken off all four sides, so the box it leaves is always wider than the
+    // frame — and filling that box cropped a 16:9 recording in a 16:9 frame to
+    // a shape nothing was ever recorded in. Six per cent of the picture, spent
+    // on nothing.
+    const { srcRect } = image(shot("cover", 0.06), "screen")!;
+
+    expect(srcRect).toEqual({ x: 0, y: 0, width: SCREEN.width, height: SCREEN.height });
+  });
+
+  it("actually reaches the edges", () => {
+    // And it did not even fill what it cropped for: the picture stopped at the
+    // padding, so "Fill" left a border on all four sides.
+    const { dstRect } = image(shot("cover", 0.06), "screen")!;
+
+    expect(dstRect).toEqual({ x: 0, y: 0, width: LANDSCAPE.width, height: LANDSCAPE.height });
+  });
+
+  it("is the same picture whatever the padding says", () => {
+    // The two settings answer the same question, and `cover` answers it "no
+    // gaps". There is no room left for padding to ask for.
+    expect(image(shot("cover", 0.2), "screen")).toEqual(image(shot("cover", 0), "screen"));
+  });
+
+  it("still leaves room around a picture that is contained", () => {
+    // The other half of it: padding is what `contain` is for, and this must not
+    // have quietly turned it off for everyone.
+    const { dstRect } = image(shot("contain", 0.06), "screen")!;
+
+    expect(dstRect.x).toBeGreaterThan(0);
+    expect(dstRect.width).toBeLessThan(LANDSCAPE.width);
+  });
+});
+
+describe("the shadow", () => {
+  const shadowOf = (plan: RenderPlan) => {
+    const item = plan.items.find((candidate) => candidate.kind === "shadow");
+    if (item?.kind !== "shadow") throw new Error("no shadow");
+    return item;
+  };
+
+  const plan = (zooms: ZoomSlice[] = []) =>
+    buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings(), null, zooms);
+
+  it("is given room past the shape that casts it", () => {
+    // The bug: a shadow was rasterised only as far as the picture's own
+    // rectangle, and everything inside that rectangle is hidden under the
+    // picture. So the only visible part was the last sliver before the geometry
+    // ran out — half opacity, ending on a hard line. It read as a slab of paint
+    // rather than as light, and no amount of blur could fix it, because the
+    // blur had nowhere to go.
+    const shadow = shadowOf(plan());
+    const { dstRect } = image(plan(), "screen")!;
+    const bleed = (shadow.blur / 2) * SHADOW_SPREAD;
+
+    expect(shadow.rect.x).toBeCloseTo(dstRect.x - bleed, 6);
+    expect(shadow.rect.y).toBeCloseTo(dstRect.y - bleed, 6);
+    expect(shadow.rect.width).toBeCloseTo(dstRect.width + bleed * 2, 6);
+    expect(shadow.rect.height).toBeCloseTo(dstRect.height + bleed * 2, 6);
+  });
+
+  it("keeps that room through a zoom", () => {
+    // The shadow has a track of its own rather than sharing the picture's,
+    // because a tilted picture's corners are a projection and there is no way
+    // to grow four projected corners by a distance in pixels afterwards. A
+    // shared track would have put the bleed back to zero the moment a zoom
+    // started, which is exactly when a shadow is most visible.
+    const zooms: ZoomSlice[] = [
+      { ...DEFAULT_ZOOM, id: "z", source: { start: 0, end: 4 * 1_000_000_000 }, level: 2 },
+    ];
+    const shadow = shadowOf(plan(zooms));
+    const picture = image(plan(zooms), "screen")!;
+    const bleed = (shadow.blur / 2) * SHADOW_SPREAD;
+
+    expect(shadow.motion).toBeDefined();
+    expect(shadow.motion).toHaveLength(picture.motion!.length);
+
+    for (const [index, key] of shadow.motion!.entries()) {
+      const under = picture.motion![index]!;
+      expect(key.width).toBeCloseTo(under.width + bleed * 2, 6);
+      expect(key.x).toBeCloseTo(under.x - bleed, 6);
+    }
+  });
+
+  it("keeps the picture's own corner radius", () => {
+    // What is being drawn is the silhouette; the bleed is only somewhere to
+    // draw it. Rounding the grown rectangle instead would round a shape three
+    // blur radii too big and leave the shadow the wrong shape at every corner.
+    expect(shadowOf(plan()).shape.radius).toBe(image(plan(), "screen")!.shape.radius);
+  });
+});
+
 describe("zooming", () => {
   const S = 1_000_000_000;
   const FRAME: Size = { width: 1920, height: 1080 };
@@ -855,6 +1023,161 @@ describe("following the cursor", () => {
     // The pointer travels left to right, so the shot must too.
     expect(last.x).toBeLessThan(first.x);
   });
+
+  const SPAN = 8 * S;
+  const SPEED = 0.2;
+
+  /** The shot, and the pointer drawn on it, for a pointer that does `samples`. */
+  const shotFor = (samples: { at: number; x: number; y: number }[]) => {
+    const plan = buildRenderPlan(
+      FRAME,
+      { screen: SCREEN, camera: null },
+      settings(),
+      { path: "cursor.png", hotspot: { x: 0, y: 0 }, size: 0.035, hideAfter: null, samples },
+      [
+        {
+          ...DEFAULT_ZOOM,
+          id: "z",
+          source: { start: 0, end: SPAN },
+          target: "cursor",
+          level: 2,
+          speed: SPEED,
+        },
+      ],
+    );
+
+    const picture = plan.items.find((item) => item.kind === "image" && item.source === "screen")!;
+    const pointer = plan.items.find((item) => item.kind === "cursor")!;
+    if (picture.kind !== "image" || pointer.kind !== "cursor") throw new Error("wrong items");
+
+    return { keys: picture.motion ?? [], points: pointer.points };
+  };
+
+  /**
+   * Only the keys with the shot fully pushed in.
+   *
+   * The transitions at either end move the rectangle by design — that is the
+   * zoom — so every property below is about what the camera does once it has
+   * arrived, with a beat of margin on each side.
+   */
+  const held = (keys: { at: number; x: number }[]) =>
+    keys.filter((key) => key.at > (SPEED + 0.3) * S && key.at < SPAN - (SPEED + 0.3) * S);
+
+  /** A pointer that holds `x` from `from` to `to`, sampled at 30 Hz. */
+  const between = (from: number, to: number, at: (t: number) => number) =>
+    Array.from({ length: Math.round(((to - from) * 30) / S) + 1 }, (_, step) => {
+      const at_ = from + (step * S) / 30;
+      return { at: Math.round(at_), x: at(at_), y: 0.5 };
+    });
+
+  it("holds still while the pointer moves inside the frame", () => {
+    // The change everything else rests on. A camera that keeps its subject dead
+    // centre is glued to it: the picture moves for every twitch of the hand and
+    // the frame is never once allowed to rest. There has to be somewhere the
+    // pointer can go without taking the picture with it.
+    const keys = held(shotFor(between(0, SPAN, (t) => 0.5 + 0.03 * Math.sin((t / S) * 4))).keys);
+    const xs = keys.map((key) => key.x);
+
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(1);
+  });
+
+  it("does not move before the pointer does", () => {
+    // The failing of the filter this replaced: run forwards and then backwards
+    // to cancel its own lag, it also cancelled causality, and the shot drifted
+    // towards a flick the better part of a second before the hand made it.
+    // Nothing on screen explains that movement, so it reads as float.
+    const still = 4 * S;
+    const keys = held(
+      shotFor(
+        between(0, SPAN, (t) => (t < still ? 0.3 : Math.min(0.8, 0.3 + (t - still) / (2 * S)))),
+      ).keys,
+    );
+
+    const before = keys.filter((key) => key.at < still - 0.1 * S).map((key) => key.x);
+
+    expect(Math.max(...before) - Math.min(...before)).toBeLessThan(1);
+  });
+
+  it("answers an ordinary move at a camera's speed, not a hand's", () => {
+    // Unbounded, the shot chases the hand at whatever speed it managed and the
+    // whole framing crosses in a few frames. That lurch is what makes a
+    // followed zoom hard to watch even once the shake is gone. A deliberate
+    // move across half the screen is well inside what a camera can do calmly.
+    const keys = held(
+      shotFor(
+        between(0, SPAN, (t) => (t < 2 * S ? 0.3 : Math.min(0.7, 0.3 + ((t - 2 * S) / S) * 0.2))),
+      ).keys,
+    );
+    const step = (keys[1]!.at - keys[0]!.at) / S;
+    const speeds = keys.slice(1).map((key, index) => Math.abs(key.x - keys[index]!.x) / step);
+
+    // No faster than the frame's shorter edge per second, which is a pan.
+    expect(Math.max(...speeds)).toBeLessThan(Math.min(FRAME.width, FRAME.height));
+  });
+
+  it("never lets the pointer leave the shot, however fast the hand goes", () => {
+    // The complaint this answers. A hand crossing the screen covers `level`
+    // times as much picture as it does desk, so a camera held to a watchable
+    // speed simply loses it: the pointer walks off the side and the shot is of
+    // whatever it left behind. Between hurrying and pointing at nothing, the
+    // camera hurries — there is no third answer, because a hand can move
+    // faster than any pan anyone would want to watch.
+    for (const hand of [
+      // A flick: most of the screen inside a tenth of a second.
+      (t: number) => (t < 2 * S ? 0.12 : Math.min(0.88, 0.12 + (t - 2 * S) / (0.1 * S))),
+      // And back again, twice, which is where a camera that overshoots shows it.
+      (t: number) => 0.5 + 0.42 * Math.sin(((t / S) * Math.PI) / 0.8),
+    ]) {
+      const { points } = shotFor(between(0, SPAN, hand));
+
+      for (let at = 1.5 * S; at < SPAN - 1.5 * S; at += S / 30) {
+        const point = cursorAt(points, Math.round(at));
+        if (!point) continue;
+
+        expect(Math.abs(point.x - FRAME.width / 2)).toBeLessThanOrEqual(FRAME.width / 2 + 1);
+        expect(Math.abs(point.y - FRAME.height / 2)).toBeLessThanOrEqual(FRAME.height / 2 + 1);
+      }
+    }
+  });
+
+  it("catches up rather than giving up", () => {
+    // A dead zone that never closed would be a camera that has stopped caring.
+    // Asserted on the pointer as drawn, because that is the thing a viewer is
+    // judging: it has to end up back near the middle of the frame.
+    const { points } = shotFor(
+      between(0, SPAN, (t) => (t < 2 * S ? 0.35 : Math.min(0.65, 0.35 + ((t - 2 * S) / S) * 0.15))),
+    );
+    const point = cursorAt(points, 7 * S)!;
+
+    // Back inside the still area, which is the boundary the camera aims the
+    // pointer at rather than the middle of the frame. It stops the instant the
+    // pointer is inside rather than carrying on to centre it — that is what
+    // makes the picture settle instead of hunting.
+    expect(Math.abs(point.x - FRAME.width / 2)).toBeLessThan(FRAME.width / 2 / 3);
+  });
+
+  it("eases into the edge of the recording rather than stopping dead", () => {
+    // The picture may not pull off the area it filled, and that limit used to
+    // be applied to the finished rectangle — after the smoothing, so nothing
+    // ever smoothed it. A shot travelling towards a corner arrived at full
+    // speed and stopped in a single frame.
+    //
+    // Unhurried on purpose: this is about the follow easing into the wall, and
+    // a hand quick enough to trip `KEEP_IN` is answered by the clamp instead,
+    // which is allowed to arrive at the edge still moving. There is nowhere
+    // else for it to go — the recording has run out.
+    const keys = held(
+      shotFor(between(0, SPAN, (t) => (t < S ? 0.5 : Math.max(0.02, 0.5 - ((t - S) / S) * 0.1))))
+        .keys,
+    );
+    const speeds = keys.slice(1).map((key, index) => Math.abs(key.x - keys[index]!.x));
+    const drops = speeds.slice(1).map((speed, index) => speeds[index]! - speed);
+
+    // It has to have been moving, or there is nothing to decelerate.
+    expect(Math.max(...speeds)).toBeGreaterThan(10);
+    // And it has to shed that speed over many frames rather than one.
+    expect(Math.max(...drops)).toBeLessThan(Math.max(...speeds) / 10);
+  });
 });
 
 describe("following typing", () => {
@@ -878,7 +1201,7 @@ describe("following typing", () => {
         // shot is aiming at is never ambiguous.
         samples: [
           { at: 0, x: 0.9, y: 0.9 },
-          { at: 6 * S, x: 0.9, y: 0.9 },
+          { at: 12 * S, x: 0.9, y: 0.9 },
         ],
         typing,
       },
@@ -888,7 +1211,11 @@ describe("following typing", () => {
           // every value spelled out below still wins over the default.
           ...DEFAULT_ZOOM,
           id: "z",
-          source: { start: 0, end: 6 * S },
+          // Long enough for the shot to reach the far corner and settle. The
+          // camera has a speed limit now, so "goes back to the pointer" is a
+          // move across most of the picture rather than something that happens
+          // between two samples.
+          source: { start: 0, end: 12 * S },
           target,
           x: 0.5,
           y: 0.5,
@@ -928,7 +1255,7 @@ describe("following typing", () => {
   it("lets go of a field that was focused long ago", () => {
     // A field focused a minute back says nothing about where the interesting
     // part of the picture is now, so the shot goes back to the pointer.
-    expect(shotAt("typing", FIELD, 5.5 * S).x).toBeCloseTo(shotAt("cursor", [], 5.5 * S).x, 0);
+    expect(shotAt("typing", FIELD, 10 * S).x).toBeCloseTo(shotAt("cursor", [], 10 * S).x, 0);
   });
 });
 
@@ -1072,5 +1399,78 @@ describe("perspective", () => {
 
     expect(q).toHaveLength(12);
     for (let index = 2; index < q.length; index += 3) expect(q[index]).toBeGreaterThan(0);
+  });
+});
+
+describe("captionAt", () => {
+  /**
+   * Deliberately identical to the fixture in
+   * `crates/prequel-render/src/plan.rs`.
+   *
+   * This arithmetic exists on both sides — a plan cannot hold a rectangle per
+   * output frame — so the numbers, not the code, are the contract between them.
+   */
+  const caption = (words: CaptionWord[] = []) =>
+    ({
+      kind: "caption",
+      path: "captions/cue-3.png",
+      bitmap: { width: 400, height: 100 },
+      dstRect: { x: 100, y: 500, width: 800, height: 200 },
+      span: { start: 1_000, end: 4_000 },
+      words,
+    }) satisfies Extract<PlanItem, { kind: "caption" }>;
+
+  const spoken: CaptionWord[] = [
+    { at: 1_000, end: 2_000, x: 0, y: 10, width: 100, height: 80, scale: 1 },
+    // A gap from 2_000 to 3_000: silence between two words.
+    { at: 3_000, end: 4_000, x: 200, y: 10, width: 100, height: 80, scale: 1 },
+  ];
+
+  it("draws the whole bitmap across its span when nothing is lit", () => {
+    const draw = captionAt(caption(), 2_500)!;
+
+    expect(draw.src).toEqual({ x: 0, y: 0, width: 400, height: 100 });
+    expect(draw.dst).toEqual({ x: 100, y: 500, width: 800, height: 200 });
+  });
+
+  it("draws nothing outside its span", () => {
+    expect(captionAt(caption(), 999)).toBeNull();
+    // Half-open, so a cue ending where the next begins does not draw both.
+    expect(captionAt(caption(), 4_000)).toBeNull();
+    expect(captionAt(caption(spoken), 4_000)).toBeNull();
+  });
+
+  it("draws nothing between two words", () => {
+    // Inside the span but in the silence. Holding the previous word lit through
+    // the gap reads as the highlight lagging the voice.
+    expect(captionAt(caption(spoken), 2_500)).toBeNull();
+  });
+
+  it("crops to the word being spoken", () => {
+    const draw = captionAt(caption(spoken), 3_500)!;
+
+    expect(draw.src).toEqual({ x: 200, y: 10, width: 100, height: 80 });
+    // The bitmap is drawn at 2x here — 800 output pixels for 400 bitmap ones —
+    // so every box inside it scales by the same two factors.
+    expect(draw.dst).toEqual({ x: 500, y: 520, width: 200, height: 160 });
+  });
+
+  it("grows a popped word about its own centre", () => {
+    const popped = spoken.map((word, index) => (index === 1 ? { ...word, scale: 1.5 } : word));
+
+    const flat = captionAt(caption(spoken), 3_500)!;
+    const grown = captionAt(caption(popped), 3_500)!;
+
+    // The crop is untouched: a pop changes where the pixels land, never which
+    // pixels are taken.
+    expect(grown.src).toEqual(flat.src);
+
+    const centre = (rect: { x: number; y: number; width: number; height: number }) => [
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+    ];
+    expect(centre(grown.dst)).toEqual(centre(flat.dst));
+    expect(grown.dst.width).toBe(flat.dst.width * 1.5);
+    expect(grown.dst.height).toBe(flat.dst.height * 1.5);
   });
 });

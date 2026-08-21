@@ -20,8 +20,10 @@
  * export have never quite agreed about shadows. Now they do.
  */
 import {
+  captionAt,
   cursorAt,
   rectAt,
+  SHADOW_SPREAD,
   type Paint,
   type PlanItem,
   type Rect,
@@ -49,6 +51,18 @@ const MODE_GRADIENT = 1;
 const MODE_IMAGE = 2;
 const MODE_SHADOW = 3;
 const MODE_STROKE = 4;
+
+/**
+ * The two shader sources, exported for `webgl.test.ts` and nothing else.
+ *
+ * A shader is compiled at runtime, in the renderer, on a GPU — so nothing in
+ * the build can tell you it is wrong. When one fails, `compile` logs it once
+ * and the compositor draws nothing at all, which shows up as an entirely blank
+ * preview and an export of plain background. Typechecking, the unit tests,
+ * Prettier and the Rust suite all pass while that is happening, which is how a
+ * reserved word shipped once already.
+ */
+export const SHADER_SOURCE = () => ({ vertex: VERTEX, fragment: FRAGMENT });
 
 const VERTEX = `#version 300 es
 precision highp float;
@@ -165,9 +179,14 @@ float shapeDistance(vec2 p, vec2 halfSize, float radius, float n) {
   return (pow(value, 1.0 / n) - 1.0) * radius;
 }
 
-// The canvas compositor expects premultiplied colour; the exporter blends
-// straight alpha. Folding it in here rather than there keeps one blend mode on
-// each side and the same result from both.
+// Both compositors blend premultiplied source-over, so every return folds its
+// alpha into the RGB. Verbatim from premultiplied in
+// crates/prequel-render/src/shaders.metal.
+//
+// Doing it in the shader rather than asking for a SRC_ALPHA blend is what lets
+// both sides run one blend mode each. With SRC_ALPHA the alpha lands twice and
+// every translucent thing draws at its own opacity squared — a pill set to 60%
+// arrives at 36%, and antialiased glyph edges erode.
 vec4 premultiplied(vec3 rgb, float alpha) {
   return vec4(rgb * alpha, alpha);
 }
@@ -202,8 +221,17 @@ void main() {
   // Shadows are the same shape, softened — so the blur follows the silhouette
   // rather than the bounding box.
   if (u_mode == 3) {
-    float softness = max(u_weight, 0.0001);
-    fragColor = premultiplied(u_colorA.rgb, u_colorA.a * (1.0 - smoothstep(-softness, softness, d)));
+    float sigma = max(u_weight, 0.0001);
+    // The rectangle arrived grown by SHADOW_SPREAD sigmas so the falloff has
+    // somewhere to be drawn; take it back off to find the shape casting it.
+    vec2 caster = max(halfSize - ${SHADOW_SPREAD.toFixed(1)} * sigma, vec2(0.0));
+    float away = shapeDistance(v_local - halfSize, caster, u_shape.x, u_shape.y);
+    // A blurred edge is a Gaussian's integral — half opacity on the edge,
+    // decaying without ever quite stopping. \`smoothstep\` reaches zero at a
+    // fixed distance and leaves a rim where the shadow ends, which is what made
+    // this read as a slab of paint. This is the logistic approximation to that
+    // integral: within half a percent of it everywhere, and one \`exp\`.
+    fragColor = premultiplied(u_colorA.rgb, u_colorA.a / (1.0 + exp(1.702 * away / sigma)));
     return;
   }
 
@@ -225,7 +253,11 @@ void main() {
     // Mirroring first, so it flips the crop rather than moving it.
     uv = u_src.xy + uv * u_src.zw;
     vec4 sampled = sampleFocused(uv);
-    fragColor = premultiplied(sampled.rgb * vignette(v_screen), sampled.a * coverage);
+    // sampled arrives premultiplied — the upload asks Chromium for it, so it
+    // matches what image.rs hands Metal — so only coverage is folded in here.
+    // Running it through premultiplied as well would multiply the texture's own
+    // alpha twice.
+    fragColor = vec4(sampled.rgb * vignette(v_screen) * coverage, sampled.a * coverage);
     return;
   }
 
@@ -343,9 +375,10 @@ export class WebGlCompositor {
     }
 
     gl.enable(gl.BLEND);
-    // Standard source-over on straight alpha, matching the exporter's pipeline
-    // state exactly.
-    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    // Source-over on premultiplied colour, matching the exporter's pipeline
+    // state exactly. `SRC_ALPHA` would multiply a second time — see the note on
+    // `premultiplied` below.
+    gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     this.program = compile(gl);
     // Said once, at the level the log actually keeps, so "is the preview even
@@ -462,6 +495,28 @@ export class WebGlCompositor {
         drawQuad(gl);
         break;
       }
+
+      case "caption": {
+        const image = images.get(item.path);
+        const draw = image ? captionAt(item, at) : null;
+        // No bitmap, or off screen at this moment — which the lit layer also is
+        // between two words. Both draw nothing rather than something wrong.
+        if (!image || !draw) break;
+
+        const texture = this.upload(gl, item.path, image, false);
+        if (!texture) break;
+
+        set(gl, p, {
+          rect: draw.dst,
+          shape: { radius: 0, exponent: 2 },
+          mode: MODE_IMAGE,
+          // Normalised against the bitmap's real size rather than the plan's,
+          // the way the exporter normalises against its texture's.
+          src: normalised(draw.src, sizeOf(image).width, sizeOf(image).height),
+        });
+        drawQuad(gl);
+        break;
+      }
     }
   }
 
@@ -549,6 +604,14 @@ export class WebGlCompositor {
       const size = sizeOf(image);
       if (size.width <= 0 || size.height <= 0) return null;
 
+      // Premultiplied on the way in, because that is what `image.rs` gives the
+      // exporter: it decodes through `KCG_IMAGE_ALPHA_PREMULTIPLIED_FIRST`.
+      // The default here is the opposite, and asking Chromium to *un*-
+      // premultiply a canvas — which is premultiplied by definition — is a
+      // lossy round-trip that bands on faint edges. Sampling different texels
+      // from the same PNG is exactly the preview/export divergence the plan
+      // architecture exists to prevent.
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       try {
         gl.texImage2D(
           gl.TEXTURE_2D,

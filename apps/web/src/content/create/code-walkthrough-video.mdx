@@ -1,0 +1,39 @@
+Code on a screen is small text, and small text is the worst thing to put in a
+video. A walkthrough recorded at native resolution and watched at half of it
+asks the viewer to read a diff at eight pixels of line height.
+
+Zooming in solves it, but placing zooms on a code walkthrough by hand is
+miserable — the interesting moments are dense, frequent and mostly consist of
+you typing.
+
+## It watches the typing
+
+Prequel treats a burst of typing as a moment worth pushing into, the same way
+it treats a click. Because it records keystrokes alongside the picture, the
+editor opens with zooms already sitting on the lines you wrote rather than on
+an arbitrary interval.
+
+There is a zoom target specifically for this: whatever you are typing into. It
+follows the text rather than the pointer, which is the difference between a
+push that tracks your edit and one that wanders off to wherever the mouse
+happens to be.
+
+This is the one input that needs the Accessibility permission as well as Screen
+Recording. Without it that signal is simply absent — click-driven zooms still
+work — rather than the app being broken.
+
+## Reading something that does not move
+
+For a diff, a stack trace or a block you are talking through rather than
+editing, use a region zoom. You draw the area and it holds still on it. A
+cursor zoom over a paragraph of code moves while the viewer is reading, which
+is worse than not zooming at all.
+
+## Legibility, end to end
+
+Capture runs at your display's native resolution, so a push lands on real
+detail rather than an upscale. Export is up to 4K, hardware H.264 or HEVC,
+constant frame rate.
+
+The cursor is drawn at a size that survives a 2x zoom and leaves the frame after
+a few seconds of stillness, so it stops covering the line you just pointed at.

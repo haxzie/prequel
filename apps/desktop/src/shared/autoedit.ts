@@ -26,10 +26,21 @@ const NS = 1_000_000_000;
  * The number that decides whether a sequence reads as one action or several.
  * Too small and clicking through a menu becomes four zooms fighting each other;
  * too large and a click at the start and one at the end of a minute collapse
- * into a single limp push. A second and a half is about the pause people leave
- * between finishing one thing and starting the next.
+ * into a single limp push.
+ *
+ * Read against the lead-in and lead-out rather than on its own: two events this
+ * far apart make shots that end and begin about two and a half seconds from
+ * each other, which is the closest a pull-out and a push straight back in can
+ * be before they read as the picture flinching. Pausing to think is not a
+ * reason to leave and come back.
+ *
+ * It can be this generous because the camera pans inside a shot now. Before the
+ * dead zone the alternative to cutting was a frame nailed to one point, so
+ * holding through a pause meant holding on the wrong thing; now it means
+ * travelling, which is both calmer to watch and shorter than an exit and a
+ * re-entry.
  */
-const CLUSTER_GAP = 2.5 * NS;
+const CLUSTER_GAP = 5.8 * NS;
 
 /**
  * Held before the first event and after the last.
@@ -58,8 +69,14 @@ const MIN_SPAN = 2.8 * NS;
  * Longer than this and a click cluster stops being a shot and becomes the whole
  * video. A cluster that runs past it is trimmed rather than dropped — see
  * `autoZooms`.
+ *
+ * Every zoom opens and closes on the un-zoomed picture, so cutting a run into
+ * two shots means pulling out and pushing back in halfway through something
+ * continuous. That was worth it when a long hold meant a frame nailed to one
+ * point for a quarter of a minute; with the camera following it is only worth
+ * it much later, so this is longer than it was.
  */
-const MAX_CLICK_SPAN = 14 * NS;
+const MAX_CLICK_SPAN = 20 * NS;
 
 /**
  * Typing gets much longer, because it is one continuous act.
@@ -324,8 +341,13 @@ function levelFor(group: readonly Moment[]): number {
   );
 
   // Tight enough to fit in a quarter of the frame: 2.2×. Spread across half of
-  // it: barely more than 1.4×.
-  return clamp(2.4 - spread * 4, 1.4, 2.4);
+  // it: 1.5×.
+  //
+  // A narrower range than this used to have, at both ends. How far a followed
+  // shot travels for a given movement of the hand is multiplied by how far in
+  // it is, so the closest push is also the most restless; and consecutive shots
+  // at visibly different distances pump, which reads as the video breathing.
+  return clamp(2.2 - spread * 3.2, 1.5, 2.2);
 }
 
 /**

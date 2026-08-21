@@ -89,6 +89,22 @@ export interface Recorder {
   /** Cameras as AVFoundation sees them. Does not prompt or open anything. */
   listCameras(): NativeCamera[];
 
+  /**
+   * Opens a camera before there is anything to record with it.
+   *
+   * Called when the countdown appears, so the sensor has settled on an exposure
+   * by the time the first frame is written — a camera opened at the instant
+   * recording starts spends its first second or two dark. Turns the camera
+   * light on, so it is paired with `releaseCamera` on every path that does not
+   * reach a recording.
+   *
+   * Never fatal: `startRecording` opens the camera itself if this was not
+   * called, failed, or was called for a camera the user then changed.
+   */
+  prepareCamera(device: string): Promise<void>;
+  /** Closes a camera opened by `prepareCamera`, if one is still open. */
+  releaseCamera(): void;
+
   startRecording(request: StartRecordingRequest): Promise<void>;
   stopRecording(): Promise<RecordingResult>;
   pauseRecording(): void;

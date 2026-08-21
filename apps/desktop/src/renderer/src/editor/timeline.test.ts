@@ -17,7 +17,9 @@ import {
   spanInProject,
   toSourceTime,
   totalDuration,
+  trimmedTo,
   type Slice,
+  type TrimGrab,
 } from "./timeline";
 
 const S = 1_000_000_000;
@@ -246,5 +248,32 @@ describe("splitAt", () => {
   it("declines to cut past the end of the edit", () => {
     expect(splitAt(CUT, 8 * S, id)).toHaveLength(2);
     expect(splitAt(CUT, 20 * S, id)).toHaveLength(2);
+  });
+});
+
+describe("trimmedTo", () => {
+  /** An edge four seconds into the take, picked up at x=200 on a 10px/s strip. */
+  const GRAB: TrimGrab = { source: 4 * S, clientX: 200, perPixel: S / 10 };
+
+  it("moves the edge by what the pointer moved", () => {
+    expect(trimmedTo(GRAB, 250)).toBe(9 * S);
+    expect(trimmedTo(GRAB, 150)).toBe(-1 * S);
+  });
+
+  it("lands in the same place however many moves got there", () => {
+    // The failure this exists to prevent: a delta measured against the live
+    // clip added the distance already travelled again on every `pointermove`,
+    // so a drag reported as fifty small steps trimmed vastly more than the same
+    // gesture reported as one.
+    const flicked = trimmedTo(GRAB, 250);
+    let crawled = 0;
+    for (let x = 201; x <= 250; x++) crawled = trimmedTo(GRAB, x);
+
+    expect(crawled).toBe(flicked);
+  });
+
+  it("puts the edge back when the pointer comes back", () => {
+    trimmedTo(GRAB, 400);
+    expect(trimmedTo(GRAB, GRAB.clientX)).toBe(GRAB.source);
   });
 });

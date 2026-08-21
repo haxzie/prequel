@@ -81,3 +81,20 @@ export const PRODUCT_FAQ: FaqEntry[] = [
       "Not to make one. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. The Team plan adds uploading a finished export to share it, which is a thing you ask for rather than something the app does on its own.",
   },
 ];
+
+/**
+ * `PRODUCT_FAQ` is the home page's list and nothing else's.
+ *
+ * Use-case pages each carry their own complete `faq` in `content/use-cases.ts`.
+ * They used to append this array instead, which meant thirteen byte-identical
+ * answers on sixteen pages — rendered twice each, once as copy and once as
+ * `FAQPage` structured data. Two hundred duplicated Q&A blocks across a set of
+ * pages whose whole purpose is to rank for different phrases is the failure
+ * mode of a set like this, not a shortcut.
+ *
+ * The cost is that a fact stated on twelve pages is written twelve times. That
+ * is deliberate: each one says it in the language of the page it is on, which
+ * is the only reason for the page to exist. When a fact changes — a supported
+ * macOS version, an export ceiling — grep for it rather than assuming one edit
+ * covers the set.
+ */

@@ -18,11 +18,25 @@ const titles: string[] = [];
 const images: string[] = [];
 /** Flipped by the test that checks an unreadable icon is reported. */
 let iconIsEmpty = false;
+/**
+ * What `getBounds` answers, flipped by the placement tests.
+ *
+ * A zero height is macOS saying the item has no slot in the menu bar — which
+ * is what the real one returns before it has been placed, and what it keeps
+ * returning if it never is.
+ */
+let trayBounds = { x: 1065, y: 0, width: 32, height: 33 };
 
 vi.mock("electron", () => {
   class FakeTray {
     constructor(image: string) {
       images.push(image);
+    }
+    getBounds() {
+      return trayBounds;
+    }
+    isDestroyed() {
+      return false;
     }
     setTitle(title: string) {
       titles.push(title);
@@ -45,6 +59,9 @@ vi.mock("electron", () => {
       getVersion: () => "0.0.0",
       getName: () => "Prequel",
       isPackaged: false,
+      // The Open at Login item reads this every time the menu is built.
+      getLoginItemSettings: () => ({ openAtLogin: false, wasOpenedAtLogin: false }),
+      setLoginItemSettings: () => {},
       // The logger writes here; a scratch path keeps the test off the real
       // `~/Library/Logs`.
       getPath: () => tmpdir(),
@@ -157,6 +174,50 @@ describe("the tray icon", () => {
     }
 
     expect(errors.some((args) => String(args[0]).includes("tray icon is empty"))).toBe(true);
+  });
+
+  it("reports an icon that never reached the menu bar", () => {
+    // The failure the empty-image check above cannot see: the icon loaded, the
+    // `Tray` was constructed, and macOS put the item nowhere the user can reach
+    // — a full menu bar, or a menu-bar manager that hides new items. With
+    // `LSUIElement` the menu bar is the only way in *and* the only way out, so
+    // this is the difference between "the user has not looked" and "there is
+    // nothing to look at".
+    vi.useFakeTimers();
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+
+    trayBounds = { x: 0, y: 982, width: 32, height: 0 };
+    try {
+      new AppTray(fakeSession(IDLE_SESSION) as never, {} as never);
+      vi.runAllTimers();
+    } finally {
+      trayBounds = { x: 1065, y: 0, width: 32, height: 33 };
+      console.error = original;
+      vi.useRealTimers();
+    }
+
+    expect(errors.some((args) => String(args[0]).includes("never reached the menu bar"))).toBe(
+      true,
+    );
+  });
+
+  it("says nothing when the item is placed", () => {
+    vi.useFakeTimers();
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+
+    try {
+      new AppTray(fakeSession(IDLE_SESSION) as never, {} as never);
+      vi.runAllTimers();
+    } finally {
+      console.error = original;
+      vi.useRealTimers();
+    }
+
+    expect(errors).toEqual([]);
   });
 
   it("says nothing when the icon loads", () => {

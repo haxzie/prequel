@@ -381,6 +381,66 @@ fn draws_an_image_background() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn a_translucent_layer_lands_at_the_opacity_it_asks_for() {
+    // The alpha bug: `image.rs` decodes premultiplied and the shader used to
+    // hand back straight alpha into a `SrcAlpha` blend, so every translucent
+    // thing drew at its own opacity squared — white at 50% arriving as 64
+    // rather than 128.
+    //
+    // It hid for as long as it did because nothing translucent was ever
+    // coloured: a background is opaque, and a shadow is black, where `0 * a * a`
+    // is still 0. A caption pill is neither.
+    let dir = scratch("prequel-pixels-alpha");
+    let output = dir.join("export.mp4");
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "#000000".to_owned(),
+                },
+            },
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "rgba(255, 255, 255, 0.5)".to_owned(),
+                },
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // Half of white over black is mid grey. Squaring the alpha gives 64, which
+    // is 192 away across the three channels and well outside `near`'s tolerance.
+    let frame = first_frame(&output);
+    near(
+        frame.at(160, 120),
+        (128, 128, 128),
+        "half-opacity white on black",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Writes a pixel buffer out as a PNG, so the exporter has a real file to
 /// decode rather than one this test hand-rolled.
 fn write_png(path: &Path, buffer: &arc::R<cv::PixelBuf>) {

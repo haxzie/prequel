@@ -309,6 +309,9 @@ export class CaptureFlow {
         // next attempt has to be asked for, rather than the panel sitting there
         // implying a source it does not have.
         this.activeMode = null;
+        // Escape during the countdown is the common way here, and by then the
+        // camera is open with its light on.
+        this.releaseCamera();
       }
     } finally {
       if (refresh) clearInterval(refresh);
@@ -328,6 +331,7 @@ export class CaptureFlow {
         run,
         current: this.selectionRun,
       });
+      this.releaseCamera();
       return this.state();
     }
 
@@ -335,6 +339,9 @@ export class CaptureFlow {
     // panel that still believes an overlay is up.
     if (start) return this.record();
 
+    // A source was chosen without starting, so the countdown never ran to a
+    // recording. Anything it opened is stray.
+    this.releaseCamera();
     return this.state();
   }
 
@@ -420,6 +427,7 @@ export class CaptureFlow {
       // leaves the app looking like it ignored the button — which is
       // indistinguishable from a bug in the button.
       console.error("[flow] could not start capturing:", cause);
+      this.releaseCamera();
       this.deps.dock.setView("setup");
       this.deps.dock.show();
       this.emit();
@@ -483,6 +491,50 @@ export class CaptureFlow {
 
   cancelSelection(): void {
     this.deps.selection.cancel();
+  }
+
+  /**
+   * Opens the camera while the countdown is on screen.
+   *
+   * Three seconds of warm-up that were being spent anyway. An
+   * `AVCaptureSession` calls itself running as soon as the pipeline is live,
+   * which is well before the sensor has settled on an exposure — so a camera
+   * opened at the instant recording starts writes a dark second or two first.
+   *
+   * Deliberately not awaited by the caller and never throws: this is an
+   * optimisation, and a camera that will not open early is one `record` opens
+   * itself, with the dark head it always had. Paired with `releaseCamera` on
+   * every path that does not reach a recording, because the camera light comes
+   * on here.
+   */
+  async warmCamera(): Promise<void> {
+    const preferences = this.deps.preferences.get();
+    if (!preferences.cameraId) return;
+
+    try {
+      const device = await this.nativeCameraId(preferences.cameraLabel);
+      if (!device) return;
+      await (await getRecorder()).prepareCamera(device);
+    } catch (cause) {
+      console.warn("[flow] could not open the camera early:", cause);
+    }
+  }
+
+  /**
+   * Closes a camera opened by `warmCamera`.
+   *
+   * Safe to call when nothing is open, which is why every path out of a
+   * countdown calls it rather than working out whether it needs to. The cost of
+   * missing one is the camera light left on with nothing recording.
+   */
+  private releaseCamera(): void {
+    void (async () => {
+      try {
+        (await getRecorder()).releaseCamera();
+      } catch (cause) {
+        console.warn("[flow] could not close the early camera:", cause);
+      }
+    })();
   }
 
   chooseSelection(result: Parameters<SelectionOverlay["choose"]>[0]): void {

@@ -7,11 +7,30 @@ import { app, Menu, nativeImage, shell, Tray } from "electron";
 
 import type { CaptureFlow } from "./capture-flow.js";
 import { log, logPath } from "./log.js";
+import { opensAtLogin, setOpensAtLogin } from "./login-item.js";
 import type { RecordingSession, SessionState } from "./session.js";
 import { recentRecordings, revealRecordings } from "./session.js";
 
 /** How many past recordings the Open Recent submenu offers. */
 const RECENT_LIMIT = 10;
+
+/**
+ * How long macOS is given to place the status item before it is checked.
+ *
+ * `getBounds` answers an empty rect until the item has a slot in the menu bar —
+ * measured, not assumed: immediately after `new Tray` it reads
+ * `{x: 0, y: <below the screen>, width: 32, height: 0}`, and settles about a
+ * third of a second later. Anything past that is long enough.
+ */
+const PLACEMENT_MS = 1500;
+
+/**
+ * The global shortcut, written the way a menu bar writes it.
+ *
+ * The one thing still worth telling a user whose tray icon is nowhere to be
+ * seen, because it is the only part of the app that does not go through it.
+ */
+const TOGGLE_HINT = "⇧⌘R";
 
 function icon(name: string) {
   // Relative to `out/main/`, where electron-vite emits the bundled main
@@ -58,6 +77,42 @@ export class AppTray {
 
     this.session.subscribe((state) => this.render(state));
     log("info", "tray ready");
+    this.reportPlacement();
+  }
+
+  /**
+   * Says whether the icon actually reached the menu bar.
+   *
+   * "tray ready" only means the `Tray` was constructed, and a constructed tray
+   * that is nowhere on screen is the one failure this app cannot survive: the
+   * menu bar is the only way in and, with `LSUIElement`, the only way out. The
+   * empty-image check above catches an icon that could not be read; it says
+   * nothing about an item macOS placed somewhere the user cannot see — a menu
+   * bar with no room left, or a third-party menu-bar manager that hides new
+   * items by default. Without this the log is identical in both cases.
+   */
+  private reportPlacement(): void {
+    const timer = setTimeout(() => {
+      if (this.tray.isDestroyed()) return;
+
+      const bounds = this.tray.getBounds();
+      if (bounds.height > 0) {
+        log("info", `tray placed at ${bounds.x},${bounds.y} ${bounds.width}×${bounds.height}`);
+        return;
+      }
+
+      // `console.error` rather than `log`: mirrored into the log file *and*
+      // visible under `pnpm dev`, because an app with no way in is worth
+      // tripping over rather than reading about afterwards.
+      console.error(
+        "tray icon never reached the menu bar — the menu bar may be full, or a " +
+          `menu-bar manager may be hiding it. Use ${TOGGLE_HINT} to record.`,
+      );
+    }, PLACEMENT_MS);
+
+    // The timer must not be what keeps a quitting app alive: teardown runs on
+    // `will-quit`, and a pending handle here would hold the process past it.
+    timer.unref?.();
   }
 
   /**
@@ -125,6 +180,16 @@ export class AppTray {
       // Reachable from the one menu that is always there, so a user can find
       // the log without being told where it lives.
       { label: "Show Log in Finder", click: () => shell.showItemInFolder(logPath()) },
+      { type: "separator" },
+      {
+        label: "Open at Login",
+        type: "checkbox",
+        // Read from macOS every time the menu is built, not cached: this is
+        // also a switch in System Settings, and a remembered answer would show
+        // a tick for a login item the user removed there an hour ago.
+        checked: opensAtLogin(),
+        click: (item) => setOpensAtLogin(item.checked),
+      },
       { type: "separator" },
       {
         label: "Quit Prequel",

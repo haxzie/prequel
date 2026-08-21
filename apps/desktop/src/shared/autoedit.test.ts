@@ -88,7 +88,30 @@ describe("clustering", () => {
 
     for (const zoom of zooms) {
       // Still shots rather than one push over the whole run.
-      expect(zoom.source.end - zoom.source.start).toBeLessThanOrEqual(14 * S);
+      expect(zoom.source.end - zoom.source.start).toBeLessThanOrEqual(20 * S);
+    }
+  });
+
+  it("holds through a pause rather than pulling out and coming back", () => {
+    // Two runs four seconds apart are one shot, not two. A zoom that leaves and
+    // returns inside a few seconds is the most tiring thing an automatic edit
+    // can do, and the camera can travel between the two places instead — which
+    // it could not before it was allowed to pan.
+    expect(autoZooms([click(10, 0.2, 0.2), click(14, 0.8, 0.8)], OPTIONS)).toHaveLength(1);
+  });
+
+  it("leaves room to breathe between the shots it does make", () => {
+    // Anything closer reads as the picture flinching rather than as two shots.
+    const zooms = autoZooms(
+      Array.from({ length: 12 }, (_, index) => click(index * 7)),
+      { duration: 120 * S, hasCursor: true },
+    );
+
+    expect(zooms.length).toBeGreaterThan(1);
+
+    for (let index = 1; index < zooms.length; index += 1) {
+      const gap = zooms[index]!.source.start - zooms[index - 1]!.source.end;
+      expect(gap).toBeGreaterThanOrEqual(2 * S);
     }
   });
 

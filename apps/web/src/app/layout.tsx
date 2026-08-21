@@ -5,9 +5,11 @@ import type { ReactNode } from "react";
 import { env } from "@prequel/env";
 
 import { Footer } from "@/components/Footer";
+import { JsonLd } from "@/components/JsonLd";
 import { Nav } from "@/components/Nav";
 import { Wash } from "@/components/Wash";
 import { Rails } from "@/components/Rails";
+import { organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 import "./globals.css";
@@ -51,12 +53,13 @@ export const metadata: Metadata = {
   description: SITE.description,
   applicationName: SITE.name,
   keywords: ["screen recorder", "macOS", "screen recording", "video editor", "screen capture"],
+  // Per-page metadata sets `openGraph.url` and `alternates.canonical`. A home
+  // URL here would leak into every subpage's share cards.
   openGraph: {
     type: "website",
     siteName: SITE.name,
     title: `${SITE.name} — ${SITE.tagline}`,
     description: SITE.description,
-    url: "/",
   },
   twitter: { card: "summary_large_image" },
 };
@@ -76,6 +79,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${sans.variable} ${mono.variable} ${serif.variable} ${script.variable}`}
     >
       <body>
+        <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
         <Wash />
         <Rails />
         <Nav />

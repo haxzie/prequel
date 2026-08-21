@@ -359,12 +359,23 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenOffsetX: 0,
   screenOffsetY: 0,
   cameraVisible: true,
-  cameraShape: "circle",
-  cameraSize: 0.22,
+  cameraShape: "squircle",
+  cameraSize: 0.35,
   cameraZoom: 1,
-  // Bottom left, which is where the corner default used to put it.
-  cameraX: 0.15,
-  cameraY: 0.85,
+  // Bottom right, standing off both edges by about a sixteenth of the frame.
+  //
+  // The pointer spends most of a demonstration on the left and in the middle —
+  // menus, sidebars, the thing being clicked — so the far corner is the one
+  // least often in the way of the point being made.
+  //
+  // Read against `cameraSize`, not on their own: the position is the bubble's
+  // *centre*, so the margin is whatever is left after half a bubble. At 0.85
+  // and this size the centre was past the point where a whole bubble still
+  // fits, `cameraRect` clamped it, and it sat flush on the bottom edge with a
+  // shadow it had nowhere to cast. Changing one of the three without the
+  // others puts it back against the edge.
+  cameraX: 0.87,
+  cameraY: 0.77,
   cameraMirror: true,
   cursorVisible: true,
   // About the size the pointer appears on screen in a 1080p frame, so an export
@@ -491,13 +502,28 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
  * fills it in from the screen track as soon as the recording is open. These
  * dimensions are only what it holds until then, and are what it keeps if the
  * recording turns out to have no screen track to measure.
+ *
+ * `fullScreen` opens a whole-screen recording without the card treatment. A
+ * window or a region is an object with edges, and inset on a background it
+ * reads as one; a whole screen already fills the frame it was recorded in, and
+ * insetting it only shrinks the thing being demonstrated and puts a border of
+ * desktop picture around a picture of a desktop. The corner radius goes with
+ * the padding rather than staying behind — kept on a full-bleed picture it cuts
+ * four notches out of the corners with the background showing through, which
+ * looks like a bug rather than like a choice.
  */
-export function newProject(recordingId: string, duration: Ns): Project {
+export function newProject(recordingId: string, duration: Ns, fullScreen = false): Project {
+  const defaults = structuredClone(DEFAULT_SETTINGS);
+  if (fullScreen) {
+    defaults.background.padding = 0;
+    defaults.background.cornerRadius = 0;
+  }
+
   return {
     version: PROJECT_VERSION,
     recordingId,
     frame: { width: 1920, height: 1080, presetId: DEFAULT_PRESET_ID },
-    defaults: structuredClone(DEFAULT_SETTINGS),
+    defaults,
     zooms: [],
     tracks: [
       {

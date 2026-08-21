@@ -136,6 +136,26 @@ export function CloseIcon() {
   );
 }
 
+/** Lucide `box`. */
+export function PerspectiveIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+    </svg>
+  );
+}
+
+/** Lucide `focus`. */
+export function FocusIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    </svg>
+  );
+}
+
 /** Lucide `mouse-pointer-2`. */
 export function CursorIcon() {
   return (
@@ -419,17 +439,6 @@ export function TypingIcon() {
       <path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1" />
       <path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7" />
       <path d="M9 7v10" />
-    </svg>
-  );
-}
-
-/** Lucide `panel-right`. Filled when the panel is showing. */
-export function PanelIcon({ open }: { open: boolean }) {
-  return (
-    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <path d="M15 3v18" />
-      {open && <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z" fill="currentColor" />}
     </svg>
   );
 }

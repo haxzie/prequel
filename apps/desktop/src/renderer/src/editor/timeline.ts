@@ -231,3 +231,40 @@ export function splitAt(slices: readonly Slice[], time: MediaTime, id: () => str
       : [{ id: candidate.id, source: { ...candidate.source } }],
   );
 }
+
+/**
+ * Where a trim drag picked an edge up.
+ *
+ * `perPixel` is the source time one pixel of the strip was worth at that
+ * moment, kept because the strip's scale does not hold still through a drag —
+ * see `trimmedTo`.
+ */
+export interface TrimGrab {
+  /** The edge's source time when it was grabbed. */
+  source: MediaTime;
+  /** Where the pointer was when it was grabbed. */
+  clientX: number;
+  perPixel: number;
+}
+
+/**
+ * Where a trim drag has moved an edge to, in source time.
+ *
+ * Measured from where the drag started rather than from where the clip is now,
+ * and that is the whole point: both halves of "how far has this moved" shift
+ * *while the drag runs*. Slices are laid end to end, so trimming a head slides
+ * every frame after it left; and at the fit zoom the strip is always exactly as
+ * wide as the edit, so shortening the edit stretches what is left back out to
+ * fill the same room.
+ *
+ * A delta taken against the live clip therefore feeds its own result back in.
+ * The distance the pointer had already travelled was added again on every
+ * `pointermove`, so the same gesture landed somewhere different depending on how
+ * many events it took to get there — a slow drag of a few pixels ran the edge
+ * off the end of the take, a flicked one barely moved it.
+ *
+ * Says where the pointer is pointing, not what is legal: `trimSlice` clamps.
+ */
+export function trimmedTo(grab: TrimGrab, clientX: number): MediaTime {
+  return grab.source + (clientX - grab.clientX) * grab.perPixel;
+}

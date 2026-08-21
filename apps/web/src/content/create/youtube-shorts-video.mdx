@@ -1,0 +1,41 @@
+Vertical video from a screen recording is usually a crop, and a crop of a
+desktop is a bad video. The interface was laid out across a wide frame; taking
+the middle ninth of it throws away most of what you were showing and puts the
+webcam somewhere off the edge.
+
+The alternative is recording everything twice, once per aspect ratio, which
+nobody does after the first week.
+
+## Framing that survives the switch
+
+Prequel does not store the look in pixels. Every geometry setting — the camera
+size, its corner, the padding, the radius — is a fraction of the frame's
+shorter edge.
+
+The practical effect is that switching a take from 16:9 to 9:16 keeps the
+camera a quarter of the way across the frame rather than sliding it out of
+shot, and keeps the padding proportional rather than enormous. The look holds.
+You are re-framing the same take, not rebuilding it.
+
+That invariant is enforced in the code that computes geometry, and the preview
+and the exporter draw the same plan — so the vertical version you approve on
+screen is the vertical version in the file.
+
+## Which frames are there
+
+Landscape 16:9, 4K, vertical 9:16, square 1:1 and portrait 4:5, plus named
+presets for YouTube, Shorts, TikTok, Reels, X and LinkedIn.
+
+Switching between them is a setting on the take, so one recording can produce
+the long landscape cut and the vertical clip without a second capture.
+
+## The zooms matter more here
+
+Vertical makes a desktop recording smaller, not larger, so the pushes are doing
+more work than they do in 16:9. Prequel places them from where you clicked and
+typed during the take, and every one is an ordinary timeline slice you can
+retime or aim somewhere else.
+
+For a Short specifically, the useful move is usually a tighter level and a
+faster speed than you would want in a long-form video. Both are per-zoom
+settings.

@@ -15,6 +15,7 @@
 import {
   cursorAt,
   rectAt,
+  SHADOW_SPREAD,
   type Paint,
   type PlanItem,
   type PlanSource,
@@ -135,10 +136,21 @@ function drawItem(
       // context's shadow properties, so the blur lands somewhere predictable
       // rather than depending on what is painted next.
       const moved = moving(item, at);
+      // The plan grows a shadow's rectangle so the GPU has somewhere to
+      // rasterise the falloff. A real Gaussian needs no such room — it spreads
+      // past whatever it is given — so the growth is taken back off here, or
+      // the shadow would be drawn three blur radii too big in every direction.
+      const bleed = (item.blur / 2) * SHADOW_SPREAD;
+      const cast: Rect = {
+        x: moved.rect.x + bleed,
+        y: moved.rect.y + bleed,
+        width: Math.max(0, moved.rect.width - bleed * 2),
+        height: Math.max(0, moved.rect.height - bleed * 2),
+      };
       context.save();
       context.filter = `blur(${item.blur / 2}px)`;
       context.fillStyle = item.color;
-      path(context, moved.rect, moved.shape, item.dy);
+      path(context, cast, moved.shape, item.dy);
       context.fill();
       context.restore();
       break;

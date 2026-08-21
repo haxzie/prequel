@@ -119,6 +119,60 @@ pub enum PlanItem {
         hotspot: Point,
         points: Vec<CursorPoint>,
     },
+    /// One caption layer: a bitmap the editor rasterised, drawn whole or
+    /// cropped to the word being spoken.
+    ///
+    /// There is no text here, and deliberately none anywhere in this crate.
+    /// Laying out a line twice — once in Chromium for the preview and once in
+    /// CoreText for the export — is the same mistake as computing the camera's
+    /// position twice, and it fails the same way: a cue that breaks into two
+    /// lines on screen and three in the file, noticed after the export. So the
+    /// editor lays it out once, rasterises it once per resolution, and both
+    /// rasterisers draw the pixels.
+    Caption {
+        /// Relative to the session directory, like a background image.
+        path: String,
+        /// The bitmap's own size in pixels. Carried rather than read off the
+        /// texture so that `caption_at` is arithmetic on plain numbers, and so
+        /// the editor and this side cannot disagree about what a word box is
+        /// measured against.
+        bitmap: Size,
+        /// Where the whole bitmap lands in the output frame, in output pixels.
+        #[serde(rename = "dstRect")]
+        dst_rect: Rect,
+        /// The source-time range the cue is on screen for.
+        span: Span,
+        /// Empty draws the whole bitmap across the span — the unlit layer.
+        /// Non-empty draws only the word active at the moment, cropped out of a
+        /// bitmap laid out identically — the lit layer. Two items rather than
+        /// one item emitting two draws, so every plan item stays one quad.
+        #[serde(default)]
+        words: Vec<CaptionWord>,
+    },
+}
+
+/// A half-open range of source time.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Span {
+    pub start: i64,
+    pub end: i64,
+}
+
+/// One word's box within a caption bitmap, and when it is the spoken one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CaptionWord {
+    /// Source time this word becomes the active one.
+    pub at: i64,
+    pub end: i64,
+    /// The word's box, in bitmap pixels.
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// How much larger it is drawn than laid out, about its own centre. 1 for
+    /// no pop.
+    #[serde(default = "one")]
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -284,6 +338,96 @@ pub fn rect_at(
 
 fn one() -> f64 {
     1.0
+}
+
+/// What a caption item draws at a source time, or None if it draws nothing.
+///
+/// Mirrors `captionAt` in `apps/desktop/src/shared/layout.ts`, and is pinned
+/// against it by fixtures that are deliberately identical on both sides. Like
+/// `cursor_at`, it exists twice because a plan cannot hold a rectangle per
+/// output frame — not because either side is deciding anything.
+///
+/// `src` comes back in bitmap pixels; normalising it against the texture is the
+/// caller's job, since only the caller knows what it bound.
+pub fn caption_at(
+    bitmap: Size,
+    dst_rect: Rect,
+    span: Span,
+    words: &[CaptionWord],
+    at: i64,
+) -> Option<CaptionDraw> {
+    // Half-open, so a cue ending exactly where the next begins does not draw
+    // both for one frame.
+    if at < span.start || at >= span.end {
+        return None;
+    }
+
+    if words.is_empty() {
+        return Some(CaptionDraw {
+            src: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: bitmap.width,
+                height: bitmap.height,
+            },
+            dst: dst_rect,
+        });
+    }
+
+    // Nothing between words: the gap is silence, and lighting the word either
+    // side of it through the gap reads as the highlight lagging the voice.
+    let word = words.iter().find(|word| at >= word.at && at < word.end)?;
+
+    if bitmap.width <= 0.0 || bitmap.height <= 0.0 {
+        return None;
+    }
+
+    // The bitmap maps onto `dst_rect` whole, so a box inside it maps by the
+    // same two factors. Nothing is re-derived: this is the one mapping, and it
+    // is the same arithmetic on the other side.
+    let sx = dst_rect.width / bitmap.width;
+    let sy = dst_rect.height / bitmap.height;
+
+    let dst = Rect {
+        x: dst_rect.x + word.x * sx,
+        y: dst_rect.y + word.y * sy,
+        width: word.width * sx,
+        height: word.height * sy,
+    };
+
+    Some(CaptionDraw {
+        src: Rect {
+            x: word.x,
+            y: word.y,
+            width: word.width,
+            height: word.height,
+        },
+        // Grown about its own centre, so a pop swells the word in place rather
+        // than pushing it down and to the right.
+        dst: grown(dst, word.scale),
+    })
+}
+
+/// A rectangle scaled about its own centre.
+fn grown(rect: Rect, scale: f64) -> Rect {
+    let width = rect.width * scale;
+    let height = rect.height * scale;
+
+    Rect {
+        x: rect.x - (width - rect.width) * 0.5,
+        y: rect.y - (height - rect.height) * 0.5,
+        width,
+        height,
+    }
+}
+
+/// The crop and the destination for one caption draw.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CaptionDraw {
+    /// In bitmap pixels.
+    pub src: Rect,
+    /// In output pixels.
+    pub dst: Rect,
 }
 
 /// Where the pointer is at a source time, or None if it is not on screen.
@@ -570,6 +714,152 @@ mod tests {
     #[test]
     fn has_nothing_to_say_about_an_empty_track() {
         assert!(cursor_at(&[], 0).is_none());
+    }
+
+    /// The fixture `captionAt` is tested against in
+    /// `apps/desktop/src/shared/layout.test.ts`. Deliberately identical: this
+    /// arithmetic exists on both sides, and the numbers are the contract.
+    fn caption() -> (Size, Rect, Span, Vec<CaptionWord>) {
+        let bitmap = Size {
+            width: 400.0,
+            height: 100.0,
+        };
+        let dst = Rect {
+            x: 100.0,
+            y: 500.0,
+            width: 800.0,
+            height: 200.0,
+        };
+        let span = Span {
+            start: 1_000,
+            end: 4_000,
+        };
+        let words = vec![
+            CaptionWord {
+                at: 1_000,
+                end: 2_000,
+                x: 0.0,
+                y: 10.0,
+                width: 100.0,
+                height: 80.0,
+                scale: 1.0,
+            },
+            // A gap from 2_000 to 3_000: silence between two words.
+            CaptionWord {
+                at: 3_000,
+                end: 4_000,
+                x: 200.0,
+                y: 10.0,
+                width: 100.0,
+                height: 80.0,
+                scale: 1.0,
+            },
+        ];
+
+        (bitmap, dst, span, words)
+    }
+
+    #[test]
+    fn an_unlit_caption_draws_the_whole_bitmap_across_its_span() {
+        let (bitmap, dst, span, _) = caption();
+
+        let draw = caption_at(bitmap, dst, span, &[], 2_500).unwrap();
+        assert_eq!(draw.src.x, 0.0);
+        assert_eq!(draw.src.width, 400.0);
+        assert_eq!(draw.src.height, 100.0);
+        assert_eq!(draw.dst, dst);
+    }
+
+    #[test]
+    fn a_caption_draws_nothing_outside_its_span() {
+        let (bitmap, dst, span, words) = caption();
+
+        assert!(caption_at(bitmap, dst, span, &[], 999).is_none());
+        // Half-open, so a cue ending where the next begins does not draw both.
+        assert!(caption_at(bitmap, dst, span, &[], 4_000).is_none());
+        assert!(caption_at(bitmap, dst, span, &words, 4_000).is_none());
+    }
+
+    #[test]
+    fn a_lit_caption_draws_nothing_between_two_words() {
+        let (bitmap, dst, span, words) = caption();
+
+        // Inside the span but in the silence. Holding the previous word lit
+        // through the gap reads as the highlight lagging the voice.
+        assert!(caption_at(bitmap, dst, span, &words, 2_500).is_none());
+    }
+
+    #[test]
+    fn a_lit_caption_crops_to_the_word_being_spoken() {
+        let (bitmap, dst, span, words) = caption();
+
+        let draw = caption_at(bitmap, dst, span, &words, 3_500).unwrap();
+
+        // The crop is the word's own box, in bitmap pixels.
+        assert_eq!(draw.src.x, 200.0);
+        assert_eq!(draw.src.width, 100.0);
+
+        // The bitmap is drawn at 2x here — 800 output pixels for 400 bitmap
+        // ones — so every box inside it scales by the same two factors.
+        assert_eq!(draw.dst.x, 100.0 + 400.0);
+        assert_eq!(draw.dst.y, 500.0 + 20.0);
+        assert_eq!(draw.dst.width, 200.0);
+        assert_eq!(draw.dst.height, 160.0);
+    }
+
+    #[test]
+    fn a_popped_word_grows_about_its_own_centre() {
+        let (bitmap, dst, span, mut words) = caption();
+        words[1].scale = 1.5;
+
+        let flat = caption_at(bitmap, dst, span, &caption().3, 3_500).unwrap();
+        let popped = caption_at(bitmap, dst, span, &words, 3_500).unwrap();
+
+        // The crop is untouched: a pop changes where the pixels land, never
+        // which pixels are taken.
+        assert_eq!(popped.src, flat.src);
+
+        let centre = |rect: Rect| (rect.x + rect.width * 0.5, rect.y + rect.height * 0.5);
+        assert_eq!(centre(popped.dst), centre(flat.dst));
+        assert_eq!(popped.dst.width, flat.dst.width * 1.5);
+        assert_eq!(popped.dst.height, flat.dst.height * 1.5);
+    }
+
+    #[test]
+    fn reads_a_caption_item_the_editor_wrote() {
+        // The field names are the contract with `layout.ts`, and `dstRect` is
+        // the one that is not snake_case on the way in.
+        let json = r#"{
+            "kind": "caption",
+            "path": "captions/cue-3.png",
+            "bitmap": { "width": 400.0, "height": 100.0 },
+            "dstRect": { "x": 100.0, "y": 500.0, "width": 800.0, "height": 200.0 },
+            "span": { "start": 1000, "end": 4000 },
+            "words": [
+                { "at": 1000, "end": 2000, "x": 0.0, "y": 10.0, "width": 100.0, "height": 80.0 }
+            ]
+        }"#;
+
+        let item: PlanItem = serde_json::from_str(json).unwrap();
+        match item {
+            PlanItem::Caption {
+                path,
+                bitmap,
+                dst_rect,
+                span,
+                words,
+            } => {
+                assert_eq!(path, "captions/cue-3.png");
+                assert_eq!(bitmap.width, 400.0);
+                assert_eq!(dst_rect.width, 800.0);
+                assert_eq!(span.end, 4_000);
+                assert_eq!(words.len(), 1);
+                // Defaulted, like a cursor point's, so the ordinary caption
+                // carries no `scale` at all.
+                assert_eq!(words[0].scale, 1.0);
+            }
+            other => panic!("parsed as {other:?}"),
+        }
     }
 
     #[test]

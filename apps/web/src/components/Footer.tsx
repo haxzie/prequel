@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { competitors } from "@/content/competitors";
+import { useCases } from "@/content/use-cases";
 import { CONTACT_EMAIL, NAV, SITE } from "@/lib/site";
 
 import { Logo } from "./Logo";
@@ -9,7 +11,7 @@ import { WaitlistForm } from "./WaitlistForm";
 export function Footer() {
   return (
     <footer className="mt-32 border-t border-dashed border-rule">
-      <Container className="grid gap-12 py-16 md:grid-cols-[1.4fr_1fr]">
+      <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
         <div>
           <Link href="/" className="flex items-center gap-2.5" aria-label="Prequel home">
             <Logo size={32} />
@@ -19,7 +21,11 @@ export function Footer() {
           <WaitlistForm className="mt-6 max-w-md" />
         </div>
 
-        <div className="flex gap-16 md:justify-end">
+        {/* Three groups rather than a flex row: the middle one carries sixteen
+            links, and a wrapping flex row that right-aligns its second line
+            reads as a mistake. `auto_1fr_auto` lets the use cases take the slack
+            and keeps the two short columns at their content width. */}
+        <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_1.5fr_1fr_auto] sm:gap-x-12">
           <nav className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Site</span>
             {NAV.map((item) => (
@@ -28,6 +34,44 @@ export function Footer() {
               </Link>
             ))}
           </nav>
+
+          {/* Every use-case page links to every other one through this column,
+              which is what makes the set crawlable without a `/create` index.
+              That is why it carries all of them rather than a curated few.
+
+              The href is built here rather than stored on the registry entry:
+              `Route` resolves its generic to `string`, and `string` does not
+              extend the generated `/create/${SafeSlug<…>}`, so a field typed
+              `Route` would reject every one of these. `Link` infers it from the
+              literal instead — the same thing `blog/page.tsx` does. */}
+          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
+            <span className="col-span-2 font-medium text-fg">Use cases</span>
+            {useCases.map((useCase) => (
+              <Link
+                key={useCase.slug}
+                href={`/create/${useCase.slug}`}
+                className="text-muted hover:text-fg"
+              >
+                {useCase.navLabel}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Same reasoning as the use cases above: the comparison pages have no
+              index either, so this column is what makes them crawlable. */}
+          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm sm:grid-cols-1">
+            <span className="col-span-2 font-medium text-fg sm:col-span-1">Alternatives</span>
+            {competitors.map((competitor) => (
+              <Link
+                key={competitor.slug}
+                href={`/alternatives/${competitor.slug}`}
+                className="text-muted hover:text-fg"
+              >
+                {competitor.navLabel}
+              </Link>
+            ))}
+          </nav>
+
           <div className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Contact</span>
             <a href={`mailto:${CONTACT_EMAIL}`} className="text-muted hover:text-fg">

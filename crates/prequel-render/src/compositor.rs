@@ -10,12 +10,15 @@
 //! long before the encoder does.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use cidre::{arc, cf, cv, mtl, ns};
 
 use prequel_session::MediaTime;
 
-use crate::plan::{Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, cursor_at, rect_at};
+use crate::plan::{
+    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, caption_at, cursor_at, rect_at,
+};
 use crate::{Error, Result};
 
 /// Mirrors `Uniforms` in `shaders.metal`. Field order and padding must match.
@@ -92,7 +95,22 @@ pub struct Compositor {
     /// Background images, decoded once and reused for every frame that uses
     /// them — a wallpaper re-uploaded per frame would dominate the export.
     images: HashMap<String, Held>,
+    /// How recently each caption bitmap was wanted, for the eviction below.
+    /// Counted rather than timed: the export loop is monotonic in time and a
+    /// counter cannot go backwards over a paused machine.
+    caption_use: HashMap<String, u64>,
+    caption_clock: u64,
 }
+
+/// How many caption bitmaps to keep decoded at once.
+///
+/// Captions deliberately do *not* go through the preload that backgrounds and
+/// the pointer use. There are a handful of those and every slice names the same
+/// one; there is one caption bitmap per cue, and a five-minute take at 4K is
+/// around 300 of them — about 1.2 GB of wired IOSurface memory if they were all
+/// decoded up front. Only one cue is on screen at a time, so a very small cache
+/// costs one decode per cue across the whole export and bounds the memory flat.
+const CAPTION_CACHE: usize = 4;
 
 impl Compositor {
     pub fn new(width: u32, height: u32) -> Result<Self> {
@@ -118,10 +136,17 @@ impl Compositor {
         let attachments = descriptor.color_attaches();
         let mut attachment = attachments.get(0);
         attachment.set_pixel_format(mtl::PixelFormat::Bgra8UNorm);
-        // Standard source-over: every primitive is drawn back to front, and the
-        // shader hands back straight (non-premultiplied) alpha.
+        // Source-over on *premultiplied* colour: every primitive is drawn back
+        // to front, and the shader has already folded its alpha into the RGB.
+        //
+        // `SrcAlpha` here would multiply a second time. That is invisible on
+        // what the plan used to hold — an opaque background, and a shadow whose
+        // colour is black, where `0 * a * a` is still 0 — and plainly wrong on
+        // anything translucent and coloured: a caption pill set to 60% draws at
+        // 36%, and an antialiased glyph edge erodes. `webgl.ts` is configured
+        // the same way, deliberately, so the two cannot drift apart.
         attachment.set_blending_enabled(true);
-        attachment.set_src_rgb_blend_factor(mtl::BlendFactor::SrcAlpha);
+        attachment.set_src_rgb_blend_factor(mtl::BlendFactor::One);
         attachment.set_dst_rgb_blend_factor(mtl::BlendFactor::OneMinusSrcAlpha);
         attachment.set_src_alpha_blend_factor(mtl::BlendFactor::One);
         attachment.set_dst_alpha_blend_factor(mtl::BlendFactor::OneMinusSrcAlpha);
@@ -146,6 +171,8 @@ impl Compositor {
             textures,
             pool,
             images: HashMap::new(),
+            caption_use: HashMap::new(),
+            caption_clock: 0,
         })
     }
 
@@ -157,6 +184,66 @@ impl Compositor {
         let held = self.texture_for(&buffer, Some(buffer.clone()))?;
         self.images.insert(path.to_owned(), held);
         Ok(())
+    }
+
+    /// Makes sure every caption bitmap this plan needs at this moment is
+    /// decoded, and drops the ones it does not.
+    ///
+    /// Called immediately before `render`, never during it: `Held`'s wrapper
+    /// must outlive the `MTLTexture`, and the texture is a *view* onto the
+    /// pixel buffer rather than a copy. Evicting between two draws of the same
+    /// frame would hand the GPU memory that had already been freed. Between
+    /// frames is safe — `render` ends by waiting on its command buffer.
+    ///
+    /// A bitmap that will not decode is skipped, not fatal. The rest of the
+    /// frame is still worth rendering, and a missing caption is a plainer video
+    /// where a failed export is lost footage.
+    pub fn load_captions(&mut self, dir: &Path, plan: &RenderPlan, at: MediaTime) {
+        self.caption_clock += 1;
+        let now = self.caption_clock;
+        let at = at as i64;
+
+        for item in &plan.items {
+            let PlanItem::Caption { path, span, .. } = item else {
+                continue;
+            };
+            // The same half-open test `caption_at` makes, so a bitmap is never
+            // decoded for a frame that would not draw it.
+            if path.is_empty() || at < span.start || at >= span.end {
+                continue;
+            }
+
+            self.caption_use.insert(path.clone(), now);
+            if self.images.contains_key(path) {
+                continue;
+            }
+
+            match crate::image::decode(&dir.join(path))
+                .and_then(|buffer| self.add_image(path, buffer))
+            {
+                Ok(()) => tracing::debug!("loaded caption {path}"),
+                Err(err) => tracing::warn!("could not load caption {path}: {err}"),
+            }
+        }
+
+        // Only ever the caption entries: `caption_use` holds nothing else, so a
+        // background can never be evicted out from under a later frame.
+        while self.caption_use.len() > CAPTION_CACHE {
+            let Some(stalest) = self
+                .caption_use
+                .iter()
+                .filter(|(_, seen)| **seen < now)
+                .min_by_key(|(_, seen)| **seen)
+                .map(|(path, _)| path.clone())
+            else {
+                // Everything left is in use this frame. More cues on screen at
+                // once than the cache holds is not a reason to thrash.
+                break;
+            };
+
+            self.caption_use.remove(&stalest);
+            self.images.remove(&stalest);
+        }
     }
 
     /// Draws one plan into a fresh output buffer.
@@ -457,6 +544,40 @@ impl Compositor {
                             size as f32,
                             size as f32,
                         ],
+                        mode: MODE_IMAGE,
+                        ..base
+                    },
+                    Some(held.texture.as_ref()),
+                ))
+            }
+
+            PlanItem::Caption {
+                path,
+                bitmap,
+                dst_rect,
+                span,
+                words,
+            } => {
+                let Some(held) = self.images.get(path) else {
+                    // No bitmap loaded. Skipped rather than drawn as a black
+                    // rectangle, which is what an unloaded texture is.
+                    return Ok(None);
+                };
+                // Off screen at this moment, or between two words on the lit
+                // layer. Not an error — the preview draws nothing here too.
+                let Some(draw) = caption_at(*bitmap, *dst_rect, *span, words, at as i64) else {
+                    return Ok(None);
+                };
+
+                Some((
+                    Uniforms {
+                        rect: rect_of(&draw.dst),
+                        // Normalised against the texture's real size rather
+                        // than the plan's `bitmap`. They agree — the same file
+                        // produced both — and if a stale PNG ever made them
+                        // disagree, this keeps the crop inside the texture
+                        // instead of sampling past its edge.
+                        src: normalised(&draw.src, held.texture.width(), held.texture.height()),
                         mode: MODE_IMAGE,
                         ..base
                     },

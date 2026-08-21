@@ -1,0 +1,39 @@
+Written bug reports lose a round trip to the same question every time: what
+exactly did you click. A recording answers it before it is asked, which is why
+every issue template has a line asking for one.
+
+The reason people skip it is that the recording is usually worse than the
+description. It is four minutes long, most of which is finding the thing, and
+the moment that matters is six pixels wide.
+
+## The moment that matters, at a readable size
+
+Prequel records where you click and type while it captures, and turns those
+moments into zooms. The click that triggered the bug is a click it noticed, so
+it is a push in the finished video without you placing one.
+
+If the interesting thing is text rather than a pointer — an error message, a
+stack trace, a value in a config panel — draw a region zoom. It holds still on
+the area you drew rather than following the cursor around while somebody tries
+to read it.
+
+## Trim to the reproduction
+
+The take is a real timeline, with a playhead that scrubs and a waveform under
+every clip. Cutting the ninety seconds where you were finding the right screen
+is a blade and a delete.
+
+That is worth doing for its own sake, and it is also how the file gets small
+enough to attach. Export is hardware H.264 at a constant frame rate, which is
+dramatically smaller than the MOV a plain screen recording produces for the
+same seconds — and at 1080p rather than 4K, a thirty-second reproduction is an
+ordinary attachment.
+
+## What gets captured
+
+Screen, microphone, system audio and webcam, as separate tracks. The system
+audio track is occasionally the whole report on its own, when the bug is
+something making a sound it should not. Narration is optional, and its gain is
+independent of everything else.
+
+Nothing is uploaded to make any of this.

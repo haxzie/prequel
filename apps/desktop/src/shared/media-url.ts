@@ -6,6 +6,8 @@
  * Deliberately free of any `electron` or Node import so both can use it.
  */
 
+import type { PermissionId } from "./contract.js";
+
 export const MEDIA_SCHEME = "prequel-media";
 
 /**
@@ -29,6 +31,18 @@ export function mediaUrl(recording: string, fileName: string): string {
  */
 export function assetUrl(fileName: string): string {
   return `${MEDIA_SCHEME}://asset/${encodeURIComponent(fileName)}`;
+}
+
+/**
+ * A URL for the macOS icon of one permission.
+ *
+ * The flat `permission-<id>.png` name is the convention `assetPath` matches on,
+ * and it is spelled out once here for the same reason the rest of this file
+ * exists: the two sides have to agree exactly, and a name built by hand in the
+ * renderer is a 404 that reads as a missing icon.
+ */
+export function permissionIconUrl(id: PermissionId): string {
+  return assetUrl(`permission-${id}.png`);
 }
 
 /** The last path segment of a session directory. */

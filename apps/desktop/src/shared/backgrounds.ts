@@ -10,6 +10,11 @@
  * seen in a square or vertical frame — which is why the busiest part of each is
  * near the centre.
  *
+ * Two groups: photographs first, then gradients. The gradients are grainy on
+ * purpose — a smooth ramp across a 4K frame bands visibly once it has been
+ * through a video encoder, and the grain is the dither that stops it. Do not
+ * re-encode them at a quality that smooths it away.
+ *
  * Free of any `electron`, Node or DOM import: main resolves them to files, the
  * renderer resolves them to URLs, and both need the same list.
  */
@@ -30,6 +35,10 @@ export const BACKGROUND_PRESETS: BackgroundPreset[] = [
   { id: "canyon", label: "Canyon", file: "canyon.jpg" },
   { id: "cirrus", label: "Cirrus", file: "cirrus.jpg" },
   { id: "shore", label: "Shore", file: "shore.jpg" },
+  { id: "aurora", label: "Aurora", file: "aurora.jpg" },
+  { id: "iris", label: "Iris", file: "iris.jpg" },
+  { id: "blush", label: "Blush", file: "blush.jpg" },
+  { id: "nebula", label: "Nebula", file: "nebula.jpg" },
 ];
 
 export function backgroundPreset(id: string): BackgroundPreset | undefined {

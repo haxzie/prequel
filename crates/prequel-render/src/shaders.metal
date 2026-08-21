@@ -169,6 +169,18 @@ static float4 sample_focused(texture2d<float> image, sampler smp, constant Unifo
     return total / 16.0;
 }
 
+// Source-over blending is configured for premultiplied colour, so every return
+// carries its alpha folded into the RGB. Verbatim from `premultiplied` in
+// `apps/desktop/src/renderer/src/editor/webgl.ts`.
+//
+// Doing it here rather than in the pipeline state is what lets both rasterisers
+// run one blend mode each: the alternative is a `SrcAlpha` blend, which
+// multiplies a second time and quietly renders every translucent thing at its
+// own opacity squared.
+static inline float4 premultiplied(float3 rgb, float alpha) {
+    return float4(rgb * alpha, alpha);
+}
+
 fragment float4 composite_fragment(Vertex in [[stage_in]],
                                    constant Uniforms &u [[buffer(0)]],
                                    texture2d<float> image [[texture(0)]]) {
@@ -181,11 +193,21 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
 
     // Shadows are drawn as the same shape, softened — so the blur follows the
     // silhouette rather than the bounding box.
+    //
+    // Verbatim from the `u_mode == 3` branch in `webgl.ts`, including the
+    // constant: the rectangle arrives grown by this many sigmas (see
+    // `SHADOW_SPREAD` in `shared/layout.ts`) so the falloff has somewhere to be
+    // drawn, and both rasterisers take it back off to find the shape casting
+    // it. Growing it in one place and not subtracting it in the other moves the
+    // shadow out from under the picture.
     if (u.mode == 3) {
-        float d = shape_distance(p, half_size, u.shape.x, u.shape.y);
-        float softness = max(u.weight, 0.0001);
-        float alpha = 1.0 - smoothstep(-softness, softness, d);
-        return float4(u.colorA.rgb, u.colorA.a * alpha);
+        float sigma = max(u.weight, 0.0001);
+        float2 caster = max(half_size - 3.0 * sigma, float2(0.0));
+        float away = shape_distance(p, caster, u.shape.x, u.shape.y);
+        // The logistic approximation to a Gaussian's integral: half opacity on
+        // the edge, decaying without ever quite stopping. `smoothstep` reached
+        // zero at a fixed distance and left a rim where the shadow ended.
+        return premultiplied(u.colorA.rgb, u.colorA.a / (1.0 + exp(1.702 * away / sigma)));
     }
 
     float d = shape_distance(p, half_size, u.shape.x, u.shape.y);
@@ -194,7 +216,7 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // A stroke is the band either side of the edge.
         float half_width = max(u.weight, 0.5) * 0.5;
         float band = 1.0 - smoothstep(half_width - 0.5, half_width + 0.5, abs(d));
-        return float4(u.colorA.rgb, u.colorA.a * band);
+        return premultiplied(u.colorA.rgb, u.colorA.a * band);
     }
 
     // One pixel of feathering at the edge. Without it a circle drawn at export
@@ -214,7 +236,11 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // applied first, so it flips the crop rather than moving it.
         uv = u.src.xy + uv * u.src.zw;
         float4 sampled = sample_focused(image, smp, u, uv, in.screen);
-        return float4(sampled.rgb * vignette(u, in.screen), sampled.a * coverage);
+        // `sampled` is already premultiplied — `image.rs` decodes through
+        // `KCG_IMAGE_ALPHA_PREMULTIPLIED_FIRST` and a camera frame is opaque —
+        // so only `coverage` is folded in here. Running it through
+        // `premultiplied` as well would multiply the texture's own alpha twice.
+        return float4(sampled.rgb * vignette(u, in.screen) * coverage, sampled.a * coverage);
     }
 
     if (u.mode == 1) {
@@ -222,8 +248,8 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // measured the same way CSS measures them.
         float t = saturate(dot(in.uv - 0.5, u.gradient) + 0.5);
         float4 color = mix(u.colorA, u.colorB, t);
-        return float4(color.rgb, color.a * coverage);
+        return premultiplied(color.rgb, color.a * coverage);
     }
 
-    return float4(u.colorA.rgb, u.colorA.a * coverage);
+    return premultiplied(u.colorA.rgb, u.colorA.a * coverage);
 }
