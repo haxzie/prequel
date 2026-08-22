@@ -21,4 +21,4 @@ export const NAV: { href: Route; label: string }[] = [
   { href: "/about", label: "About" },
 ];
 
-export const CONTACT_EMAIL = "hello@prequel.app";
+export const CONTACT_EMAIL = "hello@prequel.sh";

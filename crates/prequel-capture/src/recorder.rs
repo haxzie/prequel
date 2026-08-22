@@ -330,8 +330,14 @@ pub struct ScreenRecorder {
     /// The captured rectangle, kept so the clicks can be put in its terms when
     /// the recording stops.
     sampled: Region,
-    typing_stop: Arc<AtomicBool>,
+    /// Stops both sampler threads. One flag rather than two: they start and
+    /// stop with the recording and nothing ever wants one without the other.
+    samplers_stop: Arc<AtomicBool>,
     typing_thread: Option<std::thread::JoinHandle<()>>,
+    /// Whether the system is showing the link cursor, refreshed on its own
+    /// thread for the same reason typing is: `NSCursor` is AppKit, and the
+    /// capture callback is no place to call into it sixty times a second.
+    shape_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl ScreenRecorder {
@@ -471,8 +477,9 @@ impl ScreenRecorder {
         }
 
         let typing = Arc::new(Mutex::new(TypingTrack::new(sampled)));
-        let typing_stop = Arc::new(AtomicBool::new(false));
-        let typing_thread = spawn_typing(&typing, &typing_stop, clock.clone());
+        let samplers_stop = Arc::new(AtomicBool::new(false));
+        let typing_thread = spawn_typing(&typing, &samplers_stop, clock.clone());
+        let shape_thread = Some(spawn_pointer_shape(&samplers_stop));
 
         let sink = FrameSink::with(Arc::clone(&state));
         let queue = dispatch::Queue::serial_with_ar_pool();
@@ -504,8 +511,9 @@ impl ScreenRecorder {
             width,
             height,
             typing,
-            typing_stop,
+            samplers_stop,
             typing_thread,
+            shape_thread,
             sampled,
         })
     }
@@ -532,8 +540,11 @@ impl ScreenRecorder {
     pub fn stop(mut self) -> Result<RecordingSummary> {
         // Stopped before the stream, so the last thing it can do is take a
         // sample of a recording that is still running.
-        self.typing_stop.store(true, Ordering::Relaxed);
+        self.samplers_stop.store(true, Ordering::Relaxed);
         if let Some(thread) = self.typing_thread.take() {
+            let _ = thread.join();
+        }
+        if let Some(thread) = self.shape_thread.take() {
             let _ = thread.join();
         }
 
@@ -616,6 +627,14 @@ impl ScreenRecorder {
 /// into another application, which is not something to do at frame rate.
 const TYPING_INTERVAL: Duration = Duration::from_millis(200);
 
+/// How often the system cursor's shape is looked at.
+///
+/// Five times faster than typing's: a link is often only under the pointer in
+/// passing, and a shape sampled five times a second turns a quick hover into no
+/// hover at all. One look costs about 50µs, so this is a rounding error on one
+/// core.
+const SHAPE_INTERVAL: Duration = Duration::from_millis(40);
+
 /// Starts sampling where text is being typed, if the app is allowed to look.
 ///
 /// Returns None without the Accessibility grant rather than spawning a thread
@@ -651,6 +670,33 @@ fn spawn_typing(
             }
         }
     }))
+}
+
+/// Watches what shape the system cursor is, so the editor can follow it.
+///
+/// Its own thread, like typing and for a related reason: the answer comes from
+/// `NSCursor`, which is AppKit, and the frame callback is ScreenCaptureKit's —
+/// calling into a framework with no promise of thread safety from the thread
+/// that has to keep up with sixty frames a second is how a recorder comes to
+/// drop frames for a cosmetic detail. The callback reads the cached answer with
+/// an atomic load instead.
+///
+/// Faster than typing's interval because this is what the pointer *looks* like:
+/// a link is often only under the pointer in passing, and a shape sampled five
+/// times a second turns a quick hover into no hover at all.
+fn spawn_pointer_shape(stop: &Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+    // The static outlives a recording, so a hand left over from the last take
+    // does not open this one.
+    crate::cursor::reset_pointer_shape();
+
+    let stop = Arc::clone(stop);
+
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            crate::cursor::refresh_pointer_shape();
+            std::thread::sleep(SHAPE_INTERVAL);
+        }
+    })
 }
 
 /// Closes an audio track, returning its summary if a file was written.

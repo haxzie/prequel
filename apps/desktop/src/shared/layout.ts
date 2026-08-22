@@ -326,7 +326,7 @@ export function buildRenderPlan(
     // After the screen and before the border, so the pointer sits on the
     // picture but not over the frame's own edge.
     if (cursor && layout.cursorVisible) {
-      items.push(cursorItem(cursor, sources.screen, srcRect, dstRect, unit, motion));
+      items.push(...cursorItems(cursor, sources.screen, srcRect, dstRect, unit, motion));
     }
 
     if (background.borderWidth > 0) {
@@ -1196,9 +1196,18 @@ export interface CursorTrack {
   /** Image to draw, relative to the session directory. */
   path: string;
   hotspot: { x: number; y: number };
+  /**
+   * The image for the spans the system was showing the link cursor, or null
+   * when the chosen style has no hand to swap to.
+   *
+   * A second image rather than a second setting: which shape is on screen is a
+   * property of the recording, not a choice, and the tone is the choice.
+   */
+  hand: { path: string; hotspot: { x: number; y: number } } | null;
   /** Press times, in source time, for the click animation. */
   clicks?: readonly number[];
-  samples: readonly { at: number; x: number; y: number }[];
+  /** `hand` is absent on every recording made before the shape was sampled. */
+  samples: readonly { at: number; x: number; y: number; hand?: boolean }[];
   /** Size setting, as a fraction of the frame's shorter edge. */
   size: number;
   /** Seconds of stillness before it hides, or null to leave it on screen. */
@@ -1226,14 +1235,14 @@ export interface CursorTrack {
  * would park the pointer against the edge of the picture and hold it there,
  * which reads as a bug rather than as a pointer that has left.
  */
-function cursorItem(
+function cursorItems(
   cursor: CursorTrack,
   source: Size,
   srcRect: Rect,
   dstRect: Rect,
   unit: number,
   motion: readonly RectKey[],
-): PlanItem {
+): PlanItem[] {
   // Sampled wherever *either* moves. The pointer's own samples are written
   // only when it moves, so a pointer held still through a zoom has two points
   // a second apart — and interpolating its screen position between them would
@@ -1242,7 +1251,7 @@ function cursorItem(
   const times = new Set(cursor.samples.map((sample) => sample.at));
   for (const key of motion) times.add(key.at);
 
-  const points: CursorPoint[] = [...times]
+  const points: ShapedPoint[] = [...times]
     .sort((a, b) => a - b)
     .map((at) => {
       const point = cursorFraction(cursor, at);
@@ -1274,16 +1283,120 @@ function cursorItem(
           px <= srcRect.x + srcRect.width &&
           py >= srcRect.y &&
           py <= srcRect.y + srcRect.height,
+        hand: handAt(cursor, at),
       };
     });
 
+  const timed = cursor.hideAfter === null ? points : withIdleGaps(points, cursor.hideAfter);
+  const size = Math.max(1, cursor.size * unit);
+
+  // One image covers the whole track when the style has no hand, and also when
+  // the recording never showed one — which is every take made before the shape
+  // was sampled. Checked rather than always emitting the pair, so those plans
+  // stay exactly what they were: one item, one texture, one quad.
+  if (!cursor.hand || !timed.some((point) => point.hand)) {
+    return [
+      {
+        kind: "cursor",
+        path: cursor.path,
+        size,
+        hotspot: cursor.hotspot,
+        points: timed.map(plain),
+      },
+    ];
+  }
+
+  const split = splitByShape(timed);
+
+  return [
+    { kind: "cursor", path: cursor.path, size, hotspot: cursor.hotspot, points: split.arrow },
+    {
+      kind: "cursor",
+      path: cursor.hand.path,
+      size,
+      hotspot: cursor.hand.hotspot,
+      points: split.hand,
+    },
+  ];
+}
+
+/** A point plus the shape the system was showing there. Never leaves this file. */
+type ShapedPoint = CursorPoint & { hand: boolean };
+
+/** The point a plan carries, without the shape that chose its image. */
+function plain(point: ShapedPoint): CursorPoint {
   return {
-    kind: "cursor",
-    path: cursor.path,
-    size: Math.max(1, cursor.size * unit),
-    hotspot: cursor.hotspot,
-    points: cursor.hideAfter === null ? points : withIdleGaps(points, cursor.hideAfter),
+    at: point.at,
+    x: point.x,
+    y: point.y,
+    scale: point.scale,
+    visible: point.visible,
   };
+}
+
+/**
+ * Whether the system was showing the link cursor at a moment.
+ *
+ * A step, not a ramp: half an arrow and half a hand is not a cursor. The shape
+ * holds from the sample that recorded it until the next one, which is exactly
+ * what the capture side wrote — it forces a sample whenever the shape changes,
+ * so a change is never further away than the sample that carries it.
+ */
+function handAt(cursor: CursorTrack, at: number): boolean {
+  const samples = cursor.samples;
+  if (!samples.length) return false;
+
+  if (at <= samples[0]!.at) return samples[0]!.hand ?? false;
+
+  let low = 0;
+  let high = samples.length - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (samples[mid]!.at <= at) low = mid;
+    else high = mid;
+  }
+
+  return (samples[high]!.at <= at ? samples[high]! : samples[low]!).hand ?? false;
+}
+
+/**
+ * One track, split into the points each image is responsible for.
+ *
+ * Two plan items rather than one item that picks a texture per frame, for the
+ * reason a lit caption is its own item: every plan item stays one quad, and
+ * neither rasteriser learns that a pointer has shapes.
+ *
+ * The handover is the whole difficulty. Marking a point invisible in one list
+ * and visible in the other leaves *both* lists with an invisible end to the
+ * span they share — and `cursorAt` draws nothing across a span with an
+ * invisible end — so the pointer blinks out for a sample's width every time it
+ * crosses a link. The outgoing image therefore gets one extra visible point a
+ * nanosecond short of the swap, the same trick `withIdleGaps` uses: it finishes
+ * its span, the incoming one starts, and nothing is ever missing or doubled.
+ */
+function splitByShape(points: readonly ShapedPoint[]): {
+  arrow: CursorPoint[];
+  hand: CursorPoint[];
+} {
+  const arrow: CursorPoint[] = [];
+  const hand: CursorPoint[] = [];
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]!;
+    const previous = points[index - 1];
+
+    // Skipped when the two are already a nanosecond apart, which `withIdleGaps`
+    // makes possible: the marker would land on or before its predecessor, and
+    // an out-of-order point breaks the binary search that reads it back.
+    if (previous && previous.hand !== point.hand && point.at - 1 > previous.at) {
+      (previous.hand ? hand : arrow).push({ ...plain(point), at: point.at - 1 });
+    }
+
+    arrow.push({ ...plain(point), visible: point.visible && !point.hand });
+    hand.push({ ...plain(point), visible: point.visible && point.hand });
+  }
+
+  return { arrow, hand };
 }
 
 /**
@@ -1297,9 +1410,9 @@ function cursorItem(
  * already draws nothing. The exporter gets the behaviour without a line of
  * Rust.
  */
-function withIdleGaps(points: CursorPoint[], seconds: number): CursorPoint[] {
+function withIdleGaps<T extends CursorPoint>(points: T[], seconds: number): T[] {
   const timeout = Math.max(0, seconds) * 1_000_000_000;
-  const out: CursorPoint[] = [];
+  const out: T[] = [];
 
   for (let index = 0; index < points.length; index += 1) {
     const point = points[index]!;

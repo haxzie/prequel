@@ -42,7 +42,10 @@ mod reader;
 pub mod reader;
 
 pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};
-pub use plan::{CaptionWord, Paint, PlanItem, PlanSource, Rect, RenderPlan, Shape, Size, Span};
+pub use plan::{
+    CaptionWord, CursorPoint, Paint, PlanItem, PlanSource, Point, Rect, RenderPlan, Shape, Size,
+    Span,
+};
 pub use timeline::{AudioMix, SliceRender, Timeline};
 
 pub type Result<T> = std::result::Result<T, Error>;

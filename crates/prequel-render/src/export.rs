@@ -620,6 +620,39 @@ mod tests {
     }
 
     #[test]
+    fn names_both_pointer_images_when_one_changes_shape() {
+        // A pointer that becomes a hand over a link is two items, one per
+        // image. Loading only the first would show as an export whose pointer
+        // vanishes over every link while the preview drew it — the preview
+        // loads its own images and would not agree.
+        let paths = plan_images(&[slice_with(vec![
+            PlanItem::Cursor {
+                path: "cursor-black.png".to_owned(),
+                size: 38.0,
+                hotspot: Point { x: 0.055, y: 0.055 },
+                points: Vec::new(),
+            },
+            PlanItem::Cursor {
+                path: "cursor-black-hand.png".to_owned(),
+                size: 38.0,
+                hotspot: Point {
+                    x: 0.3754,
+                    y: 0.055,
+                },
+                points: Vec::new(),
+            },
+        ])]);
+
+        assert_eq!(
+            paths,
+            vec![
+                "cursor-black.png".to_owned(),
+                "cursor-black-hand.png".to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn names_each_image_once_however_many_slices_use_it() {
         // Every slice carries the same pointer image; decoding it per slice
         // would be pure waste.

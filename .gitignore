@@ -30,3 +30,14 @@ packages/recorder/index.d.ts
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Wrangler secrets for local `wrangler dev`. The example beside it is committed.
+.dev.vars
+.wrangler/
+
+# Build output that lands at the repo root. Nothing imports it — the desktop
+# entry point is apps/desktop/out/main/index.js — and it is rewritten by every
+# package build, so a committed copy is stale the moment it exists. A tracked
+# apps/desktop/index.js from an earlier build was exactly this.
+/index.js
+/index.d.ts

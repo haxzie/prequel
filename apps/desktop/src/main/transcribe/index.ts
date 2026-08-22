@@ -14,8 +14,6 @@ import { join } from "node:path";
 
 import { webContents } from "electron";
 
-import { env } from "@prequel/env";
-
 import type { TranscribeProgress } from "../../shared/contract.js";
 import { IPC_CHANNELS } from "../../shared/contract.js";
 import { MANIFEST_FILE_NAME, TRACK_FILE_NAMES, parseManifest } from "../../shared/manifest.js";
@@ -26,6 +24,8 @@ import {
   type Transcript,
 } from "../../shared/transcript.js";
 import { log } from "../log.js";
+import { apiUrl } from "../api.js";
+import { authToken } from "../auth.js";
 import { fakeTranscriber } from "./fake.js";
 import { installId } from "./install-id.js";
 import { openai } from "./openai.js";
@@ -134,23 +134,17 @@ function transcriber(): Transcriber {
   // drives the whole app with no grant, no key and no network.
   if (process.env["PREQUEL_FAKE_RECORDER"] === "1") return fakeTranscriber();
 
-  return openai(baseUrl, installId);
+  return openai(baseUrl, installId, authToken);
 }
 
 /**
  * Where the transcription route lives.
  *
- * The site's own URL: there is no separate API host, and a second source for it
- * is how the two come to disagree after a domain change. `PREQUEL_APP_URL`
- * overrides it for pointing a dev build at a local `next dev`.
- *
- * A packaged build gets this baked in at bundle time; see `publicEnv` in
- * `electron.vite.config.ts`. Without that it would read the schema default and
- * quietly call localhost.
+ * `apiUrl` rather than a copy of the fallback chain: sharing and signing in call
+ * the same Worker, and three separate resolutions of "where is the API" is how
+ * one of them ends up on production while the others talk to `wrangler dev`.
  */
-function baseUrl(): string {
-  return process.env["PREQUEL_APP_URL"] ?? env.NEXT_PUBLIC_APP_URL;
-}
+const baseUrl = apiUrl;
 
 function finish(update: Omit<TranscribeProgress, "dir">): void {
   // Read before it is cleared: the editor keys progress on the directory, and a

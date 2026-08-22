@@ -17,56 +17,53 @@ import { createEnv } from "./create-env.ts";
 /** Public variables must carry this prefix so Next.js/Vite will expose them. */
 export const CLIENT_PREFIX = "NEXT_PUBLIC_";
 
-/** Never sent to the browser or the Electron renderer. */
+/**
+ * Never sent to the browser or the Electron renderer.
+ *
+ * Nearly empty, and deliberately so. Every API Prequel has — auth, the library,
+ * uploads, transcription, the waitlist — is a Cloudflare Worker in `apps/api`,
+ * which is handed its configuration through bindings rather than `process.env`
+ * and declares it in `apps/api/src/env.ts`. Nothing the Next app runs holds a
+ * database URL, an OpenAI key or a signing credential any more.
+ *
+ * Adding a server secret here is therefore worth a second thought: if the thing
+ * reading it is an API, it belongs in the Worker.
+ */
 export const server = {
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  DATABASE_URL: z.url().optional(),
-  API_SECRET: z.string().min(1).optional(),
-  /**
-   * Where the marketing site forwards a waitlist signup.
-   *
-   * Defaulted rather than optional, and not a secret: this is the public
-   * response endpoint of the "Prequel - Early access form" Google Form, which
-   * anyone who opens the form can read out of its HTML. The override exists so
-   * a fork or a staging deploy can point somewhere else without a code change.
-   */
-  WAITLIST_ENDPOINT: z
-    .url()
-    .default(
-      "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
-    ),
-
-  /**
-   * The form field the address goes into.
-   *
-   * Google Forms discards fields it does not recognise and still answers 200,
-   * so a wrong value here loses every signup with no error anywhere. It is not
-   * the question id visible in the form's HTML — those differ.
-   */
-  WAITLIST_FIELD: z
-    .string()
-    .regex(/^entry\.\d+$/)
-    .default("entry.348125812"),
-
-  /**
-   * OpenAI, for the transcription endpoint on the marketing site.
-   *
-   * `/api/transcribe` forwards a recording's microphone track to Whisper with
-   * this key. The audio passes through the server, which is forced rather than
-   * chosen: OpenAI's ephemeral keys are scoped to the Realtime API, so there is
-   * no short-lived credential that would let the desktop app upload directly.
-   *
-   * Optional so the site still builds and deploys without it — the endpoint
-   * answers 503 and the editor says transcription is unavailable, which is a
-   * better failure than a site that will not build.
-   */
-  OPENAI_API_KEY: z.string().min(1).optional(),
 };
 
 /** Safe to ship to the client. Treat everything here as public. */
 export const client = {
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default("Prequel"),
-  NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
+  /**
+   * The site's own origin, and the one source for every absolute URL.
+   *
+   * Canonicals, the sitemap, `robots.txt`, both share cards and every share
+   * link the Worker hands back derive from this — so a wrong value here is not
+   * one broken link, it is a sitemap full of them.
+   *
+   * Defaulted to production rather than to localhost. The default is what
+   * applies when nothing sets it, which is a deploy or a CI build that forgot —
+   * and `http://localhost:3000` in a live sitemap is a worse failure than a dev
+   * machine generating production canonicals. `.env` pins it to localhost for
+   * local work, which is where it belongs.
+   */
+  NEXT_PUBLIC_APP_URL: z.url().default("https://prequel.sh"),
+
+  /**
+   * Where the API lives.
+   *
+   * A different origin to the site above, and not a path on it — `apps/api` is a
+   * Cloudflare Worker so that D1 and R2 can be reached through bindings instead
+   * of over the wire, and so that an upload is not bounded by a serverless
+   * function's request body limit.
+   *
+   * The two are the same *site*, which is what lets one session cookie cover
+   * both. Pointing this at an origin outside `prequel.sh` would leave the
+   * dashboard permanently signed out, since the cookie would no longer be sent.
+   */
+  NEXT_PUBLIC_API_URL: z.url().default("https://api.prequel.sh"),
 };
 
 function build() {
@@ -78,13 +75,9 @@ function build() {
     // inline the NEXT_PUBLIC_* values into the client bundle.
     runtimeEnv: {
       NODE_ENV: process.env.NODE_ENV,
-      DATABASE_URL: process.env.DATABASE_URL,
-      API_SECRET: process.env.API_SECRET,
-      WAITLIST_ENDPOINT: process.env.WAITLIST_ENDPOINT,
-      WAITLIST_FIELD: process.env.WAITLIST_FIELD,
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     },
     skipValidation: process.env.SKIP_ENV_VALIDATION === "1",
   });

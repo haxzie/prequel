@@ -62,6 +62,15 @@ mac:
     NSCameraUsageDescription: Prequel records your camera when you turn it on for a recording.
     NSMicrophoneUsageDescription: Prequel records your microphone when you turn it on for a recording.
     NSAudioCaptureUsageDescription: Prequel records your computer's audio when system audio is enabled.
+    # Claims prequel:// so the browser can hand a finished sign-in back to the
+    # app. `app.setAsDefaultProtocolClient` alone is not enough for a packaged
+    # build — Launch Services reads the scheme out of Info.plist, and without
+    # this entry the link resolves to nothing and signing in silently never
+    # completes.
+    CFBundleURLTypes:
+      - CFBundleURLName: sh.prequel.auth
+        CFBundleURLSchemes:
+          - prequel
   # Signed and notarised with a Developer ID.
   #
   # `identity` is deliberately absent rather than named: electron-builder then

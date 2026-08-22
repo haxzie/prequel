@@ -84,6 +84,19 @@ pub struct CursorSample {
     pub at: MediaTime,
     pub x: f64,
     pub y: f64,
+    /// Whether the system was showing the link cursor — the pointing hand.
+    ///
+    /// Skipped when false, which keeps a manifest the size it was: the pointer
+    /// is an arrow for nearly all of a recording, and writing `"hand":false`
+    /// beside every one of tens of thousands of samples is pure file size.
+    /// Defaults to false on read, which is what every recording made before the
+    /// shape was sampled meant.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hand: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -228,6 +241,7 @@ mod tests {
                 at: 0,
                 x: 100.0,
                 y: 200.0,
+                hand: false,
             }],
         }
     }

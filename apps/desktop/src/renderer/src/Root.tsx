@@ -2,6 +2,7 @@ import { Camera } from "./camera/Camera";
 import { Dock } from "./dock/Dock";
 import { Editor } from "./editor/Editor";
 import { Selection } from "./selection/Selection";
+import { Settings } from "./settings/Settings";
 import { Welcome } from "./welcome/Welcome";
 
 /**
@@ -24,6 +25,8 @@ export function Root() {
       return <Editor />;
     case "/welcome":
       return <Welcome />;
+    case "/settings":
+      return <Settings />;
     default:
       return <p className="p-6 text-muted">Unknown route: {route}</p>;
   }

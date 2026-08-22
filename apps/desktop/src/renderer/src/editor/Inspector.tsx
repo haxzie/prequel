@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch } from "react";
 
+import { CURSOR_STYLES, cursorStyle } from "../../../shared/contract";
 import { cameraAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
@@ -535,6 +536,24 @@ function CursorPanel({
         <Toggle
           value={layout.cursorVisible}
           onChange={(value) => set("layout", "cursorVisible", value)}
+        />
+      </Field>
+
+      <Field label="Style" {...field("layout", "cursorStyle")}>
+        <Segmented
+          // Resolved rather than passed straight through, so a project naming a
+          // style this build no longer ships shows the one actually being drawn
+          // instead of no selection at all.
+          value={cursorStyle(layout.cursorStyle).id}
+          options={CURSOR_STYLES.map((style) => ({
+            value: style.id,
+            label: style.label,
+            title: style.hand
+              ? `${style.label} pointer, becoming a hand over anything the system showed one for`
+              : `${style.label} marker, whatever the pointer was doing`,
+          }))}
+          disabled={off}
+          onChange={(value) => set("layout", "cursorStyle", value)}
         />
       </Field>
 

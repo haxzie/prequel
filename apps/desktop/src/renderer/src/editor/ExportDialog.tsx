@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import type { ExportFormat } from "../../../shared/contract";
+import type { AuthState, ExportFormat } from "../../../shared/contract";
 import { GIF_MAX_SHORT_EDGE, type OutputSettings } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { Segmented } from "./controls/inputs";
 import { Field } from "./controls/Field";
-import { CheckIcon, CloseIcon, CopyIcon, ExportIcon, FolderIcon } from "./icons";
+import { useAuth } from "../hooks/useAuth";
+import { CheckIcon, CloseIcon, CopyIcon, ExportIcon, FolderIcon, LinkIcon } from "./icons";
 import type { ExportState } from "./useExport";
+import { useShare, type ShareState } from "./useShare";
 
 /** How the resolution choice reads. Values are the frame's shorter edge. */
 type Quality = "full" | "1080" | "720" | "480";
@@ -66,8 +68,10 @@ export function ExportDialog({
   onChange: (output: OutputSettings) => void;
   onClose: () => void;
 }) {
-  const { progress, running, frame } = state;
+  const { progress, running, frame, result } = state;
   const failed = progress?.stage === "failed";
+
+  const share = useShare(result, frame);
 
   // Escape closes whatever the export is doing, because closing is not
   // cancelling — the render carries on and the title bar keeps reporting it.
@@ -114,56 +118,63 @@ export function ExportDialog({
       >
         <Header state={state} poster={poster} />
 
-        <div className="flex flex-col gap-3 px-4 py-4">
-          <Field label="Type" inline>
-            <Segmented
-              value={output.format}
-              disabled={running}
-              options={FORMATS}
-              onChange={setFormat}
-            />
-          </Field>
+        {/* The settings are gone once there is a file.
+            They change nothing about an export that has already been written —
+            a segmented control that silently applies to the *next* one is worse
+            than no control at all — and what the dialog is for at that point is
+            getting the file somewhere, which is what the space becomes. */}
+        {result ? null : (
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <Field label="Type" inline>
+              <Segmented
+                value={output.format}
+                disabled={running}
+                options={FORMATS}
+                onChange={setFormat}
+              />
+            </Field>
 
-          <Field label="Quality" inline>
-            <Segmented
-              value={qualityOf(output.shortEdge)}
-              disabled={running}
-              options={
-                // A GIF's options stop where the format stops being sensible,
-                // rather than being offered and then quietly overridden.
-                output.format === "gif"
-                  ? QUALITIES.filter((quality) => allowedForGif(quality.value))
-                  : QUALITIES
-              }
-              onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
-            />
-          </Field>
+            <Field label="Quality" inline>
+              <Segmented
+                value={qualityOf(output.shortEdge)}
+                disabled={running}
+                options={
+                  // A GIF's options stop where the format stops being sensible,
+                  // rather than being offered and then quietly overridden.
+                  output.format === "gif"
+                    ? QUALITIES.filter((quality) => allowedForGif(quality.value))
+                    : QUALITIES
+                }
+                onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
+              />
+            </Field>
 
-          <Field label="Frame rate" inline>
-            <Segmented
-              value={String(output.fps)}
-              disabled={running}
-              options={rates.map((rate) => ({ value: String(rate), label: `${rate}` }))}
-              onChange={(rate) => onChange({ ...output, fps: Number(rate) })}
-            />
-          </Field>
+            <Field label="Frame rate" inline>
+              <Segmented
+                value={String(output.fps)}
+                disabled={running}
+                options={rates.map((rate) => ({ value: String(rate), label: `${rate}` }))}
+                onChange={(rate) => onChange({ ...output, fps: Number(rate) })}
+              />
+            </Field>
 
-          {/* What the choices above add up to, spelled out: three controls that
-              each change one number are much easier to trust when the result is
-              on screen next to them. */}
-          <p className="text-[11px] tabular-nums text-editor-muted">
-            {frame.width} × {frame.height} · {output.fps} fps
-            {output.format === "gif" && " · silent"}
-          </p>
-
-          {failed && (
-            <p className="text-[11px] text-dock-record" title={progress?.error?.message}>
-              {progress?.error?.message ?? "The export failed."}
+            {/* What the choices above add up to, spelled out: three controls that
+                each change one number are much easier to trust when the result is
+                on screen next to them. */}
+            <p className="text-[11px] tabular-nums text-editor-muted">
+              {frame.width} × {frame.height} · {output.fps} fps
+              {output.format === "gif" && " · silent"}
             </p>
-          )}
-        </div>
 
-        <Actions state={state} onClose={onClose} />
+            {failed && (
+              <p className="text-[11px] text-dock-record" title={progress?.error?.message}>
+                {progress?.error?.message ?? "The export failed."}
+              </p>
+            )}
+          </div>
+        )}
+
+        <Actions state={state} share={share} poster={poster} onClose={onClose} />
       </div>
     </div>
   );
@@ -304,47 +315,222 @@ function Ring({ progress }: { progress: ExportState["progress"] }) {
   );
 }
 
-/** The buttons, which are a different set at each stage of an export. */
-function Actions({ state, onClose }: { state: ExportState; onClose: () => void }) {
+/**
+ * The buttons, which are a different set at each stage of an export.
+ *
+ * Two layouts rather than one. While an export is being set up or is running
+ * this is a row of small controls under a panel of settings, because none of
+ * them is the thing the user came to do. Once the file exists it becomes the
+ * whole dialog: three destinations, stacked and full width, because getting the
+ * recording somewhere *is* the task now.
+ */
+function Actions({
+  state,
+  share,
+  poster,
+  onClose,
+}: {
+  state: ExportState;
+  share: ShareState;
+  poster: string | null;
+  onClose: () => void;
+}) {
   const { running, result } = state;
+  const auth = useAuth();
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  /**
+   * Whether Share was pressed while signed out.
+   *
+   * Held so the upload can start by itself once the token arrives. Without it
+   * the user signs in, comes back to the app and finds the same button waiting
+   * to be pressed a second time — which reads as the first press having failed.
+   */
+  const [pendingShare, setPendingShare] = useState(false);
 
   // Reset when the file changes, so a second export does not open with the
   // previous one's tick still showing.
-  useEffect(() => setCopied(false), [result?.path]);
+  useEffect(() => {
+    setCopied(false);
+    setLinkCopied(false);
+    setPendingShare(false);
+  }, [result?.path]);
+
+  const beginShare = useCallback(() => {
+    if (!result) return;
+    const name = result.path.split("/").pop() ?? "";
+    void share.start(name.replace(/\.[^.]+$/, ""), poster, state.durationMs);
+  }, [result, poster, share, state.durationMs]);
+
+  // The other half of `pendingShare`: the sign-in finished, so do what the
+  // press asked for. Guarded on `share.progress` being empty so a token
+  // arriving while an upload is already running cannot start a second one.
+  useEffect(() => {
+    if (!pendingShare || auth.status !== "signed-in") return;
+    setPendingShare(false);
+    if (!share.progress) beginShare();
+  }, [pendingShare, auth.status, share.progress, beginShare]);
+
+  if (!result) {
+    return (
+      <div className="flex items-center gap-2 border-t border-editor-line px-4 py-3">
+        <div className="flex-1" />
+        <Secondary icon={<CloseIcon />} label="Close" onClick={onClose} />
+        {running ? (
+          <Primary label="Cancel" quiet onClick={state.cancel} />
+        ) : (
+          <Primary icon={<ExportIcon />} label="Export" onClick={() => void state.start()} />
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-center gap-2 border-t border-editor-line px-4 py-3">
-      {result ? (
-        <>
-          <Secondary
-            icon={<FolderIcon />}
-            label="Show in Finder"
-            onClick={() => void window.prequel.library.reveal(result.path)}
-          />
-          <Secondary
-            icon={copied ? <CheckIcon /> : <CopyIcon />}
-            label={copied ? "Copied" : "Copy"}
+    <div className="flex flex-col gap-2 border-t border-editor-line px-4 py-4">
+      <div className="flex gap-2">
+        <Secondary
+          wide
+          icon={<FolderIcon />}
+          label="Reveal in Folder"
+          onClick={() => void window.prequel.library.reveal(result.path)}
+        />
+        <Secondary
+          wide
+          icon={copied ? <CheckIcon /> : <CopyIcon />}
+          label={copied ? "Copied" : "Copy"}
+          onClick={async () => {
+            const done = await window.prequel.editor.export.copy(result.path);
+            setCopied(done.ok);
+          }}
+        />
+      </div>
+
+      {share.url ? (
+        // The link replaces the button that made it. Leaving a Share button
+        // there afterwards invites a second upload of the same file, and the
+        // only thing anyone wants at this point is the URL on the clipboard.
+        <div className="flex items-center gap-2 rounded-lg bg-white/8 py-1.5 pr-1.5 pl-2.5">
+          <span className="text-export [&_svg]:size-3.5">
+            <LinkIcon />
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-editor-muted">
+            {share.url.replace(/^https?:\/\//, "")}
+          </span>
+          <button
+            type="button"
+            className="rounded px-2 py-1 text-[11px] font-medium text-editor-fg hover:bg-white/10"
             onClick={async () => {
-              const done = await window.prequel.editor.export.copy(result.path);
-              setCopied(done.ok);
+              await navigator.clipboard.writeText(share.url ?? "");
+              setLinkCopied(true);
+              window.setTimeout(() => setLinkCopied(false), 1600);
             }}
-          />
-          <div className="flex-1" />
-          <Primary label="Done" onClick={onClose} />
-        </>
+          >
+            {linkCopied ? "Copied" : "Copy link"}
+          </button>
+        </div>
       ) : (
-        <>
-          <div className="flex-1" />
-          <Secondary icon={<CloseIcon />} label="Close" onClick={onClose} />
-          {running ? (
-            <Primary label="Cancel" quiet onClick={state.cancel} />
-          ) : (
-            <Primary icon={<ExportIcon />} label="Export" onClick={() => void state.start()} />
-          )}
-        </>
+        <Big
+          tone="share"
+          fraction={share.fraction}
+          disabled={auth.status === "waiting"}
+          label={shareLabel(auth.status, share, pendingShare)}
+          onClick={() => {
+            if (share.uploading) {
+              share.cancel();
+              return;
+            }
+
+            if (auth.status === "signed-in") {
+              beginShare();
+              return;
+            }
+
+            // Signed out. The browser opens, and the effect above finishes the
+            // job when the deep link comes back — one press, not two.
+            setPendingShare(true);
+            void window.prequel.auth.signIn();
+          }}
+        />
+      )}
+
+      <Big tone="done" label="Done" onClick={onClose} />
+
+      {share.error && (
+        <p className="text-[11px] text-dock-record" title={share.error}>
+          {share.error}
+        </p>
       )}
     </div>
+  );
+}
+
+/**
+ * What the green button says, which is four different things.
+ *
+ * `waiting` is its own word because the app is doing nothing visible while a
+ * browser is open somewhere else, and a button still reading "Share Link"
+ * through all of that is a button people press again.
+ */
+function shareLabel(status: AuthState["status"], share: ShareState, pendingShare: boolean): string {
+  if (share.uploading) {
+    return share.fraction === null
+      ? "Preparing…"
+      : `Uploading ${Math.round(share.fraction * 100)}%`;
+  }
+
+  if (status === "waiting") return "Waiting for your browser…";
+  if (status === "signed-out")
+    return pendingShare ? "Waiting for your browser…" : "Sign in to share";
+
+  return share.error ? "Try again" : "Share Link";
+}
+
+/**
+ * A full-width action.
+ *
+ * `fraction` fills it from the left while an upload runs, rather than putting a
+ * separate bar under it: the button *is* the progress, so there is nothing to
+ * reserve height for before an upload starts and nothing to collapse after one.
+ */
+function Big({
+  tone,
+  label,
+  fraction,
+  disabled,
+  onClick,
+}: {
+  /** Green shares, blue finishes. Both already exist as tokens. */
+  tone: "share" | "done";
+  label: string;
+  fraction?: number | null;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "relative isolate overflow-hidden rounded-lg py-2 text-center text-[12px] font-medium text-white transition-[filter]",
+        "disabled:cursor-default disabled:opacity-70",
+        tone === "share" ? "bg-export" : "bg-selected",
+        !disabled && "hover:brightness-110",
+      )}
+    >
+      {fraction !== null && fraction !== undefined && (
+        // Behind the label, and `transform` rather than `width` — this is
+        // repainted on every percent and animating a layout property would
+        // reflow the dialog under a file that is still uploading.
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 origin-left bg-white/25 transition-transform duration-150"
+          style={{ transform: `scaleX(${fraction})` }}
+        />
+      )}
+      {label}
+    </button>
   );
 }
 
@@ -380,16 +566,22 @@ function Primary({
 function Secondary({
   icon,
   label,
+  wide,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  /** Fills its half of the row. Used by the two under a finished export. */
+  wide?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg py-1.5 text-[11px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+        wide ? "flex-1 justify-center bg-white/5 px-2" : "px-2.5",
+      )}
       onClick={onClick}
     >
       {icon}

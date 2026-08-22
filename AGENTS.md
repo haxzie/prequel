@@ -2,7 +2,8 @@
 
 A macOS screen recorder and video editor: Electron shell, native Rust capture
 core (ScreenCaptureKit, AVFoundation, VideoToolbox, Metal). Apple Silicon,
-macOS 14+.
+macOS 14+. Plus a public site and a shared library people can send links to —
+`apps/web` on Vercel, `apps/api` as a Cloudflare Worker.
 
 `README.md` covers layout, setup, env vars and the Screen Recording grant. This
 file covers what the code does not say out loud — the conventions, and the
@@ -11,8 +12,9 @@ mistakes that compile, pass review, and fail silently at runtime.
 ## Commands
 
 ```bash
-pnpm typecheck                      # both tsconfig projects
+pnpm typecheck                      # every package
 pnpm --filter @prequel/desktop test  # vitest
+pnpm --filter @prequel/api test      # vitest, inside workerd
 pnpm --filter @prequel/desktop package   # .dmg into apps/desktop/release
 
 PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace
@@ -20,14 +22,25 @@ PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace --all-targets
 ```
 
 `cargo` is often not on `PATH` in a non-interactive shell — prefix it rather
-than concluding Rust is unavailable. Root `pnpm test` runs `cargo test` first
-and fails for the same reason.
+than concluding Rust is unavailable.
+
+The npm scripts that shell out to it already do. `napi build` runs
+`cargo metadata` itself, so prefixing the command you type never reached it and
+`pnpm dev` died on `Internal Error: cargo metadata failed to run` for anyone
+whose shell adds `~/.cargo/bin` in `.zshrc` rather than somewhere a spawned
+shell reads. `packages/recorder`'s `build` and the root `test:rust` set `PATH`
+themselves for that reason. A bare `cargo` typed into a non-interactive shell
+still needs the prefix.
 
 Media tests shell out to `ffmpeg`/`ffprobe`. `PREQUEL_FAKE_RECORDER=1` drives
 the whole UI with no Screen Recording grant.
 
 After changing Rust that JavaScript calls, rebuild the addon or the change is
 invisible: `cd packages/recorder && PATH="$HOME/.cargo/bin:$PATH" pnpm build`.
+
+After changing `packages/db`, regenerate and apply the migration or D1 still has
+the old schema: `pnpm --filter @prequel/db generate && pnpm --filter @prequel/api
+migrate`.
 
 ## House style
 
@@ -167,14 +180,37 @@ Prefer `console.warn`/`console.error` for anything a developer should also trip
 over in `pnpm dev`; use `log()` for lifecycle breadcrumbs that would be noise
 there.
 
-## Note on `apps/web`
+## The three apps, and what may not cross between them
 
-The public site. It shares nothing with the desktop app at runtime — no imports
-across the boundary, and in particular nothing from `shared/layout.ts`. The
-editor mock on the landing page is a picture drawn in CSS, and giving the real
-geometry module a marketing consumer would be a second reason for it to change.
+`apps/desktop` is the product. `apps/web` is the public site and the dashboard.
+`apps/api` is every API either of them calls, as one Cloudflare Worker.
 
-Its Tailwind is v4 through **PostCSS**, not the Vite plugin desktop uses, and
+**`apps/web` shares no code with `apps/desktop`** — no imports across the
+boundary, and in particular nothing from `shared/layout.ts`. The editor mock on
+the landing page is a picture drawn in CSS, and giving the real geometry module a
+marketing consumer would be a second reason for it to change.
+
+**`apps/api` is under the same rule.** `apps/web` may import its request and
+response types; the desktop app hand-rolls its small client in `main/`. A shared
+contract package spanning all three would be exactly the second reason to change
+`shared/` that the rule above exists to prevent. The HTTP endpoints are the
+contract.
+
+**Every remote call the desktop app makes lives in `main/`**, resolved through
+`main/api.ts`. Not a convention — the renderer's CSP is
+`connect-src 'self' prequel-media:`, so a window physically cannot reach the
+network. A `fetch` added to a renderer file fails at runtime, in a packaged build,
+with a console the user does not have.
+
+**A bearer token never crosses to a renderer.** `auth.json` lives in main and the
+renderer only ever sees a redacted `AuthState`. The same reasoning put the
+install id in its own file rather than on `RecordingPreferences`, which is
+broadcast to every window inside `DockState` — the note in
+`main/transcribe/install-id.ts` spells it out.
+
+### Note on `apps/web`
+
+The site's Tailwind is v4 through **PostCSS**, not the Vite plugin desktop uses, and
 `experimental.turbopackLocalPostcssConfig` is what makes Turbopack find the
 config in this workspace at all. Unstyled pages and no error is that flag.
 `apps/web/README.md` has the rest.

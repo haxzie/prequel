@@ -32,6 +32,19 @@ export function wasOpenedAtLogin(): boolean {
   return app.getLoginItemSettings().wasOpenedAtLogin;
 }
 
+/**
+ * What a switch should show: on, off, or that there is nothing to switch.
+ *
+ * `null` for a development build, where `setOpensAtLogin` refuses. Without a
+ * third state the refusal was invisible: the renderer asked for "on", got the
+ * unchanged "off" back, and drew the switch off again. From the outside that is
+ * a control that does not work, and the only sign otherwise was a line in the
+ * log — every click a user made was recorded as ignored while they kept trying.
+ */
+export function loginItemState(): boolean | null {
+  return app.isPackaged ? opensAtLogin() : null;
+}
+
 export function setOpensAtLogin(enabled: boolean): void {
   // Under `pnpm dev` the executable is electron's own binary in node_modules,
   // and registering *that* leaves an "Electron" entry in the user's Login Items

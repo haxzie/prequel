@@ -15,8 +15,8 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, PlanSource, Rect,
-    RenderPlan, Shape, Size, SliceRender, export,
+    AudioMix, CancelFlag, CursorPoint, ExportRequest, OutputFormat, Paint, PlanItem, PlanSource,
+    Point, Rect, RenderPlan, Shape, Size, SliceRender, export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -436,6 +436,156 @@ fn a_translucent_layer_lands_at_the_opacity_it_asks_for() {
         frame.at(160, 120),
         (128, 128, 128),
         "half-opacity white on black",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// One frame of the exported video, by index, as packed RGB.
+///
+/// `first_frame` is not enough for anything that changes over time: a pointer
+/// that swapped shape would be checked only where it started.
+fn frame_at(video: &Path, index: u32) -> Frame {
+    let out = video.with_extension(format!("{index}.rgb"));
+    let _ = std::fs::remove_file(&out);
+
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(video)
+        .args([
+            "-vf",
+            &format!("select=eq(n\\,{index})"),
+            "-vsync",
+            "0",
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-y",
+        ])
+        .arg(&out)
+        .status()
+        .expect("ffmpeg must be installed to verify exported pixels");
+
+    assert!(status.success(), "ffmpeg could not decode frame {index}");
+
+    let pixels = std::fs::read(&out).expect("read the decoded frame");
+    let _ = std::fs::remove_file(&out);
+    assert_eq!(pixels.len(), (OUT_W * OUT_H * 3) as usize);
+
+    Frame {
+        pixels,
+        width: OUT_W,
+    }
+}
+
+/// A solid square, for a pointer image whose colour is the whole assertion.
+fn solid(size: u32, colour: [u8; 3]) -> arc::R<cv::PixelBuf> {
+    split_frame(size, size, colour, colour)
+}
+
+#[test]
+fn swaps_the_pointer_image_partway_through() {
+    // The pointer becomes a hand over a link, which the plan expresses as two
+    // cursor items whose visible spans do not overlap. The exporter has to hold
+    // both textures and draw whichever the moment belongs to — load only the
+    // first and the pointer disappears over every link, in the file and nowhere
+    // in the preview, which is the worst place to find out.
+    let dir = scratch("prequel-pixels-cursor-shape");
+
+    // Black behind, so a red pointer and a blue one are unmistakable.
+    let source = solid(200, [0, 0, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+
+    write_png(&dir.join("arrow.png"), &solid(64, [255, 0, 0]));
+    write_png(&dir.join("hand.png"), &solid(64, [0, 0, 255]));
+
+    // Both pointers land centred on the middle of the frame, so one coordinate
+    // answers "which image is on screen" at any moment.
+    let centre = Point { x: 0.5, y: 0.5 };
+    let swap = 4 * S / 10;
+    let point = |at: i64, visible: bool| CursorPoint {
+        at,
+        x: (OUT_W / 2) as f64,
+        y: (OUT_H / 2) as f64,
+        scale: 1.0,
+        visible,
+    };
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                motion: Vec::new(),
+            },
+            PlanItem::Cursor {
+                path: "arrow.png".to_owned(),
+                size: 80.0,
+                hotspot: centre,
+                // Hands over a nanosecond before the swap, the way
+                // `splitByShape` writes it.
+                points: vec![
+                    point(0, true),
+                    point(swap as i64 - 1, true),
+                    point(swap as i64, false),
+                    point(S as i64, false),
+                ],
+            },
+            PlanItem::Cursor {
+                path: "hand.png".to_owned(),
+                size: 80.0,
+                hotspot: centre,
+                points: vec![
+                    point(0, false),
+                    point(swap as i64 - 1, false),
+                    point(swap as i64, true),
+                    point(S as i64, true),
+                ],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // Frame 0 is before the swap and frame 8 is after it.
+    near(
+        frame_at(&output, 0).at(OUT_W / 2, OUT_H / 2),
+        (255, 0, 0),
+        "the arrow before the swap",
+    );
+    near(
+        frame_at(&output, 8).at(OUT_W / 2, OUT_H / 2),
+        (0, 0, 255),
+        "the hand after the swap",
     );
 
     let _ = std::fs::remove_dir_all(&dir);

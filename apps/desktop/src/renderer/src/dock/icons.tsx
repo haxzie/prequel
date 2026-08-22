@@ -224,3 +224,24 @@ export function StopIcon() {
     </svg>
   );
 }
+
+/**
+ * A bin, for discarding the take.
+ *
+ * Stroked rather than filled like its neighbours: Pause and Stop are solid
+ * blocks because they are the two things this pill is for, and a third solid
+ * shape beside them reads as equally routine. This one throws the recording
+ * away.
+ */
+export function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor">
+      <path
+        d="M3 4.5h10M6.5 4.5V3.5a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.5 8a1 1 0 0 0 1 .95h4a1 1 0 0 0 1-.95l.5-8"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

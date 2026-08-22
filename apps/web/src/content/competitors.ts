@@ -46,6 +46,8 @@ export const FEATURE_ROWS = [
   { key: "systemAudio", label: "System audio without a virtual driver" },
   { key: "verticalReframe", label: "Reframe to vertical without cropping" },
   { key: "localOnly", label: "Records and exports without uploading" },
+  { key: "shareLinks", label: "Shareable links" },
+  { key: "workspace", label: "Team workspace" },
   { key: "iosCapture", label: "Records an iPhone or iPad" },
   { key: "maxExport", label: "Maximum export" },
   { key: "platforms", label: "Platforms" },
@@ -57,10 +59,15 @@ export type FeatureKey = (typeof FEATURE_ROWS)[number]["key"];
 /**
  * Our column, written once.
  *
- * Every comparison page reads this. Two entries are deliberately `false` and
- * should stay that way until the app does them: a page that claims a feature we
+ * Every comparison page reads this. `iosCapture` is deliberately `false` and
+ * should stay that way until the app does it: a page that claims a feature we
  * do not have is the fastest way to lose the argument in the thread where it
  * gets posted.
+ *
+ * `shareLinks` and `workspace` are the Pro tier in `lib/pricing.ts`. They live
+ * here because leaving them off the table did not make the pages more modest,
+ * it made them silent on the one axis Loom, Tella, Descript and Cap are bought
+ * for — and silence on a comparison table reads as a cross.
  */
 export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   autoZoom: true,
@@ -72,13 +79,18 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   separateTracks: true,
   systemAudio: true,
   verticalReframe: true,
+  // Still true with Pro in the picture: recording and export never need the
+  // network, and the upload is a thing you ask for. That is the distinction
+  // worth holding — "local-first" is not "no server exists".
   localOnly: true,
+  shareLinks: true,
+  workspace: true,
   // Prequel captures a display, a window or a region. There is no device
   // capture — see `TargetKind` in apps/desktop/src/shared/contract.ts.
   iosCapture: false,
   maxExport: "4K, 120 fps",
   platforms: "macOS 14+, Apple Silicon",
-  licence: "Free tier · one-off purchase",
+  licence: "$59/user/year, 14-day trial",
 };
 
 export type Competitor = {
@@ -91,14 +103,39 @@ export type Competitor = {
   /** Brand colour, for the monogram tile. Theirs, read off their own site. */
   accent: string;
   /**
-   * How the mark renders.
+   * Whether this vendor's logo may be shown at all.
    *
-   * `monogram` draws the initial in `accent` and needs no third-party asset.
-   * `asset` reads `public/logos/<slug>.svg` and must only be set once that file
-   * is there and the vendor's brand terms have been checked — Apple's forbid it
-   * outright, so `quicktime` can never be `asset`.
+   * Not "is there a file" — that is answered by the filesystem, at build time,
+   * by `Mark`. This is the separate question of whether we want to, which is a
+   * judgement about someone else's trademark rather than anything the code can
+   * work out.
+   *
+   * Every entry is currently `true`, and that is a decision rather than a
+   * default — each of these six vendors' brand terms was read before its mark
+   * went in. Set this to `false` to pull one without deleting the file, and the
+   * page falls back to the monogram: the flag is checked before the filesystem,
+   * so it is the answer, not a hint.
+   *
+   * The strictest terms in the set belonged to Apple, whose guidelines spell out
+   * a prohibition on reproducing their graphic marks. That entry has since been
+   * removed for unrelated reasons; if a QuickTime comparison ever returns, it
+   * comes back as a monogram.
+   *
+   * `true` here is not a claim that a logo exists. Every slug falls back to its
+   * monogram until someone puts a file in `public/logos`.
    */
-  mark: "monogram" | "asset";
+  logoAllowed: boolean;
+  /**
+   * The letters on the fallback tile.
+   *
+   * Authored rather than taken from `name.charAt(0)`, because the first letter
+   * is not distinctive across this set: Screen Studio and ScreenFlow both begin
+   * with an S. Two pages showing the same square is worse than no mark at all —
+   * it reads as a placeholder nobody finished.
+   *
+   * One or two characters. Three do not fit at this size.
+   */
+  monogram: string;
   /**
    * The one-line price, for the summary card.
    *
@@ -133,7 +170,8 @@ export const competitors: Competitor[] = [
     name: "Screen Studio",
     tagline: "macOS screen recorder with automatic zoom and smooth animations.",
     accent: "#6c4cf1",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "SS",
     priceSummary: "$29/mo, or $9/mo billed yearly",
     plans: [
       { name: "Monthly", price: "$29", cadence: "per month, billed monthly" },
@@ -151,6 +189,8 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: true,
       localOnly: "Records locally; shareable links upload",
+      shareLinks: "Yes, 30-minute cap, branded page",
+      workspace: false,
       iosCapture: true,
       maxExport: "4K, 60 fps",
       platforms: "macOS",
@@ -158,19 +198,22 @@ export const competitors: Competitor[] = [
     },
     strength:
       "The automatic zoom and cursor smoothing that made this category, and still the output most people are comparing everything else against.",
-    verifiedOn: "2026-08-21",
-    sources: [{ label: "screen.studio pricing", url: "https://screen.studio/#pricing" }],
+    verifiedOn: "2026-08-22",
+    sources: [
+      { label: "Screen Studio", url: "https://screen.studio/" },
+      { label: "screen.studio pricing", url: "https://screen.studio/#pricing" },
+    ],
     heading: "Looking for a Screen Studio alternative?",
-    lede: "Screen Studio is a subscription. Prequel is a one-off purchase with a free tier, records the same automatic zooms, and exports at up to 4K 120.",
+    lede: "Both are paid, and Prequel is $59 a year against Screen Studio's $108. Same automatic zooms, higher export ceiling, and a fourteen-day trial to check before you pay.",
     title: "Screen Studio alternative for Mac",
     description:
-      "A Screen Studio alternative for macOS with automatic zooms, a framed camera and 4K export — bought once rather than rented. Compared on price, features and licence.",
+      "A Screen Studio alternative for macOS at $59 a year against their $108: the same automatic zooms and a framed camera, exporting at 4K 120. Compared on price, features and licence.",
     navLabel: "vs Screen Studio",
     faq: [
       {
         question: "What is the best Screen Studio alternative?",
         answer:
-          "It depends on what pushed you to look. If it was the subscription, Prequel is a one-off purchase with a free tier and the same automatic zooms. If it was macOS-only, Screen Studio has no Windows build and neither do we — FocuSee and Cap both run on Windows. If it was price alone, Screen Studio at $9 a month billed yearly is cheaper than most of the paid alternatives.",
+          "It depends on what pushed you to look. If it was the price, Prequel is $59 per user per year against Screen Studio's $108, and does the same automatic zooms for it. If it was macOS-only, neither of us has a Windows build and you want something cross-platform. And if it was paying at all, there are free recorders in this category — they ask you to set up and edit the thing yourself, which is the work Prequel exists to remove.",
       },
       {
         question: "How much does Screen Studio cost?",
@@ -183,14 +226,14 @@ export const competitors: Competitor[] = [
           "Not for new customers. The one-time licence was withdrawn in October 2025 and Screen Studio is subscription-only now. People who already held one keep their version and were given updates into 2027. Their own FAQ still carries an entry titled 'What happens if I purchased a one-time license in the past?'",
       },
       {
-        question: "Is there a Screen Studio alternative without a subscription?",
+        question: "Is there a free Screen Studio alternative?",
         answer:
-          "That is the reason this page exists. Prequel is bought once and keeps working — the purchase includes a year of updates, and the version you have does not stop when that year ends. There is also a free tier with no watermark.",
+          "Not Prequel — it is $59 per user per year, after a fourteen-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the automatic pass: they capture faithfully and leave the zooms, the framing and the cuts to you.",
       },
       {
         question: "Is Prequel a good Screen Studio alternative?",
         answer:
-          "For a Mac recording that needs to look produced, yes — the automatic zooms, the framed camera, the backgrounds and the cursor work are the same job. Screen Studio does two things we do not: it records iPhones and iPads over USB, and it is a mature product with years of releases behind it. Prequel exports higher, at up to 4K 120 against their 4K 60, and is not a subscription.",
+          "For a Mac recording that needs to look produced, yes — the automatic zooms, the framed camera, the backgrounds and the cursor work are the same job, and Prequel exports higher, at up to 4K 120 against their 4K 60. Screen Studio does two things we do not: it records iPhones and iPads over USB, and it is a mature product with years of releases behind it rather than one in development.",
       },
       {
         question: "Can I open my Screen Studio recordings in Prequel?",
@@ -204,7 +247,8 @@ export const competitors: Competitor[] = [
     name: "Loom",
     tagline: "Async video messaging for work, now part of Atlassian.",
     accent: "#625df5",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "L",
     priceSummary: "Free tier, then $18–$24 per user/mo",
     plans: [
       { name: "Starter", price: "$0", cadence: "free, capped" },
@@ -223,13 +267,15 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: false,
       localOnly: "No — recordings upload to Loom",
+      shareLinks: true,
+      workspace: true,
       iosCapture: false,
       maxExport: "4K on paid plans",
       platforms: "macOS, Windows, web, Chrome",
       licence: "Per-seat subscription",
     },
     strength:
-      "It replaced the meeting. Nothing here is faster at turning a thought into a link somebody can watch, and the sharing, viewer analytics and team library are a whole product we do not have.",
+      "It replaced the meeting. Nothing is faster at turning a thought into a link somebody can watch, and the viewer analytics, the comments on the timeline and the integrations into every tool a company already runs are a distribution product in their own right.",
     verifiedOn: "2026-08-21",
     sources: [
       { label: "Loom pricing", url: "https://www.loom.com/pricing" },
@@ -239,7 +285,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Loom alternative?",
-    lede: "Loom uploads your recording and gives you a link. Prequel gives you a finished file that never leaves your Mac — and does the editing Loom does not.",
+    lede: "Loom uploads first and barely edits at all. Prequel edits first — zooms on the work, the camera framed, the dead air gone — then gives you a link if you want one, and a file you own either way.",
     title: "Loom alternative for Mac",
     description:
       "A Loom alternative for macOS that records locally, edits automatically and exports one MP4 — no upload, no seat pricing, no account needed to watch it.",
@@ -248,7 +294,7 @@ export const competitors: Competitor[] = [
       {
         question: "What is the best Loom alternative?",
         answer:
-          "If you want the share link and the team library, the honest answer is that Loom is still the best at that and the alternatives are Tella and Cap. If what you want is a polished video file — zooms on the work, a framed camera, no upload — that is what Prequel does.",
+          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a framed camera, a background, the dead air trimmed — and still gives you a shareable link. What Loom keeps is the analytics and the integrations.",
       },
       {
         question: "How much does Loom cost?",
@@ -263,12 +309,12 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a screen recorder that does not upload my recordings?",
         answer:
-          "Prequel records, edits and exports entirely on your Mac, on its own media engine. There is no upload step and no cloud render, so the recording exists as files on your disk and nowhere else.",
+          "Prequel records, edits and exports entirely on your Mac, on its own media engine. Nothing is uploaded to make the video and nothing is rendered on someone else's server, so a recording exists as files on your disk unless you choose to share one. Sending a link is a thing you ask for, not the price of pressing record.",
       },
       {
         question: "What do I lose by moving off Loom?",
         answer:
-          "The instant link, the hosted player, viewer analytics and the shared team library. Those are real and Prequel does not replace them — you would be exporting a file and putting it wherever your team already keeps files. What you gain is that the video is edited rather than raw, and that it is yours.",
+          "Viewer analytics, comments left on the timeline, the integrations into Slack, Jira and the rest, and the browser and Windows clients. Those are real and Prequel does not replace them. The link and the team workspace you keep — they are the Pro tier. What you gain is that the video is edited rather than raw, that it exists as a file you own, and that recording it never required an upload.",
       },
       {
         question: "Can I move my existing Loom videos into Prequel?",
@@ -278,221 +324,12 @@ export const competitors: Competitor[] = [
     ],
   },
   {
-    slug: "obs",
-    name: "OBS Studio",
-    tagline: "Free and open source software for video recording and live streaming.",
-    accent: "#302e31",
-    mark: "monogram",
-    priceSummary: "Free, open source",
-    plans: [{ name: "OBS Studio", price: "Free", cadence: "open source, GPL v2 or later" }],
-    freeTier: "The whole product, with no limits and no account",
-    features: {
-      autoZoom: false,
-      typingZoom: false,
-      smoothCursor: false,
-      camera: "Composited by hand in a scene",
-      backgrounds: "Add an image source yourself",
-      timeline: false,
-      separateTracks: true,
-      systemAudio: true,
-      verticalReframe: "Rebuild the scene at the new size",
-      localOnly: true,
-      iosCapture: false,
-      maxExport: "Whatever you configure",
-      platforms: "macOS, Windows, Linux",
-      licence: "Free, open source",
-    },
-    strength:
-      "The most capable free compositor and encoder there is, and the only one on this page that live streams. Arbitrary scenes, unlimited sources, filters and hardware encoding, for nothing.",
-    verifiedOn: "2026-08-21",
-    sources: [
-      { label: "obsproject.com", url: "https://obsproject.com/" },
-      {
-        label: "OBS macOS desktop audio guide",
-        url: "https://obsproject.com/kb/macos-desktop-audio-capture-guide",
-      },
-    ],
-    heading: "Looking for an OBS alternative on Mac?",
-    lede: "OBS records anything you can configure it to record. Prequel decides the hard parts for you and hands back a finished video instead of a scene graph.",
-    title: "OBS alternative for Mac",
-    description:
-      "An OBS Studio alternative for macOS that needs no scene setup: automatic zooms, a framed camera, a real timeline and one MP4 out. What OBS gives you and what it asks of you.",
-    navLabel: "vs OBS",
-    faq: [
-      {
-        question: "Is there an OBS alternative that is easier to set up?",
-        answer:
-          "That is the whole difference. OBS asks you to build a scene — add a display source, add a webcam source, position and crop both, set an encoder — before you record anything. Prequel asks which screen, and does the rest afterwards on a take you can already see.",
-      },
-      {
-        question: "Does OBS need BlackHole to record system audio on a Mac?",
-        answer:
-          "Not any more, and this is worth correcting because a lot of comparison pages still say otherwise. OBS 30 and later on macOS 13 and later ship a macOS Audio Capture source that records desktop audio directly, either everything or one application. A virtual driver is only needed on older versions of macOS.",
-      },
-      {
-        question: "Is OBS still better for some things?",
-        answer:
-          "Yes, and it is not close. If you are live streaming, OBS is the tool and Prequel does not stream at all. If you need a dozen sources, custom filters or an unusual capture setup, OBS will do it and Prequel will not. OBS is also free forever, with no account.",
-      },
-      {
-        question: "Does OBS have automatic zoom?",
-        answer:
-          "No. OBS records what the scene contains at a fixed framing. Zooms and cursor smoothing are done afterwards in a video editor, or with plugins and manual keyframes. Prequel places them from your clicks and typing while it records.",
-      },
-      {
-        question: "What resolution can OBS record at?",
-        answer:
-          "Whatever you configure the canvas and encoder for — there is no product-imposed ceiling, which is one of its genuine advantages. Prequel exports up to 4K at 120 frames per second, hardware encoded.",
-      },
-      {
-        question: "Does OBS have a video editor?",
-        answer:
-          "No. OBS records and streams; editing happens somewhere else. That is the step Prequel is built around — the editor opens on the take with the zooms already placed.",
-      },
-    ],
-  },
-  {
-    slug: "quicktime",
-    name: "QuickTime Player",
-    tagline: "Apple's player and recorder, built into macOS.",
-    accent: "#4e84f9",
-    // Never `asset`. Apple's trademark guidelines prohibit using Apple logos and
-    // product icons in third-party marketing material.
-    mark: "monogram",
-    priceSummary: "Free with macOS",
-    plans: [{ name: "QuickTime Player", price: "Free", cadence: "included with macOS" }],
-    freeTier: "The whole thing — it comes with the Mac",
-    features: {
-      autoZoom: false,
-      typingZoom: false,
-      smoothCursor: false,
-      camera: "Recorded separately, not composited",
-      backgrounds: false,
-      timeline: "Trim, split and rearrange",
-      separateTracks: false,
-      systemAudio: false,
-      verticalReframe: false,
-      localOnly: true,
-      iosCapture: "Over USB, as a movie recording",
-      maxExport: "Your display's own resolution",
-      platforms: "macOS",
-      licence: "Included with macOS",
-    },
-    strength:
-      "It is already installed, it starts instantly, it records at your display's native resolution and it hands you a plain file you own. Nothing is faster for capture this and send it.",
-    verifiedOn: "2026-08-21",
-    sources: [
-      {
-        label: "Apple — Record your screen in QuickTime Player",
-        url: "https://support.apple.com/guide/quicktime-player/record-your-screen-qtp97b08e666/mac",
-      },
-    ],
-    heading: "Want more than QuickTime for screen recording?",
-    lede: "QuickTime records the screen and trims the ends. Everything that makes a recording worth watching — the zooms, the camera, the system audio — is the part it leaves to you.",
-    title: "A QuickTime alternative for screen recording on Mac",
-    description:
-      "QuickTime records your screen and offers one audio option: a microphone. Prequel adds system audio, a framed camera, automatic zooms and 4K export, all locally.",
-    navLabel: "vs QuickTime",
-    faq: [
-      {
-        question: "Can QuickTime record system audio?",
-        answer:
-          "No. Apple's own documentation for a screen recording lists exactly one audio option, and it is a microphone — there is no system audio setting. That is why the standard advice is to install a virtual driver like BlackHole and route your output through it. Prequel records system audio directly, as its own track.",
-      },
-      {
-        question: "Why is my QuickTime screen recording black?",
-        answer:
-          "Almost always the Screen Recording permission. macOS hands back empty frames rather than an error when it has not been granted, which reads as a broken app rather than a missing checkbox. Grant it under Privacy and Security in System Settings and start the recording again.",
-      },
-      {
-        question: "Can QuickTime record my screen and my camera at the same time?",
-        answer:
-          "Not into one frame. It will record a screen, or a camera, and putting both in one video means recording twice and compositing them yourself. Prequel captures both at once as separate tracks, and where the camera sits is decided afterwards.",
-      },
-      {
-        question: "Why are QuickTime screen recordings such large files?",
-        answer:
-          "It writes a MOV tuned for quality rather than size. Prequel exports hardware H.264 or HEVC at a constant frame rate, which is dramatically smaller for the same seconds — and a constant frame rate is also what keeps audio in sync after an upload.",
-      },
-      {
-        question: "Can I edit a QuickTime recording?",
-        answer:
-          "A little. QuickTime will trim, split, rotate and rearrange clips. It will not zoom, frame a camera, add a background, clean up the cursor or mix two audio sources, which is most of what a screen recording needs.",
-      },
-      {
-        question: "Is there a free alternative to QuickTime for screen recording?",
-        answer:
-          "OBS Studio is free and open source and will do far more, at the cost of setting up a scene first. Prequel has a free tier with no watermark, limited on length and export format rather than on the recording being usable.",
-      },
-    ],
-  },
-  {
-    slug: "cleanshot-x",
-    name: "CleanShot X",
-    tagline: "Capture your Mac's screen like a pro.",
-    accent: "#ff6b35",
-    mark: "monogram",
-    priceSummary: "$29 once, or $8 per user/mo",
-    plans: [
-      { name: "App + Cloud Basic", price: "$29", cadence: "one-off, a year of updates" },
-      { name: "App + Cloud Pro", price: "$8", cadence: "per user, per month, billed annually" },
-    ],
-    freeTier: false,
-    features: {
-      autoZoom: false,
-      typingZoom: false,
-      smoothCursor: false,
-      camera: false,
-      backgrounds: "For screenshots",
-      timeline: "Trim only",
-      separateTracks: false,
-      systemAudio: true,
-      verticalReframe: false,
-      localOnly: "Local, with optional cloud upload",
-      iosCapture: false,
-      maxExport: "Display resolution, MP4 or GIF",
-      platforms: "macOS",
-      licence: "One-off, or per-seat for Cloud",
-    },
-    strength:
-      "The best screenshot tool on the Mac, and it is not particularly close — scrolling capture, annotation, OCR, cloud links and a genuinely one-off price. Most people who own it own it for that.",
-    verifiedOn: "2026-08-21",
-    sources: [{ label: "CleanShot X pricing", url: "https://cleanshot.com/pricing" }],
-    heading: "Need more than CleanShot X for video?",
-    lede: "CleanShot X is a screenshot tool that also records. Prequel is a recorder that hands back an edited video — the two overlap less than the feature lists suggest.",
-    title: "CleanShot X alternative for screen recording",
-    description:
-      "CleanShot X is unbeatable at screenshots and light on video. Compare its recording against Prequel's automatic zooms, camera framing and 4K export on macOS.",
-    navLabel: "vs CleanShot X",
-    faq: [
-      {
-        question: "How much does CleanShot X cost?",
-        answer:
-          "$29 as a one-off for App and Cloud Basic, which includes the Mac app to keep and a year of updates, with an optional $19 a year to keep updating. Cloud Pro is $8 per user per month billed annually, or $10 monthly. Checked on 21 August 2026.",
-      },
-      {
-        question: "Does CleanShot X have automatic zoom?",
-        answer:
-          "No. Its video recording is deliberately simple — record, trim, share. There is no automatic zoom, no cursor smoothing and no camera overlay composited into the frame.",
-      },
-      {
-        question: "Should I use both?",
-        answer:
-          "Plenty of people will. They solve different problems: CleanShot X for screenshots, annotation and a quick clip to drop into a thread, Prequel for a recording that has to look produced. Nothing about owning one argues against the other.",
-      },
-      {
-        question: "Is Prequel also a one-off purchase?",
-        answer:
-          "Yes, on the same shape — bought once, a year of updates, and the version you have keeps working afterwards. There is also a free tier, which CleanShot X does not have.",
-      },
-    ],
-  },
-  {
     slug: "camtasia",
     name: "Camtasia",
     tagline: "TechSmith's screen recorder and video editor for training and tutorials.",
     accent: "#8a56d1",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "Ct",
     priceSummary: "Subscription only, billed annually",
     plans: [
       { name: "Starter", price: "Paid", cadence: "annual — exports carry a watermark" },
@@ -510,6 +347,8 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: "Change the canvas and re-position by hand",
       localOnly: true,
+      shareLinks: "Via Screencast Pro",
+      workspace: true,
       iosCapture: false,
       maxExport: "4K",
       platforms: "macOS 14+, Windows",
@@ -517,8 +356,9 @@ export const competitors: Competitor[] = [
     },
     strength:
       "Record and edit in one place, with a real multi-track timeline, quizzing and SCORM output. For a training department that needs interactive courseware, nothing on this page is a substitute.",
-    verifiedOn: "2026-08-21",
+    verifiedOn: "2026-08-22",
     sources: [
+      { label: "TechSmith Screencast", url: "https://www.techsmith.com/screencast/" },
       {
         label: "TechSmith — transition to subscription pricing",
         url: "https://support.techsmith.com/hc/en-us/articles/27009223314701-TechSmith-Transition-to-Annual-Subscription-Pricing-Model-in-2025",
@@ -529,10 +369,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a lighter Camtasia alternative?",
-    lede: "Camtasia is a full video editor you drive by hand. Prequel does the pass a screen recording actually needs and gets out of the way.",
+    lede: "Camtasia is a full video editor you drive by hand, sold as an annual subscription whose cheapest tier watermarks your exports. Prequel does the pass a screen recording actually needs, gets out of the way, and is $59 a year with nothing held back.",
     title: "Camtasia alternative for Mac",
     description:
-      "A Camtasia alternative for macOS: automatic zooms instead of manual keyframes, no watermark on the free tier, and a one-off purchase rather than an annual subscription.",
+      "A Camtasia alternative for macOS at $59 a year: automatic zooms instead of manual keyframes, and 4K export that is never watermarked — where Camtasia's cheapest tier still stamps one on.",
     navLabel: "vs Camtasia",
     faq: [
       {
@@ -543,7 +383,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Camtasia's cheapest plan watermark exports?",
         answer:
-          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel's free tier does not watermark anything — its limits are on length and export format, not on the file being usable.",
+          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel never watermarks anything, on the trial or on a licence — there is one plan at $59 per user per year and the export is always the full file.",
       },
       {
         question: "Does Camtasia have automatic zoom?",
@@ -567,7 +407,8 @@ export const competitors: Competitor[] = [
     name: "ScreenFlow",
     tagline: "Telestream's screen recording and video editing software for Mac.",
     accent: "#2f6fdb",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "SF",
     priceSummary: "$199.99 once, single machine",
     plans: [{ name: "ScreenFlow 10", price: "$199.99", cadence: "one-off, single machine" }],
     freeTier: "A free trial that watermarks exports",
@@ -582,6 +423,8 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: "Change the canvas and re-position by hand",
       localOnly: true,
+      shareLinks: false,
+      workspace: false,
       iosCapture: "Over USB",
       maxExport: "4K",
       platforms: "macOS 15 or macOS 26",
@@ -601,7 +444,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a ScreenFlow alternative?",
-    lede: "ScreenFlow is $199.99 and has not had a major version since June 2021. Prequel is a one-off purchase built for the Macs that shipped since.",
+    lede: "ScreenFlow is $199.99 and has not had a major version since June 2021. Prequel is $59 a year, and built for the Macs that shipped since.",
     title: "ScreenFlow alternative for Mac",
     description:
       "A ScreenFlow alternative for macOS with automatic zooms and hardware 4K export. What ScreenFlow costs, what version it is on, and where it has stalled.",
@@ -639,7 +482,8 @@ export const competitors: Competitor[] = [
     name: "Descript",
     tagline: "Edit video by editing the transcript.",
     accent: "#2b8fff",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "D",
     priceSummary: "Free tier, then $16–$50/mo annually",
     plans: [
       { name: "Free", price: "$0", cadence: "720p, watermarked, 60 min transcription a month" },
@@ -659,6 +503,8 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: true,
       localOnly: "No — projects and media are stored on their servers",
+      shareLinks: true,
+      workspace: true,
       iosCapture: false,
       maxExport: "4K on Creator and above",
       platforms: "macOS, Windows, web",
@@ -672,10 +518,10 @@ export const competitors: Competitor[] = [
       { label: "Descript security", url: "https://www.descript.com/security" },
     ],
     heading: "Looking for a Descript alternative for screen recording?",
-    lede: "Descript is built around the transcript and stores your media on its servers. Prequel is built around the screen and never leaves your Mac.",
+    lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen, records and renders on your Mac, and uploads only when you ask it to.",
     title: "Descript alternative for Mac screen recording",
     description:
-      "A Descript alternative for macOS screen recording: automatic zooms, local-only processing and no watermark on the free tier. Compared on price and features.",
+      "A Descript alternative for macOS screen recording: automatic zooms, local-only processing and exports that are never watermarked or capped. Compared on price and features.",
     navLabel: "vs Descript",
     faq: [
       {
@@ -686,7 +532,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Descript watermark free exports?",
         answer:
-          "Yes, and it caps them at 720p. Prequel's free tier has no watermark and exports 1080p — the limits are on length and format rather than on the file being usable.",
+          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $59 per user per year after a fourteen-day trial — but nothing it exports is ever watermarked or capped, on the trial or after it.",
       },
       {
         question: "Does Descript store my recordings in the cloud?",
@@ -710,7 +556,8 @@ export const competitors: Competitor[] = [
     name: "Tella",
     tagline: "Record and share video that looks professionally edited.",
     accent: "#5e51f8",
-    mark: "monogram",
+    logoAllowed: true,
+    monogram: "T",
     priceSummary: "$13–$19 per user/mo, no free plan",
     plans: [
       { name: "Pro", price: "$13", cadence: "per user, per month" },
@@ -728,6 +575,8 @@ export const competitors: Competitor[] = [
       systemAudio: true,
       verticalReframe: true,
       localOnly: "No — recordings are hosted by Tella",
+      shareLinks: true,
+      workspace: true,
       iosCapture: false,
       maxExport: "4K; 60 fps on Premium only",
       platforms: "macOS, Windows, web, Chrome",
@@ -741,16 +590,16 @@ export const competitors: Competitor[] = [
       { label: "Tella plans", url: "https://www.tella.com/help/introduction/plans" },
     ],
     heading: "Looking for a Tella alternative?",
-    lede: "Tella hosts your video and charges per seat, with no free plan. Prequel exports a file you own, on a Mac app you buy once.",
+    lede: "Tella is $156 a seat a year and hosts your video. Prequel is $59, renders on your own Mac, and the export is a file you own rather than a page you rent.",
     title: "Tella alternative for Mac",
     description:
-      "A Tella alternative for macOS with automatic zooms and 4K 120 export, recorded and rendered locally. No per-seat subscription and a free tier that is not a trial.",
+      "A Tella alternative for macOS with automatic zooms and 4K 120 export, recorded and rendered locally — at $59 a year against Tella's $156 a seat.",
     navLabel: "vs Tella",
     faq: [
       {
         question: "Does Tella have a free plan?",
         answer:
-          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel has a free tier that is not time-limited.",
+          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, with a fourteen-day trial rather than seven and one price at the end of it instead of three tiers.",
       },
       {
         question: "How much does Tella cost?",
@@ -760,143 +609,12 @@ export const competitors: Competitor[] = [
       {
         question: "Is Tella better for anything?",
         answer:
-          "Sharing. Hosted pages, custom domains, password protection, CTAs and viewer analytics are a distribution product we do not have, and it runs on Windows and in a browser. If the link matters more than the file, Tella is the stronger choice.",
+          "Distribution, specifically. Custom domains, password protection, calls to action and per-viewer analytics go further than a link and a workspace do, and it runs on Windows and in a browser where Prequel does not. If the hosted page is the product you are buying, that is Tella's ground.",
       },
       {
         question: "Where does Tella process my recordings?",
         answer:
           "In the cloud — every video gets a hosted Tella page. Prequel records and renders on your Mac's own media engine, so nothing is uploaded to produce the file.",
-      },
-    ],
-  },
-  {
-    slug: "cap",
-    name: "Cap",
-    tagline: "Open source screen recording, local first.",
-    accent: "#4785ff",
-    mark: "monogram",
-    priceSummary: "Free tier, $29 licence, or $12 per user/mo",
-    plans: [
-      { name: "Free", price: "$0", cadence: "personal use; shared links capped at 5 minutes" },
-      {
-        name: "Desktop licence",
-        price: "$29",
-        cadence: "single user — their page also says billed yearly",
-      },
-      { name: "Cap Pro", price: "$12", cadence: "per user, per month, or $8.16 billed annually" },
-    ],
-    freeTier: "Studio Mode and 4K 60 export, for personal use",
-    features: {
-      autoZoom: true,
-      typingZoom: false,
-      smoothCursor: true,
-      camera: true,
-      backgrounds: true,
-      timeline: true,
-      separateTracks: true,
-      systemAudio: true,
-      verticalReframe: true,
-      localOnly: true,
-      iosCapture: false,
-      maxExport: "4K, 60 fps",
-      platforms: "macOS, Windows",
-      licence: "AGPL v3, paid tiers for cloud",
-    },
-    strength:
-      "Genuinely open source and genuinely local. Auto-zoom, cursor smoothing, backgrounds, 4K 60, bring your own S3 bucket, and the whole platform is self-hostable. Of everything on this page it is the closest to what Prequel does.",
-    verifiedOn: "2026-08-21",
-    sources: [
-      { label: "Cap pricing", url: "https://cap.so/pricing" },
-      { label: "Cap Studio Mode", url: "https://cap.so/features/studio-mode" },
-    ],
-    heading: "Cap or Prequel?",
-    lede: "Cap is the closest thing to Prequel on this list, and it is open source. The difference is what each one is built out of, and what happens after the free tier.",
-    title: "Cap alternative for Mac",
-    description:
-      "Cap and Prequel compared: both record locally with automatic zooms and 4K export. Where they differ on platform, licence, pricing and the capture pipeline.",
-    navLabel: "vs Cap",
-    faq: [
-      {
-        question: "How much does Cap cost?",
-        answer:
-          "There is a free tier for personal use with Studio Mode and 4K 60 export, and shared links capped at five minutes. A desktop licence is $29 for a single user — their pricing page describes it as both perpetual and billed yearly, which we will not try to resolve for them. Cap Pro is $12 per user per month, or $8.16 billed annually. Checked on 21 August 2026.",
-      },
-      {
-        question: "Is Cap open source?",
-        answer:
-          "Yes, genuinely — AGPL v3 for most of it, with some crates under MIT, and the platform can be self-hosted with Docker. Prequel is not open source. If that matters to you, it is a real reason to choose Cap and we would rather say so than pretend otherwise.",
-      },
-      {
-        question: "Does Cap record locally?",
-        answer:
-          "Yes. Cap states that recording and editing happen locally on your device, and it lets you connect your own S3 bucket or Google Drive. This is one of the few comparisons on this site where local-only is not a difference between us.",
-      },
-      {
-        question: "So why choose Prequel over Cap?",
-        answer:
-          "It is a macOS-only app built on ScreenCaptureKit, AVFoundation, VideoToolbox and Metal, and that focus is the argument: export runs at up to 4K 120 against Cap's 4K 60, and zooms are driven by typing as well as clicking. Cap runs on Windows and is open source, which Prequel is not.",
-      },
-    ],
-  },
-  {
-    slug: "focusee",
-    name: "FocuSee",
-    tagline: "Screen recording with automatic zoom, for Windows and Mac.",
-    accent: "#ff8a3d",
-    mark: "monogram",
-    priceSummary: "$49.99 first year, or $199.99 lifetime",
-    plans: [
-      { name: "Standard", price: "$49.99", cadence: "first year, one computer" },
-      { name: "Standard monthly", price: "$19.99", cadence: "per month" },
-      { name: "Advanced lifetime", price: "$199.99", cadence: "one-off, up to five computers" },
-    ],
-    freeTier: "Free, but exports carry a watermark",
-    features: {
-      autoZoom: true,
-      typingZoom: true,
-      smoothCursor: true,
-      camera: "Picture in picture and full screen",
-      backgrounds: true,
-      timeline: true,
-      separateTracks: "Background music, not a track mixer",
-      systemAudio: true,
-      verticalReframe: true,
-      localOnly: "Partly — it runs a server-side AI credit system",
-      iosCapture: false,
-      maxExport: "4K, 60 fps",
-      platforms: "macOS, Windows",
-      licence: "Per-machine, subscription or lifetime",
-    },
-    strength:
-      "The cheapest route to this kind of output, with a real lifetime option — and it runs on Windows, which neither Screen Studio nor Prequel does.",
-    verifiedOn: "2026-08-21",
-    sources: [{ label: "FocuSee pricing", url: "https://focusee.imobie.com/pricing.htm" }],
-    heading: "Looking for a FocuSee alternative on Mac?",
-    lede: "FocuSee is cheap and runs on Windows. Prequel is a native Mac app that renders on your machine's own media engine and does not watermark its free tier.",
-    title: "FocuSee alternative for Mac",
-    description:
-      "A FocuSee alternative for macOS: automatic zooms, hardware 4K 120 export and a free tier with no watermark. Compared on price, platform and processing.",
-    navLabel: "vs FocuSee",
-    faq: [
-      {
-        question: "How much does FocuSee cost?",
-        answer:
-          "Standard is $49.99 for the first year on one computer, or $19.99 a month. Advanced adds more machines and an AI credit allowance, and there is a $199.99 lifetime option covering up to five computers. Their pricing page labels one annual plan in a way that reads as a monthly price; treat the annual figure as the real one. Checked on 21 August 2026.",
-      },
-      {
-        question: "Does FocuSee watermark free exports?",
-        answer:
-          "Yes — the free version watermarks, and paying removes it. Prequel's free tier has no watermark.",
-      },
-      {
-        question: "Does FocuSee work offline?",
-        answer:
-          "Partly. FocuSee says cursor tracking, click detection and shortcut recognition are processed locally and never uploaded, which is a statement about those signals rather than the whole pipeline — it also runs a server-side AI credit system. Prequel does everything locally, including export.",
-      },
-      {
-        question: "Is FocuSee better for anything?",
-        answer:
-          "It runs on Windows, and it is cheaper — including a genuine lifetime licence. If you record on both platforms, that settles it.",
       },
     ],
   },

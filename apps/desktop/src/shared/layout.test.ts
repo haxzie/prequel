@@ -444,6 +444,7 @@ describe("the plan itself", () => {
 describe("the pointer layer", () => {
   const TRACK = {
     path: "cursor.png",
+    hand: null,
     hotspot: { x: 0.055, y: 0.055 },
     size: 0.035,
     hideAfter: null,
@@ -517,9 +518,106 @@ describe("the pointer layer", () => {
   });
 });
 
+describe("the pointer changing shape", () => {
+  const TONE = {
+    path: "arrow.png",
+    hotspot: { x: 0.055, y: 0.055 },
+    hand: { path: "hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+    size: 0.035,
+    hideAfter: null,
+  };
+
+  /** Every pointer item in the plan for a track that hovers a link mid-way. */
+  const itemsFor = (samples: { at: number; x: number; y: number; hand?: boolean }[]) =>
+    buildRenderPlan({ width: 1920, height: 1080 }, { screen: SCREEN, camera: null }, settings(), {
+      ...TONE,
+      samples,
+    }).items.filter((item) => item.kind === "cursor");
+
+  const HOVER = [
+    { at: 0, x: 0.2, y: 0.2 },
+    { at: 1_000_000_000, x: 0.4, y: 0.4, hand: true },
+    { at: 2_000_000_000, x: 0.6, y: 0.6, hand: true },
+    { at: 3_000_000_000, x: 0.8, y: 0.8 },
+  ];
+
+  it("draws exactly one pointer at every moment of a hover", () => {
+    // The invariant the split exists to hold. Getting the handover wrong shows
+    // as either a blink or a doubled pointer, and both are only ever noticed
+    // after the file is written.
+    const items = itemsFor(HOVER);
+
+    for (let at = 0; at <= 3_000_000_000; at += 10_000_000) {
+      const drawn = items.filter(
+        (item) => item.kind === "cursor" && cursorAt(item.points, at) !== null,
+      );
+
+      expect(drawn, `at ${at}`).toHaveLength(1);
+    }
+  });
+
+  it("draws the hand for the span the system showed one", () => {
+    const items = itemsFor(HOVER);
+    // The image actually on screen at a moment, which is the only question
+    // either rasteriser asks of the plan.
+    const drawnAt = (at: number) => {
+      const item = items.find((candidate) => cursorAt(candidate.points, at) !== null);
+      if (item?.kind !== "cursor") throw new Error(`nothing drawn at ${at}`);
+      return item.path;
+    };
+
+    expect(drawnAt(500_000_000)).toBe("arrow.png");
+    expect(drawnAt(1_500_000_000)).toBe("hand.png");
+    // The shape holds until the sample that says otherwise, so the hand is
+    // still on at 2.5s and gone by 3s. That is the data, not a rounding: the
+    // capture side writes a sample the moment the shape changes, so the sample
+    // that ends a hover *is* when it ended.
+    expect(drawnAt(2_500_000_000)).toBe("hand.png");
+    expect(drawnAt(3_000_000_000)).toBe("arrow.png");
+  });
+
+  it("gives the hand its own hotspot", () => {
+    // An arrow points with its tip and a hand with its fingertip. One hotspot
+    // for both puts whichever it was not written for beside what it is on.
+    const hand = itemsFor(HOVER).find((item) => item.kind === "cursor" && item.path === "hand.png");
+    if (hand?.kind !== "cursor") throw new Error("no hand item");
+
+    expect(hand.hotspot).toEqual({ x: 0.3754, y: 0.055 });
+  });
+
+  it("stays one item for a recording that never showed a hand", () => {
+    // Every take made before the shape was sampled. A second item would be a
+    // second texture to load and a second quad to draw for nothing at all.
+    expect(itemsFor([{ at: 0, x: 0.2, y: 0.2 }])).toHaveLength(1);
+  });
+
+  it("stays one item for a style with no hand to swap to", () => {
+    const items = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings(),
+      { ...TONE, hand: null, samples: HOVER },
+    ).items.filter((item) => item.kind === "cursor");
+
+    expect(items).toHaveLength(1);
+  });
+
+  it("keeps every point in time order through the handover", () => {
+    // `cursorAt` binary-searches these. One point out of order and it reads
+    // back the wrong span, which draws a pointer somewhere it never was.
+    for (const item of itemsFor(HOVER)) {
+      if (item.kind !== "cursor") continue;
+      const times = item.points.map((point) => point.at);
+
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  });
+});
+
 describe("hiding a parked pointer", () => {
   const still = {
     path: "cursor.png",
+    hand: null,
     hotspot: { x: 0.055, y: 0.055 },
     size: 0.035,
     hideAfter: 2,
@@ -919,6 +1017,7 @@ describe("zooming", () => {
     // the further out the pointer was.
     const cursor = {
       path: "cursor.png",
+      hand: null,
       hotspot: { x: 0, y: 0 },
       size: 0.035,
       hideAfter: null,
@@ -954,6 +1053,7 @@ describe("following the cursor", () => {
   /** A pointer crossing the screen with a bad shake on top of it. */
   const shaky = (jitter: number) => ({
     path: "cursor.png",
+    hand: null,
     hotspot: { x: 0, y: 0 },
     size: 0.035,
     hideAfter: null,
@@ -1033,7 +1133,14 @@ describe("following the cursor", () => {
       FRAME,
       { screen: SCREEN, camera: null },
       settings(),
-      { path: "cursor.png", hotspot: { x: 0, y: 0 }, size: 0.035, hideAfter: null, samples },
+      {
+        path: "cursor.png",
+        hand: null,
+        hotspot: { x: 0, y: 0 },
+        size: 0.035,
+        hideAfter: null,
+        samples,
+      },
       [
         {
           ...DEFAULT_ZOOM,
@@ -1194,6 +1301,7 @@ describe("following typing", () => {
       settings(),
       {
         path: "cursor.png",
+        hand: null,
         hotspot: { x: 0, y: 0 },
         size: 0.035,
         hideAfter: null,

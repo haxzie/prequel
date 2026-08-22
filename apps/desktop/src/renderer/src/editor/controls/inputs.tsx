@@ -148,16 +148,20 @@ export function Segmented<T extends string>({
 export function Toggle({
   value,
   disabled,
+  title,
   onChange,
 }: {
   value: boolean;
   disabled?: boolean;
+  /** Why it cannot be moved, for the switches that are sometimes unavailable. */
+  title?: string;
   onChange: (value: boolean) => void;
 }) {
   return (
     <button
       type="button"
       role="switch"
+      title={title}
       aria-checked={value}
       disabled={disabled}
       className={cn("flex-none", disabled && "opacity-40")}

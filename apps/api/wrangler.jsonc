@@ -1,0 +1,83 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prequel-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  // `nodejs_compat` is not optional here: Better Auth reaches for `node:crypto`
+  // for its password and token primitives, and without this the Worker fails to
+  // start with a bare "Cannot find module" that names nothing useful.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "prequel",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Where `wrangler d1 migrations apply` looks. Generated into this app by
+      // packages/db's drizzle.config.ts, because wrangler resolves the path
+      // relative to this file.
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "prequel"
+      // Deliberately *not* `"remote": true`, tempting as it is. The tests read
+      // this same file, and a remote binding would point them at the live
+      // bucket — a test suite that writes to production storage, and one that
+      // cannot run in CI at all without a Cloudflare token.
+      //
+      // The cost is that `pnpm dev` cannot finish a share: a presigned URL is a
+      // signature over a real R2 endpoint, so the upload lands in the real
+      // bucket while `complete` HEADs the local simulation, finds nothing, and
+      // reports "the upload didn't finish". Use `pnpm dev:remote` to exercise
+      // that path — see the README.
+    }
+  ],
+
+  "vars": {
+    "APP_URL": "http://localhost:3000",
+    "API_URL": "http://localhost:8787",
+    // Not a secret. This is the public response endpoint of the "Prequel - Early
+    // access form" Google Form, readable by anyone who opens the form.
+    "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
+    "WAITLIST_FIELD": "entry.348125812",
+    "SES_REGION": "us-east-1",
+    // A verified address, so magic links actually send while developing. The
+    // production sender below is the one that belongs to the product — SES will
+    // not send from an unverified identity, and while the account is in the
+    // sandbox it will not send *to* an unverified one either, so this address
+    // doubles as the only inbox that can receive a test link.
+    "SES_FROM": "Prequel <musthaq@sequel.sh>"
+  },
+
+  "env": {
+    "production": {
+      "vars": {
+        "APP_URL": "https://prequel.sh",
+        "API_URL": "https://api.prequel.sh",
+        "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
+        "WAITLIST_FIELD": "entry.348125812",
+        "SES_REGION": "us-east-1",
+        // Verify the `prequel.sh` domain in SES before deploying, or every
+        // magic link and invitation fails with an error naming the sender.
+        // Sending Prequel's mail from another brand's domain would also cost
+        // deliverability, which is the slow version of the same failure.
+        "SES_FROM": "Prequel <hello@prequel.sh>"
+      },
+      "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "prequel",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "prequel" }]
+    }
+  }
+}

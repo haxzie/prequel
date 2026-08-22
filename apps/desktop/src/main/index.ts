@@ -1,21 +1,26 @@
-import { app, globalShortcut, protocol } from "electron";
+import { app, protocol } from "electron";
 
 import { validateEnv } from "@prequel/env";
 
+import { onAuthChanged } from "./auth.js";
 import { CaptureFlow } from "./capture-flow.js";
-import { broadcastDockState, registerIpc } from "./ipc.js";
+import { migrateLibrary } from "./library-migrate.js";
+import { flushDeepLinks, handleDeepLinkArgv, registerDeepLinks } from "./deep-link.js";
+import { broadcastAuthState, broadcastDockState, broadcastLoginItem, registerIpc } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
-import { seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
+import { loginItemState, seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
 import { Preferences } from "./preferences.js";
 import { RecordingSession } from "./session.js";
+import { applyShortcuts, teardownShortcuts } from "./shortcuts.js";
 import { AppTray } from "./tray.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { EditorWindows } from "./windows/editor.js";
 import { SelectionOverlay } from "./windows/selection.js";
+import { SettingsWindow } from "./windows/settings.js";
 import { WelcomeWindow } from "./windows/welcome.js";
 
 // Without this, an unpackaged build takes its name from package.json and
@@ -31,9 +36,10 @@ initLogging();
 // Fail fast on a bad config rather than mid-session.
 validateEnv();
 
-/** Start/stop from anywhere, including while another app has focus. */
-const TOGGLE_SHORTCUT = "Shift+Cmd+R";
-const PAUSE_SHORTCUT = "Shift+Cmd+P";
+// Before anything reads the library: the tray's recent list, an editor window
+// restored from a previous run and the media protocol all resolve against the
+// new layout, so a take still sitting in the old one would read as missing.
+migrateLibrary();
 
 // Only one instance may hold the tray icon and the global shortcut.
 if (!app.requestSingleInstanceLock()) {
@@ -45,6 +51,12 @@ if (!app.requestSingleInstanceLock()) {
 // registration afterwards is silently ignored. Without `stream` in particular
 // the editor's video elements cannot seek.
 protocol.registerSchemesAsPrivileged([MEDIA_SCHEME_PRIVILEGES]);
+
+// Also before `whenReady`, and for a related reason: launching the app *by*
+// following a `prequel://` link fires `open-url` before the app is ready, and a
+// listener attached later never hears the event that started the process. The
+// URLs are queued until `flushDeepLinks` below.
+registerDeepLinks();
 
 const session = new RecordingSession();
 const dock = new DockWindow();
@@ -75,13 +87,20 @@ let quitting = false;
  * is open and hidden only once neither is.
  */
 function syncDockIcon(): void {
-  if (editors.openCount > 0 || welcome.isOpen) void app.dock?.show();
+  if (editors.openCount > 0 || welcome.isOpen || settings.isOpen) void app.dock?.show();
   else app.dock?.hide();
 }
 
 const welcome = new WelcomeWindow({
   onOpen: () => syncDockIcon(),
   onClose: () => syncDockIcon(),
+});
+
+const settings = new SettingsWindow({
+  onOpen: () => syncDockIcon(),
+  onClose: () => syncDockIcon(),
+  // Open at login lives in macOS, so it can change while this window is open.
+  onFocus: () => broadcastLoginItem(loginItemState()),
 });
 
 const editors = new EditorWindows({
@@ -108,7 +127,14 @@ if (!app.isPackaged) {
 
 // Relaunching a menu-bar app should reveal it rather than do nothing — there is
 // no Dock icon to click.
-app.on("second-instance", () => flow?.open());
+//
+// The argv is not ignored any more: macOS delivers a deep link this way when a
+// second copy is launched to follow one while this instance holds the lock,
+// which is the ordinary case for signing in with the app already running.
+app.on("second-instance", (_event, argv) => {
+  handleDeepLinkArgv(argv);
+  flow?.open();
+});
 
 void app.whenReady().then(() => {
   registerMediaProtocol();
@@ -129,12 +155,23 @@ void app.whenReady().then(() => {
     selection,
     preferences,
     onChange: broadcastDockState,
+    settings,
     editors,
     welcome,
   });
 
   registerIpc({ flow });
   tray = new AppTray(session, flow);
+
+  // Several surfaces show the account, so they hear about it rather than each
+  // polling for it.
+  onAuthChanged(broadcastAuthState);
+
+  // Now that `completeSignIn` has somewhere to report to. Covers both a link
+  // that arrived before this point and the cold-launch case, where the URL is in
+  // this process's own argv rather than in an event.
+  flushDeepLinks();
+  handleDeepLinkArgv(process.argv);
 
   /**
    * The panel, or the welcome window in front of it.
@@ -183,8 +220,10 @@ void app.whenReady().then(() => {
   }, 1000);
   app.on("will-quit", () => clearInterval(ticker));
 
-  globalShortcut.register(TOGGLE_SHORTCUT, () => void flow?.toggleRecording());
-  globalShortcut.register(PAUSE_SHORTCUT, () => void flow?.togglePause());
+  applyShortcuts(preferences.get().toggleShortcut, {
+    onToggle: () => void flow?.toggleRecording(),
+    onPause: () => void flow?.togglePause(),
+  });
 });
 
 /**
@@ -199,12 +238,13 @@ app.on("will-quit", () => {
   log("info", "will-quit: tearing down");
 
   for (const [name, teardown] of [
-    ["shortcuts", () => globalShortcut.unregisterAll()],
+    ["shortcuts", () => teardownShortcuts()],
     ["selection", () => selection.close()],
     ["camera", () => camera.destroy()],
     ["dock", () => dock.destroy()],
     ["editors", () => editors.closeAll()],
     ["welcome", () => welcome.close()],
+    ["settings", () => settings.close()],
     ["tray", () => tray?.destroy()],
   ] as const) {
     try {

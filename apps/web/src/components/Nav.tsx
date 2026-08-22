@@ -43,6 +43,18 @@ export function Nav() {
               {item.label}
             </Link>
           ))}
+          {/* Sign in sits with the nav links rather than beside the button,
+              and stays visible at every width. It is not a call to action — it
+              is how somebody who already has an account gets back to their
+              library, and burying that behind a menu on a phone is how a
+              returning user concludes there is no way back in. */}
+          <Link
+            href="/login"
+            className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-white/8"
+          >
+            Sign in
+          </Link>
+
           {/* Dropped on the narrowest screens: the row cannot hold it, and the
               hero's own form is a scroll away rather than a navigation.
 

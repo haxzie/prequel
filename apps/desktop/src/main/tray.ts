@@ -5,11 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import { app, Menu, nativeImage, shell, Tray } from "electron";
 
+import { authState, beginSignIn, openDashboard } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { log, logPath } from "./log.js";
-import { opensAtLogin, setOpensAtLogin } from "./login-item.js";
 import type { RecordingSession, SessionState } from "./session.js";
+import { acceleratorGlyphs } from "../shared/accelerator.js";
 import { recentRecordings, revealRecordings } from "./session.js";
+import { boundToggle } from "./shortcuts.js";
 
 /** How many past recordings the Open Recent submenu offers. */
 const RECENT_LIMIT = 10;
@@ -29,8 +31,15 @@ const PLACEMENT_MS = 1500;
  *
  * The one thing still worth telling a user whose tray icon is nowhere to be
  * seen, because it is the only part of the app that does not go through it.
+ *
+ * Read from what is actually bound rather than written out here: the chord is
+ * remappable now, and a hint naming a shortcut the user has changed is worse
+ * than no hint at all.
  */
-const TOGGLE_HINT = "⇧⌘R";
+function toggleHint(): string {
+  const bound = boundToggle();
+  return bound ? acceleratorGlyphs(bound) : "the shortcut";
+}
 
 function icon(name: string) {
   // Relative to `out/main/`, where electron-vite emits the bundled main
@@ -106,7 +115,7 @@ export class AppTray {
       // tripping over rather than reading about afterwards.
       console.error(
         "tray icon never reached the menu bar — the menu bar may be full, or a " +
-          `menu-bar manager may be hiding it. Use ${TOGGLE_HINT} to record.`,
+          `menu-bar manager may be hiding it. Use ${toggleHint()} to record.`,
       );
     }, PLACEMENT_MS);
 
@@ -151,7 +160,7 @@ export class AppTray {
       active
         ? {
             label: "Stop Recording",
-            accelerator: "Shift+Cmd+R",
+            accelerator: boundToggle() ?? undefined,
             // Through the flow rather than straight to the session: the flow is
             // what resets the panel and opens the editor, so stopping from here
             // would otherwise do noticeably less than stopping from the panel.
@@ -159,7 +168,7 @@ export class AppTray {
           }
         : {
             label: "Start Recording…",
-            accelerator: "Shift+Cmd+R",
+            accelerator: boundToggle() ?? undefined,
             click: () => this.flow.open(),
           },
       {
@@ -177,18 +186,25 @@ export class AppTray {
         })),
       },
       { label: "Show Recordings in Finder", click: () => void revealRecordings() },
+      // The shared library, for the recordings that are not on this Mac. Only
+      // once there is an account — an item that opens a sign-in page is a
+      // promise the menu cannot keep.
+      ...(authState().status === "signed-in"
+        ? [{ label: "Open Shared Library", click: () => openDashboard() }]
+        : []),
       // Reachable from the one menu that is always there, so a user can find
       // the log without being told where it lives.
       { label: "Show Log in Finder", click: () => shell.showItemInFolder(logPath()) },
       { type: "separator" },
+      ...(authState().status === "signed-in"
+        ? []
+        : [{ label: "Sign In…", click: () => beginSignIn() }]),
       {
-        label: "Open at Login",
-        type: "checkbox",
-        // Read from macOS every time the menu is built, not cached: this is
-        // also a switch in System Settings, and a remembered answer would show
-        // a tick for a login item the user removed there an hour ago.
-        checked: opensAtLogin(),
-        click: (item) => setOpensAtLogin(item.checked),
+        label: "Settings…",
+        accelerator: "Cmd+,",
+        // Through the flow, like everything else here — the tray never reaches
+        // for a window class directly.
+        click: () => this.flow.openSettings(),
       },
       { type: "separator" },
       {

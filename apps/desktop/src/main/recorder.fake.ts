@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Manifest, Track } from "../shared/manifest.js";
+import type { CursorSample, Manifest, Track } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, MANIFEST_VERSION, TRACK_FILE_NAMES } from "../shared/manifest.js";
 import type {
   PermissionStatus,
@@ -165,10 +165,37 @@ function writeManifest(
       scale_factor: target.scaleFactor,
     },
     tracks,
-    cursor: [],
+    // Not baked, so the editor offers the pointer as a layer. Without this the
+    // Cursor panel never appears and the fake cannot drive the part of the UI
+    // it exists to drive.
+    cursor_baked: false,
+    cursor: fakeCursor(summary.durationMs),
   };
 
   writeFileSync(join(request.outputPath, MANIFEST_FILE_NAME), JSON.stringify(manifest, null, 2));
+}
+
+/**
+ * A pointer that crosses the frame and hovers something on the way.
+ *
+ * The hover is the point of it: the middle third is marked as the link cursor,
+ * so the editor's shape swap — arrow, hand, arrow — is exercised by a run that
+ * needs no Screen Recording grant. A diagonal sweep rather than anything
+ * cleverer, because what is being driven is the panel, not the path.
+ */
+function fakeCursor(durationMs: number): CursorSample[] {
+  const steps = Math.max(2, Math.round(durationMs / 100));
+
+  return Array.from({ length: steps + 1 }, (_, step) => {
+    const through = step / steps;
+
+    return {
+      at: Math.round(through * durationMs) * NS_PER_MS,
+      x: 0.1 + through * 0.8,
+      y: 0.15 + through * 0.7,
+      hand: through > 1 / 3 && through < 2 / 3,
+    };
+  });
 }
 
 export function createFakeRecorder(): Recorder {

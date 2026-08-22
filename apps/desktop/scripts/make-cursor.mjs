@@ -22,23 +22,28 @@ const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../resources")
 const SIZE = 128;
 
 /**
- * Every pointer the editor offers, and where each one actually points.
+ * Every image the editor draws, and what each one is made of.
  *
- * The hotspot is the part that acts, and it is different for each: an arrow
- * points with its tip, a hand with its fingertip, and a dot with its middle.
- * Get it wrong and the pointer sits beside everything it is pointing at.
+ * Two tones rather than four unrelated pointers: a fill and the outline that
+ * keeps it visible against its own colour. Each tone ships an arrow *and* a
+ * hand because the shape is not a setting — the editor swaps to the hand
+ * wherever the recording says the system was showing one, which is what makes
+ * a composited pointer behave like the real one over a link.
  *
  * Exported as JSON beside the images so `shared/contract.ts` does not have to
  * repeat numbers that are decided here.
  */
 const STYLES = [
-  { id: "light", shape: "arrow", fill: 255, stroke: 0, alpha: 255 },
-  { id: "dark", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
-  { id: "hand", shape: "hand", fill: 255, stroke: 0, alpha: 255 },
-  // No outline and half opaque: a marker that shows where the pointer is
-  // without hiding what is under it, for a recording where the content matters
-  // more than the pointing.
-  { id: "dot", shape: "dot", fill: 255, stroke: 255, alpha: 140 },
+  { id: "black", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
+  { id: "black-hand", shape: "hand", fill: 0, stroke: 255, alpha: 255 },
+  { id: "white", shape: "arrow", fill: 255, stroke: 0, alpha: 255 },
+  { id: "white-hand", shape: "hand", fill: 255, stroke: 0, alpha: 255 },
+  // Part opaque, so it marks where the pointer is without hiding what is under
+  // it — for a recording where the content matters more than the pointing. It
+  // keeps the outline the arrows have all the same: a translucent disc with
+  // nothing round it disappears into anything of its own tone, which is how the
+  // one option with no outline became the one nobody could see.
+  { id: "circle", shape: "dot", fill: 0, stroke: 255, alpha: 200 },
 ];
 
 /**
@@ -133,10 +138,11 @@ function distance(points, px, py) {
 }
 
 /**
- * White fill inside the outline, black within it, transparent beyond.
+ * The style's fill inside the shape, its outline within `OUTLINE` of the edge,
+ * transparent beyond.
  *
- * Accumulated per subsample rather than composited in two passes: a black shape
- * with a white one drawn over it leaves a grey seam wherever the two edges
+ * Accumulated per subsample rather than composited in two passes: one shape
+ * with the other drawn over it leaves a grey seam wherever the two edges
  * antialias against each other.
  */
 function draw(style) {
@@ -156,8 +162,12 @@ function draw(style) {
           const py = y + (sy + 0.5) / SAMPLES;
 
           if (style.shape === "dot") {
-            // A plain disc, no outline: the shape is its own silhouette.
-            if (Math.hypot(px - centre, py - centre) <= dotRadius) white++;
+            // Ringed like the arrows rather than left as a bare silhouette: a
+            // disc of one tone vanishes into a background of the same tone,
+            // and a marker nobody can find is worse than no marker.
+            const radial = Math.hypot(px - centre, py - centre);
+            if (radial <= dotRadius) white++;
+            else if (radial <= dotRadius + OUTLINE) black++;
             continue;
           }
 
@@ -174,11 +184,8 @@ function draw(style) {
       const at = (y * SIZE + x) * 4;
 
       // Colour is the average of the samples that landed on something, so an
-      // edge pixel is a blend of white and black rather than of white and
+      // edge pixel is part fill and part outline rather than part fill and part
       // nothing — which would read as a gap in the outline.
-      // Blended between the two, so an edge pixel is part fill and part
-      // outline rather than part fill and part nothing — which would read as a
-      // gap in the outline.
       const shade =
         covered === 0 ? 0 : Math.round((white * style.fill + black * style.stroke) / covered);
 

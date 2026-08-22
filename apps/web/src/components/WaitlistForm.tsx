@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { api, ApiError } from "@/lib/api";
 import { Button } from "./Button";
 
 type State = { status: "idle" | "sending" | "done" } | { status: "error"; message: string };
@@ -29,30 +30,19 @@ export function WaitlistForm({ className = "" }: { className?: string }) {
         setState({ status: "sending" });
 
         try {
-          const response = await fetch("/api/waitlist", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ email }),
-          });
-
-          // The route answers with a message on every failure path, but a proxy
-          // or a network fault can still return something that is not JSON.
-          // Reading it defensively keeps a 502 from surfacing as a parse error.
-          if (!response.ok) {
-            const body = await response.json().catch(() => null);
-            const message =
-              body && typeof body === "object" && "message" in body
-                ? String((body as { message: unknown }).message)
-                : "That didn't go through. Try again in a moment.";
-            setState({ status: "error", message });
-            return;
-          }
-
+          // The API is a Worker on another origin, so this is a CORS request.
+          // `api()` is what supplies the credentials mode; a bare fetch here
+          // works for the waitlist, which needs no cookie, and would silently
+          // stop working the moment this form needed one.
+          await api("/v1/waitlist", { method: "POST", body: JSON.stringify({ email }) });
           setState({ status: "done" });
-        } catch {
+        } catch (error) {
           setState({
             status: "error",
-            message: "Couldn't reach the server. Check your connection.",
+            message:
+              error instanceof ApiError
+                ? error.message
+                : "That didn't go through. Try again in a moment.",
           });
         }
       }}

@@ -14,7 +14,7 @@ import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/cont
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { log } from "./log.js";
 import { getRecorder } from "./recorder.js";
-import { fileTimestamp } from "./session.js";
+import { RECORDINGS_DIR, fileTimestamp } from "./session.js";
 
 /**
  * What one export is called inside its recording's own folder.
@@ -51,7 +51,10 @@ export async function startExport(request: ExportRequest): Promise<void> {
     throw new Error("ALREADY_EXPORTING: an export is already running");
   }
 
-  const output = join(request.dir, exportFileName(request.format));
+  // Beside the recordings, not inside the take. A take's directory is working
+  // state — tracks, manifests, the pointer images — and burying the one file
+  // the user actually wants among them is what made this folder unusable.
+  const output = join(RECORDINGS_DIR, exportFileName(request.format));
   running = request.dir;
 
   log("info", "export started", {

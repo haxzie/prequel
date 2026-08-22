@@ -127,6 +127,16 @@ export function CheckIcon() {
   );
 }
 
+/** Lucide `link`. */
+export function LinkIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
 /** Lucide `x`. */
 export function CloseIcon() {
   return (
@@ -439,6 +449,52 @@ export function TypingIcon() {
       <path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1" />
       <path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7" />
       <path d="M9 7v10" />
+    </svg>
+  );
+}
+
+/**
+ * ⌥, the glyph Apple prints on the Option key.
+ *
+ * Drawn rather than taken from Lucide, which has no Option symbol. Two strokes:
+ * the switch that rises left to right, and the short bar above it. Same reason
+ * as `CommandIcon` — the symbol on the key is easier to match than the word.
+ */
+export function OptionIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7h6l7 10h5" />
+      <path d="M14 7h7" />
+    </svg>
+  );
+}
+
+/**
+ * ⌃, the glyph on the Control key.
+ *
+ * A plain chevron, which is the one case where that is correct — this is the
+ * caret Apple prints, not a stand-in for it.
+ */
+export function ControlIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m5 15 7-7 7 7" />
     </svg>
   );
 }

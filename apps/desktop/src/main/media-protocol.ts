@@ -26,7 +26,7 @@ import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, mediaUrl as urlFor } from "../shared/media-url.js";
-import { RECORDINGS_DIR } from "./session.js";
+import { SESSIONS_DIR } from "./session.js";
 
 export { MEDIA_SCHEME } from "../shared/media-url.js";
 
@@ -68,7 +68,7 @@ const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
  * like `../../..` only reveals itself as an escape once it has been resolved,
  * and comparing the raw string would let it through.
  */
-export function resolveMediaPath(url: string, root = RECORDINGS_DIR): string | null {
+export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | null {
   let parsed: URL;
   try {
     parsed = new URL(url);

@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787395142887,
+      "tag": "0000_left_moonstone",
+      "breakpoints": true
+    }
+  ]
+}

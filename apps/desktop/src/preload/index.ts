@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   AppInfo,
+  AuthState,
   BackgroundImage,
   DockState,
   EditorSession,
@@ -15,6 +16,8 @@ import type {
   ScreenMode,
   SelectionResult,
   SelectionSetup,
+  ShareProgress,
+  ShareRequest,
   Target,
   TranscribeProgress,
 } from "../shared/contract.js";
@@ -66,7 +69,7 @@ const api = {
 
   loginItem: {
     /** Whether macOS starts Prequel when the user logs in. */
-    get: (): Promise<boolean> => ipcRenderer.invoke(IPC_CHANNELS.loginItem),
+    get: (): Promise<boolean | null> => ipcRenderer.invoke(IPC_CHANNELS.loginItem),
 
     /**
      * Adds or removes the login item, and answers with what macOS ended up with.
@@ -77,6 +80,30 @@ const api = {
      */
     set: (enabled: boolean): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.setLoginItem, enabled),
+
+    /**
+     * Subscribes to the value macOS holds. Returns an unsubscribe function.
+     *
+     * A settings window stays open while the user can go and change Login Items
+     * in System Settings, so the switch has to be told to look again rather
+     * than trusting what it read when it mounted.
+     */
+    onChange: (listener: (enabled: boolean) => void): (() => void) => {
+      const handler = (_event: unknown, enabled: boolean) => listener(enabled);
+      ipcRenderer.on(IPC_CHANNELS.loginItemChanged, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.loginItemChanged, handler);
+    },
+  },
+
+  settings: {
+    /**
+     * Rebinds the global start/stop chord.
+     *
+     * Fails rather than throws when the combination is taken — the old binding
+     * is still live at that point, and the window says so.
+     */
+    setShortcut: (accelerator: string): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.setShortcut, accelerator),
   },
 
   dock: {
@@ -87,6 +114,8 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.updatePreferences, patch),
     record: (): Promise<IpcResult<DockState>> => ipcRenderer.invoke(IPC_CHANNELS.startRecording),
     stop: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.sessionStop),
+    /** Stops and deletes the take. There is no undo. */
+    discard: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.sessionDiscard),
     togglePause: (): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.sessionTogglePause),
     close: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.closePopover),
@@ -209,6 +238,27 @@ const api = {
       },
     },
 
+    share: {
+      /**
+       * Uploads a finished export to the team's library.
+       *
+       * Resolves once the upload has been *accepted*, not once it has finished.
+       * The link arrives on `onProgress` with the terminal stage, so a dialog
+       * that is closed mid-upload and reopened sees where it got to rather than
+       * having missed the only notification.
+       */
+      start: (request: ShareRequest): Promise<IpcResult<void>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.shareStart, request),
+
+      cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.shareCancel),
+
+      onProgress: (listener: (progress: ShareProgress) => void): (() => void) => {
+        const handler = (_event: unknown, progress: ShareProgress) => listener(progress);
+        ipcRenderer.on(IPC_CHANNELS.shareProgress, handler);
+        return () => ipcRenderer.off(IPC_CHANNELS.shareProgress, handler);
+      },
+    },
+
     transcribe: {
       start: (dir: string): Promise<IpcResult<void>> =>
         ipcRenderer.invoke(IPC_CHANNELS.transcribeStart, dir),
@@ -236,6 +286,32 @@ const api = {
   library: {
     reveal: (path?: string): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.revealRecordings, path),
+  },
+
+  auth: {
+    /** The account, redacted. The device token never crosses this boundary. */
+    state: (): Promise<AuthState> => ipcRenderer.invoke(IPC_CHANNELS.authState),
+
+    /**
+     * Opens the browser.
+     *
+     * Resolves once it is open, not once the sign-in is done — that answer comes
+     * back through `onChange`, because it depends on a person and a second
+     * application and may never arrive at all.
+     */
+    signIn: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.authSignIn),
+
+    signOut: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.authSignOut),
+
+    /** The team's library, in the default browser. */
+    openDashboard: (): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.authOpenDashboard),
+
+    onChange: (listener: (state: AuthState) => void): (() => void) => {
+      const handler = (_event: unknown, state: AuthState) => listener(state);
+      ipcRenderer.on(IPC_CHANNELS.authChanged, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.authChanged, handler);
+    },
   },
 };
 

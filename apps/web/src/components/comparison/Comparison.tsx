@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { Logo } from "@/components/Logo";
 import { Container } from "@/components/Section";
 import { Cell } from "@/components/Table";
@@ -8,44 +11,113 @@ import {
   formatVerified,
   type Competitor,
 } from "@/content/competitors";
-import { PLANS } from "@/lib/pricing";
+import { PLANS, PRICE_MONTHLY_EQUIVALENT, TRIAL_DAYS } from "@/lib/pricing";
 import { SITE } from "@/lib/site";
 
+/** Where a competitor's logo goes, if we have one. See `public/logos/README.md`. */
+const LOGO_DIR = join(process.cwd(), "public", "logos");
+
 /**
- * The competitor's mark.
+ * Whether this competitor renders as their own logo or as a monogram tile.
  *
- * `monogram` draws their initial in their own accent colour, on the same
- * superellipse the app icon uses. It is drawn here rather than fetched because
- * a third-party logo is an asset with terms attached — Apple's forbid it
- * outright — and a page that ships without one is better than a page that
- * ships with a broken image.
+ * Two questions, deliberately separate. `logoAllowed` is whether we want to
+ * show a vendor's mark — a judgement about their trademark, made in
+ * `competitors.ts` — and the filesystem answers whether we actually have one.
+ * The flag is checked first, so pulling a mark is one boolean rather than a
+ * deletion, and a file left behind cannot quietly put it back.
  *
- * Setting `mark: "asset"` on an entry reads `public/logos/<slug>.svg` instead.
- * That path uses a plain `<img>`: `next/image` refuses SVG unless
- * `dangerouslyAllowSVG` is set, and turning that on for files we did not draw
- * is not a trade worth making.
+ * Read at build time rather than declared in `competitors.ts`. These pages are
+ * all statically generated, so the check costs nothing at request time, and it
+ * removes the failure this used to have — a `mark: "asset"` entry with no file
+ * behind it rendered a broken image, and one field had to be kept in step with
+ * a directory by hand. Now adding a logo is one file and removing it is one
+ * file.
+ */
+function logoFor(competitor: Competitor): string | null {
+  if (!competitor.logoAllowed) return null;
+
+  // SVG first, then PNG. Most of these marks only exist as raster — an app icon
+  // is drawn as one — and refusing PNG would mean nine of the eleven pages
+  // falling back to a monogram over a file format.
+  for (const ext of ["svg", "png"]) {
+    if (existsSync(join(LOGO_DIR, `${competitor.slug}.${ext}`))) {
+      return `/logos/${competitor.slug}.${ext}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * The size both marks are drawn at, and the corner radius they share.
+ *
+ * `squircle` only sets `corner-shape` — the radius has to come with it, which
+ * is why `Logo` passes one. Without it the tile renders as a hard square next
+ * to a rounded logo. The fraction is the one `ComparisonHero` already passes to
+ * `Logo`, so their mark and ours are the same size and the same curve.
+ */
+const MARK_SIZE = 64;
+const MARK_RADIUS = 0.42;
+
+/**
+ * The competitor's mark: their logo where we have one, their monogram where we
+ * do not.
+ *
+ * Both render at the size and curve above, so a page with a logo and a page
+ * without are the same page rather than two different designs.
  */
 function Mark({ competitor }: { competitor: Competitor }) {
-  if (competitor.mark === "asset") {
+  const logo = logoFor(competitor);
+  const shape = { borderRadius: MARK_SIZE * MARK_RADIUS };
+
+  if (logo) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={`/logos/${competitor.slug}.svg`}
-        alt=""
-        width={64}
-        height={64}
-        className="squircle size-16 object-contain"
-      />
+      <span
+        className="squircle relative block size-16 overflow-hidden bg-surface ring-1 ring-white/10"
+        style={shape}
+      >
+        {/* A plain `img`: `next/image` refuses SVG unless `dangerouslyAllowSVG`
+            is set, and turning that on for files we did not draw is not a trade
+            worth making for eleven icons.
+
+            Filling the tile and clipped by it, rather than inset. Most of
+            these arrive as an `apple-touch-icon.png` flattened onto opaque
+            white, and a white square floating inside a rounded tile reads as a
+            postage stamp rather than a logo. Filling means the squircle rounds
+            their background the way it rounds ours, so their mark and ours are
+            the same object at the same weight — inset, theirs reads as half the
+            size of ours standing beside it, which is a thumb on the scale.
+
+            The surface underneath still matters for the marks that arrive on
+            transparency: this site is dark only, so a near-black one dropped
+            straight onto the page would disappear. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={logo}
+          alt={`${competitor.name} logo`}
+          width={MARK_SIZE}
+          height={MARK_SIZE}
+          className="size-full object-cover"
+        />
+      </span>
     );
   }
 
   return (
     <div
-      className="squircle flex size-16 items-center justify-center text-2xl font-medium text-white"
-      style={{ backgroundColor: competitor.accent }}
+      className="squircle flex size-16 items-center justify-center border text-xl font-medium tracking-tight"
+      style={{
+        ...shape,
+        // Their accent, tinted rather than poured in flat. A fully saturated
+        // brand colour next to our own mark reads as their page rather than a
+        // comparison, and eleven of them at full strength is a swatch book.
+        backgroundColor: `color-mix(in oklab, ${competitor.accent} 18%, var(--surface))`,
+        borderColor: `color-mix(in oklab, ${competitor.accent} 34%, transparent)`,
+        color: `color-mix(in oklab, ${competitor.accent} 72%, var(--fg))`,
+      }}
       aria-hidden
     >
-      {competitor.name.charAt(0)}
+      {competitor.monogram}
     </div>
   );
 }
@@ -58,7 +130,7 @@ export function ComparisonHero({ competitor }: { competitor: Competitor }) {
           <div className="mb-8 flex items-center justify-center gap-5">
             <Mark competitor={competitor} />
             <span className="font-mono text-xs tracking-widest text-muted uppercase">vs</span>
-            <Logo size={64} radius={0.42} />
+            <Logo size={MARK_SIZE} radius={MARK_RADIUS} />
           </div>
 
           <h1 className="text-[2rem] leading-[1.05] font-normal tracking-tight text-balance text-fg sm:text-5xl">
@@ -97,8 +169,9 @@ export function AtAGlance({ competitor }: { competitor: Competitor }) {
       tagline: SITE.tagline,
       // Built from `lib/pricing.ts` rather than written here, so the
       // placeholder prices there are corrected in one edit for all eleven.
-      price: `${PLANS[0]?.price === "$0" ? "Free" : PLANS[0]?.price}, or ${PLANS[1]?.price} once`,
-      free: "Free tier, no watermark",
+      // The year, then the month — never the month alone.
+      price: `${PLANS[0]?.price} ${PLANS[0]?.cadence} (about ${PRICE_MONTHLY_EQUIVALENT}/mo)`,
+      free: `${TRIAL_DAYS}-day trial, then paid`,
       platforms: PREQUEL_FEATURES.platforms,
     },
   ];

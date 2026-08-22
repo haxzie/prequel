@@ -1,15 +1,23 @@
 # @prequel/web
 
-The public site — landing, blog, pricing and about. Next.js 16 (App Router,
-React 19, Turbopack) with Tailwind v4.
+The public site — landing, blog, pricing and about — and the dashboard where a
+team's shared recordings live. Next.js 16 (App Router, React 19, Turbopack) with
+Tailwind v4.
 
 ```bash
-pnpm dev:web    # http://localhost:3000
+pnpm dev:web                    # http://localhost:3000
+pnpm --filter @prequel/api dev  # :8787 — the dashboard needs it
 ```
 
-Every route is static except `/api/waitlist`. `pnpm --filter @prequel/web build`
-prints the table; anything marked `ƒ` that you did not intend to be dynamic is
-worth chasing down.
+**There are no route handlers here.** Every API — auth, the library, uploads,
+transcription, the waitlist — is the Cloudflare Worker in `apps/api`. See its
+README for why; the short version is that D1 and R2 want bindings, and Vercel's
+4.5 MB function body limit is not something video can be moved through.
+
+The marketing pages are static. `/app/*`, `/login`, `/onboarding`, `/invite/*`,
+`/desktop/auth` and `/v/*` are dynamic because they read a session or mint a
+signed URL. `pnpm --filter @prequel/web build` prints the table; anything marked
+`ƒ` outside that list is worth chasing down.
 
 ## Layout
 
@@ -19,7 +27,10 @@ src/components/   the shell and the page furniture
 src/content/      posts.ts + blog/*.mdx, use-cases.ts + create/*.mdx,
                   competitors.ts + alternatives/*.mdx
                   (a registry for the metadata, MDX for the prose)
-src/lib/          site.ts, pricing.ts, faq.ts, seo.ts, og.tsx
+src/components/dashboard/  the signed-in surfaces, all client components
+src/lib/          site.ts, pricing.ts, faq.ts, seo.ts, og.tsx,
+                  api.ts + session.ts + auth-client.ts (the Worker)
+src/middleware.ts the cheap half of the dashboard's auth gate
 public/           prequel.svg
 ```
 
@@ -121,11 +132,49 @@ reads `public/logos/<slug>.svg`, and should only be done once that file exists
 and the vendor's brand terms have been checked — Apple's prohibit it, so
 `quicktime` stays a monogram.
 
+## The dashboard
+
+`/app` is the team's library: everything somebody pressed **Share Link** on in
+the desktop app's export dialog. `/v/<slug>` is what those links open — a public
+player page, no account needed on the viewer's side.
+
+**Sessions.** The cookie is set by the Worker on `.prequel.sh`, so it covers both
+hosts. `getMe()` in `src/lib/session.ts` forwards the incoming `cookie` header
+and lets the Worker answer, wrapped in React's `cache()` — a dashboard page reads
+the session in its layout, its page and a couple of components, and without
+dedupe that is four calls to Cloudflare for one render.
+
+`middleware.ts` only checks that a session cookie _exists_. Whether it is valid
+is the Worker's answer to give, and asking it there would put a round-trip in
+front of every navigation including the ones that ask again anyway. It is a fast
+path, not authorisation — every page still calls `getMe()` and acts on the real
+answer.
+
+**Locally the cookie works with no domain set**, because cookies ignore the port
+and `localhost:3000` and `localhost:8787` are the same host. In production it is
+scoped to `.prequel.sh`. Pointing `NEXT_PUBLIC_API_URL` at anything outside that
+domain leaves the dashboard signed out immediately after signing in.
+
+**Every call needs `credentials: "include"`.** That is what `api()` in
+`src/lib/api.ts` is for. A bare `fetch` to another origin sends no cookie and
+comes back 401 while the user is plainly signed in.
+
+**`/v/[slug]` must stay dynamic.** Its `src` is a presigned R2 URL with a
+six-hour life, so a statically rendered copy would serve an expired one to
+everybody who arrived after the build — which looks like a video that will not
+play rather than like a stale cache. Note this is the opposite of every other
+dynamic route here, which all set `dynamicParams = false` and prerender their
+whole set.
+
+It is also `robots: { index: false }`. A share link is unlisted, not public:
+indexing one would turn "anyone with the link" into "anyone at all", which is not
+what sharing was understood to mean.
+
 ## Waitlist
 
-`WaitlistForm` posts to `/api/waitlist`, which files the address as a response
-to a Google Form. `WAITLIST_ENDPOINT` and `WAITLIST_FIELD` both default to the
-live form, so it works with no configuration.
+`WaitlistForm` posts to `/v1/waitlist` on the Worker, which files the address as
+a response to a Google Form. It is the one endpoint a browser calls without
+credentials, and the only reason this form is a client component.
 
 It runs server-side because Google Forms sends no CORS headers: posted from the
 browser the response is opaque, and the form appears to work whether or not
@@ -142,55 +191,18 @@ curl -s "https://docs.google.com/forms/d/<edit-id>/viewform" |
   grep -o 'FB_PUBLIC_LOAD_DATA_ = .*' # entry ids live in this blob, not in the markup
 ```
 
-## Transcription
-
-`/api/transcribe` forwards a recording's microphone track to OpenAI Whisper for
-the desktop app's caption feature. It needs `OPENAI_API_KEY`; without it the
-route answers 503 and the editor reports that transcription is unavailable,
-which is deliberate — the site still builds and deploys with no key.
-
-**The audio passes through this server.** That is forced, not chosen: OpenAI's
-ephemeral keys are scoped to the Realtime API, so there is no short-lived
-credential that would let the desktop app upload to `/v1/audio/transcriptions`
-itself. The only other option is embedding the real key in a downloadable app.
-Nothing is written to disk here and the audio is not retained past the forward,
-but it is worth knowing that this route is on the path of every user's
-microphone.
-
-**`whisper-1`, and not by preference.** It is the only OpenAI model that returns
-word timestamps at all — the gpt-4o transcribe models do not support
-`timestamp_granularities` — and `response_format=verbose_json` is a precondition
-for getting them rather than a nicety. Its word times are interpolated from
-segment boundaries rather than measured, so they run a couple of hundred
-milliseconds out; the desktop app declares this as `timings: "interpolated"` and
-snaps the boundaries to the audio to recover most of it.
-
-**Size.** The route rejects anything over 4 MB, which is a little over four
-minutes of `mic.m4a`. Two ceilings stack: OpenAI accepts 25 MB, and a serverless
-host in front of this accepts far less — Vercel's function body limit is 4.5 MB
-and is infrastructure, not something application code can raise. Lifting this
-means streaming the upload or putting the route somewhere without that limit.
-
-This is the only runtime link between the site and the desktop app. They still
-share no code — the rule in `AGENTS.md` is about imports across that boundary,
-not about an HTTP endpoint — and the JSON this route returns is the whole
-contract between them.
-
-**What is weak about it, plainly.** There is no account system, so the rate
-limit is an in-memory `Map` keyed on an anonymous per-install id: per-instance
-on serverless, and reset by every deploy. It stops one client running this in a
-loop and nothing more. The size cap is what bounds the cost of any single call.
-
-**The desktop side needs the deployed URL at build time.** It calls
-`NEXT_PUBLIC_APP_URL`, baked into the Electron main bundle when it is packaged —
-see `publicEnv` in `apps/desktop/electron.vite.config.ts`. Packaging without it
-set ships an app that calls `http://localhost:3000`. `PREQUEL_APP_URL` overrides
-it when pointing a dev build at a local `next dev`.
+Both `WAITLIST_ENDPOINT` and `WAITLIST_FIELD` are now vars in
+`apps/api/wrangler.jsonc`, not variables in `.env`.
 
 ## Environment
 
 `src/instrumentation.ts` calls `validateEnv()`, so a missing or malformed
 variable fails at boot with the offending name rather than at the first request.
+
+There is almost nothing server-side left to validate. `NEXT_PUBLIC_APP_URL` and
+`NEXT_PUBLIC_API_URL` are the two that matter, and both are public. Secrets — the
+OpenAI key, Google's OAuth pair, R2's and SES's credentials — belong to the
+Worker and live in `apps/api/.dev.vars` and `wrangler secret`.
 
 `@prequel/env` ships raw TypeScript rather than a compiled `dist`, so it is
 listed in `transpilePackages`. Do not import it from `next.config.ts` — that

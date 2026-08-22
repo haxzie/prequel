@@ -19,12 +19,16 @@ import type {
   SelectionResult,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
-import type { ExportRequest } from "../shared/contract.js";
+import type { AuthState, ExportRequest, ShareRequest } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
+import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { saveProject } from "./editor-project.js";
-import { opensAtLogin, setOpensAtLogin } from "./login-item.js";
+import { isBindable } from "../shared/accelerator.js";
+import { loginItemState, setOpensAtLogin } from "./login-item.js";
+import { setToggleShortcut } from "./shortcuts.js";
 import { cancelExport, copyExport, dragExport, startExport } from "./export.js";
+import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
@@ -67,11 +71,38 @@ export function registerIpc({ flow }: IpcDeps): void {
   // Read through to macOS rather than from a stored copy: Login Items is a
   // System Settings pane the user can change at any time, and a remembered
   // answer would start disagreeing with it the moment they did.
-  ipcMain.handle(IPC_CHANNELS.loginItem, () => opensAtLogin());
+  ipcMain.handle(IPC_CHANNELS.loginItem, () => loginItemState());
+
+  /**
+   * Rebind the start/stop chord.
+   *
+   * Returns a result rather than throwing: an accelerator another application
+   * already owns is an expected condition, not a fault, and the window needs to
+   * say which one failed while the old binding carries on working.
+   */
+  ipcMain.handle(IPC_CHANNELS.setShortcut, (_event, accelerator: string) => {
+    if (!isBindable(accelerator)) {
+      return {
+        ok: false,
+        code: "SHORTCUT_UNBINDABLE",
+        message: "Use at least one of Command, Control or Option.",
+      } satisfies IpcResult<never>;
+    }
+    if (!setToggleShortcut(accelerator)) {
+      return {
+        ok: false,
+        code: "SHORTCUT_TAKEN",
+        // macOS gives us a boolean and no owner, so nothing here guesses one.
+        message: "Something else on your Mac is already using that shortcut.",
+      } satisfies IpcResult<never>;
+    }
+    const stored = flow.updatePreferences({ toggleShortcut: accelerator });
+    return { ok: true, value: stored.preferences.toggleShortcut } satisfies IpcResult<string>;
+  });
 
   ipcMain.handle(IPC_CHANNELS.setLoginItem, (_event, enabled: boolean) => {
     setOpensAtLogin(enabled);
-    return opensAtLogin();
+    return loginItemState();
   });
 
   ipcMain.handle(IPC_CHANNELS.welcomeDone, () => flow.finishWelcome());
@@ -95,6 +126,7 @@ export function registerIpc({ flow }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.startRecording, () => attempt(() => flow.record()));
   ipcMain.handle(IPC_CHANNELS.sessionStop, () => attempt(() => flow.stop()));
+  ipcMain.handle(IPC_CHANNELS.sessionDiscard, () => attempt(() => flow.discard()));
   ipcMain.handle(IPC_CHANNELS.sessionTogglePause, () => attempt(() => flow.togglePause()));
 
   ipcMain.handle(IPC_CHANNELS.selectionChoose, (_event, result: SelectionResult) =>
@@ -169,6 +201,24 @@ export function registerIpc({ flow }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.transcribeCancel, () => attempt(() => cancelTranscribe()));
 
+  ipcMain.handle(IPC_CHANNELS.authState, () => authState());
+
+  // Answers as soon as the browser is open, not when the sign-in finishes. The
+  // result comes back on `authChanged`, because the user may take minutes over
+  // it or never come back at all — and a promise awaiting that would leave the
+  // button that called it spinning for ever.
+  ipcMain.handle(IPC_CHANNELS.authSignIn, () => attempt(() => beginSignIn()));
+
+  ipcMain.handle(IPC_CHANNELS.authSignOut, () => attempt(() => signOut()));
+
+  ipcMain.handle(IPC_CHANNELS.authOpenDashboard, () => attempt(() => openDashboard()));
+
+  ipcMain.handle(IPC_CHANNELS.shareStart, (_event, share: ShareRequest) =>
+    attempt(() => startShare(share)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.shareCancel, () => attempt(() => cancelShare()));
+
   // `on`, not `handle`: see the channel's own note. This one is cleaned up by
   // `removeIpc`'s `removeAllListeners`, which `removeHandler` does not cover.
   ipcMain.on(IPC_CHANNELS.exportDrag, (event, path: string, icon: string) => {
@@ -177,9 +227,30 @@ export function registerIpc({ flow }: IpcDeps): void {
 }
 
 /** Pushes panel state to every live renderer. */
+/** Tells every open window what macOS now says about opening at login. */
+export function broadcastLoginItem(enabled: boolean | null): void {
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.loginItemChanged, enabled);
+  }
+}
+
 export function broadcastDockState(state: DockState): void {
   for (const contents of webContents.getAllWebContents()) {
     if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.dockChanged, state);
+  }
+}
+
+/**
+ * Tells every window who is signed in.
+ *
+ * Broadcast because three surfaces show it — the welcome flow, the settings
+ * pane and the export dialog's Share button — and two of them being open at
+ * once with different answers is exactly the disagreement a broadcast exists to
+ * prevent.
+ */
+export function broadcastAuthState(state: AuthState): void {
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.authChanged, state);
   }
 }
 

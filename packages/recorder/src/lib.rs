@@ -217,6 +217,7 @@ fn write_manifest(
                 at: sample.at,
                 x: sample.x,
                 y: sample.y,
+                hand: sample.hand,
             })
             .collect(),
     };

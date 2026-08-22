@@ -17,9 +17,11 @@ GIF.
 ```
 apps/
   desktop/    @prequel/desktop — Electron 43 + Vite 8 + React 19
-  web/        @prequel/web — Next.js 16 + Tailwind v4, the public site
+  web/        @prequel/web — Next.js 16 + Tailwind v4, the site and the dashboard
+  api/        @prequel/api — Cloudflare Worker: accounts, teams, the shared library
 packages/
   recorder/   @prequel/recorder — napi-rs addon, the only bridge from Node to Rust
+  db/         @prequel/db — Drizzle schema for D1, and its migrations
   env/        @prequel/env — Zod-validated environment variables  ← edit src/env.ts
   typescript-config/  Shared tsconfig presets
 crates/
@@ -68,14 +70,19 @@ PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace
 PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace --all-targets
 ```
 
-Root `pnpm test` runs `cargo test` first and fails the same way for the same
-reason.
+The npm scripts that shell out to cargo already set this themselves, so
+`pnpm dev`, `pnpm build` and `pnpm test` work whatever your shell does.
+`napi build` runs `cargo metadata` in a shell of its own — prefixing the command
+you type never reached it, which is why `pnpm dev` used to die on
+`Internal Error: cargo metadata failed to run`. The prefix above is still needed
+for a bare `cargo` in a non-interactive shell.
 
 **After changing Rust that JavaScript calls, rebuild the addon** or the change
-is invisible — the committed `.node` is what Electron loads:
+is invisible — the built `.node` on disk is what Electron loads, and it is
+gitignored rather than committed:
 
 ```bash
-cd packages/recorder && PATH="$HOME/.cargo/bin:$PATH" pnpm build
+cd packages/recorder && pnpm build
 ```
 
 `pnpm ship` does not do this for you. A stale `.node` is the explanation for
@@ -146,6 +153,24 @@ Electron.
 Everything crossing the napi boundary is plain data. Objective-C objects and
 `CMSampleBuffer`s never reach JavaScript — the Node side sees descriptions of
 things and commands to act on them.
+
+### Sharing is a link, not a file
+
+Recording, editing and exporting all work with no account. Pressing **Share
+Link** on a finished export uploads it to the team's library and hands back a
+`prequel.sh/v/<slug>` URL that plays in any browser, for anyone, signed in or
+not.
+
+The bytes go straight from the Mac to R2 on a presigned PUT and come back on a
+presigned GET — they never pass through a server of ours in either direction.
+That is not only a cost decision: an export is routinely hundreds of megabytes,
+and every serverless platform's request body limit is far below it.
+
+Accounts, teams and invitations are Better Auth over D1, in `apps/api`. The
+desktop app cannot hold the web session cookie — it is not a browser, and its
+renderer cannot reach the network at all — so it holds a device token instead,
+obtained through a PKCE handshake over a `prequel://` deep link. `apps/api/README.md`
+walks through it.
 
 ### Geometry is computed once
 
@@ -343,6 +368,13 @@ One `.env` at the repo root. Root scripts load it with `dotenv-cli` and Turbo
 passes it down, so there are no per-app copies to keep in sync. Everything is
 declared in **`packages/env/src/env.ts`** — see `packages/env/README.md` for
 how to add one and what the validation guarantees.
+
+The Worker is the exception, and deliberately: a Cloudflare Worker is handed its
+configuration through bindings and has no `process.env` to read. Its
+non-secret vars live in `apps/api/wrangler.jsonc`, its secrets in
+`apps/api/.dev.vars` locally and `wrangler secret` in production, and its shape
+is declared in `apps/api/src/env.ts`. `.env.example` lists them so the set is
+still discoverable from one place.
 
 ## Conventions
 

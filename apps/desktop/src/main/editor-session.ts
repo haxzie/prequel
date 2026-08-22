@@ -16,7 +16,7 @@ import { dialog, shell, type BrowserWindow } from "electron";
 import type { Manifest, TrackKind } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
 import type { CursorLayer } from "../shared/contract.js";
-import { CURSOR_STYLES } from "../shared/contract.js";
+import { CURSOR_FILES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import { FALLBACK_BACKGROUND } from "../shared/project.js";
 import type { Transcript } from "../shared/transcript.js";
@@ -157,22 +157,19 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
   if (manifest.cursor_baked ?? true) return null;
   if (!manifest.cursor?.length) return null;
 
-  // Every style, not just the one selected: which is chosen is a project
-  // setting that changes after this runs, and they are a couple of kilobytes
-  // each.
-  for (const style of CURSOR_STYLES) {
-    const target = join(dir, style.file);
+  // Every image, not just the selected style's: which is chosen is a project
+  // setting that changes after this runs, and the hand is chosen by the
+  // recording rather than by anyone. They are a couple of kilobytes each.
+  for (const file of CURSOR_FILES) {
+    const target = join(dir, file);
     if (existsSync(target)) continue;
 
     try {
-      copyFileSync(
-        fileURLToPath(new URL(`../../resources/${style.file}`, import.meta.url)),
-        target,
-      );
+      copyFileSync(fileURLToPath(new URL(`../../resources/${file}`, import.meta.url)), target);
     } catch (cause) {
       // Without the image there is no pointer, which is a recording that looks
       // like it was made with the cursor hidden — not a broken editor.
-      console.warn(`[editor] could not provide ${style.file} for ${dir}:`, cause);
+      console.warn(`[editor] could not provide ${file} for ${dir}:`, cause);
       return null;
     }
   }

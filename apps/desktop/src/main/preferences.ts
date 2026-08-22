@@ -11,10 +11,15 @@ import { dirname, join } from "node:path";
 
 import { app } from "electron";
 
-import type { RecordingPreferences, ScreenMode } from "../shared/contract.js";
+import { normaliseAccelerator } from "../shared/accelerator.js";
+import type { AfterRecording, RecordingPreferences, ScreenMode } from "../shared/contract.js";
 import { DEFAULT_PREFERENCES } from "../shared/contract.js";
 
 const SCREEN_MODES: ScreenMode[] = ["screen", "window", "area"];
+const AFTER_RECORDING: AfterRecording[] = ["editor", "finder", "nothing"];
+
+/** Long enough to get out of the way, short enough not to be a wait. */
+const MAX_COUNTDOWN = 10;
 
 export class Preferences {
   private cached: RecordingPreferences | null = null;
@@ -76,8 +81,26 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     systemAudio: value.systemAudio ?? DEFAULT_PREFERENCES.systemAudio,
     bakeCursor: value.bakeCursor ?? DEFAULT_PREFERENCES.bakeCursor,
     cameraPosition: point(value.cameraPosition),
+    // Normalised on the way in as well as the way out: a hand-edited
+    // "Command+Shift+R" binds the same keys as the stored "Shift+Cmd+R", and
+    // the settings window compares the two as strings.
+    toggleShortcut:
+      (typeof value.toggleShortcut === "string"
+        ? normaliseAccelerator(value.toggleShortcut)
+        : null) ?? DEFAULT_PREFERENCES.toggleShortcut,
+    countdown: countdown(value.countdown),
+    saveDirectory: typeof value.saveDirectory === "string" ? value.saveDirectory : null,
+    afterRecording: AFTER_RECORDING.includes(value.afterRecording as AfterRecording)
+      ? (value.afterRecording as AfterRecording)
+      : DEFAULT_PREFERENCES.afterRecording,
     welcomed: value.welcomed ?? DEFAULT_PREFERENCES.welcomed,
   };
+}
+
+/** Whole seconds within range. A negative or absurd value reaches this. */
+function countdown(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_PREFERENCES.countdown;
+  return Math.min(Math.max(Math.round(value), 0), MAX_COUNTDOWN);
 }
 
 /** A stored point, or null if it is not one. Hand-edited files reach this. */

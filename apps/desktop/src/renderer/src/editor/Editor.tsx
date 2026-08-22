@@ -8,7 +8,7 @@ import {
   type Dispatch,
 } from "react";
 
-import { CURSOR_STYLES, type EditorSession } from "../../../shared/contract";
+import { CURSOR_FILES, type EditorSession } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
@@ -664,10 +664,7 @@ function useEditorImages(
 ) {
   // Joined so the effect re-runs when the set changes rather than on every
   // edit — a project object is new on each keystroke.
-  const paths = imagePaths(
-    project,
-    CURSOR_STYLES.map((style) => style.file),
-  ).join("\u0000");
+  const paths = imagePaths(project, CURSOR_FILES).join("\u0000");
 
   useEffect(() => {
     if (!session || !paths) return;
@@ -703,9 +700,10 @@ function useEditorImages(
 }
 
 /** Every distinct image path the plan can name, across defaults and clips. */
-function imagePaths(project: ReturnType<typeof newProject>, cursors: string[]): string[] {
-  // Every pointer style, because which one is drawn is a setting that can
-  // change without the recording changing, and they are tiny.
+function imagePaths(project: ReturnType<typeof newProject>, cursors: readonly string[]): string[] {
+  // Every pointer image, because which one is drawn is a setting that can change
+  // without the recording changing — and the hand is not a setting at all — and
+  // they are tiny.
   const paths = new Set<string>(cursors);
 
   const add = (background: { kind: string; path?: string } | undefined) => {

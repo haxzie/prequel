@@ -4,12 +4,6 @@ import type { ReactNode } from "react";
 
 import { env } from "@prequel/env";
 
-import { Footer } from "@/components/Footer";
-import { JsonLd } from "@/components/JsonLd";
-import { Nav } from "@/components/Nav";
-import { Wash } from "@/components/Wash";
-import { Rails } from "@/components/Rails";
-import { organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 import "./globals.css";
@@ -68,6 +62,19 @@ export const metadata: Metadata = {
 // to this export.
 export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" };
 
+/**
+ * The document, and nothing else.
+ *
+ * Deliberately carries no chrome. It used to hold the marketing nav, the footer
+ * and the background wash, which was right when every page was a marketing page
+ * — and wrong the moment there was a dashboard: `/app` rendered its own header
+ * *under* the marketing one, with a footer full of SEO links below the video
+ * library, and `/login` sat inside a page furniture asking people to sign up for
+ * a waitlist they were in the middle of signing in past.
+ *
+ * Three groups own their own chrome instead: `(marketing)`, `(auth)` and `/app`.
+ * A route group's parentheses keep it out of the URL, so none of the paths moved.
+ */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // Next 16 stopped overriding scroll behaviour during navigation, so the
@@ -78,14 +85,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       data-scroll-behavior="smooth"
       className={`${sans.variable} ${mono.variable} ${serif.variable} ${script.variable}`}
     >
-      <body>
-        <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
-        <Wash />
-        <Rails />
-        <Nav />
-        <main>{children}</main>
-        <Footer />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

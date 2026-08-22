@@ -7,7 +7,7 @@ import {
   type RefObject,
 } from "react";
 
-import { cursorStyle, type CursorLayer } from "../../../shared/contract";
+import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import { buildRenderPlan, cameraRect, type Size } from "../../../shared/layout";
 import type { SliceSettings, ZoomSlice } from "../../../shared/project";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
@@ -163,8 +163,7 @@ export function Preview({
         current,
         cursor && {
           ...cursor,
-          path: cursorStyle(current.layout.cursorStyle).file,
-          hotspot: cursorStyle(current.layout.cursorStyle).hotspot,
+          ...cursorImages(current.layout.cursorStyle),
           size: current.layout.cursorSize,
           hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
         },

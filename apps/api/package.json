@@ -1,0 +1,33 @@
+{
+  "name": "@prequel/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
+    "build": "wrangler deploy --dry-run --outdir dist --env=\"\"",
+    "deploy": "wrangler deploy --env production",
+    "migrate": "wrangler d1 migrations apply prequel --local",
+    "migrate:remote": "wrangler d1 migrations apply prequel --remote --env production",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo node_modules dist .wrangler *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@prequel/db": "workspace:*",
+    "aws4fetch": "^1.0.20",
+    "better-auth": "^1.7.1",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "5.20260815.1",
+    "@prequel/typescript-config": "workspace:*",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.125.0"
+  }
+}

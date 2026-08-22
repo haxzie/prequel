@@ -66,6 +66,7 @@
   --color-editor-fg: var(--editor-fg);
   --color-editor-muted: var(--editor-muted);
   --color-editor-accent: var(--editor-accent);
+  --color-editor-danger: var(--editor-danger);
   --color-slice-fill: var(--slice-fill);
   --color-slice-edge: var(--slice-edge);
   --color-wave: var(--wave);
@@ -237,6 +238,11 @@ body {
      competes with the thing being looked at. Paired with `--editor-bg` for
      anything drawn *on* it, which is why it has to stay this light. */
   --editor-accent: #c9ced6;
+  /* Refusals, and nothing else. The recorder's red, restated here rather than
+     reached for as `--dock-record`: that one is defined inside `dock-theme`,
+     so a `text-dock-record` used under this scope resolves to nothing and the
+     warning renders in the body colour. */
+  --editor-danger: #e5484d;
 
   /* The timeline's own colours.
      Clips are purple so the strip reads as a distinct surface from the panels

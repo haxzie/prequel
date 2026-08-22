@@ -22,6 +22,7 @@ import { log } from "./log.js";
 import type { Preferences } from "./preferences.js";
 import type { NativeCamera } from "./recorder.js";
 import { getRecorder } from "./recorder.js";
+import { deleteRecording } from "./session.js";
 import type { RecordingSession } from "./session.js";
 import { windowId } from "./windows/base.js";
 import type { CameraWindow } from "./windows/camera.js";
@@ -95,6 +96,14 @@ export interface CaptureFlowOptions {
    * reason: nothing about capture depends on it existing.
    */
   welcome?: { close: () => void };
+  /**
+   * The settings window, for the tray to reach through the flow.
+   *
+   * Injected for the same reasons as the two above. The tray never touches a
+   * window class directly — everything it does goes through here, so there is
+   * one place that knows what opening a surface entails.
+   */
+  settings?: { open: () => void };
 }
 
 export class CaptureFlow {
@@ -143,6 +152,11 @@ export class CaptureFlow {
     this.deps.preferences.update({ welcomed: true });
     this.deps.welcome?.close();
     this.open();
+  }
+
+  /** Opens settings, or focuses the window already open. */
+  openSettings(): void {
+    this.deps.settings?.open();
   }
 
   state(): DockState {
@@ -474,6 +488,31 @@ export class CaptureFlow {
       // is not worth surfacing as a failed stop.
       console.warn("[flow] could not open the editor:", cause);
     }
+  }
+
+  /**
+   * Stops the recording and deletes it, without opening an editor.
+   *
+   * The path is read *before* stopping. `RecordingSession.stop()` clears
+   * `outputPath` in its `finally`, so reading it afterwards gives null on the
+   * happy path and there would be nothing to delete — and a stop that threw
+   * leaves no `lastResult` either, which is exactly the case where a
+   * half-written directory most needs removing.
+   *
+   * Stop has to complete first regardless: the recorder still holds the files
+   * open, and deleting underneath it leaves the writer failing into a directory
+   * that is no longer there.
+   */
+  async discard(): Promise<void> {
+    const path = this.deps.session.snapshot().outputPath;
+
+    await this.deps.session.stop();
+    this.deps.session.forgetLastResult();
+    this.deps.dock.setView("setup");
+    this.emit();
+
+    if (!path) return;
+    if (deleteRecording(path)) log("info", "recording discarded");
   }
 
   /** Stops if recording, otherwise opens the panel ready to start. */

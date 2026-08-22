@@ -6,9 +6,9 @@
  * command means lives here rather than in any one of them. Everything else
  * observes and reacts.
  */
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { shell } from "electron";
 
@@ -36,6 +36,25 @@ type Listener = (state: SessionState) => void;
  */
 const RECORDINGS_DIR =
   process.env["PREQUEL_RECORDINGS_DIR"] ?? join(homedir(), "Movies", "Prequel");
+
+/**
+ * Where a take's own files live: the tracks, both manifests, the pointer images
+ * and whatever background was chosen.
+ *
+ * A dot-directory, and that is the whole point. What the user came to this
+ * folder for is the export; everything else is working state that happens to be
+ * on disk. Before this, opening a recording meant twenty-two items — four
+ * pointer PNGs, one JPEG for every background that had ever been *previewed*,
+ * two manifests and the raw tracks — with the finished video somewhere among
+ * them. Five orphaned `cursor-black*` files from a renamed style set were still
+ * sitting in takes made months later, because nothing ever had a reason to
+ * remove them.
+ *
+ * Hidden rather than deleted: a recording still carries everything it needs to
+ * be re-exported on another machine, which is the property the copying exists
+ * for. It just stops being the first thing anyone sees.
+ */
+const SESSIONS_DIR = join(RECORDINGS_DIR, ".recordings");
 
 export class RecordingSession {
   private status: SessionStatus = "idle";
@@ -71,6 +90,18 @@ export class RecordingSession {
 
   isBusy(): boolean {
     return this.status !== "idle";
+  }
+
+  /**
+   * Forgets the last finished take.
+   *
+   * `stop()` records a result so the flow can open an editor on it. A discarded
+   * take must not leave one behind: the directory is gone, and anything that
+   * later reached for `lastResult` would open an editor onto nothing.
+   */
+  forgetLastResult(): void {
+    this.lastResult = null;
+    this.emit();
   }
 
   async start(options: StartOptions): Promise<void> {
@@ -202,7 +233,7 @@ export class RecordingSession {
  * the output is a folder rather than a single video. Keeping them together is
  * what makes the set reassemblable later.
  */
-export function newRecordingPath(now = new Date(), dir = RECORDINGS_DIR): string {
+export function newRecordingPath(now = new Date(), dir = SESSIONS_DIR): string {
   mkdirSync(dir, { recursive: true });
   return join(dir, `Prequel ${fileTimestamp(now)}`);
 }
@@ -245,7 +276,37 @@ export async function revealRecordings(path?: string): Promise<void> {
  * Sorted by the manifest's own mtime rather than the directory's, which macOS
  * touches for reasons that have nothing to do with when the take was made.
  */
-export function recentRecordings(limit = 10, dir = RECORDINGS_DIR): RecentRecording[] {
+/**
+ * Deletes a take, permanently.
+ *
+ * Guarded to the recordings directory, and to a directory rather than a file.
+ * Nothing should ever hand this an arbitrary path — but this is a recursive
+ * delete reached from a button, and the cost of being sure is one comparison.
+ *
+ * Not `shell.trashItem`: a discarded take is meant to reclaim the disk, which
+ * a 4K recording makes worth caring about.
+ */
+export function deleteRecording(path: string, dir = SESSIONS_DIR): boolean {
+  const resolved = resolve(path);
+  const root = resolve(dir);
+
+  // `startsWith(root)` alone would also accept a sibling whose name merely
+  // begins with the root's, so the separator has to be part of the test.
+  if (resolved === root || !resolved.startsWith(root + sep)) {
+    console.warn(`[library] refusing to delete outside the recordings folder: ${resolved}`);
+    return false;
+  }
+
+  try {
+    rmSync(resolved, { recursive: true, force: true });
+    return true;
+  } catch (cause) {
+    console.warn(`[library] could not delete ${resolved}:`, cause);
+    return false;
+  }
+}
+
+export function recentRecordings(limit = 10, dir = SESSIONS_DIR): RecentRecording[] {
   if (!existsSync(dir)) return [];
 
   let entries: string[];
@@ -273,4 +334,4 @@ export function recentRecordings(limit = 10, dir = RECORDINGS_DIR): RecentRecord
   return recordings.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit);
 }
 
-export { RECORDINGS_DIR };
+export { RECORDINGS_DIR, SESSIONS_DIR };

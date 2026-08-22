@@ -3,15 +3,26 @@
  *  Prices are placeholders. This is the only file that carries them.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- *  Nothing is for sale yet — every plan's action is the waitlist — so these
- *  numbers exist to give the page a shape rather than to be paid. Change them
- *  here and the cards, the table and the FAQ all follow.
+ *  Nothing is for sale yet — every action is the waitlist — so these numbers
+ *  exist to give the page a shape rather than to be paid. Change them here and
+ *  the cards, the included list, the FAQ and every comparison page follow.
  *
- *  Two of the three are a one-off purchase rather than a subscription, which is
- *  the whole shape of this page: the app is bought once and keeps working, and
- *  the only recurring charge is for the part that costs money to run every month
- *  — storage and bandwidth for a team's uploads.
+ *  One plan, one price, a trial in front of it. There is no free tier and no
+ *  second tier, which means nothing on this site should describe a feature as
+ *  "paid" or "included" — everything is included, and the only question is
+ *  whether the fourteen days have run out.
+ *
+ *  **Write the year, not the month.** `$59 a year` is what is charged; the
+ *  monthly figure is arithmetic and is only ever shown beside it. Leading with
+ *  `$4.92` would be the same sleight of hand this site calls out on Screen
+ *  Studio's own pricing, where `$9` is the yearly rate and `$29` the monthly
+ *  one. `PRICE_MONTHLY_EQUIVALENT` exists so that figure is derived in one
+ *  place rather than recalculated by hand in copy.
  */
+
+export const PRICE_YEARLY = "$59";
+export const PRICE_MONTHLY_EQUIVALENT = "$4.92";
+export const TRIAL_DAYS = 14;
 
 export type Plan = {
   name: string;
@@ -24,81 +35,67 @@ export type Plan = {
 
 export const PLANS: Plan[] = [
   {
-    name: "Free",
-    price: "$0",
-    cadence: "forever",
-    summary: "The whole recorder and the whole editor. The limits are on output.",
+    name: "Prequel",
+    price: PRICE_YEARLY,
+    cadence: "per user, per year",
+    summary: `Everything, for everyone on the licence. ${TRIAL_DAYS} days free to begin with.`,
     features: [
       "Screen, window and region capture",
       "Webcam, microphone and system audio",
-      "Cuts, backgrounds and the camera bubble",
       "Automatic zooms from clicks and typing",
-      "Per-slice overrides and keyframed zooms",
-      "Export to 1080p, H.264",
-      "Up to 5 minutes a recording",
-    ],
-  },
-  {
-    name: "Personal",
-    price: "$39",
-    // Spelled out rather than left as "one-off", because the question anyone
-    // asks about a one-time licence is what stops working when the year is up.
-    cadence: "once · one Mac · a year of updates",
-    summary: "Buy it once. It keeps working after the update year ends.",
-    featured: true,
-    features: [
-      "Everything in Free, without the length limit",
+      "Cuts, backgrounds and the camera bubble",
       "4K and HEVC export, up to 120 fps",
       "Every frame preset, including the social sizes",
-      "One year of updates, and the version you have forever",
-    ],
-  },
-  {
-    name: "Team",
-    price: "$19",
-    cadence: "per user, per month",
-    summary: "Everything in Personal, plus somewhere to put the finished file.",
-    features: [
-      "Everything in Personal, on every seat",
-      "Cloud uploads straight from the editor",
-      "Shareable links, with no download required to watch",
-      "Updates for as long as the subscription runs",
-      "Centralised billing and seat management",
+      "Transcripts, uploads and shareable links",
+      "No length limit and no watermark",
     ],
   },
 ];
 
-/** Rows are `[feature, free, personal, team]`; `true` renders as a tick. */
-export const COMPARISON: [string, boolean | string, boolean | string, boolean | string][] = [
-  ["Screen, window and region capture", true, true, true],
-  ["Webcam and both audio sources", true, true, true],
-  ["Recording length", "5 min", "Unlimited", "Unlimited"],
-  ["Maximum export", "1080p60", "4K120", "4K120"],
-  ["Codecs", "H.264", "H.264 · HEVC", "H.264 · HEVC"],
-  ["Automatic zooms", true, true, true],
-  ["Keyframed zooms and per-slice overrides", true, true, true],
-  ["Frame and social presets", "16:9 only", true, true],
-  ["Macs per licence", "Any", "One", "One per seat"],
-  ["Updates", "While it is free", "One year", "While subscribed"],
-  ["Cloud uploads and shareable links", false, false, true],
-  ["Centralised billing and seat management", false, false, true],
+/**
+ * What the licence covers.
+ *
+ * A list rather than a table: with one plan there is no second column to
+ * compare against, and a tick beside every row in a table of one is noise.
+ */
+export const INCLUDED: [string, string][] = [
+  ["Capture", "Screen, window or region"],
+  ["Sources", "Webcam, microphone, system audio"],
+  ["Zooms", "Automatic, from clicks and typing"],
+  ["Editor", "Cuts, backgrounds, camera, cursor"],
+  ["Resolution", "Up to 4K"],
+  ["Frame rate", "Up to 120 fps"],
+  ["Codecs", "H.264 · HEVC"],
+  ["Presets", "Every frame and social size"],
+  ["Length", "No limit"],
+  ["Watermark", "None"],
+  ["Transcripts", "Included"],
+  ["Sharing", "Uploads and shareable links"],
 ];
 
 export const FAQ: { question: string; answer: string }[] = [
   {
     question: "When can I actually buy this?",
     answer:
-      "Not yet. Prequel is in development and nothing is for sale, which is why every button on this page joins the waitlist instead. The plans are here so it is clear what will be free when it does ship.",
+      "Not yet. Prequel is in development and nothing is for sale, which is why every button on this page joins the waitlist instead. The plan is here so the price is clear before it ships.",
   },
   {
-    question: "What happens after my year of updates?",
-    answer:
-      "Nothing stops. Personal is a one-off purchase, not a rental: the version you have keeps working for as long as macOS runs it. The year buys the updates released during it, and renewing is optional rather than the price of keeping what you paid for.",
+    question: "Is there a free plan?",
+    answer: `No. There is a ${TRIAL_DAYS}-day free trial with the whole app in it, and after that Prequel is ${PRICE_YEARLY} per user per year. We would rather charge one honest price than run a free tier that quietly withholds the part you actually needed.`,
   },
   {
-    question: "Is the free plan watermarked?",
+    question: "What is in the trial?",
     answer:
-      "No. Free exports carry nothing that a paid export does not — the limits are on length and output format, not on the file being usable.",
+      "All of it. The trial is the full app rather than a preview of it — 4K at 120 frames per second, every frame preset, transcripts, no length limit and no watermark. A video you export during the trial is yours, and it keeps working afterwards whether or not you subscribe.",
+  },
+  {
+    question: "Why only one plan?",
+    answer:
+      "Because tiers make you read a table before you can decide anything, and the feature you want is always one row below the one you were going to buy. One price, everything in it.",
+  },
+  {
+    question: "Is the export watermarked?",
+    answer: "No, on the trial or on a licence. The file is yours at full quality.",
   },
   {
     question: "What do I need to run it?",
@@ -108,6 +105,6 @@ export const FAQ: { question: string; answer: string }[] = [
   {
     question: "Does anything leave my machine?",
     answer:
-      "On Free and Personal, no: recording, editing and export all happen locally, on your Mac's own media engine. Team adds uploading — and only when you ask for it, on the file you have already exported. Nothing is sent anywhere to make a recording or to render one.",
+      "Not to make a video. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. Uploading a finished export to get a shareable link is a thing you ask for, on a file you have already made.",
   },
 ];

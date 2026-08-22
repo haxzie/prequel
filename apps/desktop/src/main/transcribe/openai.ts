@@ -1,5 +1,5 @@
 /**
- * OpenAI, reached through the Prequel route on the marketing site.
+ * OpenAI, reached through the Prequel API.
  *
  * The audio goes to our server and our server forwards it to OpenAI. That is a
  * deliberate difference from a token-minting arrangement, and it is forced:
@@ -25,19 +25,21 @@ import {
  * Checked here so a long take is refused before it is sent, with a message that
  * says why, rather than arriving as a 413 from whichever hop is narrowest.
  *
- * Two ceilings stack. OpenAI accepts 25 MB, and a serverless host in front of
- * it typically accepts far less — Vercel's function body limit is 4.5 MB and
- * cannot be raised from application code. At the 128 kbps `mic.m4a` is written
- * at, 4 MB is a little over four minutes of speech.
+ * This is OpenAI's own ceiling for `whisper-1`, and it used not to be. The route
+ * this calls sat behind Vercel, whose 4.5 MB function body limit is
+ * infrastructure that application code cannot raise, so the tighter of the two
+ * applied — about four minutes of speech at the 128 kbps `mic.m4a` is written
+ * at. It is a Worker now, which accepts 100 MB, so the constraint is the one
+ * that belongs to the work: roughly half an hour.
  *
- * Set to the tighter of the two on purpose. Being told a recording is too long
- * is a bad outcome; uploading for a minute and *then* being told is a worse
- * one.
+ * Kept in step with `MAX_BYTES` in `apps/api/src/routes/transcribe.ts`. Being
+ * told a recording is too long is a bad outcome; uploading for a minute and
+ * *then* being told is a worse one, which is what this copy prevents.
  */
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 25 * 1024 * 1024;
 
-/** Where the site forwards a transcription to OpenAI. */
-const TRANSCRIBE_PATH = "/api/transcribe";
+/** Where the API forwards a transcription to OpenAI. */
+const TRANSCRIBE_PATH = "/v1/transcribe";
 
 /** One word as the route relays it: nanoseconds, already converted server-side. */
 interface RelayedWord {
@@ -47,7 +49,11 @@ interface RelayedWord {
   confidence: number;
 }
 
-export function openai(baseUrl: () => string, installId: () => string): Transcriber {
+export function openai(
+  baseUrl: () => string,
+  installId: () => string,
+  token: () => string | null,
+): Transcriber {
   return {
     name: "openai",
     maxBytes: MAX_BYTES,
@@ -69,9 +75,19 @@ export function openai(baseUrl: () => string, installId: () => string): Transcri
       const bytes = new Uint8Array(audio).slice().buffer;
       body.append("audio", new Blob([bytes], { type: "audio/mp4" }), "mic.m4a");
 
+      const bearer = token();
+
       const response = await fetch(new URL(TRANSCRIBE_PATH, baseUrl()), {
         method: "POST",
-        headers: { "x-prequel-install": installId() },
+        headers: {
+          // Sent whether or not anybody is signed in. The install id is what the
+          // allowance is counted against for an anonymous user, and dropping it
+          // once signed in would mean signing out reset the count.
+          "x-prequel-install": installId(),
+          // A signed-in user is counted as themselves and gets a larger
+          // allowance, since there is a name attached to the usage.
+          ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+        },
         body,
         signal,
       });

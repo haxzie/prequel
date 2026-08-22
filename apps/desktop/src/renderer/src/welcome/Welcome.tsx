@@ -4,6 +4,7 @@ import type { AppInfo, PermissionId } from "../../../shared/contract";
 import { assetUrl, permissionIconUrl } from "../../../shared/media-url";
 import { cn } from "../lib/cn";
 import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
+import { useAuth } from "../hooks/useAuth";
 import { usePermissions, type Permissions } from "./usePermissions";
 
 /**
@@ -65,7 +66,15 @@ const PERMISSIONS: {
   },
 ];
 
-const STEPS = 3;
+/**
+ * Four, since signing in became one of them.
+ *
+ * Sign-in sits between permissions and the finish, and is skippable. The
+ * permissions block recording and an account does not — gating the app somebody
+ * has just installed behind a browser round trip would be the wrong trade for a
+ * recorder that works perfectly well without one.
+ */
+const STEPS = 4;
 
 export function Welcome() {
   const [step, setStep] = useState(0);
@@ -92,7 +101,8 @@ export function Welcome() {
       <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto px-12">
         {step === 0 && <WelcomeStep name={info?.name ?? "Prequel"} version={info?.version} />}
         {step === 1 && <PermissionsStep permissions={permissions} />}
-        {step === 2 && <ReadyStep permissions={permissions} />}
+        {step === 2 && <SignInStep />}
+        {step === 3 && <ReadyStep permissions={permissions} />}
       </main>
 
       {/* Dots left, button right: the reading order of the footer is "where am
@@ -100,6 +110,19 @@ export function Welcome() {
       <footer className="relative z-10 flex flex-none items-center gap-4 px-12 pt-4 pb-9">
         <Dots step={step} onStep={setStep} />
         <div className="flex-1" />
+
+        {/* Only on the sign-in step, and only while nobody is signed in. Once
+            there is an account the primary button says Continue and a Skip
+            beside it would be offering to undo something already done. */}
+        {step === 2 && (
+          <button
+            type="button"
+            className="text-xs text-editor-muted hover:text-editor-fg"
+            onClick={() => setStep((current) => current + 1)}
+          >
+            Skip for now
+          </button>
+        )}
 
         {/* White, with the window's own near-black on it. The only solid white
             in the window, so it is unmistakably the thing to press — and the
@@ -335,6 +358,82 @@ function PermissionRow({
   );
 }
 
+/**
+ * Signing in, offered once rather than insisted on.
+ *
+ * Everything up to here has been about permissions, which the app genuinely
+ * cannot work without. This one is not like that: recording, editing and
+ * exporting all work signed out, and the only thing an account adds is a link
+ * other people can open. So it is presented as what it buys, and skipping it
+ * costs nothing.
+ */
+function SignInStep() {
+  const auth = useAuth();
+  const signedIn = auth.status === "signed-in";
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 py-6">
+      <h1 className="text-3xl font-semibold tracking-tight">
+        {signedIn ? "You're signed in" : "Share what you record"}
+      </h1>
+
+      <p className="max-w-md text-sm leading-relaxed text-editor-muted">
+        {signedIn ? (
+          <>
+            Exports can go straight to{" "}
+            <span className="text-editor-fg">{auth.account.teamName ?? "your team"}</span> and come
+            back as a link. Anyone you send it to can watch it — no account needed on their side.
+          </>
+        ) : (
+          <>
+            With an account, a finished export uploads to your team and gives you back a link.
+            Everything else — recording, the editor, exporting to a file — works without one.
+          </>
+        )}
+      </p>
+
+      {signedIn ? (
+        <div className="mt-2 flex items-center gap-3">
+          {auth.account.avatarUrl ? (
+            <img
+              src={auth.account.avatarUrl}
+              alt=""
+              className="size-9 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-medium">
+              {(auth.account.name || auth.account.email).charAt(0).toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm">{auth.account.name || auth.account.email}</p>
+            <p className="truncate text-xs text-editor-muted">{auth.account.email}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-col items-start gap-2">
+          <button
+            type="button"
+            disabled={auth.status === "waiting"}
+            onClick={() => void window.prequel.auth.signIn()}
+            className="rounded-lg bg-selected px-4 py-2 text-xs font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-70"
+          >
+            {auth.status === "waiting" ? "Waiting for your browser…" : "Sign in"}
+          </button>
+
+          {/* Said plainly, because the window is about to lose focus and that
+              is alarming if it was not expected. */}
+          <p className="text-xs text-editor-muted">
+            {auth.status === "waiting"
+              ? "Finish in the browser and come back — this updates by itself."
+              : "Opens your browser. There's no separate signup."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReadyStep({ permissions }: { permissions: Permissions }) {
   const missing = PERMISSIONS.filter((permission) => !permissions.granted(permission.id));
 
@@ -398,7 +497,9 @@ function ReadyStep({ permissions }: { permissions: Permissions }) {
  * System Settings and resent; put where they can see it, it is a choice.
  *
  * `null` until the first read lands, so the switch cannot draw itself off and
- * then flick on — which would read as the app having changed it just then.
+ * then flick on — which would read as the app having changed it just then. It
+ * is also what main answers in a development build, where there is no bundle to
+ * register: the row is left out rather than offered and then refused.
  */
 function LoginItemToggle() {
   const [enabled, setEnabled] = useState<boolean | null>(null);

@@ -71,4 +71,51 @@ describe("Preferences", () => {
     expect(prefs.cameraId).toBeNull();
     expect(prefs.micId).toBeNull();
   });
+
+  it("stores the shortcut in one spelling, whatever was written", () => {
+    // Two spellings of the same chord must not compare unequal, or rebinding
+    // to the shortcut you already have reads as a conflict.
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ toggleShortcut: "Command+Shift+R" }));
+
+    expect(new Preferences(file).get().toggleShortcut).toBe("Shift+Cmd+R");
+  });
+
+  it("falls back when the stored shortcut is not a chord", () => {
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ toggleShortcut: "Cmd+Shift" }));
+
+    expect(new Preferences(file).get().toggleShortcut).toBe(DEFAULT_PREFERENCES.toggleShortcut);
+  });
+
+  it("clamps a countdown that would never end", () => {
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ countdown: 9000 }));
+    expect(new Preferences(file).get().countdown).toBe(10);
+
+    const negative = freshFile();
+    writeFileSync(negative, JSON.stringify({ countdown: -4 }));
+    expect(new Preferences(negative).get().countdown).toBe(0);
+  });
+
+  it("rejects an afterRecording that no longer exists", () => {
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ afterRecording: "email-it-to-mum" }));
+
+    expect(new Preferences(file).get().afterRecording).toBe(DEFAULT_PREFERENCES.afterRecording);
+  });
+
+  it("keeps every new key across a write, rather than dropping it", () => {
+    // `sanitise` is exhaustive by hand, so a key added to the type without a
+    // line there saves fine and is gone on the next write. This is that check.
+    const file = freshFile();
+    const written = new Preferences(file);
+    written.update({ countdown: 5, saveDirectory: "/tmp/takes", afterRecording: "finder" });
+    written.update({ micId: "mic-2" });
+
+    const reread = new Preferences(file).get();
+    expect(reread.countdown).toBe(5);
+    expect(reread.saveDirectory).toBe("/tmp/takes");
+    expect(reread.afterRecording).toBe("finder");
+  });
 });

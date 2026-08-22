@@ -23,8 +23,8 @@
     "*.node"
   ],
   "scripts": {
-    "build": "napi build --platform --release --esm --output-dir .",
-    "build:debug": "napi build --platform --esm --output-dir .",
+    "build": "PATH=\"$HOME/.cargo/bin:$PATH\" napi build --platform --release --esm --output-dir .",
+    "build:debug": "PATH=\"$HOME/.cargo/bin:$PATH\" napi build --platform --esm --output-dir .",
     "test": "vitest run",
     "clean": "rm -rf .turbo node_modules *.node index.js index.d.ts"
   },

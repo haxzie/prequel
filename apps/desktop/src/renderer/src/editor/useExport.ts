@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  cursorStyle,
+  cursorImages,
   type EditorSession,
   type ExportProgress,
   type ExportSlice,
@@ -47,6 +47,14 @@ export interface ExportState {
   result: ExportResult | null;
   /** The frame this export would be written at, once the format is applied. */
   frame: Size;
+  /**
+   * How long the finished file runs, in milliseconds.
+   *
+   * Summed over the kept slices rather than taken from the recording, because
+   * what was cut out is exactly the difference between the two — and this is
+   * what the library shows beside the thumbnail.
+   */
+  durationMs: number;
   start: () => Promise<void>;
   cancel: () => void;
   dismiss: () => void;
@@ -119,6 +127,15 @@ export function useExport(
     };
   }, [session, progress]);
 
+  const durationMs = useMemo(
+    () =>
+      slicesOf(project).reduce(
+        (total, slice) => total + (slice.source.end - slice.source.start),
+        0,
+      ) / 1_000_000,
+    [project],
+  );
+
   return {
     progress,
     running:
@@ -128,6 +145,7 @@ export function useExport(
         progress.stage === "finalising"),
     result,
     frame,
+    durationMs,
     start,
     cancel,
     dismiss: () => setProgress(null),
@@ -152,8 +170,7 @@ function buildSlices(session: EditorSession, project: Project, frame: Size): Exp
         settings,
         session.cursor && {
           ...session.cursor,
-          path: cursorStyle(settings.layout.cursorStyle).file,
-          hotspot: cursorStyle(settings.layout.cursorStyle).hotspot,
+          ...cursorImages(settings.layout.cursorStyle),
           size: settings.layout.cursorSize,
           hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
         },

@@ -8,7 +8,7 @@
 import type { RecordingResult } from "@prequel/recorder";
 
 import type { CursorSample, Manifest, MediaTime, TrackKind, TypingSample } from "./manifest.js";
-import type { RenderPlan } from "./layout.js";
+import type { CursorTrack, RenderPlan } from "./layout.js";
 import type { Project } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
@@ -64,6 +64,9 @@ export interface Target {
 /** How the user is choosing what to capture. */
 export type ScreenMode = "screen" | "window" | "area";
 
+/** What the app does with a take once recording stops. */
+export type AfterRecording = "editor" | "finder" | "nothing";
+
 /** Setup the panel remembers between recordings. */
 export interface RecordingPreferences {
   mode: ScreenMode;
@@ -109,6 +112,26 @@ export interface RecordingPreferences {
    */
   cameraPosition: { x: number; y: number } | null;
   /**
+   * The global start/stop chord, as an Electron accelerator.
+   *
+   * Stored in the canonical spelling `normaliseAccelerator` produces, so a
+   * rebind to the chord already in use compares equal instead of looking like
+   * a conflict. Main is the only thing that registers it; every surface that
+   * *draws* it reads this and formats it, rather than carrying its own copy.
+   */
+  toggleShortcut: string;
+  /** Seconds counted down before capture starts. Zero begins immediately. */
+  countdown: number;
+  /**
+   * Where recordings are written, or null for `~/Movies/Prequel`.
+   *
+   * Null rather than the resolved path, so the default follows the home
+   * directory instead of being frozen into the file on first launch.
+   */
+  saveDirectory: string | null;
+  /** What happens when a recording stops. */
+  afterRecording: AfterRecording;
+  /**
    * Whether the welcome flow has been finished.
    *
    * Not recording setup, and the only thing in here that is not — but this file
@@ -130,6 +153,10 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   systemAudio: true,
   bakeCursor: false,
   cameraPosition: null,
+  toggleShortcut: "Shift+Cmd+R",
+  countdown: 3,
+  saveDirectory: null,
+  afterRecording: "editor",
   welcomed: false,
 };
 
@@ -210,6 +237,12 @@ export const IPC_CHANNELS = {
   loginItem: "app:loginItem",
   /** Adds or removes the login item. */
   setLoginItem: "app:setLoginItem",
+  /** Main → renderer: macOS may have changed it while a window sat open. */
+  loginItemChanged: "app:loginItemChanged",
+  /** Renderer → main: rebind the global start/stop chord. */
+  setShortcut: "shortcut:set",
+  /** Renderer → main: stop the recording and delete it. */
+  sessionDiscard: "session:discard",
   /** Quits and comes back, which is what a new Screen Recording grant needs. */
   relaunchApp: "app:relaunch",
   /** The welcome flow finished. */
@@ -276,6 +309,20 @@ export const IPC_CHANNELS = {
   transcribeCancel: "transcribe:cancel",
   /** Main → renderer broadcast. */
   transcribeProgress: "transcribe:progress",
+  /** Who is signed in, as much of it as a window is allowed to know. */
+  authState: "auth:state",
+  /** Opens the browser and waits for the deep link to come back. */
+  authSignIn: "auth:signIn",
+  authSignOut: "auth:signOut",
+  /** Opens the team's library in the default browser. */
+  authOpenDashboard: "auth:openDashboard",
+  /** Main → renderer broadcast, since several surfaces show the account. */
+  authChanged: "auth:changed",
+  /** Uploads a finished export and answers with a link. */
+  shareStart: "share:start",
+  shareCancel: "share:cancel",
+  /** Main → renderer broadcast. */
+  shareProgress: "share:progress",
 } as const;
 
 /** One kept span, resolved and ready to render. */
@@ -348,6 +395,63 @@ export interface TranscribeProgress {
   error: { code: string | null; message: string } | null;
   /** Present only on `done`. */
   transcript?: Transcript;
+}
+
+/**
+ * The signed-in account, as the renderer is allowed to see it.
+ *
+ * Redacted on purpose. The device token itself lives in `auth.json` in main and
+ * never crosses this boundary — a window has no use for a bearer credential, and
+ * the renderer is the half of the app that loads remote pictures.
+ */
+export interface AuthAccount {
+  name: string;
+  email: string;
+  /** A remote URL from the identity provider, or null. */
+  avatarUrl: string | null;
+  /** The team a share would go to. Null until onboarding has run. */
+  teamName: string | null;
+}
+
+/**
+ * Whether anybody is signed in.
+ *
+ * `waiting` is its own state rather than a boolean beside `signed-out`: the
+ * browser is open and the app is expecting a deep link, which can take as long
+ * as the user takes and can end in nothing at all. A button that says "Sign in"
+ * throughout that is a button people press twice.
+ */
+export type AuthState =
+  { status: "signed-out" } | { status: "waiting" } | { status: "signed-in"; account: AuthAccount };
+
+/** What to upload, and what to call it. */
+export interface ShareRequest {
+  /** Absolute path of the finished export. */
+  path: string;
+  /** A still for the library and the link preview, as a data URL. Optional. */
+  poster: string | null;
+  title: string;
+  durationMs: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * How an upload is going.
+ *
+ * Bytes rather than a percentage, and the same reasoning as `ExportProgress`:
+ * completion is a terminal stage on this channel rather than a resolved
+ * promise, so there is one path for "finished" and nothing to race.
+ */
+export interface ShareProgress {
+  /** Which export this is about; a dialog ignores progress for any other. */
+  path: string;
+  stage: "preparing" | "uploading" | "finalising" | "done" | "failed" | "cancelled";
+  bytesSent: number;
+  bytesTotal: number;
+  /** Present only on `done`. */
+  url: string | null;
+  error: { code: string | null; message: string } | null;
 }
 
 /** An image copied into a recording, ready to be used as a background. */
@@ -503,21 +607,72 @@ export interface DockState {
  * The pointers the editor can draw, and where each one actually points.
  *
  * The hotspot is the part that acts, and it differs by shape: an arrow points
- * with its tip, a hand with its fingertip, a dot with its middle. These numbers
- * come from `scripts/make-cursor.mjs`, which prints them when it draws the
- * images — change the artwork there and these follow.
+ * with its tip, a hand with its fingertip, a circle with its middle. These
+ * numbers come from `scripts/make-cursor.mjs`, which prints them when it draws
+ * the images — change the artwork there and these follow.
+ *
+ * A style is a *tone*, not a shape. The two arrows each carry a `hand` of the
+ * same tone, drawn wherever the recording says the system was showing the link
+ * cursor — so choosing white does not also mean choosing to lose the hand. The
+ * circle has none: it is a marker for where the pointer is rather than a
+ * pointer, and there is nothing for it to become.
  */
 export const CURSOR_STYLES = [
-  { id: "light", label: "Light", file: "cursor-light.png", hotspot: { x: 0.055, y: 0.055 } },
-  { id: "dark", label: "Dark", file: "cursor-dark.png", hotspot: { x: 0.055, y: 0.055 } },
-  { id: "hand", label: "Hand", file: "cursor-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
-  { id: "dot", label: "Dot", file: "cursor-dot.png", hotspot: { x: 0.5, y: 0.5 } },
+  {
+    id: "black",
+    label: "Black",
+    file: "cursor-black.png",
+    hotspot: { x: 0.055, y: 0.055 },
+    hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+  },
+  {
+    id: "white",
+    label: "White",
+    file: "cursor-white.png",
+    hotspot: { x: 0.055, y: 0.055 },
+    hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+  },
+  {
+    id: "circle",
+    label: "Circle",
+    file: "cursor-circle.png",
+    hotspot: { x: 0.5, y: 0.5 },
+    hand: null,
+  },
 ] as const;
 
 export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
 
+/**
+ * Falls back to the first style rather than throwing, so a project naming one
+ * this build no longer ships — every recording made before the pointer became a
+ * tone rather than a shape names `light`, `dark`, `hand` or `dot` — opens with
+ * the default drawn instead of with no pointer at all.
+ */
 export function cursorStyle(id: string): (typeof CURSOR_STYLES)[number] {
   return CURSOR_STYLES.find((style) => style.id === id) ?? CURSOR_STYLES[0];
+}
+
+/** Every image any style may ask for, which is what has to reach a recording. */
+export const CURSOR_FILES: readonly string[] = CURSOR_STYLES.flatMap((style) =>
+  style.hand ? [style.file, style.hand.file] : [style.file],
+);
+
+/**
+ * The image half of a pointer track, for a style id.
+ *
+ * Here rather than at both call sites: the preview and the export build the
+ * same track from the same setting, and a style that resolved differently in
+ * one of them is a preview that does not match the file it promised.
+ */
+export function cursorImages(id: string): Pick<CursorTrack, "path" | "hotspot" | "hand"> {
+  const style = cursorStyle(id);
+
+  return {
+    path: style.file,
+    hotspot: style.hotspot,
+    hand: style.hand ? { path: style.hand.file, hotspot: style.hand.hotspot } : null,
+  };
 }
 
 /** The pointer track, ready for the editor to lay out. */

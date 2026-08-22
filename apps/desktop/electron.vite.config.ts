@@ -19,8 +19,8 @@ const envPrefix = ["VITE_", "NEXT_PUBLIC_"];
  * Main is a Node process, not a browser one, so `@prequel/env` reads these from
  * `process.env` at runtime — and a packaged app is launched by Finder with none
  * of them set, so every one of them silently falls back to its schema default.
- * That is how `NEXT_PUBLIC_APP_URL` comes to be `http://localhost:3000` in a
- * shipped build, which is wrong for anything that actually calls it.
+ * That is how `NEXT_PUBLIC_APP_URL` comes to be whatever the schema defaults
+ * to in a shipped build, which is wrong for anything that actually calls it.
  *
  * Replaced statically instead, the way the renderer already gets them. The
  * value is whatever `.env` held when the bundle was built, which is the only

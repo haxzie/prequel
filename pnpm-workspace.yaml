@@ -7,5 +7,7 @@ allowBuilds:
   # Downloads the Electron binary for this platform.
   electron: true
   esbuild: true
+  # The Workers runtime the API's `wrangler dev` and its tests run inside.
+  workerd: true
 minimumReleaseAgeExclude:
   - '@napi-rs/cli@3.8.5'

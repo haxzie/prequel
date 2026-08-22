@@ -86,6 +86,16 @@ export interface CursorSample {
   at: MediaTime;
   x: number;
   y: number;
+  /**
+   * Whether the system was showing the link cursor — the pointing hand.
+   *
+   * Absent means it was not, which is also what every recording made before the
+   * shape was sampled says. The editor draws a hand for the spans this is true
+   * over, so a composited pointer changes shape over a link the way the real
+   * one did; without it a recording simply never grows a hand, which is the
+   * behaviour it had before.
+   */
+  hand?: boolean;
 }
 
 /** A press, sampled during the recording. */

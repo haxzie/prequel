@@ -2,6 +2,13 @@
   "extends": "@prequel/typescript-config/nextjs.json",
   "compilerOptions": {
     "types": ["node"],
+    // The base config turns declarations on for the libraries in `packages/`.
+    // An app emits nothing, so all this does here is enforce that every exported
+    // inferred type be *nameable* from outside — which Better Auth's client type
+    // is not, since it composes plugin types out of files it does not re-export.
+    // The alternative is hand-annotating a type that exists to be inferred.
+    "declaration": false,
+    "declarationMap": false,
     "paths": {
       "@/*": ["./src/*"]
     }

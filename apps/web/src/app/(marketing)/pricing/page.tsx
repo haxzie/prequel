@@ -1,0 +1,119 @@
+import type { Metadata } from "next";
+
+import { ButtonLink } from "@/components/Button";
+import { JsonLd } from "@/components/JsonLd";
+import { Container, SectionHeading } from "@/components/Section";
+import { FAQ, INCLUDED, PLANS, PRICE_MONTHLY_EQUIVALENT, TRIAL_DAYS } from "@/lib/pricing";
+import { faqPageJsonLd, pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Pricing",
+  description:
+    "Prequel is $59 per user per year, with a 14-day free trial. One plan: the recorder, the editor, 4K export, transcripts and sharing, with no watermark and no length limit.",
+  path: "/pricing",
+});
+
+export default function Pricing() {
+  return (
+    <>
+      <section className="pt-20 pb-4">
+        <Container>
+          <SectionHeading
+            eyebrow="Pricing"
+            title="One price, everything in it."
+            lede="Nothing is for sale yet — Prequel is still in development. This is the price it will ship with, so you know before you wait for it."
+            align="centre"
+          />
+        </Container>
+      </section>
+
+      <section className="py-14">
+        {/* One plan, so the card is centred at a readable measure rather than
+            stranded in the first of three columns. */}
+        <Container className="mx-auto max-w-md">
+          {PLANS.map((plan) => (
+            <div
+              key={plan.name}
+              className={`squircle lit relative flex flex-col rounded-2xl border p-7 ${
+                plan.featured ? "border-brand-to/60 bg-elevated" : "border-line bg-surface"
+              }`}
+            >
+              {plan.featured ? (
+                <span className="brand-gradient absolute -top-3 left-7 rounded-full px-3 py-1 text-[11px] font-medium text-white">
+                  Most popular
+                </span>
+              ) : null}
+
+              <h2 className="text-base font-medium text-fg">{plan.name}</h2>
+              <p className="mt-1.5 text-sm text-muted">{plan.summary}</p>
+
+              <p className="mt-6 flex items-baseline gap-2">
+                <span className="text-4xl font-medium tracking-tight text-fg">{plan.price}</span>
+                <span className="text-xs text-muted">{plan.cadence}</span>
+              </p>
+              {/* The year is what gets charged; the month is arithmetic and
+                  never appears without it. Leading with the smaller number is
+                  the trick this site calls out on Screen Studio's own page. */}
+              <p className="mt-1.5 text-xs text-muted">
+                About {PRICE_MONTHLY_EQUIVALENT} a month · {TRIAL_DAYS} days free
+              </p>
+
+              <ButtonLink
+                href="/#waitlist"
+                variant={plan.featured ? "primary" : "secondary"}
+                className="mt-6 w-full"
+              >
+                Join the waitlist
+              </ButtonLink>
+
+              <ul className="mt-7 flex flex-col gap-3 border-t border-line pt-6 text-sm">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex gap-3 text-muted">
+                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-lilac" aria-hidden />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container>
+          <h2 className="text-2xl font-medium tracking-tight text-fg">What you get</h2>
+          {/* A list rather than a table: with one plan there is no second
+              column, and a tick beside every row of a table of one says
+              nothing. */}
+          <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">
+            {INCLUDED.map(([label, value]) => (
+              <div key={label} className="bg-surface px-5 py-5">
+                <dt className="font-mono text-[11px] tracking-wider text-muted uppercase">
+                  {label}
+                </dt>
+                <dd className="mt-1.5 text-sm text-fg">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Container>
+      </section>
+
+      <section className="py-14">
+        <Container className="grid gap-10 lg:grid-cols-[1fr_1.6fr]">
+          <h2 className="text-2xl font-medium tracking-tight text-fg">Questions</h2>
+          <dl className="flex flex-col gap-px overflow-hidden rounded-2xl border border-line bg-line">
+            {FAQ.map((item) => (
+              <div key={item.question} className="bg-bg px-6 py-6">
+                <dt className="text-[0.9375rem] font-medium text-fg">{item.question}</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-muted">{item.answer}</dd>
+              </div>
+            ))}
+          </dl>
+        </Container>
+
+        {/* Off the same array as the markup above, so the two cannot drift. */}
+        <JsonLd data={faqPageJsonLd(FAQ)} />
+      </section>
+    </>
+  );
+}
