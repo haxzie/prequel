@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AfterRecording } from "../../../shared/contract";
 import { Field, Section } from "../editor/controls/Field";
 import { Segmented, Toggle } from "../editor/controls/inputs";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useDock } from "../hooks/useDock";
 import { cn } from "../lib/cn";
@@ -258,20 +259,7 @@ function Account() {
     <div className="flex flex-col">
       <Section title="Account">
         <div className="flex items-center gap-3">
-          {/* The avatar is a remote URL from the identity provider, and it is
-              the only remote image the app loads. The renderer's CSP allows
-              `img-src` from anywhere; it is `connect-src` that is locked down. */}
-          {account.avatarUrl ? (
-            <img
-              src={account.avatarUrl}
-              alt=""
-              className="size-9 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-[13px] font-medium text-editor-fg">
-              {(account.name || account.email).charAt(0).toUpperCase()}
-            </span>
-          )}
+          <Avatar seed={account.email} size={36} />
           <div className="min-w-0">
             <p className="truncate text-[13px] text-editor-fg">{account.name || account.email}</p>
             <p className="truncate text-[12px] text-editor-muted">{account.email}</p>

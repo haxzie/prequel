@@ -200,7 +200,7 @@ export async function completeSignIn(code: string, state: string): Promise<void>
   try {
     const result = await apiFetch<{
       token: string;
-      user: { name: string; email: string; image: string | null };
+      user: { name: string; email: string };
       team: { id: string; name: string } | null;
     }>("/v1/desktop/token", {
       method: "POST",
@@ -212,7 +212,6 @@ export async function completeSignIn(code: string, state: string): Promise<void>
       account: {
         name: result.user.name,
         email: result.user.email,
-        avatarUrl: result.user.image,
         teamName: result.team?.name ?? null,
       },
     });

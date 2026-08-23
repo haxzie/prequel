@@ -142,7 +142,7 @@ function UserMenu({ user }: { user: SessionUser }) {
         placement="up"
         trigger={
           <span className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/8">
-            <Avatar src={user.image} seed={user.email} size={32} />
+            <Avatar seed={user.email} size={32} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-fg">{name}</span>
               <span className="block truncate text-xs text-muted">{user.email}</span>

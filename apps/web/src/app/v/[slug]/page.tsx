@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Logo } from "@/components/Logo";
 import { API_URL } from "@/lib/api";
 import { absoluteUrl } from "@/lib/seo";
 import { SITE } from "@/lib/site";
@@ -32,13 +30,25 @@ interface Shared {
   poster: string | null;
 }
 
-async function fetchShared(slug: string): Promise<Shared | null> {
+/**
+ * Three outcomes, not two.
+ *
+ * The API distinguishes a slug that never existed from a recording that was
+ * deliberately taken down — 404 against 410 — and the difference is the whole
+ * reason `video` rows are soft-deleted rather than dropped. Collapsing both to
+ * `null` throws that away and tells somebody holding a link their sender
+ * deleted on purpose that the link was never real.
+ */
+type Lookup = { status: "ok"; shared: Shared } | { status: "deleted" } | { status: "missing" };
+
+async function fetchShared(slug: string): Promise<Lookup> {
   const response = await fetch(`${API_URL}/p/${encodeURIComponent(slug)}`, {
     cache: "no-store",
   }).catch(() => null);
 
-  if (!response?.ok) return null;
-  return (await response.json()) as Shared;
+  if (response?.ok) return { status: "ok", shared: (await response.json()) as Shared };
+  if (response?.status === 410) return { status: "deleted" };
+  return { status: "missing" };
 }
 
 /**
@@ -54,11 +64,16 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const shared = await fetchShared(slug);
+  const found = await fetchShared(slug);
 
-  if (!shared) {
-    return { title: "Recording not found", robots: { index: false, follow: false } };
+  if (found.status !== "ok") {
+    return {
+      title: found.status === "deleted" ? "Recording deleted" : "Recording not found",
+      robots: { index: false, follow: false },
+    };
   }
+
+  const shared = found.shared;
 
   const url = absoluteUrl(`/v/${slug}`);
 
@@ -87,11 +102,43 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * When it was shared, in the viewer's own locale but a fixed timezone.
+ *
+ * `UTC` pinned because this string is rendered on the server and again on the
+ * client; a timezone difference between the two is a hydration mismatch React
+ * reports as an error on every view.
+ */
+function formatShared(value: string): string {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function SharedVideoPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const shared = await fetchShared(slug);
+  const found = await fetchShared(slug);
 
-  if (!shared) notFound();
+  // `notFound()` renders `v/not-found.tsx`, which lives inside this route's own
+  // layout — so a dead link keeps the player's chrome instead of dropping a
+  // stranger onto the marketing site's 404 with a link to the blog.
+  if (found.status === "missing") notFound();
+
+  if (found.status === "deleted") {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-5 py-24 text-center sm:px-8">
+        <h1 className="text-xl font-medium tracking-tight text-fg">This recording was deleted</h1>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
+          Whoever shared it has taken it down. Ask them for a new link if you still need it.
+        </p>
+      </div>
+    );
+  }
+
+  const shared = found.shared;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-8 sm:px-8">
@@ -115,21 +162,16 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
         )}
       </div>
 
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {shared.teamName ? `Shared by ${shared.teamName}` : "Shared with Prequel"}
-          </p>
-        </div>
-
-        <Link
-          href="/"
-          className="lit flex items-center gap-2 rounded-full border border-line bg-elevated px-4 py-2 text-sm text-fg transition-colors hover:border-muted/40"
-        >
-          <Logo size={18} />
-          Made with Prequel
-        </Link>
+      {/* No second Prequel mark here — the bar above already carries it, and
+          the same wordmark twice on one short page reads as a template that
+          could not decide. What belongs under the video is whose recording it
+          is. */}
+      <div className="mt-6 min-w-0">
+        <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
+        <p className="mt-1 text-sm text-muted">
+          {shared.teamName ? `Shared by ${shared.teamName}` : "Shared with Prequel"}
+          {shared.createdAt ? ` · ${formatShared(shared.createdAt)}` : ""}
+        </p>
       </div>
     </div>
   );

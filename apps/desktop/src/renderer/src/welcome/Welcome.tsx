@@ -4,6 +4,7 @@ import type { AppInfo, PermissionId } from "../../../shared/contract";
 import { assetUrl, permissionIconUrl } from "../../../shared/media-url";
 import { cn } from "../lib/cn";
 import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions, type Permissions } from "./usePermissions";
 
@@ -394,17 +395,7 @@ function SignInStep() {
 
       {signedIn ? (
         <div className="mt-2 flex items-center gap-3">
-          {auth.account.avatarUrl ? (
-            <img
-              src={auth.account.avatarUrl}
-              alt=""
-              className="size-9 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-medium">
-              {(auth.account.name || auth.account.email).charAt(0).toUpperCase()}
-            </span>
-          )}
+          <Avatar seed={auth.account.email} size={36} />
           <div className="min-w-0">
             <p className="truncate text-sm">{auth.account.name || auth.account.email}</p>
             <p className="truncate text-xs text-editor-muted">{auth.account.email}</p>

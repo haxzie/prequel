@@ -400,15 +400,17 @@ export interface TranscribeProgress {
 /**
  * The signed-in account, as the renderer is allowed to see it.
  *
- * Redacted on purpose. The device token itself lives in `auth.json` in main and
- * never crosses this boundary — a window has no use for a bearer credential, and
- * the renderer is the half of the app that loads remote pictures.
+ * Redacted on purpose. The device token lives in `auth.json` in main and never
+ * crosses this boundary — a window has no use for a bearer credential.
+ *
+ * No avatar URL either. The provider's photo is never drawn: the renderer's CSP
+ * is `img-src 'self' data: prequel-media:`, so a remote picture is blocked and
+ * renders an empty box, and the account may have no photo at all. Everyone gets
+ * a marble generated from their address instead — see `components/Avatar.tsx`.
  */
 export interface AuthAccount {
   name: string;
   email: string;
-  /** A remote URL from the identity provider, or null. */
-  avatarUrl: string | null;
   /** The team a share would go to. Null until onboarding has run. */
   teamName: string | null;
 }
