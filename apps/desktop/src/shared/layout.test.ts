@@ -12,14 +12,39 @@ import {
   buildRenderPlan,
   captionAt,
   cursorAt,
+  layoutBoxes,
   rectAt,
+  shapeAspect,
   SHADOW_SPREAD,
   type CaptionWord,
   type PlanItem,
+  type Rect,
   type RenderPlan,
   type Size,
 } from "./layout.js";
-import { DEFAULT_SETTINGS, DEFAULT_ZOOM, type SliceSettings, type ZoomSlice } from "./project.js";
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_ZOOM,
+  type LayoutPreset,
+  type LayoutSettings,
+  type SliceSettings,
+  type ZoomSlice,
+} from "./project.js";
+
+/** Every arrangement, so a sweep cannot quietly skip the one that broke. */
+const PRESETS: LayoutPreset[] = [
+  "over-full",
+  "over-padded",
+  "beside",
+  "stacked",
+  "split",
+  "split-stacked",
+  "screen-full",
+  "screen-padded",
+  "camera-full",
+  "camera-padded",
+  "custom",
+];
 
 const LANDSCAPE: Size = { width: 1920, height: 1080 };
 const VERTICAL: Size = { width: 1080, height: 1920 };
@@ -91,7 +116,7 @@ describe("fitting the screen", () => {
       VERTICAL,
       { screen: SCREEN, camera: null },
       settings({
-        layout: { ...DEFAULT_SETTINGS.layout, screenFit: "cover" },
+        layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" },
         background: { ...DEFAULT_SETTINGS.background, padding: 0 },
       }),
     );
@@ -112,7 +137,7 @@ describe("fitting the screen", () => {
       VERTICAL,
       { screen: SCREEN, camera: null },
       settings({
-        layout: { ...DEFAULT_SETTINGS.layout, screenFit: "cover", screenOffsetX: 5 },
+        layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full", screenOffsetX: 5 },
       }),
     );
     const { srcRect } = image(plan, "screen")!;
@@ -167,7 +192,15 @@ describe("the camera", () => {
         // The size is spelled out rather than inherited: these assert exact
         // pixels, and a default nobody thought about this file when changing
         // should not read as the geometry being wrong.
-        settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraX, cameraY } }),
+        settings({
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            cameraWidth: 0.22,
+            cameraHeight: 0.22,
+            cameraX,
+            cameraY,
+          },
+        }),
       ),
       "camera",
     )!;
@@ -207,14 +240,26 @@ describe("the camera", () => {
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: CAMERA },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraShape: "wide" } }),
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cameraShape: "wide",
+          // The proportions the shape picker writes for `wide`. The shape sets
+          // the radius; the box is what the geometry reads.
+          cameraWidth: 0.22 * shapeAspect("wide", CAMERA),
+          cameraHeight: 0.22,
+        },
+      }),
     );
     const { srcRect, dstRect } = image(plan, "camera")!;
 
-    expect(srcRect).toEqual({ x: 0, y: 0, width: CAMERA.width, height: CAMERA.height });
+    expect(srcRect.x).toBeCloseTo(0, 6);
+    expect(srcRect.y).toBeCloseTo(0, 6);
+    expect(srcRect.width).toBeCloseTo(CAMERA.width, 6);
+    expect(srcRect.height).toBeCloseTo(CAMERA.height, 6);
     expect(dstRect.width / dstRect.height).toBeCloseTo(CAMERA.width / CAMERA.height, 5);
 
-    // Height is what `cameraSize` means, whatever the shape — so switching from
+    // Height is what `cameraHeight` means, whatever the shape — so switching from
     // a circle keeps the bubble the size it was and grows it sideways.
     expect(dstRect.height).toBeCloseTo(237.6);
   });
@@ -251,7 +296,14 @@ describe("the camera", () => {
         buildRenderPlan(
           LANDSCAPE,
           { screen: SCREEN, camera: CAMERA },
-          settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 0.22, cameraShape } }),
+          settings({
+            layout: {
+              ...DEFAULT_SETTINGS.layout,
+              cameraWidth: 0.22,
+              cameraHeight: 0.22,
+              cameraShape,
+            },
+          }),
         ),
         "camera",
       )!.shape;
@@ -335,7 +387,7 @@ describe("the camera", () => {
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: CAMERA },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraSize: 3 } }),
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraWidth: 3, cameraHeight: 3 } }),
     );
     const camera = image(plan, "camera")!;
 
@@ -718,25 +770,73 @@ describe("the screen is never stretched", () => {
   ];
 
   it("keeps the source window and the destination the same shape", () => {
+    // Both pictures, now: the camera reaches its crop through the same fitter
+    // the screen does, and in an arrangement that hands it a tall column there
+    // is nothing about a webcam's own proportions to fall back on.
     for (const frame of FRAMES) {
       for (const source of SOURCES) {
-        for (const screenFit of ["contain", "cover"] as const) {
-          for (const screenZoom of [0.05, 0.25, 0.5, 0.9, 1, 1.5, 3]) {
+        for (const preset of PRESETS) {
+          for (const zoom of [0.05, 0.25, 0.5, 0.9, 1, 1.5, 3]) {
             const plan = buildRenderPlan(
               frame,
-              { screen: source, camera: null },
-              settings({ layout: { ...settings().layout, screenFit, screenZoom } }),
+              { screen: source, camera: CAMERA },
+              settings({
+                layout: { ...settings().layout, preset, screenZoom: zoom, cameraZoom: zoom },
+              }),
             );
-            const item = image(plan, "screen")!;
-            const where = `${frame.width}x${frame.height} ${screenFit} @${screenZoom}`;
 
-            expect(item.srcRect.width, where).toBeGreaterThan(0);
-            expect(item.srcRect.height, where).toBeGreaterThan(0);
-            expect(
-              item.dstRect.width / item.dstRect.height,
-              `${where}: dst ${item.dstRect.width}x${item.dstRect.height} vs src ${item.srcRect.width}x${item.srcRect.height}`,
-            ).toBeCloseTo(item.srcRect.width / item.srcRect.height, 5);
+            for (const which of ["screen", "camera"] as const) {
+              const item = image(plan, which);
+              if (!item) continue;
+
+              const where = `${frame.width}x${frame.height} ${preset} ${which} @${zoom}`;
+              expect(item.srcRect.width, where).toBeGreaterThan(0);
+              expect(item.srcRect.height, where).toBeGreaterThan(0);
+              expect(
+                item.dstRect.width / item.dstRect.height,
+                `${where}: dst ${item.dstRect.width}x${item.dstRect.height} vs src ${item.srcRect.width}x${item.srcRect.height}`,
+              ).toBeCloseTo(item.srcRect.width / item.srcRect.height, 5);
+            }
           }
+        }
+      }
+    }
+  });
+
+  it("never samples outside either recording, in any arrangement", () => {
+    for (const frame of FRAMES) {
+      for (const preset of PRESETS) {
+        const plan = buildRenderPlan(
+          frame,
+          { screen: SCREEN, camera: CAMERA },
+          settings({
+            layout: {
+              ...settings().layout,
+              preset,
+              screenOffsetX: 0.4,
+              screenOffsetY: -0.4,
+              cameraOffsetX: -0.6,
+              cameraOffsetY: 0.6,
+            },
+          }),
+        );
+
+        for (const [which, source] of [
+          ["screen", SCREEN],
+          ["camera", CAMERA],
+        ] as const) {
+          const item = image(plan, which);
+          if (!item) continue;
+
+          const where = `${frame.width}x${frame.height} ${preset} ${which}`;
+          expect(item.srcRect.x, where).toBeGreaterThanOrEqual(0);
+          expect(item.srcRect.y, where).toBeGreaterThanOrEqual(0);
+          expect(item.srcRect.x + item.srcRect.width, where).toBeLessThanOrEqual(
+            source.width + 1e-6,
+          );
+          expect(item.srcRect.y + item.srcRect.height, where).toBeLessThanOrEqual(
+            source.height + 1e-6,
+          );
         }
       }
     }
@@ -752,7 +852,7 @@ describe("the screen is never stretched", () => {
           settings({
             layout: {
               ...settings().layout,
-              screenFit: "cover",
+              preset: "over-full",
               screenZoom,
               screenOffsetX: 0.4,
               screenOffsetY: -0.4,
@@ -776,7 +876,7 @@ describe("the screen is never stretched", () => {
     const plan = buildRenderPlan(
       frame,
       { screen: { width: 2560, height: 1440 }, camera: null },
-      settings({ layout: { ...settings().layout, screenFit: "cover", screenZoom: 0.5 } }),
+      settings({ layout: { ...settings().layout, preset: "over-full", screenZoom: 0.5 } }),
     );
     const { dstRect } = image(plan, "screen")!;
 
@@ -788,12 +888,12 @@ describe("the screen is never stretched", () => {
 });
 
 describe("filling the frame", () => {
-  const shot = (screenFit: "contain" | "cover", padding: number) =>
+  const shot = (preset: "over-padded" | "over-full", padding: number) =>
     buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: null },
       settings({
-        layout: { ...DEFAULT_SETTINGS.layout, screenFit },
+        layout: { ...DEFAULT_SETTINGS.layout, preset },
         background: { ...DEFAULT_SETTINGS.background, padding },
       }),
     );
@@ -804,7 +904,7 @@ describe("filling the frame", () => {
     // frame — and filling that box cropped a 16:9 recording in a 16:9 frame to
     // a shape nothing was ever recorded in. Six per cent of the picture, spent
     // on nothing.
-    const { srcRect } = image(shot("cover", 0.06), "screen")!;
+    const { srcRect } = image(shot("over-full", 0.06), "screen")!;
 
     expect(srcRect).toEqual({ x: 0, y: 0, width: SCREEN.width, height: SCREEN.height });
   });
@@ -812,7 +912,7 @@ describe("filling the frame", () => {
   it("actually reaches the edges", () => {
     // And it did not even fill what it cropped for: the picture stopped at the
     // padding, so "Fill" left a border on all four sides.
-    const { dstRect } = image(shot("cover", 0.06), "screen")!;
+    const { dstRect } = image(shot("over-full", 0.06), "screen")!;
 
     expect(dstRect).toEqual({ x: 0, y: 0, width: LANDSCAPE.width, height: LANDSCAPE.height });
   });
@@ -820,16 +920,300 @@ describe("filling the frame", () => {
   it("is the same picture whatever the padding says", () => {
     // The two settings answer the same question, and `cover` answers it "no
     // gaps". There is no room left for padding to ask for.
-    expect(image(shot("cover", 0.2), "screen")).toEqual(image(shot("cover", 0), "screen"));
+    expect(image(shot("over-full", 0.2), "screen")).toEqual(image(shot("over-full", 0), "screen"));
   });
 
   it("still leaves room around a picture that is contained", () => {
     // The other half of it: padding is what `contain` is for, and this must not
     // have quietly turned it off for everyone.
-    const { dstRect } = image(shot("contain", 0.06), "screen")!;
+    const { dstRect } = image(shot("over-padded", 0.06), "screen")!;
 
     expect(dstRect.x).toBeGreaterThan(0);
     expect(dstRect.width).toBeLessThan(LANDSCAPE.width);
+  });
+});
+
+describe("an edit made before layouts existed", () => {
+  // The numbers the old code produced for the default look, worked out by hand
+  // against it and pinned here.
+  //
+  // Every project on disk is one of these: Fit, a padded card, a squircle
+  // bubble in the bottom right. The camera reaches its crop through a general
+  // fitter now rather than through a centre-square and a tighten, and the whole
+  // claim of the migration is that this changes nothing anyone can see. If this
+  // fails, every existing edit opens looking different from the day it was
+  // saved — and it would be noticed on export rather than here.
+  const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, DEFAULT_SETTINGS);
+
+  it("puts the screen exactly where it always did", () => {
+    const { dstRect, srcRect } = image(plan, "screen")!;
+
+    // 6% of 1080 off each side, then the whole 16:9 source contained in what is
+    // left — height-constrained, so it fills the padded box top to bottom.
+    expect(dstRect.x).toBeCloseTo(115.2, 6);
+    expect(dstRect.y).toBeCloseTo(64.8, 6);
+    expect(dstRect.width).toBeCloseTo(1689.6, 6);
+    expect(dstRect.height).toBeCloseTo(950.4, 6);
+    expect(srcRect).toEqual({ x: 0, y: 0, width: SCREEN.width, height: SCREEN.height });
+  });
+
+  it("puts the bubble exactly where it always did, cropped the same way", () => {
+    const { dstRect, srcRect } = image(plan, "camera")!;
+
+    expect(dstRect.x).toBeCloseTo(1481.4, 6);
+    expect(dstRect.y).toBeCloseTo(642.6, 6);
+    expect(dstRect.width).toBeCloseTo(378, 6);
+    expect(dstRect.height).toBeCloseTo(378, 6);
+
+    // The centre square of a 1280×720 camera — what `centreSquare` used to
+    // return, now what fitting a square box under `cover` arrives at.
+    expect(srcRect.x).toBeCloseTo(280, 6);
+    expect(srcRect.y).toBeCloseTo(0, 6);
+    expect(srcRect.width).toBeCloseTo(720, 6);
+    expect(srcRect.height).toBeCloseTo(720, 6);
+  });
+});
+
+describe("the arrangements", () => {
+  const boxes = (preset: LayoutPreset, frame: Size = LANDSCAPE) =>
+    layoutBoxes(frame, { ...DEFAULT_SETTINGS.layout, preset }, DEFAULT_SETTINGS.background, {
+      screen: SCREEN,
+      camera: CAMERA,
+    });
+
+  const overlap = (a: Rect, b: Rect) =>
+    Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
+    Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+
+  it("matches the camera to the screen's height, beside it", () => {
+    // The point of `beside`: one row, two pictures, and a webcam cropped into a
+    // portrait column rather than shrunk to a postage stamp beside a 16:9 card.
+    const { screen, camera } = boxes("beside");
+
+    expect(camera!.area.height).toBeCloseTo(screen!.area.height);
+    expect(camera!.area.y).toBeCloseTo(screen!.area.y);
+    expect(camera!.area.x).toBeGreaterThan(screen!.area.x + screen!.area.width - 0.001);
+    expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
+  });
+
+  it("matches the camera to the screen's width, under it", () => {
+    const { screen, camera } = boxes("stacked");
+
+    expect(camera!.area.width).toBeCloseTo(screen!.area.width);
+    expect(camera!.area.x).toBeCloseTo(screen!.area.x);
+    expect(camera!.area.y).toBeGreaterThan(screen!.area.y + screen!.area.height - 0.001);
+    expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
+  });
+
+  it("never leaves the camera a slit, whatever the recording's shape", () => {
+    // The bug this pins. Matching the screen's height decides the camera's
+    // height, so what is left over is a *width* — and beside a 16:9 recording
+    // at full height there is almost none of it. A camera 0.39 wide per unit
+    // tall is a nose.
+    for (const screen of [
+      { width: 2560, height: 1440 },
+      { width: 5120, height: 1440 },
+      { width: 1600, height: 1600 },
+      { width: 1440, height: 2560 },
+    ]) {
+      for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
+        const beside = layoutBoxes(
+          frame,
+          { ...DEFAULT_SETTINGS.layout, preset: "beside" },
+          DEFAULT_SETTINGS.background,
+          { screen, camera: CAMERA },
+        );
+        const where = `${screen.width}x${screen.height} in ${frame.width}x${frame.height}`;
+        const column = beside.camera!.area;
+
+        expect(column.width, where).toBeGreaterThan(0);
+        expect(column.width / column.height, where).toBeGreaterThanOrEqual(2 / 3 - 1e-6);
+        expect(column.height, where).toBeCloseTo(beside.screen!.area.height);
+        expect(overlap(beside.screen!.area, column), where).toBeCloseTo(0);
+
+        const stacked = layoutBoxes(
+          frame,
+          { ...DEFAULT_SETTINGS.layout, preset: "stacked" },
+          DEFAULT_SETTINGS.background,
+          { screen, camera: CAMERA },
+        );
+        const row = stacked.camera!.area;
+
+        expect(row.height, where).toBeGreaterThan(0);
+        expect(row.width / row.height, where).toBeLessThanOrEqual(2 + 1e-6);
+        expect(row.width, where).toBeCloseTo(stacked.screen!.area.width);
+        expect(overlap(stacked.screen!.area, row), where).toBeCloseTo(0);
+      }
+    }
+  });
+
+  it("still leaves the screen the prominent one beside a wide recording", () => {
+    // The camera getting a usable shape must not have quietly turned `beside`
+    // into an even split — the screen is what is being demonstrated.
+    const { screen, camera } = boxes("beside");
+
+    expect(screen!.area.width).toBeGreaterThan(camera!.area.width * 2);
+  });
+
+  it("gives each picture exactly half of a split", () => {
+    for (const preset of ["split", "split-stacked"] as const) {
+      const { screen, camera } = boxes(preset);
+
+      expect(screen!.area.width, preset).toBeCloseTo(camera!.area.width);
+      expect(screen!.area.height, preset).toBeCloseTo(camera!.area.height);
+      expect(overlap(screen!.area, camera!.area), preset).toBeCloseTo(0);
+    }
+  });
+
+  it("leaves out the picture its name leaves out", () => {
+    // Whatever the toggle says. In `camera-*` the arrangement *is* how the
+    // camera is turned on, so a stale toggle must not empty the frame.
+    const on = { ...DEFAULT_SETTINGS.layout, cameraVisible: true };
+    const off = { ...DEFAULT_SETTINGS.layout, cameraVisible: false };
+    const sources = { screen: SCREEN, camera: CAMERA };
+    const at = (layout: typeof on, preset: LayoutPreset) =>
+      layoutBoxes(LANDSCAPE, { ...layout, preset }, DEFAULT_SETTINGS.background, sources);
+
+    for (const layout of [on, off]) {
+      expect(at(layout, "screen-full").camera).toBeNull();
+      expect(at(layout, "screen-padded").camera).toBeNull();
+      expect(at(layout, "camera-full").screen).toBeNull();
+      expect(at(layout, "camera-padded").screen).toBeNull();
+      expect(at(layout, "camera-full").camera).not.toBeNull();
+    }
+  });
+
+  it("keeps every box inside the frame, whatever shape the frame is", () => {
+    for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
+      for (const preset of PRESETS) {
+        const { screen, camera } = boxes(preset, frame);
+
+        for (const [which, slot] of [
+          ["screen", screen],
+          ["camera", camera],
+        ] as const) {
+          if (!slot) continue;
+
+          const where = `${preset} ${which} in ${frame.width}x${frame.height}`;
+          expect(slot.area.x, where).toBeGreaterThanOrEqual(-1e-6);
+          expect(slot.area.y, where).toBeGreaterThanOrEqual(-1e-6);
+          expect(slot.area.x + slot.area.width, where).toBeLessThanOrEqual(frame.width + 1e-6);
+          expect(slot.area.y + slot.area.height, where).toBeLessThanOrEqual(frame.height + 1e-6);
+        }
+      }
+    }
+  });
+
+  it("pulls a box dragged past the edge back inside", () => {
+    const off = layoutBoxes(
+      LANDSCAPE,
+      {
+        ...DEFAULT_SETTINGS.layout,
+        preset: "custom",
+        screenX: 4,
+        screenY: -3,
+        screenWidth: 0.5,
+        screenHeight: 0.5,
+      },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+    );
+
+    expect(off.screen!.area.x + off.screen!.area.width).toBeLessThanOrEqual(1920 + 1e-6);
+    expect(off.screen!.area.y).toBeGreaterThanOrEqual(-1e-6);
+  });
+
+  it("dresses a slotted camera as a card and a floating one as a bubble", () => {
+    // The one thing an arrangement changes about the camera itself. A card
+    // beside another card has to be cut and lifted the same way, or a split
+    // frame reads as two unrelated pictures.
+    const radius = (preset: LayoutPreset) => {
+      const plan = buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, preset, cameraShape: "circle" } }),
+      );
+      return {
+        screen: image(plan, "screen")?.shape,
+        camera: image(plan, "camera")!.shape,
+      };
+    };
+
+    const slotted = radius("split");
+    expect(slotted.camera).toEqual(slotted.screen);
+
+    const floating = radius("over-padded");
+    const bubble = image(
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraShape: "circle" } }),
+      ),
+      "camera",
+    )!;
+    // Half its shorter edge: a circle, and nothing like the card's radius.
+    expect(floating.camera.radius).toBeCloseTo(
+      Math.min(bubble.dstRect.width, bubble.dstRect.height) / 2,
+    );
+    expect(floating.camera.radius).not.toBeCloseTo(floating.screen!.radius);
+  });
+
+  it("keeps the camera's corners when only the screen is dragged", () => {
+    // The bug this pins. `custom` dressed the camera as a bubble whatever it
+    // was reached from, so dragging the screen out of a split turned the card
+    // standing beside it into a circle — a change to the picture the user was
+    // not touching, on the gesture where they are watching the other one.
+    const shapeOf = (layout: Partial<LayoutSettings>) =>
+      image(
+        buildRenderPlan(
+          LANDSCAPE,
+          { screen: SCREEN, camera: CAMERA },
+          settings({ layout: { ...DEFAULT_SETTINGS.layout, ...layout } }),
+        ),
+        "camera",
+      )!.shape;
+
+    // What the preview seeds when a drag detaches: the boxes as they were, and
+    // the dressing they had.
+    const split = layoutBoxes(
+      LANDSCAPE,
+      { ...DEFAULT_SETTINGS.layout, preset: "split" },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+    );
+    const box = split.camera!.area;
+    const unit = Math.min(LANDSCAPE.width, LANDSCAPE.height);
+    const dragged: Partial<LayoutSettings> = {
+      preset: "custom",
+      cameraCard: split.camera!.card,
+      cameraX: (box.x + box.width / 2) / LANDSCAPE.width,
+      cameraY: (box.y + box.height / 2) / LANDSCAPE.height,
+      cameraWidth: box.width / unit,
+      cameraHeight: box.height / unit,
+    };
+
+    expect(shapeOf(dragged)).toEqual(shapeOf({ preset: "split" }));
+
+    // And the other direction still holds: a bubble dragged out of `over-*`
+    // must not square off either.
+    expect(shapeOf({ preset: "custom", cameraCard: false })).toEqual(
+      shapeOf({ preset: "over-padded" }),
+    );
+  });
+
+  it("gives a slotted camera the border the screen gets, and a bubble none", () => {
+    const strokes = (preset: LayoutPreset) =>
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset },
+          background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01 },
+        }),
+      ).items.filter((item) => item.kind === "stroke").length;
+
+    expect(strokes("split")).toBe(2);
+    expect(strokes("over-padded")).toBe(1);
   });
 });
 
@@ -1373,14 +1757,26 @@ describe("the camera's own zoom", () => {
       buildRenderPlan(
         LANDSCAPE,
         { screen: SCREEN, camera: CAMERA },
-        settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraZoom, cameraShape } }),
+        settings({
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            cameraZoom,
+            cameraShape,
+            cameraWidth: DEFAULT_SETTINGS.layout.cameraHeight * shapeAspect(cameraShape, CAMERA),
+          },
+        }),
       ),
       "camera",
     )!.srcRect;
 
   it("shows all of the camera at 1×", () => {
     expect(tight(1)).toEqual(tight(1));
-    expect(tight(1, "wide")).toEqual({ x: 0, y: 0, width: CAMERA.width, height: CAMERA.height });
+    // A bubble as wide as the camera crops nothing off it. Asserted loosely
+    // because the width now arrives through a divide and a multiply rather than
+    // as the source's own number.
+    expect(tight(1, "wide")).toMatchObject({ x: expect.closeTo(0, 6), y: 0 });
+    expect(tight(1, "wide").width).toBeCloseTo(CAMERA.width, 6);
+    expect(tight(1, "wide").height).toBeCloseTo(CAMERA.height, 6);
   });
 
   it("takes a smaller piece as it tightens", () => {

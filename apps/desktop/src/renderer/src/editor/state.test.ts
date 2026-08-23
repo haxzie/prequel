@@ -300,7 +300,7 @@ describe("writing settings", () => {
   it("resets a whole section", () => {
     const state = run(
       start(),
-      { type: "setSetting", section: "layout", key: "cameraSize", value: 0.5 },
+      { type: "setSetting", section: "layout", key: "cameraHeight", value: 0.5 },
       { type: "setSetting", section: "audio", key: "micMuted", value: true },
       { type: "resetSection", section: "layout" },
     );
@@ -316,21 +316,23 @@ describe("activeSettings", () => {
     const state = run(start(), {
       type: "setSetting",
       section: "layout",
-      key: "cameraSize",
+      key: "cameraHeight",
       value: 0.5,
     });
 
-    expect(activeSettings(state).layout.cameraSize).toBe(0.5);
+    expect(activeSettings(state).layout.cameraHeight).toBe(0.5);
   });
 
   it("shows the project defaults when nothing is selected", () => {
     const state = run(
       start(),
-      { type: "setSetting", section: "layout", key: "cameraSize", value: 0.5 },
+      { type: "setSetting", section: "layout", key: "cameraHeight", value: 0.5 },
       { type: "select", sliceId: null },
     );
 
-    expect(activeSettings(state).layout.cameraSize).toBe(state.project.defaults.layout.cameraSize);
+    expect(activeSettings(state).layout.cameraHeight).toBe(
+      state.project.defaults.layout.cameraHeight,
+    );
   });
 });
 

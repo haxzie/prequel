@@ -15,7 +15,14 @@
  * Pure, and free of any `electron`, Node or DOM import, so the arithmetic is
  * testable on its own.
  */
-import type { Background, SliceSettings, ZoomSlice } from "./project.js";
+import type {
+  Background,
+  BackgroundSettings,
+  CameraShape,
+  LayoutSettings,
+  SliceSettings,
+  ZoomSlice,
+} from "./project.js";
 
 export interface Size {
   width: number;
@@ -249,29 +256,20 @@ export function buildRenderPlan(
 
   items.push({ kind: "fill", rect: full, paint: toPaint(background.background) });
 
-  if (sources.screen) {
-    // `cover` fills the frame, and the padding does not apply to it.
-    //
-    // Insetting first and then filling what was left made "Fill" crop a
-    // recording whose shape already matched the frame: the padding is a
-    // fraction of the *shorter* edge taken off all four sides, so the box left
-    // behind is always wider than the frame it sits in, and filling that box
-    // means cropping to a shape nothing was recorded in. A 16:9 screen in a
-    // 16:9 frame lost six per cent of its picture and still stopped short of
-    // the edges — a crop that bought nothing, which is exactly how it read.
-    //
-    // The two settings are answers to the same question. `contain` says show
-    // all of it, and padding is how much room to leave around it; `cover` says
-    // leave no gaps, and there is no room to leave.
-    const padding = layout.screenFit === "cover" ? 0 : background.padding * unit;
-    const area: Rect = {
-      x: padding,
-      y: padding,
-      width: Math.max(0, frame.width - padding * 2),
-      height: Math.max(0, frame.height - padding * 2),
-    };
+  // Where each picture goes, worked out once for both of them. Everything below
+  // only fits a source into the box it was given and decides how to dress it.
+  const boxes = layoutBoxes(frame, layout, background, sources);
 
-    const { dstRect, srcRect } = place(sources.screen, area, layout);
+  if (sources.screen && boxes.screen) {
+    const slot = boxes.screen;
+    const { dstRect, srcRect } = place(
+      sources.screen,
+      slot.area,
+      slot.fit,
+      layout.screenZoom,
+      layout.screenOffsetX,
+      layout.screenOffsetY,
+    );
     const shape: Shape = { radius: background.cornerRadius * unit, exponent: 2 };
 
     // Room around the shadow for its blur to fall off in, in output pixels.
@@ -341,63 +339,81 @@ export function buildRenderPlan(
     }
   }
 
-  if (sources.camera && layout.cameraVisible) {
-    const dstRect = cameraRect(frame, layout, sources.camera);
-    const wide = layout.cameraShape === "wide";
-    const bubbleShape: Shape = {
-      // A circle is the degenerate case of the rounded rect, so there is one
-      // code path rather than a special case that could drift from it. The
-      // radius is measured off the shorter edge, or a wide bubble's corners
-      // would grow with its width and swallow the picture.
-      radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
-      exponent: SHAPE_EXPONENT[layout.cameraShape],
-    };
+  if (sources.camera && boxes.camera) {
+    const slot = boxes.camera;
+    const { dstRect, srcRect } = place(
+      sources.camera,
+      slot.area,
+      slot.fit,
+      layout.cameraZoom,
+      layout.cameraOffsetX,
+      layout.cameraOffsetY,
+    );
 
-    // The bubble's own shadow, which is what lifts it off the picture instead
-    // of leaving it stuck on like a sticker.
+    // Two ways to dress the same picture, and which one it gets is the only
+    // thing the arrangement changes about it.
     //
-    // Measured against the bubble rather than against the frame. Every other
-    // distance here is a fraction of the frame's shorter edge, and the bubble
-    // is a fraction of that again — so a blur sized for the screen is one this
+    // A camera sharing the frame with the screen is a card standing beside
+    // another card, and it has to be cut and lifted the same way or a split
+    // frame reads as two unrelated pictures pasted together. A camera floating
+    // *over* the screen is a bubble: its own shape, and a shadow measured
+    // against itself rather than against the frame, because every other
+    // distance here is a fraction of the frame's shorter edge and the bubble is
+    // a fraction of that again. A blur sized for the screen is one the bubble
     // would vanish into, and a drop sized for the screen would put the shadow
     // out from under it entirely. A small object casts a small tight shadow.
-    if (background.shadowOpacity > 0) {
-      const bubble = Math.min(dstRect.width, dstRect.height);
-      const bubbleBlur = background.shadowBlur * bubble;
-      const bubbleSpread = (bubbleBlur / 2) * SHADOW_SPREAD;
+    const shape: Shape = slot.card
+      ? { radius: background.cornerRadius * unit, exponent: 2 }
+      : {
+          // A circle is the degenerate case of the rounded rect, so there is
+          // one code path rather than a special case that could drift from it.
+          // The radius is measured off the shorter edge, or a wide bubble's
+          // corners would grow with its width and swallow the picture.
+          radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
+          exponent: SHAPE_EXPONENT[layout.cameraShape],
+        };
 
+    const against = slot.card ? unit : Math.min(dstRect.width, dstRect.height);
+    const blur = background.shadowBlur * against;
+    const spread = (blur / 2) * SHADOW_SPREAD;
+
+    if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
         rect: {
-          x: dstRect.x - bubbleSpread,
-          y: dstRect.y - bubbleSpread,
-          width: dstRect.width + bubbleSpread * 2,
-          height: dstRect.height + bubbleSpread * 2,
+          x: dstRect.x - spread,
+          y: dstRect.y - spread,
+          width: dstRect.width + spread * 2,
+          height: dstRect.height + spread * 2,
         },
-        shape: bubbleShape,
-        blur: bubbleBlur,
-        dy: background.shadowY * bubble,
-        color: rgba("#000000", background.shadowOpacity * CAMERA_SHADOW),
+        shape,
+        blur,
+        dy: background.shadowY * against,
+        color: rgba("#000000", background.shadowOpacity * (slot.card ? 1 : CAMERA_SHADOW)),
       });
     }
 
     items.push({
       kind: "image",
       source: "camera",
-      // Every shape but `wide` is a square, and the camera is not — so
-      // something has to be trimmed, and taking it from the middle is what
-      // keeps a face centred. `wide` keeps the whole frame instead, which is
-      // the point of it.
-      srcRect: tightened(
-        wide
-          ? { x: 0, y: 0, width: sources.camera.width, height: sources.camera.height }
-          : centreSquare(sources.camera),
-        layout.cameraZoom,
-      ),
+      srcRect,
       dstRect,
-      shape: bubbleShape,
+      shape,
       mirror: layout.cameraMirror,
     });
+
+    // Only a card takes the border. A stroke around a bubble is a ring, which
+    // is a different design decision from a frame around a picture, and one
+    // nobody asked for by dragging the border slider.
+    if (slot.card && background.borderWidth > 0) {
+      items.push({
+        kind: "stroke",
+        rect: dstRect,
+        shape,
+        width: background.borderWidth * unit,
+        color: background.borderColor,
+      });
+    }
   }
 
   return { frame, items };
@@ -1604,7 +1620,333 @@ export function cursorAt(
 }
 
 /**
- * Where the screen recording lands, and which part of it is shown.
+ * What each picture is given: an area of the frame, and how it fills it.
+ *
+ * The one place an arrangement becomes geometry. Everything downstream only
+ * fits a source into the box it is handed, so adding a layout is adding an arm
+ * to the switch below and nothing else.
+ */
+export interface Slot {
+  area: Rect;
+  /**
+   * `contain` shows all of the source inside the area and leaves gaps where the
+   * shapes disagree; `cover` fills the area and crops the overflow.
+   *
+   * `cover` wherever the area was worked out *from* the source's own shape —
+   * the two then agree exactly at zoom 1, and zooming in crops rather than
+   * spilling the picture over its neighbour.
+   */
+  fit: "contain" | "cover";
+  /**
+   * Dressed as a card — the frame's corner radius, the border, and a shadow
+   * measured against the frame. False makes the camera a bubble instead: its
+   * own shape, and a shadow measured against itself.
+   *
+   * The screen is always a card. There is nothing for it to float over.
+   */
+  card: boolean;
+}
+
+/** How wide the source is per unit of height. 1 for anything degenerate. */
+function aspectOf(source: Size | null | undefined): number {
+  if (!source || source.width <= 0 || source.height <= 0) return 1;
+  return source.width / source.height;
+}
+
+/**
+ * How wide a bubble of a given shape wants to be, per unit of height.
+ *
+ * The shape's *only* remaining say in geometry, and it is exercised once — when
+ * the shape control writes `cameraWidth`. Deriving the width here on every
+ * frame instead is what would make a resized bubble snap back to a square.
+ */
+export function shapeAspect(shape: CameraShape, source?: Size | null): number {
+  return shape === "wide" ? aspectOf(source) : 1;
+}
+
+/**
+ * A box of a given size about a centre, kept wholly inside the frame.
+ *
+ * Clamped rather than allowed off the edge: dragging is how these are
+ * positioned, and a picture half off the edge in the preview would be half off
+ * the edge in the export too — a state worth making unreachable rather than one
+ * to explain afterwards. A box wider than the frame degrades to flush left
+ * rather than to a negative range.
+ */
+function boxAt(frame: Size, cx: number, cy: number, width: number, height: number): Rect {
+  return {
+    x: clamp(cx * frame.width, width / 2, Math.max(width / 2, frame.width - width / 2)) - width / 2,
+    y:
+      clamp(cy * frame.height, height / 2, Math.max(height / 2, frame.height - height / 2)) -
+      height / 2,
+    width,
+    height,
+  };
+}
+
+/** The frame inset on all four sides. Never negative. */
+function inset(frame: Size, by: number): Rect {
+  return {
+    x: by,
+    y: by,
+    width: Math.max(0, frame.width - by * 2),
+    height: Math.max(0, frame.height - by * 2),
+  };
+}
+
+/**
+ * The shape the camera is guaranteed in a shared frame, as width over height.
+ *
+ * A share of the row is the wrong thing to promise. Matching the screen's
+ * height means the camera's *height* is already decided, so what is left over
+ * is a width — and a 16:9 recording beside a camera eats almost all of it. At
+ * eighteen per cent of the row the camera came out around 0.39 wide per unit
+ * tall: a slit, with a face cropped down to a nose.
+ *
+ * So the promise is a shape instead. The camera may be no narrower than two
+ * thirds in a column and no wider than two to one in a row, and where that
+ * cannot be had beside a screen at full height, the pair shrinks until it can.
+ * Losing some of the frame's height is the cheaper mistake — the alternative
+ * spends it on a picture too thin to show a face.
+ */
+const CAMERA_COLUMN = 2 / 3;
+const CAMERA_ROW = 2;
+
+/**
+ * Where both pictures go.
+ *
+ * Deliberately the only function that reads `layout.preset`. The plan builder,
+ * the preview's hit-testing and the picker's thumbnails all call this, so there
+ * is one answer to "where is the camera" and it cannot be disagreed with.
+ */
+export function layoutBoxes(
+  frame: Size,
+  layout: LayoutSettings,
+  background: BackgroundSettings,
+  sources: SourceSizes,
+): { screen: Slot | null; camera: Slot | null } {
+  const unit = Math.min(frame.width, frame.height);
+  const gap = background.padding * unit;
+  const padded = inset(frame, gap);
+  const whole: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
+
+  // The camera wherever the arrangement leaves it free to be placed. `card` is
+  // the arrangement's to decide everywhere but `custom`, which is arrived at
+  // from both kinds and has to be told which it came from.
+  const free = (card = false): Slot => ({
+    area: boxAt(
+      frame,
+      layout.cameraX,
+      layout.cameraY,
+      Math.max(1, layout.cameraWidth * unit),
+      Math.max(1, layout.cameraHeight * unit),
+    ),
+    fit: "cover",
+    card,
+  });
+
+  // Hidden by the toggle, or because the arrangement has no room for it. The
+  // `camera-*` arrangements ignore the toggle: the camera is the whole picture
+  // there, and the arrangement is how it gets turned off.
+  const withCamera = layout.cameraVisible && sources.camera !== null;
+
+  switch (layout.preset) {
+    // Padding does not apply to a full-bleed picture.
+    //
+    // Insetting first and then filling what was left made "Fill" crop a
+    // recording whose shape already matched the frame: the padding is a
+    // fraction of the *shorter* edge taken off all four sides, so the box left
+    // behind is always wider than the frame it sits in, and filling that box
+    // means cropping to a shape nothing was recorded in. A 16:9 screen in a
+    // 16:9 frame lost six per cent of its picture and still stopped short of
+    // the edges — a crop that bought nothing, which is exactly how it read.
+    case "over-full":
+      return {
+        screen: { area: whole, fit: "cover", card: true },
+        camera: withCamera ? free() : null,
+      };
+
+    case "over-padded":
+      return {
+        screen: { area: padded, fit: "contain", card: true },
+        camera: withCamera ? free() : null,
+      };
+
+    case "screen-full":
+      return { screen: { area: whole, fit: "cover", card: true }, camera: null };
+
+    case "screen-padded":
+      return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+
+    case "camera-full":
+      return { screen: null, camera: { area: whole, fit: "cover", card: true } };
+
+    case "camera-padded":
+      return { screen: null, camera: { area: padded, fit: "contain", card: true } };
+
+    case "beside":
+    case "stacked": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+      const [screen, camera] = matched(padded, gap, aspectOf(sources.screen), layout.preset);
+      return {
+        screen: { area: screen, fit: "cover", card: true },
+        camera: { area: camera, fit: "cover", card: true },
+      };
+    }
+
+    case "split":
+    case "split-stacked": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+      const [screen, camera] = halves(padded, gap, layout.preset === "split");
+      return {
+        screen: { area: screen, fit: "cover", card: true },
+        camera: { area: camera, fit: "cover", card: true },
+      };
+    }
+
+    // Both boxes exactly as they were dragged, and the camera dressed the way
+    // it was in whichever arrangement this was reached from. Anything else
+    // changes the camera's shape the moment the *screen* is dragged.
+    case "custom":
+      return {
+        screen: {
+          area: boxAt(
+            frame,
+            layout.screenX,
+            layout.screenY,
+            Math.max(1, layout.screenWidth * unit),
+            Math.max(1, layout.screenHeight * unit),
+          ),
+          fit: "cover",
+          card: true,
+        },
+        camera: withCamera ? free(layout.cameraCard) : null,
+      };
+  }
+}
+
+/**
+ * Where one picture ends up, without building a whole plan for it.
+ *
+ * The preview needs this to know what was clicked on, and needs it to be the
+ * *same* rectangle the plan draws — hit-testing against a second guess is how a
+ * handle comes to sit somewhere the picture is not. Null when the arrangement
+ * has no place for that source, or the source has not opened yet.
+ */
+export function placement(
+  frame: Size,
+  layout: LayoutSettings,
+  background: BackgroundSettings,
+  sources: SourceSizes,
+  which: PlanSource,
+): (Slot & { dstRect: Rect; srcRect: Rect }) | null {
+  const source = sources[which];
+  const slot = layoutBoxes(frame, layout, background, sources)[which];
+  if (!source || !slot) return null;
+
+  const fitted =
+    which === "screen"
+      ? place(
+          source,
+          slot.area,
+          slot.fit,
+          layout.screenZoom,
+          layout.screenOffsetX,
+          layout.screenOffsetY,
+        )
+      : place(
+          source,
+          slot.area,
+          slot.fit,
+          layout.cameraZoom,
+          layout.cameraOffsetX,
+          layout.cameraOffsetY,
+        );
+
+  // The slot comes back with it, because what an offset *means* depends on the
+  // fit: under `cover` it moves the crop window through the source, and under
+  // `contain` there is no window to move and it slides the picture inside its
+  // area instead. A dragger that assumed one of the two would push the picture
+  // the wrong way in half the arrangements.
+  return { ...slot, ...fitted };
+}
+
+/**
+ * Two boxes sharing an area, one edge matched to the other's.
+ *
+ * The screen keeps its own proportions and the camera takes what is left, which
+ * is what puts a 16:9 recording beside a portrait crop of a webcam. Where what
+ * is left would be thinner than `CAMERA_COLUMN` (or, stacked, wider than
+ * `CAMERA_ROW`), the pair shrinks off its matched edge until the camera has the
+ * shape it was promised — both stay the same height as each other throughout,
+ * and the pair stays centred in the area.
+ *
+ * The screen is still the prominent one: at a 16:9 recording and these limits
+ * it takes about seven tenths of the row. That falls out of the arithmetic
+ * rather than being asked for, because it is the screen's own proportions doing
+ * it — a squarer recording gets a squarer split, which is the honest answer.
+ */
+function matched(
+  area: Rect,
+  gap: number,
+  screenAspect: number,
+  preset: "beside" | "stacked",
+): [Rect, Rect] {
+  if (preset === "beside") {
+    const room = Math.max(0, area.width - gap);
+    // Full height first, and only give it up if the leftover is too thin.
+    let height = area.height;
+    if (height * screenAspect + height * CAMERA_COLUMN > room) {
+      height = room / (screenAspect + CAMERA_COLUMN);
+    }
+
+    const screenWidth = height * screenAspect;
+    const y = area.y + (area.height - height) / 2;
+    // The camera takes everything left rather than exactly `CAMERA_COLUMN`, so
+    // a narrow recording hands it the surplus instead of leaving a hole.
+    return [
+      { x: area.x, y, width: screenWidth, height },
+      { x: area.x + screenWidth + gap, y, width: Math.max(0, room - screenWidth), height },
+    ];
+  }
+
+  const room = Math.max(0, area.height - gap);
+  let width = area.width;
+  if (width / screenAspect + width / CAMERA_ROW > room) {
+    width = room / (1 / screenAspect + 1 / CAMERA_ROW);
+  }
+
+  const screenHeight = width / screenAspect;
+  const x = area.x + (area.width - width) / 2;
+  return [
+    { x, y: area.y, width, height: screenHeight },
+    { x, y: area.y + screenHeight + gap, width, height: Math.max(0, room - screenHeight) },
+  ];
+}
+
+/** An area cut in two down the middle, or across it, with the gap between. */
+function halves(area: Rect, gap: number, sideBySide: boolean): [Rect, Rect] {
+  if (sideBySide) {
+    const width = Math.max(0, area.width - gap) / 2;
+    return [
+      { x: area.x, y: area.y, width, height: area.height },
+      { x: area.x + width + gap, y: area.y, width, height: area.height },
+    ];
+  }
+
+  const height = Math.max(0, area.height - gap) / 2;
+  return [
+    { x: area.x, y: area.y, width: area.width, height },
+    { x: area.x, y: area.y + height + gap, width: area.width, height },
+  ];
+}
+
+/**
+ * Where a picture lands, and which part of it is shown.
  *
  * Both at once, because they are one decision. Working them out separately is
  * how the two came to disagree: the destination was handed the whole padded
@@ -1615,29 +1957,36 @@ export function cursorAt(
  * The invariant this exists to hold: the source window and the destination
  * always have the same aspect ratio. Nothing here may return a pair that does
  * not, whatever the fit, the zoom or the shape of the frame.
+ *
+ * One fitter for both sources. The camera used to reach its crop through a
+ * centre-square and a tighten instead — a second implementation that happened
+ * to agree, right up until a bubble stopped being square.
  */
 function place(
   source: Size,
   area: Rect,
-  layout: SliceSettings["layout"],
+  fit: "contain" | "cover",
+  zoomLevel: number,
+  offsetX: number,
+  offsetY: number,
 ): { dstRect: Rect; srcRect: Rect } {
   const whole: Rect = { x: 0, y: 0, width: source.width, height: source.height };
   if (area.width <= 0 || area.height <= 0) {
     return { dstRect: { ...area, width: 0, height: 0 }, srcRect: whole };
   }
 
-  const zoom = Math.max(0.05, layout.screenZoom);
+  const zoom = Math.max(0.05, zoomLevel);
 
   // `contain` shows all of it, letterboxed: the whole source, scaled to fit.
-  if (layout.screenFit !== "cover") {
+  if (fit !== "cover") {
     const scale = Math.min(area.width / source.width, area.height / source.height) * zoom;
     const width = source.width * scale;
     const height = source.height * scale;
 
     return {
       dstRect: {
-        x: area.x + (area.width - width) / 2 + layout.screenOffsetX * area.width,
-        y: area.y + (area.height - height) / 2 + layout.screenOffsetY * area.height,
+        x: area.x + (area.width - width) / 2 + offsetX * area.width,
+        y: area.y + (area.height - height) / 2 + offsetY * area.height,
         width,
         height,
       },
@@ -1675,12 +2024,12 @@ function place(
     // and start sampling nothing.
     srcRect: {
       x: clamp(
-        (source.width - windowWidth) / 2 + layout.screenOffsetX * source.width,
+        (source.width - windowWidth) / 2 + offsetX * source.width,
         0,
         source.width - windowWidth,
       ),
       y: clamp(
-        (source.height - windowHeight) / 2 + layout.screenOffsetY * source.height,
+        (source.height - windowHeight) / 2 + offsetY * source.height,
         0,
         source.height - windowHeight,
       ),
@@ -1690,86 +2039,13 @@ function place(
   };
 }
 
-/**
- * The camera bubble, centred on a fraction of the frame.
- *
- * Clamped so it always stays wholly inside: dragging is how it is positioned,
- * and a bubble half off the edge in the preview would be half off the edge in
- * the export too — which is a state worth making unreachable rather than one to
- * explain afterwards.
- */
-export function cameraRect(
-  frame: Size,
-  layout: SliceSettings["layout"],
-  /** The camera's own dimensions. Only consulted for the `wide` shape. */
-  source?: Size | null,
-): Rect {
-  // `cameraSize` is the bubble's *height*, whatever its shape. Switching a
-  // circle to `wide` then keeps it the size it was and grows it sideways,
-  // rather than shrinking the face to fit the same square.
-  const height = Math.max(1, layout.cameraSize * Math.min(frame.width, frame.height));
-  const width = height * cameraAspect(layout, source);
-
-  return {
-    x:
-      clamp(layout.cameraX * frame.width, width / 2, Math.max(width / 2, frame.width - width / 2)) -
-      width / 2,
-    y:
-      clamp(
-        layout.cameraY * frame.height,
-        height / 2,
-        Math.max(height / 2, frame.height - height / 2),
-      ) -
-      height / 2,
-    width,
-    height,
-  };
-}
-
-/** How much wider than tall the bubble is. 1 for everything but `wide`. */
-export function cameraAspect(layout: SliceSettings["layout"], source?: Size | null): number {
-  if (layout.cameraShape !== "wide" || !source || source.height <= 0) return 1;
-  return source.width / source.height;
-}
-
 /** Corner radius per shape, off the bubble's shorter edge. */
-function radiusFor(shape: SliceSettings["layout"]["cameraShape"], edge: number): number {
+function radiusFor(shape: CameraShape, edge: number): number {
   if (shape === "rounded") return edge * 0.18;
   // Modest, because the point of `wide` is the whole picture — a heavy round
   // starts eating the corners of what it was chosen to show.
   if (shape === "wide") return edge * 0.12;
   return edge / 2;
-}
-
-/**
- * Crops in on the middle of a rectangle.
- *
- * About its centre, so tightening the shot keeps a face where it was rather
- * than walking it towards a corner.
- */
-function tightened(rect: Rect, zoom: number): Rect {
-  const scale = Math.max(1, zoom);
-  if (scale === 1) return rect;
-
-  const width = rect.width / scale;
-  const height = rect.height / scale;
-
-  return {
-    x: rect.x + (rect.width - width) / 2,
-    y: rect.y + (rect.height - height) / 2,
-    width,
-    height,
-  };
-}
-
-function centreSquare(source: Size): Rect {
-  const edge = Math.min(source.width, source.height);
-  return {
-    x: (source.width - edge) / 2,
-    y: (source.height - edge) / 2,
-    width: edge,
-    height: edge,
-  };
 }
 
 function toPaint(background: Background): Paint {

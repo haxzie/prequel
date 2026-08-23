@@ -339,18 +339,6 @@ export function AudioIcon() {
   );
 }
 
-/** Lucide `maximize-2`, for "show all of it". */
-export function FitIcon() {
-  return (
-    <svg {...STROKE} aria-hidden="true">
-      <path d="M15 3h6v6" />
-      <path d="M9 21H3v-6" />
-      <path d="M21 3l-7 7" />
-      <path d="M3 21l7-7" />
-    </svg>
-  );
-}
-
 /** Lucide `scan`, for "fill the frame". */
 export function FillIcon() {
   return (
@@ -360,6 +348,28 @@ export function FillIcon() {
       <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
       <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
       <rect width="8" height="8" x="8" y="8" rx="1" />
+    </svg>
+  );
+}
+
+/**
+ * A person, solid.
+ *
+ * Filled rather than stroked because of where it is used: the camera block in a
+ * layout thumbnail is a dozen pixels across at its smallest, and a two-pixel
+ * outline at that size closes up into a grey smudge. A silhouette keeps its
+ * shape all the way down.
+ *
+ * Drawn hard against the edges of its box, unlike the Lucide glyphs above,
+ * which all carry a couple of units of air. Air is what there is least of here:
+ * the glyph is already down to seven pixels in the smallest cell, and a margin
+ * baked into the artwork would spend a third of that on nothing.
+ */
+export function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="6.5" r="5.5" />
+      <path d="M12 13.6c6.1 0 11 3.7 11 8.2V24H1v-2.2c0-4.5 4.9-8.2 11-8.2z" />
     </svg>
   );
 }

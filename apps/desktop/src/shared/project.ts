@@ -29,29 +29,85 @@ export type Ns = MediaTime;
 // pixels, so switching a 16:9 frame to 9:16 does not turn 40px of padding into
 // a hairline.
 
-export type ScreenFit = "contain" | "cover";
+/**
+ * A named arrangement of the two pictures.
+ *
+ * This is the shape of the composition, and it replaced a `contain`/`cover`
+ * choice that could only ever say how the screen filled a frame it always had
+ * to itself. The arrangements where the two pictures *share* the frame — beside
+ * each other, stacked, split down the middle — were unreachable, because
+ * neither picture was an object with a box of its own.
+ *
+ * `over-*` own only the screen and leave the camera free, which is the bubble
+ * as it has always behaved. Everything else owns both boxes. `custom` owns
+ * neither and reads them off the settings; it is where a resize lands.
+ */
+export type LayoutPreset =
+  | "over-full"
+  | "over-padded"
+  | "beside"
+  | "stacked"
+  | "split"
+  | "split-stacked"
+  | "screen-full"
+  | "screen-padded"
+  | "camera-full"
+  | "camera-padded"
+  | "custom";
+
 /**
  * `wide` keeps the camera's own proportions and only rounds its corners; every
- * other shape is a square the source is centre-cropped into.
+ * other shape is square. The shape sets the corner radius and nothing else —
+ * picking one writes `cameraWidth`, and the geometry reads that. Deriving the
+ * width from the shape instead would mean a resized bubble snapped back to a
+ * square the next time anyone touched the shape control.
  */
 export type CameraShape = "circle" | "squircle" | "rounded" | "wide";
 export type CameraCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface LayoutSettings {
-  screenFit: ScreenFit;
+  preset: LayoutPreset;
+  /**
+   * The screen box's *centre*, as a fraction of the frame, and its size as a
+   * fraction of the shorter edge. Read only under `custom`; every other preset
+   * works the box out from the frame, so these hold the last dragged shape
+   * without fighting it.
+   *
+   * The shorter edge for both edges of the box rather than width for one and
+   * height for the other, so the box keeps its shape through a 16:9 -> 9:16
+   * switch instead of being squashed into the new frame.
+   */
+  screenX: number;
+  screenY: number;
+  screenWidth: number;
+  screenHeight: number;
   /** 1 fits the frame; above that crops in. */
   screenZoom: number;
   screenOffsetX: number;
   screenOffsetY: number;
   cameraVisible: boolean;
   cameraShape: CameraShape;
-  cameraSize: number;
+  /** The bubble's size, both edges as fractions of the frame's shorter edge. */
+  cameraWidth: number;
+  cameraHeight: number;
+  /**
+   * Dress the camera as a card rather than as a bubble. Read only under
+   * `custom`; every other arrangement knows which of the two it wants.
+   *
+   * Carried rather than assumed, because `custom` is arrived at from both. A
+   * camera dragged out of `split` was a square-cornered card standing beside
+   * the screen, and one dragged out of `over-padded` was a round bubble on top
+   * of it — picking either as the answer for both turns the *other* one into a
+   * different shape the instant the screen is touched, which reads as the
+   * camera breaking rather than as the arrangement changing.
+   */
+  cameraCard: boolean;
   /**
    * How far into the camera's own picture to crop.
    *
    * 1 shows all of it; above that tightens in on the middle, which is how a
    * webcam sitting too far back is made to look like a headshot. Distinct from
-   * `cameraSize`, which is how big the bubble is on screen — one changes the
+   * `cameraHeight`, which is how big the bubble is on screen — one changes the
    * shot, the other changes the frame it sits in.
    */
   cameraZoom: number;
@@ -68,6 +124,9 @@ export interface LayoutSettings {
    */
   cameraX: number;
   cameraY: number;
+  /** Pan within the camera's crop window, the mirror of `screenOffsetX/Y`. */
+  cameraOffsetX: number;
+  cameraOffsetY: number;
   /**
    * Mirrored by default, because the bubble the user watched while recording
    * was mirrored. An un-mirrored edit reads as flipped against the take.
@@ -362,13 +421,22 @@ export interface Project {
 // ── Defaults ────────────────────────────────────────────────────────────────
 
 export const DEFAULT_LAYOUT: LayoutSettings = {
-  screenFit: "contain",
+  preset: "over-padded",
+  // The whole frame, which is what `custom` opens on if it is ever reached
+  // from a preset that had the screen full-bleed. Only ever read there.
+  screenX: 0.5,
+  screenY: 0.5,
+  screenWidth: 1,
+  screenHeight: 1,
   screenZoom: 1,
   screenOffsetX: 0,
   screenOffsetY: 0,
   cameraVisible: true,
   cameraShape: "squircle",
-  cameraSize: 0.35,
+  cameraWidth: 0.35,
+  cameraHeight: 0.35,
+  // The default arrangement floats the camera over the screen.
+  cameraCard: false,
   cameraZoom: 1,
   // Bottom right, standing off both edges by about a sixteenth of the frame.
   //
@@ -376,7 +444,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // menus, sidebars, the thing being clicked — so the far corner is the one
   // least often in the way of the point being made.
   //
-  // Read against `cameraSize`, not on their own: the position is the bubble's
+  // Read against `cameraHeight`, not on their own: the position is the bubble's
   // *centre*, so the margin is whatever is left after half a bubble. At 0.85
   // and this size the centre was past the point where a whole bubble still
   // fits, `cameraRect` clamped it, and it sat flush on the bottom edge with a
@@ -384,6 +452,8 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // others puts it back against the edge.
   cameraX: 0.87,
   cameraY: 0.77,
+  cameraOffsetX: 0,
+  cameraOffsetY: 0,
   cameraMirror: true,
   cursorVisible: true,
   // About the size the pointer appears on screen in a 1080p frame, so an export
@@ -523,6 +593,7 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
 export function newProject(recordingId: string, duration: Ns, fullScreen = false): Project {
   const defaults = structuredClone(DEFAULT_SETTINGS);
   if (fullScreen) {
+    defaults.layout.preset = "over-full";
     defaults.background.padding = 0;
     defaults.background.cornerRadius = 0;
   }
@@ -660,7 +731,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         start: clamp(number(slice.source?.start, 0), 0, duration),
         end: clamp(number(slice.source?.end, duration), 0, duration),
       },
-      overrides: (slice.overrides ?? {}) as SliceOverrides,
+      overrides: migrateOverrides((slice.overrides ?? {}) as SliceOverrides),
     }))
     // A slice that survived clamping as empty cannot be drawn or rendered.
     .filter((slice) => slice.source.end > slice.source.start);
@@ -671,7 +742,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     frame: { width, height, presetId: stored.frame?.presetId ?? null },
     zooms: sanitiseZooms(stored.zooms, duration),
     defaults: {
-      layout: { ...DEFAULT_LAYOUT, ...stored.defaults?.layout },
+      layout: { ...DEFAULT_LAYOUT, ...migrateLayout(stored.defaults?.layout) },
       background: { ...DEFAULT_BACKGROUND, ...stored.defaults?.background },
       audio: { ...DEFAULT_AUDIO, ...stored.defaults?.audio },
     },
@@ -686,6 +757,77 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     ],
     output: outputSettings(stored.output),
   };
+}
+
+/**
+ * Reads a layout block written before the composition became an arrangement.
+ *
+ * The version is deliberately *not* bumped for this: `sanitiseProject` treats a
+ * mismatch as unusable and starts fresh, so a bump would throw away every
+ * project on disk to rename two keys. The old names are read here instead and
+ * translated, and the new ones win wherever both are present.
+ *
+ * Returns a partial, because it is spread over `DEFAULT_LAYOUT` — a key nobody
+ * ever wrote must fall through to its default rather than arrive as undefined.
+ */
+function migrateLayout(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored) return stored;
+
+  const legacy = stored as Partial<LayoutSettings> & {
+    screenFit?: unknown;
+    cameraSize?: unknown;
+  };
+  const migrated: Partial<LayoutSettings> = { ...stored };
+  delete (migrated as { screenFit?: unknown }).screenFit;
+  delete (migrated as { cameraSize?: unknown }).cameraSize;
+
+  if (migrated.preset === undefined && legacy.screenFit !== undefined) {
+    const full = legacy.screenFit === "cover";
+    // A hidden camera becomes the screen-only arrangement rather than an
+    // `over-*` one with the bubble switched off. Both draw the same picture,
+    // but only one of them lights the cell in the picker that matches it.
+    migrated.preset =
+      legacy.cameraVisible === false
+        ? full
+          ? "screen-full"
+          : "screen-padded"
+        : full
+          ? "over-full"
+          : "over-padded";
+  }
+
+  // `cameraSize` was the bubble's height whatever its shape, and the width came
+  // from the shape. The width is stored now, so it has to be worked out once,
+  // here. The camera's real proportions are not known when a file is read off
+  // disk — 16:9 is what all but a handful of webcams record, and being wrong
+  // costs a `wide` bubble a few per cent of its width.
+  if (typeof legacy.cameraSize === "number") {
+    const height = legacy.cameraSize;
+    if (migrated.cameraHeight === undefined) migrated.cameraHeight = height;
+    if (migrated.cameraWidth === undefined) {
+      migrated.cameraWidth = legacy.cameraShape === "wide" ? (height * 16) / 9 : height;
+    }
+  }
+
+  return migrated;
+}
+
+/** The same translation, for the keys a slice set for itself. */
+function migrateOverrides(overrides: SliceOverrides): SliceOverrides {
+  if (!overrides.layout) return overrides;
+
+  const layout = migrateLayout(overrides.layout);
+  // An empty block would make `key in overrides.layout` answer "yes, something"
+  // for a slice that overrides nothing, which is the one thing the flat-leaf
+  // rule exists to keep true.
+  if (!layout || Object.keys(layout).length === 0) {
+    const { layout: _dropped, ...rest } = overrides;
+    return rest;
+  }
+
+  return { ...overrides, layout };
 }
 
 /** Repairs the output block, keeping the format and its limits consistent. */

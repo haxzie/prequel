@@ -298,16 +298,20 @@ export function Editor() {
             />
             <Preview
               frame={state.project.frame}
-              cameraSource={cameraSource}
               settings={previewSettings}
               media={media}
               images={images}
               cursor={session.cursor}
               zooms={state.project.zooms}
               grab={grab}
-              onMoveCamera={(x, y) => {
-                dispatch({ type: "setSetting", section: "layout", key: "cameraX", value: x });
-                dispatch({ type: "setSetting", section: "layout", key: "cameraY", value: y });
+              onLayout={(patch) => {
+                // One dispatch per key, because that is what the override
+                // bookkeeping counts in: a gesture that writes five keys has to
+                // mark five keys as set for this clip, or resetting one of them
+                // would take its neighbours with it.
+                for (const [key, value] of Object.entries(patch)) {
+                  dispatch({ type: "setSetting", section: "layout", key, value });
+                }
               }}
             />
           </div>

@@ -8,8 +8,15 @@ import {
 } from "react";
 
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
-import { buildRenderPlan, cameraRect, type Size } from "../../../shared/layout";
-import type { SliceSettings, ZoomSlice } from "../../../shared/project";
+import {
+  buildRenderPlan,
+  placement,
+  type PlanSource,
+  type Rect,
+  type Size,
+  type SourceSizes,
+} from "../../../shared/layout";
+import type { LayoutSettings, SliceSettings, ZoomSlice } from "../../../shared/project";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
 import type { EditorPlayback } from "./useEditorPlayback";
@@ -50,10 +57,9 @@ export function Preview({
   media,
   images,
   cursor,
-  cameraSource,
   zooms,
   grab: grabRef,
-  onMoveCamera,
+  onLayout,
 }: {
   frame: Size;
   settings: SliceSettings;
@@ -61,8 +67,6 @@ export function Preview({
   images: Images;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
-  /** The camera's own dimensions, which the `wide` shape is proportioned to. */
-  cameraSource: Size | null;
   /** Zoom spans, baked into the plan as a sampled crop. */
   zooms: readonly ZoomSlice[];
   /**
@@ -72,14 +76,20 @@ export function Preview({
    * dialog wants one frame when it opens, not a stream of them.
    */
   grab?: RefObject<Grab | null>;
-  /** Dragging the bubble. Both are fractions of the frame, at its centre. */
-  onMoveCamera: (x: number, y: number) => void;
+  /**
+   * Whatever a drag in the preview worked out, as layout keys.
+   *
+   * A patch rather than one callback per gesture: a resize writes five keys and
+   * a detach writes six, and threading each of them out as its own prop would
+   * put the knowledge of *which* keys a gesture touches in two places.
+   */
+  onLayout: (patch: Partial<LayoutSettings>) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const compositor = useRef(new WebGlCompositor());
-  /** Offset from the bubble's centre to where it was picked up, or null. */
-  const grab = useRef<{ x: number; y: number } | null>(null);
+  /** What is being dragged, and from where. Null between gestures. */
+  const grab = useRef<Grip | null>(null);
   /** Waiting to be handed the next drawn frame, or null when nobody asked. */
   const wanted = useRef<((shot: string | null) => void) | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
@@ -226,16 +236,196 @@ export function Preview({
     };
   };
 
-  const overCamera = (point: { x: number; y: number }) => {
-    if (!settings.layout.cameraVisible || !media.visible.has("camera")) return false;
+  /** The two sources' own dimensions, read off the elements the loop draws. */
+  const sourceSizes = (): SourceSizes => {
+    const screen = media.getElement("screen");
+    const camera = media.getElement("camera");
+    return {
+      screen: isReady(screen) ? { width: screen!.videoWidth, height: screen!.videoHeight } : null,
+      camera:
+        media.visible.has("camera") && isReady(camera)
+          ? { width: camera!.videoWidth, height: camera!.videoHeight }
+          : null,
+    };
+  };
 
-    const box = cameraRect(frame, settings.layout, cameraSource);
-    return (
-      point.x >= box.x &&
-      point.x <= box.x + box.width &&
-      point.y >= box.y &&
-      point.y <= box.y + box.height
-    );
+  /**
+   * Where each picture is right now, as the plan has it.
+   *
+   * The camera is dropped when it is switched off, so a hidden bubble cannot be
+   * picked up by something the user cannot see.
+   */
+  const pictures = () => {
+    const sources = sourceSizes();
+    const { layout, background } = settings;
+    return {
+      screen: placement(frame, layout, background, sources, "screen"),
+      camera: layout.cameraVisible ? placement(frame, layout, background, sources, "camera") : null,
+      sources,
+    };
+  };
+
+  /** How many output pixels a point on screen is worth, for hit tolerances. */
+  const grain = () => (fitted.width > 0 ? frame.width / fitted.width : 1);
+
+  /** What is under the pointer: a corner to pull, a picture to drag, or nothing. */
+  const find = (point: Point): Grip | null => {
+    const near = HANDLE * grain();
+    const { screen, camera } = pictures();
+
+    // The camera first, because in every arrangement that stacks them it is the
+    // one on top — and a bubble sitting over the screen would otherwise be
+    // unreachable wherever the two overlap.
+    for (const target of ["camera", "screen"] as const) {
+      const found = target === "camera" ? camera : screen;
+      if (!found) continue;
+
+      const corner = cornerAt(found.dstRect, point, near);
+      if (corner) return { kind: "resize", target, corner, box: found.dstRect, from: point };
+      if (inside(found.dstRect, point)) {
+        return { kind: "move", target, box: found.dstRect, from: point };
+      }
+    }
+
+    return null;
+  };
+
+  /** The keys one gesture writes, worked out from where the pointer has got to. */
+  /**
+   * Both boxes exactly where they are now, as `custom` would store them.
+   *
+   * Written whenever a drag falls out of an arrangement, so the picture that is
+   * *not* being dragged stays where it was. Without it, resizing the screen out
+   * of a split sent the camera back to the default bubble in the corner — a
+   * jump nobody asked for, on the one gesture where the eye is on the other
+   * picture waiting to see what happens to it.
+   */
+  const seeded = (): Partial<LayoutSettings> => {
+    const unit = Math.min(frame.width, frame.height);
+    const { screen, camera } = pictures();
+    const patch: Partial<LayoutSettings> = {};
+
+    if (screen) {
+      patch.screenX = (screen.dstRect.x + screen.dstRect.width / 2) / frame.width;
+      patch.screenY = (screen.dstRect.y + screen.dstRect.height / 2) / frame.height;
+      patch.screenWidth = screen.dstRect.width / unit;
+      patch.screenHeight = screen.dstRect.height / unit;
+    }
+
+    if (camera) {
+      patch.cameraX = (camera.dstRect.x + camera.dstRect.width / 2) / frame.width;
+      patch.cameraY = (camera.dstRect.y + camera.dstRect.height / 2) / frame.height;
+      patch.cameraWidth = camera.dstRect.width / unit;
+      patch.cameraHeight = camera.dstRect.height / unit;
+      // Which dressing it had, so `custom` can keep it. Without this, dragging
+      // the screen out of a split turned the camera beside it from a
+      // square-cornered card into a round bubble — a change to the picture the
+      // user was not touching.
+      patch.cameraCard = camera.card;
+    }
+
+    return patch;
+  };
+
+  /** The keys one gesture writes, worked out from where the pointer has got to. */
+  const patchFor = (grip: Grip, point: Point, aspect: boolean): Partial<LayoutSettings> => {
+    const unit = Math.min(frame.width, frame.height);
+    const { layout } = settings;
+
+    if (grip.kind === "pan") {
+      const found = grip.target === "screen" ? pictures().screen : pictures().camera;
+      const source = sourceSizes()[grip.target];
+      if (!found || !source) return {};
+
+      // Under `cover` the picture travels with the pointer, so the crop window
+      // travels against it — by as much of the source as the pointer covered of
+      // the picture. `place` clamps the result, so a pan stops at the edge of
+      // the recording rather than sampling nothing.
+      //
+      // Under `contain` there is no window: the whole source is on show, and
+      // the offset slides the picture around inside the area it was given. Same
+      // gesture, opposite sign, and the fraction is of the area rather than of
+      // the source.
+      const [dx, dy] =
+        found.fit === "cover"
+          ? [
+              -((point.x - grip.from.x) / found.dstRect.width) *
+                (found.srcRect.width / source.width),
+              -((point.y - grip.from.y) / found.dstRect.height) *
+                (found.srcRect.height / source.height),
+            ]
+          : [
+              (point.x - grip.from.x) / Math.max(found.area.width, 1),
+              (point.y - grip.from.y) / Math.max(found.area.height, 1),
+            ];
+
+      return grip.target === "screen"
+        ? { screenOffsetX: grip.offsetX + dx, screenOffsetY: grip.offsetY + dy }
+        : { cameraOffsetX: grip.offsetX + dx, cameraOffsetY: grip.offsetY + dy };
+    }
+
+    const box =
+      grip.kind === "resize"
+        ? pulled(grip.box, grip.corner, point, aspect)
+        : {
+            ...grip.box,
+            x: grip.box.x + (point.x - grip.from.x),
+            y: grip.box.y + (point.y - grip.from.y),
+          };
+
+    const centre = {
+      x: (box.x + box.width / 2) / frame.width,
+      y: (box.y + box.height / 2) / frame.height,
+    };
+
+    if (grip.target === "camera") {
+      // The `over-*` arrangements and `custom` already leave the camera's box
+      // to its own settings, so neither moving nor resizing it there is a
+      // change of arrangement at all: write the box and leave the preset be.
+      // Forcing `custom` on any resize also froze the *screen* box, which is
+      // how pulling a corner of the bubble quietly disconnected the padding
+      // slider from the picture beside it.
+      //
+      // Anywhere else the arrangement placed the camera. Moving it is a request
+      // for the arrangement that does not — keeping whatever full-bleed or
+      // padded look the screen already had, because that is not what was being
+      // changed. Resizing it has no `over-*` answer, the camera being given a
+      // shape of its own, which is what `custom` is for.
+      const placed = detached(layout.preset) !== null;
+      const loose = !placed ? null : grip.kind === "resize" ? "custom" : detached(layout.preset);
+      const detaching = loose !== null && loose !== layout.preset;
+
+      const patch: Partial<LayoutSettings> = {
+        ...(detaching ? seeded() : {}),
+        cameraX: centre.x,
+        cameraY: centre.y,
+      };
+
+      if (grip.kind === "resize") {
+        patch.cameraWidth = box.width / unit;
+        patch.cameraHeight = box.height / unit;
+      }
+      if (detaching) {
+        patch.preset = loose!;
+        // `camera-*` ignores the toggle, so the camera may have been on screen
+        // with it switched off. The arrangement it lands in respects it.
+        patch.cameraVisible = true;
+      }
+
+      return patch;
+    }
+
+    // The screen has no free-standing arrangement to fall back on: every
+    // arrangement that placed it owns its box, so moving or resizing it is
+    // `custom` by definition.
+    return {
+      ...(layout.preset === "custom" ? {} : seeded()),
+      preset: "custom",
+      screenX: centre.x,
+      screenY: centre.y,
+      screenWidth: box.width / unit,
+      screenHeight: box.height / unit,
+    };
   };
 
   return (
@@ -250,17 +440,31 @@ export function Preview({
         style={{ width: fitted.width, height: fitted.height }}
         onPointerDown={(event) => {
           const point = framePoint(event);
-          if (!overCamera(point)) return;
+          const found = find(point);
+          if (!found) return;
 
-          // The grab offset, so the bubble does not jump its centre under the
-          // pointer the instant it is picked up.
-          const box = cameraRect(frame, settings.layout, cameraSource);
-          grab.current = {
-            x: point.x - (box.x + box.width / 2),
-            y: point.y - (box.y + box.height / 2),
-          };
+          // Alt turns a drag on a picture into a pan of what it is showing. The
+          // corners keep resizing either way — there is nothing else a corner
+          // could sensibly mean.
+          grab.current =
+            event.altKey && found.kind === "move"
+              ? {
+                  kind: "pan",
+                  target: found.target,
+                  from: point,
+                  offsetX:
+                    found.target === "screen"
+                      ? settings.layout.screenOffsetX
+                      : settings.layout.cameraOffsetX,
+                  offsetY:
+                    found.target === "screen"
+                      ? settings.layout.screenOffsetY
+                      : settings.layout.cameraOffsetY,
+                }
+              : found;
+
           // Captured, so a fast drag that leaves the canvas keeps moving the
-          // bubble instead of dropping it wherever the pointer crossed out.
+          // picture instead of dropping it wherever the pointer crossed out.
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
@@ -270,15 +474,19 @@ export function Preview({
             // Written straight to the element: this fires far more often than a
             // render, and routing a cursor change through state would rebuild
             // the editor to change one CSS property.
-            event.currentTarget.style.cursor = overCamera(point) ? "grab" : "";
+            const found = find(point);
+            event.currentTarget.style.cursor = !found
+              ? ""
+              : found.kind === "resize"
+                ? CORNER_CURSOR[found.corner]
+                : event.altKey
+                  ? "move"
+                  : "grab";
             return;
           }
 
-          event.currentTarget.style.cursor = "grabbing";
-          onMoveCamera(
-            (point.x - grab.current.x) / frame.width,
-            (point.y - grab.current.y) / frame.height,
-          );
+          if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
+          onLayout(patchFor(grab.current, point, event.shiftKey));
         }}
         onPointerUp={(event) => {
           grab.current = null;
@@ -290,4 +498,121 @@ export function Preview({
       />
     </div>
   );
+}
+
+/** A point in the output frame, in its own pixels. */
+interface Point {
+  x: number;
+  y: number;
+}
+
+type Corner = "nw" | "ne" | "sw" | "se";
+
+/**
+ * A drag in progress.
+ *
+ * `box` and `from` are both captured at the moment of grabbing, so a gesture is
+ * always measured against where it started rather than against the last frame.
+ * Accumulating deltas instead lets rounding walk the picture away under a slow
+ * drag, which reads as drift nobody can point at the cause of.
+ */
+type Grip =
+  | { kind: "move"; target: PlanSource; box: Rect; from: Point }
+  | { kind: "resize"; target: PlanSource; corner: Corner; box: Rect; from: Point }
+  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number };
+
+/** How close to a corner counts as grabbing it, in points on screen. */
+const HANDLE = 12;
+
+const CORNER_CURSOR: Record<Corner, string> = {
+  nw: "nwse-resize",
+  se: "nwse-resize",
+  ne: "nesw-resize",
+  sw: "nesw-resize",
+};
+
+function inside(rect: Rect, point: Point): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/**
+ * Which corner the pointer is on, if any.
+ *
+ * The tolerance reaches inwards as well as outwards, so a corner is grabbable
+ * on a picture that runs to the edge of the frame and has no outside to speak
+ * of. It also has to stay smaller than the picture: on a bubble a few
+ * tolerances across, four handles would cover the whole thing and it could
+ * never be dragged.
+ */
+function cornerAt(rect: Rect, point: Point, near: number): Corner | null {
+  const reach = Math.min(near, rect.width / 3, rect.height / 3);
+  const west = Math.abs(point.x - rect.x) <= reach;
+  const east = Math.abs(point.x - (rect.x + rect.width)) <= reach;
+  const north = Math.abs(point.y - rect.y) <= reach;
+  const south = Math.abs(point.y - (rect.y + rect.height)) <= reach;
+
+  if (north && west) return "nw";
+  if (north && east) return "ne";
+  if (south && west) return "sw";
+  if (south && east) return "se";
+  return null;
+}
+
+/**
+ * A rectangle with one corner pulled to the pointer.
+ *
+ * The opposite corner is the anchor and does not move, which is what makes a
+ * resize feel like dragging an edge rather than scaling about a centre. Kept a
+ * pixel across at worst: a box collapsed to nothing has no corners left to grab
+ * and could never be recovered.
+ */
+function pulled(rect: Rect, corner: Corner, point: Point, keepAspect: boolean): Rect {
+  const anchor = {
+    x: corner === "nw" || corner === "sw" ? rect.x + rect.width : rect.x,
+    y: corner === "nw" || corner === "ne" ? rect.y + rect.height : rect.y,
+  };
+
+  let width = Math.max(1, Math.abs(point.x - anchor.x));
+  let height = Math.max(1, Math.abs(point.y - anchor.y));
+
+  if (keepAspect) {
+    // The larger of the two, so the picture follows the pointer outwards rather
+    // than being held back by whichever edge moved less.
+    const scale = Math.max(width / rect.width, height / rect.height);
+    width = rect.width * scale;
+    height = rect.height * scale;
+  }
+
+  return {
+    x: corner === "nw" || corner === "sw" ? anchor.x - width : anchor.x,
+    y: corner === "nw" || corner === "ne" ? anchor.y - height : anchor.y,
+    width,
+    height,
+  };
+}
+
+/**
+ * The arrangement to fall into when the bubble is picked up, or null.
+ *
+ * The `over-*` arrangements already leave the camera free, so dragging inside
+ * one changes nothing structural. Every other arrangement placed the bubble,
+ * and moving it is a request to stop.
+ */
+function detached(preset: LayoutSettings["preset"]): LayoutSettings["preset"] | null {
+  switch (preset) {
+    case "over-full":
+    case "over-padded":
+    case "custom":
+      return null;
+    case "split":
+    case "camera-full":
+      return "over-full";
+    default:
+      return "over-padded";
+  }
 }

@@ -85,7 +85,7 @@ on either side. Two implementations of "where does the camera sit" is how a
 preview and an export come to disagree, and it is only ever noticed after the
 file is written.
 
-**Settings are flat leaves.** `cameraShape`, `cameraSize` — never a nested
+**Settings are flat leaves.** `cameraShape`, `cameraHeight` — never a nested
 `camera: {…}`. "Is this overridden?" is `key in overrides[section]`, and a
 nested group would make that mean "something in this group", so every
 per-control reset would silently be wrong.

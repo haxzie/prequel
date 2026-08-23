@@ -1,17 +1,21 @@
 import { useEffect, useState, type Dispatch } from "react";
 
 import { CURSOR_STYLES, cursorStyle } from "../../../shared/contract";
-import { cameraAspect, type Size } from "../../../shared/layout";
+import { shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
+  DEFAULT_LAYOUT,
   overriddenKeys,
   type Background,
+  type LayoutPreset,
+  type LayoutSettings,
   type SettingsSection,
   type SliceSettings,
   type ZoomSlice,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { CameraMap } from "./controls/CameraMap";
+import { LayoutPicker } from "./controls/LayoutPicker";
 import { Field, Section } from "./controls/Field";
 import { EasingPad } from "./controls/EasingPad";
 import { PerspectivePad } from "./controls/PerspectivePad";
@@ -23,7 +27,6 @@ import {
   CursorIcon,
   CloseIcon,
   FillIcon,
-  FitIcon,
   FocusIcon,
   GradientIcon,
   ImageIcon,
@@ -222,6 +225,9 @@ export function Inspector(props: InspectorProps) {
             <>
               <LayoutPanel
                 settings={settings}
+                frame={props.frame}
+                cameraSource={props.cameraSource}
+                cameraPresent={props.present.has("camera")}
                 field={field}
                 reset={sectionReset("layout")}
                 set={set}
@@ -355,14 +361,25 @@ type FieldProps = <S extends SettingsSection>(
 
 type Setter = (section: SettingsSection, key: string, value: unknown) => void;
 
-/** The screen itself: how much of the frame it takes and how it is cropped. */
+/**
+ * Arrangements the two pictures can be in, and how far into the screen to crop.
+ *
+ * `screenZoom` is still a crop, not a scale: the arrangement fixes the box, and
+ * the zoom decides how much of the recording fills it.
+ */
 function LayoutPanel({
   settings,
+  frame,
+  cameraSource,
+  cameraPresent,
   field,
   reset,
   set,
 }: {
   settings: SliceSettings;
+  frame: Size;
+  cameraSource: Size | null;
+  cameraPresent: boolean;
   field: FieldProps;
   reset?: () => void;
   set: Setter;
@@ -371,24 +388,31 @@ function LayoutPanel({
 
   return (
     <Section title="Screen" onReset={reset}>
-      <Field label="Screen fit" {...field("layout", "screenFit")}>
-        <Segmented
-          value={layout.screenFit}
-          options={[
-            {
-              value: "contain",
-              label: "Fit",
-              title: "Show all of the recording",
-              icon: <FitIcon />,
-            },
-            {
-              value: "cover",
-              label: "Fill",
-              title: "Fill the frame, cropping the rest",
-              icon: <FillIcon />,
-            },
-          ]}
-          onChange={(value) => set("layout", "screenFit", value)}
+      <Field label="Layout" {...field("layout", "preset")}>
+        <LayoutPicker
+          frame={frame}
+          value={layout.preset}
+          cameraPresent={cameraPresent}
+          onChange={(preset) => {
+            set("layout", "preset", preset);
+            // The toggle and the arrangement are two ways of asking the same
+            // question, so picking a screen-only arrangement has to answer it
+            // the same way — otherwise the Camera panel says the camera is on
+            // while the frame plainly has no camera in it.
+            set("layout", "cameraVisible", !SCREEN_ONLY.has(preset));
+
+            // Picking an arrangement starts it clean.
+            //
+            // A crop and a hand-dragged box are answers to "how should this sit
+            // in *that* arrangement", and they do not survive the question
+            // changing: a zoom that framed a split's left half lands somewhere
+            // arbitrary once the same picture is full-bleed, and a box dragged
+            // in `custom` would otherwise sit in the settings unread until the
+            // next resize snapped the picture back to it.
+            for (const [key, value] of Object.entries(freshFraming(layout, cameraSource))) {
+              set("layout", key, value);
+            }
+          }}
         />
       </Field>
 
@@ -405,6 +429,58 @@ function LayoutPanel({
     </Section>
   );
 }
+
+/**
+ * The arrangement to move to when the camera is switched on or off, if any.
+ *
+ * Null where the current one already agrees — the `over-*` arrangements own
+ * only the screen, so the bubble simply appears and disappears within them.
+ */
+function cameraAgreement(preset: LayoutPreset, visible: boolean): LayoutPreset | null {
+  if (visible) {
+    if (preset === "screen-full") return "over-full";
+    if (preset === "screen-padded") return "over-padded";
+    return null;
+  }
+
+  if (preset === "camera-full" || SLOTTED.has(preset)) return "screen-padded";
+  if (preset === "camera-padded") return "screen-padded";
+  return null;
+}
+
+/**
+ * The framing keys back at their defaults, for a change of arrangement.
+ *
+ * Position is deliberately not among them. Where the bubble sits is a
+ * preference about the recording rather than about the arrangement — someone
+ * who moved it off the pointer's half of the screen means that whichever
+ * arrangement they are in — and the arrangements that place the camera
+ * themselves ignore it anyway.
+ */
+function freshFraming(layout: LayoutSettings, cameraSource: Size | null): Partial<LayoutSettings> {
+  return {
+    screenZoom: DEFAULT_LAYOUT.screenZoom,
+    screenOffsetX: DEFAULT_LAYOUT.screenOffsetX,
+    screenOffsetY: DEFAULT_LAYOUT.screenOffsetY,
+    screenX: DEFAULT_LAYOUT.screenX,
+    screenY: DEFAULT_LAYOUT.screenY,
+    screenWidth: DEFAULT_LAYOUT.screenWidth,
+    screenHeight: DEFAULT_LAYOUT.screenHeight,
+    cameraZoom: DEFAULT_LAYOUT.cameraZoom,
+    cameraOffsetX: DEFAULT_LAYOUT.cameraOffsetX,
+    cameraOffsetY: DEFAULT_LAYOUT.cameraOffsetY,
+    cameraHeight: DEFAULT_LAYOUT.cameraHeight,
+    // Off the shape rather than off the default, or a `wide` bubble would come
+    // back square while the shape control still said wide.
+    cameraWidth: DEFAULT_LAYOUT.cameraHeight * shapeAspect(layout.cameraShape, cameraSource),
+  };
+}
+
+/** Arrangements with no camera in them. */
+const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded"]);
+
+/** Arrangements where the camera is a card beside the screen, not a bubble over it. */
+const SLOTTED = new Set<LayoutPreset>(["beside", "stacked", "split", "split-stacked"]);
 
 /** The webcam bubble. Only reachable when the recording has one. */
 function CameraPanel({
@@ -428,20 +504,38 @@ function CameraPanel({
   // with them, so turning the camera off and on again moves everything below —
   // and hides what turning it back on is going to do.
   const off = !layout.cameraVisible;
+  // Wherever the camera is a card beside the screen it takes the same corner
+  // radius the screen does, or the two halves of a split frame read as two
+  // unrelated pictures. Shape reverts to being the bubble's business, and so do
+  // the proportions that go with it — a shape control that visibly does nothing
+  // is worse than one that is plainly unavailable.
+  //
+  // `custom` is either, depending on what it was dragged out of, which is
+  // exactly what `cameraCard` records.
+  const slotted = SLOTTED.has(layout.preset) || (layout.preset === "custom" && layout.cameraCard);
+  const aspect = layout.cameraWidth / Math.max(layout.cameraHeight, 0.0001);
 
   return (
     <Section title="Camera" onReset={reset}>
       <Field label="Camera" inline {...field("layout", "cameraVisible")}>
         <Toggle
           value={layout.cameraVisible}
-          onChange={(value) => set("layout", "cameraVisible", value)}
+          onChange={(value) => {
+            set("layout", "cameraVisible", value);
+            // The arrangement has to agree. Switching the camera off inside one
+            // built around it would leave the screen alone in half a frame, and
+            // switching it back on inside a screen-only one would do nothing at
+            // all — a toggle that visibly does nothing is worse than no toggle.
+            const answer = cameraAgreement(layout.preset, value);
+            if (answer) set("layout", "preset", answer);
+          }}
         />
       </Field>
 
       <Field label="Shape" {...field("layout", "cameraShape")}>
         <Segmented
           value={layout.cameraShape}
-          disabled={off}
+          disabled={off || slotted}
           iconsOnly
           options={[
             { value: "circle", label: "Circle", icon: <CircleIcon /> },
@@ -454,18 +548,30 @@ function CameraPanel({
               icon: <WideIcon />,
             },
           ]}
-          onChange={(value) => set("layout", "cameraShape", value)}
+          onChange={(value) => {
+            set("layout", "cameraShape", value);
+            // The shape decides the proportions once, here, rather than on
+            // every frame. Derived during layout instead, a bubble someone had
+            // dragged to a shape of their own would snap back to a square the
+            // next time this control was touched.
+            set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
+          }}
         />
       </Field>
 
-      <Field label="Size" {...field("layout", "cameraSize")}>
+      <Field label="Size" {...field("layout", "cameraHeight")}>
         <Slider
-          value={layout.cameraSize}
+          value={layout.cameraHeight}
           min={0.05}
           max={0.6}
           format={percent}
-          disabled={off}
-          onChange={(value) => set("layout", "cameraSize", value)}
+          disabled={off || slotted}
+          onChange={(value) => {
+            set("layout", "cameraHeight", value);
+            // Both edges together, so resizing keeps whatever proportions the
+            // bubble has rather than squaring it off.
+            set("layout", "cameraWidth", value * aspect);
+          }}
         />
       </Field>
 
@@ -485,11 +591,11 @@ function CameraPanel({
         <CameraMap
           frame={frame}
           shape={layout.cameraShape}
-          size={layout.cameraSize}
-          aspect={cameraAspect(layout, cameraSource)}
+          size={layout.cameraHeight}
+          aspect={aspect}
           x={layout.cameraX}
           y={layout.cameraY}
-          disabled={off}
+          disabled={off || slotted}
           onChange={(x, y) => {
             set("layout", "cameraX", x);
             set("layout", "cameraY", y);

@@ -38,7 +38,7 @@ describe("resolveSettings", () => {
 
     expect(resolved.layout.cameraX).toBe(0.85);
     // Everything else still follows the default.
-    expect(resolved.layout.cameraSize).toBe(DEFAULT_SETTINGS.layout.cameraSize);
+    expect(resolved.layout.cameraHeight).toBe(DEFAULT_SETTINGS.layout.cameraHeight);
     expect(resolved.background).toEqual(DEFAULT_SETTINGS.background);
   });
 
@@ -77,13 +77,16 @@ describe("override bookkeeping", () => {
 
   it("reports exactly the keys that are set", () => {
     const overrides = setOverride(
-      setOverride({}, "layout", "cameraSize", 0.4),
+      setOverride({}, "layout", "cameraHeight", 0.4),
       "layout",
       "cameraMirror",
       false,
     );
 
-    expect([...overriddenKeys(overrides, "layout")].sort()).toEqual(["cameraMirror", "cameraSize"]);
+    expect([...overriddenKeys(overrides, "layout")].sort()).toEqual([
+      "cameraHeight",
+      "cameraMirror",
+    ]);
     expect(overriddenKeys(overrides, "background").size).toBe(0);
   });
 
@@ -91,14 +94,14 @@ describe("override bookkeeping", () => {
     // The reason every setting is a flat leaf: a nested group would make this
     // clear the whole group.
     const overrides = setOverride(
-      setOverride({}, "layout", "cameraSize", 0.4),
+      setOverride({}, "layout", "cameraHeight", 0.4),
       "layout",
       "cameraMirror",
       false,
     );
-    const cleared = clearOverride(overrides, "layout", "cameraSize");
+    const cleared = clearOverride(overrides, "layout", "cameraHeight");
 
-    expect(overriddenKeys(cleared, "layout").has("cameraSize")).toBe(false);
+    expect(overriddenKeys(cleared, "layout").has("cameraHeight")).toBe(false);
     expect(overriddenKeys(cleared, "layout").has("cameraMirror")).toBe(true);
   });
 
@@ -114,7 +117,7 @@ describe("override bookkeeping", () => {
 
   it("clears a whole section", () => {
     const overrides = setOverride(
-      setOverride({}, "layout", "cameraSize", 0.4),
+      setOverride({}, "layout", "cameraHeight", 0.4),
       "audio",
       "micMuted",
       true,
@@ -126,15 +129,15 @@ describe("override bookkeeping", () => {
   });
 
   it("clearing something not set is a no-op", () => {
-    const overrides = setOverride({}, "layout", "cameraSize", 0.4);
+    const overrides = setOverride({}, "layout", "cameraHeight", 0.4);
     expect(clearOverride(overrides, "layout", "cameraMirror")).toBe(overrides);
     expect(clearSection(overrides, "audio")).toBe(overrides);
   });
 
   it("does not mutate the overrides it is given", () => {
-    const overrides = setOverride({}, "layout", "cameraSize", 0.4);
-    clearOverride(overrides, "layout", "cameraSize");
-    expect(overriddenKeys(overrides, "layout").has("cameraSize")).toBe(true);
+    const overrides = setOverride({}, "layout", "cameraHeight", 0.4);
+    clearOverride(overrides, "layout", "cameraHeight");
+    expect(overriddenKeys(overrides, "layout").has("cameraHeight")).toBe(true);
   });
 });
 
@@ -289,7 +292,7 @@ describe("sanitiseProject", () => {
     const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
 
     expect(repaired.defaults.layout.cameraX).toBe(0.85);
-    expect(repaired.defaults.layout.cameraSize).toBe(DEFAULT_SETTINGS.layout.cameraSize);
+    expect(repaired.defaults.layout.cameraHeight).toBe(DEFAULT_SETTINGS.layout.cameraHeight);
     expect(repaired.defaults.background).toEqual(DEFAULT_SETTINGS.background);
   });
 
@@ -332,5 +335,83 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.overrides).toEqual({
       layout: { cameraX: 0.85 },
     });
+  });
+});
+
+describe("reading a project written before layouts", () => {
+  // The version is deliberately not bumped for this — a mismatch makes
+  // `sanitiseProject` start fresh, which would throw away every project on disk
+  // to rename two keys. So the old names have to be understood here instead,
+  // and every one of these is a look somebody had already settled on.
+  const before = (layout: Record<string, unknown>) => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.defaults.layout = layout;
+    return sanitiseProject(project, RECORDING, 10 * S)!;
+  };
+
+  it("reads Fill as the full-bleed arrangement", () => {
+    expect(before({ screenFit: "cover" }).defaults.layout.preset).toBe("over-full");
+  });
+
+  it("reads Fit as the padded one", () => {
+    expect(before({ screenFit: "contain" }).defaults.layout.preset).toBe("over-padded");
+  });
+
+  it("reads a hidden camera as the screen-only arrangement", () => {
+    // Both draw the same picture, but only one of them lights the cell in the
+    // picker that matches what is on screen.
+    expect(before({ screenFit: "contain", cameraVisible: false }).defaults.layout.preset).toBe(
+      "screen-padded",
+    );
+    expect(before({ screenFit: "cover", cameraVisible: false }).defaults.layout.preset).toBe(
+      "screen-full",
+    );
+  });
+
+  it("gives the bubble the size it had, and the width its shape implied", () => {
+    const square = before({ cameraSize: 0.42, cameraShape: "squircle" }).defaults.layout;
+    expect(square.cameraHeight).toBe(0.42);
+    expect(square.cameraWidth).toBe(0.42);
+
+    const wide = before({ cameraSize: 0.42, cameraShape: "wide" }).defaults.layout;
+    expect(wide.cameraHeight).toBe(0.42);
+    expect(wide.cameraWidth).toBeCloseTo((0.42 * 16) / 9);
+  });
+
+  it("leaves the old keys behind rather than carrying them along", () => {
+    const layout = before({ screenFit: "cover", cameraSize: 0.42 }).defaults.layout;
+
+    expect(layout).not.toHaveProperty("screenFit");
+    expect(layout).not.toHaveProperty("cameraSize");
+  });
+
+  it("carries a slice's own choice across, and nothing else with it", () => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.tracks[0].slices[0].overrides = {
+      layout: { screenFit: "cover", cameraSize: 0.5 },
+      audio: { micMuted: true },
+    };
+
+    const { overrides } = sanitiseProject(project, RECORDING, 10 * S)!.tracks[0]!.slices[0]!;
+
+    // Still overridden, so resetting one of them is still a thing this slice
+    // can do — a migration that dropped them would quietly move the clip back
+    // to whatever the project defaults happen to say.
+    expect([...overriddenKeys(overrides, "layout")].sort()).toEqual([
+      "cameraHeight",
+      "cameraWidth",
+      "preset",
+    ]);
+    expect(overrides.layout!.preset).toBe("over-full");
+    expect(overrides.audio).toEqual({ micMuted: true });
+  });
+
+  it("does not invent an override for a slice that had none", () => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.tracks[0].slices[0].overrides = { layout: {} };
+
+    const { overrides } = sanitiseProject(project, RECORDING, 10 * S)!.tracks[0]!.slices[0]!;
+
+    expect(overrides.layout).toBeUndefined();
   });
 });
