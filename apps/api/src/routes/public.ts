@@ -23,6 +23,7 @@ publicRoutes.get("/:slug", async (c) => {
   const [row] = await db
     .select({
       id: schema.video.id,
+      slug: schema.video.slug,
       title: schema.video.title,
       contentType: schema.video.contentType,
       durationMs: schema.video.durationMs,
@@ -66,7 +67,57 @@ publicRoutes.get("/:slug", async (c) => {
     teamName: row.teamName,
     createdAt: row.createdAt,
     src: await signedPlayback(c.env, row.objectKey),
-    poster: row.posterKey ? await signedPlayback(c.env, row.posterKey) : null,
+    // A stable URL, not a signed one — see the handler below.
+    poster: row.posterKey ? `${c.env.API_URL}/p/${row.slug}/poster` : null,
+  });
+});
+
+/**
+ * The still, served rather than signed.
+ *
+ * Every other object in this bucket is handed out as a presigned URL, and the
+ * poster deliberately is not. Two reasons, and the first is the one that
+ * matters:
+ *
+ * **A share card outlives a signature.** This URL goes into `og:image`, and
+ * Slack, iMessage and the rest keep what they scrape. A six-hour signature means
+ * a link pasted on Friday shows a broken picture by Saturday — with nothing
+ * failing at the time to suggest it would.
+ *
+ * **A poster is cheap to proxy and a video is not.** Presigned URLs exist here
+ * because a Worker cannot stand in front of hundreds of megabytes of video. A
+ * 50 KB JPEG is a different problem, and paying one Worker invocation for it
+ * buys a URL that does not expire.
+ *
+ * Nothing is given away by this. The still is one frame of a recording that
+ * anybody holding the link can already watch in full, and the slug protecting it
+ * is the same unguessable string protecting the video. Deleting the recording
+ * removes the object, so this answers 404 from then on.
+ */
+publicRoutes.get("/:slug/poster", async (c) => {
+  const db = database(c.env);
+
+  const [row] = await db
+    .select({ posterKey: schema.video.posterKey, deletedAt: schema.video.deletedAt })
+    .from(schema.video)
+    .where(eq(schema.video.slug, c.req.param("slug")))
+    .limit(1);
+
+  if (!row?.posterKey || row.deletedAt) return c.notFound();
+
+  const object = await c.env.MEDIA.get(row.posterKey);
+  if (!object) return c.notFound();
+
+  return new Response(object.body, {
+    headers: {
+      "content-type": object.httpMetadata?.contentType ?? "image/jpeg",
+      "content-length": String(object.size),
+      // An hour. Long enough that a scrape and the grid renders that follow are
+      // one fetch, short enough that deleting a recording takes its picture out
+      // of circulation the same afternoon. `immutable` would be true of the
+      // bytes and wrong about the permission.
+      "cache-control": "public, max-age=3600",
+    },
   });
 });
 

@@ -8,7 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && electron-builder",
+    "package": "electron-vite build && node scripts/check-release-env.mjs && electron-builder",
     "install:app": "node scripts/install.mjs",
     "ship": "pnpm package && pnpm install:app",
     "test": "vitest run",

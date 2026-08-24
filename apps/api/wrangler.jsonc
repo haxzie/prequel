@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "prequel",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "bf36c554-42e2-4ee0-aae7-d8fbf600eb50",
       // Where `wrangler d1 migrations apply` looks. Generated into this app by
       // packages/db's drizzle.config.ts, because wrangler resolves the path
       // relative to this file.
@@ -73,7 +73,7 @@
         {
           "binding": "DB",
           "database_name": "prequel",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "bf36c554-42e2-4ee0-aae7-d8fbf600eb50",
           "migrations_dir": "migrations"
         }
       ],

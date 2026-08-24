@@ -48,7 +48,7 @@ when the recording of it actually began.
 The mistake — and it is a good one, because everything about it looks correct —
 is to probe a file for its start time and subtract that too. The probe returns
 zero, because the writer already normalised it. Subtracting the manifest offset
-*and* a probed start double-counts the gap, and the result is a camera that
+_and_ a probed start double-counts the gap, and the result is a camera that
 drifts against the screen by exactly the amount you were trying to fix.
 
 > Take the offset from the manifest. Seek the file from zero. That is the entire

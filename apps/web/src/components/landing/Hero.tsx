@@ -1,6 +1,6 @@
 import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
-import { WaitlistForm } from "@/components/WaitlistForm";
+import { DownloadCta } from "@/components/DownloadButton";
 import { SITE } from "@/lib/site";
 
 type HeroProps = {
@@ -43,14 +43,7 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
             {lede}
           </p>
 
-          <div id="waitlist" className="mx-auto mt-9 max-w-lg scroll-mt-28">
-            <WaitlistForm />
-            {/* The platform used to be a badge above the headline. It still
-                belongs above the fold, so it rides with the small print. */}
-            <p className="mt-3.5 font-mono text-[11px] tracking-wide text-muted">
-              {SITE.platform} · one email when the first build is ready
-            </p>
-          </div>
+          <DownloadCta className="mt-9" />
         </div>
       </Container>
     </section>

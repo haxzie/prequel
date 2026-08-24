@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 
 import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
-import { WaitlistForm } from "@/components/WaitlistForm";
+import { ButtonLink } from "@/components/Button";
+import { TRIAL_DAYS } from "@/lib/pricing";
 import { findPost, formatDate, posts } from "@/content/posts";
 import { blogPostingJsonLd, pageMetadata } from "@/lib/seo";
 
@@ -71,11 +72,14 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
         <JsonLd data={blogPostingJsonLd(post)} />
 
         <aside className="mt-16 rounded-2xl border border-line bg-surface p-7">
-          <h2 className="text-base font-medium text-fg">Prequel is in development</h2>
+          <h2 className="text-base font-medium text-fg">Try it yourself</h2>
           <p className="mt-2 text-sm text-muted">
-            Leave an address and we&rsquo;ll send the first build when it is worth installing.
+            Prequel records your screen and hands back a finished video. Free for {TRIAL_DAYS} days,
+            with no watermark on anything you export.
           </p>
-          <WaitlistForm className="mt-5" />
+          <ButtonLink href="/download" className="mt-5">
+            Download for Mac
+          </ButtonLink>
         </aside>
       </article>
     </Container>

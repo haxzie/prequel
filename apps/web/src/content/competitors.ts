@@ -233,7 +233,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Screen Studio alternative?",
         answer:
-          "For a Mac recording that needs to look produced, yes — the automatic zooms, the framed camera, the backgrounds and the cursor work are the same job, and Prequel exports higher, at up to 4K 120 against their 4K 60. Screen Studio does two things we do not: it records iPhones and iPads over USB, and it is a mature product with years of releases behind it rather than one in development.",
+          "For a Mac recording that needs to look produced, yes — the automatic zooms, the framed camera, the backgrounds and the cursor work are the same job, and Prequel exports higher, at up to 4K 120 against their 4K 60. Screen Studio does two things we do not: it records iPhones and iPads over USB, and it is a mature product with years of releases behind it rather than a new one.",
       },
       {
         question: "Can I open my Screen Studio recordings in Prequel?",

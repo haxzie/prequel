@@ -65,7 +65,7 @@ async function call(path: string, init: RequestInit = {}) {
   return response;
 }
 
-function create(sizeBytes: number) {
+function create(sizeBytes: number, posterContentType?: "image/png" | "image/jpeg") {
   return call("/v1/videos", {
     method: "POST",
     body: JSON.stringify({
@@ -75,6 +75,7 @@ function create(sizeBytes: number) {
       durationMs: 5000,
       width: 1920,
       height: 1080,
+      ...(posterContentType ? { posterContentType } : {}),
     }),
   });
 }
@@ -192,6 +193,82 @@ describe("POST /v1/videos/:id/complete", () => {
   });
 });
 
+describe("GET /p/:slug/poster", () => {
+  /**
+   * The share card outlives the page view that produced it.
+   *
+   * `og:image` is scraped once and kept — by Slack, by iMessage, by anything
+   * that unfurls a link. A presigned URL there works when it is tested and shows
+   * a broken picture days later, with nothing failing at the time to warn you.
+   * So this URL carries no signature, and that is the property under test.
+   */
+  it("is a plain URL with no signature in it", async () => {
+    const { id } = (await (await create(100, "image/png")).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await env.MEDIA.put(`posters/org1/${id}.png`, new Uint8Array([1, 2, 3]));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+
+    const listed = (await (await call("/v1/videos")).json()) as {
+      videos: { poster: string }[];
+    };
+
+    expect(listed.videos[0]?.poster).toBe(`${env.API_URL}/p/${slug}/poster`);
+    expect(listed.videos[0]?.poster).not.toContain("X-Amz-Signature");
+  });
+
+  it("serves the image to somebody with no credentials", async () => {
+    const { id } = (await (await create(100, "image/png")).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await env.MEDIA.put(`posters/org1/${id}.png`, new Uint8Array([1, 2, 3, 4]));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      new Request(`https://api.prequel.sh/p/${slug}/poster`),
+      env,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toContain("max-age");
+    expect((await response.arrayBuffer()).byteLength).toBe(4);
+  });
+
+  it("stops serving once the recording is deleted", async () => {
+    const { id } = (await (await create(100, "image/png")).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await env.MEDIA.put(`posters/org1/${id}.png`, new Uint8Array([1, 2, 3]));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+
+    await call(`/v1/videos/${id}`, { method: "DELETE" });
+
+    // Deleting has to take the picture down as well as the video. A poster that
+    // outlived its recording would be a frame of something somebody withdrew.
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      new Request(`https://api.prequel.sh/p/${slug}/poster`),
+      env,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("GET /p/:slug", () => {
   it("is readable with no credentials at all", async () => {
     const { id } = (await (await create(100)).json()) as { id: string };
@@ -211,6 +288,7 @@ describe("GET /p/:slug", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { src: string; teamName: string };
     expect(body.teamName).toBe("Acme");
+    // The video still is signed — it is far too large to proxy through here.
     expect(body.src).toContain("X-Amz-Signature");
   });
 

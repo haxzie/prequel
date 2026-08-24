@@ -7,6 +7,7 @@ import { Segmented } from "./controls/inputs";
 import { Field } from "./controls/Field";
 import { useAuth } from "../hooks/useAuth";
 import { CheckIcon, CloseIcon, CopyIcon, ExportIcon, FolderIcon, LinkIcon } from "./icons";
+import { capturePoster } from "./poster";
 import type { ExportState } from "./useExport";
 import { useShare, type ShareState } from "./useShare";
 
@@ -72,6 +73,31 @@ export function ExportDialog({
   const failed = progress?.stage === "failed";
 
   const share = useShare(result, frame);
+
+  /**
+   * A still taken from the finished file, once there is one.
+   *
+   * Captured as soon as the export lands rather than when Share is pressed, so
+   * the decode and seek have already happened by the time anybody clicks —
+   * pressing Share should start an upload, not wait on a video element.
+   *
+   * `poster` — the preview's own grab — remains the fallback. It is the picture
+   * shown *during* the export, when there is no file to take one from yet.
+   */
+  const [still, setStill] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!result) return setStill(null);
+
+    let live = true;
+    void capturePoster(result.url, result.isGif).then((shot) => {
+      if (live) setStill(shot);
+    });
+
+    return () => {
+      live = false;
+    };
+  }, [result]);
 
   // Escape closes whatever the export is doing, because closing is not
   // cancelling — the render carries on and the title bar keeps reporting it.
@@ -174,7 +200,7 @@ export function ExportDialog({
           </div>
         )}
 
-        <Actions state={state} share={share} poster={poster} onClose={onClose} />
+        <Actions state={state} share={share} poster={still ?? poster} onClose={onClose} />
       </div>
     </div>
   );

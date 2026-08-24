@@ -150,10 +150,21 @@ static float vignette(constant Uniforms &u, float2 screen) {
 static float4 sample_focused(texture2d<float> image, sampler smp, constant Uniforms &u,
                              float2 uv, float2 screen) {
     float away = max(distance(screen, u.focus.xy) - u.focus.z, 0.0);
-    float radius = u.focus.w * min(away / max(u.focus.z, 1.0), 1.0);
-    // Squared, so the sharp area has a soft border rather than an edge where
-    // the blur switches on.
-    radius *= radius / max(u.focus.w, 0.0001);
+
+    // `smoothstep`, and over half again the sharp radius.
+    //
+    // This was `t * t` over `u.focus.z`, and both halves of that showed. A
+    // square leaves rest smoothly and *arrives* at full blur with its steepest
+    // slope, so where the ramp saturated the rate of change fell to nothing in
+    // one step — a slope discontinuity, which the eye reads as a ring at a fixed
+    // distance from the subject rather than as defocus. `smoothstep` is flat at
+    // both ends, so there is no edge to find at either.
+    //
+    // The wider ramp is the other half. Tying the transition to exactly the
+    // sharp radius made it as tight as the sharp area itself, so a small
+    // `blurSafe` — the setting that ought to give a *shallower* depth of field —
+    // instead gave a hard-edged hole. Half again is enough to read as a lens.
+    float radius = u.focus.w * smoothstep(0.0, max(u.focus.z * 1.5, 1.0), away);
 
     if (u.focus.w <= 0.0 || radius <= 0.5) {
         return image.sample(smp, uv);

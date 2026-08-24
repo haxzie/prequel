@@ -21,9 +21,10 @@ import {
   ZoomIllustration,
 } from "@/components/editor-illustrations";
 import { Container, Eyebrow, SectionHeading } from "@/components/Section";
-import { WaitlistForm } from "@/components/WaitlistForm";
+import { DownloadCta } from "@/components/DownloadButton";
 import type { FaqEntry } from "@/lib/faq";
 import { faqPageJsonLd } from "@/lib/seo";
+import { TRIAL_DAYS } from "@/lib/pricing";
 
 import editor from "../../../public/editor.png";
 import stage from "../../../public/stage.jpg";
@@ -289,13 +290,13 @@ function CallToAction(): ReactNode {
         <div className="squircle lit relative overflow-hidden rounded-3xl border border-line bg-surface px-6 py-16 text-center sm:px-16">
           <div className="brand-gradient pointer-events-none absolute inset-x-0 top-0 h-px opacity-70" />
           <h2 className="text-3xl font-medium tracking-tight text-balance text-fg sm:text-4xl">
-            Be there for the first build
+            Record something worth watching
           </h2>
           <p className="mx-auto mt-4 max-w-md text-pretty text-muted">
-            Prequel is in development. Leave an address and we will send it the day it is worth
-            installing.
+            Free for {TRIAL_DAYS} days, with nothing held back and no watermark on anything you
+            export.
           </p>
-          <WaitlistForm className="mx-auto mt-8 max-w-lg" />
+          <DownloadCta className="mt-8" />
           <p className="mt-8 text-xs text-muted">
             Curious about the internals?{" "}
             <ButtonLink

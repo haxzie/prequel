@@ -106,8 +106,28 @@ jobs:
       # Distribution certificate is for the App Store: it signs happily here and
       # Gatekeeper still refuses the download, so the failure lands on users
       # rather than in this log.
+      #
+      # ---
+      #
+      # The origins baked into the app, and the reason the two variables below
+      # exist at all.
+      #
+      # `pnpm install` above seeds `.env` from `.env.example`, which pins both to
+      # localhost so a clone runs with no setup. `publicEnv` in
+      # `electron.vite.config.ts` bakes whatever `.env` says into the main bundle
+      # — so without these, this workflow produces a signed, notarised disk image
+      # whose Sign in button opens `http://localhost:3000`. It did.
+      #
+      # Vite's `loadEnv` applies the process environment over the file, so
+      # setting them here wins. Repository variables let a fork point at its own
+      # deployment; the fallbacks are this one's.
+      #
+      # `check-release-env.mjs` runs inside `package` and fails the build if
+      # either still resolves to localhost, before anything is signed.
       - name: Package
         env:
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL || 'https://prequel.sh' }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.prequel.sh' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}

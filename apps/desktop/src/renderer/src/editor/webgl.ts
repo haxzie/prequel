@@ -142,10 +142,21 @@ out vec4 fragColor;
  */
 vec4 sampleFocused(vec2 uv) {
   float away = max(distance(v_screen, u_focus.xy) - u_focus.z, 0.0);
-  // Squared, so the sharp area has a soft border instead of an edge where the
-  // blur switches on.
-  float radius = u_focus.w * min(away / max(u_focus.z, 1.0), 1.0);
-  radius *= radius / max(u_focus.w, 0.0001);
+
+  // smoothstep, and over half again the sharp radius.
+  //
+  // This was a square of the ramp over u_focus.z, and both halves of that
+  // showed. A square leaves rest smoothly and *arrives* at full blur with its
+  // steepest slope, so where the ramp saturated the rate of change fell to
+  // nothing in one step — a slope discontinuity, which the eye reads as a ring
+  // at a fixed distance from the subject rather than as defocus. smoothstep is
+  // flat at both ends, so there is no edge to find at either.
+  //
+  // The wider ramp is the other half. Tying the transition to exactly the sharp
+  // radius made it as tight as the sharp area itself, so a small blurSafe — the
+  // setting that ought to give a *shallower* depth of field — instead gave a
+  // hard-edged hole. Half again is enough to read as a lens.
+  float radius = u_focus.w * smoothstep(0.0, max(u_focus.z * 1.5, 1.0), away);
 
   if (u_focus.w <= 0.0 || radius <= 0.5) return texture(u_image, uv);
 

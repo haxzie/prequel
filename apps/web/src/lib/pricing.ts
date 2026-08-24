@@ -1,11 +1,18 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- *  Prices are placeholders. This is the only file that carries them.
+ *  This is the only file that carries a price.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- *  Nothing is for sale yet — every action is the waitlist — so these numbers
- *  exist to give the page a shape rather than to be paid. Change them here and
- *  the cards, the included list, the FAQ and every comparison page follow.
+ *  Change them here and the cards, the included list, the FAQ, the billing
+ *  page and every comparison page follow.
+ *
+ *  **The rate is introductory.** Every surface that shows it says so, and none
+ *  of them says more than that: there is no struck-out regular price, because
+ *  there is not one to strike out, and no promise that an early licence keeps
+ *  this rate for life. That last one is a commitment to honour indefinitely on
+ *  every licence sold at this price, and it is not something a page is allowed
+ *  to invent on the way to a better conversion rate. When the price does rise,
+ *  raising it here is the whole change.
  *
  *  One plan, one price, a trial in front of it. There is no free tier and no
  *  second tier, which means nothing on this site should describe a feature as
@@ -75,9 +82,8 @@ export const INCLUDED: [string, string][] = [
 
 export const FAQ: { question: string; answer: string }[] = [
   {
-    question: "When can I actually buy this?",
-    answer:
-      "Not yet. Prequel is in development and nothing is for sale, which is why every button on this page joins the waitlist instead. The plan is here so the price is clear before it ships.",
+    question: "Why is it called introductory pricing?",
+    answer: `Because it is going up. ${PRICE_YEARLY} a year is what Prequel costs while it is new, and the rate is set here rather than promised anywhere — there is no struck-out "regular" price to compare it against and no claim that signing up today locks it in forever. When it rises, it rises.`,
   },
   {
     question: "Is there a free plan?",

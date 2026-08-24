@@ -6,7 +6,7 @@ import { CONTACT_EMAIL, NAV, SITE } from "@/lib/site";
 
 import { Logo } from "./Logo";
 import { Container } from "./Section";
-import { WaitlistForm } from "./WaitlistForm";
+import { DownloadCta } from "./DownloadButton";
 
 export function Footer() {
   return (
@@ -18,7 +18,7 @@ export function Footer() {
             <span className="text-base font-medium tracking-tight text-fg">Prequel</span>
           </Link>
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted">{SITE.description}</p>
-          <WaitlistForm className="mt-6 max-w-md" />
+          <DownloadCta className="mt-6 max-w-md" />
         </div>
 
         {/* Three groups rather than a flex row: the middle one carries sixteen

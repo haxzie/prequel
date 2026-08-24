@@ -69,8 +69,8 @@ export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" }
  * and the background wash, which was right when every page was a marketing page
  * — and wrong the moment there was a dashboard: `/app` rendered its own header
  * *under* the marketing one, with a footer full of SEO links below the video
- * library, and `/login` sat inside a page furniture asking people to sign up for
- * a waitlist they were in the middle of signing in past.
+ * library, and `/login` sat inside page furniture inviting people to download an
+ * app they were in the middle of signing in to.
  *
  * Three groups own their own chrome instead: `(marketing)`, `(auth)` and `/app`.
  * A route group's parentheses keep it out of the URL, so none of the paths moved.

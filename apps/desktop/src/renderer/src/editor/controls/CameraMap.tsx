@@ -40,6 +40,7 @@ export function CameraMap({
   size,
   aspect,
   radius,
+  point,
   x,
   y,
   disabled,
@@ -61,6 +62,21 @@ export function CameraMap({
    * is meant to look like.
    */
   radius?: string;
+  /**
+   * Pick a point rather than place a box.
+   *
+   * The zoom's area used to be drawn as the rectangle the shot would show, which
+   * was honest about the framing and made the corners unreachable: a box is
+   * clamped so its *edges* stay inside the map, so at 2× the middle half of the
+   * frame was the only pickable region. Aiming a zoom at a corner was not
+   * something the control could express.
+   *
+   * A dot has no edges to clamp, so every part of the frame can be picked. What
+   * the shot will show is drawn behind it as an outline that runs off the map
+   * where the picture would run off the frame — which is the honest picture of
+   * what an edge target does, rather than a box pretending it cannot happen.
+   */
+  point?: boolean;
   x: number;
   y: number;
   disabled?: boolean;
@@ -77,10 +93,16 @@ export function CameraMap({
   const height = (size * shorter) / frame.height;
   const width = (size * shorter * aspect) / frame.width;
 
+  // A dot is clamped to the frame; a box is clamped to keep its edges inside it.
+  // Zero half-extents is exactly that difference, and it falls out of the same
+  // arithmetic rather than needing a second path through it.
+  const halfX = point ? 0 : width / 2;
+  const halfY = point ? 0 : height / 2;
+
   // Clamped exactly as `cameraRect` clamps it, so the map cannot show the
   // bubble anywhere the frame would not.
   const clamp = (value: number, half: number) => Math.min(Math.max(value, half), 1 - half);
-  const at = { x: clamp(x, width / 2), y: clamp(y, height / 2) };
+  const at = { x: clamp(x, halfX), y: clamp(y, halfY) };
 
   const pointAt = (event: PointerEvent) => {
     const box = map.current?.getBoundingClientRect();
@@ -91,8 +113,8 @@ export function CameraMap({
     };
   };
 
-  const move = (point: { x: number; y: number }) => {
-    onChange(clamp(point.x, width / 2), clamp(point.y, height / 2));
+  const move = (to: { x: number; y: number }) => {
+    onChange(clamp(to.x, halfX), clamp(to.y, halfY));
   };
 
   return (
@@ -107,24 +129,26 @@ export function CameraMap({
       // somewhere it is not.
       style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
       onPointerDown={(event) => {
-        const point = pointAt(event);
-        if (!point) return;
+        const where = pointAt(event);
+        if (!where) return;
 
         // Pressing away from the bubble sends it there — the dots cover the
         // nine obvious places, and anywhere else is a click rather than a hunt
         // for a small target.
+        // A dot is too small to pick up by its own area, so a press anywhere is
+        // a press on it — which is also what the box does when pressed outside.
         const inside =
-          Math.abs(point.x - at.x) <= width / 2 && Math.abs(point.y - at.y) <= height / 2;
+          !point && Math.abs(where.x - at.x) <= halfX && Math.abs(where.y - at.y) <= halfY;
 
-        grab.current = inside ? { x: point.x - at.x, y: point.y - at.y } : { x: 0, y: 0 };
-        if (!inside) move(point);
+        grab.current = inside ? { x: where.x - at.x, y: where.y - at.y } : { x: 0, y: 0 };
+        if (!inside) move(where);
 
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        const point = pointAt(event);
-        if (!grab.current || !point) return;
-        move({ x: point.x - grab.current.x, y: point.y - grab.current.y });
+        const where = pointAt(event);
+        if (!grab.current || !where) return;
+        move({ x: where.x - grab.current.x, y: where.y - grab.current.y });
       }}
       onPointerUp={() => {
         grab.current = null;
@@ -167,16 +191,46 @@ export function CameraMap({
         }),
       )}
 
-      <div
-        className="absolute cursor-grab border-2 border-white/80 bg-white/25 active:cursor-grabbing"
-        style={{
-          left: `${(at.x - width / 2) * 100}%`,
-          top: `${(at.y - height / 2) * 100}%`,
-          width: `${width * 100}%`,
-          height: `${height * 100}%`,
-          borderRadius: radius ?? RADIUS[shape],
-        }}
-      />
+      {point ? (
+        <>
+          {/* What the shot will show, drawn from the dot and *not* clamped.
+              Where the target is near an edge this runs past the map, which is
+              the true answer — the picture cannot cover the frame from there,
+              and `EDGE_REACH` in `shared/layout.ts` is what decides how far it
+              goes anyway. A box held inside the map would be a drawing of
+              something the camera does not do. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute border border-dashed border-white/25"
+            style={{
+              left: `${(at.x - width / 2) * 100}%`,
+              top: `${(at.y - height / 2) * 100}%`,
+              width: `${width * 100}%`,
+              height: `${height * 100}%`,
+              borderRadius: radius ?? RADIUS[shape],
+            }}
+          />
+
+          {/* The target itself. A ring rather than a filled dot: it sits over
+              the picture it is aiming at, and something to see through is worth
+              more here than something to see. */}
+          <div
+            className="absolute size-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-white/25 shadow-[0_0_0_1px_rgba(0,0,0,0.5)] active:cursor-grabbing"
+            style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }}
+          />
+        </>
+      ) : (
+        <div
+          className="absolute cursor-grab border-2 border-white/80 bg-white/25 active:cursor-grabbing"
+          style={{
+            left: `${(at.x - width / 2) * 100}%`,
+            top: `${(at.y - height / 2) * 100}%`,
+            width: `${width * 100}%`,
+            height: `${height * 100}%`,
+            borderRadius: radius ?? RADIUS[shape],
+          }}
+        />
+      )}
     </div>
   );
 }

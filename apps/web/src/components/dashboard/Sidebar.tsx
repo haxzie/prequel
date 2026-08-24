@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { Logo } from "@/components/Logo";
 import { authClient } from "@/lib/auth-client";
@@ -10,6 +10,8 @@ import { displayName } from "@/lib/display-name";
 import type { SessionUser, Team } from "@/lib/session";
 
 import { Avatar } from "./Avatar";
+import { STROKE } from "./icons";
+import { Popover } from "./Popover";
 import { UpgradeCard } from "./UpgradeCard";
 
 const LINKS = [
@@ -166,85 +168,8 @@ function UserMenu({ user }: { user: SessionUser }) {
   );
 }
 
-/**
- * A small menu, dismissed by a click anywhere else or by Escape.
- *
- * The backdrop is a real element rather than a document listener, which would
- * also have to ignore the press that opened the menu — the fiddly half of doing
- * this without one.
- */
-function Popover({
-  open,
-  onOpenChange,
-  trigger,
-  placement = "down",
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  trigger: React.ReactNode;
-  placement?: "up" | "down";
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onOpenChange(false);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onOpenChange]);
-
-  return (
-    <div className="relative min-w-0 flex-1" ref={ref}>
-      <button
-        type="button"
-        className="flex w-full min-w-0"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => onOpenChange(!open)}
-      >
-        {trigger}
-      </button>
-
-      {open ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-40 cursor-default"
-            aria-hidden="true"
-            tabIndex={-1}
-            onClick={() => onOpenChange(false)}
-          />
-          <div
-            role="menu"
-            className={`absolute z-50 w-full min-w-52 rounded-xl border border-line bg-elevated p-1.5 shadow-2xl ${
-              placement === "up" ? "bottom-full mb-1.5" : "top-full mt-1.5"
-            }`}
-          >
-            {children}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
 /* Lucide geometry, inlined — the site draws its own icons and one dependency
    for four glyphs would leave two systems to keep in step. */
-const STROKE = {
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 2,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
 function LibraryIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">

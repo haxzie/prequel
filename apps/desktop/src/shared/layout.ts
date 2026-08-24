@@ -540,6 +540,32 @@ const CAMERA_SHADOW = 0.7;
  * Each span opens and closes on the un-zoomed rectangle, so the flat stretches
  * between zooms need no keys at all: interpolating base to base gives base.
  */
+/**
+ * How far a shot aimed past its range still travels, as a fraction of the
+ * distance it cannot cover.
+ *
+ * A target near an edge cannot be centred: the picture would have to slide off
+ * the frame and leave the background showing behind it. The old answer was to
+ * clamp and stop, which is why aiming a zoom at a corner appeared to do nothing
+ * at all — the camera had somewhere to be and simply declined to set off.
+ *
+ * A third of the way is enough for the move to read as going somewhere, while
+ * every edge of the picture stays over the area it filled. Zero restores the old
+ * behaviour; one uncovers the frame.
+ */
+const EDGE_REACH = 0.35;
+
+/**
+ * The clamped position, nudged back toward what was actually asked for.
+ *
+ * A no-op wherever the aim was already in range — which is every interior
+ * target, and so most of every recording. It only has anything to say at an
+ * edge, which is exactly where the clamp had nothing useful to say.
+ */
+function reach(value: number, min: number, max: number): number {
+  return lerp(clamp(value, min, max), value, EDGE_REACH);
+}
+
 function zoomKeys(
   zooms: readonly ZoomSlice[],
   frame: Size,
@@ -609,13 +635,30 @@ function zoomKeys(
     const path =
       zoom.target === "region"
         ? aims.map((aim) => ({
-            x: clamp(aim.x, bounds.minX, bounds.maxX),
-            y: clamp(aim.y, bounds.minY, bounds.maxY),
+            x: reach(aim.x, bounds.minX, bounds.maxX),
+            y: reach(aim.y, bounds.minY, bounds.maxY),
           }))
-        : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds);
+        : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds).map(
+            (point) => ({
+              x: reach(point.x, bounds.minX, bounds.maxX),
+              y: reach(point.y, bounds.minY, bounds.maxY),
+            }),
+          );
 
     for (let step = 0; step <= steps; step += 1) {
-      const at = rectFor(zoom, times[step]!, path[step]!, ease, frame, base, radius, spread);
+      // `path` is where the camera goes; `aims` is where the subject is. They
+      // differ wherever the shot is steadying or has been held short of centre.
+      const at = rectFor(
+        zoom,
+        times[step]!,
+        path[step]!,
+        aims[step]!,
+        ease,
+        frame,
+        base,
+        radius,
+        spread,
+      );
       keys.push(at.key);
       shadow.push(at.shadow);
     }
@@ -629,6 +672,15 @@ function rectFor(
   zoom: ZoomSlice,
   at: number,
   travel: Point,
+  /**
+   * What the shot is *aimed at*, before steadying and before `reach` — the
+   * cursor's own position, in the same scaled-picture pixels as `travel`.
+   *
+   * Distinct from `travel`, which is where the camera has got to. The two agree
+   * only when the shot has caught up and had room to centre the subject; the
+   * depth of field belongs on the subject either way.
+   */
+  aim: Point,
   ease: number,
   frame: Size,
   base: Rect,
@@ -649,14 +701,15 @@ function rectFor(
   const height = base.height * level;
 
   // `travel` is how far into the scaled picture the shot is looking, in output
-  // pixels, and `zoomKeys` has already held it inside the range that keeps the
-  // picture over the area it filled. The clamp stays as a guard rather than as
-  // the mechanism: doing it here is what used to stop the camera dead at an
-  // edge, and a stop is the one thing a smoothed path is supposed to be free of.
-  const target = {
-    x: clamp(frame.width / 2 - travel.x, base.x + base.width - width, base.x),
-    y: clamp(frame.height / 2 - travel.y, base.y + base.height - height, base.y),
-  };
+  // pixels, and where the picture has to sit to put that point in the middle.
+  //
+  // Taken as given rather than clamped again. `zoomKeys` decides how far a shot
+  // may look — including how far past the covering range an edge target is
+  // allowed to reach, which is the whole of `EDGE_REACH` — and a second clamp
+  // here would quietly undo that decision. It did: the clamp was described as a
+  // guard rather than the mechanism, and a guard that silently disagrees with
+  // the mechanism is just the mechanism, in the wrong place.
+  const target = { x: frame.width / 2 - travel.x, y: frame.height / 2 - travel.y };
 
   const moved: Rect = {
     x: lerp(base.x, target.x, amount),
@@ -676,10 +729,33 @@ function rectFor(
   // rather than snapping out of focus. Measured against the frame, not the
   // picture, because it is the *viewer's* depth of field.
   const shorter = Math.min(frame.width, frame.height);
+
+  /**
+   * Where the subject is on screen, which is where the sharp patch belongs.
+   *
+   * Built from `aim`, not from `travel`. This used to be `frame.width / 2`, and
+   * deriving it from `travel` instead would have been the same number by a
+   * longer route — the camera's target is centred *by construction*, since the
+   * picture is positioned precisely to put it there.
+   *
+   * The subject is a different matter. `followPath` steadies the shot, so it
+   * lags a moving cursor by design, and `reach` deliberately leaves an edge
+   * target short of centre. In both cases the thing being looked at is somewhere
+   * other than the middle of the frame — and a depth of field focused on the
+   * middle regardless is focused on whatever the subject has just left.
+   *
+   * Scaled by how far the move has come, so the sharp patch travels *with* the
+   * picture rather than arriving before it.
+   */
+  const aimed = {
+    x: moved.x + (width > 0 ? (aim.x / width) * moved.width : 0),
+    y: moved.y + (height > 0 ? (aim.y / height) * moved.height : 0),
+  };
+
   const focus = zoom.blur
     ? {
-        x: frame.width / 2,
-        y: frame.height / 2,
+        x: aimed.x,
+        y: aimed.y,
         safe: zoom.blurSafe * shorter,
         strength: zoom.blurStrength * shorter * amount,
       }

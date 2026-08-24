@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { LibraryVideo } from "@/app/app/page";
 import { formatBytes } from "@/app/app/page";
 import { VideoActions } from "@/components/dashboard/VideoActions";
+import { VideoHeader } from "@/components/dashboard/VideoHeader";
 import { API_URL } from "@/lib/api";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
@@ -47,6 +48,8 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="mx-auto max-w-3xl">
+      <VideoHeader id={video.id} title={video.title} className="mb-6" />
+
       <div className="overflow-hidden rounded-2xl border border-line bg-black">
         {video.poster ? (
           <img src={video.poster} alt="" className="block aspect-video w-full object-cover" />
@@ -55,7 +58,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
-      <VideoActions id={video.id} title={video.title} url={url} className="mt-6" />
+      <VideoActions url={url} className="mt-6" />
 
       <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-line pt-6 text-sm sm:grid-cols-4">
         <Fact label="Shared by" value={video.ownerName ?? "Someone"} />

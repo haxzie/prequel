@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Logo } from "@/components/Logo";
 import { Container } from "@/components/Section";
 import { Cell } from "@/components/Table";
-import { WaitlistForm } from "@/components/WaitlistForm";
+import { DownloadCta } from "@/components/DownloadButton";
 import {
   FEATURE_ROWS,
   PREQUEL_FEATURES,
@@ -140,12 +140,7 @@ export function ComparisonHero({ competitor }: { competitor: Competitor }) {
             {competitor.lede}
           </p>
 
-          <div id="waitlist" className="mx-auto mt-9 max-w-lg scroll-mt-28">
-            <WaitlistForm />
-            <p className="mt-3.5 font-mono text-[11px] tracking-wide text-muted">
-              {SITE.platform} · one email when the first build is ready
-            </p>
-          </div>
+          <DownloadCta className="mt-9" />
         </div>
       </Container>
     </section>

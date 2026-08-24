@@ -141,15 +141,22 @@ which is the slow version of the same failure.
 
 ```bash
 wrangler d1 create prequel                     # once; put the id in wrangler.jsonc
-wrangler r2 bucket create prequel-media        # once
+wrangler r2 bucket create prequel              # once
 wrangler secret put BETTER_AUTH_SECRET --env production
 # …and the rest of the list in .env.example
 pnpm --filter @prequel/api migrate:remote
-pnpm --filter @prequel/api deploy
+pnpm --filter @prequel/api run deploy   # `run` is not optional: pnpm has its own `deploy`
 ```
 
 The bucket must stay **private**. Playback goes through a presigned GET with a
 six-hour life, which is what makes a deleted recording actually stop playing.
+
+`R2_BUCKET` must name the same bucket as the `MEDIA` binding in
+`wrangler.jsonc`. The binding does HEAD and DELETE; the secret is what presigned
+uploads and playback are signed against. Point them at different buckets and an
+upload succeeds, `complete` HEADs a bucket the object was never put in, and the
+share fails with "the upload didn't finish" — the production version of the
+local-dev trap described above, with nothing to say which of the two is wrong.
 
 Google's OAuth client needs `<API_URL>/api/auth/callback/google` as a redirect
 URI, character for character — a trailing slash is a `redirect_uri_mismatch`.

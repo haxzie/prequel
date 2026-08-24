@@ -14,7 +14,7 @@ import { schema } from "@prequel/db";
 
 import type { Database } from "../db.ts";
 import { id, slug } from "../lib/ids.ts";
-import { posterKey, signedPlayback, signedUpload, videoKey } from "../lib/r2.ts";
+import { posterKey, signedUpload, videoKey } from "../lib/r2.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
 const videos = new Hono<AppContext>();
@@ -69,16 +69,18 @@ videos.get("/", async (c) => {
     .orderBy(desc(schema.video.createdAt))
     .limit(200);
 
-  // Posters are signed here rather than fetched per card from `/p/:slug`.
-  // That endpoint counts a view, so a library page would register one for every
-  // recording on it every time somebody opened the dashboard. Signing is a local
-  // HMAC with no network in it, so doing it inline costs nothing worth avoiding.
-  const videos = await Promise.all(
-    rows.map(async ({ posterKey: key, ...row }) => ({
-      ...row,
-      poster: key ? await signedPlayback(c.env, key) : null,
-    })),
-  );
+  // The same stable poster URL the share page uses, rather than a signature per
+  // row. Two things follow: a browser can reuse a picture across navigations
+  // instead of refetching a URL that differs every render, and a listing of two
+  // hundred videos stops computing two hundred HMACs.
+  //
+  // Note it is `/p/:slug/poster` and not `/p/:slug` — the latter counts a view,
+  // and a dashboard would register one for every recording on the page every
+  // time somebody opened it.
+  const videos = rows.map(({ posterKey: key, ...row }) => ({
+    ...row,
+    poster: key ? `${c.env.API_URL}/p/${row.slug}/poster` : null,
+  }));
 
   return c.json({ videos, usage: await usage(c.get("db"), teamId) });
 });

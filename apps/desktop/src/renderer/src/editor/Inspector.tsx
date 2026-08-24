@@ -1171,8 +1171,12 @@ function ZoomMotionPanel({
           <CameraMap
             frame={frame}
             shape="rounded"
-            // The share of the frame the zoom will show, which is exactly what
-            // the box on the map should be.
+            // A point, not a box. The box could not be dragged into a corner —
+            // its own edges were clamped to the map — so the one thing this
+            // control existed to do was the one thing it refused.
+            point
+            // Still passed: the outline behind the dot draws the share of the
+            // frame the shot will show.
             size={1 / Math.max(1, zoom.level)}
             aspect={frame.width / frame.height}
             radius="5px"

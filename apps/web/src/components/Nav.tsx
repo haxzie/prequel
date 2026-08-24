@@ -63,8 +63,8 @@ export function Nav() {
               decided by Tailwind's emit order, not by the order they are
               written in, and `inline-flex` is the one that wins. */}
           <span className="ml-1.5 hidden sm:block">
-            <ButtonLink href="/#waitlist" size="sm">
-              Get early access
+            <ButtonLink href="/download" size="sm">
+              Download
             </ButtonLink>
           </span>
         </nav>

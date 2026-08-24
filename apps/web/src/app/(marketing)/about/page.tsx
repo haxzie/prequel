@@ -128,8 +128,8 @@ export default function About() {
               >
                 {CONTACT_EMAIL}
               </a>
-              <ButtonLink href="/#waitlist" variant="secondary">
-                Join the waitlist
+              <ButtonLink href="/download" variant="secondary">
+                Download for Mac
               </ButtonLink>
             </div>
           </div>

@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { LibraryVideo } from "@/app/app/page";
+import { api } from "@/lib/api";
 import { env } from "@prequel/env";
+
+import { ConfirmDialog } from "./ConfirmDialog";
+import { MoreIcon, TrashIcon } from "./icons";
+import { Popover } from "./Popover";
 
 export function LibraryGrid({
   videos,
@@ -39,12 +45,21 @@ export function LibraryGrid({
 }
 
 function Card({ video }: { video: LibraryVideo }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const url = `${env.NEXT_PUBLIC_APP_URL}/v/${video.slug}`;
 
   return (
-    <div className="lit group flex flex-col overflow-hidden rounded-2xl border border-line bg-elevated transition-colors hover:border-muted/40">
-      <Link href={`/app/v/${video.id}`} className="block">
+    // `relative` so the menu can sit over the poster. `overflow-hidden` moves
+    // off the card and onto the poster band, which is the only part that needs
+    // clipping — leaving it here would cut off any menu that grows past the
+    // card's own height, which is a trap waiting for the second item.
+    <div className="lit group relative flex flex-col rounded-2xl border border-line bg-elevated transition-colors hover:border-muted/40">
+      <Link href={`/app/v/${video.id}`} className="block overflow-hidden rounded-t-2xl">
         {/* A fixed 16:9 band with the poster cropped into it, not the video's
             own aspect. A grid of cards at whatever shape each recording happens
             to be reads as broken rather than as varied. */}
@@ -66,6 +81,68 @@ function Card({ video }: { video: LibraryVideo }) {
           ) : null}
         </div>
       </Link>
+
+      {/* Over the poster rather than in the meta row: the row is already two
+          lines of text and a button, and the corner is where a card's own menu
+          is looked for. Hidden until the card is hovered or the button itself
+          has focus, so a grid of twelve cards is not a grid of twelve buttons —
+          `focus-within` is what keeps it reachable from the keyboard. */}
+      <Popover
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        label="Recording options"
+        className={`absolute top-2 right-2 z-20 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
+          menuOpen ? "opacity-100" : "opacity-0"
+        }`}
+        triggerClassName="flex size-7 items-center justify-center rounded-lg bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 [&_svg]:size-4"
+        menuClassName="right-0 w-44"
+        trigger={<MoreIcon />}
+      >
+        <button
+          type="button"
+          role="menuitem"
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-white/8 [&_svg]:size-3.5"
+          onClick={() => {
+            setMenuOpen(false);
+            setError(null);
+            setConfirming(true);
+          }}
+        >
+          <TrashIcon />
+          Delete
+        </button>
+      </Popover>
+
+      <ConfirmDialog
+        open={confirming}
+        title="Delete this recording?"
+        body={
+          <>
+            <span className="text-fg">{video.title}</span> will be removed and its share link will
+            stop working for anyone you have sent it to. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        pending={deleting}
+        error={error}
+        onCancel={() => setConfirming(false)}
+        onConfirm={async () => {
+          setDeleting(true);
+          setError(null);
+          try {
+            await api(`/v1/videos/${video.id}`, { method: "DELETE" });
+            setConfirming(false);
+            setDeleting(false);
+            // The grid is drawn from a server component, so the row goes when
+            // the server says it has. Dropping it here as well would be a second
+            // copy of the library's contents to keep in step.
+            router.refresh();
+          } catch {
+            setError("That didn't delete. Try again.");
+            setDeleting(false);
+          }
+        }}
+      />
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <Link href={`/app/v/${video.id}`} className="min-w-0">

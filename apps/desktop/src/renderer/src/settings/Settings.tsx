@@ -292,9 +292,12 @@ function Account() {
       </Section>
 
       <Section title="Billing">
+        {/* Deliberately carries no price. `apps/web/src/lib/pricing.ts` is the
+            one file that holds one, and the desktop app may not import across
+            that boundary — so a figure here would be a second copy to keep in
+            step, and the one nobody would remember to update. */}
         <p className="text-[13px] leading-relaxed text-editor-muted">
-          Prequel is still in development and there is nothing to buy yet. When there is, your plan
-          and billing will live here.
+          Your plan, invoices and seats live in your account on the web.
         </p>
       </Section>
     </div>

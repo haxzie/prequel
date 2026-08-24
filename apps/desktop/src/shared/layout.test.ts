@@ -1310,6 +1310,106 @@ describe("zooming", () => {
     return { keys: item.motion ?? [], base: item.dstRect, radius: item.shape.radius };
   };
 
+  /** The key at the deepest point of the move, where the shot has fully arrived. */
+  const deepest = (zooms: ZoomSlice[]) => {
+    const { keys } = motionOf(zooms);
+    return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
+  };
+
+  describe("what the shot is looking at", () => {
+    /**
+     * The sharp patch has to be where the subject is, not where the frame is.
+     *
+     * It used to be hard-coded to the middle of the frame, which is only where
+     * the subject ends up when the picture had room to carry it there. Aiming
+     * at anything near an edge left the blur focused on empty space — and
+     * because it *looked* like a working depth of field, nothing about it read
+     * as broken.
+     */
+    it("puts the sharp patch on the target, not on the middle of the frame", () => {
+      const left = deepest([region({ x: 0.15, y: 0.5, blur: true })]);
+      const right = deepest([region({ x: 0.85, y: 0.5, blur: true })]);
+
+      expect(left.focus).toBeDefined();
+      expect(right.focus).toBeDefined();
+
+      // Aiming at opposite sides has to move it to opposite sides.
+      expect(left.focus!.x).toBeLessThan(FRAME.width / 2);
+      expect(right.focus!.x).toBeGreaterThan(FRAME.width / 2);
+    });
+
+    it("carries the sharp patch along with the move rather than after it", () => {
+      const { keys } = motionOf([region({ x: 0.9, y: 0.5, blur: true })]);
+      const withFocus = keys.filter((key) => key.focus);
+
+      // Every key in the move, not just the ends: a patch that jumped to its
+      // final place on the first frame would pass the test above and still be
+      // wrong for the whole of the travel.
+      const xs = withFocus.map((key) => key.focus!.x);
+      expect(new Set(xs).size).toBeGreaterThan(1);
+    });
+
+    it("leaves it out entirely when the zoom has no blur", () => {
+      // Carrying a focus nothing reads would put the depth of field in every
+      // plan twice over.
+      expect(deepest([region({ blur: false })]).focus).toBeUndefined();
+    });
+  });
+
+  describe("a target near an edge", () => {
+    /**
+     * A corner cannot be centred without sliding half the picture off the frame,
+     * so the camera used to give up and not move at all — which is why aiming a
+     * zoom at a corner appeared to do nothing.
+     */
+    it("still travels toward it", () => {
+      const { base } = motionOf([]);
+      const corner = deepest([region({ x: 0.02, y: 0.02 })]);
+
+      // The old behaviour pinned the picture's own edge to the base rectangle's.
+      // Anything past that is travel the shot could not previously make.
+      expect(corner.x).toBeGreaterThan(base.x);
+      expect(corner.y).toBeGreaterThan(base.y);
+    });
+
+    it("brings a corner a third of the way to the middle", () => {
+      const { base } = motionOf([]);
+      const corner = deepest([region({ x: 0, y: 0, blur: true })]);
+
+      // Where the corner sits un-zoomed, and where it ends up.
+      const rest = base.x;
+      const landed = corner.focus!.x;
+      const middle = FRAME.width / 2;
+
+      const travelled = (landed - rest) / (middle - rest);
+
+      // `EDGE_REACH` is a third. Enough that the move is unmistakably going
+      // somewhere; not so much that the picture slides off the frame.
+      expect(travelled).toBeGreaterThan(0.3);
+      expect(travelled).toBeLessThan(0.45);
+    });
+
+    it("does not travel so far that it uncovers the frame", () => {
+      const { base } = motionOf([]);
+      const corner = deepest([region({ x: 0, y: 0 })]);
+
+      // `EDGE_REACH` is a third of the way, so the picture keeps two thirds of
+      // the overlap it would have had. Centring the corner outright is the
+      // failure this guards: it would leave half the frame showing background.
+      const uncovered = corner.x - base.x;
+      expect(uncovered).toBeLessThan(FRAME.width / 4);
+    });
+
+    it("leaves an interior target exactly where it was", () => {
+      // The blend is between two numbers that are equal wherever the picture had
+      // room, so nothing about an ordinary zoom may shift.
+      const middle = deepest([region({ x: 0.5, y: 0.5 })]);
+
+      expect(middle.x).toBeCloseTo(FRAME.width / 2 - middle.width / 2, 5);
+      expect(middle.y).toBeCloseTo(FRAME.height / 2 - middle.height / 2, 5);
+    });
+  });
+
   it("leaves the plan alone when there is nothing to zoom", () => {
     // No keys at all, rather than a flat track of the base rectangle for the
     // whole recording — which for a ten-minute take would be 18,000 of them.
@@ -1362,16 +1462,26 @@ describe("zooming", () => {
     expect(withMotion).toBeGreaterThanOrEqual(2);
   });
 
-  it("never pulls the picture off the area it filled", () => {
-    // A zoom towards a corner would otherwise leave background showing where
-    // the recording was.
+  it("comes off the area it filled by a bounded amount, and only at the leading edge", () => {
+    // This used to assert the picture *never* came off that area, and it was a
+    // fair rule until it turned out to be the reason aiming a zoom at a corner
+    // did nothing: covering the area from a corner is impossible, so the camera
+    // stayed put. `EDGE_REACH` buys the move at the price of some background
+    // showing on the side the shot is travelling away from.
+    //
+    // The bound is what is still worth pinning. Uncapped, this is a zoom that
+    // slides the recording halfway out of frame.
     const { keys, base } = motionOf([region({ x: 0, y: 0, level: 4 })]);
 
     for (const key of keys) {
-      expect(key.x).toBeLessThanOrEqual(base.x + 1e-6);
-      expect(key.y).toBeLessThanOrEqual(base.y + 1e-6);
+      // The trailing edges still cover: a shot moving up-left cannot uncover
+      // the bottom or the right, and if it ever does the sign is wrong somewhere.
       expect(key.x + key.width).toBeGreaterThanOrEqual(base.x + base.width - 1e-6);
       expect(key.y + key.height).toBeGreaterThanOrEqual(base.y + base.height - 1e-6);
+
+      // The leading edges may come inside, by well under a fifth of the frame.
+      expect(key.x - base.x).toBeLessThan(FRAME.width * 0.2);
+      expect(key.y - base.y).toBeLessThan(FRAME.height * 0.2);
     }
   });
 

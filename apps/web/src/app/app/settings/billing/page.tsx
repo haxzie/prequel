@@ -1,5 +1,5 @@
 import { formatBytes } from "@/app/app/page";
-import { PLANS } from "@/lib/pricing";
+import { PLANS, PRICE_YEARLY } from "@/lib/pricing";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
 
@@ -27,8 +27,8 @@ export default async function BillingPage() {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-medium tracking-tight text-fg">Billing</h1>
       <p className="mt-1.5 text-sm text-muted">
-        Prequel is still in development and there is nothing to buy yet. Your plan and invoices will
-        live here.
+        Your plan and invoices live here. Prequel is {PRICE_YEARLY} per user per year at
+        introductory pricing, which goes up later.
       </p>
 
       <div className="lit mt-8 rounded-2xl border border-line bg-elevated p-6">

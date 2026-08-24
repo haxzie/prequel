@@ -10,7 +10,7 @@ import { CONTACT_EMAIL, SITE } from "@/lib/site";
  *
  * One column, one thing to do, and nothing to click away to. The marketing nav
  * belongs to pages that are trying to interest somebody; every page in here is
- * for somebody who has already decided, and a "Get early access" button beside a
+ * for somebody who has already decided, and a "Download" button beside a
  * sign-in form is an invitation to abandon the thing they came to finish.
  *
  * The wash stays. It is the one piece of the site's identity that costs nothing

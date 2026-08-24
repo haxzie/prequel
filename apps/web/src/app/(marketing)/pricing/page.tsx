@@ -21,7 +21,7 @@ export default function Pricing() {
           <SectionHeading
             eyebrow="Pricing"
             title="One price, everything in it."
-            lede="Nothing is for sale yet — Prequel is still in development. This is the price it will ship with, so you know before you wait for it."
+            lede="One plan, one price, and everything in it. Introductory while Prequel is new, so the rate goes up later — this is what it costs today."
             align="centre"
           />
         </Container>
@@ -38,11 +38,11 @@ export default function Pricing() {
                 plan.featured ? "border-brand-to/60 bg-elevated" : "border-line bg-surface"
               }`}
             >
-              {plan.featured ? (
-                <span className="brand-gradient absolute -top-3 left-7 rounded-full px-3 py-1 text-[11px] font-medium text-white">
-                  Most popular
-                </span>
-              ) : null}
+              {/* Early bird, not "most popular" — there is one plan, so there is
+                  nothing for it to be more popular than. */}
+              <span className="brand-gradient absolute -top-3 left-7 rounded-full px-3 py-1 text-[11px] font-medium text-white">
+                Early bird
+              </span>
 
               <h2 className="text-base font-medium text-fg">{plan.name}</h2>
               <p className="mt-1.5 text-sm text-muted">{plan.summary}</p>
@@ -57,13 +57,21 @@ export default function Pricing() {
               <p className="mt-1.5 text-xs text-muted">
                 About {PRICE_MONTHLY_EQUIVALENT} a month · {TRIAL_DAYS} days free
               </p>
+              {/* Says the rate is introductory and nothing more. No struck-out
+                  regular price, because there is not one to strike out, and no
+                  promise that this rate is kept for life — that is a commitment
+                  to honour on every early licence indefinitely, and it is not
+                  one this page is allowed to invent. */}
+              <p className="mt-3 text-xs text-lilac">
+                Introductory pricing while Prequel is new. It goes up later.
+              </p>
 
               <ButtonLink
-                href="/#waitlist"
+                href="/download"
                 variant={plan.featured ? "primary" : "secondary"}
                 className="mt-6 w-full"
               >
-                Join the waitlist
+                Download for Mac
               </ButtonLink>
 
               <ul className="mt-7 flex flex-col gap-3 border-t border-line pt-6 text-sm">
