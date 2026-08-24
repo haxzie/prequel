@@ -41,6 +41,9 @@
   "vars": {
     "APP_URL": "http://localhost:3000",
     "API_URL": "http://localhost:8787",
+    // Where the desktop app's update feed points. The download path redirects
+    // to this repository's releases; the notes lookup reads its API.
+    "GITHUB_REPO": "haxzie/prequel",
     // Not a secret. This is the public response endpoint of the "Prequel - Early
     // access form" Google Form, readable by anyone who opens the form.
     "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
@@ -51,7 +54,18 @@
     // not send from an unverified identity, and while the account is in the
     // sandbox it will not send *to* an unverified one either, so this address
     // doubles as the only inbox that can receive a test link.
-    "SES_FROM": "Prequel <musthaq@sequel.sh>"
+    "SES_FROM": "Prequel <musthaq@sequel.sh>",
+    // PostHog's project token is public — write-only, and served to every
+    // browser that loads the site — so it is a var here rather than a secret in
+    // `.dev.vars`, the same call `WAITLIST_ENDPOINT` above makes.
+    //
+    // Development uses the same token as production on purpose. Every event the
+    // Worker forwards carries an `environment` property derived from `APP_URL`,
+    // so local traffic is filterable rather than absent — and the integration is
+    // exercised while it is being written instead of for the first time on the
+    // deploy that ships it.
+    "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
+    "POSTHOG_HOST": "https://us.i.posthog.com"
   },
 
   "env": {
@@ -59,6 +73,7 @@
       "vars": {
         "APP_URL": "https://prequel.sh",
         "API_URL": "https://api.prequel.sh",
+        "GITHUB_REPO": "haxzie/prequel",
         "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
         "WAITLIST_FIELD": "entry.348125812",
         "SES_REGION": "us-east-1",
@@ -66,7 +81,12 @@
         // magic link and invitation fails with an error naming the sender.
         // Sending Prequel's mail from another brand's domain would also cost
         // deliverability, which is the slow version of the same failure.
-        "SES_FROM": "Prequel <hello@prequel.sh>"
+        "SES_FROM": "Prequel <hello@prequel.sh>",
+        // Repeated rather than inherited: a named environment inherits nothing
+        // from the top-level `vars`, so a value left out here is simply absent
+        // in production — which for these two is silence rather than an error.
+        "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
+        "POSTHOG_HOST": "https://us.i.posthog.com"
       },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
       "d1_databases": [

@@ -2,11 +2,18 @@ import { app, protocol } from "electron";
 
 import { validateEnv } from "@prequel/env";
 
+import { flush, track } from "./analytics.js";
 import { onAuthChanged } from "./auth.js";
 import { CaptureFlow } from "./capture-flow.js";
 import { migrateLibrary } from "./library-migrate.js";
 import { flushDeepLinks, handleDeepLinkArgv, registerDeepLinks } from "./deep-link.js";
-import { broadcastAuthState, broadcastDockState, broadcastLoginItem, registerIpc } from "./ipc.js";
+import {
+  broadcastAuthState,
+  broadcastDockState,
+  broadcastLoginItem,
+  broadcastUpdateState,
+  registerIpc,
+} from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
 import { loginItemState, seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
 import { permissionStates } from "./permissions.js";
@@ -16,11 +23,13 @@ import { Preferences } from "./preferences.js";
 import { RecordingSession } from "./session.js";
 import { applyShortcuts, teardownShortcuts } from "./shortcuts.js";
 import { AppTray } from "./tray.js";
+import { checkForUpdates, onUpdateChanged } from "./update.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { EditorWindows } from "./windows/editor.js";
 import { SelectionOverlay } from "./windows/selection.js";
 import { SettingsWindow } from "./windows/settings.js";
+import { UpdateWindow } from "./windows/update.js";
 import { WelcomeWindow } from "./windows/welcome.js";
 
 // Without this, an unpackaged build takes its name from package.json and
@@ -87,7 +96,8 @@ let quitting = false;
  * is open and hidden only once neither is.
  */
 function syncDockIcon(): void {
-  if (editors.openCount > 0 || welcome.isOpen || settings.isOpen) void app.dock?.show();
+  if (editors.openCount > 0 || welcome.isOpen || settings.isOpen || updates.isOpen)
+    void app.dock?.show();
   else app.dock?.hide();
 }
 
@@ -101,6 +111,11 @@ const settings = new SettingsWindow({
   onClose: () => syncDockIcon(),
   // Open at login lives in macOS, so it can change while this window is open.
   onFocus: () => broadcastLoginItem(loginItemState()),
+});
+
+const updates = new UpdateWindow({
+  onOpen: () => syncDockIcon(),
+  onClose: () => syncDockIcon(),
 });
 
 const editors = new EditorWindows({
@@ -158,6 +173,7 @@ void app.whenReady().then(() => {
     settings,
     editors,
     welcome,
+    updates,
   });
 
   registerIpc({ flow });
@@ -166,6 +182,10 @@ void app.whenReady().then(() => {
   // Several surfaces show the account, so they hear about it rather than each
   // polling for it.
   onAuthChanged(broadcastAuthState);
+
+  // The tray menu reads this directly when it is built, but the update window
+  // and the Settings pane stay open across a whole download and have to be told.
+  onUpdateChanged(broadcastUpdateState);
 
   // Now that `completeSignIn` has somewhere to report to. Covers both a link
   // that arrived before this point and the cold-launch case, where the URL is in
@@ -197,6 +217,17 @@ void app.whenReady().then(() => {
   void (async () => {
     const granted = (await permissionStates()).find((state) => state.id === "screen")?.granted;
 
+    // The one event that answers the questions nothing here could: how many
+    // installs there are, how many ever get past the Screen Recording prompt,
+    // and which versions are still running. `first_launch` is read off
+    // `welcomed` rather than a flag of its own — there is exactly one piece of
+    // first-run state and a second one would eventually disagree with it.
+    track("app_launched", {
+      first_launch: !preferences.get().welcomed,
+      opened_at_login: wasOpenedAtLogin(),
+      screen_permission: granted === true,
+    });
+
     if (!preferences.get().welcomed || !granted) {
       welcome.open();
       return;
@@ -208,6 +239,25 @@ void app.whenReady().then(() => {
     // to be dismissed, which is the opposite of what opening at login is for.
     if (wasOpenedAtLogin()) log("info", "opened at login: staying in the menu bar");
     else flow!.open();
+
+    /**
+     * Then, quietly, whether there is a newer version.
+     *
+     * The window is shown on every launch while an update is pending rather
+     * than once per version: launching is the only moment this app has anyone's
+     * attention, and a recorder people open twice a week would otherwise take
+     * months to notice.
+     *
+     * Not at login, though — the rule above applies to this too, and a window
+     * over the desktop every time the machine boots is something to be
+     * dismissed rather than read. The check still runs, so the tray item has
+     * the answer; only the window waits for a launch somebody meant.
+     *
+     * The welcome flow never reaches here at all, which is right: that user is
+     * installing a fresh copy and has nothing to update.
+     */
+    const update = await checkForUpdates();
+    if (update.status === "available" && !wasOpenedAtLogin()) updates.open();
   })();
 
   // The tray title and the panel both show elapsed time, so it has to tick even
@@ -245,6 +295,7 @@ app.on("will-quit", () => {
     ["editors", () => editors.closeAll()],
     ["welcome", () => welcome.close()],
     ["settings", () => settings.close()],
+    ["updates", () => updates.close()],
     ["tray", () => tray?.destroy()],
   ] as const) {
     try {
@@ -262,6 +313,13 @@ app.on("will-quit", () => {
 app.on("before-quit", () => {
   quitting = true;
   log("info", "before-quit");
+
+  // Started, not awaited. `before-quit` and `will-quit` must not throw and must
+  // not block — an exception here abandons the quit and strands the app with no
+  // way out but `kill -9` — so whatever has not been sent by now is lost, which
+  // is the right trade for an analytics event.
+  track("app_quit");
+  void flush();
 });
 app.on("quit", (_event, code) => log("info", `quit with code ${code}`));
 

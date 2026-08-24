@@ -520,6 +520,22 @@ export function selectedSlice(state: EditorState): Slice | undefined {
 }
 
 /**
+ * The settings a given slice renders with.
+ *
+ * The preview follows the playhead and the inspector follows the selection, so
+ * the two ask this the same question about different slices. Separate from
+ * `activeSettings` for exactly that reason: tying the picture to the selection
+ * is what made changing one clip's layout appear to change every clip's.
+ *
+ * An id that names no slice resolves to the defaults, which is what a project
+ * with nothing under the playhead should draw.
+ */
+export function settingsOf(project: Project, sliceId: string | null): SliceSettings {
+  const slice = slicesOf(project).find((candidate) => candidate.id === sliceId);
+  return resolveSettings(project.defaults, slice?.overrides);
+}
+
+/**
  * Where a cut at `at` would actually land, or null if it would not happen.
  *
  * The single rule behind both the split action and the line the slice tool

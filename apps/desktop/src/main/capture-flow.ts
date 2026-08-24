@@ -18,6 +18,7 @@ import type {
 } from "../shared/contract.js";
 import { withoutDeviceIds } from "../shared/contract.js";
 import { iconsFor } from "./app-icons.js";
+import { track } from "./analytics.js";
 import { log } from "./log.js";
 import type { Preferences } from "./preferences.js";
 import type { NativeCamera } from "./recorder.js";
@@ -104,6 +105,13 @@ export interface CaptureFlowOptions {
    * one place that knows what opening a surface entails.
    */
   settings?: { open: () => void };
+  /**
+   * The update window, for the tray to reach through the flow.
+   *
+   * Injected for the same reasons as the three above, and optional for the same
+   * reason: nothing about capture depends on it existing.
+   */
+  updates?: { open: () => void };
 }
 
 export class CaptureFlow {
@@ -149,6 +157,9 @@ export class CaptureFlow {
    * places to keep in step and one of them eventually wrong.
    */
   finishWelcome(): void {
+    // Fired here rather than off the flag, because this is the transition. The
+    // flag is a state and is already true on every launch afterwards.
+    track("welcome_completed");
     this.deps.preferences.update({ welcomed: true });
     this.deps.welcome?.close();
     this.open();
@@ -157,6 +168,11 @@ export class CaptureFlow {
   /** Opens settings, or focuses the window already open. */
   openSettings(): void {
     this.deps.settings?.open();
+  }
+
+  /** Opens the update window, or focuses the one already open. */
+  openUpdate(): void {
+    this.deps.updates?.open();
   }
 
   state(): DockState {
@@ -425,6 +441,19 @@ export class CaptureFlow {
         `${String(Math.round(selection.target.bounds.height))}`,
     });
 
+    // Shapes and switches only. The target's label names a window, which names
+    // whatever the user happened to have open.
+    track("recording_started", {
+      mode: selection.mode,
+      target: selection.target.kind,
+      cropped: selection.crop !== null,
+      camera: preferences.cameraId !== null,
+      microphone: preferences.micId !== null,
+      system_audio: preferences.systemAudio,
+      bake_cursor: preferences.bakeCursor,
+      countdown: preferences.countdown,
+    });
+
     try {
       await this.deps.session.start({
         target: selection.target,
@@ -470,9 +499,16 @@ export class CaptureFlow {
   }
 
   async stop(): Promise<void> {
+    // Read before the stop clears it. `RecordingSession.stop()` resets the clock
+    // in its `finally`, so asking afterwards reports zero for every recording
+    // ever made — which looks like data rather than like a bug.
+    const elapsedMs = this.deps.session.snapshot().elapsedMs;
+
     await this.deps.session.stop();
     this.deps.dock.setView("setup");
     this.emit();
+
+    track("recording_stopped", { duration_ms: Math.round(elapsedMs) });
 
     // The take is on disk and nothing else in the app would ever show it, so
     // stopping opens the editor on it. Read from the session rather than
@@ -504,7 +540,9 @@ export class CaptureFlow {
    * that is no longer there.
    */
   async discard(): Promise<void> {
-    const path = this.deps.session.snapshot().outputPath;
+    const { outputPath: path, elapsedMs } = this.deps.session.snapshot();
+
+    track("recording_discarded", { duration_ms: Math.round(elapsedMs) });
 
     await this.deps.session.stop();
     this.deps.session.forgetLastResult();

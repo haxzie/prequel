@@ -15,18 +15,14 @@
  * API. Two things changed with it: the size cap, which was Vercel's rather than
  * OpenAI's, and the rate limiter, which was in memory and now is not.
  */
-import { and, eq, isNull } from "drizzle-orm";
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 
-import { schema } from "@prequel/db";
+import { sha256 } from "../lib/ids.ts";
+import { captureServer } from "../lib/posthog.ts";
+import { sweep, take, type Allowance } from "../lib/rate-limit.ts";
+import { optionalIdentity, type App, type AppContext, type Identity } from "../middleware.ts";
 
-import { createAuth } from "../auth.ts";
-import { database } from "../db.ts";
-import type { Env } from "../env.ts";
-import { bearerToken, sha256 } from "../lib/ids.ts";
-import { sweep, take } from "../lib/rate-limit.ts";
-
-const transcribe = new Hono<{ Bindings: Env }>();
+const transcribe = new Hono<AppContext>();
 
 /**
  * Long enough for a several-minute recording to be transcribed, short enough
@@ -87,7 +83,9 @@ transcribe.post("/", async (c) => {
   const subject = await identify(c);
   if (!subject) return c.json({ message: "Missing install identifier." }, 400);
 
-  const db = database(c.env);
+  // Set by `optionalIdentity` inside `identify`, the same way `authenticate`
+  // sets it for every other route.
+  const db = c.get("db");
 
   if (!(await take(db, subject.key, subject.allowance))) {
     return c.json({ message: "Too many transcriptions in the last hour. Try again later." }, 429);
@@ -133,11 +131,24 @@ transcribe.post("/", async (c) => {
       words?: { word: string; start: number; end: number }[];
     };
 
+    const words = result.words ?? [];
+
+    captureServer(c.env, c.executionCtx, {
+      event: "transcription_completed",
+      userId: subject.identity?.userId ?? null,
+      // The raw install id, not the limiter's hash of it. `/v1/events` files
+      // this machine's other events under `install_<uuid>`, and a second
+      // identifier for the same Mac would split one person's history in two.
+      distinctId: subject.installId ? `install_${subject.installId}` : undefined,
+      teamId: subject.identity?.teamId ?? null,
+      properties: { words: words.length, language: result.language ?? "en", model: MODEL },
+    });
+
     return c.json({
       // Converted here rather than in the app: seconds are OpenAI's unit and
       // nanoseconds are the session clock's, and one conversion in one place is
       // the difference between a caption that lands and one that drifts.
-      words: (result.words ?? []).map((word) => ({
+      words: words.map((word) => ({
         at: nanoseconds(word.start),
         end: nanoseconds(word.end),
         text: word.word,
@@ -167,42 +178,30 @@ transcribe.post("/", async (c) => {
  * The install id is hashed before it becomes a key. It identifies a machine, and
  * there is no reason for the limiter's table to be a list of them.
  */
-async function identify(c: Context<{ Bindings: Env }>) {
-  const userId = await signedInUser(c);
-  if (userId) return { key: `user:${userId}`, allowance: SIGNED_IN };
+async function identify(c: App): Promise<{
+  key: string;
+  allowance: Allowance;
+  identity: Identity | null;
+  installId: string | null;
+} | null> {
+  // Both credentials are resolved by the same helper `authenticate` uses, which
+  // is what stops this route drifting from the rest of the API about what counts
+  // as signed in. It answers null rather than refusing the request — an install
+  // with no account still gets an allowance, just a smaller one.
+  const identity = await optionalIdentity(c);
+  const install = c.req.header("x-prequel-install")?.slice(0, 64) ?? null;
 
-  const install = c.req.header("x-prequel-install")?.slice(0, 64);
+  if (identity)
+    return { key: `user:${identity.userId}`, allowance: SIGNED_IN, identity, installId: install };
+
   if (!install) return null;
 
-  return { key: `install:${await sha256(install)}`, allowance: ANONYMOUS };
-}
-
-async function signedInUser(c: Context<{ Bindings: Env }>): Promise<string | null> {
-  const bearer = bearerToken(c.req.header("authorization"));
-
-  if (bearer) {
-    const [row] = await database(c.env)
-      .select({ userId: schema.deviceToken.userId })
-      .from(schema.deviceToken)
-      .where(
-        and(
-          eq(schema.deviceToken.tokenHash, await sha256(bearer)),
-          isNull(schema.deviceToken.revokedAt),
-        ),
-      )
-      .limit(1);
-
-    return row?.userId ?? null;
-  }
-
-  // A cookie only reaches here from a browser, which today means nothing calls
-  // this path — it costs one lookup and means a future web-side transcription
-  // is not a special case.
-  const session = await createAuth(c.env)
-    .api.getSession({ headers: c.req.raw.headers })
-    .catch(() => null);
-
-  return session?.user.id ?? null;
+  return {
+    key: `install:${await sha256(install)}`,
+    allowance: ANONYMOUS,
+    identity: null,
+    installId: install,
+  };
 }
 
 function nanoseconds(value: number): number {

@@ -156,6 +156,20 @@ jobs:
 
       # `gh` rather than a third-party action: it is already on the runner and
       # authenticated by the token, so this is one less thing to trust.
+      #
+      # `latest-mac.yml` is what makes the release an update: `/v1/updates` in
+      # the Worker redirects the app's updater at it, and without it in the
+      # release every installed copy checks, gets a 404, and stays where it is.
+      #
+      # No `.blockmap` on purpose. Differential download is turned off in
+      # `main/update.ts` — GitHub's asset host answers 501 to the multi-range
+      # request it needs — so publishing them would only look like a delta path
+      # that works.
+      #
+      # An unsigned build (no `CSC_LINK` secret) still produces a release, and
+      # an installed copy of it can never update in place: Squirrel refuses a
+      # replacement whose signature does not match what is running. Do not tag
+      # from a run that was not signed.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -164,6 +178,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             apps/desktop/release/*.dmg \
             apps/desktop/release/*.zip \
+            apps/desktop/release/latest-mac.yml \
             --title "Prequel $GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag

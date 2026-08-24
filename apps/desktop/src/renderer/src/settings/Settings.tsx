@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AfterRecording } from "../../../shared/contract";
+import type { AfterRecording, UpdateStatus } from "../../../shared/contract";
 import { Field, Section } from "../editor/controls/Field";
 import { Segmented, Toggle } from "../editor/controls/inputs";
 import { Avatar } from "../components/Avatar";
@@ -9,6 +9,7 @@ import { useDock } from "../hooks/useDock";
 import { cn } from "../lib/cn";
 import { AccountIcon, GeneralIcon, RecordingIcon, ShortcutsIcon } from "./icons";
 import { ShortcutField } from "./ShortcutField";
+import { useUpdate } from "../update/useUpdate";
 
 const SECTIONS = [
   { id: "general", label: "General", Icon: GeneralIcon },
@@ -92,6 +93,7 @@ const AFTER_RECORDING: { value: AfterRecording; label: string }[] = [
 
 function General({ preferences, set }: PaneProps) {
   const [openAtLogin, setOpenAtLogin] = useState<boolean | null>(null);
+  const { state: update } = useUpdate();
 
   /**
    * Read from macOS, never from `preferences.json`.
@@ -138,9 +140,44 @@ function General({ preferences, set }: PaneProps) {
             onChange={(value) => set({ afterRecording: value })}
           />
         </Field>
+
+        {/* The only place in the app that says which version this is. The
+            welcome window shows it once and is never seen again. */}
+        <Field label={`Version ${update.current}`} inline>
+          <button
+            type="button"
+            className="rounded-md border border-editor-line px-2.5 py-1 text-[11px] text-editor-muted hover:text-editor-fg disabled:opacity-40"
+            disabled={update.status === "checking" || update.status === "downloading"}
+            onClick={() => {
+              // Checked from here, shown over there: the result needs release
+              // notes and a progress bar, and this pane is a list of switches.
+              void window.prequel.update.check().then((state) => {
+                if (state.status !== "idle") void window.prequel.update.open();
+              });
+            }}
+          >
+            {updateLabel(update.status)}
+          </button>
+        </Field>
       </Section>
     </div>
   );
+}
+
+/** What the button in General says, given where the check has got to. */
+function updateLabel(status: UpdateStatus): string {
+  switch (status) {
+    case "checking":
+      return "Checking…";
+    case "available":
+      return "Update available";
+    case "downloading":
+      return "Downloading…";
+    case "ready":
+      return "Restart to update";
+    default:
+      return "Check for Updates";
+  }
 }
 
 function Recording({ preferences, set }: PaneProps) {

@@ -67,6 +67,7 @@
   --color-editor-muted: var(--editor-muted);
   --color-editor-accent: var(--editor-accent);
   --color-editor-danger: var(--editor-danger);
+  --color-layout-screen: var(--layout-screen);
   --color-layout-camera: var(--layout-camera);
   --color-slice-fill: var(--slice-fill);
   --color-slice-edge: var(--slice-edge);
@@ -245,16 +246,17 @@ body {
      warning renders in the body colour. */
   --editor-danger: #e5484d;
 
-  /* The camera block in a layout thumbnail.
-     A hue rather than another step of grey: the thumbnails are twelve pixels
-     across and there are ten of them, so "which block is the camera" has to be
-     answerable at a glance rather than by comparing two greys. Not the clips'
-     purple, which is sitting in this same panel on the clip chip — two purples
-     meaning different things is worse than one hue nobody has to decode. Blue
-     is the closest thing this editor has to a neutral highlight, and its other
-     uses are a hairline playhead and a selection ring on the far side of the
-     window, so a solid block of it here is not mistaken for either. */
-  --layout-camera: #3b82f6;
+  /* The two blocks in a layout thumbnail, standing in for the pictures.
+     Both are greys, and opaque: the thumbnail now draws the composition's own
+     background behind them, and a translucent block took that background's hue
+     — so a recording on a blue gradient and one on a red gradient disagreed
+     about what a screen looks like.
+     The camera is the darker of the two, and the difference has to survive
+     being nine pixels across. What actually answers "which block is the
+     camera" is the glyph on it; the step in tone is what makes the pair read as
+     two different things before the glyph is resolved. */
+  --layout-screen: #d5d9de;
+  --layout-camera: #9aa1a9;
 
   /* The timeline's own colours.
      Clips are purple so the strip reads as a distinct surface from the panels

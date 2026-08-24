@@ -11,13 +11,7 @@ import {
 import { CURSOR_FILES, type EditorSession } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
-import {
-  newProject,
-  resolveSettings,
-  WALLPAPER_FILE_NAME,
-  type Project,
-  type ZoomSlice,
-} from "../../../shared/project";
+import { newProject, type Project, type ZoomSlice } from "../../../shared/project";
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
@@ -30,12 +24,10 @@ import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { Preview, type Grab } from "./Preview";
 import {
-  activeSettings,
+  settingsOf,
   canUndo,
   editorReducer,
   initialState,
-  placedSlices,
-  selectedSlice,
   slicesOf,
   zoomInProject,
   type EditorAction,
@@ -118,16 +110,34 @@ export function Editor() {
   // The settings the playhead is currently under, which is not necessarily the
   // ones the inspector is showing — the preview follows the video, the panel
   // follows the selection.
-  const previewSettings = useMemo(() => {
-    const placed = placedSlices(state.project);
-    const at = placed.find(
-      (slice) =>
-        media.playback.position() >= slice.timelineStart &&
-        media.playback.position() < slice.timelineStart + slice.duration,
-    );
-    const slice = slices.find((candidate) => candidate.id === at?.id) ?? slices[0];
-    return resolveSettings(state.project.defaults, slice?.overrides);
-  }, [state.project, slices, media.playback]);
+  //
+  // Keyed off `media.sliceId`, which the playback loop updates as the playhead
+  // crosses a cut. It used to read `playback.position()` inside a memo that
+  // depended on the project, so it was resolved once per edit and then frozen:
+  // every clip after the first drew with whatever layout happened to be under
+  // the playhead when the project last changed. Per-slice layouts were being
+  // saved and exported correctly the whole time and simply never shown.
+  const previewSettings = useMemo(
+    () => settingsOf(state.project, media.sliceId),
+    [state.project, media.sliceId],
+  );
+
+  /**
+   * What the slice under the playhead is arriving from.
+   *
+   * Null on the first slice, which has nothing behind it to travel from. The
+   * plan is rebuilt every frame from this, so the camera's move is drawn by the
+   * preview and rasterised by the exporter off the same keyframes — the
+   * transition is in the plan rather than in either renderer.
+   */
+  const previewEnter = useMemo(() => {
+    const index = slices.findIndex((slice) => slice.id === media.sliceId);
+    const previous = index > 0 ? slices[index - 1] : undefined;
+    const current = index >= 0 ? slices[index] : undefined;
+
+    if (!previous || !current) return null;
+    return { from: settingsOf(state.project, previous.id), source: current.source };
+  }, [state.project, slices, media.sliceId]);
 
   // Latest, so the debounced preview below plays the zoom as it is when the
   // timer fires rather than as it was when the first change landed.
@@ -299,6 +309,7 @@ export function Editor() {
             <Preview
               frame={state.project.frame}
               settings={previewSettings}
+              enter={previewEnter}
               media={media}
               images={images}
               cursor={session.cursor}
@@ -347,7 +358,13 @@ export function Editor() {
                 dispatch({ type: "selectZoom", zoomId: null });
                 setPanelOpen(false);
               }}
-              wallpaperUrl={mediaUrl(recordingName(session.dir), WALLPAPER_FILE_NAME)}
+              // Everything the panels draw comes out of the session
+              // directory: the desktop picture, the background images copied
+              // in when they were chosen, and every pointer image, which
+              // `cursorLayer` copies whether or not it is the chosen one. The
+              // same files the preview composites, rather than second copies
+              // bundled for the panel to show.
+              fileUrl={(file) => mediaUrl(recordingName(session.dir), file)}
               onPickWallpaper={async () => {
                 const result = await window.prequel.editor.wallpaper(session.dir);
                 if (result.ok && result.value) {
@@ -619,32 +636,43 @@ function usePersistence(session: EditorSession | null, project: unknown, revisio
   }, [revision]);
 }
 
-/** Pushes the resolved audio settings into the live graph. */
+/**
+ * Pushes the resolved audio settings into the live graph.
+ *
+ * Keyed to the slice under the playhead, not the selected one. Following the
+ * selection meant the mix answered a question nobody was asking: what is being
+ * *edited*, rather than what is being *heard*. Two ways that showed:
+ *
+ * Selecting a zoom clears the clip selection — the inspector shows one thing at
+ * a time — so the mix fell back to the project defaults, and a clip whose audio
+ * had been muted played at full volume for the whole of the zoom preview. The
+ * mute was still saved and still exported; only the thing you were listening to
+ * ignored it.
+ *
+ * And during ordinary playback across a cut, the mix stayed on whichever clip
+ * happened to be selected rather than the one making the sound.
+ *
+ * Nothing is lost by the change: a fader is dragged while paused, where there is
+ * no audio either way, and once playing the clip you can hear is the one the
+ * playhead is in. The gains are ramped in `AudioMixer.set`, so a change at a
+ * boundary slides rather than clicks.
+ */
 function useAudioMix(
   media: ReturnType<typeof useEditorPlayback>,
   state: ReturnType<typeof initialState>,
   session: EditorSession | null,
 ) {
-  const settings = activeSettings(state);
-  const slice = selectedSlice(state);
+  const { audio } = settingsOf(state.project, media.sliceId);
 
+  // The four values rather than the object they came out of: `settingsOf`
+  // resolves a fresh one every render, so depending on it would push the whole
+  // mix into the graph on every frame of every drag.
   useEffect(() => {
     if (!session) return;
-    // The playhead's slice rather than the selected one would be more correct
-    // mid-playback; the difference only shows while a clip is selected that is
-    // not playing, and following the selection is what makes the fader respond
-    // to the thing being adjusted.
-    const resolved = resolveSettings(state.project.defaults, slice?.overrides);
 
-    media.setGain("microphone", {
-      volume: resolved.audio.micVolume,
-      muted: resolved.audio.micMuted,
-    });
-    media.setGain("system_audio", {
-      volume: resolved.audio.systemVolume,
-      muted: resolved.audio.systemMuted,
-    });
-  }, [media, session, state.project.defaults, slice?.overrides, settings]);
+    media.setGain("microphone", { volume: audio.micVolume, muted: audio.micMuted });
+    media.setGain("system_audio", { volume: audio.systemVolume, muted: audio.systemMuted });
+  }, [media, session, audio.micVolume, audio.micMuted, audio.systemVolume, audio.systemMuted]);
 }
 
 /**

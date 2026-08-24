@@ -45,6 +45,27 @@ export interface SourceSizes {
 export type PlanSource = "screen" | "camera";
 
 /**
+ * What the slice before this one was drawn with.
+ *
+ * A cut between two arrangements is the one moment the composition changes
+ * without anything moving, and a camera that teleports across the frame reads
+ * as a glitch rather than as an edit. Given this, the camera travels into its
+ * new place over the opening of the slice.
+ *
+ * Only the camera moves. The screen box is also driven by zooms, whose keys are
+ * derived from a base rectangle that is fixed for the slice — making that base
+ * move means threading it through the follow, the steadying and the reach, and
+ * that is a change to the zoom maths rather than an addition beside it.
+ *
+ * Absent on the first slice, which has nothing to arrive from.
+ */
+export interface EnterTransition {
+  from: SliceSettings;
+  /** This slice's own source range, so a move cannot outlast the clip it opens. */
+  source: { start: number; end: number };
+}
+
+/**
  * A rounded rectangle whose corners are a superellipse.
  *
  * `exponent` 2 is a true ellipse — a circle when the radius reaches half the
@@ -245,6 +266,7 @@ export function buildRenderPlan(
   settings: SliceSettings,
   cursor?: CursorTrack | null,
   zooms?: readonly ZoomSlice[],
+  enter?: EnterTransition | null,
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -259,6 +281,14 @@ export function buildRenderPlan(
   // Where each picture goes, worked out once for both of them. Everything below
   // only fits a source into the box it was given and decides how to dress it.
   const boxes = layoutBoxes(frame, layout, background, sources);
+
+  // Where the camera was a frame ago, on the far side of the cut. Resolved
+  // through the same `placement` the drag handles use, so "where was it" and
+  // "where is it" cannot be answered by two different pieces of arithmetic.
+  const leaving =
+    enter && sources.camera
+      ? placement(frame, enter.from.layout, enter.from.background, sources, "camera")
+      : null;
 
   if (sources.screen && boxes.screen) {
     const slot = boxes.screen;
@@ -377,6 +407,25 @@ export function buildRenderPlan(
     const blur = background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
+    // Arriving from wherever the previous slice had it — or from nothing, when
+    // that arrangement had no camera at all. Growing out of the middle of where
+    // it is going is the one entrance that needs no opacity: a plan item has no
+    // alpha, and a rectangle of no size draws nothing on any of the three
+    // rasterisers because the quad is degenerate before any fragment work.
+    const { keys: motion, shadow: shadowMotion } = enter
+      ? moveKeys(
+          leaving ? reshaped(leaving.dstRect, dstRect) : nothingAt(dstRect),
+          leaving ? cameraRadius(leaving, reshaped(leaving.dstRect, dstRect), unit, enter.from) : 0,
+          dstRect,
+          shape.radius,
+          spread,
+          enter.source.start,
+          moveWindow(enter),
+        )
+      : { keys: [], shadow: [] };
+
+    const moving = motion.length > 0 ? { motion } : {};
+
     if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
@@ -390,6 +439,7 @@ export function buildRenderPlan(
         blur,
         dy: background.shadowY * against,
         color: rgba("#000000", background.shadowOpacity * (slot.card ? 1 : CAMERA_SHADOW)),
+        ...(shadowMotion.length > 0 ? { motion: shadowMotion } : {}),
       });
     }
 
@@ -400,6 +450,7 @@ export function buildRenderPlan(
       dstRect,
       shape,
       mirror: layout.cameraMirror,
+      ...moving,
     });
 
     // Only a card takes the border. A stroke around a bubble is a ring, which
@@ -412,11 +463,83 @@ export function buildRenderPlan(
         shape,
         width: background.borderWidth * unit,
         color: background.borderColor,
+        ...moving,
+      });
+    }
+  } else if (leaving && enter && sources.camera) {
+    // This arrangement has no camera and the one before it did. Without this the
+    // bubble is simply gone on the cut, which reads as the camera failing rather
+    // than as the composition changing — so it shrinks away into its own middle
+    // and the slice draws nothing thereafter.
+    //
+    // The item's own rectangle is the empty one: `rectAt` holds the last key
+    // past the end of the track, so what is drawn for the rest of the slice is
+    // nothing either way, and a resting value that could ever draw would be a
+    // bubble reappearing at the end of a clip that has no camera in it.
+    const gone = nothingAt(leaving.dstRect);
+    const radius = cameraRadius(leaving, leaving.dstRect, unit, enter.from);
+    const against = leaving.card ? unit : Math.min(leaving.dstRect.width, leaving.dstRect.height);
+    const blur = enter.from.background.shadowBlur * against;
+    const spread = (blur / 2) * SHADOW_SPREAD;
+
+    const { keys: motion, shadow: shadowMotion } = moveKeys(
+      leaving.dstRect,
+      radius,
+      gone,
+      0,
+      spread,
+      enter.source.start,
+      moveWindow(enter),
+    );
+
+    if (motion.length > 0) {
+      const shape: Shape = {
+        radius,
+        exponent: leaving.card ? 2 : SHAPE_EXPONENT[enter.from.layout.cameraShape],
+      };
+
+      if (enter.from.background.shadowOpacity > 0) {
+        items.push({
+          kind: "shadow",
+          rect: gone,
+          shape,
+          blur,
+          dy: enter.from.background.shadowY * against,
+          color: rgba(
+            "#000000",
+            enter.from.background.shadowOpacity * (leaving.card ? 1 : CAMERA_SHADOW),
+          ),
+          motion: shadowMotion,
+        });
+      }
+
+      items.push({
+        kind: "image",
+        source: "camera",
+        srcRect: leaving.srcRect,
+        dstRect: gone,
+        shape,
+        mirror: enter.from.layout.cameraMirror,
+        motion,
       });
     }
   }
 
   return { frame, items };
+}
+
+/**
+ * The corner radius the camera has in a given arrangement, at a given size.
+ *
+ * Split out because a move needs it twice: once for where the camera is going,
+ * which the branch above already computes, and once for where it came from —
+ * and the rule differs between a card, whose radius is a fraction of the frame,
+ * and a bubble, whose radius is a fraction of itself.
+ */
+function cameraRadius(slot: Slot, rect: Rect, unit: number, settings: SliceSettings): number {
+  return slot.card
+    ? settings.background.cornerRadius * unit
+    : radiusFor(settings.layout.cameraShape, Math.min(rect.width, rect.height));
 }
 
 /** How often a zoom is sampled. Fine enough that a straight line between two
@@ -528,6 +651,16 @@ export const SHADOW_SPREAD = 3;
  * reads as a hole cut in it.
  */
 const CAMERA_SHADOW = 0.7;
+
+/**
+ * How long the camera takes to reach its new place, in nanoseconds.
+ *
+ * Long enough to read as a move rather than a jump, short enough that a two
+ * second clip is not still arranging itself halfway through. Capped at half the
+ * slice below, for the same reason a zoom's ease is: a move that is still
+ * arriving when the clip ends never shows where it was going.
+ */
+const CAMERA_MOVE_NS = 280_000_000;
 
 /**
  * Turns zoom spans into a sampled destination rectangle.
@@ -665,6 +798,140 @@ function zoomKeys(
   }
 
   return { keys, shadow };
+}
+
+/**
+ * The camera travelling from where it was to where it now belongs.
+ *
+ * Position, size and corner radius only — the crop, the shape's exponent, the
+ * mirror and the border are the incoming slice's from the first frame. The
+ * picture moves; its dressing does not cross-fade, because a plan item carries
+ * one source rectangle and one exponent and there is nowhere for a second to
+ * live. Where two arrangements crop the camera differently, the opening frame
+ * of the move therefore shows the arriving crop rather than the departing one.
+ *
+ * `from` is deliberately not the rectangle the previous slice actually drew —
+ * see `reshaped`. Feeding that in directly would mean a box of one shape
+ * showing a crop of another, and the picture would be visibly stretched for the
+ * length of the move. Every face in every recording, on every cut.
+ */
+function moveKeys(
+  from: Rect,
+  fromRadius: number,
+  to: Rect,
+  toRadius: number,
+  /** Room the shadow needs around the picture at rest, in output pixels. */
+  spread: number,
+  start: number,
+  duration: number,
+): { keys: RectKey[]; shadow: RectKey[] } {
+  if (duration <= 0) return { keys: [], shadow: [] };
+
+  // Nothing to say when nothing moves. Two arrangements that leave the camera
+  // exactly where it was — `over-full` and `over-padded` both float it at the
+  // same fractions — would otherwise carry a track of identical keys.
+  if (
+    from.x === to.x &&
+    from.y === to.y &&
+    from.width === to.width &&
+    from.height === to.height &&
+    fromRadius === toRadius
+  ) {
+    return { keys: [], shadow: [] };
+  }
+
+  const steps = Math.max(2, Math.ceil(duration / ZOOM_SAMPLE_NS));
+  const keys: RectKey[] = [];
+  const shadow: RectKey[] = [];
+
+  // What the full spread belongs to, so a picture that is half its final size
+  // casts half the shadow. A small object casts a small tight shadow — the same
+  // rule the camera's own shadow is sized by when it is a bubble — and without
+  // it a camera shrinking away leaves a blur behind after the picture has gone.
+  const settled = Math.min(to.width, to.height);
+
+  for (let step = 0; step <= steps; step += 1) {
+    const at = Math.round(start + (duration * step) / steps);
+    const t = easeOut(step / steps);
+
+    const rect: Rect = {
+      x: lerp(from.x, to.x, t),
+      y: lerp(from.y, to.y, t),
+      width: lerp(from.width, to.width, t),
+      height: lerp(from.height, to.height, t),
+    };
+    const radius = lerp(fromRadius, toRadius, t);
+
+    keys.push({ at, ...rect, radius });
+
+    const grown = settled > 0 ? spread * (Math.min(rect.width, rect.height) / settled) : 0;
+    shadow.push({
+      at,
+      x: rect.x - grown,
+      y: rect.y - grown,
+      width: rect.width + grown * 2,
+      height: rect.height + grown * 2,
+      radius,
+    });
+  }
+
+  return { keys, shadow };
+}
+
+/**
+ * The departing box, restated in the arriving box's proportions.
+ *
+ * A plan item shows one crop, and a crop always has its destination's aspect
+ * ratio — `place` derives the two together, under both fits. So a move that
+ * lerped the previous slice's actual rectangle into this one's would spend the
+ * whole transition drawing a wide crop inside a square box, or the reverse:
+ * the picture stretches, worst at the midpoint, and it is a face it is
+ * stretching.
+ *
+ * Same centre and same *area* as the box being left, so the move reads as the
+ * picture changing shape rather than as it changing size. What is given up is
+ * that the opening frame is not pixel-identical to the closing frame of the
+ * slice before — it is the same picture, the same size, in the same place, in
+ * the shape it is on its way to.
+ */
+function reshaped(previous: Rect, target: Rect): Rect {
+  const area = previous.width * previous.height;
+  const targetArea = target.width * target.height;
+
+  if (area <= 0 || targetArea <= 0) return { ...previous, width: 0, height: 0 };
+
+  const scale = Math.sqrt(area / targetArea);
+  const width = target.width * scale;
+  const height = target.height * scale;
+
+  return {
+    x: previous.x + previous.width / 2 - width / 2,
+    y: previous.y + previous.height / 2 - height / 2,
+    width,
+    height,
+  };
+}
+
+/** A rectangle of nothing, in the middle of one that is there. */
+function nothingAt(rect: Rect): Rect {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: 0, height: 0 };
+}
+
+/**
+ * Ease-out cubic.
+ *
+ * Leaves immediately and settles, which is what arriving somewhere should read
+ * as. An ease that also started slowly would spend the first frames of the
+ * clip looking like the cut simply had not happened yet.
+ */
+function easeOut(t: number): number {
+  const clamped = clamp(t, 0, 1);
+  return 1 - (1 - clamped) ** 3;
+}
+
+/** How long a move gets in a slice, which is never more than half of it. */
+function moveWindow(enter: EnterTransition): number {
+  return Math.min(CAMERA_MOVE_NS, Math.max(0, enter.source.end - enter.source.start) / 2);
 }
 
 /** Where the picture sits, and how big it is, at one moment of one zoom. */

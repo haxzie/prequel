@@ -10,6 +10,7 @@ import {
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import {
   buildRenderPlan,
+  type EnterTransition,
   placement,
   type PlanSource,
   type Rect,
@@ -17,6 +18,7 @@ import {
   type SourceSizes,
 } from "../../../shared/layout";
 import type { LayoutSettings, SliceSettings, ZoomSlice } from "../../../shared/project";
+import { cn } from "../lib/cn";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
 import type { EditorPlayback } from "./useEditorPlayback";
@@ -54,6 +56,7 @@ export type Grab = () => Promise<string | null>;
 export function Preview({
   frame,
   settings,
+  enter,
   media,
   images,
   cursor,
@@ -63,6 +66,14 @@ export function Preview({
 }: {
   frame: Size;
   settings: SliceSettings;
+  /**
+   * The arrangement this slice is arriving from, or null on the first one.
+   *
+   * Passed rather than derived here: the plan is rebuilt every frame and the
+   * previous slice's settings change only at a cut, so resolving them in the
+   * loop would be work per frame for an answer that holds for a whole clip.
+   */
+  enter: EnterTransition | null;
   media: EditorPlayback;
   images: Images;
   /** The pointer track, or null when this recording has none to draw. */
@@ -90,14 +101,24 @@ export function Preview({
   const compositor = useRef(new WebGlCompositor());
   /** What is being dragged, and from where. Null between gestures. */
   const grab = useRef<Grip | null>(null);
+  /** The selection ring. Positioned from the draw loop, never by React. */
+  const outline = useRef<HTMLDivElement>(null);
   /** Waiting to be handed the next drawn frame, or null when nobody asked. */
   const wanted = useRef<((shot: string | null) => void) | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
+  /**
+   * Which picture is ringed, or null when nothing is.
+   *
+   * Local to the preview. Nothing else in the editor acts on it, and a
+   * selection held in the project would have to be cleared from every place
+   * that can change the arrangement out from under it.
+   */
+  const [selected, setSelected] = useState<PlanSource | null>(null);
 
   // Read through refs so changing a setting does not restart the loop — the
   // next frame simply picks the new values up.
-  const latest = useRef({ frame, settings, images, fitted });
-  latest.current = { frame, settings, images, fitted };
+  const latest = useRef({ frame, settings, enter, images, fitted, selected });
+  latest.current = { frame, settings, enter, images, fitted, selected };
 
   // Fits the frame's aspect ratio into whatever space the window is giving
   // this pane, at any output size. `contentRect` is the padded box, so the
@@ -136,7 +157,14 @@ export function Preview({
     const render = (now: number) => {
       handle = requestAnimationFrame(render);
 
-      const { frame: size, settings: current, images: loaded, fitted: box } = latest.current;
+      const {
+        frame: size,
+        settings: current,
+        enter: arriving,
+        images: loaded,
+        fitted: box,
+        selected: ringed,
+      } = latest.current;
       const screen = media.getElement("screen");
       const camera = media.getElement("camera");
 
@@ -160,16 +188,14 @@ export function Preview({
         camera: media.visible.has("camera") && isReady(camera) ? camera : null,
       };
 
+      const sizes: SourceSizes = {
+        screen: sources.screen ? { width: screen!.videoWidth, height: screen!.videoHeight } : null,
+        camera: sources.camera ? { width: camera!.videoWidth, height: camera!.videoHeight } : null,
+      };
+
       const plan = buildRenderPlan(
         size,
-        {
-          screen: sources.screen
-            ? { width: screen!.videoWidth, height: screen!.videoHeight }
-            : null,
-          camera: sources.camera
-            ? { width: camera!.videoWidth, height: camera!.videoHeight }
-            : null,
-        },
+        sizes,
         current,
         cursor && {
           ...cursor,
@@ -178,11 +204,19 @@ export function Preview({
           hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
         },
         zooms,
+        arriving,
       );
 
       // Source time, because that is what the pointer track is indexed by —
       // the same clock the media elements are seeked on.
-      compositor.current.draw(element, plan, sources, loaded, backing, media.sourceAt(now) ?? 0);
+      const at = media.sourceAt(now) ?? 0;
+      compositor.current.draw(element, plan, sources, loaded, backing, at);
+
+      // The ring rides along with the picture from here rather than from a
+      // render, for the reason the picture itself is drawn here: the box moves
+      // with the sources' own dimensions and with a drag in flight, and React
+      // is told about neither on the frame it happens.
+      ring(outline.current, ringed, size, current, sizes, box, zooms, at);
 
       // Read here and nowhere else. The context is created without
       // `preserveDrawingBuffer`, so the drawing buffer is cleared as soon as
@@ -221,6 +255,26 @@ export function Preview({
     const painter = compositor.current;
     return () => painter.dispose();
   }, []);
+
+  // A camera switched off has no ring to draw, and switching it back on should
+  // not restore a selection made before it was hidden — the user would come
+  // back to handles on something they did not just click.
+  useEffect(() => {
+    if (selected === "camera" && !settings.layout.cameraVisible) setSelected(null);
+  }, [selected, settings.layout.cameraVisible]);
+
+  // Escape drops it, as it does everywhere else in the app something is
+  // selected. On the window rather than the canvas: the ring stays up while the
+  // panels beside it are being used, so the canvas rarely has focus.
+  useEffect(() => {
+    if (!selected) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
 
   /**
    * Where a pointer is in the output frame, in its own pixels.
@@ -280,7 +334,11 @@ export function Preview({
       const found = target === "camera" ? camera : screen;
       if (!found) continue;
 
-      const corner = cornerAt(found.dstRect, point, near);
+      // Only the ringed picture answers to its corners. The handles are what
+      // say a corner is there, so a resize on a picture showing none is a
+      // gesture nobody aimed — and on the stacked arrangements it is usually
+      // the *other* picture's edge the pointer was heading for.
+      const corner = target === selected ? cornerAt(found.dstRect, point, near) : null;
       if (corner) return { kind: "resize", target, corner, box: found.dstRect, from: point };
       if (inside(found.dstRect, point)) {
         return { kind: "move", target, box: found.dstRect, from: point };
@@ -430,75 +488,170 @@ export function Preview({
 
   return (
     <div ref={box} className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden p-6">
-      <canvas
-        ref={canvas}
-        // `block` kills the inline baseline gap, which otherwise leaves a few
-        // stray pixels under the canvas inside its grid cell.
-        className="block rounded-lg shadow-2xl"
-        // Explicit pixels rather than a percentage: see the note above on why
-        // `max-h-full` cannot be relied on here.
-        style={{ width: fitted.width, height: fitted.height }}
-        onPointerDown={(event) => {
-          const point = framePoint(event);
-          const found = find(point);
-          if (!found) return;
-
-          // Alt turns a drag on a picture into a pan of what it is showing. The
-          // corners keep resizing either way — there is nothing else a corner
-          // could sensibly mean.
-          grab.current =
-            event.altKey && found.kind === "move"
-              ? {
-                  kind: "pan",
-                  target: found.target,
-                  from: point,
-                  offsetX:
-                    found.target === "screen"
-                      ? settings.layout.screenOffsetX
-                      : settings.layout.cameraOffsetX,
-                  offsetY:
-                    found.target === "screen"
-                      ? settings.layout.screenOffsetY
-                      : settings.layout.cameraOffsetY,
-                }
-              : found;
-
-          // Captured, so a fast drag that leaves the canvas keeps moving the
-          // picture instead of dropping it wherever the pointer crossed out.
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          const point = framePoint(event);
-
-          if (!grab.current) {
-            // Written straight to the element: this fires far more often than a
-            // render, and routing a cursor change through state would rebuild
-            // the editor to change one CSS property.
+      {/* Sized to the picture so the ring inside it can be placed in frame
+          pixels scaled once, and so the handles hanging off its corners are not
+          clipped by anything — this box has no overflow of its own. */}
+      <div className="relative" style={{ width: fitted.width, height: fitted.height }}>
+        <canvas
+          ref={canvas}
+          // `block` kills the inline baseline gap, which otherwise leaves a few
+          // stray pixels under the canvas inside its grid cell.
+          className="block rounded-lg shadow-2xl"
+          // Explicit pixels rather than a percentage: see the note above on why
+          // `max-h-full` cannot be relied on here.
+          style={{ width: fitted.width, height: fitted.height }}
+          onPointerDown={(event) => {
+            const point = framePoint(event);
             const found = find(point);
-            event.currentTarget.style.cursor = !found
-              ? ""
-              : found.kind === "resize"
-                ? CORNER_CURSOR[found.corner]
-                : event.altKey
-                  ? "move"
-                  : "grab";
-            return;
-          }
+            // Empty background drops the selection, the same click that would
+            // drop it on a canvas anywhere else.
+            setSelected(found?.target ?? null);
+            if (!found) return;
 
-          if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
-          onLayout(patchFor(grab.current, point, event.shiftKey));
-        }}
-        onPointerUp={(event) => {
-          grab.current = null;
-          event.currentTarget.style.cursor = "";
-        }}
-        onPointerLeave={(event) => {
-          if (!grab.current) event.currentTarget.style.cursor = "";
-        }}
-      />
+            // Alt turns a drag on a picture into a pan of what it is showing. The
+            // corners keep resizing either way — there is nothing else a corner
+            // could sensibly mean.
+            grab.current =
+              event.altKey && found.kind === "move"
+                ? {
+                    kind: "pan",
+                    target: found.target,
+                    from: point,
+                    offsetX:
+                      found.target === "screen"
+                        ? settings.layout.screenOffsetX
+                        : settings.layout.cameraOffsetX,
+                    offsetY:
+                      found.target === "screen"
+                        ? settings.layout.screenOffsetY
+                        : settings.layout.cameraOffsetY,
+                  }
+                : found;
+
+            // Captured, so a fast drag that leaves the canvas keeps moving the
+            // picture instead of dropping it wherever the pointer crossed out.
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const point = framePoint(event);
+
+            if (!grab.current) {
+              // Written straight to the element: this fires far more often than a
+              // render, and routing a cursor change through state would rebuild
+              // the editor to change one CSS property.
+              const found = find(point);
+              event.currentTarget.style.cursor = !found
+                ? ""
+                : found.kind === "resize"
+                  ? CORNER_CURSOR[found.corner]
+                  : event.altKey
+                    ? "move"
+                    : "grab";
+              return;
+            }
+
+            if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
+            onLayout(patchFor(grab.current, point, event.shiftKey));
+          }}
+          onPointerUp={(event) => {
+            grab.current = null;
+            event.currentTarget.style.cursor = "";
+          }}
+          onPointerLeave={(event) => {
+            if (!grab.current) event.currentTarget.style.cursor = "";
+          }}
+        />
+
+        {/* Drawn over the picture, never in it: the canvas is the composition
+            and this is a note about it, so it must not reach the export or the
+            grabbed poster frame. `pointer-events-none` leaves every gesture
+            with the canvas underneath, which is where the hit testing that put
+            the ring here lives — two things listening for a drag on the same
+            corner is how a handle comes to disagree with what it moves. */}
+        <div
+          ref={outline}
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 border border-selected"
+          // Hidden inline rather than with `hidden`, because the loop below
+          // shows it by writing `display` — and an inline property cleared
+          // against a class that also sets `display: none` never comes back.
+          // The first rAF is after the first paint, so without this the ring
+          // spends a frame collapsed at the top left corner.
+          style={{ display: "none" }}
+        >
+          {CORNERS.map((corner) => (
+            <span
+              key={corner}
+              className={cn(
+                // Centred on the corner rather than tucked inside it, so the
+                // handle marks the point the drag actually pivots about.
+                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                HANDLE_AT[corner],
+              )}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
+
+/**
+ * Puts the ring on the selected picture, or takes it away.
+ *
+ * Geometry through `placement`, which is what the drag reads too — a ring
+ * derived some other way would be a second answer to "where is the camera", and
+ * the handles would end up somewhere the picture is not.
+ */
+function ring(
+  element: HTMLDivElement | null,
+  selected: PlanSource | null,
+  frame: Size,
+  settings: SliceSettings,
+  sources: SourceSizes,
+  fitted: Size,
+  zooms: readonly ZoomSlice[],
+  at: number,
+): void {
+  if (!element) return;
+
+  const found = selected
+    ? placement(frame, settings.layout, settings.background, sources, selected)
+    : null;
+
+  // A zoom moves the screen on its own track, leaving the box a drag reads and
+  // writes exactly where it was. Following the zoom would put handles on a
+  // corner that cannot be grabbed; staying put would ring empty background. So
+  // for the length of the span there is no ring, and the picture is left to be
+  // watched rather than edited.
+  const moving =
+    selected === "screen" && zooms.some((zoom) => at >= zoom.source.start && at <= zoom.source.end);
+
+  if (!found || moving || fitted.width <= 0) {
+    element.style.display = "none";
+    return;
+  }
+
+  const scale = fitted.width / frame.width;
+  const { x, y, width, height } = found.dstRect;
+
+  element.style.display = "block";
+  // Transform rather than `left`/`top`: this runs every frame, and through a
+  // drag it runs on every frame that also lays the canvas out.
+  element.style.transform = `translate(${x * scale}px, ${y * scale}px)`;
+  element.style.width = `${width * scale}px`;
+  element.style.height = `${height * scale}px`;
+}
+
+/** Clockwise from the top left, which is the order the handles read in. */
+const CORNERS = ["nw", "ne", "se", "sw"] as const;
+
+const HANDLE_AT: Record<Corner, string> = {
+  nw: "-top-1 -left-1",
+  ne: "-top-1 -right-1",
+  se: "-right-1 -bottom-1",
+  sw: "-bottom-1 -left-1",
+};
 
 /** A point in the output frame, in its own pixels. */
 interface Point {

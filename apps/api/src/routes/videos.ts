@@ -14,6 +14,7 @@ import { schema } from "@prequel/db";
 
 import type { Database } from "../db.ts";
 import { id, slug } from "../lib/ids.ts";
+import { captureServer } from "../lib/posthog.ts";
 import { posterKey, signedUpload, videoKey } from "../lib/r2.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
@@ -109,6 +110,16 @@ videos.post("/", async (c) => {
 
   const used = await usage(db, teamId!);
   if (team && used + body.sizeBytes > team.quota) {
+    // Worth an event of its own: somebody hitting this has finished a recording,
+    // pressed Share and been turned away, which is the point in the product
+    // where a plan limit actually costs something.
+    captureServer(c.env, c.executionCtx, {
+      event: "upload_quota_exceeded",
+      userId,
+      teamId,
+      properties: { size_bytes: body.sizeBytes, used_bytes: used, quota_bytes: team.quota },
+    });
+
     return c.json(
       { message: "This team is out of storage.", code: "QUOTA_EXCEEDED" },
       // 507, not 403: the request is allowed and well-formed, there is simply
@@ -186,6 +197,22 @@ videos.post("/:id/complete", async (c) => {
     .set({ status: "ready", sizeBytes: object.size, updatedAt: new Date() })
     .where(eq(schema.video.id, row.id));
 
+  // The authoritative share. The app reports one of its own, but only this point
+  // knows the object actually arrived, and at what size — the number here is
+  // R2's rather than the one the client declared.
+  captureServer(c.env, c.executionCtx, {
+    event: "video_shared",
+    userId: row.ownerId,
+    teamId: row.teamId,
+    properties: {
+      size_bytes: object.size,
+      duration_ms: row.durationMs,
+      content_type: row.contentType,
+      width: row.width,
+      height: row.height,
+    },
+  });
+
   return c.json({ id: row.id, slug: row.slug, url: `${c.env.APP_URL}/v/${row.slug}` });
 });
 
@@ -242,6 +269,13 @@ videos.delete("/:id", async (c) => {
     .update(schema.video)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(eq(schema.video.id, row.id));
+
+  captureServer(c.env, c.executionCtx, {
+    event: "video_deleted",
+    userId: c.get("identity").userId,
+    teamId: row.teamId,
+    properties: { size_bytes: row.sizeBytes, view_count: row.viewCount },
+  });
 
   return c.json({ ok: true });
 });

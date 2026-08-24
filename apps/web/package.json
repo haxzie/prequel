@@ -19,6 +19,7 @@
     "boring-avatars": "^2.0.4",
     "lucide-react": "^1.31.0",
     "next": "^16.3.0",
+    "posthog-js": "^1.418.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "remark-gfm": "^4.0.1",

@@ -41,18 +41,34 @@ export type App = Context<AppContext>;
  * would mean a D1 read that cannot succeed on every call the app makes.
  */
 export const authenticate: MiddlewareHandler<AppContext> = async (c, next) => {
-  const db = database(c.env);
-  c.set("db", db);
-
-  const bearer = bearerToken(c.req.header("authorization"));
-
-  const identity = bearer ? await fromDeviceToken(c, db, bearer) : await fromSession(c);
+  const identity = await optionalIdentity(c);
 
   if (!identity) return c.json({ message: "Sign in to continue." }, 401);
 
   c.set("identity", identity);
   await next();
 };
+
+/**
+ * The same resolution, without the refusal.
+ *
+ * Two routes need to know who is calling and must still answer when nobody is.
+ * `/v1/events` takes `app_launched` from an app that has never been signed in —
+ * 401ing it would throw away the entire pre-sign-in funnel, which is the part
+ * worth having. `/v1/transcribe` gives an anonymous install a smaller allowance
+ * rather than none.
+ *
+ * Sets `db` on the context the way `authenticate` does, so a handler behind
+ * either one reads it the same way.
+ */
+export async function optionalIdentity(c: App): Promise<Identity | null> {
+  const db = database(c.env);
+  c.set("db", db);
+
+  const bearer = bearerToken(c.req.header("authorization"));
+
+  return bearer ? fromDeviceToken(c, db, bearer) : fromSession(c);
+}
 
 /**
  * Requires a team as well as a user.
@@ -70,7 +86,15 @@ export const requireTeam: MiddlewareHandler<AppContext> = async (c, next) => {
 };
 
 async function fromSession(c: App): Promise<Identity | null> {
-  const session = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+  // A throw out of Better Auth is treated as "not signed in" rather than left to
+  // reach the error floor. `optionalIdentity` has callers that must answer
+  // whatever happens here, and for `authenticate` the difference is a login
+  // redirect instead of a 500 page — which is the right thing to show somebody
+  // whose session cannot be read.
+  const session = await createAuth(c.env)
+    .api.getSession({ headers: c.req.raw.headers })
+    .catch(() => null);
+
   if (!session) return null;
 
   return {

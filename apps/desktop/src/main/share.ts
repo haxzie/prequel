@@ -17,6 +17,7 @@ import { webContents } from "electron";
 import { IPC_CHANNELS, type ShareProgress, type ShareRequest } from "../shared/contract.js";
 import { apiFetch, ApiError } from "./api.js";
 import { authToken } from "./auth.js";
+import { track } from "./analytics.js";
 import { log } from "./log.js";
 
 interface Created {
@@ -49,6 +50,8 @@ export async function startShare(share: ShareRequest): Promise<void> {
 
   try {
     broadcast({ path: share.path, stage: "preparing", bytesSent: 0, bytesTotal: 0 });
+
+    track("share_started");
 
     const { size } = await stat(share.path);
     const contentType = extname(share.path).toLowerCase() === ".gif" ? "image/gif" : "video/mp4";
@@ -96,6 +99,11 @@ export async function startShare(share: ShareRequest): Promise<void> {
 
     log("info", `shared ${basename(share.path)}`);
 
+    // Sizes, not names. The app reports the share it believes it made; the
+    // Worker reports `video_shared` when the object has actually arrived, which
+    // is the one to count when the two disagree.
+    track("share_completed", { size_bytes: size, duration_ms: Math.round(share.durationMs) });
+
     broadcast({
       path: share.path,
       stage: "done",
@@ -107,6 +115,13 @@ export async function startShare(share: ShareRequest): Promise<void> {
     const cancelled = abort.signal.aborted;
 
     if (!cancelled) console.error("[share] upload failed:", cause);
+
+    track(cancelled ? "share_cancelled" : "share_failed", {
+      // The code, not the message. `ApiError` codes are ours and finite —
+      // QUOTA_EXCEEDED, SIGNED_OUT, UPLOAD_403 — where a message can carry a
+      // presigned URL or a path in it.
+      code: cause instanceof ApiError ? cause.code : null,
+    });
 
     broadcast({
       path: share.path,

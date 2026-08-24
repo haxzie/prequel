@@ -4,6 +4,7 @@
 import { fileURLToPath } from "node:url";
 
 import { app, Menu, nativeImage, shell, Tray } from "electron";
+import type { MenuItemConstructorOptions } from "electron";
 
 import { authState, beginSignIn, openDashboard } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
@@ -12,6 +13,7 @@ import type { RecordingSession, SessionState } from "./session.js";
 import { acceleratorGlyphs } from "../shared/accelerator.js";
 import { recentRecordings, revealRecordings } from "./session.js";
 import { boundToggle } from "./shortcuts.js";
+import { checkForUpdates, installUpdate, updateState } from "./update.js";
 
 /** How many past recordings the Open Recent submenu offers. */
 const RECENT_LIMIT = 10;
@@ -199,6 +201,10 @@ export class AppTray {
       ...(authState().status === "signed-in"
         ? []
         : [{ label: "Sign In…", click: () => beginSignIn() }]),
+      // What the app can say about its own version, from the one menu that is
+      // always there. The menu is rebuilt on every right-click, so this reads
+      // live state without anything having to push it.
+      updateItem(this.flow),
       {
         label: "Settings…",
         accelerator: "Cmd+,",
@@ -219,6 +225,43 @@ export class AppTray {
         },
       },
     ]);
+  }
+}
+
+/**
+ * The update entry, in whichever of its four states applies.
+ *
+ * One item rather than a conditional pair: an update is a thing with progress,
+ * and a menu that showed "Check for Updates…" while one was downloading would
+ * be offering to start the work it is already doing.
+ *
+ * Everything goes through the flow, like the rest of this menu — except
+ * installing, which quits the app rather than opening a surface.
+ */
+function updateItem(flow: CaptureFlow): MenuItemConstructorOptions {
+  const state = updateState();
+
+  switch (state.status) {
+    case "ready":
+      return { label: "Restart to Update", click: () => installUpdate() };
+
+    case "downloading":
+      return { label: `Downloading… ${state.percent}%`, enabled: false };
+
+    case "available":
+      return { label: `Update to ${state.version}…`, click: () => flow.openUpdate() };
+
+    default:
+      return {
+        label: "Check for Updates…",
+        click: () => {
+          // Opened first, not after: a check is a network round trip, and a menu
+          // item that does nothing visible for a second reads as one that did
+          // not register the click. The window shows the check running.
+          flow.openUpdate();
+          void checkForUpdates();
+        },
+      };
   }
 }
 

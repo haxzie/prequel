@@ -31,7 +31,7 @@ import {
   type PlacedSlice,
   type TrimGrab,
 } from "./timeline";
-import type { EditorPlayback } from "./useEditorPlayback";
+import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
@@ -481,7 +481,7 @@ export function TimelineStrip({
           </div>
 
           <Shadow ref={shadow} />
-          <Playhead ref={media.playheadRef} />
+          <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
         </div>
       </div>
     </div>
@@ -551,7 +551,7 @@ function Ruler({
 }
 
 /**
- * The playhead.
+ * The playhead, with the time on it.
  *
  * The playback loop rewrites this element's `transform` once per frame, so it
  * follows the clock without a React render — and without a reflow, which is
@@ -561,17 +561,44 @@ function Ruler({
  * than promoting it on the first move, which shows as a stutter right as
  * playback starts.
  */
-function Playhead({ ref }: { ref: (element: HTMLElement | null) => void }) {
+function Playhead({
+  ref,
+  labelRef,
+}: {
+  ref: (element: HTMLElement | null) => void;
+  labelRef: (element: HTMLElement | null) => void;
+}) {
   return (
     <div
       ref={ref}
       className="pointer-events-none absolute inset-y-0 left-0 z-10 -ml-px w-0.5 bg-indicator"
       style={{ willChange: "transform" }}
     >
-      {/* A triangle pointing down at the line, drawn by clipping a box: the
-          border trick needs a transparent-border hack, and a rotated square
-          leaves the point a diagonal rather than a tip. */}
-      <span className="absolute top-0 left-1/2 h-2 w-2.5 -translate-x-1/2 bg-indicator [clip-path:polygon(50%_100%,0_0,100%_0)]" />
+      {/* The time, rather than the triangle that used to sit here. The head is
+          where the eye already is while scrubbing, and a marker that only says
+          "here" spends that attention on something the line has already said —
+          the readout it sends you looking for is at the far end of the
+          transport.
+
+          Its own `transform`, written by the same loop: the label is centred on
+          the line and clamped to the content, because the timeline scrolls and
+          a label centred on a head at zero would be cut in half by the
+          scroller's edge. The width is fixed for the same reason it is tabular
+          — a label that resized as the digits changed would shimmy around the
+          line it is meant to mark.
+
+          `text-editor-bg` rather than white: `--indicator` is a light blue, and
+          white over it is the pairing the palette already warns about for
+          `--export` — 2.9:1 against 6.6:1 for the panel's own near-black. */}
+      <span
+        ref={labelRef}
+        className="absolute top-0 left-1/2 h-3.5 rounded-full bg-indicator text-center text-[10px] leading-[0.875rem] font-medium tabular-nums text-editor-bg"
+        style={{
+          width: HEAD_LABEL_W,
+          transform: "translate3d(-50%, 0, 0)",
+          willChange: "transform",
+        }}
+      />
     </div>
   );
 }

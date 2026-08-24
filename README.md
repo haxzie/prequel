@@ -376,6 +376,17 @@ non-secret vars live in `apps/api/wrangler.jsonc`, its secrets in
 is declared in `apps/api/src/env.ts`. `.env.example` lists them so the set is
 still discoverable from one place.
 
+`NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` appears in both places, under two names, for
+that reason — `POSTHOG_PROJECT_TOKEN` in `wrangler.jsonc` is the same value with
+no `NEXT_PUBLIC_` prefix, because a Worker has no bundler to inline anything and
+the prefix would name a mechanism that is not there. It is a var rather than a
+secret: a PostHog project token is write-only and is already served to every
+browser that loads the site.
+
+The desktop app is given neither. It posts events to the Worker's `/v1/events`,
+which is what keeps the token out of a `.dmg` and makes analytics reroutable
+without shipping a build.
+
 ## Conventions
 
 **Every non-obvious decision carries a comment explaining the failure mode it

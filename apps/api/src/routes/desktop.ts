@@ -20,6 +20,7 @@ import { schema } from "@prequel/db";
 
 import { database } from "../db.ts";
 import { bearerToken, deviceToken, id, sha256, timingSafeEqual } from "../lib/ids.ts";
+import { captureServer } from "../lib/posthog.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
 
 const desktop = new Hono<AppContext>();
@@ -145,6 +146,16 @@ desktop.post("/token", async (c) => {
       )[0] ?? null)
     : null;
 
+  // Emitted here rather than from the app: this is the moment the account and
+  // the Mac are joined, and it is the one place that knows both halves. The
+  // app's own `signed_in` event is what carries the anonymous install id across
+  // to the account — the two are complementary, not duplicates.
+  captureServer(c.env, c.executionCtx, {
+    event: "device_authorised",
+    userId: row.userId,
+    teamId: row.teamId,
+  });
+
   // The only time the plaintext token is ever transmitted. Nothing stores it
   // but the Mac it is being sent to.
   return c.json({ token, user, team });
@@ -160,6 +171,9 @@ desktop.post("/revoke", authenticate, async (c) => {
     .update(schema.deviceToken)
     .set({ revokedAt: new Date() })
     .where(eq(schema.deviceToken.tokenHash, await sha256(bearer)));
+
+  const { userId, teamId } = c.get("identity");
+  captureServer(c.env, c.executionCtx, { event: "device_revoked", userId, teamId });
 
   return c.json({ ok: true });
 });

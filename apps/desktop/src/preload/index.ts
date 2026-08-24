@@ -20,6 +20,7 @@ import type {
   ShareRequest,
   Target,
   TranscribeProgress,
+  UpdateState,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
@@ -41,6 +42,7 @@ export type {
   SelectionSetup,
   Target,
   TranscribeProgress,
+  UpdateState,
 };
 
 const api = {
@@ -311,6 +313,40 @@ const api = {
       const handler = (_event: unknown, state: AuthState) => listener(state);
       ipcRenderer.on(IPC_CHANNELS.authChanged, handler);
       return () => ipcRenderer.off(IPC_CHANNELS.authChanged, handler);
+    },
+  },
+
+  update: {
+    /** How far along an update is, including the version running now. */
+    state: (): Promise<UpdateState> => ipcRenderer.invoke(IPC_CHANNELS.updateState),
+
+    /** Looks for a newer version. Resolves with the state the check ended in. */
+    check: (): Promise<UpdateState> => ipcRenderer.invoke(IPC_CHANNELS.updateCheck),
+
+    /**
+     * Starts the download.
+     *
+     * Resolves when it finishes, but nothing should wait on that — progress
+     * arrives on `onChange` many times a second, and that is what to draw.
+     */
+    download: (): Promise<UpdateState> => ipcRenderer.invoke(IPC_CHANNELS.updateDownload),
+
+    /**
+     * Quits and comes back on the new version.
+     *
+     * Or opens the download page, when Squirrel cannot replace this build —
+     * which an unsigned copy never can. One call because the window offers one
+     * button either way, and only main can tell the two apart.
+     */
+    install: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.updateInstall),
+
+    /** Brings up the update window, which has room for notes and progress. */
+    open: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.updateOpen),
+
+    onChange: (listener: (state: UpdateState) => void): (() => void) => {
+      const handler = (_event: unknown, state: UpdateState) => listener(state);
+      ipcRenderer.on(IPC_CHANNELS.updateChanged, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.updateChanged, handler);
     },
   },
 };

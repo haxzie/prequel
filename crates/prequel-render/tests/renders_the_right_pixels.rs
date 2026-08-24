@@ -16,7 +16,7 @@ use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
     AudioMix, CancelFlag, CursorPoint, ExportRequest, OutputFormat, Paint, PlanItem, PlanSource,
-    Point, Rect, RenderPlan, Shape, Size, SliceRender, export,
+    Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -646,4 +646,102 @@ fn write_png(path: &Path, buffer: &arc::R<cv::PixelBuf>) {
 
     assert!(status.success(), "could not write the background PNG");
     let _ = std::fs::remove_file(&raw);
+}
+
+#[test]
+fn a_motion_track_moves_the_picture_over_the_clip() {
+    // Every moving thing in a plan is a track of rectangles: a zoom pushing in,
+    // and a camera travelling to the place the next arrangement puts it. If the
+    // track never reaches the shader the picture simply sits at `dst_rect` for
+    // the whole clip — an export that is a still of the opening frame, which
+    // looks exactly like an export that was meant to hold still.
+    //
+    // So: a red picture that starts on the left of a blue frame and ends on the
+    // right. Sampling both halves at both ends is what tells "it moved" apart
+    // from "it was always there".
+    let dir = scratch("prequel-pixels-motion");
+    let source = split_frame(400, 200, [255, 0, 0], [255, 0, 0]);
+    record(&dir, "screen.mp4", 400, 200, &source);
+
+    let left = Rect {
+        x: 20.0,
+        y: 70.0,
+        width: 100.0,
+        height: 100.0,
+    };
+    let right = Rect {
+        x: 200.0,
+        ..left
+    };
+
+    let key = |at: i64, rect: Rect| RectKey {
+        at,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        radius: 0.0,
+        focus: None,
+        vignette: None,
+        quad: Vec::new(),
+    };
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                paint: Paint::Solid {
+                    color: "#0000ff".into(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 400.0,
+                    height: 200.0,
+                },
+                // Where it rests, which the track overrides for the whole of the
+                // move. Set to the destination so a dropped track fails this
+                // test on the *first* frame rather than passing on the last.
+                dst_rect: right,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                motion: vec![key(0, left), key((S / 2) as i64, right)],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let opening = frame_at(&output, 0);
+    near(opening.at(70, 120), (255, 0, 0), "the picture at the start");
+    near(opening.at(250, 120), (0, 0, 255), "where it has not gone yet");
+
+    // Past the end of the track, which holds the last key — so this also pins
+    // that a move ends where it was going and stays there.
+    let settled = frame_at(&output, 9);
+    near(settled.at(70, 120), (0, 0, 255), "where it came from");
+    near(settled.at(250, 120), (255, 0, 0), "the picture at the end");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

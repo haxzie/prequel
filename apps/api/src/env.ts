@@ -19,11 +19,34 @@ export interface Env {
   /** This Worker's own origin, which OAuth callback URLs must match exactly. */
   API_URL: string;
 
+  /**
+   * The repository the desktop app updates from, as `owner/name`.
+   *
+   * A var rather than a constant so a fork can point the update feed at its own
+   * releases without editing the code that builds the redirect.
+   */
+  GITHUB_REPO: string;
+
   WAITLIST_ENDPOINT: string;
   WAITLIST_FIELD: string;
 
   SES_REGION: string;
   SES_FROM: string;
+
+  /**
+   * PostHog's project token, and where to send it.
+   *
+   * A var rather than a secret, deliberately. The `phc_…` token is write-only —
+   * it cannot read one event back out of the project — and `apps/web` serves it
+   * to every browser that loads the site, so keeping a copy of it in `.dev.vars`
+   * would protect nothing and split one value across two mechanisms.
+   *
+   * Empty disables analytics outright: `capture` returns without a request. That
+   * is the state a deploy that has not been configured should be in, which is
+   * why this is checked for emptiness rather than passed through `required()`.
+   */
+  POSTHOG_PROJECT_TOKEN: string;
+  POSTHOG_HOST: string;
 
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -46,6 +69,15 @@ export interface Env {
   SES_SECRET_ACCESS_KEY?: string;
 
   OPENAI_API_KEY?: string;
+
+  /**
+   * Optional, and only for the release-notes lookup.
+   *
+   * Public data either way — this raises GitHub's 60-per-hour limit for an
+   * unauthenticated address, which a Worker shares with everything else on
+   * Cloudflare. The download path never calls the API and needs no token.
+   */
+  GITHUB_TOKEN?: string;
 }
 
 /**

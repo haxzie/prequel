@@ -13,9 +13,11 @@ import { cors } from "hono/cors";
 import { createAuth } from "./auth.ts";
 import type { Env } from "./env.ts";
 import desktop from "./routes/desktop.ts";
+import events from "./routes/events.ts";
 import me from "./routes/me.ts";
 import publicRoutes from "./routes/public.ts";
 import transcribe from "./routes/transcribe.ts";
+import updates from "./routes/updates.ts";
 import videos from "./routes/videos.ts";
 import waitlist from "./routes/waitlist.ts";
 
@@ -51,6 +53,10 @@ app.route("/v1/me", me);
 app.route("/v1/videos", videos);
 app.route("/v1/desktop", desktop);
 app.route("/v1/transcribe", transcribe);
+app.route("/v1/events", events);
+
+/** The desktop app's update feed. Unauthenticated, and called before sign-in. */
+app.route("/v1/updates", updates);
 app.route("/v1/waitlist", waitlist);
 
 /** What `/v/<slug>` on the site reads. Public, and the only unauthenticated read. */

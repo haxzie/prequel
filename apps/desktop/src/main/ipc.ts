@@ -13,6 +13,7 @@ import { env } from "@prequel/env";
 import type {
   DockState,
   IpcResult,
+  UpdateState,
   PermissionId,
   RecordingPreferences,
   ScreenMode,
@@ -35,6 +36,13 @@ import { describeRecorderError, getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
+import {
+  checkForUpdates,
+  downloadUpdate,
+  installUpdate,
+  openDownloadPage,
+  updateState,
+} from "./update.js";
 
 /** Runs an operation, turning a native failure into a tagged result. */
 async function attempt<T>(operation: () => Promise<T> | T): Promise<IpcResult<T>> {
@@ -213,6 +221,28 @@ export function registerIpc({ flow }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.authOpenDashboard, () => attempt(() => openDashboard()));
 
+  // ── updates ─────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.updateState, () => updateState());
+
+  ipcMain.handle(IPC_CHANNELS.updateCheck, () => checkForUpdates());
+
+  // Answers when the download finishes, but nothing waits on it: progress
+  // arrives on `updateChanged` many times a second, and that is what the window
+  // draws from.
+  ipcMain.handle(IPC_CHANNELS.updateDownload, () => downloadUpdate());
+
+  // Two outcomes on one channel because the window offers one button either
+  // way: install what was downloaded, or — when Squirrel cannot replace this
+  // build, which an unsigned copy never can — open the download page instead.
+  ipcMain.handle(IPC_CHANNELS.updateInstall, () => {
+    if (updateState().status === "ready") installUpdate();
+    else openDownloadPage();
+  });
+
+  // Through the flow, like every other request for a surface — one place knows
+  // what opening a window entails.
+  ipcMain.handle(IPC_CHANNELS.updateOpen, () => flow.openUpdate());
+
   ipcMain.handle(IPC_CHANNELS.shareStart, (_event, share: ShareRequest) =>
     attempt(() => startShare(share)),
   );
@@ -224,6 +254,19 @@ export function registerIpc({ flow }: IpcDeps): void {
   ipcMain.on(IPC_CHANNELS.exportDrag, (event, path: string, icon: string) => {
     dragExport(event.sender, path, icon);
   });
+}
+
+/**
+ * Tells every window how far along an update is.
+ *
+ * Broadcast because three surfaces show it — the update window, the tray menu
+ * and the Settings pane — and the download progress that drives it arrives many
+ * times a second from a place none of them can see.
+ */
+export function broadcastUpdateState(state: UpdateState): void {
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.updateChanged, state);
+  }
 }
 
 /** Pushes panel state to every live renderer. */

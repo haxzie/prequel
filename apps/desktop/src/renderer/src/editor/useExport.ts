@@ -156,8 +156,14 @@ export function useExport(
 function buildSlices(session: EditorSession, project: Project, frame: Size): ExportSlice[] {
   const sources = sourceSizes(session);
 
-  return slicesOf(project).map((slice) => {
+  const all = slicesOf(project);
+
+  return all.map((slice, index) => {
     const settings = resolveSettings(project.defaults, slice.overrides);
+    // The slice before this one, so the camera arrives rather than teleports.
+    // The first slice has nothing behind it and gets no transition, which is
+    // what makes an export open on its composition rather than assembling it.
+    const previous = index > 0 ? all[index - 1] : undefined;
 
     return {
       start: slice.source.start,
@@ -175,6 +181,12 @@ function buildSlices(session: EditorSession, project: Project, frame: Size): Exp
           hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
         },
         project.zooms,
+        previous
+          ? {
+              from: resolveSettings(project.defaults, previous.overrides),
+              source: slice.source,
+            }
+          : null,
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,

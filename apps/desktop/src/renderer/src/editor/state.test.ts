@@ -17,6 +17,7 @@ import {
   MIN_SLICE_NS,
   projectDuration,
   selectedSlice,
+  settingsOf,
   slicesOf,
   placedSlices,
   type EditorAction,
@@ -332,6 +333,83 @@ describe("activeSettings", () => {
 
     expect(activeSettings(state).layout.cameraHeight).toBe(
       state.project.defaults.layout.cameraHeight,
+    );
+  });
+});
+
+describe("settingsOf", () => {
+  /** Two clips, the second one given a layout of its own. */
+  function cut(): EditorState {
+    const state = run(start(), { type: "split", at: 5 * S });
+    const second = slicesOf(state.project)[1]!;
+
+    return run(
+      state,
+      { type: "select", sliceId: second.id },
+      { type: "setSetting", section: "layout", key: "preset", value: "beside" },
+    );
+  }
+
+  it("gives each slice its own layout", () => {
+    const state = cut();
+    const [first, second] = slicesOf(state.project);
+
+    // The whole point of a per-slice override. This was already true of what
+    // was saved and exported; what was broken was the preview asking for it.
+    expect(settingsOf(state.project, first!.id).layout.preset).toBe(
+      state.project.defaults.layout.preset,
+    );
+    expect(settingsOf(state.project, second!.id).layout.preset).toBe("beside");
+  });
+
+  it("does not follow the selection", () => {
+    // The preview follows the playhead and the inspector follows the selection.
+    // Resolving the picture from the selection is what made changing one clip
+    // appear to change all of them — and it only showed up during playback,
+    // where nothing re-resolved at all.
+    const state = cut();
+    const first = slicesOf(state.project)[0]!;
+
+    expect(state.selectedSliceId).not.toBe(first.id);
+    expect(settingsOf(state.project, first.id).layout.preset).toBe(
+      state.project.defaults.layout.preset,
+    );
+  });
+
+  it("keeps a muted clip muted while a zoom is selected", () => {
+    // The bug this pins: adding or selecting a zoom clears the clip selection,
+    // because the inspector shows one thing at a time. An audio mix that
+    // followed the *selection* then fell back to the project defaults, so a clip
+    // whose audio had been muted by hand played at full volume for the whole of
+    // the zoom preview — while the mute stayed correctly saved and correctly
+    // exported, which is what made it look like the mute had not worked.
+    const only = slicesOf(start().project)[0]!;
+    const state = run(
+      start(),
+      { type: "select", sliceId: only.id },
+      { type: "setSetting", section: "audio", key: "micMuted", value: true },
+      { type: "addZoom", at: 2 * S },
+    );
+
+    expect(state.selectedZoomId).not.toBeNull();
+    expect(state.selectedSliceId).toBeNull();
+
+    // What the mix used to ask, and the answer that caused it.
+    expect(activeSettings(state).audio.micMuted).toBe(false);
+    // What it asks now: the clip the playhead is in, which is still muted.
+    expect(settingsOf(state.project, only.id).audio.micMuted).toBe(true);
+  });
+
+  it("falls back to the defaults for a slice that is not there", () => {
+    // What the playhead resolves to past the end of the edit, and after an undo
+    // has removed the slice it was sitting in.
+    const state = cut();
+
+    expect(settingsOf(state.project, null).layout.preset).toBe(
+      state.project.defaults.layout.preset,
+    );
+    expect(settingsOf(state.project, "gone").layout.preset).toBe(
+      state.project.defaults.layout.preset,
     );
   });
 });

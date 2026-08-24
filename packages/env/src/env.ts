@@ -64,6 +64,24 @@ export const client = {
    * dashboard permanently signed out, since the cookie would no longer be sent.
    */
   NEXT_PUBLIC_API_URL: z.url().default("https://api.prequel.sh"),
+
+  /**
+   * PostHog's project token — the `phc_…` one.
+   *
+   * Public by construction: it is write-only, cannot read a single event back
+   * out of the project, and is served to every browser that loads the site. It
+   * is here rather than in `server` for that reason, not by oversight.
+   *
+   * Defaulted to empty rather than to the real token, which is the opposite of
+   * the two URLs above. The default is what applies to a build that forgot, and
+   * a build that forgot should be silent — sending a deploy's traffic to the
+   * project under whatever `environment` it happens to compute is worse than
+   * sending nothing. The desktop app never reads this at all: it posts to
+   * `/v1/events` and the Worker holds the token.
+   */
+  NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: z.string().default(""),
+  /** PostHog's ingestion host. US Cloud unless the project is moved. */
+  NEXT_PUBLIC_POSTHOG_HOST: z.url().default("https://us.i.posthog.com"),
 };
 
 function build() {
@@ -78,6 +96,8 @@ function build() {
       NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+      NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
+      NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
     },
     skipValidation: process.env.SKIP_ENV_VALIDATION === "1",
   });

@@ -9,6 +9,24 @@ directories:
 # time — macOS mounts either without a plugin.
 compression: maximum
 
+# Present so electron-builder writes `latest-mac.yml` beside the artefacts and
+# embeds `app-update.yml` in the bundle — both come from having a publish config
+# at all, not from passing `--publish`, so the `package` script needs no flag.
+# A generic provider can never upload anything, so a tag build cannot publish
+# behind our back either.
+#
+# The URL here is not where a running app looks. `main/update.ts` calls
+# `setFeedURL` with `apiUrl()` instead, so a build pointed at another deployment
+# through NEXT_PUBLIC_API_URL does not also have to edit this file.
+#
+# `useMultipleRangeRequest` is off because GitHub serves release assets from
+# Azure Blob, which answers 501 to a multi-range request — see the differential
+# download note in `main/update.ts`.
+publish:
+  provider: generic
+  url: https://api.prequel.sh/v1/updates/darwin-arm64
+  useMultipleRangeRequest: false
+
 files:
   - "out/**/*"
   # The tray icons are read from `out/main/../../resources`, so they have to

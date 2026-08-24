@@ -9,5 +9,7 @@ allowBuilds:
   esbuild: true
   # The Workers runtime the API's `wrangler dev` and its tests run inside.
   workerd: true
+  # posthog-js pulls this in; its only install script prints a funding notice.
+  core-js: false
 minimumReleaseAgeExclude:
   - '@napi-rs/cli@3.8.5'

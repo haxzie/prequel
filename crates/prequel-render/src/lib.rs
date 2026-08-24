@@ -43,8 +43,8 @@ pub mod reader;
 
 pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};
 pub use plan::{
-    CaptionWord, CursorPoint, Paint, PlanItem, PlanSource, Point, Rect, RenderPlan, Shape, Size,
-    Span,
+    CaptionWord, CursorPoint, Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape,
+    Size, Span,
 };
 pub use timeline::{AudioMix, SliceRender, Timeline};
 

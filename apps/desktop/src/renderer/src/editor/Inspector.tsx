@@ -1,11 +1,12 @@
 import { useEffect, useState, type Dispatch } from "react";
 
-import { CURSOR_STYLES, cursorStyle } from "../../../shared/contract";
+import { cursorStyle } from "../../../shared/contract";
 import { shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
   DEFAULT_LAYOUT,
   overriddenKeys,
+  WALLPAPER_FILE_NAME,
   type Background,
   type LayoutPreset,
   type LayoutSettings,
@@ -15,6 +16,7 @@ import {
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { CameraMap } from "./controls/CameraMap";
+import { CursorPicker } from "./controls/CursorPicker";
 import { LayoutPicker } from "./controls/LayoutPicker";
 import { Field, Section } from "./controls/Field";
 import { EasingPad } from "./controls/EasingPad";
@@ -40,7 +42,7 @@ import {
   WideIcon,
   ZoomIcon,
 } from "./icons";
-import { ColorField, percent, Segmented, Slider, Toggle } from "./controls/inputs";
+import { ColorField, percent, Segmented, Slider, Tabs, Toggle } from "./controls/inputs";
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
 import { activeSettings, selectedSlice, type EditorAction, type EditorState } from "./state";
 
@@ -66,8 +68,16 @@ export interface InspectorProps {
   onPickWallpaper: () => void;
   onPickImage: () => void;
   onPickPreset: (presetId: string) => void;
-  /** URL for the desktop picture inside the recording, drawn on its cell. */
-  wallpaperUrl: string | null;
+  /**
+   * A file inside the recording, as something the renderer can load.
+   *
+   * One resolver rather than a URL for each picture. Three panels want one —
+   * the desktop picture on its swatch, the pointer images on theirs, the
+   * background behind every layout thumbnail — and which files those are is
+   * decided by `CURSOR_STYLES`, by what the user dropped in, and by the
+   * arrangement being drawn. None of that should reach this list of props.
+   */
+  fileUrl: (file: string) => string;
   /**
    * Put the panel away and drop the selection with it.
    *
@@ -228,6 +238,7 @@ export function Inspector(props: InspectorProps) {
                 frame={props.frame}
                 cameraSource={props.cameraSource}
                 cameraPresent={props.present.has("camera")}
+                fileUrl={props.fileUrl}
                 field={field}
                 reset={sectionReset("layout")}
                 set={set}
@@ -240,7 +251,7 @@ export function Inspector(props: InspectorProps) {
                 onPickWallpaper={props.onPickWallpaper}
                 onPickImage={props.onPickImage}
                 onPickPreset={props.onPickPreset}
-                wallpaperUrl={props.wallpaperUrl}
+                wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
               />
             </>
           )}
@@ -272,6 +283,7 @@ export function Inspector(props: InspectorProps) {
               field={field}
               reset={sectionReset("layout")}
               set={set}
+              cursorUrl={props.fileUrl}
             />
           )}
         </div>
@@ -372,6 +384,7 @@ function LayoutPanel({
   frame,
   cameraSource,
   cameraPresent,
+  fileUrl,
   field,
   reset,
   set,
@@ -380,6 +393,7 @@ function LayoutPanel({
   frame: Size;
   cameraSource: Size | null;
   cameraPresent: boolean;
+  fileUrl: (file: string) => string;
   field: FieldProps;
   reset?: () => void;
   set: Setter;
@@ -391,6 +405,11 @@ function LayoutPanel({
       <Field label="Layout" {...field("layout", "preset")}>
         <LayoutPicker
           frame={frame}
+          // The composition's own background and padding, so a padded
+          // arrangement is told apart from a full-bleed one by the thing that
+          // actually differs between them.
+          background={settings.background}
+          fileUrl={fileUrl}
           value={layout.preset}
           cameraPresent={cameraPresent}
           onChange={(preset) => {
@@ -627,11 +646,13 @@ function CursorPanel({
   field,
   reset,
   set,
+  cursorUrl,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   reset?: () => void;
   set: Setter;
+  cursorUrl: (file: string) => string;
 }) {
   const { layout } = settings;
   const off = !layout.cursorVisible;
@@ -646,18 +667,12 @@ function CursorPanel({
       </Field>
 
       <Field label="Style" {...field("layout", "cursorStyle")}>
-        <Segmented
+        <CursorPicker
           // Resolved rather than passed straight through, so a project naming a
           // style this build no longer ships shows the one actually being drawn
           // instead of no selection at all.
           value={cursorStyle(layout.cursorStyle).id}
-          options={CURSOR_STYLES.map((style) => ({
-            value: style.id,
-            label: style.label,
-            title: style.hand
-              ? `${style.label} pointer, becoming a hand over anything the system showed one for`
-              : `${style.label} marker, whatever the pointer was doing`,
-          }))}
+          imageUrl={cursorUrl}
           disabled={off}
           onChange={(value) => set("layout", "cursorStyle", value)}
         />
@@ -717,7 +732,7 @@ function BackgroundPanel({
   onPickWallpaper: () => void;
   onPickImage: () => void;
   onPickPreset: (presetId: string) => void;
-  wallpaperUrl: string | null;
+  wallpaperUrl: string;
 }) {
   const { background } = settings;
   const paint = background.background;
@@ -743,7 +758,7 @@ function BackgroundPanel({
   return (
     <Section title="Background" onReset={reset}>
       <Field label="Style" {...field("background", "background")}>
-        <Segmented
+        <Tabs
           value={style}
           options={[
             { value: "image", label: "Image", icon: <ImageIcon /> },

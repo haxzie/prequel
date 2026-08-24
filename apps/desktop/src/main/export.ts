@@ -12,6 +12,7 @@ import { clipboard, nativeImage, webContents, type WebContents } from "electron"
 
 import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
+import { track } from "./analytics.js";
 import { log } from "./log.js";
 import { getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, fileTimestamp } from "./session.js";
@@ -35,6 +36,15 @@ export function exportFileName(format: ExportFormat, now = new Date()): string {
 /** The directory currently being exported, or null. */
 let running: string | null = null;
 
+/**
+ * When the export in progress started, for the event that reports it finishing.
+ *
+ * How long a render actually takes on real machines is the number that decides
+ * whether the encoder is worth work, and it is not knowable from anywhere else —
+ * a packaged app has no console and the log only records the stages.
+ */
+let startedAt = 0;
+
 export function isExporting(): boolean {
   return running !== null;
 }
@@ -56,6 +66,15 @@ export async function startExport(request: ExportRequest): Promise<void> {
   // the user actually wants among them is what made this folder unusable.
   const output = join(RECORDINGS_DIR, exportFileName(request.format));
   running = request.dir;
+  startedAt = Date.now();
+
+  track("export_started", {
+    format: request.format,
+    width: request.width,
+    height: request.height,
+    fps: request.fps,
+    slices: request.slices.length,
+  });
 
   log("info", "export started", {
     dir: request.dir,
@@ -169,6 +188,14 @@ export async function cancelExport(): Promise<void> {
 
 function finish(update: ExportProgress): void {
   running = null;
+
+  track(`export_${update.stage}`, {
+    took_ms: startedAt ? Date.now() - startedAt : null,
+    frames: update.framesTotal,
+    // The message, not the path. A failure reason is a bug report; a path is
+    // the user's home directory and the name of whatever they recorded.
+    ...(update.stage === "failed" ? { message: update.error?.message ?? null } : {}),
+  });
 
   // Logged here rather than only shown in the editor: a failed export is the
   // one thing a user cannot investigate for themselves, and the message the

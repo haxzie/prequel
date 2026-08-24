@@ -31,6 +31,12 @@ export default defineConfig({
           R2_ACCESS_KEY_ID: "test",
           R2_SECRET_ACCESS_KEY: "test",
           R2_BUCKET: "prequel",
+          // Empty on purpose: `capture` returns without a request when there is
+          // no token, so the suite exercises the "analytics is not configured"
+          // path by default and a test that wants the other one stubs `fetch`
+          // and overrides this itself.
+          POSTHOG_PROJECT_TOKEN: "",
+          POSTHOG_HOST: "https://us.i.posthog.com",
         },
       },
     }),

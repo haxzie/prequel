@@ -13,6 +13,7 @@ import { schema } from "@prequel/db";
 
 import { database } from "../db.ts";
 import type { Env } from "../env.ts";
+import { captureServer } from "../lib/posthog.ts";
 import { signedPlayback } from "../lib/r2.ts";
 
 const publicRoutes = new Hono<{ Bindings: Env }>();
@@ -34,6 +35,7 @@ publicRoutes.get("/:slug", async (c) => {
       createdAt: schema.video.createdAt,
       deletedAt: schema.video.deletedAt,
       status: schema.video.status,
+      teamId: schema.video.teamId,
       teamName: schema.organization.name,
     })
     .from(schema.video)
@@ -57,6 +59,18 @@ publicRoutes.get("/:slug", async (c) => {
       .set({ viewCount: sql`${schema.video.viewCount} + 1` })
       .where(and(eq(schema.video.id, row.id), isNull(schema.video.deletedAt))),
   );
+
+  // Anonymous, and it has to be. The person opening a share link has no account
+  // and never will; making a PostHog person out of every one of them would fill
+  // the project with rows that do exactly one thing each and are counted for
+  // ever after. The team is still attributed, which is the part worth knowing.
+  captureServer(c.env, c.executionCtx, {
+    event: "video_viewed",
+    distinctId: `video_${row.id}`,
+    teamId: row.teamId,
+    anonymous: true,
+    properties: { duration_ms: row.durationMs, content_type: row.contentType },
+  });
 
   return c.json({
     title: row.title,

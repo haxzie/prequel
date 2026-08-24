@@ -23,11 +23,12 @@ import {
   onSessionClock,
   type Transcript,
 } from "../../shared/transcript.js";
+import { track } from "../analytics.js";
 import { log } from "../log.js";
 import { apiUrl } from "../api.js";
 import { authToken } from "../auth.js";
+import { installId } from "../install-id.js";
 import { fakeTranscriber } from "./fake.js";
-import { installId } from "./install-id.js";
 import { openai } from "./openai.js";
 import { TranscribeError, type Transcriber } from "./transcriber.js";
 
@@ -54,6 +55,7 @@ export async function startTranscribe(dir: string): Promise<void> {
   const controller = new AbortController();
   cancelling = controller;
 
+  track("transcription_started");
   log("info", "transcription started", dir);
 
   try {
@@ -153,6 +155,11 @@ function finish(update: Omit<TranscribeProgress, "dir">): void {
   const dir = running ?? "";
   running = null;
   cancelling = null;
+
+  // The stage only. `completed` also lands server-side from `/v1/transcribe`
+  // with the word count on it; this one is what says the editor got the result,
+  // which is a different thing from OpenAI having returned one.
+  track(`transcription_${update.stage}`);
 
   log("info", `transcription ${update.stage}`);
   broadcast(update, dir);

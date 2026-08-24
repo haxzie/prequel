@@ -11,11 +11,25 @@ import { tmpdir } from "node:os";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SessionState } from "../shared/contract.js";
-import { IDLE_SESSION } from "../shared/contract.js";
+import type { SessionState, UpdateState } from "../shared/contract.js";
+import { IDLE_SESSION, IDLE_UPDATE } from "../shared/contract.js";
 
 const titles: string[] = [];
 const images: string[] = [];
+/** Every menu template the tray has built, newest last. */
+const menus: MenuTemplate[] = [];
+/** What `updateState()` answers while a menu is being built. */
+let update: UpdateState = { ...IDLE_UPDATE };
+/** Set by the Restart item, so the test can see the install was requested. */
+let installed = false;
+
+interface MenuItem {
+  label?: string;
+  enabled?: boolean;
+  type?: string;
+  click?: () => void;
+}
+type MenuTemplate = MenuItem[];
 /** Flipped by the test that checks an unreadable icon is reported. */
 let iconIsEmpty = false;
 /**
@@ -29,6 +43,9 @@ let trayBounds = { x: 1065, y: 0, width: 32, height: 33 };
 
 vi.mock("electron", () => {
   class FakeTray {
+    /** Every `on` the tray registered, so a right-click can be delivered. */
+    handlers: Record<string, () => void> = {};
+
     constructor(image: string) {
       images.push(image);
     }
@@ -46,14 +63,21 @@ vi.mock("electron", () => {
     }
     setToolTip() {}
     setIgnoreDoubleClickEvents() {}
-    on() {}
+    on(event: string, handler: () => void) {
+      this.handlers[event] = handler;
+    }
     destroy() {}
     popUpContextMenu() {}
   }
 
   return {
     Tray: FakeTray,
-    Menu: { buildFromTemplate: () => ({}) },
+    Menu: {
+      buildFromTemplate: (template: MenuTemplate) => {
+        menus.push(template);
+        return {};
+      },
+    },
     app: {
       quit: () => {},
       getVersion: () => "0.0.0",
@@ -82,6 +106,16 @@ vi.mock("electron", () => {
   };
 });
 
+// The menu asks where the update has got to; the updater itself reaches for
+// Squirrel and the network, neither of which this file is about.
+vi.mock("./update.js", () => ({
+  updateState: () => update,
+  checkForUpdates: async () => update,
+  installUpdate: () => {
+    installed = true;
+  },
+}));
+
 const { AppTray, formatElapsed } = await import("./tray.js");
 
 /** A session stub whose state the test controls outright. */
@@ -98,7 +132,41 @@ function fakeSession(state: SessionState) {
 beforeEach(() => {
   titles.length = 0;
   images.length = 0;
+  menus.length = 0;
+  update = { ...IDLE_UPDATE };
+  installed = false;
 });
+
+/**
+ * The menu as the user would get it: built fresh on a right-click.
+ *
+ * Deliberately not by calling a private method. The menu is rebuilt on every
+ * right-click precisely so it can read live state, and going through the event
+ * is what proves that path still exists.
+ */
+function openMenu(flow: unknown = {}): MenuTemplate {
+  const tray = new AppTray(fakeSession({ ...IDLE_SESSION }) as never, flow as never);
+  (tray as unknown as { tray: { handlers: Record<string, () => void> } }).tray.handlers[
+    "right-click"
+  ]!();
+  return menus.at(-1)!;
+}
+
+/**
+ * The one update item.
+ *
+ * Found by its place — directly above Settings — rather than by its label,
+ * because the label is the thing under test and one of the four states does not
+ * contain the word at all.
+ */
+function updateItem(template: MenuTemplate): MenuItem {
+  const settings = template.findIndex((entry) => entry.label === "Settings…");
+  expect(settings, "the menu has no Settings item to anchor to").toBeGreaterThan(0);
+
+  const item = template[settings - 1]!;
+  expect(item.type, "the item above Settings is a separator, not the update item").toBeUndefined();
+  return item;
+}
 
 describe("the tray clock", () => {
   it("shows nothing while idle", () => {
@@ -232,5 +300,59 @@ describe("the tray icon", () => {
     }
 
     expect(errors.some((args) => String(args[0]).includes("tray icon is empty"))).toBe(false);
+  });
+});
+
+/**
+ * The update entry.
+ *
+ * A menu-bar app has no other permanent surface, so this item is the only place
+ * a user can ever go looking. It has to say something true in each of the four
+ * states, and — because the menu is rebuilt on every right-click — it has to
+ * read them live rather than from whatever was true when the tray was made.
+ */
+describe("the update item", () => {
+  it("offers a check when there is nothing pending", () => {
+    expect(updateItem(openMenu()).label).toBe("Check for Updates…");
+  });
+
+  it("names the version once one is found", () => {
+    update = { ...IDLE_UPDATE, status: "available", version: "0.0.3" };
+    expect(updateItem(openMenu()).label).toBe("Update to 0.0.3…");
+  });
+
+  it("shows progress, and does not offer to start again mid-download", () => {
+    // The failure this guards: an item still reading "Check for Updates…" while
+    // a download runs, which offers to start work already in progress.
+    update = { ...IDLE_UPDATE, status: "downloading", version: "0.0.3", percent: 42 };
+
+    const item = updateItem(openMenu());
+    expect(item.label).toBe("Downloading… 42%");
+    expect(item.enabled).toBe(false);
+  });
+
+  it("asks for the restart that finishes it", () => {
+    update = { ...IDLE_UPDATE, status: "ready", version: "0.0.3", percent: 100 };
+
+    updateItem(openMenu()).click?.();
+    expect(installed).toBe(true);
+  });
+
+  it("opens the window through the flow, never a window class", () => {
+    // The rule this pins: the tray reaches for surfaces through `CaptureFlow`,
+    // so there is one place that knows what opening one entails.
+    update = { ...IDLE_UPDATE, status: "available", version: "0.0.3" };
+    let opened = false;
+
+    updateItem(openMenu({ openUpdate: () => (opened = true) })).click?.();
+    expect(opened).toBe(true);
+  });
+
+  it("opens the window before the check, not after it", () => {
+    // A check is a network round trip. A menu item that does nothing visible
+    // for a second reads as one that did not register the click.
+    let opened = false;
+    updateItem(openMenu({ openUpdate: () => (opened = true) })).click?.();
+    expect(opened).toBe(true);
   });
 });

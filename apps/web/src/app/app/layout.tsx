@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { Analytics } from "@/components/Analytics";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { requireTeam } from "@/lib/session";
 
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     // take it out of flow and leave the main column to be padded around a width
     // defined somewhere else.
     <div className="flex h-dvh overflow-hidden bg-bg">
+      <Analytics userId={me.user.id} email={me.user.email} name={me.user.name} teamId={team.id} />
       <Sidebar user={me.user} teams={me.teams} activeTeamId={team.id} />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-6 py-10">{children}</div>

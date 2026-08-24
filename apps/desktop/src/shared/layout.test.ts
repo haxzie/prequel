@@ -2088,3 +2088,145 @@ describe("captionAt", () => {
     expect(grown.dst.height).toBe(flat.dst.height * 1.5);
   });
 });
+
+describe("arriving from the slice before", () => {
+  const BOTH = { screen: SCREEN, camera: CAMERA };
+  const S = 1_000_000_000;
+  const SPAN = { start: 10 * S, end: 20 * S };
+
+  function planFor(preset: LayoutPreset, from: LayoutPreset | null) {
+    return buildRenderPlan(
+      LANDSCAPE,
+      BOTH,
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset } }),
+      null,
+      [],
+      from
+        ? {
+            from: settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: from } }),
+            source: SPAN,
+          }
+        : null,
+    );
+  }
+
+  it("gives the camera a track that ends where it belongs", () => {
+    const plan = planFor("beside", "over-full");
+    const camera = image(plan, "camera")!;
+    const keys = camera.motion!;
+
+    // The move is only allowed to be a way of arriving. Ending anywhere but the
+    // resting rectangle would leave the camera permanently offset, and every
+    // frame after the transition would be wrong rather than just the opening
+    // ones — which is the version of this bug nothing would catch.
+    const last = keys[keys.length - 1]!;
+    expect(last.x).toBeCloseTo(camera.dstRect.x, 6);
+    expect(last.y).toBeCloseTo(camera.dstRect.y, 6);
+    expect(last.width).toBeCloseTo(camera.dstRect.width, 6);
+    expect(last.height).toBeCloseTo(camera.dstRect.height, 6);
+  });
+
+  it("starts the move at the moment the slice does", () => {
+    const keys = image(planFor("beside", "over-full"), "camera")!.motion!;
+
+    // Keyed in source time, the same clock the cursor track and the zooms use.
+    // A track that opened at zero would have already finished before the slice
+    // it belongs to started playing.
+    expect(keys[0]!.at).toBe(SPAN.start);
+    expect(keys[keys.length - 1]!.at).toBeLessThanOrEqual(SPAN.end);
+  });
+
+  it("never stretches the picture on the way", () => {
+    const camera = image(planFor("beside", "over-full"), "camera")!;
+    const wanted = camera.srcRect.width / camera.srcRect.height;
+
+    // A plan item shows one crop, and a crop always has its destination's
+    // aspect. Lerping the previous slice's actual box into this one would draw
+    // that crop through a box of another shape — a face stretched widest at the
+    // midpoint of every cut. `reshaped` is what stops it, and this is the
+    // assertion that says so.
+    for (const key of camera.motion!) {
+      expect(key.width / key.height).toBeCloseTo(wanted, 6);
+    }
+  });
+
+  it("grows a camera the arrangement before had no room for", () => {
+    const keys = image(planFor("over-full", "screen-full"), "camera")!.motion!;
+
+    // Out of nothing, because a plan item carries no opacity — a rectangle of
+    // no size is the only entrance available, and it is a real one rather than
+    // a fallback.
+    expect(keys[0]!.width).toBe(0);
+    expect(keys[0]!.height).toBe(0);
+    expect(keys[keys.length - 1]!.width).toBeGreaterThan(0);
+  });
+
+  it("shrinks a camera this arrangement has no room for", () => {
+    const plan = planFor("screen-full", "over-full");
+    const camera = image(plan, "camera")!;
+    const keys = camera.motion!;
+
+    // The slice has no camera at all, so without this the bubble is simply gone
+    // on the cut. It has to end at nothing as well as start somewhere: `rectAt`
+    // holds the last key for the rest of the slice, so a track ending at any
+    // size would leave a bubble parked on a composition that does not have one.
+    expect(keys[0]!.width).toBeGreaterThan(0);
+    expect(keys[keys.length - 1]!.width).toBe(0);
+    expect(camera.dstRect.width).toBe(0);
+  });
+
+  it("takes the shadow with it, and lets it go", () => {
+    const plan = planFor("screen-full", "over-full");
+    const shadow = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "shadow" }> =>
+        item.kind === "shadow" && item.motion !== undefined,
+    )!;
+    const keys = shadow.motion!;
+
+    // The shadow is grown around the picture, so a track that only shrank the
+    // picture would leave a blur behind after the camera had gone — a soft grey
+    // lozenge sitting on the frame for the rest of the clip.
+    expect(keys[keys.length - 1]!.width).toBe(0);
+    expect(keys[keys.length - 1]!.height).toBe(0);
+  });
+
+  it("says nothing when the arrangement leaves the camera where it was", () => {
+    // `over-full` and `over-padded` both float the camera at the same fractions,
+    // so nothing about it moves. A track of identical keys would be carried in
+    // every plan and every export for no reason.
+    expect(image(planFor("over-padded", "over-full"), "camera")!.motion).toBeUndefined();
+  });
+
+  it("does not move anything on the first slice", () => {
+    // Nothing to arrive from. An export that assembled its own composition in
+    // the first quarter-second would look like the render had not finished.
+    expect(image(planFor("beside", null), "camera")!.motion).toBeUndefined();
+  });
+
+  it("leaves the screen alone", () => {
+    // Only the camera moves. The screen's track is the zooms', derived from a
+    // base rectangle that is fixed for the slice — sharing it needs the zoom
+    // maths changed rather than added to, which is not what this does.
+    expect(image(planFor("beside", "over-full"), "screen")!.motion).toBeUndefined();
+  });
+
+  it("cannot still be arriving when the clip ends", () => {
+    const brief = buildRenderPlan(
+      LANDSCAPE,
+      BOTH,
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "beside" } }),
+      null,
+      [],
+      {
+        from: settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" } }),
+        // A tenth of a second, well under the move's own length.
+        source: { start: 0, end: S / 10 },
+      },
+    );
+
+    const keys = image(brief, "camera")!.motion!;
+    // Half the slice at most, the same cap a zoom's ease takes: a move still in
+    // flight when the clip cuts never shows where it was going.
+    expect(keys[keys.length - 1]!.at).toBeLessThanOrEqual(S / 20);
+  });
+});

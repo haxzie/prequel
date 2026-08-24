@@ -13,10 +13,28 @@ import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type TrackGain } from "./audio";
 import { Playback, syncElement } from "./playback";
-import { hasJumped, place, toFileTime, toSourceTime, totalDuration, type Slice } from "./timeline";
+import {
+  hasJumped,
+  place,
+  sliceAt,
+  toFileTime,
+  toSourceTime,
+  totalDuration,
+  type Slice,
+} from "./timeline";
 
 /** How close to the edge the playhead gets before the view follows it. */
 const FOLLOW_MARGIN = 80;
+
+/**
+ * The width of the playhead's time label.
+ *
+ * Fixed rather than fitted to the text, and exported so the element and the
+ * clamp below cannot disagree about it. A label that resized as the digits
+ * changed would shimmy left and right around the line sixty times a second,
+ * because it is centred on it — the one place a variable width is visible.
+ */
+export const HEAD_LABEL_W = 54;
 
 /** Tracks that carry sound, and therefore need a gain of their own. */
 const AUDIO_KINDS: TrackKind[] = ["microphone", "system_audio"];
@@ -37,6 +55,23 @@ export interface EditorPlayback {
   getElement: (kind: TrackKind) => HTMLVideoElement | null;
   /** Attach to the element whose text should be the running timecode. */
   timecodeRef: (element: HTMLElement | null) => void;
+  /**
+   * The same timecode again, on the playhead itself.
+   *
+   * A second element rather than a second loop: the string is already being
+   * built here, and two loops formatting the same clock would eventually show
+   * two different times on one frame.
+   */
+  headTimeRef: (element: HTMLElement | null) => void;
+  /**
+   * The slice the picture is currently showing, or null before there is one.
+   *
+   * State rather than a ref, because the settings resolved from it reach React —
+   * the drag handles and the selection ring are rendered, not painted. It only
+   * changes when the playhead crosses a boundary, so this is a render per cut
+   * rather than a render per frame.
+   */
+  sliceId: string | null;
   /**
    * The playhead itself. Its `transform` is rewritten once per frame.
    *
@@ -98,6 +133,7 @@ export function useEditorPlayback(
 
   const elements = useRef(new Map<TrackKind, HTMLMediaElement>());
   const timecode = useRef<HTMLElement | null>(null);
+  const headTime = useRef<HTMLElement | null>(null);
   const playhead = useRef<HTMLElement | null>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const metrics = useRef({ content: 0, view: 0 });
@@ -107,6 +143,7 @@ export function useEditorPlayback(
   const hover = useRef<MediaTime | null>(null);
 
   const [playing, setPlaying] = useState(false);
+  const [sliceId, setSliceId] = useState<string | null>(null);
   const [visible, setVisible] = useState<Set<TrackKind>>(new Set());
 
   const placed = useMemo(() => place(slices), [slices]);
@@ -127,6 +164,9 @@ export function useEditorPlayback(
 
     let frame = 0;
     let shown = "";
+    // Only rewritten when it changes, which is only near the two ends. The
+    // playhead's own transform moves every frame; this one almost never does.
+    let nudged: number | null = null;
 
     // The frame's presentation time, not the moment this callback ran. See
     // `Playback.position` for why the difference is the whole of the jitter.
@@ -147,6 +187,14 @@ export function useEditorPlayback(
       // all of them instead, which is what stopping on a frame should look
       // like.
       const source = toSourceTime(placed, Math.min(showing, Math.max(0, duration - 1)));
+
+      // Which slice is on screen, on the same clock the picture is resolved
+      // against — so hovering the timeline previews the layout of the moment
+      // under the pointer as well as the frame.
+      //
+      // React bails out of an identical value, so this is only a render when
+      // the playhead actually crosses a cut.
+      setSliceId(sliceAt(placed, showing)?.id ?? null);
 
       // Running off the end stops the clock rather than leaving it counting
       // past media that is no longer there.
@@ -201,14 +249,28 @@ export function useEditorPlayback(
         }
       }
 
-      if (timecode.current) {
-        // Written only when the displayed value actually changes — the string
-        // is rebuilt cheaply, but the DOM write is not free.
-        const text = format(at);
-        if (text !== shown) {
-          shown = text;
-          timecode.current.textContent = text;
+      if (headTime.current) {
+        // Clamped to the content rather than centred blindly. The timeline is
+        // an `overflow-x` scroller, so a label centred on a head at zero has
+        // its left half cut off by the scroller's edge — and zero is where the
+        // head sits on every recording that has not been played yet.
+        const half = HEAD_LABEL_W / 2;
+        const nudge = Math.min(Math.max(x, half), Math.max(content - half, half)) - x;
+
+        if (nudge !== nudged) {
+          nudged = nudge;
+          headTime.current.style.transform = `translate3d(calc(-50% + ${nudge}px), 0, 0)`;
         }
+      }
+
+      // Written only when the displayed value actually changes — the string is
+      // rebuilt cheaply, but the DOM write is not free, and there are two of
+      // them now.
+      const text = format(at);
+      if (text !== shown) {
+        shown = text;
+        if (timecode.current) timecode.current.textContent = text;
+        if (headTime.current) headTime.current.textContent = text;
       }
     };
 
@@ -238,6 +300,10 @@ export function useEditorPlayback(
   // means a frame where the loop has nothing to write to.
   const timecodeRef = useCallback((element: HTMLElement | null) => {
     timecode.current = element;
+  }, []);
+
+  const headTimeRef = useCallback((element: HTMLElement | null) => {
+    headTime.current = element;
   }, []);
 
   const playheadRef = useCallback((element: HTMLElement | null) => {
@@ -277,7 +343,9 @@ export function useEditorPlayback(
     duration,
     register,
     getElement,
+    sliceId,
     timecodeRef,
+    headTimeRef,
     playheadRef,
     scrollerRef,
     setTrackMetrics,

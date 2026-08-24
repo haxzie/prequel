@@ -32,6 +32,12 @@ vi.mock("electron", () => ({
 
 vi.mock("./log.js", () => ({ log: () => undefined }));
 
+// Analytics is stubbed rather than exercised. `auth.ts` tracks a sign-in and a
+// sign-out, and without this those events would go through the `apiFetch` mock
+// below and be counted as sign-in exchanges — a test failing because of a call
+// that has nothing to do with what it is testing.
+vi.mock("./analytics.js", () => ({ track: () => undefined, flush: () => Promise.resolve() }));
+
 const exchanges: { code: string; verifier: string }[] = [];
 let exchangeResult: unknown = null;
 

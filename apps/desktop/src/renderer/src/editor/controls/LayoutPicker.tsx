@@ -1,5 +1,13 @@
-import type { LayoutSettings, LayoutPreset } from "../../../../shared/project";
-import { DEFAULT_BACKGROUND, DEFAULT_LAYOUT } from "../../../../shared/project";
+import type { CSSProperties } from "react";
+
+import type {
+  Background,
+  BackgroundSettings,
+  LayoutSettings,
+  LayoutPreset,
+} from "../../../../shared/project";
+import { DEFAULT_LAYOUT } from "../../../../shared/project";
+import { gradientCss } from "../../../../shared/presets";
 import { layoutBoxes, type Size } from "../../../../shared/layout";
 import { PersonIcon } from "../icons";
 import { cn } from "../../lib/cn";
@@ -17,6 +25,13 @@ import { cn } from "../../lib/cn";
  * implementation of the layout, and it would be wrong the first time a rule
  * changed — silently, in the one place whose whole job is to promise what the
  * export will look like.
+ *
+ * The composition's own background goes behind them, and its own padding sets
+ * the inset. Both used to be the defaults: a padded arrangement then drew its
+ * gap in near-black against a near-black plate, so the six arrangements that
+ * differ from their neighbours *only* by that gap were six copies of the same
+ * picture — and a project whose padding had been turned up or off was described
+ * by a thumbnail that showed neither.
  */
 
 /** The arrangements, in the order they appear. Five to a row. */
@@ -51,11 +66,17 @@ const CELL =
 
 export function LayoutPicker({
   frame,
+  background,
+  fileUrl,
   value,
   cameraPresent,
   onChange,
 }: {
   frame: Size;
+  /** The composition's background and padding, drawn as they will be. */
+  background: BackgroundSettings;
+  /** Resolves a file inside the recording, for an image background. */
+  fileUrl: (file: string) => string;
   value: LayoutPreset;
   /**
    * Arrangements needing a camera are disabled without one, not hidden. A grid
@@ -65,6 +86,11 @@ export function LayoutPicker({
   cameraPresent: boolean;
   onChange: (preset: LayoutPreset) => void;
 }) {
+  // Worked out once for all ten cells: it is the same background in each, and
+  // an image URL rebuilt per cell is ten identical requests for the browser to
+  // deduplicate.
+  const paint = backgroundCss(background.background, fileUrl);
+
   return (
     <div className="grid grid-cols-5 gap-1">
       {PRESETS.map((preset) => {
@@ -81,7 +107,7 @@ export function LayoutPicker({
             className={cn(CELL, preset.value === value && "ring-2 ring-editor-accent ring-inset")}
             onClick={() => onChange(preset.value)}
           >
-            <Plate frame={frame} preset={preset.value} />
+            <Plate frame={frame} preset={preset.value} background={background} paint={paint} />
           </button>
         );
       })}
@@ -106,14 +132,46 @@ export function LayoutPicker({
   );
 }
 
+/**
+ * A background as CSS.
+ *
+ * The same three cases `toPaint` maps for the rasterisers, in the one language
+ * a swatch can be painted in. `cover` and centred because that is how both of
+ * them draw an image, so the cell samples what the frame will show.
+ */
+function backgroundCss(background: Background, fileUrl: (file: string) => string): CSSProperties {
+  switch (background.kind) {
+    case "solid":
+      return { background: background.color };
+    case "gradient":
+      return { background: gradientCss(background) };
+    case "image":
+      return {
+        backgroundImage: `url("${fileUrl(background.path)}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      };
+  }
+}
+
 /** One thumbnail: the frame, with whichever pictures the arrangement puts in it. */
-function Plate({ frame, preset }: { frame: Size; preset: LayoutPreset }) {
+function Plate({
+  frame,
+  preset,
+  background,
+  paint,
+}: {
+  frame: Size;
+  preset: LayoutPreset;
+  background: BackgroundSettings;
+  paint: CSSProperties;
+}) {
   // A frame of arbitrary size, laid out and then expressed as percentages, so
   // the plate is resolution-independent and needs no measuring.
   const boxes = layoutBoxes(
     frame,
     { ...DEFAULT_LAYOUT, preset } as LayoutSettings,
-    DEFAULT_BACKGROUND,
+    background,
     THUMB_SOURCES,
   );
 
@@ -129,19 +187,24 @@ function Plate({ frame, preset }: { frame: Size; preset: LayoutPreset }) {
       className="relative block overflow-hidden rounded-[3px] bg-black/40"
       // Whichever edge runs out first, so a 9:16 frame draws as a tall sliver
       // inside a square cell rather than overflowing it.
+      //
+      // The paint goes on last so an image that has not loaded — or one the
+      // recording never copied in — leaves the dark plate underneath rather
+      // than a transparent hole in the middle of the grid.
       style={{
         aspectRatio: `${frame.width} / ${frame.height}`,
         width: frame.width >= frame.height ? "100%" : undefined,
         height: frame.width >= frame.height ? undefined : "100%",
+        ...paint,
       }}
     >
       {boxes.screen && (
-        <span className="absolute rounded-[2px] bg-editor-fg/70" style={at(boxes.screen.area)} />
+        <span className="absolute rounded-[2px] bg-layout-screen" style={at(boxes.screen.area)} />
       )}
       {boxes.camera && (
         <span
           className={cn(
-            "absolute grid place-items-center overflow-hidden bg-layout-camera text-white/90",
+            "absolute grid place-items-center overflow-hidden bg-layout-camera text-black/50",
             // The bubble reads as a bubble at this size only if it is round.
             boxes.camera.card ? "rounded-[2px]" : "rounded-full",
             // Both edges, so the glyph stays square and centres itself inside
@@ -151,11 +214,10 @@ function Plate({ frame, preset }: { frame: Size; preset: LayoutPreset }) {
           )}
           style={at(boxes.camera.area)}
         >
-          {/* Says which block is the camera without anyone having to learn
-              that blue means camera. It is a mark rather than a picture in the
-              smallest cells — the bubble is nine pixels across there — but a
-              blue block with something in it still reads differently from the
-              plain one beside it. */}
+          {/* Says which block is the camera, and with both blocks now grey it
+              is the only thing that does. Dark on the lighter grey rather than
+              white: the block is a mid tone, and white on it is the pairing
+              that stops reading at this size. */}
           <PersonIcon />
         </span>
       )}

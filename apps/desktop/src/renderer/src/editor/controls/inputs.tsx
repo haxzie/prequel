@@ -138,6 +138,54 @@ export function Segmented<T extends string>({
 }
 
 /**
+ * One row of destinations, marked underneath.
+ *
+ * A segmented control is for a value — the three camera shapes are all applied,
+ * and the pill shows which one is. These are not: pressing Solid changes what
+ * the panel is showing, and nothing about the frame until a swatch is pressed.
+ * A pill lit up on Solid over an image background says the background is a
+ * colour, which is the one thing it must not say.
+ *
+ * The underline overlaps the row's own line rather than sitting under it, so
+ * the marked tab reads as a piece cut out of the rule instead of as a second
+ * line below it.
+ */
+export function Tabs<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string; title?: string; icon?: ReactNode }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex gap-4 border-b border-editor-line" role="tablist">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={option.value === value}
+          title={option.title ?? option.label}
+          className={cn(
+            "-mb-px flex items-center gap-1.5 border-b-2 pb-1.5",
+            "text-[11px] whitespace-nowrap [&_svg]:size-3.5",
+            option.value === value
+              ? "border-editor-accent font-medium text-editor-fg"
+              : "border-transparent text-editor-muted hover:text-editor-fg",
+          )}
+          onClick={() => onChange(option.value)}
+        >
+          {option.icon}
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * A switch, always at the right-hand end of its row.
  *
  * Green when on, white knob either way. Green because "on" is the one state

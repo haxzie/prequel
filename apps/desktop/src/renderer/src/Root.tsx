@@ -3,6 +3,7 @@ import { Dock } from "./dock/Dock";
 import { Editor } from "./editor/Editor";
 import { Selection } from "./selection/Selection";
 import { Settings } from "./settings/Settings";
+import { Update } from "./update/Update";
 import { Welcome } from "./welcome/Welcome";
 
 /**
@@ -27,6 +28,8 @@ export function Root() {
       return <Welcome />;
     case "/settings":
       return <Settings />;
+    case "/update":
+      return <Update />;
     default:
       return <p className="p-6 text-muted">Unknown route: {route}</p>;
   }

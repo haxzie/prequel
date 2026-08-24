@@ -318,6 +318,18 @@ export const IPC_CHANNELS = {
   authOpenDashboard: "auth:openDashboard",
   /** Main → renderer broadcast, since several surfaces show the account. */
   authChanged: "auth:changed",
+  /** Where the update check has got to. */
+  updateState: "update:state",
+  /** Renderer → main: look for a newer version now. */
+  updateCheck: "update:check",
+  /** Renderer → main: start fetching the version already found. */
+  updateDownload: "update:download",
+  /** Renderer → main: quit and install what has been downloaded. */
+  updateInstall: "update:install",
+  /** Renderer → main: bring up the update window, which has room to explain. */
+  updateOpen: "update:open",
+  /** Main → renderer broadcast: the window, the tray and Settings all show it. */
+  updateChanged: "update:changed",
   /** Uploads a finished export and answers with a link. */
   shareStart: "share:start",
   shareCancel: "share:cancel",
@@ -753,6 +765,51 @@ export interface RecentRecording {
   /** Epoch milliseconds, newest first. */
   modifiedAt: number;
 }
+
+/**
+ * How far along an update is.
+ *
+ * `idle` is also "checked, and there is nothing" — the two are not worth telling
+ * apart anywhere they are shown, and a separate state for the second would have
+ * every surface handle both identically.
+ */
+export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+
+export interface UpdateState {
+  status: UpdateStatus;
+  /** The version running now. */
+  current: string;
+  /** The version on offer. Set from `available` onwards. */
+  version: string | null;
+  /**
+   * The release body, for the window.
+   *
+   * Fetched separately from the version itself and allowed to fail on its own —
+   * a changelog that did not arrive is a window without a changelog, not a
+   * failed check.
+   */
+  notes: string | null;
+  /** 0–100 while downloading. */
+  percent: number;
+  /** Set only on `error`, and already a sentence to put in front of a user. */
+  message: string | null;
+}
+
+/**
+ * Nothing happening, and no version read yet.
+ *
+ * `current` is empty rather than a placeholder version: `app.getVersion()`
+ * throws before the app is ready, so main fills it in on the way out and a
+ * plausible-looking `0.0.0` here would only ever be wrong somewhere.
+ */
+export const IDLE_UPDATE: UpdateState = {
+  status: "idle",
+  current: "",
+  version: null,
+  notes: null,
+  percent: 0,
+  message: null,
+};
 
 export interface AppInfo {
   name: string;

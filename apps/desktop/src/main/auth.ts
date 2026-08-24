@@ -21,6 +21,7 @@ import { app, shell } from "electron";
 
 import type { AuthAccount, AuthState } from "../shared/contract.js";
 import { apiFetch, ApiError, appUrl } from "./api.js";
+import { flush, track } from "./analytics.js";
 import { log } from "./log.js";
 
 const FILE = "auth.json";
@@ -66,7 +67,7 @@ function file(): string {
  * `RecordingPreferences` rides along in the `DockState` main broadcasts to every
  * window, so a token stored there would be readable by every renderer — the same
  * reasoning that put the install id in its own file, written down in
- * `transcribe/install-id.ts`.
+ * `install-id.ts`.
  */
 function read(): Stored | null {
   if (cached !== undefined) return cached;
@@ -163,6 +164,8 @@ export function beginSignIn(): void {
   url.searchParams.set("challenge", challenge);
   url.searchParams.set("state", state);
 
+  track("sign_in_started");
+
   void shell.openExternal(url.toString());
   emit();
 }
@@ -217,6 +220,13 @@ export async function completeSignIn(code: string, state: string): Promise<void>
     });
 
     log("info", `signed in as ${result.user.email}`);
+
+    // The one event the Worker treats specially: it becomes a PostHog
+    // `$identify` carrying the install id, which is what merges everything this
+    // Mac did before signing in onto the account. Flushed immediately rather
+    // than left to the timer, so the merge lands before anything else does.
+    track("signed_in", { has_team: result.team !== null });
+    void flush();
   } catch (cause) {
     console.error(
       "[auth] the sign-in exchange failed:",
@@ -243,6 +253,16 @@ export function openDashboard(): void {
  */
 export async function signOut(): Promise<void> {
   const token = authToken();
+
+  // Before the token is dropped, so the event is still attributed to the account
+  // signing out rather than to the anonymous install left behind. Not awaited:
+  // signing out must not wait on a network, which is the whole point of the
+  // ordering below. `flush` reads the token synchronously before it suspends, so
+  // starting it on this line is enough — moving it after `write(null)` would
+  // send the event as nobody.
+  track("signed_out");
+  void flush();
+
   write(null);
   emit();
 
