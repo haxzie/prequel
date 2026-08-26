@@ -33,8 +33,15 @@ export interface LibraryVideo {
 export default async function LibraryPage() {
   // Not `getMe()` plus a `!`. The layout's redirect does not stop this page from
   // rendering — Next runs the two in parallel — so the guard has to be here.
-  const { team } = await requireTeam();
-  const library = await fetchLibrary();
+  //
+  // Started together rather than one after the other. The listing needs nothing
+  // from the session — the Worker scopes it to the team off the same cookie — so
+  // awaiting the guard first spends two serial round-trips to Cloudflare on a
+  // page that can spend one, and that pair was most of what made opening the
+  // dashboard feel slow. A cookie that turns out to be invalid still redirects:
+  // `requireTeam` throws, and the listing it raced simply comes back 401 and is
+  // dropped.
+  const [{ team }, library] = await Promise.all([requireTeam(), fetchLibrary()]);
 
   return (
     <>

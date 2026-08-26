@@ -1,4 +1,7 @@
-import { BillingPanel } from "@/components/dashboard/BillingPanel";
+import { cookies } from "next/headers";
+
+import { BillingPanel, type Billing } from "@/components/dashboard/BillingPanel";
+import { API_URL } from "@/lib/api";
 import { PRICE_MONTHLY } from "@/lib/pricing";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
@@ -18,13 +21,20 @@ const CAN_MANAGE = new Set(["owner", "admin"]);
 /**
  * The plan, and what it costs to grow the team.
  *
- * The panel below is a client component because subscription state lives behind
- * `GET /v1/billing` rather than on the session — the team row this page already
- * has says `pro` or `free` and nothing about seats, and seats are the number
- * somebody comes to this page to look at.
+ * Subscription state lives behind `GET /v1/billing` rather than on the session —
+ * the team row this page already has says `pro` or `free` and nothing about
+ * seats, and seats are the number somebody comes to this page to look at. So it
+ * is read here and handed down. The panel stays a client component for the two
+ * buttons: checkout and the portal both end in a redirect to a single-use,
+ * time-limited URL only the API can mint, so neither can be rendered ahead of
+ * the click.
  */
 export default async function BillingPage() {
-  const { team } = await requireTeam();
+  // Together, not one then the other. The subscription read needs nothing from
+  // the session — the Worker resolves the team off the same cookie — and running
+  // it here rather than from an effect in the panel takes a whole leg off the
+  // waterfall this page used to have.
+  const [{ team }, billing] = await Promise.all([requireTeam(), fetchBilling()]);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -34,7 +44,7 @@ export default async function BillingPage() {
         Your subscription includes one seat; each teammate takes another.
       </p>
 
-      <BillingPanel canManage={CAN_MANAGE.has(team.role)} />
+      <BillingPanel billing={billing} canManage={CAN_MANAGE.has(team.role)} />
 
       <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
         <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">
@@ -53,4 +63,24 @@ export default async function BillingPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * The team's subscription, or null.
+ *
+ * Null rather than a thrown error, on the same reasoning as the library's
+ * listing: the rest of this page — what a seat costs, how seats work, the nav
+ * around it — is still worth showing, and a 500 would hide all of it behind a
+ * Worker that is briefly unreachable.
+ */
+async function fetchBilling(): Promise<Billing | null> {
+  const cookie = (await cookies()).toString();
+
+  const response = await fetch(`${API_URL}/v1/billing`, {
+    headers: { cookie },
+    // Never a shared cache. This is one team's money.
+    cache: "no-store",
+  }).catch(() => null);
+
+  return response?.ok ? ((await response.json()) as Billing) : null;
 }

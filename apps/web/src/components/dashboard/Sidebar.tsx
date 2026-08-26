@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Logo } from "@/components/Logo";
 import { authClient } from "@/lib/auth-client";
 import { displayName } from "@/lib/display-name";
-import type { SessionUser, Team } from "@/lib/session";
+import type { SessionUser, Team, Trial } from "@/lib/session";
 
 import { Avatar } from "./Avatar";
 import { STROKE } from "./icons";
@@ -24,13 +24,14 @@ export function Sidebar({
   user,
   teams,
   activeTeamId,
+  trial,
 }: {
   user: SessionUser;
   teams: Team[];
   activeTeamId: string;
+  trial: Trial;
 }) {
   const pathname = usePathname();
-  const team = teams.find((one) => one.id === activeTeamId) ?? teams[0];
 
   return (
     // `--elevated` rather than `--surface`. Both are lighter than the page, but
@@ -56,6 +57,18 @@ export function Sidebar({
             <Link
               key={href}
               href={href}
+              /**
+               * Left on `auto` everywhere but the page already open, where a
+               * prefetch is a round-trip for a payload the router will not use.
+               *
+               * `auto` is worth something here now and was worth nothing before:
+               * it prefetches a dynamic route as far as the nearest `loading.tsx`,
+               * and until those existed that was as far as the front door. The
+               * rest of the payload comes on hover, via `dynamicOnHover` in
+               * `next.config.ts` — which the comment there explains is fresher
+               * than `prefetch` would be, not merely cheaper.
+               */
+              prefetch={current ? false : undefined}
               aria-current={current ? "page" : undefined}
               className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 ${
                 current ? "bg-white/8 text-fg" : "text-muted hover:bg-white/5 hover:text-fg"
@@ -70,7 +83,11 @@ export function Sidebar({
 
       <div className="flex-1" />
 
-      {team?.plan === "free" ? <UpgradeCard className="mx-3 mb-3" /> : null}
+      {/* Keyed off the trial rather than off `plan === "free"`, which is the same
+          value for a trial that is running and one that ended in March. A paying
+          team gets nothing here, which is the point of a card that asks for
+          money. */}
+      {trial.status === "paid" ? null : <UpgradeCard trial={trial} className="mx-3 mb-3" />}
 
       <UserMenu user={user} />
     </aside>

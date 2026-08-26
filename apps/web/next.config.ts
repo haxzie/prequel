@@ -27,6 +27,31 @@ const nextConfig: NextConfig = {
   },
 
   experimental: {
+    /**
+     * Hovering a link upgrades its prefetch from the shell to the whole page.
+     *
+     * Viewport prefetch of a dynamic route only ever reaches the nearest
+     * `loading.tsx`, which is deliberate — the library grid can hold two hundred
+     * links and full-prefetching all of them would be two hundred server renders
+     * for the one anybody clicks. Hover is the signal that narrows it to one, and
+     * it lands a couple of hundred milliseconds before the click, which is most
+     * of a round-trip to Cloudflare.
+     *
+     * Chosen over `prefetch` on the links themselves, which is the other way to
+     * get the whole page. A payload prefetched on page load is held under the
+     * *static* stale time — five minutes — so a library prefetched when the tab
+     * opened can be five minutes out of date by the time it is clicked, and a
+     * recording shared from the Mac in between would be missing from it. A hover
+     * prefetch is minted moments before the click and cannot drift.
+     *
+     * `staleTimes.dynamic` is deliberately left at its default of 0 for the same
+     * reason: it would let the router re-show an already-rendered dashboard page
+     * on a forward navigation, which is how you land on the library and see the
+     * recording you have just deleted. Back and forward do not need it — those go
+     * through the bfcache, which disregards stale time outright.
+     */
+    dynamicOnHover: true,
+
     // Turbopack looks for a PostCSS config at the *project* root before the
     // stylesheet's own directory, and in this workspace the project root is the
     // repo root, not apps/web. Without this flag postcss.config.mjs beside this

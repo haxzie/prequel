@@ -32,6 +32,22 @@ export interface Team {
   role: string;
 }
 
+/**
+ * Where the account stands on its fourteen days.
+ *
+ * Derived by the Worker — `apps/api/src/lib/trial.ts` says why the dashboard is
+ * handed a verdict where the desktop app is handed facts. Nothing here rounds a
+ * countdown of its own; a second rule would disagree with the app the first time
+ * either changed, and the two are read side by side by the same person.
+ */
+export interface Trial {
+  status: "paid" | "trial" | "expired";
+  /** Whole days remaining, rounded up. Zero when paid, and zero once it has run out. */
+  daysLeft: number;
+  /** Epoch milliseconds. */
+  endsAt: number;
+}
+
 export interface Device {
   id: string;
   label: string;
@@ -43,6 +59,8 @@ export interface Me {
   user: SessionUser;
   teams: Team[];
   activeTeamId: string | null;
+  /** Resolved against the active team, which is the one the dashboard renders. */
+  trial: Trial;
   devices: Device[];
 }
 

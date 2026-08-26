@@ -17,6 +17,7 @@ import { schema } from "@prequel/db";
 
 import { createCheckout, portalSession } from "../lib/dodo.ts";
 import { entitlement, seatsNeeded } from "../lib/seats.ts";
+import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, requireAdmin, requireTeam, type AppContext } from "../middleware.ts";
 
 const billing = new Hono<AppContext>();
@@ -25,29 +26,61 @@ billing.use("*", authenticate, requireTeam);
 
 billing.get("/", async (c) => {
   const db = c.get("db");
-  const teamId = c.get("identity").teamId!;
+  const { userId, teamId } = c.get("identity");
 
-  const [team] = await db
-    .select({ plan: schema.organization.plan, quota: schema.organization.storageQuotaBytes })
-    .from(schema.organization)
-    .where(eq(schema.organization.id, teamId))
-    .limit(1);
+  /**
+   * Four reads for one panel, started together.
+   *
+   * Every one of them keys off `userId` or `teamId`, both already resolved by
+   * the middleware, so none waits on another. Awaited in turn they were four
+   * serial hops to D1 — and the dashboard now blocks its billing page on this
+   * call rather than fetching it from an effect, so the four were the page.
+   *
+   * The second is one read for one date: the trial is anchored to the account's
+   * sign-up and the plan to the team, so this cannot say which of the three
+   * states a non-paying team is in without both — and "free" on its own is the
+   * label that made a running trial and a lapsed one look identical here.
+   */
+  const [[team], [account], [subscription], [members]] = await Promise.all([
+    db
+      .select({ plan: schema.organization.plan, quota: schema.organization.storageQuotaBytes })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, teamId!))
+      .limit(1),
 
-  const [subscription] = await db
-    .select()
-    .from(schema.subscription)
-    .where(eq(schema.subscription.teamId, teamId))
-    .limit(1);
+    db
+      .select({ createdAt: schema.user.createdAt })
+      .from(schema.user)
+      .where(eq(schema.user.id, userId))
+      .limit(1),
 
-  const [members] = await db
-    .select({ total: count() })
-    .from(schema.member)
-    .where(eq(schema.member.organizationId, teamId));
+    db.select().from(schema.subscription).where(eq(schema.subscription.teamId, teamId!)).limit(1),
+
+    db
+      .select({ total: count() })
+      .from(schema.member)
+      .where(eq(schema.member.organizationId, teamId!)),
+  ]);
+
+  // A valid session for a user who is not there — `/v1/me` documents how that
+  // happens. Refused rather than answered with an invented sign-up date, which
+  // is what `/v1/desktop/entitlement` does with the same state and for the same
+  // reason: a date made up here is a trial verdict made up here.
+  if (!account) return c.json({ message: "Sign in to continue." }, 401);
 
   const seatsUsed = seatsNeeded(members?.total ?? 0);
 
   return c.json({
     plan: team?.plan ?? "free",
+    /**
+     * The verdict, not the dates behind it.
+     *
+     * `main/licence.ts` derives its own from facts because it caches them and
+     * reads them back offline. This page does not — it is fetched fresh every
+     * time it is opened — so it is handed the answer from `lib/trial.ts` rather
+     * than being a second place that rounds a countdown.
+     */
+    trial: trialStatus(team?.plan ?? "free", trialEndsAt(account.createdAt)),
     storageQuotaBytes: team?.quota ?? 0,
     /** Seats in use and seats paid for, both excluding the included one. */
     seatsUsed,
@@ -94,7 +127,7 @@ billing.post("/checkout", requireAdmin, async (c) => {
   const [members] = await db
     .select({ total: count() })
     .from(schema.member)
-    .where(eq(schema.member.organizationId, teamId));
+    .where(eq(schema.member.organizationId, teamId!));
 
   // A cancelled subscription leaves its row behind, and with it the Dodo
   // customer. Reusing it keeps one payer's cards and invoices together instead
@@ -102,7 +135,7 @@ billing.post("/checkout", requireAdmin, async (c) => {
   const [previous] = await db
     .select({ customerId: schema.subscription.dodoCustomerId })
     .from(schema.subscription)
-    .where(eq(schema.subscription.teamId, teamId))
+    .where(eq(schema.subscription.teamId, teamId!))
     .limit(1);
 
   const url = await createCheckout(c.env, {
@@ -125,7 +158,7 @@ billing.post("/portal", requireAdmin, async (c) => {
   const [subscription] = await db
     .select({ customerId: schema.subscription.dodoCustomerId })
     .from(schema.subscription)
-    .where(eq(schema.subscription.teamId, teamId))
+    .where(eq(schema.subscription.teamId, teamId!))
     .limit(1);
 
   if (!subscription) {

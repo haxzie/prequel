@@ -15,7 +15,7 @@ import { schema } from "@prequel/db";
 import type { Database } from "../db.ts";
 import { id, slug } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
-import { posterKey, signedUpload, videoKey } from "../lib/r2.ts";
+import { posterKey, signedPlayback, signedUpload, videoKey } from "../lib/r2.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
 const videos = new Hono<AppContext>();
@@ -43,32 +43,39 @@ videos.get("/", async (c) => {
   const db = c.get("db");
   const teamId = c.get("identity").teamId!;
 
-  const rows = await db
-    .select({
-      id: schema.video.id,
-      slug: schema.video.slug,
-      title: schema.video.title,
-      contentType: schema.video.contentType,
-      sizeBytes: schema.video.sizeBytes,
-      durationMs: schema.video.durationMs,
-      width: schema.video.width,
-      height: schema.video.height,
-      viewCount: schema.video.viewCount,
-      createdAt: schema.video.createdAt,
-      posterKey: schema.video.posterKey,
-      ownerName: schema.user.name,
-    })
-    .from(schema.video)
-    .leftJoin(schema.user, eq(schema.video.ownerId, schema.user.id))
-    .where(
-      and(
-        eq(schema.video.teamId, teamId),
-        eq(schema.video.status, "ready"),
-        isNull(schema.video.deletedAt),
-      ),
-    )
-    .orderBy(desc(schema.video.createdAt))
-    .limit(200);
+  // The listing and the quota total are two independent scans of the same
+  // table, and the page prints both. Awaiting them in turn put a second hop to
+  // D1 in front of the library for a number rendered in the corner of it.
+  const [rows, used] = await Promise.all([
+    db
+      .select({
+        id: schema.video.id,
+        slug: schema.video.slug,
+        title: schema.video.title,
+        contentType: schema.video.contentType,
+        sizeBytes: schema.video.sizeBytes,
+        durationMs: schema.video.durationMs,
+        width: schema.video.width,
+        height: schema.video.height,
+        viewCount: schema.video.viewCount,
+        createdAt: schema.video.createdAt,
+        posterKey: schema.video.posterKey,
+        ownerName: schema.user.name,
+      })
+      .from(schema.video)
+      .leftJoin(schema.user, eq(schema.video.ownerId, schema.user.id))
+      .where(
+        and(
+          eq(schema.video.teamId, teamId),
+          eq(schema.video.status, "ready"),
+          isNull(schema.video.deletedAt),
+        ),
+      )
+      .orderBy(desc(schema.video.createdAt))
+      .limit(200),
+
+    usage(db, teamId),
+  ]);
 
   // The same stable poster URL the share page uses, rather than a signature per
   // row. Two things follow: a browser can reuse a picture across navigations
@@ -83,7 +90,56 @@ videos.get("/", async (c) => {
     poster: key ? `${c.env.API_URL}/p/${row.slug}/poster` : null,
   }));
 
-  return c.json({ videos, usage: await usage(c.get("db"), teamId) });
+  return c.json({ videos, usage: used });
+});
+
+/**
+ * Where the owning team watches its own recording.
+ *
+ * `/p/:slug` already mints a playback URL and this deliberately does not reuse
+ * it: that route counts a view and captures `video_viewed`, so a dashboard built
+ * on it would have every owner inflating the number printed on the same page —
+ * and a team of five checking a link before sending it would put the count into
+ * double figures before a stranger ever opened it. `GET /v1/videos` skirts the
+ * same trap by linking `/p/:slug/poster` rather than `/p/:slug`.
+ *
+ * A signature per request rather than a column, and this is why the listing does
+ * not carry one: `PLAYBACK_TTL` is six hours, so a URL rendered into a page has
+ * to be minted when the page is, and two hundred of them per library render
+ * would be two hundred HMACs nobody watches.
+ */
+videos.get("/:id/playback", async (c) => {
+  const [row] = await c
+    .get("db")
+    .select({
+      objectKey: schema.video.objectKey,
+      contentType: schema.video.contentType,
+      status: schema.video.status,
+      deletedAt: schema.video.deletedAt,
+    })
+    .from(schema.video)
+    .where(
+      and(
+        eq(schema.video.id, c.req.param("id")),
+        // Scoped to the team, so this is not a way to read another team's key by
+        // guessing an id. Every other handler here scopes the same way.
+        eq(schema.video.teamId, c.get("identity").teamId!),
+      ),
+    )
+    .limit(1);
+
+  // One 404 for "not yours", "still uploading" and "deleted". None of the three
+  // has anything to play, and the page above falls back to the still.
+  if (!row || row.status !== "ready" || row.deletedAt) {
+    return c.json({ message: "No such recording." }, 404);
+  }
+
+  return c.json({
+    src: await signedPlayback(c.env, row.objectKey),
+    // The player has to know before it draws: a `<video>` pointed at a GIF shows
+    // a black rectangle with controls and reports no error at all.
+    contentType: row.contentType,
+  });
 });
 
 /**

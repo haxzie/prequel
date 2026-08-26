@@ -11,6 +11,7 @@ import { Hono } from "hono";
 
 import { schema } from "@prequel/db";
 
+import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
 
 const me = new Hono<AppContext>();
@@ -21,16 +22,61 @@ me.get("/", async (c) => {
   const db = c.get("db");
   const { userId, teamId } = c.get("identity");
 
-  const [user] = await db
-    .select({
-      id: schema.user.id,
-      name: schema.user.name,
-      email: schema.user.email,
-      image: schema.user.image,
-    })
-    .from(schema.user)
-    .where(eq(schema.user.id, userId))
-    .limit(1);
+  /**
+   * Three reads, started together.
+   *
+   * None of them needs anything from the others — `userId` comes off the
+   * identity the middleware already resolved — and this handler is what every
+   * dashboard page waits on before it renders anything at all. Run one after
+   * the other, they were three serial hops to D1 sitting in front of every
+   * navigation; the slowest of the three is now the whole cost.
+   *
+   * `account` is still checked before the rest is used, below. Racing the reads
+   * does not mean trusting them.
+   */
+  const [[account], teams, devices] = await Promise.all([
+    db
+      .select({
+        id: schema.user.id,
+        name: schema.user.name,
+        email: schema.user.email,
+        image: schema.user.image,
+        // Read for the trial below and then dropped from the payload. It is the
+        // account's sign-up date, which is the trial's anchor, and nothing in
+        // the dashboard has any other use for it.
+        createdAt: schema.user.createdAt,
+      })
+      .from(schema.user)
+      .where(eq(schema.user.id, userId))
+      .limit(1),
+
+    db
+      .select({
+        id: schema.organization.id,
+        name: schema.organization.name,
+        slug: schema.organization.slug,
+        plan: schema.organization.plan,
+        storageQuotaBytes: schema.organization.storageQuotaBytes,
+        role: schema.member.role,
+      })
+      .from(schema.member)
+      .innerJoin(schema.organization, eq(schema.member.organizationId, schema.organization.id))
+      .where(eq(schema.member.userId, userId))
+      .orderBy(schema.member.createdAt),
+
+    db
+      .select({
+        id: schema.deviceToken.id,
+        label: schema.deviceToken.label,
+        lastUsedAt: schema.deviceToken.lastUsedAt,
+        createdAt: schema.deviceToken.createdAt,
+        revokedAt: schema.deviceToken.revokedAt,
+      })
+      .from(schema.deviceToken)
+      .where(eq(schema.deviceToken.userId, userId))
+      .orderBy(desc(schema.deviceToken.createdAt))
+      .limit(20),
+  ]);
 
   /**
    * A valid session for a user who is not there.
@@ -44,39 +90,26 @@ me.get("/", async (c) => {
    * reads `me.user.name` off a payload that parsed fine and crashes. 401 is the
    * truth, and the caller already knows what to do with it.
    */
-  if (!user) return c.json({ message: "Sign in to continue." }, 401);
+  if (!account) return c.json({ message: "Sign in to continue." }, 401);
 
-  const teams = await db
-    .select({
-      id: schema.organization.id,
-      name: schema.organization.name,
-      slug: schema.organization.slug,
-      plan: schema.organization.plan,
-      storageQuotaBytes: schema.organization.storageQuotaBytes,
-      role: schema.member.role,
-    })
-    .from(schema.member)
-    .innerJoin(schema.organization, eq(schema.member.organizationId, schema.organization.id))
-    .where(eq(schema.member.userId, userId))
-    .orderBy(schema.member.createdAt);
+  const { createdAt, ...user } = account;
 
-  const devices = await db
-    .select({
-      id: schema.deviceToken.id,
-      label: schema.deviceToken.label,
-      lastUsedAt: schema.deviceToken.lastUsedAt,
-      createdAt: schema.deviceToken.createdAt,
-      revokedAt: schema.deviceToken.revokedAt,
-    })
-    .from(schema.deviceToken)
-    .where(eq(schema.deviceToken.userId, userId))
-    .orderBy(desc(schema.deviceToken.createdAt))
-    .limit(20);
+  /**
+   * The trial, resolved against the team the dashboard is about to render.
+   *
+   * The end date belongs to the account and the plan belongs to a team, so a
+   * verdict needs both — and `activeTeam` in `lib/session.ts` picks the same row
+   * this does, because `identity.teamId` falls back to the oldest membership and
+   * `teams` above is ordered by exactly that. Picking differently here would
+   * count down a trial beside the name of another team.
+   */
+  const active = teams.find((team) => team.id === teamId) ?? teams[0] ?? null;
 
   return c.json({
     user,
     teams,
     activeTeamId: teamId,
+    trial: trialStatus(active?.plan ?? "free", trialEndsAt(createdAt)),
     devices: devices.filter((device) => device.revokedAt === null),
   });
 });

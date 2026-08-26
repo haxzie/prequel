@@ -193,6 +193,74 @@ describe("POST /v1/videos/:id/complete", () => {
   });
 });
 
+describe("GET /v1/videos/:id/playback", () => {
+  /** A row the owning team can actually watch. */
+  async function ready() {
+    const { id } = (await (await create(100)).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+    return id;
+  }
+
+  it("hands back a signed URL the browser can play", async () => {
+    const id = await ready();
+
+    const response = await call(`/v1/videos/${id}/playback`);
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as { src: string; contentType: string };
+    // Presigned, so the bytes go straight from R2 to the player and never pass
+    // through the Worker — the same arrangement the share page uses.
+    expect(body.src).toContain("X-Amz-Signature");
+    expect(body.contentType).toBe("video/mp4");
+  });
+
+  /**
+   * The reason this route exists at all.
+   *
+   * The obvious implementation of a player in the dashboard is to point it at
+   * `/p/:slug`, which already mints a URL — and which counts a view. Every owner
+   * opening their own recording would then inflate the number printed on the
+   * same page, and a team checking a link before sending it would put the count
+   * into double figures before a stranger ever opened it.
+   */
+  it("does not count the owner as a view", async () => {
+    const id = await ready();
+
+    await call(`/v1/videos/${id}/playback`);
+    await call(`/v1/videos/${id}/playback`);
+
+    const views = await scalar<number>(
+      env.DB.prepare("SELECT view_count FROM video WHERE id = ?").bind(id),
+    );
+
+    expect(views).toBe(0);
+  });
+
+  it("refuses a recording belonging to another team", async () => {
+    const id = await ready();
+
+    // Moved to a team the caller is not in. `team_id` is a foreign key, so the
+    // other team has to exist for the row to be moved to it.
+    await env.DB.exec(
+      "INSERT INTO organization (id, name, slug) VALUES ('org2', 'Other', 'other')",
+    );
+    await env.DB.exec("UPDATE video SET team_id = 'org2'");
+
+    // 404 rather than 403: confirming the id exists is the only thing this
+    // endpoint could tell somebody guessing them.
+    expect((await call(`/v1/videos/${id}/playback`)).status).toBe(404);
+  });
+
+  it("has nothing to play for an upload that never finished", async () => {
+    // Still `uploading` — no object was ever sent, and a signature over a key
+    // with nothing behind it is a player that spins.
+    const { id } = (await (await create(100)).json()) as { id: string };
+
+    expect((await call(`/v1/videos/${id}/playback`)).status).toBe(404);
+  });
+});
+
 describe("GET /p/:slug/poster", () => {
   /**
    * The share card outlives the page view that produced it.

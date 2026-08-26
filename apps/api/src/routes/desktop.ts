@@ -21,20 +21,13 @@ import { schema } from "@prequel/db";
 import { database } from "../db.ts";
 import { bearerToken, deviceToken, id, sha256, timingSafeEqual } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
+import { trialEndsAt } from "../lib/trial.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
 
 const desktop = new Hono<AppContext>();
 
 /** Five minutes: the time between pressing the button and the app being open. */
 const CODE_TTL_MS = 5 * 60 * 1000;
-
-/**
- * How long a new account may export without paying.
- *
- * The same fourteen days the pricing page sells, and the server is where it is
- * decided — a number the app could edit is not a trial length, it is a default.
- */
-const TRIAL_DAYS = 14;
 
 const Authorize = z.object({
   /** base64url(SHA-256(verifier)), from the app. Opaque to the browser. */
@@ -214,7 +207,7 @@ desktop.get("/entitlement", authenticate, async (c) => {
     plan: team?.plan ?? "free",
     // Milliseconds, because `Date` on the other side takes milliseconds and a
     // unit that has to be remembered is a unit that gets forgotten.
-    trialEndsAt: account.createdAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
+    trialEndsAt: trialEndsAt(account.createdAt),
   });
 });
 

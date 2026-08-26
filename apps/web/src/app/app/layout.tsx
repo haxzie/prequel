@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     // defined somewhere else.
     <div className="flex h-dvh overflow-hidden bg-bg">
       <Analytics userId={me.user.id} email={me.user.email} name={me.user.name} teamId={team.id} />
-      <Sidebar user={me.user} teams={me.teams} activeTeamId={team.id} />
+      <Sidebar user={me.user} teams={me.teams} activeTeamId={team.id} trial={me.trial} />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-6 py-10">{children}</div>
       </main>
