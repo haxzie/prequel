@@ -78,8 +78,14 @@ const PERMISSIONS: {
  */
 const STEPS = 4;
 
-export function Welcome() {
-  const [step, setStep] = useState(0);
+/** The steps, by name, so `startAt` cannot drift from the order below. */
+const STEP = { intro: 0, permissions: 1, signIn: 2, ready: 3 } as const;
+
+export function Welcome({ startAt = "intro" }: { startAt?: "intro" | "permissions" } = {}) {
+  // A returning user with a permission missing lands on the step that is the
+  // reason the window opened. The dots still go back, so nothing is unreachable
+  // — see `Dots`, which allows every step at or before the current one.
+  const [step, setStep] = useState<number>(STEP[startAt]);
   const permissions = usePermissions();
   const [info, setInfo] = useState<AppInfo | null>(null);
 

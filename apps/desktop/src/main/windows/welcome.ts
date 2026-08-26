@@ -1,11 +1,11 @@
 /**
  * The window the app opens on when it cannot yet do its job.
  *
- * Shown on a first run, and on any run where Screen Recording is still not
- * granted. The second condition is the one that earns it: without that
- * permission every part of the app is present and none of it works, and a
- * recorder that produces nothing is a much worse first impression than a
- * window asking for one thing.
+ * Shown on a first run, and on any run where a permission a recording needs is
+ * still missing. The second condition is the one that earns it: without them
+ * every part of the app is present and some of it silently does nothing, and a
+ * recorder that produces a take with one click in it is a much worse first
+ * impression than a window asking for a permission.
  *
  * A real `createWindow` rather than a panel: this is something to be read and
  * clicked through, so it takes focus and behaves like a window. Fixed size —
@@ -24,6 +24,17 @@ export interface WelcomeWindowOptions {
   onClose?: () => void;
 }
 
+/**
+ * Where the flow starts.
+ *
+ * `intro` is the whole thing, for somebody who has never seen it. `permissions`
+ * drops them straight on the step that is the reason the window opened — a
+ * returning user does not need to be welcomed to an app they have been using,
+ * and making them press Continue past a greeting to reach the one thing they
+ * came back for is how a prompt becomes something to dismiss unread.
+ */
+export type WelcomeStart = "intro" | "permissions";
+
 export class WelcomeWindow {
   private window: BrowserWindow | null = null;
 
@@ -34,7 +45,7 @@ export class WelcomeWindow {
   }
 
   /** Opens it, or brings the one already open to the front. */
-  open(): BrowserWindow {
+  open(start: WelcomeStart = "intro"): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) {
       this.window.show();
       this.window.focus();
@@ -66,7 +77,10 @@ export class WelcomeWindow {
       this.options.onClose?.();
     });
 
-    void loadRoute(window, "/welcome");
+    // The step rides in the route rather than in an IPC call the renderer would
+    // have to make before it could draw. A window that mounts on the intro and
+    // then jumps to another step is a visible flinch on every launch.
+    void loadRoute(window, start === "permissions" ? "/welcome/permissions" : "/welcome");
 
     this.options.onOpen?.();
     return window;

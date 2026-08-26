@@ -26,6 +26,11 @@ export function Root() {
       return <Editor />;
     case "/welcome":
       return <Welcome />;
+    // Straight to the step the window opened for. A separate route rather than
+    // a query, because the switch below matches the hash exactly and a `?step=`
+    // would fall through to the unknown-route branch.
+    case "/welcome/permissions":
+      return <Welcome startAt="permissions" />;
     case "/settings":
       return <Settings />;
     case "/update":

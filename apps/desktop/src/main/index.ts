@@ -18,6 +18,7 @@ import {
 } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
 import { loginItemState, seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
+import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
@@ -214,11 +215,16 @@ void app.whenReady().then(() => {
    * and find the tray icon first. `open` uses `showInactive`, so this still
    * does not steal focus from whatever they were doing.
    *
-   * Unless the app cannot record. Without Screen Recording every part of the
-   * panel is present and none of it works, which reads as a broken app rather
-   * than as a missing permission — so the welcome window goes first, and the
-   * panel follows when it is done. Checked on every launch rather than only the
-   * first: a permission can be taken away again in System Settings.
+   * Unless a permission a recording needs is missing. Without Screen Recording
+   * every part of the panel is present and none of it works; without
+   * Accessibility it all works and quietly produces a take with one click in it
+   * and no automatic zooms. Both read as a broken app rather than as a missing
+   * permission — so the welcome window goes first, on the step that is the
+   * reason it opened, and the panel follows when it is done.
+   *
+   * Checked on every launch rather than only the first: a permission can be
+   * taken away again in System Settings, and replacing the bundle in place is
+   * enough to strand one.
    */
   // A Mac that has never run Prequel gets the login item, so the recorder is
   // already in the menu bar the next time something worth capturing happens —
@@ -228,7 +234,22 @@ void app.whenReady().then(() => {
   if (!preferences.get().welcomed) seedLoginItem();
 
   void (async () => {
-    const granted = (await permissionStates()).find((state) => state.id === "screen")?.granted;
+    const states = await permissionStates();
+    const granted = states.find((state) => state.id === "screen")?.granted;
+    const chosen = preferences.get();
+
+    /**
+     * The same rule the panel's warning uses, from the same function.
+     *
+     * Not "anything ungranted": a camera nobody has switched on needs no camera
+     * grant, and a window on every launch about a permission the user has
+     * deliberately never wanted is one they learn to dismiss without reading —
+     * which costs the two that matter their only way of being seen.
+     */
+    const missing = missingPermissions(states, {
+      camera: chosen.cameraId !== null,
+      microphone: chosen.micId !== null,
+    });
 
     // The one event that answers the questions nothing here could: how many
     // installs there are, how many ever get past the Screen Recording prompt,
@@ -236,13 +257,23 @@ void app.whenReady().then(() => {
     // `welcomed` rather than a flag of its own — there is exactly one piece of
     // first-run state and a second one would eventually disagree with it.
     track("app_launched", {
-      first_launch: !preferences.get().welcomed,
+      first_launch: !chosen.welcomed,
       opened_at_login: wasOpenedAtLogin(),
       screen_permission: granted === true,
     });
 
-    if (!preferences.get().welcomed || !granted) {
+    // Never seen it: the whole flow, from the top.
+    if (!chosen.welcomed) {
       welcome.open();
+      return;
+    }
+
+    // Seen it, and something is still missing. Straight to the permissions
+    // step — a returning user does not need to be welcomed to an app they
+    // have been using.
+    if (missing.length > 0) {
+      log("info", `opening the welcome flow: ${missing.join(", ")} not granted`);
+      welcome.open("permissions");
       return;
     }
 
