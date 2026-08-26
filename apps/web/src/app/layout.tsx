@@ -1,3 +1,4 @@
+import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader, Playwrite_VN } from "next/font/google";
 import type { ReactNode } from "react";
@@ -70,6 +71,10 @@ export const metadata: Metadata = {
 // to this export.
 export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" };
 
+// A deployed origin is https, a developer's is not. The same test `posthog`'s
+// bootstrap uses to stamp its `environment` property.
+const isProduction = env.NEXT_PUBLIC_APP_URL.startsWith("https://");
+
 /**
  * The document, and nothing else.
  *
@@ -93,7 +98,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       data-scroll-behavior="smooth"
       className={`${sans.variable} ${mono.variable} ${serif.variable} ${script.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        {children}
+        {/*
+          Google Analytics, in production only.
+
+          The tag itself is what is gated rather than the id, which is a fixed
+          public constant: GA4 has no per-event `environment` property the way
+          PostHog does, so a development pageview cannot be filtered out after
+          the fact — it has to never be sent. The condition is the one
+          `instrumentation-client.ts` already uses to decide the same question,
+          since `.env` pins the origin to localhost for local work.
+
+          `next/third-parties` loads gtag.js through `next/script`'s
+          `afterInteractive` strategy and wires App Router navigations into it,
+          which the hand-rolled snippet from Google's console does not: without
+          that, a client-side route change is invisible and the whole site
+          reads as one page.
+        */}
+        {isProduction && <GoogleAnalytics gaId={env.NEXT_PUBLIC_GA_MEASUREMENT_ID} />}
+      </body>
     </html>
   );
 }

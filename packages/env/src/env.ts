@@ -82,6 +82,21 @@ export const client = {
   NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: z.string().default(""),
   /** PostHog's ingestion host. US Cloud unless the project is moved. */
   NEXT_PUBLIC_POSTHOG_HOST: z.url().default("https://us.i.posthog.com"),
+
+  /**
+   * The Google Analytics 4 measurement id — the `G-…` one.
+   *
+   * Public by construction, like PostHog's token above, and fixed for the life
+   * of the property rather than varying per deployment. It is therefore
+   * defaulted to the real one, the way the two URLs are: nothing sets it
+   * anywhere, and a deploy that was never given it should still be measured.
+   *
+   * What keeps local work out of the property is not this value but the
+   * condition the tag is rendered under — see `apps/web/src/app/layout.tsx`.
+   * GA4 has no equivalent of the `environment` property every PostHog event
+   * carries, so development traffic has to be *absent* rather than filterable.
+   */
+  NEXT_PUBLIC_GA_MEASUREMENT_ID: z.string().default("G-V0CDLY5XCP"),
 };
 
 function build() {
@@ -98,6 +113,7 @@ function build() {
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
       NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+      NEXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
     },
     skipValidation: process.env.SKIP_ENV_VALIDATION === "1",
   });
