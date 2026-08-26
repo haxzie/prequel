@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { env } from "@prequel/env";
 
+import { OG_IMAGE } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 import "./globals.css";
@@ -54,8 +55,15 @@ export const metadata: Metadata = {
     siteName: SITE.name,
     title: `${SITE.name} — ${SITE.tagline}`,
     description: SITE.description,
+    // The floor, for the handful of routes that build their metadata by hand
+    // rather than through `pageMetadata` — the auth pages and the share page.
+    // Every marketing page sets the same card again through that helper, which
+    // is not redundant: a page's own `openGraph` object replaces this one whole
+    // rather than merging into it, so a page that names a title and no image
+    // would otherwise drop back to having none.
+    images: [OG_IMAGE],
   },
-  twitter: { card: "summary_large_image" },
+  twitter: { card: "summary_large_image", images: [OG_IMAGE.url] },
 };
 
 // `themeColor` and `colorScheme` inside `metadata` are deprecated — they belong

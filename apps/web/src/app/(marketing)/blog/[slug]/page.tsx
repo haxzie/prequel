@@ -26,6 +26,7 @@ export async function generateMetadata({ params }: PageProps<"/blog/[slug]">): P
     title: post.title,
     description: post.excerpt,
     path: `/blog/${post.slug}`,
+    ownCard: true,
     openGraph: {
       type: "article",
       title: post.title,

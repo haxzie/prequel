@@ -1,10 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-/** Open Graph's expected card. Twitter reads the same image. */
-export const OG_SIZE = { width: 1200, height: 630 };
-export const OG_CONTENT_TYPE = "image/png";
-
 /**
  * The mark, as a data URI.
  *

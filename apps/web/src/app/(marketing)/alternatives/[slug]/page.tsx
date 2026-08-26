@@ -32,6 +32,7 @@ export async function generateMetadata({
     title: competitor.title,
     description: competitor.description,
     path: `/alternatives/${competitor.slug}`,
+    ownCard: true,
   });
 }
 

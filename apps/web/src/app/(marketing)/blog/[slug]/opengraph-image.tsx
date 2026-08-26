@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 
 import { findPost, posts } from "@/content/posts";
-import { OG_CONTENT_TYPE, OG_SIZE, ogCard } from "@/lib/og";
+import { ogCard } from "@/lib/og";
+import { OG_CONTENT_TYPE, OG_SIZE } from "@/lib/seo";
 
 export const alt = "Prequel blog";
 export const size = OG_SIZE;

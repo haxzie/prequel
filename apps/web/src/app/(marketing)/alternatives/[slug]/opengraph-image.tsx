@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 
 import { competitors, findCompetitor } from "@/content/competitors";
-import { OG_CONTENT_TYPE, OG_SIZE, ogCard } from "@/lib/og";
+import { ogCard } from "@/lib/og";
+import { OG_CONTENT_TYPE, OG_SIZE } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 // Static, because Next reads it at build time. Varying it per slug would need

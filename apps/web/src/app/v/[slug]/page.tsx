@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { API_URL } from "@/lib/api";
-import { absoluteUrl } from "@/lib/seo";
+import { absoluteUrl, OG_IMAGE } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
 /**
@@ -92,12 +92,17 @@ export async function generateMetadata({
       siteName: SITE.name,
       title: shared.title,
       url,
-      ...(shared.poster ? { images: [{ url: shared.poster }] } : {}),
+      // The recording's own still where there is one, and the brand card where
+      // there is not. A share link with no image at all is the one outcome this
+      // page cannot afford: looking like something in Slack is the whole reason
+      // it exists, and a recording whose poster never uploaded is not a reason
+      // to fall back to a bare text link.
+      images: shared.poster ? [{ url: shared.poster }] : [OG_IMAGE],
     },
     twitter: {
       card: "player",
       title: shared.title,
-      ...(shared.poster ? { images: [shared.poster] } : {}),
+      images: [shared.poster ?? OG_IMAGE.url],
     },
   };
 }

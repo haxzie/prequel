@@ -24,6 +24,7 @@ export async function generateMetadata({ params }: PageProps<"/create/[slug]">):
     title: useCase.title,
     description: useCase.description,
     path: `/create/${useCase.slug}`,
+    ownCard: true,
   });
 }
 
