@@ -273,11 +273,44 @@ lost its Dodo call. `wrangler dev` does not fire it — `curl
 
 ## Deploying
 
+Pushing to `main` deploys it. `.github/workflows/deploy-api.yml` runs the
+Worker's typecheck and tests, applies any new migration, then deploys — in that
+order, because a migration here only ever adds and the old code keeps working
+against the new schema for the seconds in between. The other order puts new code
+in front of a schema without the tables it reads.
+
+It only fires when `apps/api`, `packages/db` or `packages/env` changed, so a
+desktop-only push does not restart every isolate for nothing. Use **Run
+workflow** for anything the filter misses.
+
+Two repository secrets make it work:
+
+| Secret                  |                                                                         |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | "Edit Cloudflare Workers" template, plus D1 edit                        |
+| `CLOUDFLARE_ACCOUNT_ID` | separate, because a token scoped to several accounts cannot infer which |
+
+The **Worker's own** secrets are not among them. They live on the Worker, set
+once and surviving every deploy — putting them in CI would mean a second copy of
+a payment key in a second place, for nothing:
+
 ```bash
-wrangler d1 create prequel                     # once; put the id in wrangler.jsonc
-wrangler r2 bucket create prequel              # once
 wrangler secret put BETTER_AUTH_SECRET --env production
+wrangler secret put DODOPAYMENT_API_KEY --env production
+wrangler secret put DODOPAYMENT_WEBHOOK_SECRET --env production
 # …and the rest of the list in .env.example
+```
+
+First time only, and by hand:
+
+```bash
+wrangler d1 create prequel                     # put the id in wrangler.jsonc
+wrangler r2 bucket create prequel
+```
+
+The same two steps the workflow runs, when a deploy has to happen locally:
+
+```bash
 pnpm --filter @prequel/api migrate:remote
 pnpm --filter @prequel/api run deploy   # `run` is not optional: pnpm has its own `deploy`
 ```

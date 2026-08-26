@@ -1,0 +1,82 @@
+name: Deploy API
+
+# Only when the Worker or the schema it reads actually changes. A desktop-only
+# push should not redeploy the API — it costs a deployment id, restarts every
+# isolate, and buys nothing. The workflow file is in the list so a change to
+# these rules is itself exercised.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "packages/db/**"
+      - "packages/env/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-api.yml"
+  # So a deploy can be retried, or run for a change this filter did not catch.
+  workflow_dispatch:
+
+# Deliberately not keyed on the ref, and deliberately not cancelling. There is
+# one production Worker and one D1 behind it, so two runs must never overlap —
+# and a run cancelled between `migrate:remote` and `deploy` leaves the schema
+# ahead of the code, which is the one state nothing here recovers from on its
+# own.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Everything wrangler needs. `CLOUDFLARE_API_TOKEN` wants the "Edit
+    # Cloudflare Workers" template plus D1 edit; the account id is separate
+    # because a token scoped to several accounts cannot infer which one.
+    #
+    # The Worker's own secrets — DODOPAYMENT_API_KEY and
+    # DODOPAYMENT_WEBHOOK_SECRET — are deliberately *not* here. They live on the
+    # Worker, set once with `wrangler secret put --env production`, and survive
+    # every deploy. Pushing them through CI would mean a second copy of a
+    # payment key in a second place, for no gain.
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Seeds `.env` from `.env.example` through the root `prepare` script,
+      # which is what makes the env schema resolve with no secrets present.
+      - run: pnpm install --frozen-lockfile
+
+      # The Worker's own checks rather than the whole workspace's. `ci.yml` runs
+      # the macOS build, the Rust suites and clippy, and none of that decides
+      # whether this Worker is safe to ship — waiting on a ten-minute macOS job
+      # to deploy a Hono route would only make people reach for a manual deploy.
+      #
+      # These two are the ones that would catch it: the tests run inside workerd
+      # against a real D1, so a broken migration or a route that throws fails
+      # here rather than in production.
+      - name: Typecheck
+        run: pnpm --filter @prequel/api typecheck
+
+      - name: Test
+        run: pnpm --filter @prequel/api test
+
+      # Before the deploy, never after. A migration in this repo only ever adds
+      # — see `migrations/` — so the old code keeps working against the new
+      # schema for the few seconds between these two steps. The other order has
+      # no such window: the new code would be live against a schema without the
+      # tables it reads, and every request touching them would 500.
+      - name: Apply migrations
+        run: pnpm --filter @prequel/api migrate:remote
+
+      - name: Deploy
+        run: pnpm --filter @prequel/api run deploy
