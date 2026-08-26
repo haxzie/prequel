@@ -79,24 +79,28 @@ pub struct SourceInfo {
 /// A cursor position sampled during the recording.
 ///
 /// Captured so a zoom-to-cursor editor is possible later without re-recording.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+// Not `Copy` any more: the kind is a string, and one owned string per sample is
+// still far cheaper than the enum being repeated in two crates' vocabularies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CursorSample {
     pub at: MediaTime,
     pub x: f64,
     pub y: f64,
-    /// Whether the system was showing the link cursor — the pointing hand.
+    /// Which pointer the system was showing — `arrow`, `hand`, `text`,
+    /// `resize-h` or `resize-v`.
     ///
-    /// Skipped when false, which keeps a manifest the size it was: the pointer
-    /// is an arrow for nearly all of a recording, and writing `"hand":false`
-    /// beside every one of tens of thousands of samples is pure file size.
-    /// Defaults to false on read, which is what every recording made before the
-    /// shape was sampled meant.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub hand: bool,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
+    /// Skipped when it is the arrow, which keeps a manifest the size it was:
+    /// the pointer is an arrow for nearly all of a recording, and writing
+    /// `"kind":"arrow"` beside every one of tens of thousands of samples is pure
+    /// file size.
+    ///
+    /// This replaced a `hand` boolean. Recordings made before it still carry
+    /// that field and are still read correctly — `shared/layout.ts` falls back
+    /// to it where there is no `kind`, which is the only place either is read.
+    /// Nothing here has to know that, because nothing in Rust reads a manifest
+    /// back: this crate writes them and the editor reads them.
+    #[serde(default, skip_serializing_if = "str::is_empty")]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -241,7 +245,7 @@ mod tests {
                 at: 0,
                 x: 100.0,
                 y: 200.0,
-                hand: false,
+                kind: String::new(),
             }],
         }
     }

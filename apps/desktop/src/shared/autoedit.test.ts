@@ -188,22 +188,22 @@ describe("the lean", () => {
     // A tilt on every zoom is a wobble, not a style.
     const zooms = autoZooms([click(10, 0.5, 0.5)], OPTIONS);
 
-    expect(zooms[0]!.yaw).toBe(0);
-    expect(zooms[0]!.tilt).toBe(0);
+    expect(zooms[0]!.rotateY).toBe(0);
+    expect(zooms[0]!.rotateX).toBe(0);
   });
 
   it("leans towards what it is showing, not away from it", () => {
     // Something on the right yaws positively, which swings the right edge back
     // — the picture turns to face it.
-    expect(autoZooms([click(10, 0.95, 0.5)], OPTIONS)[0]!.yaw).toBeGreaterThan(0);
-    expect(autoZooms([click(10, 0.05, 0.5)], OPTIONS)[0]!.yaw).toBeLessThan(0);
+    expect(autoZooms([click(10, 0.95, 0.5)], OPTIONS)[0]!.rotateY).toBeGreaterThan(0);
+    expect(autoZooms([click(10, 0.05, 0.5)], OPTIONS)[0]!.rotateY).toBeLessThan(0);
   });
 
   it("leans harder at the edges than just off centre", () => {
     // Cubed rather than linear, or everything tilts slightly and nothing reads
     // as deliberate.
-    const edge = Math.abs(autoZooms([click(10, 1, 0.5)], OPTIONS)[0]!.yaw);
-    const nearMiddle = Math.abs(autoZooms([click(10, 0.65, 0.5)], OPTIONS)[0]!.yaw);
+    const edge = Math.abs(autoZooms([click(10, 1, 0.5)], OPTIONS)[0]!.rotateY);
+    const nearMiddle = Math.abs(autoZooms([click(10, 0.65, 0.5)], OPTIONS)[0]!.rotateY);
 
     expect(edge).toBeGreaterThan(nearMiddle * 4);
   });
@@ -219,8 +219,8 @@ describe("the lean", () => {
     ]) {
       const zoom = autoZooms([click(10, x, y)], OPTIONS)[0]!;
 
-      expect(Math.abs(zoom.yaw)).toBeLessThanOrEqual(12);
-      expect(Math.abs(zoom.tilt)).toBeLessThanOrEqual(8);
+      expect(Math.abs(zoom.rotateY)).toBeLessThanOrEqual(12);
+      expect(Math.abs(zoom.rotateX)).toBeLessThanOrEqual(8);
     }
   });
 });
@@ -237,9 +237,9 @@ describe("running it again over an edit", () => {
     y: 0.1,
     level: 3,
     speed: 1,
-    tilt: 20,
-    yaw: -20,
-    depth: 0.9,
+    rotateX: 20,
+    rotateY: -20,
+    perspective: 0.9,
     blur: true,
     blurSafe: 0.5,
     blurStrength: 0.02,
@@ -268,7 +268,7 @@ describe("running it again over an edit", () => {
     expect(after[0]!.source.end).toBeGreaterThan(mine.source.end);
     // Everything that is not the span survives.
     expect(after[0]!.level).toBe(3);
-    expect(after[0]!.tilt).toBe(20);
+    expect(after[0]!.rotateX).toBe(20);
     expect(after[0]!.blur).toBe(true);
   });
 

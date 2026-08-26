@@ -757,17 +757,20 @@ function BackgroundPanel({
 
   return (
     <Section title="Background" onReset={reset}>
-      <Field label="Style" {...field("background", "background")}>
-        <Tabs
-          value={style}
-          options={[
-            { value: "image", label: "Image", icon: <ImageIcon /> },
-            { value: "solid", label: "Solid", icon: <SolidIcon /> },
-            { value: "gradient", label: "Gradient", icon: <GradientIcon /> },
-          ]}
-          onChange={setStyle}
-        />
-      </Field>
+      {/* No label over it. "Style" restated what three tabs reading Image,
+          Solid and Gradient already say, and a tab row is the one control in
+          this panel that names itself. The override this field would have
+          marked is still reachable: the section header carries Reset whenever
+          anything in it is set for the clip. */}
+      <Tabs
+        value={style}
+        options={[
+          { value: "image", label: "Image", icon: <ImageIcon /> },
+          { value: "solid", label: "Solid", icon: <SolidIcon /> },
+          { value: "gradient", label: "Gradient", icon: <GradientIcon /> },
+        ]}
+        onChange={setStyle}
+      />
 
       {/* Each grid is passed the applied value only when it is that grid's own
           style. Otherwise nothing is marked as chosen — a colour highlighted
@@ -1059,12 +1062,12 @@ const TILT_LIMIT = 30;
 const THUMB_PERSPECTIVE = 220;
 
 const TILTS = [
-  { label: "Flat", tilt: 0, yaw: 0 },
-  { label: "Lean back", tilt: 8, yaw: 0 },
-  { label: "Lean in", tilt: -8, yaw: 0 },
-  { label: "Left", tilt: 4, yaw: -10 },
-  { label: "Right", tilt: 4, yaw: 10 },
-  { label: "Hero", tilt: 12, yaw: -14 },
+  { label: "Flat", rotateX: 0, rotateY: 0 },
+  { label: "Lean back", rotateX: 8, rotateY: 0 },
+  { label: "Lean in", rotateX: -8, rotateY: 0 },
+  { label: "Left", rotateX: 4, rotateY: -10 },
+  { label: "Right", rotateX: 4, rotateY: 10 },
+  { label: "Hero", rotateX: 12, rotateY: -14 },
 ] as const;
 
 /**
@@ -1275,9 +1278,9 @@ function ZoomPerspectivePanel({
           anyone arrives at one. */}
       <Field label="Perspective">
         <PerspectivePad
-          tilt={zoom.tilt}
-          yaw={zoom.yaw}
-          depth={zoom.depth}
+          rotateX={zoom.rotateX}
+          rotateY={zoom.rotateY}
+          perspective={zoom.perspective}
           limit={TILT_LIMIT}
           onChange={onChange}
         />
@@ -1292,7 +1295,8 @@ function ZoomPerspectivePanel({
         <div className="grid grid-cols-3 gap-1">
           {TILTS.map((preset) => {
             const here =
-              Math.abs(zoom.tilt - preset.tilt) < 0.5 && Math.abs(zoom.yaw - preset.yaw) < 0.5;
+              Math.abs(zoom.rotateX - preset.rotateX) < 0.5 &&
+              Math.abs(zoom.rotateY - preset.rotateY) < 0.5;
 
             return (
               <button
@@ -1306,21 +1310,21 @@ function ZoomPerspectivePanel({
                     ? "bg-selected text-white"
                     : "bg-white/5 text-editor-muted hover:bg-white/10",
                 )}
-                onClick={() => onChange({ tilt: preset.tilt, yaw: preset.yaw })}
+                onClick={() => onChange({ rotateX: preset.rotateX, rotateY: preset.rotateY })}
               >
                 {/* Fixed and shallower than the pad's. The pad splays with the
-                    zoom's depth because it is showing this shot; a thumbnail is
+                    zoom's perspective because it is showing this shot; a thumbnail is
                     showing the angle alone, and letting it move with an
                     unrelated slider would make six buttons twitch whenever
-                    depth was dragged. */}
+                    perspective was dragged. */}
                 <span
                   className="grid h-6 w-full place-items-center"
                   style={{ perspective: THUMB_PERSPECTIVE }}
                   aria-hidden="true"
                 >
                   <PerspectivePlate
-                    tilt={preset.tilt}
-                    yaw={preset.yaw}
+                    rotateX={preset.rotateX}
+                    rotateY={preset.rotateY}
                     className={cn(
                       "h-4 w-7 rounded-[2px] border",
                       here ? "border-white/70 bg-white/25" : "border-white/25 bg-white/10",
@@ -1341,36 +1345,36 @@ function ZoomPerspectivePanel({
           camera's field of view. */}
       <Field label="Depth">
         <Slider
-          value={zoom.depth}
+          value={zoom.perspective}
           min={0}
           max={1}
           step={0.01}
           format={(value) => (value < 0.02 ? "Flat" : percent(value))}
-          onChange={(depth) => onChange({ depth })}
+          onChange={(perspective) => onChange({ perspective })}
         />
       </Field>
 
       <Field label="Tilt">
         <Slider
-          value={zoom.tilt}
+          value={zoom.rotateX}
           min={-TILT_LIMIT}
           max={TILT_LIMIT}
           step={1}
           // Degrees, and signed: the sign is the whole difference between
           // leaning towards the viewer and away from them.
           format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(tilt) => onChange({ tilt })}
+          onChange={(rotateX) => onChange({ rotateX })}
         />
       </Field>
 
       <Field label="Yaw">
         <Slider
-          value={zoom.yaw}
+          value={zoom.rotateY}
           min={-TILT_LIMIT}
           max={TILT_LIMIT}
           step={1}
           format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(yaw) => onChange({ yaw })}
+          onChange={(rotateY) => onChange({ rotateY })}
         />
       </Field>
     </Section>

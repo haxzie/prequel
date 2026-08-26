@@ -37,6 +37,20 @@ export default defineConfig({
           // and overrides this itself.
           POSTHOG_PROJECT_TOKEN: "",
           POSTHOG_HOST: "https://us.i.posthog.com",
+          // Billing, with nothing real behind it. Every suite that reaches a
+          // billing route stubs `fetch`, so these only have to satisfy
+          // `required()` — but they have to be here, or a suite that never
+          // meant to touch Dodo throws from a missing secret instead.
+          DODOPAYMENT_MODE: "test",
+          DODOPAYMENT_BRAND_ID: "brand_test",
+          DODOPAYMENT_PRO_PRODUCT_ID: "pdt_test_pro",
+          DODOPAYMENT_SEAT_ADDON_ID: "addon_test_seat",
+          DODOPAYMENT_API_KEY: "test_key",
+          // Valid base64 after the prefix, because verification decodes it
+          // before it can reject anything — a placeholder that is not base64
+          // fails inside `atob` and every signature test errors instead of
+          // failing.
+          DODOPAYMENT_WEBHOOK_SECRET: "whsec_dGVzdC13ZWJob29rLXNlY3JldA==",
         },
       },
     }),

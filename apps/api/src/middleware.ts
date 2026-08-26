@@ -85,6 +85,34 @@ export const requireTeam: MiddlewareHandler<AppContext> = async (c, next) => {
   await next();
 };
 
+/**
+ * Requires a team, and requires being in charge of it.
+ *
+ * The first server-side role check in this codebase. Everything else scopes by
+ * team alone, and the only role logic that existed was the dashboard hiding the
+ * Invite form from a plain member — which stops nothing, because the plugin's
+ * endpoints are reachable directly.
+ *
+ * Membership and role in one read, so a member of another team gets the same
+ * 403 as a member of this one, rather than leaking that the team exists.
+ */
+export const requireAdmin: MiddlewareHandler<AppContext> = async (c, next) => {
+  const { userId, teamId } = c.get("identity");
+
+  if (!teamId) return c.json({ message: "Create a team first.", code: "NO_TEAM" }, 403);
+
+  const row = await membership(c.get("db"), userId, teamId);
+
+  if (!row || !MANAGES.has(row.role)) {
+    return c.json({ message: "Only an owner or admin can do that.", code: "NOT_ADMIN" }, 403);
+  }
+
+  await next();
+};
+
+/** The roles Better Auth's organization plugin lets manage a team. */
+const MANAGES = new Set(["owner", "admin"]);
+
 async function fromSession(c: App): Promise<Identity | null> {
   // A throw out of Better Auth is treated as "not signed in" rather than left to
   // reach the error floor. `optionalIdentity` has callers that must answer

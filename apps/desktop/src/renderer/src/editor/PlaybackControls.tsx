@@ -92,12 +92,36 @@ export function PlaybackControls({
         </button>
       </div>
 
-      {/* Rendered once. The playback loop rewrites its text, so React must not
-          — it changes sixty times a second. */}
-      <span ref={media.timecodeRef} className="w-16 flex-none text-xs tabular-nums text-editor-fg">
-        0:00.00
-      </span>
-      <span className="text-xs tabular-nums text-editor-muted">/ {formatTimecode(duration)}</span>
+      {/* The clock and what it is counting towards, as one thing.
+
+          Grouped so the row's own `gap-3` cannot fall between them: a time and
+          its total read as a single value, and spacing them like two controls
+          is half of what made this look wrong.
+
+          The other half was the width. The box has to be fixed — the playback
+          loop writes the text straight to the DOM sixty times a second, and an
+          auto-width box would resize as the digits changed and shunt the total
+          left and right on every frame — but it was a flat `w-16` with the text
+          left-aligned, so every value shorter than the box left its slack
+          sitting between the time and the slash. Right-aligned in a box sized to
+          the longest value it can hold puts that slack beside the transport
+          instead, where the row is already spaced. */}
+      <div className="flex items-center gap-1 text-xs tabular-nums">
+        {/* Rendered once. The playback loop rewrites its text, so React must not. */}
+        <span
+          ref={media.timecodeRef}
+          className="flex-none text-right text-editor-fg"
+          // The total, because the two share a format and nothing the clock can
+          // say is wider than the thing it is counting towards. `ch` is the
+          // advance of a digit and `tabular-nums` makes every digit that wide,
+          // so this is exact for the digits and generous by the difference on
+          // the colon and the point — which is the safe direction to be wrong.
+          style={{ width: `${String(formatTimecode(duration).length)}ch` }}
+        >
+          0:00.00
+        </span>
+        <span className="text-editor-muted">/ {formatTimecode(duration)}</span>
+      </div>
 
       <span className="flex-1" />
 

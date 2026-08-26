@@ -3,6 +3,7 @@ import Link from "next/link";
 import { NAV } from "@/lib/site";
 
 import { ButtonLink } from "./Button";
+import { AppleIcon } from "./icons";
 import { Container } from "./Section";
 
 export function Nav() {
@@ -64,6 +65,7 @@ export function Nav() {
               written in, and `inline-flex` is the one that wins. */}
           <span className="ml-1.5 hidden sm:block">
             <ButtonLink href="/download" size="sm">
+              <AppleIcon className="-mt-0.5 size-4" />
               Download
             </ButtonLink>
           </span>

@@ -1,4 +1,5 @@
 import { ButtonLink } from "@/components/Button";
+import { AppleIcon } from "@/components/icons";
 import { SITE } from "@/lib/site";
 import { TRIAL_DAYS } from "@/lib/pricing";
 
@@ -13,7 +14,13 @@ import { TRIAL_DAYS } from "@/lib/pricing";
 export function DownloadCta({ className = "" }: { className?: string }): React.ReactNode {
   return (
     <div className={`mx-auto max-w-lg ${className}`}>
-      <ButtonLink href="/download">Download for Mac</ButtonLink>
+      <ButtonLink href="/download">
+        {/* `-mt-0.5` for the leaf, which puts the mark's optical centre below
+            its geometric one — vertically centred, it sits visibly low next to
+            the cap height of the text. The gap comes from `ButtonLink`. */}
+        <AppleIcon className="-mt-0.5 size-[1.05rem]" />
+        Download for Mac
+      </ButtonLink>
       {/* The platform used to be a badge above the headline. It still belongs
           above the fold, so it rides with the small print. */}
       <p className="mt-3.5 font-mono text-[11px] tracking-wide text-muted">

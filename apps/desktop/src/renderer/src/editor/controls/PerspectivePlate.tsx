@@ -12,24 +12,24 @@ import { plateTransform, shadingAngle, shadingStrength } from "./perspective";
  *
  * Callers own the `perspective` container. The amount of splay is a property of
  * the scene being drawn, not of the plate, and the pad varies it with the
- * zoom's depth while a 20px preset thumbnail wants a fixed shallow one.
+ * zoom's perspective while a 20px preset thumbnail wants a fixed shallow one.
  */
 export function PerspectivePlate({
-  tilt,
-  yaw,
+  rotateX,
+  rotateY,
   className,
 }: {
-  tilt: number;
-  yaw: number;
+  rotateX: number;
+  rotateY: number;
   /** Size and skin. The plate has no opinion about either. */
   className?: string;
 }) {
   return (
     <div
       className={cn("relative overflow-hidden", className)}
-      style={{ transform: plateTransform(tilt, yaw) }}
+      style={{ transform: plateTransform(rotateX, rotateY) }}
     >
-      <Shading tilt={tilt} yaw={yaw} />
+      <Shading rotateX={rotateX} rotateY={rotateY} />
     </div>
   );
 }
@@ -47,11 +47,11 @@ export function PerspectivePlate({
  * horizontal one cross-fades them and leaves the corner nearest the viewer no
  * brighter than its neighbours, which is exactly the corner the eye uses.
  */
-function Shading({ tilt, yaw }: { tilt: number; yaw: number }) {
-  const strength = shadingStrength(tilt, yaw);
+function Shading({ rotateX, rotateY }: { rotateX: number; rotateY: number }) {
+  const strength = shadingStrength(rotateX, rotateY);
   if (strength === 0) return null;
 
-  const away = Math.round(shadingAngle(tilt, yaw));
+  const away = Math.round(shadingAngle(rotateX, rotateY));
 
   return (
     <div

@@ -28,6 +28,14 @@ const desktop = new Hono<AppContext>();
 /** Five minutes: the time between pressing the button and the app being open. */
 const CODE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * How long a new account may export without paying.
+ *
+ * The same fourteen days the pricing page sells, and the server is where it is
+ * decided — a number the app could edit is not a trial length, it is a default.
+ */
+const TRIAL_DAYS = 14;
+
 const Authorize = z.object({
   /** base64url(SHA-256(verifier)), from the app. Opaque to the browser. */
   challenge: z.string().min(43).max(64),
@@ -159,6 +167,55 @@ desktop.post("/token", async (c) => {
   // The only time the plaintext token is ever transmitted. Nothing stores it
   // but the Mac it is being sent to.
   return c.json({ token, user, team });
+});
+
+/**
+ * The two facts the app needs to decide whether it may export.
+ *
+ * Facts, not a verdict. This returns when the trial ends and whether the team
+ * is paying; `main/licence.ts` turns those into "trial", "paid" or "expired" in
+ * one place. Computing the verdict here as well would put the same rule on both
+ * sides of the wire, and the two would disagree the first time either changed.
+ *
+ * **The trial runs from the account, not from the install.** Fourteen days from
+ * `user.createdAt`, which is a row this app cannot write — anchoring it to
+ * anything on the Mac would restart it with a deleted file, and reinstalling to
+ * get another fortnight is not a trial.
+ *
+ * `authenticate` without `requireTeam`: somebody who has signed in and not yet
+ * finished onboarding has no team, and that is `free` on a running trial, not
+ * an error. A 403 there would leave the app to interpret a refusal, and the
+ * safe reading of an ambiguous refusal is to let the export run.
+ */
+desktop.get("/entitlement", authenticate, async (c) => {
+  const db = c.get("db");
+  const { userId, teamId } = c.get("identity");
+
+  const [account] = await db
+    .select({ createdAt: schema.user.createdAt })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1);
+
+  // A valid session for a user who is not there — `/v1/me` documents how that
+  // happens. There is no sign-up date to answer with, and inventing `now` would
+  // hand out a fresh fortnight to exactly the sessions that should not have one.
+  if (!account) return c.json({ message: "Sign in to continue." }, 401);
+
+  const [team] = teamId
+    ? await db
+        .select({ plan: schema.organization.plan })
+        .from(schema.organization)
+        .where(eq(schema.organization.id, teamId))
+        .limit(1)
+    : [];
+
+  return c.json({
+    plan: team?.plan ?? "free",
+    // Milliseconds, because `Date` on the other side takes milliseconds and a
+    // unit that has to be remembered is a unit that gets forgotten.
+    trialEndsAt: account.createdAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
+  });
 });
 
 /** Signs this Mac out. The token is dead the moment this returns. */

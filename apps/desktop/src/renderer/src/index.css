@@ -19,6 +19,12 @@
      palette below, because the selection overlay draws its highlight in the
      same blue and lives in a different window entirely. */
   --selected: #4296fc;
+  /* The app icon's sunrise, and the only three brand hues there are. Named
+     here rather than written into the wash, because the upgrade dialog paints
+     its button from the same three and two copies drifted within a week. */
+  --sunrise-warm: #f2622e;
+  --sunrise-mid: #d81e63;
+  --sunrise-cool: #8b5cf6;
   color-scheme: light dark;
 }
 
@@ -47,6 +53,9 @@
   --color-accent: var(--accent);
   --color-on-accent: var(--on-accent);
   --color-selected: var(--selected);
+  --color-sunrise-warm: var(--sunrise-warm);
+  --color-sunrise-mid: var(--sunrise-mid);
+  --color-sunrise-cool: var(--sunrise-cool);
 
   --color-dock-bg: var(--dock-bg);
   --color-dock-line: var(--dock-line);
@@ -56,6 +65,7 @@
   --color-dock-selected: var(--dock-selected);
   --color-dock-meter: var(--dock-meter);
   --color-dock-record: var(--dock-record);
+  --color-dock-warn: var(--dock-warn);
   --color-dot-on: var(--dot-on);
   --color-dot-live: var(--dot-live);
   --color-dot-off: var(--dot-off);
@@ -184,6 +194,21 @@ body {
   background-position: 8px 8px;
 }
 
+/* The sunrise as a fill, for the one button that asks for money.
+   Three stops rather than two, and the middle one is why: a ramp straight from
+   the orange to the violet passes through the grey between them, which is the
+   same reason the wash is drawn as three overlapping circles rather than as a
+   gradient. Angled slightly off horizontal so the button does not read as a
+   progress bar sitting at 100%. */
+@utility sunrise {
+  background-image: linear-gradient(
+    100deg,
+    var(--sunrise-warm),
+    var(--sunrise-mid) 52%,
+    var(--sunrise-cool)
+  );
+}
+
 /* Reveals the glyph from the bottom as the level rises. `--level` is written
    straight to the element by the meter, so a 60 fps signal never touches
    React — which is why this reads the variable rather than baking a value. */
@@ -301,6 +326,11 @@ body {
   --dock-selected: var(--selected);
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
+  /* A missing permission. The same amber as `--dot-live` below, and a token of
+     its own rather than that one reused: the panel should hold one amber, but
+     "a microphone is hearing you" and "something is wrong" are not the same
+     idea, and a shared name would make changing either of them change both. */
+  --dock-warn: #f0b429;
   --dot-on: #34c759;
   --dot-live: #f0b429;
   --dot-off: #6f757c;

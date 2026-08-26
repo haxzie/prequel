@@ -8,7 +8,7 @@ import {
   type Dispatch,
 } from "react";
 
-import { CURSOR_FILES, type EditorSession } from "../../../shared/contract";
+import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import { newProject, type Project, type ZoomSlice } from "../../../shared/project";
@@ -19,6 +19,7 @@ import { TrashIcon, WandIcon } from "./icons";
 import type { Images } from "./webgl";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
+import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
@@ -37,6 +38,7 @@ import { CLIP_H, TimelineStrip } from "./TimelineStrip";
 import { useEditorPlayback } from "./useEditorPlayback";
 import { useExport } from "./useExport";
 import { useFilmstrip } from "./useFilmstrip";
+import { useLicence } from "../hooks/useLicence";
 import { useWaveforms } from "./useWaveforms";
 
 /** How long editing pauses before the project is written. */
@@ -79,6 +81,12 @@ export function Editor() {
    */
   const selected = state.selectedSliceId ?? state.selectedZoomId;
   const [exportOpen, setExportOpen] = useState(false);
+  /**
+   * The upgrade prompt, which stands in for the export dialog rather than
+   * sitting over it. Only one of the two is ever open.
+   */
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const { entitlement, check: checkLicence } = useLicence();
   /** A still of the composition, taken when the export dialog opens. */
   const [poster, setPoster] = useState<string | null>(null);
   const grab = useRef<Grab | null>(null);
@@ -189,9 +197,44 @@ export function Editor() {
    * grab resolves on the next drawn frame, and a preview that is not drawing
    * would otherwise mean a button that does nothing at all.
    */
-  const openExport = async () => {
+  const showExport = useCallback(async () => {
     setExportOpen(true);
     setPoster((await grab.current?.()) ?? null);
+  }, []);
+
+  /**
+   * The upgrade dialog getting out of the way.
+   *
+   * Signing in or paying happens in a browser and comes back as a broadcast
+   * minutes later, in a window nobody is looking at. Leaving the prompt up with
+   * an Upgrade button that is no longer true would read as the payment having
+   * failed — so the moment the answer says otherwise, this becomes the export
+   * the user pressed for in the first place.
+   */
+  useEffect(() => {
+    if (!upgradeOpen || !mayExport(entitlement)) return;
+    setUpgradeOpen(false);
+    void showExport();
+  }, [upgradeOpen, entitlement, showExport]);
+
+  /**
+   * What the Export button actually does: ask whether it may, then do it.
+   *
+   * The licence is checked here rather than watched continuously, because this
+   * is the one moment the answer decides anything — and it is the moment
+   * somebody has just paid on the website and come back. A stale "expired"
+   * shown to a paying customer is the worst version of this feature, and it
+   * costs one request against a click that already waits for a frame.
+   */
+  const openExport = async () => {
+    const licence = await checkLicence();
+
+    if (!mayExport(licence)) {
+      setUpgradeOpen(true);
+      return;
+    }
+
+    await showExport();
   };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
@@ -468,6 +511,15 @@ export function Editor() {
           `<video>` of the finished export, and one left decoding behind a
           dismissed dialog is a whole media element's worth of work spent on
           something nobody can see. */}
+      {upgradeOpen && (
+        <UpgradeDialog
+          entitlement={entitlement}
+          onUpgrade={() => void window.prequel.licence.upgrade()}
+          onSignIn={() => void window.prequel.auth.signIn()}
+          onClose={() => setUpgradeOpen(false)}
+        />
+      )}
+
       {exportOpen && (
         <ExportDialog
           state={exportState}

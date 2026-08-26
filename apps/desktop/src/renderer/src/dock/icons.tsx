@@ -245,3 +245,20 @@ export function TrashIcon() {
     </svg>
   );
 }
+
+/**
+ * A permission is missing.
+ *
+ * A triangle rather than a circle with an `i` in it: the panel already spends
+ * circles on device status dots, and at 18px beside them this has to read as
+ * "something is wrong" rather than as another state light.
+ */
+export function WarningIcon() {
+  return (
+    <svg {...box} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+      <path d="M10 3.2 18 16.8H2z" />
+      <path d="M10 8.2v3.4" strokeLinecap="round" />
+      <path d="M10 14.2h.01" strokeLinecap="round" />
+    </svg>
+  );
+}

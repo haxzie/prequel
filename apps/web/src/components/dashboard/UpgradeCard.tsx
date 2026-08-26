@@ -15,7 +15,9 @@ import { PLANS, TRIAL_DAYS } from "@/lib/pricing";
  * editing are free forever, and the licence is the part that costs us money
  * every month to run.
  *
- * Nothing is for sale yet, so it goes to the plan rather than to a checkout.
+ * It links to the billing page rather than straight to a checkout: checkout is
+ * owner-and-admin only, and a card that opens a payment page for somebody who is
+ * not allowed to pay is a dead end. The billing page can say so.
  */
 export function UpgradeCard({ className = "" }: { className?: string }) {
   const licence = PLANS[0];

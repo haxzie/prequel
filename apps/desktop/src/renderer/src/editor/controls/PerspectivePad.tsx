@@ -4,7 +4,7 @@ import { cn } from "../../lib/cn";
 import { PerspectivePlate } from "./PerspectivePlate";
 
 /**
- * Tilt and yaw, set by dragging a picture of the result.
+ * `rotateX` and `rotateY`, set by dragging a picture of the result.
  *
  * Two sliders and a row of named presets was the previous answer, and the
  * problem with it was not the range: nobody arrives knowing what −8° of pitch
@@ -15,24 +15,24 @@ import { PerspectivePlate } from "./PerspectivePlate";
  * and Unity all let you grab the object and turn it, and Rotato does exactly
  * this for device mockups. The control is the thing it controls.
  *
- * Horizontal is yaw and vertical is tilt, because that is the axis each one
- * visibly moves. The plate inside is drawn with the same rotation the renderer
+ * Horizontal is `rotateY` and vertical is `rotateX`, because that is the axis
+ * each one visibly turns about. The plate inside is drawn with the same rotation the renderer
  * will apply, so what is under the pointer is what the shot will look like.
  */
 export function PerspectivePad({
-  tilt,
-  yaw,
-  depth,
+  rotateX,
+  rotateY,
+  perspective,
   limit,
   onChange,
 }: {
-  tilt: number;
-  yaw: number;
+  rotateX: number;
+  rotateY: number;
   /** 0 to 1. Drives the CSS `perspective` so the plate splays like the shot. */
-  depth: number;
+  perspective: number;
   /** Degrees at the edges, matching what the project will accept. */
   limit: number;
-  onChange: (next: { tilt: number; yaw: number }) => void;
+  onChange: (next: { rotateX: number; rotateY: number }) => void;
 }) {
   const pad = useRef<HTMLDivElement>(null);
 
@@ -48,16 +48,16 @@ export function PerspectivePad({
     const down = (event.clientY - rect.top) / rect.height;
 
     onChange({
-      yaw: Math.round(clamp((across - 0.5) * 2, -1, 1) * limit),
+      rotateY: Math.round(clamp((across - 0.5) * 2, -1, 1) * limit),
       // Down on the pad leans the top away, which is what dragging the near
       // edge towards you does to a real plate.
-      tilt: Math.round(clamp((down - 0.5) * 2, -1, 1) * limit),
+      rotateX: Math.round(clamp((down - 0.5) * 2, -1, 1) * limit),
     });
   };
 
   // 260px maps the whole range across a pad this size at a comfortable rate;
   // the number only sets how far the plate appears to lean, not the output.
-  const perspective = 1400 - depth * 1100;
+  const perspectivePx = 1400 - perspective * 1100;
 
   return (
     <div
@@ -84,11 +84,11 @@ export function PerspectivePad({
         // Arrow keys, because a drag-only control is unreachable without a
         // pointer and this is the only way to set an angle now.
         const step = event.shiftKey ? 5 : 1;
-        const moves: Record<string, { tilt: number; yaw: number }> = {
-          ArrowLeft: { tilt: 0, yaw: -step },
-          ArrowRight: { tilt: 0, yaw: step },
-          ArrowUp: { tilt: -step, yaw: 0 },
-          ArrowDown: { tilt: step, yaw: 0 },
+        const moves: Record<string, { rotateX: number; rotateY: number }> = {
+          ArrowLeft: { rotateX: 0, rotateY: -step },
+          ArrowRight: { rotateX: 0, rotateY: step },
+          ArrowUp: { rotateX: -step, rotateY: 0 },
+          ArrowDown: { rotateX: step, rotateY: 0 },
         };
 
         const move = moves[event.key];
@@ -96,8 +96,8 @@ export function PerspectivePad({
 
         event.preventDefault();
         onChange({
-          tilt: clamp(tilt + move.tilt, -limit, limit),
-          yaw: clamp(yaw + move.yaw, -limit, limit),
+          rotateX: clamp(rotateX + move.rotateX, -limit, limit),
+          rotateY: clamp(rotateY + move.rotateY, -limit, limit),
         });
       }}
     >
@@ -105,10 +105,13 @@ export function PerspectivePad({
       <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
       <div className="absolute inset-y-0 left-1/2 w-px bg-white/10" />
 
-      <div className="absolute inset-0 grid place-items-center" style={{ perspective }}>
+      <div
+        className="absolute inset-0 grid place-items-center"
+        style={{ perspective: perspectivePx }}
+      >
         <PerspectivePlate
-          tilt={tilt}
-          yaw={yaw}
+          rotateX={rotateX}
+          rotateY={rotateY}
           className="h-12 w-20 rounded-[3px] border border-selected/70 bg-selected/25"
         />
       </div>

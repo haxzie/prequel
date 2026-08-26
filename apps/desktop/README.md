@@ -11,10 +11,6 @@ pnpm --filter @prequel/desktop package    # .dmg into ./release
 pnpm --filter @prequel/desktop ship       # package, then install to /Applications
 ```
 
-`PREQUEL_FAKE_RECORDER=1` swaps the native addon for a stub that writes a real
-`session.json` and placeholder media. The whole UI works — recording, the
-editor, project persistence — with no Screen Recording grant and no Rust build.
-
 ## Layout
 
 ```

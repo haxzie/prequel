@@ -1,24 +1,27 @@
-import { formatBytes } from "@/app/app/page";
-import { PLANS, PRICE_YEARLY } from "@/lib/pricing";
+import { BillingPanel } from "@/components/dashboard/BillingPanel";
+import { PRICE_MONTHLY } from "@/lib/pricing";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
 
 export const metadata = pageMetadata({
   title: "Billing",
-  description: "Your plan and storage.",
+  description: "Your plan and seats.",
   path: "/app/settings/billing",
   robots: { index: false, follow: false },
 });
 
 export const dynamic = "force-dynamic";
 
+/** Only these two may spend money. The API enforces it; this only hides it. */
+const CAN_MANAGE = new Set(["owner", "admin"]);
+
 /**
- * The plan, before there is anything to buy.
+ * The plan, and what it costs to grow the team.
  *
- * A placeholder that is still honest about the model rather than a "coming
- * soon" card: the quota is real, it is what an upload is checked against, and a
- * team that hits it needs to see the number it hit. Prices come from
- * `lib/pricing.ts` so this page and the public pricing page cannot disagree.
+ * The panel below is a client component because subscription state lives behind
+ * `GET /v1/billing` rather than on the session — the team row this page already
+ * has says `pro` or `free` and nothing about seats, and seats are the number
+ * somebody comes to this page to look at.
  */
 export default async function BillingPage() {
   const { team } = await requireTeam();
@@ -27,36 +30,27 @@ export default async function BillingPage() {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-medium tracking-tight text-fg">Billing</h1>
       <p className="mt-1.5 text-sm text-muted">
-        Your plan and invoices live here. Prequel is {PRICE_YEARLY} per user per year at
-        introductory pricing, which goes up later.
+        Prequel is {PRICE_MONTHLY} per seat per month at introductory pricing, which goes up later.
+        Your subscription includes one seat; each teammate takes another.
       </p>
 
-      <div className="lit mt-8 rounded-2xl border border-line bg-elevated p-6">
-        <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">Current plan</p>
-        <p className="mt-2 text-lg text-fg capitalize">{team.plan}</p>
-        <p className="mt-1 text-sm text-muted">
-          Up to {formatBytes(team.storageQuotaBytes)} of shared recordings.
-        </p>
-      </div>
+      <BillingPanel canManage={CAN_MANAGE.has(team.role)} />
 
-      <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-        {PLANS.map((plan) => (
-          <li key={plan.name} className="rounded-2xl border border-line bg-surface p-5">
-            <p className="text-sm font-medium text-fg">{plan.name}</p>
-            <p className="mt-1 text-2xl text-fg">
-              {plan.price} <span className="text-sm text-muted">{plan.cadence}</span>
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-muted">{plan.summary}</p>
-            <button
-              type="button"
-              disabled
-              className="mt-4 w-full rounded-full border border-line px-4 py-2 text-sm text-muted disabled:cursor-not-allowed"
-            >
-              Coming soon
-            </button>
+      <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
+        <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">
+          How seats work
+        </p>
+        <ul className="mt-3 space-y-2 text-sm leading-relaxed text-muted">
+          <li>
+            A teammate joining takes a seat. If every seat is taken, one is added and charged for
+            the rest of your month.
           </li>
-        ))}
-      </ul>
+          <li>
+            Removing someone frees their seat but keeps it. Filling it again costs nothing, and if
+            it is still empty at your renewal it drops off the bill then.
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }

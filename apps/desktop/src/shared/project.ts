@@ -278,9 +278,9 @@ export interface ZoomSlice {
    * what makes it read as a camera looking at a screen rather than as a flat
    * image on a slant.
    */
-  tilt: number;
+  rotateX: number;
   /** Yaw, in degrees. Positive swings the right edge away. */
-  yaw: number;
+  rotateY: number;
   /**
    * How strong the perspective is, 0 to 1, independent of the angle.
    *
@@ -294,7 +294,7 @@ export interface ZoomSlice {
    * this — and folding them together was what made the lean impossible to
    * predict from the numbers.
    */
-  depth: number;
+  perspective: number;
   /**
    * Darken the frame towards its edges, 0 to 1.
    *
@@ -335,11 +335,11 @@ export const DEFAULT_ZOOM = {
   easeInY: 0,
   easeOutX: 2 / 3,
   easeOutY: 1,
-  tilt: 0,
-  yaw: 0,
+  rotateX: 0,
+  rotateY: 0,
   // The eye distance this was fixed at before the control existed, so every
   // project made until now looks exactly as it did.
-  depth: 0.5,
+  perspective: 0.5,
   blur: false,
   blurSafe: 0.28,
   blurStrength: 0.012,
@@ -553,11 +553,22 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
       easeOutY: clamp(number(zoom?.["easeOutY"], DEFAULT_ZOOM.easeOutY), 0, 1),
       // Past about thirty degrees the far edge is short enough that the
       // picture is more foreshortening than content.
-      tilt: clamp(number(zoom?.["tilt"], DEFAULT_ZOOM.tilt), -30, 30),
-      yaw: clamp(number(zoom?.["yaw"], DEFAULT_ZOOM.yaw), -30, 30),
+      //
+      // `tilt`, `yaw` and `depth` are what these three were called until they
+      // were renamed for the axes they actually turn about. Read as a fallback
+      // rather than migrated in place: a project is rewritten only when
+      // something in it is edited, so a rename with no fallback would leave
+      // every recording made before it silently flat — the values are still
+      // there in the file, and nothing would be reading them.
+      rotateX: clamp(number(zoom?.["rotateX"] ?? zoom?.["tilt"], DEFAULT_ZOOM.rotateX), -30, 30),
+      rotateY: clamp(number(zoom?.["rotateY"] ?? zoom?.["yaw"], DEFAULT_ZOOM.rotateY), -30, 30),
       // Absent in every project written before this existed, which is what the
       // default is for: they read back at the distance they were drawn at.
-      depth: clamp(number(zoom?.["depth"], DEFAULT_ZOOM.depth), 0, 1),
+      perspective: clamp(
+        number(zoom?.["perspective"] ?? zoom?.["depth"], DEFAULT_ZOOM.perspective),
+        0,
+        1,
+      ),
       // Absent in every project written before this existed, and the default is
       // no vignette — so those all read back looking exactly as they did.
       vignette: clamp(number(zoom?.["vignette"], DEFAULT_ZOOM.vignette), 0, 1),

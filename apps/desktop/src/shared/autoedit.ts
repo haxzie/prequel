@@ -174,7 +174,7 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
         // The default distance. The automatic pass sets an angle but not how
         // hard the lens sells it, which is a look rather than a reading of the
         // recording.
-        depth: DEFAULT_ZOOM.depth,
+        perspective: DEFAULT_ZOOM.perspective,
         // Both off, like the defaults. The first cut should read as a steadier
         // version of the recording rather than as a different sort of video —
         // softening what someone may have been reading is not a decision to make
@@ -190,7 +190,7 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
         easeInY: DEFAULT_ZOOM.easeInY,
         easeOutX: DEFAULT_ZOOM.easeOutX,
         easeOutY: DEFAULT_ZOOM.easeOutY,
-        ...tiltFor(centre),
+        ...leanFor(centre),
       });
     }
   }
@@ -359,7 +359,7 @@ function levelFor(group: readonly Moment[]): number {
  * on every recording without being asked, and something that announces itself
  * that often stops being cinematic very quickly.
  */
-function tiltFor(centre: { x: number; y: number }): { tilt: number; yaw: number } {
+function leanFor(centre: { x: number; y: number }): { rotateX: number; rotateY: number } {
   // −1 at the left edge, 0 in the middle, 1 at the right.
   const across = clamp((centre.x - 0.5) * 2, -1, 1);
   const down = clamp((centre.y - 0.5) * 2, -1, 1);
@@ -368,8 +368,8 @@ function tiltFor(centre: { x: number; y: number }): { tilt: number; yaw: number 
   // third leans much at all. A linear falloff tilts everything slightly, which
   // reads as a wobble rather than as intent.
   return {
-    yaw: round(across ** 3 * 12),
-    tilt: round(down ** 3 * -8),
+    rotateY: round(across ** 3 * 12),
+    rotateX: round(down ** 3 * -8),
   };
 }
 

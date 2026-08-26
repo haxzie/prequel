@@ -22,6 +22,21 @@ export function mediaUrl(recording: string, fileName: string): string {
 }
 
 /**
+ * A URL for a finished export, wherever the user chose to put it.
+ *
+ * A third host, and the only one whose file is not under the recordings
+ * directory — an export is saved wherever the save dialog pointed, and the
+ * traversal guard the `recording` route relies on cannot cover a path outside
+ * the root it checks against. So this route resolves nothing: main registers
+ * the file it has just written by name, and a name that was never registered
+ * is not a path to be sanitised, it is a request for something that does not
+ * exist.
+ */
+export function exportUrl(fileName: string): string {
+  return `${MEDIA_SCHEME}://export/${encodeURIComponent(fileName)}`;
+}
+
+/**
  * A URL for one of the app's own shipped images.
  *
  * A second host rather than a second scheme: the privileges, the CSP entry and

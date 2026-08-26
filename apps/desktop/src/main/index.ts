@@ -4,11 +4,13 @@ import { validateEnv } from "@prequel/env";
 
 import { flush, track } from "./analytics.js";
 import { onAuthChanged } from "./auth.js";
+import { clearEntitlement, onEntitlementChanged, refreshEntitlement } from "./licence.js";
 import { CaptureFlow } from "./capture-flow.js";
 import { migrateLibrary } from "./library-migrate.js";
 import { flushDeepLinks, handleDeepLinkArgv, registerDeepLinks } from "./deep-link.js";
 import {
   broadcastAuthState,
+  broadcastEntitlement,
   broadcastDockState,
   broadcastLoginItem,
   broadcastUpdateState,
@@ -182,6 +184,17 @@ void app.whenReady().then(() => {
   // Several surfaces show the account, so they hear about it rather than each
   // polling for it.
   onAuthChanged(broadcastAuthState);
+  onEntitlementChanged(broadcastEntitlement);
+
+  // The licence follows the account. Signing out drops what was known about the
+  // old one — otherwise signing out of a paid account and into a free one would
+  // go on exporting on the previous answer — and signing in asks straight away,
+  // so the first Export press after a sign-in is not the one that waits on a
+  // round trip.
+  onAuthChanged((state) => {
+    if (state.status === "signed-out") clearEntitlement();
+    else if (state.status === "signed-in") void refreshEntitlement();
+  });
 
   // The tray menu reads this directly when it is built, but the update window
   // and the Settings pane stay open across a whole download and have to be told.

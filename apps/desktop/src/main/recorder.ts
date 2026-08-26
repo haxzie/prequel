@@ -197,18 +197,17 @@ export function describeRecorderError(error: unknown): {
 let cached: Recorder | null = null;
 
 /**
- * Loads the native recorder, or a fake when `PREQUEL_FAKE_RECORDER=1`.
+ * Loads the native recorder.
  *
- * The fake exists so end-to-end runs can drive the whole UI on a machine
- * without the Screen Recording grant — hosted CI can never have it.
+ * There is no stub behind an environment variable any more. Tests that need a
+ * stand-in build one themselves and hand it to `setRecorder` below, which is
+ * both explicit at the call site and impossible to leave switched on by a stray
+ * variable in a shell that then records nothing for the rest of the afternoon.
  */
 export async function getRecorder(): Promise<Recorder> {
   if (cached) return cached;
 
-  cached =
-    process.env["PREQUEL_FAKE_RECORDER"] === "1"
-      ? await loadFake()
-      : ((await import("@prequel/recorder")) as unknown as Recorder);
+  cached = (await import("@prequel/recorder")) as unknown as Recorder;
 
   return cached;
 }
@@ -216,9 +215,4 @@ export async function getRecorder(): Promise<Recorder> {
 /** Replaces the recorder. Tests only. */
 export function setRecorder(recorder: Recorder | null): void {
   cached = recorder;
-}
-
-async function loadFake(): Promise<Recorder> {
-  const { createFakeRecorder } = await import("./recorder.fake.js");
-  return createFakeRecorder();
 }

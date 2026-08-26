@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import { ButtonLink } from "@/components/Button";
 import { JsonLd } from "@/components/JsonLd";
 import { Container, SectionHeading } from "@/components/Section";
-import { FAQ, INCLUDED, PLANS, PRICE_MONTHLY_EQUIVALENT, TRIAL_DAYS } from "@/lib/pricing";
+import { FAQ, INCLUDED, PLANS, TRIAL_DAYS } from "@/lib/pricing";
 import { faqPageJsonLd, pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
   title: "Pricing",
   description:
-    "Prequel is $59 per user per year, with a 14-day free trial. One plan: the recorder, the editor, 4K export, transcripts and sharing, with no watermark and no length limit.",
+    "Prequel is $14 per user per month, with a 14-day free trial. One plan, everything in it: automatic zooms, a perspective tilt, a framed camera, 4K export, transcripts and sharing — no watermark, no length limit.",
   path: "/pricing",
 });
 
@@ -21,7 +21,7 @@ export default function Pricing() {
           <SectionHeading
             eyebrow="Pricing"
             title="One price, everything in it."
-            lede="One plan, one price, and everything in it. Introductory while Prequel is new, so the rate goes up later — this is what it costs today."
+            lede="Every recording comes out directed — zooms that follow the work, a perspective tilt, focus falling away from the subject, a camera framed afterwards. One plan, one price, all of it included. Introductory while Prequel is new, so the rate goes up later; this is what it costs today."
             align="centre"
           />
         </Container>
@@ -51,12 +51,11 @@ export default function Pricing() {
                 <span className="text-4xl font-medium tracking-tight text-fg">{plan.price}</span>
                 <span className="text-xs text-muted">{plan.cadence}</span>
               </p>
-              {/* The year is what gets charged; the month is arithmetic and
-                  never appears without it. Leading with the smaller number is
-                  the trick this site calls out on Screen Studio's own page. */}
-              <p className="mt-1.5 text-xs text-muted">
-                About {PRICE_MONTHLY_EQUIVALENT} a month · {TRIAL_DAYS} days free
-              </p>
+              {/* The month, and only the month. There is no yearly plan, so an
+                  annualised figure beside this one would be a cadence nobody is
+                  billed — the same trick this site calls out on Screen Studio's
+                  own page, run the other way. */}
+              <p className="mt-1.5 text-xs text-muted">Billed monthly · {TRIAL_DAYS} days free</p>
               {/* Says the rate is introductory and nothing more. No struck-out
                   regular price, because there is not one to strike out, and no
                   promise that this rate is kept for life — that is a commitment

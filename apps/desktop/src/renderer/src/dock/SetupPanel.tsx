@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 import type { DockState, ScreenMode } from "../../../shared/contract";
+import { missingPermissions } from "../../../shared/permissions";
 import { useMediaDevices } from "../hooks/useMediaDevices";
+import { usePermissions } from "../hooks/usePermissions";
 import {
   AreaIcon,
   CameraIcon,
@@ -14,6 +16,7 @@ import {
 } from "./icons";
 import { DeviceMenu } from "./DeviceMenu";
 import { IconButton } from "./IconButton";
+import { PermissionMenu } from "./PermissionMenu";
 
 /** Short, centred: a full-height rule would meet the panel's border at both
     ends and read as a seam between two panels rather than a separator inside
@@ -30,7 +33,21 @@ export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
   const cameras = useMediaDevices("videoinput");
   const microphones = useMediaDevices("audioinput");
-  const [open, setOpen] = useState<"camera" | "mic" | null>(null);
+  const [open, setOpen] = useState<"camera" | "mic" | "permissions" | null>(null);
+
+  // No timer. The panel is up for as long as the app is, and the two
+  // permissions that matter here are read from a value macOS fixes at launch —
+  // so a poll could never see either turn true and would only wake main every
+  // couple of seconds for the life of a menu-bar app. Mount, window focus and
+  // the answer a request returns are the three moments this can change.
+  const permissions = usePermissions(null);
+
+  // What a recording started *now* would be missing, which is not the same as
+  // what is ungranted: a camera nobody has switched on needs no camera grant.
+  const missing = missingPermissions(permissions.states, {
+    camera: preferences.cameraId !== null,
+    microphone: preferences.micId !== null,
+  });
 
   // The window is only as tall as the panel, so main has to grow it before a
   // drop-up can be drawn above it — otherwise the menu is clipped to a sliver
@@ -38,6 +55,13 @@ export function SetupPanel({ state }: { state: DockState }) {
   useEffect(() => {
     void window.prequel.dock.setMenuOpen(open !== null);
   }, [open]);
+
+  // The warning can disappear under an open menu — granting the last missing
+  // permission from inside it is the ordinary way that happens — and a menu
+  // whose button has gone leaves the window grown around nothing.
+  useEffect(() => {
+    if (open === "permissions" && missing.length === 0) setOpen(null);
+  }, [open, missing.length]);
 
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
 
@@ -117,6 +141,21 @@ export function SetupPanel({ state }: { state: DockState }) {
           OffIcon={MicOffIcon}
         />
       </div>
+
+      {/* Last, and absent entirely when there is nothing wrong. At the end
+          rather than beside Close because it must not push the controls people
+          reach for before every recording sideways the day it appears. */}
+      {missing.length > 0 && (
+        <>
+          <span className={DIVIDER} />
+          <PermissionMenu
+            missing={missing}
+            permissions={permissions}
+            open={open === "permissions"}
+            onToggle={() => setOpen(open === "permissions" ? null : "permissions")}
+          />
+        </>
+      )}
     </div>
   );
 }

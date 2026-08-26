@@ -48,6 +48,32 @@ export interface Env {
   POSTHOG_PROJECT_TOKEN: string;
   POSTHOG_HOST: string;
 
+  /**
+   * Which Dodo Payments environment this Worker talks to.
+   *
+   * A var rather than something inferred from the API key: Dodo serves test and
+   * live from two different hosts, and a live key sent to the test host answers
+   * 401 rather than telling you the host is wrong. Explicit here, and paired
+   * with the product ids below — a live product id is meaningless in test mode.
+   */
+  DODOPAYMENT_MODE: "test" | "live";
+  DODOPAYMENT_BRAND_ID: string;
+  /** The Pro subscription product. Includes one seat, the owner's. */
+  DODOPAYMENT_PRO_PRODUCT_ID: string;
+  /** The per-seat add-on attached to it. Every member past the first is one of these. */
+  DODOPAYMENT_SEAT_ADDON_ID: string;
+
+  DODOPAYMENT_API_KEY?: string;
+  /**
+   * The `whsec_…` signing key, from Developer → Webhooks in Dodo's dashboard.
+   *
+   * Not the API key, and not interchangeable with it. Without this the webhook
+   * route has nothing to verify against and refuses every call, which is the
+   * right failure: the alternative is trusting an unsigned POST that can set a
+   * team's plan to whatever it likes.
+   */
+  DODOPAYMENT_WEBHOOK_SECRET?: string;
+
   BETTER_AUTH_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -78,6 +104,19 @@ export interface Env {
    * Cloudflare. The download path never calls the API and needs no token.
    */
   GITHUB_TOKEN?: string;
+}
+
+/**
+ * The one thing anything here wants from an execution context.
+ *
+ * Structural rather than `ExecutionContext`, because there are two of those:
+ * Hono's, which is what `c.executionCtx` is, and the one in
+ * `@cloudflare/workers-types`, which has `tracing` and `abort` on it as well. A
+ * parameter typed as the second refuses the first, over methods neither caller
+ * uses.
+ */
+export interface Deferrable {
+  waitUntil(promise: Promise<unknown>): void;
 }
 
 /**

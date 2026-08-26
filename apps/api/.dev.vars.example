@@ -30,3 +30,12 @@ SES_SECRET_ACCESS_KEY=
 # transcription is unavailable, which is the intended behaviour rather than a
 # broken deployment.
 OPENAI_API_KEY=
+
+# Dodo Payments. The product and brand ids are not secret and live in
+# wrangler.jsonc; these two are.
+#
+# The webhook key is the `whsec_…` signing key under Developer → Webhooks, not
+# the API key. Without it the webhook route refuses every call, which is
+# deliberate — an unsigned POST to it could set any team's plan.
+DODOPAYMENT_API_KEY=
+DODOPAYMENT_WEBHOOK_SECRET=

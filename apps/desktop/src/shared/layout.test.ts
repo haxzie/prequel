@@ -30,6 +30,7 @@ import {
   type SliceSettings,
   type ZoomSlice,
 } from "./project.js";
+import type { CursorKind } from "./manifest.js";
 
 /** Every arrangement, so a sweep cannot quietly skip the one that broke. */
 const PRESETS: LayoutPreset[] = [
@@ -495,9 +496,7 @@ describe("the plan itself", () => {
 
 describe("the pointer layer", () => {
   const TRACK = {
-    path: "cursor.png",
-    hand: null,
-    hotspot: { x: 0.055, y: 0.055 },
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
     size: 0.035,
     hideAfter: null,
     samples: [
@@ -572,15 +571,19 @@ describe("the pointer layer", () => {
 
 describe("the pointer changing shape", () => {
   const TONE = {
-    path: "arrow.png",
-    hotspot: { x: 0.055, y: 0.055 },
-    hand: { path: "hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+    shapes: {
+      arrow: { path: "arrow.png", hotspot: { x: 0.055, y: 0.055 } },
+      hand: { path: "hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      text: { path: "text.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
     size: 0.035,
     hideAfter: null,
   };
 
   /** Every pointer item in the plan for a track that hovers a link mid-way. */
-  const itemsFor = (samples: { at: number; x: number; y: number; hand?: boolean }[]) =>
+  const itemsFor = (
+    samples: { at: number; x: number; y: number; kind?: CursorKind; hand?: boolean }[],
+  ) =>
     buildRenderPlan({ width: 1920, height: 1080 }, { screen: SCREEN, camera: null }, settings(), {
       ...TONE,
       samples,
@@ -643,15 +646,106 @@ describe("the pointer changing shape", () => {
     expect(itemsFor([{ at: 0, x: 0.2, y: 0.2 }])).toHaveLength(1);
   });
 
-  it("stays one item for a style with no hand to swap to", () => {
+  it("stays one item for a style with no other shape to swap to", () => {
     const items = buildRenderPlan(
       { width: 1920, height: 1080 },
       { screen: SCREEN, camera: null },
       settings(),
-      { ...TONE, hand: null, samples: HOVER },
+      { ...TONE, shapes: { arrow: TONE.shapes.arrow }, samples: HOVER },
     ).items.filter((item) => item.kind === "cursor");
 
     expect(items).toHaveLength(1);
+  });
+
+  it("draws the I-beam for the span the system showed one", () => {
+    // The whole point of a pointer per kind. An arrow parked in a text field
+    // while somebody types is the tell that the pointer was drawn in
+    // afterwards, and it is the one nobody can unsee.
+    const items = itemsFor([
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 1_000_000_000, x: 0.4, y: 0.4, kind: "text" },
+      { at: 2_000_000_000, x: 0.6, y: 0.6 },
+    ]);
+
+    const drawnAt = (at: number) => {
+      const item = items.find((candidate) => cursorAt(candidate.points, at) !== null);
+      if (item?.kind !== "cursor") throw new Error(`nothing drawn at ${at}`);
+      return item.path;
+    };
+
+    expect(drawnAt(500_000_000)).toBe("arrow.png");
+    expect(drawnAt(1_500_000_000)).toBe("text.png");
+    expect(drawnAt(2_000_000_000)).toBe("arrow.png");
+  });
+
+  it("draws exactly one pointer at every moment of three kinds in one take", () => {
+    // The handover is between *images*, not between an arrow and one other
+    // thing. Three tracks share the timeline and the same rule has to hold
+    // across all of them: never a blink, never two pointers.
+    const items = itemsFor([
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 1_000_000_000, x: 0.3, y: 0.3, kind: "hand" },
+      { at: 2_000_000_000, x: 0.4, y: 0.4, kind: "text" },
+      { at: 3_000_000_000, x: 0.5, y: 0.5 },
+    ]);
+
+    expect(items).toHaveLength(3);
+
+    for (let at = 0; at <= 3_000_000_000; at += 10_000_000) {
+      const drawn = items.filter(
+        (item) => item.kind === "cursor" && cursorAt(item.points, at) !== null,
+      );
+
+      expect(drawn, `at ${at}`).toHaveLength(1);
+    }
+  });
+
+  it("draws the arrow for a kind the style has no image for", () => {
+    // A style ships what it ships. Emitting an item for a texture that is not
+    // there would draw nothing at all over a text field — worse than an arrow,
+    // because the pointer would vanish rather than be slightly wrong.
+    const items = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings(),
+      {
+        ...TONE,
+        shapes: { arrow: TONE.shapes.arrow },
+        samples: [
+          { at: 0, x: 0.2, y: 0.2 },
+          { at: 1_000_000_000, x: 0.4, y: 0.4, kind: "text" as const },
+        ],
+      },
+    ).items.filter((item) => item.kind === "cursor");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.kind === "cursor" && items[0]!.path).toBe("arrow.png");
+  });
+
+  it("still reads the hand off a recording made before kinds", () => {
+    // Every take on disk today says `hand: true` and carries no `kind` at all.
+    // Dropping the fallback would not break anything visibly — it would just
+    // quietly stop drawing the hand on every recording anybody already has.
+    const items = itemsFor([
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 1_000_000_000, x: 0.4, y: 0.4, hand: true },
+    ]);
+
+    const drawn = items.find((item) => cursorAt(item.points, 1_500_000_000) !== null);
+    expect(drawn?.kind === "cursor" && drawn.path).toBe("hand.png");
+  });
+
+  it("prefers the kind over the boolean where a sample has both", () => {
+    // A recording written by a build that carried both. The kind is the newer
+    // and more specific of the two, and reading them the other way round would
+    // draw a hand in a text field.
+    const items = itemsFor([
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 1_000_000_000, x: 0.4, y: 0.4, kind: "text", hand: true },
+    ]);
+
+    const drawn = items.find((item) => cursorAt(item.points, 1_500_000_000) !== null);
+    expect(drawn?.kind === "cursor" && drawn.path).toBe("text.png");
   });
 
   it("keeps every point in time order through the handover", () => {
@@ -668,9 +762,7 @@ describe("the pointer changing shape", () => {
 
 describe("hiding a parked pointer", () => {
   const still = {
-    path: "cursor.png",
-    hand: null,
-    hotspot: { x: 0.055, y: 0.055 },
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
     size: 0.035,
     hideAfter: 2,
     // Moves, then sits for ten seconds, then moves again.
@@ -1290,9 +1382,9 @@ describe("zooming", () => {
     y: 0.75,
     level: 2,
     speed: 0.5,
-    tilt: 0,
-    yaw: 0,
-    depth: 0.5,
+    rotateX: 0,
+    rotateY: 0,
+    perspective: 0.5,
     blur: false,
     blurSafe: 0.28,
     blurStrength: 0.012,
@@ -1510,9 +1602,7 @@ describe("zooming", () => {
     // rectangle while the picture moved under it, so the further a zoom went
     // the further out the pointer was.
     const cursor = {
-      path: "cursor.png",
-      hand: null,
-      hotspot: { x: 0, y: 0 },
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
       size: 0.035,
       hideAfter: null,
       samples: [
@@ -1546,9 +1636,7 @@ describe("following the cursor", () => {
 
   /** A pointer crossing the screen with a bad shake on top of it. */
   const shaky = (jitter: number) => ({
-    path: "cursor.png",
-    hand: null,
-    hotspot: { x: 0, y: 0 },
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
     size: 0.035,
     hideAfter: null,
     samples: Array.from({ length: 120 }, (_, index) => ({
@@ -1576,9 +1664,9 @@ describe("following the cursor", () => {
           y: 0.5,
           level: 2,
           speed: 0.2,
-          tilt: 0,
-          yaw: 0,
-          depth: 0.5,
+          rotateX: 0,
+          rotateY: 0,
+          perspective: 0.5,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -1628,9 +1716,7 @@ describe("following the cursor", () => {
       { screen: SCREEN, camera: null },
       settings(),
       {
-        path: "cursor.png",
-        hand: null,
-        hotspot: { x: 0, y: 0 },
+        shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
         size: 0.035,
         hideAfter: null,
         samples,
@@ -1794,9 +1880,7 @@ describe("following typing", () => {
       { screen: SCREEN, camera: null },
       settings(),
       {
-        path: "cursor.png",
-        hand: null,
-        hotspot: { x: 0, y: 0 },
+        shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
         size: 0.035,
         hideAfter: null,
         // The pointer sits in the far bottom-right, so which of the two the
@@ -1823,9 +1907,9 @@ describe("following typing", () => {
           y: 0.5,
           level: 2,
           speed: 0,
-          tilt: 0,
-          yaw: 0,
-          depth: 0.5,
+          rotateX: 0,
+          rotateY: 0,
+          perspective: 0.5,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -1925,7 +2009,7 @@ describe("the camera's own zoom", () => {
 describe("perspective", () => {
   const S = 1_000_000_000;
 
-  const cornersFor = (tilt: number, yaw: number, depth = 0.5) => {
+  const cornersFor = (rotateX: number, rotateY: number, perspective = 0.5) => {
     const plan = buildRenderPlan(
       { width: 1920, height: 1080 },
       { screen: SCREEN, camera: null },
@@ -1943,9 +2027,9 @@ describe("perspective", () => {
           y: 0.5,
           level: 1.5,
           speed: 0,
-          tilt,
-          yaw,
-          depth,
+          rotateX,
+          rotateY,
+          perspective,
           blur: false,
           blurSafe: 0.28,
           blurStrength: 0.012,
@@ -1965,7 +2049,7 @@ describe("perspective", () => {
     expect(cornersFor(0, 0)).toBeUndefined();
   });
 
-  it("converges harder at the near end of the depth range", () => {
+  it("converges harder at the near end of the perspective range", () => {
     // The control the panel was missing. Angle says which way the picture is
     // turned; depth says how much being turned costs it, and the two are
     // genuinely independent — the same 12° is a product shot or a caricature.

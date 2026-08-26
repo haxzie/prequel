@@ -290,6 +290,16 @@ export const IPC_CHANNELS = {
   editorPickImage: "editor:pickImage",
   editorPresetImage: "editor:presetImage",
   editorDeleteRecording: "editor:deleteRecording",
+  /**
+   * Asks where the export should be written, with a save dialog.
+   *
+   * Separate from `exportStart` rather than folded into it, because the two
+   * answer different questions: this one can come back empty — the user changed
+   * their mind in the sheet — and that is not a failed export, it is no export.
+   * Rolling them together would mean `start` resolving successfully having done
+   * nothing, which the dialog cannot tell from a render about to begin.
+   */
+  exportChoose: "export:choose",
   exportStart: "export:start",
   exportCancel: "export:cancel",
   /** Main → renderer broadcast. */
@@ -330,6 +340,14 @@ export const IPC_CHANNELS = {
   updateOpen: "update:open",
   /** Main → renderer broadcast: the window, the tray and Settings all show it. */
   updateChanged: "update:changed",
+  /** Whatever is already known about the licence, with no network call. */
+  licenceState: "licence:state",
+  /** Asks the server and answers with what it said. Pressed Export triggers it. */
+  licenceCheck: "licence:check",
+  /** Opens the billing page in the browser. */
+  licenceUpgrade: "licence:upgrade",
+  /** Main → renderer broadcast, when the verdict changes under a window. */
+  licenceChanged: "licence:changed",
   /** Uploads a finished export and answers with a link. */
   shareStart: "share:start",
   shareCancel: "share:cancel",
@@ -365,8 +383,16 @@ export interface ExportSlice {
 export type ExportFormat = "h264" | "hevc" | "gif";
 
 export interface ExportRequest {
-  /** The recording's directory. The export lands inside it. */
+  /** The recording's directory — where the source media is read from. */
   dir: string;
+  /**
+   * Absolute path of the file to write, as chosen in the save dialog.
+   *
+   * Comes from `exportChoose`, which is the only thing that ever builds one:
+   * the extension has to agree with `format`, and a second place deciding it is
+   * how a GIF comes to be written into a file called `.mp4`.
+   */
+  output: string;
   width: number;
   height: number;
   fps: number;
@@ -439,6 +465,34 @@ export type AuthState =
   { status: "signed-out" } | { status: "waiting" } | { status: "signed-in"; account: AuthAccount };
 
 /** What to upload, and what to call it. */
+/**
+ * Whether this Mac may export.
+ *
+ * Five states rather than a boolean, because the four that are not "paid" want
+ * four different things said to the user. `unknown` is the one that looks like
+ * an omission and is not: signed in, never successfully checked — offline on a
+ * first run — and the only safe reading of it is to let the export run.
+ *
+ * Derived in `main/licence.ts` from what `/v1/desktop/entitlement` returns. The
+ * trial runs from the account's sign-up date, so it is not restarted by a
+ * reinstall.
+ */
+export type Entitlement =
+  | { status: "paid" }
+  | { status: "trial"; daysLeft: number }
+  | { status: "expired" }
+  | { status: "signed-out" }
+  | { status: "unknown" };
+
+/** Whether a status is one that may export. */
+export function mayExport(entitlement: Entitlement): boolean {
+  return (
+    entitlement.status === "paid" ||
+    entitlement.status === "trial" ||
+    entitlement.status === "unknown"
+  );
+}
+
 export interface ShareRequest {
   /** Absolute path of the finished export. */
   path: string;
@@ -635,27 +689,44 @@ export const CURSOR_STYLES = [
   {
     id: "black",
     label: "Black",
-    file: "cursor-black.png",
-    hotspot: { x: 0.055, y: 0.055 },
-    hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+    shapes: {
+      arrow: { file: "cursor-black.png", hotspot: { x: 0.055, y: 0.055 } },
+      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      text: { file: "cursor-black-text.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-h": { file: "cursor-black-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-v": { file: "cursor-black-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
   },
   {
     id: "white",
     label: "White",
-    file: "cursor-white.png",
-    hotspot: { x: 0.055, y: 0.055 },
-    hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+    shapes: {
+      arrow: { file: "cursor-white.png", hotspot: { x: 0.055, y: 0.055 } },
+      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      text: { file: "cursor-white-text.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-h": { file: "cursor-white-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-v": { file: "cursor-white-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
   },
   {
     id: "circle",
     label: "Circle",
-    file: "cursor-circle.png",
-    hotspot: { x: 0.5, y: 0.5 },
-    hand: null,
+    // One image and no others, deliberately. The circle is a marker for where
+    // the pointer is rather than a pointer, and there is nothing for it to
+    // become — an I-beam version of a dot is just a dot.
+    shapes: {
+      arrow: { file: "cursor-circle.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
   },
 ] as const;
 
 export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
+
+/** One image, and the point of it that lands on the pointer's position. */
+export interface CursorShape {
+  path: string;
+  hotspot: { x: number; y: number };
+}
 
 /**
  * Falls back to the first style rather than throwing, so a project naming one
@@ -668,9 +739,9 @@ export function cursorStyle(id: string): (typeof CURSOR_STYLES)[number] {
 }
 
 /** Every image any style may ask for, which is what has to reach a recording. */
-export const CURSOR_FILES: readonly string[] = CURSOR_STYLES.flatMap((style) =>
-  style.hand ? [style.file, style.hand.file] : [style.file],
-);
+export const CURSOR_FILES: readonly string[] = [
+  ...new Set(CURSOR_STYLES.flatMap((style) => Object.values(style.shapes).map((s) => s.file))),
+];
 
 /**
  * The image half of a pointer track, for a style id.
@@ -678,15 +749,22 @@ export const CURSOR_FILES: readonly string[] = CURSOR_STYLES.flatMap((style) =>
  * Here rather than at both call sites: the preview and the export build the
  * same track from the same setting, and a style that resolved differently in
  * one of them is a preview that does not match the file it promised.
+ *
+ * `arrow` is always present; the rest are whatever the style ships. A kind with
+ * no image of its own is drawn as the arrow, which is what every style did for
+ * every kind before there were any.
  */
-export function cursorImages(id: string): Pick<CursorTrack, "path" | "hotspot" | "hand"> {
+export function cursorImages(id: string): Pick<CursorTrack, "shapes"> {
   const style = cursorStyle(id);
 
-  return {
-    path: style.file,
-    hotspot: style.hotspot,
-    hand: style.hand ? { path: style.hand.file, hotspot: style.hand.hotspot } : null,
-  };
+  const shapes = Object.fromEntries(
+    Object.entries(style.shapes).map(([kind, shape]) => [
+      kind,
+      { path: shape.file, hotspot: shape.hotspot },
+    ]),
+  ) as CursorTrack["shapes"];
+
+  return { shapes };
 }
 
 /** The pointer track, ready for the editor to lay out. */

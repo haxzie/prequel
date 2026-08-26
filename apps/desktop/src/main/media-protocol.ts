@@ -25,7 +25,7 @@ import { protocol } from "electron";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 
-import { MEDIA_SCHEME, mediaUrl as urlFor } from "../shared/media-url.js";
+import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
 import { SESSIONS_DIR } from "./session.js";
 
 export { MEDIA_SCHEME } from "../shared/media-url.js";
@@ -39,6 +39,31 @@ export { MEDIA_SCHEME } from "../shared/media-url.js";
  */
 export function mediaUrl(dir: string, fileName: string): string {
   return urlFor(basename(dir), fileName);
+}
+
+/**
+ * Exports this run has written, by file name.
+ *
+ * An export goes wherever the save dialog pointed — the Desktop, an external
+ * drive, anywhere — and the renderer still has to show it, which it can only do
+ * through this scheme. The `recording` route's guard cannot help here: it works
+ * by proving a path lands inside one known directory, and an export lands
+ * outside it by design.
+ *
+ * So this is an allow-list rather than a resolver. Nothing a renderer sends can
+ * name a file main did not itself write.
+ */
+const written = new Map<string, string>();
+
+/**
+ * Registers a finished export and answers with the URL for it.
+ *
+ * Called once the file exists, not when the export starts: a URL handed out
+ * early is a 404 that reads as a broken preview.
+ */
+export function publishExport(path: string): string {
+  written.set(basename(path), path);
+  return exportUrl(basename(path));
 }
 
 /**
@@ -62,11 +87,13 @@ export const MEDIA_SCHEME_PRIVILEGES = {
 const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
 
 /**
- * Resolves a media URL to a path inside the recordings directory.
+ * Resolves a media URL to a file on disk, or to null.
  *
- * Returns null for anything outside it. `resolve` first, then compare: a name
- * like `../../..` only reveals itself as an escape once it has been resolved,
- * and comparing the raw string would let it through.
+ * Only the `recording` route resolves a path the renderer supplied, and it is
+ * the one that needs the guard: `resolve` first, then compare, because a name
+ * like `../../..` only reveals itself as an escape once it has been resolved
+ * and comparing the raw string would let it through. The other two routes look
+ * their answer up in a list main wrote.
  */
 export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | null {
   let parsed: URL;
@@ -87,6 +114,13 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
   if (parsed.host === "asset") {
     if (parts.length !== 1) return null;
     return assetPath(parts[0]!);
+  }
+
+  // A finished export, by name. Exact match against what main registered —
+  // there is no path here to traverse, because the renderer never supplies one.
+  if (parsed.host === "export") {
+    if (parts.length !== 1) return null;
+    return written.get(parts[0]!) ?? null;
   }
 
   if (parts.length !== 2) return null;

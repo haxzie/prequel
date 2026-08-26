@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
 
 import { Avatar } from "./Avatar";
+import { UpgradeDialog } from "./UpgradeDialog";
 import { authClient } from "@/lib/auth-client";
 import { displayName } from "@/lib/display-name";
 
@@ -24,6 +25,15 @@ interface Invitation {
 /** Only these two may invite or remove. The plugin enforces it server-side too. */
 const CAN_MANAGE = new Set(["owner", "admin"]);
 
+/**
+ * The team has no subscription, so it cannot grow.
+ *
+ * 402 rather than 403, and the difference is the whole interaction: 403 is a
+ * refusal to show the user, 402 is a price to show them. Anything else here
+ * falls through to the error line.
+ */
+const NEEDS_UPGRADE = 402;
+
 export function TeamSettings({
   teamId,
   role,
@@ -39,6 +49,7 @@ export function TeamSettings({
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const manage = CAN_MANAGE.has(role);
 
   const load = async () => {
@@ -62,6 +73,8 @@ export function TeamSettings({
 
   return (
     <div className={`flex flex-col gap-10 ${className}`}>
+      <UpgradeDialog open={upgrading} canManage={manage} onClose={() => setUpgrading(false)} />
+
       {manage ? (
         <form
           className="flex flex-col gap-2 sm:flex-row"
@@ -79,6 +92,14 @@ export function TeamSettings({
             setBusy(false);
 
             if (sent.error) {
+              // The seat gate. The invitation was never created, so there is
+              // nothing to undo — the form keeps the address it was given, and
+              // the same submission works once the team is on Pro.
+              if (sent.error.status === NEEDS_UPGRADE) {
+                setUpgrading(true);
+                return;
+              }
+
               setError(sent.error.message ?? "That invitation didn't send.");
               return;
             }

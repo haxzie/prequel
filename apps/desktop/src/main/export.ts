@@ -5,20 +5,30 @@
  * that a second Export press cannot start a competing render and a closed
  * window cannot leave one running with nobody listening.
  */
-import { join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { clipboard, nativeImage, webContents, type WebContents } from "electron";
+import {
+  clipboard,
+  dialog,
+  nativeImage,
+  webContents,
+  type BrowserWindow,
+  type SaveDialogOptions,
+  type WebContents,
+} from "electron";
 
 import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
 import { log } from "./log.js";
+import { publishExport } from "./media-protocol.js";
 import { getRecorder } from "./recorder.js";
 import { RECORDINGS_DIR, fileTimestamp } from "./session.js";
 
 /**
- * What one export is called inside its recording's own folder.
+ * What the save dialog offers to call an export.
  *
  * Timestamped rather than a fixed `export.mp4`: exporting twice is normal —
  * a different frame size, a tweaked background — and a fixed name would either
@@ -35,6 +45,66 @@ export function exportFileName(format: ExportFormat, now = new Date()): string {
 
 /** The directory currently being exported, or null. */
 let running: string | null = null;
+
+/**
+ * The folder the last save dialog settled on.
+ *
+ * Kept for as long as the app runs and no longer. Somebody exporting four takes
+ * into the same folder should be asked once, and the alternative — carrying it
+ * in `RecordingPreferences` — would broadcast a path inside the user's home to
+ * every window inside `DockState`, which is the reason the install id lives in
+ * a file of its own.
+ */
+let lastDir: string | null = null;
+
+/**
+ * Asks where to write an export, and answers with the path or null.
+ *
+ * The extension is forced to match the format here rather than trusted from the
+ * sheet: macOS lets a typed name keep whatever extension it was given, and a
+ * GIF written into a file called `.mp4` is one nothing on the system will open.
+ * Only appended when it is not already right, so `.mp4` typed by hand stays one
+ * file rather than becoming `.mp4.mp4`.
+ */
+export async function chooseExportTarget(
+  format: ExportFormat,
+  window?: BrowserWindow | null,
+): Promise<string | null> {
+  const name = exportFileName(format);
+
+  // Before the sheet, not after: `NSSavePanel` silently ignores a `defaultPath`
+  // whose directory does not exist and opens on wherever it was last, so on a
+  // machine that has never recorded the suggested folder would simply not be
+  // the one offered.
+  const dir = lastDir ?? RECORDINGS_DIR;
+  mkdirSync(dir, { recursive: true });
+
+  // Sheet-attached where there is a window to attach to. A free-floating save
+  // dialog over a full-screen editor opens behind it often enough to read as
+  // the Export button having done nothing.
+  const options: SaveDialogOptions = {
+    title: "Export",
+    defaultPath: join(dir, name),
+    filters: [
+      format === "gif"
+        ? { name: "GIF", extensions: ["gif"] }
+        : { name: "MP4", extensions: ["mp4"] },
+    ],
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+  };
+
+  const { canceled, filePath } = window
+    ? await dialog.showSaveDialog(window, options)
+    : await dialog.showSaveDialog(options);
+
+  if (canceled || !filePath) return null;
+
+  const wanted = extname(name);
+  const output = extname(filePath).toLowerCase() === wanted ? filePath : filePath + wanted;
+
+  lastDir = dirname(output);
+  return output;
+}
 
 /**
  * When the export in progress started, for the event that reports it finishing.
@@ -61,10 +131,11 @@ export async function startExport(request: ExportRequest): Promise<void> {
     throw new Error("ALREADY_EXPORTING: an export is already running");
   }
 
-  // Beside the recordings, not inside the take. A take's directory is working
-  // state — tracks, manifests, the pointer images — and burying the one file
-  // the user actually wants among them is what made this folder unusable.
-  const output = join(RECORDINGS_DIR, exportFileName(request.format));
+  // Wherever the save dialog was pointed. Never inside the take: a take's
+  // directory is working state — tracks, manifests, the pointer images — and
+  // burying the one file the user actually wants among them is what made that
+  // folder unusable.
+  const output = request.output;
   running = request.dir;
   startedAt = Date.now();
 
@@ -205,6 +276,11 @@ function finish(update: ExportProgress): void {
   } else {
     log("info", `export ${update.stage}`, update.outputPath ?? undefined);
   }
+
+  // Registered before the progress goes out, not after: the renderer shows the
+  // finished file the moment it hears "done", and it can only reach it through
+  // `prequel-media:` — a URL published a tick late is a preview that 404s.
+  if (update.stage === "done" && update.outputPath) publishExport(update.outputPath);
 
   // Nothing is revealed here. The export dialog offers Show in Finder beside
   // the finished file, and opening Finder on its own used to pull focus out of

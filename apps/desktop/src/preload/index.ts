@@ -6,6 +6,8 @@ import type {
   BackgroundImage,
   DockState,
   EditorSession,
+  Entitlement,
+  ExportFormat,
   ExportProgress,
   ExportRequest,
   IpcResult,
@@ -30,6 +32,8 @@ export type {
   BackgroundImage,
   DockState,
   EditorSession,
+  Entitlement,
+  ExportFormat,
   ExportProgress,
   ExportRequest,
   IpcResult,
@@ -204,6 +208,15 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.editorPresetImage, dir, presetId),
 
     export: {
+      /**
+       * Asks where to write the export, with a save dialog.
+       *
+       * Resolves to null when the sheet was dismissed, which is not a failure —
+       * nothing was started and nothing needs reporting.
+       */
+      choose: (format: ExportFormat): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.exportChoose, format),
+
       start: (request: ExportRequest): Promise<IpcResult<void>> =>
         ipcRenderer.invoke(IPC_CHANNELS.exportStart, request),
       cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.exportCancel),
@@ -288,6 +301,25 @@ const api = {
   library: {
     reveal: (path?: string): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.revealRecordings, path),
+  },
+
+  /**
+   * Whether this Mac may export.
+   *
+   * `state` is what is already known and answers instantly; `check` asks the
+   * server. The Export button calls `check`, because that is the one moment
+   * the answer matters and the user is already waiting through it.
+   */
+  licence: {
+    state: (): Promise<Entitlement> => ipcRenderer.invoke(IPC_CHANNELS.licenceState),
+    check: (): Promise<Entitlement> => ipcRenderer.invoke(IPC_CHANNELS.licenceCheck),
+    /** Opens the billing page in the default browser. */
+    upgrade: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.licenceUpgrade),
+    onChange: (listener: (entitlement: Entitlement) => void): (() => void) => {
+      const handler = (_event: unknown, value: Entitlement) => listener(value);
+      ipcRenderer.on(IPC_CHANNELS.licenceChanged, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.licenceChanged, handler);
+    },
   },
 
   auth: {

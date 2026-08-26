@@ -47,9 +47,10 @@ You need the Rust toolchain (`rustup`, stable — the workspace is edition 2024
 and needs 1.88+), Xcode Command Line Tools, Node 22+ and pnpm 11. `ffmpeg` and
 `ffprobe` are needed only by the media tests.
 
-Then grant Screen Recording — see below — or run with
-`PREQUEL_FAKE_RECORDER=1`, which drives the whole UI with a stub recorder and
-no grant at all.
+Then grant Screen Recording — see below. There is no way to run the app
+without it: a stub recorder switched on by an environment variable is one a
+stale shell can leave switched on, and a recorder that silently captures
+nothing is indistinguishable from a broken one.
 
 | Command          | What it does                                         |
 | ---------------- | ---------------------------------------------------- |

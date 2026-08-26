@@ -24,12 +24,12 @@ const S = 1_000_000_000;
 /**
  * The four projected corners, each with how far away it is.
  *
- * `tiltedQuad` stores `depth / distance` as every corner's third number — the
+ * `rotatedQuad` stores `depth / distance` as every corner's third number — the
  * divisor a GPU applies, so larger is farther. That is the only fact these
  * tests need from the renderer, and reading it out of a real plan rather than
  * recomputing it is the whole point of the exercise.
  */
-function corners(tilt: number, yaw: number) {
+function corners(rotateX: number, rotateY: number) {
   const plan = buildRenderPlan(
     { width: 1920, height: 1080 },
     { screen: { width: 2560, height: 1440 }, camera: null },
@@ -47,8 +47,8 @@ function corners(tilt: number, yaw: number) {
         y: 0.5,
         level: 1.5,
         speed: 0,
-        tilt,
-        yaw,
+        rotateX,
+        rotateY,
       },
     ],
   );
@@ -80,8 +80,8 @@ function corners(tilt: number, yaw: number) {
  * the conversion the component relies on — if either drifts, the directions
  * below stop lining up with the corners.
  */
-function darkTowards(tilt: number, yaw: number) {
-  const radians = (shadingAngle(tilt, yaw) * Math.PI) / 180;
+function darkTowards(rotateX: number, rotateY: number) {
+  const radians = (shadingAngle(rotateX, rotateY) * Math.PI) / 180;
   return { x: Math.sin(radians), up: Math.cos(radians) };
 }
 
@@ -90,35 +90,37 @@ describe("the shading on a plate", () => {
     // Pitch and yaw separately, then together, and in both directions: an
     // inverted sign survives any single case that happens to be symmetrical.
     const cases = [
-      { tilt: 8, yaw: 0 },
-      { tilt: -8, yaw: 0 },
-      { tilt: 0, yaw: 10 },
-      { tilt: 0, yaw: -10 },
-      { tilt: 12, yaw: -14 },
-      { tilt: -12, yaw: 14 },
+      { rotateX: 8, rotateY: 0 },
+      { rotateX: -8, rotateY: 0 },
+      { rotateX: 0, rotateY: 10 },
+      { rotateX: 0, rotateY: -10 },
+      { rotateX: 12, rotateY: -14 },
+      { rotateX: -12, rotateY: 14 },
     ];
 
-    for (const { tilt, yaw } of cases) {
-      const quad = corners(tilt, yaw);
-      const dark = darkTowards(tilt, yaw);
+    for (const { rotateX, rotateY } of cases) {
+      const quad = corners(rotateX, rotateY);
+      const dark = darkTowards(rotateX, rotateY);
 
       // Vertical: which of the two edges is farther, and does the gradient
       // lean that way? `up` is positive when the dark end is at the top.
       const topFar = (quad.topLeft.far + quad.topRight.far) / 2;
       const bottomFar = (quad.bottomLeft.far + quad.bottomRight.far) / 2;
       if (Math.abs(topFar - bottomFar) > 1e-6) {
-        expect(Math.sign(dark.up), `tilt ${String(tilt)} yaw ${String(yaw)} vertical`).toBe(
-          Math.sign(topFar - bottomFar),
-        );
+        expect(
+          Math.sign(dark.up),
+          `rotateX ${String(rotateX)} rotateY ${String(rotateY)} vertical`,
+        ).toBe(Math.sign(topFar - bottomFar));
       }
 
       // Horizontal, the same way round.
       const leftFar = (quad.topLeft.far + quad.bottomLeft.far) / 2;
       const rightFar = (quad.topRight.far + quad.bottomRight.far) / 2;
       if (Math.abs(leftFar - rightFar) > 1e-6) {
-        expect(Math.sign(dark.x), `tilt ${String(tilt)} yaw ${String(yaw)} horizontal`).toBe(
-          Math.sign(rightFar - leftFar),
-        );
+        expect(
+          Math.sign(dark.x),
+          `rotateX ${String(rotateX)} rotateY ${String(rotateY)} horizontal`,
+        ).toBe(Math.sign(rightFar - leftFar));
       }
     }
   });
@@ -132,42 +134,44 @@ describe("the shading on a plate", () => {
     // The one CSS fact being pinned: with Y pointing down and +Z at the viewer,
     // `rotateX(+a)` sends the top edge away. So whenever the renderer puts the
     // top farther, the rotation has to be positive.
-    for (const { tilt, yaw } of [
-      { tilt: 8, yaw: 0 },
-      { tilt: -8, yaw: 0 },
-      { tilt: 12, yaw: -14 },
-      { tilt: -12, yaw: 14 },
+    for (const { rotateX, rotateY } of [
+      { rotateX: 8, rotateY: 0 },
+      { rotateX: -8, rotateY: 0 },
+      { rotateX: 12, rotateY: -14 },
+      { rotateX: -12, rotateY: 14 },
     ]) {
-      const quad = corners(tilt, yaw);
+      const quad = corners(rotateX, rotateY);
       const topFar = (quad.topLeft.far + quad.topRight.far) / 2;
       const bottomFar = (quad.bottomLeft.far + quad.bottomRight.far) / 2;
 
-      const rotateX = /rotateX\((-?[\d.]+)deg\)/.exec(plateTransform(tilt, yaw))?.[1];
-      expect(rotateX, "the transform names a pitch").toBeDefined();
+      const drawnX = /rotateX\((-?[\d.]+)deg\)/.exec(plateTransform(rotateX, rotateY))?.[1];
+      expect(drawnX, "the transform names a pitch").toBeDefined();
 
-      expect(Math.sign(Number(rotateX)), `tilt ${String(tilt)} yaw ${String(yaw)}`).toBe(
-        Math.sign(topFar - bottomFar),
-      );
+      expect(
+        Math.sign(Number(drawnX)),
+        `rotateX ${String(rotateX)} rotateY ${String(rotateY)}`,
+      ).toBe(Math.sign(topFar - bottomFar));
     }
   });
 
   it("turns the plate the way the renderer turns it", () => {
     // Yaw was never wrong, which is exactly why it is worth pinning: the fix to
     // the pitch sign was a one-character change to the same template string.
-    for (const { tilt, yaw } of [
-      { tilt: 0, yaw: 10 },
-      { tilt: 0, yaw: -10 },
-      { tilt: 12, yaw: -14 },
+    for (const { rotateX, rotateY } of [
+      { rotateX: 0, rotateY: 10 },
+      { rotateX: 0, rotateY: -10 },
+      { rotateX: 12, rotateY: -14 },
     ]) {
-      const quad = corners(tilt, yaw);
+      const quad = corners(rotateX, rotateY);
       const leftFar = (quad.topLeft.far + quad.bottomLeft.far) / 2;
       const rightFar = (quad.topRight.far + quad.bottomRight.far) / 2;
 
       // `rotateY(+b)` sends the right edge away, the mirror of the rule above.
-      const rotateY = /rotateY\((-?[\d.]+)deg\)/.exec(plateTransform(tilt, yaw))?.[1];
-      expect(Math.sign(Number(rotateY)), `tilt ${String(tilt)} yaw ${String(yaw)}`).toBe(
-        Math.sign(rightFar - leftFar),
-      );
+      const drawnY = /rotateY\((-?[\d.]+)deg\)/.exec(plateTransform(rotateX, rotateY))?.[1];
+      expect(
+        Math.sign(Number(drawnY)),
+        `rotateX ${String(rotateX)} rotateY ${String(rotateY)}`,
+      ).toBe(Math.sign(rightFar - leftFar));
     }
   });
 

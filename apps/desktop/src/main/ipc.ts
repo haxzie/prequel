@@ -20,7 +20,13 @@ import type {
   SelectionResult,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
-import type { AuthState, ExportRequest, ShareRequest } from "../shared/contract.js";
+import type {
+  AuthState,
+  Entitlement,
+  ExportFormat,
+  ExportRequest,
+  ShareRequest,
+} from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
 import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
@@ -28,7 +34,8 @@ import { saveProject } from "./editor-project.js";
 import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
 import { setToggleShortcut } from "./shortcuts.js";
-import { cancelExport, copyExport, dragExport, startExport } from "./export.js";
+import { cancelExport, chooseExportTarget, copyExport, dragExport, startExport } from "./export.js";
+import { entitlement, onEntitlementChanged, openUpgrade, refreshEntitlement } from "./licence.js";
 import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
@@ -193,6 +200,12 @@ export function registerIpc({ flow }: IpcDeps): void {
     attempt(() => deleteRecording(dir, BrowserWindow.fromWebContents(event.sender))),
   );
 
+  // The sheet hangs off the window that asked, so it cannot open behind the
+  // editor it belongs to.
+  ipcMain.handle(IPC_CHANNELS.exportChoose, (event, format: ExportFormat) =>
+    attempt(() => chooseExportTarget(format, BrowserWindow.fromWebContents(event.sender))),
+  );
+
   ipcMain.handle(IPC_CHANNELS.exportStart, (_event, request: ExportRequest) =>
     attempt(() => startExport(request)),
   );
@@ -242,6 +255,16 @@ export function registerIpc({ flow }: IpcDeps): void {
   // Through the flow, like every other request for a surface — one place knows
   // what opening a window entails.
   ipcMain.handle(IPC_CHANNELS.updateOpen, () => flow.openUpdate());
+
+  // ── the licence ─────────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.licenceState, () => entitlement());
+
+  // Not wrapped in `attempt`: a failed check is not a failed call. `licence.ts`
+  // answers with the last thing it knew, so the renderer always receives a
+  // verdict rather than a result it has to decide how to read.
+  ipcMain.handle(IPC_CHANNELS.licenceCheck, () => refreshEntitlement());
+
+  ipcMain.handle(IPC_CHANNELS.licenceUpgrade, () => openUpgrade());
 
   ipcMain.handle(IPC_CHANNELS.shareStart, (_event, share: ShareRequest) =>
     attempt(() => startShare(share)),
@@ -294,6 +317,19 @@ export function broadcastDockState(state: DockState): void {
 export function broadcastAuthState(state: AuthState): void {
   for (const contents of webContents.getAllWebContents()) {
     if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.authChanged, state);
+  }
+}
+
+/**
+ * Tells every window whether this Mac may export.
+ *
+ * Broadcast for the same reason the auth state is: the verdict changes while a
+ * browser is open somewhere else, and the upgrade dialog waiting on it is not
+ * necessarily in the window that opened the browser.
+ */
+export function broadcastEntitlement(value: Entitlement): void {
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.licenceChanged, value);
   }
 }
 

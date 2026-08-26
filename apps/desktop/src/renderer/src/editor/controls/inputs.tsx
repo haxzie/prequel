@@ -148,7 +148,10 @@ export function Segmented<T extends string>({
  *
  * The underline overlaps the row's own line rather than sitting under it, so
  * the marked tab reads as a piece cut out of the rule instead of as a second
- * line below it.
+ * line below it. Equal shares of the row and no gap between them, so the mark
+ * is a piece of the rule the width of its own tab rather than a dash under a
+ * word — with the tabs sized to their labels, "Gradient" would be marked half
+ * again as heavily as "Solid" for saying the same kind of thing.
  */
 export function Tabs<T extends string>({
   value,
@@ -160,7 +163,7 @@ export function Tabs<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex gap-4 border-b border-editor-line" role="tablist">
+    <div className="flex border-b border-editor-line" role="tablist">
       {options.map((option) => (
         <button
           key={option.value}
@@ -169,7 +172,7 @@ export function Tabs<T extends string>({
           aria-selected={option.value === value}
           title={option.title ?? option.label}
           className={cn(
-            "-mb-px flex items-center gap-1.5 border-b-2 pb-1.5",
+            "-mb-px flex flex-1 items-center justify-center gap-1.5 border-b-2 pb-1.5",
             "text-[11px] whitespace-nowrap [&_svg]:size-3.5",
             option.value === value
               ? "border-editor-accent font-medium text-editor-fg"

@@ -1,10 +1,14 @@
 /**
- * Deterministic stand-in for the native recorder.
+ * Deterministic stand-in for the native recorder. Tests only.
  *
- * Used by end-to-end runs and by any environment without the Screen Recording
- * grant. It satisfies the same `Recorder` contract as the real addon — including
- * the same error codes for invalid transitions — so the UI cannot tell the
- * difference and tests exercise the real error paths.
+ * Imported directly by the suites that need it and handed to `setRecorder`.
+ * There is deliberately no environment variable that swaps it in at runtime:
+ * one that did meant a shell with a stale export in it could record nothing at
+ * all, indistinguishably from the app being broken.
+ *
+ * It satisfies the same `Recorder` contract as the real addon — including the
+ * same error codes for invalid transitions — so the tests exercise the real
+ * error paths rather than a happy-path mock.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

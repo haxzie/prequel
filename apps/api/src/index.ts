@@ -11,7 +11,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { createAuth } from "./auth.ts";
+import { scheduled } from "./cron.ts";
 import type { Env } from "./env.ts";
+import billing from "./routes/billing.ts";
 import desktop from "./routes/desktop.ts";
 import events from "./routes/events.ts";
 import me from "./routes/me.ts";
@@ -20,6 +22,7 @@ import transcribe from "./routes/transcribe.ts";
 import updates from "./routes/updates.ts";
 import videos from "./routes/videos.ts";
 import waitlist from "./routes/waitlist.ts";
+import dodoWebhook from "./routes/webhooks/dodo.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,13 +50,28 @@ app.use("*", (c, next) =>
  * invitations, sessions. Mounted with `on` over every method because the
  * handler routes internally and a `GET`-only mount silently 404s the callbacks.
  */
-app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
+app.on(["GET", "POST"], "/api/auth/*", (c) =>
+  // The execution context goes in because the organization hooks buy and
+  // release seats, and a Dodo round trip does not belong in front of somebody
+  // clicking Accept in an invitation email.
+  createAuth(c.env, c.executionCtx).handler(c.req.raw),
+);
 
 app.route("/v1/me", me);
 app.route("/v1/videos", videos);
 app.route("/v1/desktop", desktop);
 app.route("/v1/transcribe", transcribe);
 app.route("/v1/events", events);
+app.route("/v1/billing", billing);
+
+/**
+ * Dodo Payments, verified by signature rather than by a session.
+ *
+ * Mounted at the top level rather than under `/v1` alongside the rest: every
+ * `/v1` router but the public ones sits behind `authenticate`, and a webhook has
+ * no credential to offer.
+ */
+app.route("/v1/webhooks/dodo", dodoWebhook);
 
 /** The desktop app's update feed. Unauthenticated, and called before sign-in. */
 app.route("/v1/updates", updates);
@@ -80,4 +98,16 @@ app.onError((error, c) => {
 
 app.notFound((c) => c.json({ message: "No such endpoint." }, 404));
 
-export default app;
+/**
+ * A `fetch` and a `scheduled`, where this used to export the Hono app itself.
+ *
+ * `app.fetch` is already bound, so the tests calling `app.fetch(req, env, ctx)`
+ * on the default export keep working unchanged. The cron is the only thing that
+ * needs the second handler — see `cron.ts` for what it is for.
+ */
+export default {
+  fetch: app.fetch,
+  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(scheduled(env));
+  },
+};

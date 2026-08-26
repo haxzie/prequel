@@ -30,9 +30,14 @@ export function CursorPicker({
   return (
     <div className="grid grid-cols-3 gap-1">
       {CURSOR_STYLES.map((style) => {
-        const title = style.hand
-          ? `${style.label} pointer, becoming a hand over anything the system showed one for`
-          : `${style.label} marker, whatever the pointer was doing`;
+        // Every style but the circle ships a pointer per shape the recording
+        // may have caught, so the tooltip has to say which of the two it is —
+        // the swatch shows an arrow either way.
+        const shapes = Object.keys(style.shapes).length;
+        const title =
+          shapes > 1
+            ? `${style.label} pointer, following the shape the system was showing — a hand over a link, an I-beam in text, arrows on an edge`
+            : `${style.label} marker, whatever the pointer was doing`;
 
         return (
           <button
@@ -56,7 +61,7 @@ export function CursorPicker({
                   of a frame at the default size — the swatch is a picture of
                   the setting rather than of the file. */}
               <img
-                src={imageUrl(style.file)}
+                src={imageUrl(style.shapes.arrow.file)}
                 alt=""
                 draggable={false}
                 className="w-2/5 select-none"

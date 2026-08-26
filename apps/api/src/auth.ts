@@ -6,19 +6,62 @@
  * never been here before and someone returning take exactly the same path.
  */
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink, organization } from "better-auth/plugins";
 
 import { schema } from "@prequel/db";
 
 import { database } from "./db.ts";
-import type { Env } from "./env.ts";
+import type { Deferrable, Env } from "./env.ts";
+import { entitlement, reconcileSeats } from "./lib/seats.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
 
 export type Auth = ReturnType<typeof createAuth>;
 
-export function createAuth(env: Env) {
+/**
+ * @param ctx The request's execution context, when there is one.
+ *
+ * Seat reconciliation is a call to Dodo, and the hooks below hang off actions a
+ * user is waiting on — accepting an invitation is somebody clicking a link in an
+ * email. Passed through so that work happens after the response instead of in
+ * front of it. `middleware.ts` calls this for `getSession` and needs none of it.
+ */
+export function createAuth(env: Env, ctx?: Deferrable) {
   const db = database(env);
+
+  /**
+   * Runs seat reconciliation without the caller waiting on it.
+   *
+   * A failure is logged and left. `reconcileSeats` derives its work from state
+   * rather than from the event, so the hourly sweep picks up whatever this
+   * missed — which is a far better outcome than a member row written and the
+   * request failed because a third party was slow.
+   */
+  const syncSeats = (teamId: string) => {
+    const work = reconcileSeats(env, db, teamId).catch((error: unknown) => {
+      console.error("seat reconciliation failed", teamId, error);
+    });
+
+    if (ctx) ctx.waitUntil(work);
+    else void work;
+  };
+
+  /**
+   * Refuses to grow a team that is not paying.
+   *
+   * 402 rather than 403: the dashboard opens the upgrade modal on this exact
+   * status, and "you may not" and "you have not paid" want different words in
+   * front of the user. `PAYMENT_REQUIRED` is better-call's name for it.
+   */
+  const requireSubscription = async (teamId: string) => {
+    if (await entitlement(db, teamId)) return;
+
+    throw new APIError("PAYMENT_REQUIRED", {
+      message: "Upgrade to Pro to add teammates.",
+      code: "SUBSCRIPTION_REQUIRED",
+    });
+  };
 
   return betterAuth({
     // The Worker's own origin. OAuth callback URLs are built from this and must
@@ -123,6 +166,35 @@ export function createAuth(env: Env) {
             },
           },
         },
+        /**
+         * Where billing meets membership.
+         *
+         * All of it hangs off the plugin rather than off routes of our own,
+         * because the plugin *is* the route — invitations, acceptance and
+         * removal are its endpoints under `/api/auth/organization/*`, and a
+         * seat count maintained anywhere else would drift the first time
+         * somebody used one of them directly.
+         *
+         * Who may invite and remove is already the plugin's: `owner` and
+         * `admin` only, which is the rule the product wants. These add what it
+         * costs, not who may.
+         */
+        organizationHooks: {
+          // Both ways into a team. `beforeAddMember` is the direct path, which
+          // no interface uses today — gating only the invitation would leave it
+          // open the day something does.
+          beforeCreateInvitation: async ({ invitation }) => {
+            await requireSubscription(invitation.organizationId);
+          },
+          beforeAddMember: async ({ member: added }) => {
+            await requireSubscription(added.organizationId);
+          },
+
+          afterAcceptInvitation: async ({ organization: team }) => syncSeats(team.id),
+          afterAddMember: async ({ organization: team }) => syncSeats(team.id),
+          afterRemoveMember: async ({ organization: team }) => syncSeats(team.id),
+        },
+
         sendInvitationEmail: async ({ email, invitation, organization: team, inviter }) => {
           const url = `${env.APP_URL}/invite/${invitation.id}`;
           const who = inviter.user.name || inviter.user.email;

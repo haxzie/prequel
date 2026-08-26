@@ -11,6 +11,7 @@ import {
   clearOverride,
   clearSection,
   DEFAULT_SETTINGS,
+  DEFAULT_ZOOM,
   hasOverrides,
   newProject,
   outputFrame,
@@ -335,6 +336,56 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.overrides).toEqual({
       layout: { cameraX: 0.85 },
     });
+  });
+});
+
+describe("reading a project written before the perspective rename", () => {
+  /**
+   * `tilt`, `yaw` and `depth` are what `rotateX`, `rotateY` and `perspective`
+   * were called on disk until they were renamed for the axes they turn about.
+   *
+   * The version is deliberately not bumped, for the reason the block below
+   * gives: a mismatch makes `sanitiseProject` start fresh, and throwing away
+   * every project on disk to rename three keys is a far worse outcome than
+   * reading both spellings. Without the fallback the values stay in the file
+   * and nothing reads them — so a recording somebody leaned by hand reopens
+   * flat, with no error and no way to tell what happened.
+   */
+  const zoomedBy = (zoom: Record<string, unknown>) => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.zooms = [{ id: "z1", source: { start: 0, end: 2 * S }, ...zoom }];
+    return sanitiseProject(project, RECORDING, 10 * S)!.zooms[0]!;
+  };
+
+  it("reads the old names", () => {
+    const zoom = zoomedBy({ tilt: 12, yaw: -14, depth: 0.8 });
+
+    expect(zoom.rotateX).toBe(12);
+    expect(zoom.rotateY).toBe(-14);
+    expect(zoom.perspective).toBe(0.8);
+  });
+
+  it("prefers the new name when a project carries both", () => {
+    // What a project written by this build and then opened by an older one and
+    // written again would look like. The new name is the one being maintained.
+    const zoom = zoomedBy({ tilt: 12, rotateX: 4, yaw: -14, rotateY: -2, depth: 0.8 });
+
+    expect(zoom.rotateX).toBe(4);
+    expect(zoom.rotateY).toBe(-2);
+  });
+
+  it("still clamps a value that arrives under the old name", () => {
+    // The fallback feeds the same clamp, or an old file could set an angle the
+    // interface cannot reach and the picture becomes foreshortening.
+    expect(zoomedBy({ tilt: 400 }).rotateX).toBe(30);
+    expect(zoomedBy({ depth: -3 }).perspective).toBe(0);
+  });
+
+  it("falls back to the default when neither name is there", () => {
+    const zoom = zoomedBy({});
+
+    expect(zoom.rotateX).toBe(DEFAULT_ZOOM.rotateX);
+    expect(zoom.perspective).toBe(DEFAULT_ZOOM.perspective);
   });
 });
 

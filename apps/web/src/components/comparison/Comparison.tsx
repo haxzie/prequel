@@ -11,7 +11,7 @@ import {
   formatVerified,
   type Competitor,
 } from "@/content/competitors";
-import { PLANS, PRICE_MONTHLY_EQUIVALENT, TRIAL_DAYS } from "@/lib/pricing";
+import { PLANS, TRIAL_DAYS } from "@/lib/pricing";
 import { SITE } from "@/lib/site";
 
 /** Where a competitor's logo goes, if we have one. See `public/logos/README.md`. */
@@ -162,10 +162,11 @@ export function AtAGlance({ competitor }: { competitor: Competitor }) {
     {
       name: SITE.name,
       tagline: SITE.tagline,
-      // Built from `lib/pricing.ts` rather than written here, so the
-      // placeholder prices there are corrected in one edit for all eleven.
-      // The year, then the month — never the month alone.
-      price: `${PLANS[0]?.price} ${PLANS[0]?.cadence} (about ${PRICE_MONTHLY_EQUIVALENT}/mo)`,
+      // Built from `lib/pricing.ts` rather than written here, so a change of
+      // price is one edit for all of these pages. The cadence we actually bill
+      // and nothing beside it: an annualised figure next to a rival who bills
+      // yearly would be a number nobody is charged.
+      price: `${PLANS[0]?.price} ${PLANS[0]?.cadence}`,
       free: `${TRIAL_DAYS}-day trial, then paid`,
       platforms: PREQUEL_FEATURES.platforms,
     },

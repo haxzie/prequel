@@ -267,3 +267,70 @@ describe("GET /v1/me", () => {
     expect(await response.json()).not.toHaveProperty("user");
   });
 });
+
+/**
+ * The two facts the app gates its export on.
+ *
+ * The trial is anchored to the account's sign-up date precisely so it cannot be
+ * restarted from the Mac, and that anchoring is invisible from the app — it
+ * would look identical for a fortnight if this returned `now` instead.
+ */
+describe("GET /v1/desktop/entitlement", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** Signs a Mac in as `u1`, the way the token exchange would. */
+  async function device(): Promise<string> {
+    const token = deviceToken();
+    await env.DB.prepare(
+      "INSERT INTO device_token (id, token_hash, user_id, label) VALUES ('d1', ?, 'u1', 'Mac')",
+    )
+      .bind(await sha256(token))
+      .run();
+    return token;
+  }
+
+  it("dates the trial from the sign-up, not from the request", async () => {
+    // Ten days old, so four are left. A trial anchored to anything on the Mac
+    // would answer fourteen here, and would look right until somebody
+    // reinstalled.
+    const signedUp = Math.floor((Date.now() - 10 * DAY) / 1000);
+    await env.DB.prepare("UPDATE \"user\" SET created_at = ? WHERE id = 'u1'").bind(signedUp).run();
+
+    const response = await get("/v1/desktop/entitlement", {
+      authorization: `Bearer ${await device()}`,
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { plan: string; trialEndsAt: number };
+    expect(body.plan).toBe("free");
+    expect(body.trialEndsAt).toBe(signedUp * 1000 + 14 * DAY);
+  });
+
+  it("reports a paid team as paid", async () => {
+    await env.DB.exec("UPDATE organization SET plan = 'pro' WHERE id = 'org1'");
+
+    const response = await get("/v1/desktop/entitlement", {
+      authorization: `Bearer ${await device()}`,
+    });
+
+    expect(((await response.json()) as { plan: string }).plan).toBe("pro");
+  });
+
+  it("answers for somebody who has not finished onboarding", async () => {
+    // No team yet. A 403 here would leave the app to interpret a refusal, and
+    // the reading it would have to choose is "let the export run" — so the
+    // refusal buys nothing and costs a state nobody tested.
+    await env.DB.exec("DELETE FROM member");
+
+    const response = await get("/v1/desktop/entitlement", {
+      authorization: `Bearer ${await device()}`,
+    });
+
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { plan: string }).plan).toBe("free");
+  });
+
+  it("refuses a Mac that is not signed in", async () => {
+    expect((await get("/v1/desktop/entitlement")).status).toBe(401);
+  });
+});

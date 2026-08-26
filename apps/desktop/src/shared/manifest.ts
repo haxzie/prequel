@@ -82,18 +82,34 @@ export interface SourceInfo {
  * because `cursor_baked` is true for all of them and a baked pointer is never
  * drawn from the track.
  */
+/**
+ * Which pointer the system was showing.
+ *
+ * `arrow` is everything unrecognised as well as the arrow itself, which is why
+ * it is the one the manifest leaves out — the pointer is an arrow for nearly all
+ * of a recording, and writing it beside every one of tens of thousands of
+ * samples is pure file size.
+ */
+export type CursorKind = "arrow" | "hand" | "text" | "resize-h" | "resize-v";
+
 export interface CursorSample {
   at: MediaTime;
   x: number;
   y: number;
   /**
-   * Whether the system was showing the link cursor — the pointing hand.
+   * Which pointer the system was showing here. Absent means the arrow.
    *
-   * Absent means it was not, which is also what every recording made before the
-   * shape was sampled says. The editor draws a hand for the spans this is true
-   * over, so a composited pointer changes shape over a link the way the real
-   * one did; without it a recording simply never grows a hand, which is the
-   * behaviour it had before.
+   * The editor swaps images over the spans this changes across, so a composited
+   * pointer becomes an I-beam in a text field the way the real one did — without
+   * it a recording never changes shape at all, which is the tell that the
+   * pointer was drawn in afterwards.
+   */
+  kind?: CursorKind;
+  /**
+   * What `kind` replaced, and the only thing recordings made before it carry.
+   *
+   * Read rather than written. `cursorKind` in `layout.ts` falls back to this
+   * where there is no `kind`, which is the one place either is looked at.
    */
   hand?: boolean;
 }

@@ -204,6 +204,73 @@ production env is `hello@prequel.sh` and will fail until that domain is verified
 sending Prequel's mail from some other domain would work but costs deliverability,
 which is the slow version of the same failure.
 
+## Billing, and what a seat is
+
+Dodo Payments, as one subscription per team: a **Pro product** that includes one
+seat, plus a **per-seat add-on** for every member past the first.
+
+A seat is capacity the team has bought, not a live headcount. That single choice
+decides all four transitions:
+
+|                                  |                                                  |
+| -------------------------------- | ------------------------------------------------ |
+| Somebody joins, every seat taken | Buy a seat, `prorated_immediately`               |
+| Somebody joins, a seat is free   | Nothing. It is already paid for                  |
+| Somebody is removed              | Seat kept, release **scheduled** for the renewal |
+| That seat is filled again        | Scheduled release cancelled. Free                |
+
+So a team that churns a member in and out pays once, and a team that shrinks
+stops paying at its renewal rather than getting a mid-term credit.
+
+A team with no subscription cannot invite anybody: the organization plugin's
+`beforeCreateInvitation` hook answers **402** with `SUBSCRIPTION_REQUIRED`, and
+the dashboard opens the upgrade modal on that status specifically. Inviting and
+removing are owner-and-admin only, which is Better Auth's own rule; the billing
+routes repeat it server-side through `requireAdmin`.
+
+`lib/seats.ts` holds all of it. `decide` is pure and idempotent — it derives the
+one call to make from current state rather than from the event that prompted it,
+which is what lets a hook, a retried webhook and the hourly cron all run it
+without compounding.
+
+### The webhook
+
+Register this in Dodo under **Developer → Webhooks**:
+
+```
+production   https://api.prequel.sh/v1/webhooks/dodo
+development  <tunnel>/v1/webhooks/dodo
+```
+
+Subscribed to `subscription.active`, `.renewed`, `.plan_changed`, `.updated`,
+`.on_hold`, `.paused`, `.failed`, `.cancelled`, `.expired`. Payment events are
+not needed — the subscription events already say what a payment did.
+
+It is the only thing that writes a plan. Checkout returns a URL and nothing
+else; what this app believes about a subscription came from a signed delivery
+rather than from an optimistic write next to a redirect the user may never
+follow.
+
+Three things about that verification fail silently if changed:
+
+- The body must be the **raw bytes**. Parse and re-serialise and the digest
+  moves.
+- `DODOPAYMENT_WEBHOOK_SECRET` is base64 **after** its `whsec_` prefix.
+- `webhook-signature` is a space-separated list of `v1,<base64>` pairs, not one
+  signature.
+
+A verified delivery always answers 200, including for an event with no handler —
+a 4xx makes Dodo retry until it abandons the endpoint, taking the events that do
+matter with it. A _failed signature_ is 401 and is deliberately not recorded as
+seen, so one forged POST cannot suppress the genuine delivery behind it.
+
+### The cron
+
+One hourly trigger, for the two things no webhook announces: a grace window
+closing after a failed renewal, and a seat count that drifted because a hook
+lost its Dodo call. `wrangler dev` does not fire it — `curl
+<dev-host>/cdn-cgi/local/scheduled`.
+
 ## Deploying
 
 ```bash

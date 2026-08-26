@@ -36,8 +36,14 @@ const SIZE = 128;
 const STYLES = [
   { id: "black", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
   { id: "black-hand", shape: "hand", fill: 0, stroke: 255, alpha: 255 },
+  { id: "black-text", shape: "ibeam", fill: 0, stroke: 255, alpha: 255 },
+  { id: "black-resize-h", shape: "resize-h", fill: 0, stroke: 255, alpha: 255 },
+  { id: "black-resize-v", shape: "resize-v", fill: 0, stroke: 255, alpha: 255 },
   { id: "white", shape: "arrow", fill: 255, stroke: 0, alpha: 255 },
   { id: "white-hand", shape: "hand", fill: 255, stroke: 0, alpha: 255 },
+  { id: "white-text", shape: "ibeam", fill: 255, stroke: 0, alpha: 255 },
+  { id: "white-resize-h", shape: "resize-h", fill: 255, stroke: 0, alpha: 255 },
+  { id: "white-resize-v", shape: "resize-v", fill: 255, stroke: 0, alpha: 255 },
   // Part opaque, so it marks where the pointer is without hiding what is under
   // it — for a recording where the content matters more than the pointing. It
   // keeps the outline the arrows have all the same: a translucent disc with
@@ -96,6 +102,57 @@ const ARROW = [
 /** Ratio of the arrow's own width to its height. */
 const ASPECT = 0.56 / 0.86;
 
+/**
+ * The text cursor, as fractions of its own bounding box.
+ *
+ * A capital I: a stem with a serif across each end. The serifs are what stop it
+ * disappearing into a column of text — a bare vertical bar reads as part of
+ * whatever it is over, which is the one thing a pointer must never do.
+ *
+ * Wound as one closed loop like the arrow, so the same fill-and-outline pass
+ * draws it.
+ */
+const IBEAM = [
+  [0.0, 0.0],
+  [1.0, 0.0],
+  [1.0, 0.09],
+  [0.64, 0.09],
+  [0.64, 0.91],
+  [1.0, 0.91],
+  [1.0, 1.0],
+  [0.0, 1.0],
+  [0.0, 0.91],
+  [0.36, 0.91],
+  [0.36, 0.09],
+  [0.0, 0.09],
+];
+
+/** Tall and narrow, the proportions of the glyph it is named after. */
+const IBEAM_ASPECT = 0.42;
+
+/**
+ * The horizontal resize pointer: a bar with an arrowhead at each end.
+ *
+ * One loop rather than three pieces — a bar with two triangles laid over it
+ * seams where the three antialias against each other, which is the same reason
+ * the fill and the outline are accumulated per subsample rather than composited.
+ */
+const RESIZE = [
+  [0.0, 0.5],
+  [0.26, 0.16],
+  [0.26, 0.36],
+  [0.74, 0.36],
+  [0.74, 0.16],
+  [1.0, 0.5],
+  [0.74, 0.84],
+  [0.74, 0.64],
+  [0.26, 0.64],
+  [0.26, 0.84],
+];
+
+/** Wide and short. The vertical one is this turned a quarter, and so is its reciprocal. */
+const RESIZE_ASPECT = 1 / 0.62;
+
 /** Arrow scaled into the image, leaving room for the outline on every side. */
 function polygon(shape) {
   const span = SIZE - OUTLINE * 2;
@@ -104,8 +161,40 @@ function polygon(shape) {
     return HAND.map(([x, y]) => [OUTLINE + x * span, OUTLINE + y * span]);
   }
 
+  // Centred rather than anchored to the corner, because these three point with
+  // their middle. The arrow and the hand point with a corner and are laid out
+  // from it, which is what makes their hotspots the small fractions below.
+  if (shape === "ibeam") return centred(IBEAM, IBEAM_ASPECT, span);
+  if (shape === "resize-h") return centred(RESIZE, RESIZE_ASPECT, span);
+  if (shape === "resize-v") {
+    // The same shape through the diagonal. Turned here rather than written out
+    // twice: two lists of ten points that have to stay each other's transpose
+    // is a pair that drifts the first time one of them is adjusted.
+    return centred(
+      RESIZE.map(([x, y]) => [y, x]),
+      1 / RESIZE_ASPECT,
+      span,
+    );
+  }
+
   const width = span * ASPECT;
   return ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * span]);
+}
+
+/**
+ * A unit-box shape fitted to its longer edge and centred in the image.
+ *
+ * The longer edge takes the whole span so every pointer is drawn at the same
+ * scale as the arrow, and the shorter one falls out of the aspect — a shape
+ * stretched to fill a square would be a different pointer.
+ */
+function centred(points, aspect, span) {
+  const width = aspect >= 1 ? span : span * aspect;
+  const height = aspect >= 1 ? span / aspect : span;
+  const left = (SIZE - width) / 2;
+  const top = (SIZE - height) / 2;
+
+  return points.map(([x, y]) => [left + x * width, top + y * height]);
 }
 
 /** Even-odd ray cast. The arrow is simple, so this needs no winding rule. */
@@ -246,7 +335,9 @@ function hotspot(shape) {
   // The hand points with the top of its index finger.
   if (shape === "hand")
     return { x: (OUTLINE + (SIZE - OUTLINE * 2) * 0.36) / SIZE, y: OUTLINE / SIZE };
-  // A dot points with its middle, which is the whole idea of it.
+  // Everything else points with its middle: a dot by definition, and the text
+  // and resize pointers because that is where the system puts their hotspot —
+  // an I-beam aimed from its corner would insert one character off.
   return { x: 0.5, y: 0.5 };
 }
 

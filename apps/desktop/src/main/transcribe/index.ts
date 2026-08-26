@@ -28,7 +28,6 @@ import { log } from "../log.js";
 import { apiUrl } from "../api.js";
 import { authToken } from "../auth.js";
 import { installId } from "../install-id.js";
-import { fakeTranscriber } from "./fake.js";
 import { openai } from "./openai.js";
 import { TranscribeError, type Transcriber } from "./transcriber.js";
 
@@ -132,10 +131,6 @@ export function cancelTranscribe(): void {
  * whether its word times are real.
  */
 function transcriber(): Transcriber {
-  // The same switch the recorder itself uses, so one environment variable
-  // drives the whole app with no grant, no key and no network.
-  if (process.env["PREQUEL_FAKE_RECORDER"] === "1") return fakeTranscriber();
-
   return openai(baseUrl, installId, authToken);
 }
 

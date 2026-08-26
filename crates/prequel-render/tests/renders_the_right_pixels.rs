@@ -669,10 +669,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
         width: 100.0,
         height: 100.0,
     };
-    let right = Rect {
-        x: 200.0,
-        ..left
-    };
+    let right = Rect { x: 200.0, ..left };
 
     let key = |at: i64, rect: Rect| RectKey {
         at,
@@ -735,7 +732,11 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
 
     let opening = frame_at(&output, 0);
     near(opening.at(70, 120), (255, 0, 0), "the picture at the start");
-    near(opening.at(250, 120), (0, 0, 255), "where it has not gone yet");
+    near(
+        opening.at(250, 120),
+        (0, 0, 255),
+        "where it has not gone yet",
+    );
 
     // Past the end of the track, which holds the last key — so this also pins
     // that a move ends where it was going and stays there.

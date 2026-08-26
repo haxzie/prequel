@@ -180,11 +180,95 @@ export const rateLimit = sqliteTable(
   (table) => [uniqueIndex("rate_limit_subject_window_idx").on(table.subject, table.windowStart)],
 );
 
+/**
+ * What a team is paying for, and how many seats it has bought.
+ *
+ * A table of its own rather than columns on `organization`, which is Better
+ * Auth's. Every column added there has to be repeated in the plugin's
+ * `additionalFields` in `apps/api/src/auth.ts` or the plugin drops it on write,
+ * and `test/schema-matches-better-auth.test.ts` compares the two — a contract
+ * billing has no business inside.
+ *
+ * `organization.plan` stays the entitlement flag the rest of the app reads. This
+ * is the billing state behind it.
+ */
+export const subscription = sqliteTable("subscription", {
+  id: text("id").primaryKey(),
+  /**
+   * One subscription per team, enforced here rather than by convention.
+   *
+   * A second row would mean two Dodo subscriptions both claiming to own the
+   * seat count, and the seat reconciler picking whichever came back first.
+   */
+  teamId: text("team_id")
+    .notNull()
+    .unique()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  dodoSubscriptionId: text("dodo_subscription_id").notNull().unique(),
+  /**
+   * The payer at Dodo. Kept even after a cancellation, because the customer
+   * portal is how somebody resubscribes and it is addressed by this id.
+   */
+  dodoCustomerId: text("dodo_customer_id").notNull(),
+  /** Dodo's own vocabulary, stored verbatim rather than mapped to ours. */
+  status: text("status").notNull(),
+  /**
+   * The add-on quantity: seats *beyond* the one the Pro product includes.
+   *
+   * Capacity, not headcount. A member leaving frees their seat without
+   * refunding it — the team paid for it for the term — so this only ever
+   * falls at a renewal.
+   */
+  seatsPurchased: integer("seats_purchased").notNull().default(0),
+  /**
+   * What a scheduled change will drop `seatsPurchased` to at the next
+   * renewal. Null when nothing is scheduled.
+   *
+   * Mirrors Dodo's `scheduled_change` so the reconciler can tell "already
+   * scheduled to release two seats" from "needs scheduling", without a round
+   * trip on every membership change.
+   */
+  scheduledSeats: integer("scheduled_seats"),
+  currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
+  /**
+   * Set when a renewal fails. Past this instant the cron downgrades the team.
+   *
+   * A declined card should not take a team's library away the same minute.
+   */
+  graceUntil: integer("grace_until", { mode: "timestamp" }),
+  createdAt: createdAt(),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/**
+ * Webhook ids already acted on.
+ *
+ * Dodo retries until it gets a 2xx, so the same event arrives more than once.
+ * Replaying a seat sync is harmless — reconciliation is idempotent — but
+ * replaying a `subscription.cancelled` that arrived before a resubscribe would
+ * downgrade a team that is paying, which nothing downstream would notice.
+ *
+ * The primary key is Dodo's `webhook-id` header, so the insert *is* the check:
+ * a constraint violation means this event has been seen.
+ */
+export const webhookEvent = sqliteTable("webhook_event", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  createdAt: createdAt(),
+});
+
 export const videoRelations = relations(video, ({ one }) => ({
   team: one(organization, { fields: [video.teamId], references: [organization.id] }),
   owner: one(user, { fields: [video.ownerId], references: [user.id] }),
 }));
 
+export const subscriptionRelations = relations(subscription, ({ one }) => ({
+  team: one(organization, { fields: [subscription.teamId], references: [organization.id] }),
+}));
+
 export type Video = typeof video.$inferSelect;
 export type NewVideo = typeof video.$inferInsert;
 export type DeviceToken = typeof deviceToken.$inferSelect;
+export type Subscription = typeof subscription.$inferSelect;

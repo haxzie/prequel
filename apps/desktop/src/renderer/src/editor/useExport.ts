@@ -15,7 +15,7 @@ import {
 } from "../../../shared/contract";
 import { buildRenderPlan, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
-import { mediaUrl, recordingName } from "../../../shared/media-url";
+import { exportUrl } from "../../../shared/media-url";
 import {
   outputFrame,
   resolveSettings,
@@ -77,6 +77,22 @@ export function useExport(
   const start = useCallback(async () => {
     if (!session) return;
 
+    // Where it goes is asked before anything is rendered. Dismissing the sheet
+    // leaves the dialog exactly as it was — no progress, no failure — because
+    // choosing not to export is not an export that went wrong.
+    const chosen = await window.prequel.editor.export.choose(output.format);
+    if (!chosen.ok) {
+      setProgress({
+        stage: "failed",
+        framesDone: 0,
+        framesTotal: 0,
+        outputPath: null,
+        error: { code: chosen.code, message: chosen.message },
+      });
+      return;
+    }
+    if (!chosen.value) return;
+
     // Shown immediately rather than waiting for the first tick from main, so
     // pressing Export cannot look like it did nothing.
     setProgress({
@@ -91,6 +107,7 @@ export function useExport(
 
     const result = await window.prequel.editor.export.start({
       dir: session.dir,
+      output: chosen.value,
       width: size.width,
       height: size.height,
       fps: output.fps,
@@ -122,7 +139,9 @@ export function useExport(
     const name = progress.outputPath.split("/").pop() ?? "";
     return {
       path: progress.outputPath,
-      url: mediaUrl(recordingName(session.dir), name),
+      // By name, through the scheme's `export` route — the file is wherever the
+      // save dialog put it, which is nowhere the recordings route can reach.
+      url: exportUrl(name),
       isGif: name.endsWith(".gif"),
     };
   }, [session, progress]);

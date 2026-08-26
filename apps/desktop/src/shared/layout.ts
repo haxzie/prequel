@@ -15,6 +15,8 @@
  * Pure, and free of any `electron`, Node or DOM import, so the arithmetic is
  * testable on its own.
  */
+import type { CursorShape } from "./contract.js";
+import type { CursorKind } from "./manifest.js";
 import type {
   Background,
   BackgroundSettings,
@@ -987,10 +989,10 @@ function rectFor(
 
   // Eased in with the rest of the move, so the picture leans over as it comes
   // forward rather than snapping to an angle the moment the zoom begins.
-  // The angle eases in with the move; the depth does not. Easing the distance
+  // The angle eases in with the move; the perspective does not. Easing the distance
   // as well would zoom the lens while the shot travels, which reads as a dolly
   // and is not what anyone asked for by setting an angle.
-  const quad = tiltedQuad(moved, zoom.tilt * amount, zoom.yaw * amount, zoom.depth);
+  const quad = rotatedQuad(moved, zoom.rotateX * amount, zoom.rotateY * amount, zoom.perspective);
 
   // Eased in with the move, so the surroundings soften as the shot arrives
   // rather than snapping out of focus. Measured against the frame, not the
@@ -1049,7 +1051,9 @@ function rectFor(
     height: moved.height + spread * 2,
   };
   const bledQuad =
-    spread > 0 ? tiltedQuad(bled, zoom.tilt * amount, zoom.yaw * amount, zoom.depth) : quad;
+    spread > 0
+      ? rotatedQuad(bled, zoom.rotateX * amount, zoom.rotateY * amount, zoom.perspective)
+      : quad;
 
   return {
     key: {
@@ -1345,7 +1349,7 @@ interface Point {
 const EYE_DISTANCE = 2.6;
 
 /**
- * The range `depth` picks the eye distance from.
+ * The range `perspective` picks the eye distance from.
  *
  * `FAR_EYE` is far enough that a tilt reads as an orthographic lean — the near
  * and far edges stay near enough the same length to look like a slab turned on
@@ -1373,16 +1377,21 @@ const NEAR_EYE = 1.2;
  * Returns undefined when there is nothing to tilt, so an ordinary zoom stays
  * four numbers rather than sixteen.
  */
-function tiltedQuad(rect: Rect, tilt: number, yaw: number, depth: number): number[] | undefined {
-  if (Math.abs(tilt) < 0.01 && Math.abs(yaw) < 0.01) return undefined;
+function rotatedQuad(
+  rect: Rect,
+  rotateX: number,
+  rotateY: number,
+  perspective: number,
+): number[] | undefined {
+  if (Math.abs(rotateX) < 0.01 && Math.abs(rotateY) < 0.01) return undefined;
 
-  const pitch = (tilt * Math.PI) / 180;
-  const swing = (yaw * Math.PI) / 180;
+  const pitch = (rotateX * Math.PI) / 180;
+  const swing = (rotateY * Math.PI) / 180;
   // Near at 1, far at 0. Interpolated in eye distance rather than in field of
   // view: distance is what the projection below actually divides by, and going
   // through an angle would only be the same number with a trigonometric step
   // in front of it.
-  const eye = FAR_EYE + (NEAR_EYE - FAR_EYE) * clamp(depth, 0, 1);
+  const eye = FAR_EYE + (NEAR_EYE - FAR_EYE) * clamp(perspective, 0, 1);
   const distance = Math.max(rect.width, rect.height) * eye;
 
   const cx = rect.x + rect.width / 2;
@@ -1413,9 +1422,9 @@ function tiltedQuad(rect: Rect, tilt: number, yaw: number, depth: number): numbe
     // A corner behind the eye has no projection. Clamped rather than dropped:
     // the tilt range does not reach it, and a picture that vanishes at an
     // extreme is worse than one that flattens.
-    const depth = Math.max(distance - zb, distance * 0.2);
+    const perspective = Math.max(distance - zb, distance * 0.2);
     // How much nearer things look bigger. Multiplies the position.
-    const magnify = distance / depth;
+    const magnify = distance / perspective;
 
     // The third number is the *divisor*, not the magnification — it has to be
     // proportional to the corner's distance from the eye, because that is what
@@ -1423,7 +1432,7 @@ function tiltedQuad(rect: Rect, tilt: number, yaw: number, depth: number): numbe
     // the correction: the picture still has the right outline, but the image
     // inside it bends the wrong way across the diagonal where the two triangles
     // meet. That reads as a crease rather than as a tilt.
-    out.push(cx + xa * magnify, cy + ya * magnify, depth / distance);
+    out.push(cx + xa * magnify, cy + ya * magnify, perspective / distance);
   }
 
   return out;
@@ -1552,21 +1561,23 @@ export interface TypingSpan {
 
 /** The pointer track as the manifest records it: fractions of the frame. */
 export interface CursorTrack {
-  /** Image to draw, relative to the session directory. */
-  path: string;
-  hotspot: { x: number; y: number };
   /**
-   * The image for the spans the system was showing the link cursor, or null
-   * when the chosen style has no hand to swap to.
+   * One image per pointer the style ships, relative to the session directory.
    *
-   * A second image rather than a second setting: which shape is on screen is a
-   * property of the recording, not a choice, and the tone is the choice.
+   * Images rather than settings: which pointer is on screen at a moment is a
+   * property of the recording, and the tone is the choice. `arrow` is always
+   * there and is what any kind the style has no image for is drawn as — which
+   * is every kind but the hand, for a style that ships only those two.
    */
-  hand: { path: string; hotspot: { x: number; y: number } } | null;
+  shapes: { arrow: CursorShape } & Partial<Record<CursorKind, CursorShape>>;
   /** Press times, in source time, for the click animation. */
   clicks?: readonly number[];
-  /** `hand` is absent on every recording made before the shape was sampled. */
-  samples: readonly { at: number; x: number; y: number; hand?: boolean }[];
+  /**
+   * `kind` is absent wherever the pointer was the arrow, and on every recording
+   * made before the shape was sampled at all. `hand` is what those recordings
+   * carry instead, and is read only as a fallback — see `cursorKind`.
+   */
+  samples: readonly { at: number; x: number; y: number; kind?: CursorKind; hand?: boolean }[];
   /** Size setting, as a fraction of the frame's shorter edge. */
   size: number;
   /** Seconds of stillness before it hides, or null to leave it on screen. */
@@ -1642,47 +1653,31 @@ function cursorItems(
           px <= srcRect.x + srcRect.width &&
           py >= srcRect.y &&
           py <= srcRect.y + srcRect.height,
-        hand: handAt(cursor, at),
+        kind: cursorKind(cursor, at),
       };
     });
 
   const timed = cursor.hideAfter === null ? points : withIdleGaps(points, cursor.hideAfter);
   const size = Math.max(1, cursor.size * unit);
 
-  // One image covers the whole track when the style has no hand, and also when
-  // the recording never showed one — which is every take made before the shape
-  // was sampled. Checked rather than always emitting the pair, so those plans
-  // stay exactly what they were: one item, one texture, one quad.
-  if (!cursor.hand || !timed.some((point) => point.hand)) {
-    return [
-      {
-        kind: "cursor",
-        path: cursor.path,
-        size,
-        hotspot: cursor.hotspot,
-        points: timed.map(plain),
-      },
-    ];
-  }
+  // The image each point is drawn with, which is not the kind it was recorded
+  // as: a style that ships no I-beam draws the arrow there, so those points
+  // belong to the arrow rather than to an item with no texture behind it.
+  const shapeFor = (kind: CursorKind): CursorShape => cursor.shapes[kind] ?? cursor.shapes.arrow;
 
-  const split = splitByShape(timed);
-
-  return [
-    { kind: "cursor", path: cursor.path, size, hotspot: cursor.hotspot, points: split.arrow },
-    {
-      kind: "cursor",
-      path: cursor.hand.path,
-      size,
-      hotspot: cursor.hand.hotspot,
-      points: split.hand,
-    },
-  ];
+  return splitByShape(timed, shapeFor).map(({ shape, points: drawn }) => ({
+    kind: "cursor" as const,
+    path: shape.path,
+    size,
+    hotspot: shape.hotspot,
+    points: drawn,
+  }));
 }
 
-/** A point plus the shape the system was showing there. Never leaves this file. */
-type ShapedPoint = CursorPoint & { hand: boolean };
+/** A point plus the pointer the system was showing there. Never leaves this file. */
+type ShapedPoint = CursorPoint & { kind: CursorKind };
 
-/** The point a plan carries, without the shape that chose its image. */
+/** The point a plan carries, without the kind that chose its image. */
 function plain(point: ShapedPoint): CursorPoint {
   return {
     at: point.at,
@@ -1694,18 +1689,24 @@ function plain(point: ShapedPoint): CursorPoint {
 }
 
 /**
- * Whether the system was showing the link cursor at a moment.
+ * Which pointer the system was showing at a moment.
  *
- * A step, not a ramp: half an arrow and half a hand is not a cursor. The shape
- * holds from the sample that recorded it until the next one, which is exactly
- * what the capture side wrote — it forces a sample whenever the shape changes,
- * so a change is never further away than the sample that carries it.
+ * A step, not a ramp: half an arrow and half an I-beam is not a cursor. The
+ * shape holds from the sample that recorded it until the next one, which is
+ * exactly what the capture side wrote — it forces a sample whenever the shape
+ * changes, so a change is never further away than the sample that carries it.
+ *
+ * `hand` is the fallback for recordings made before the kind was a kind. Read
+ * here and nowhere else, which is what keeps the migration to one line.
  */
-function handAt(cursor: CursorTrack, at: number): boolean {
+function cursorKind(cursor: CursorTrack, at: number): CursorKind {
   const samples = cursor.samples;
-  if (!samples.length) return false;
+  if (!samples.length) return "arrow";
 
-  if (at <= samples[0]!.at) return samples[0]!.hand ?? false;
+  const of = (sample: { kind?: CursorKind; hand?: boolean }): CursorKind =>
+    sample.kind ?? (sample.hand ? "hand" : "arrow");
+
+  if (at <= samples[0]!.at) return of(samples[0]!);
 
   let low = 0;
   let high = samples.length - 1;
@@ -1715,15 +1716,20 @@ function handAt(cursor: CursorTrack, at: number): boolean {
     else high = mid;
   }
 
-  return (samples[high]!.at <= at ? samples[high]! : samples[low]!).hand ?? false;
+  return of(samples[high]!.at <= at ? samples[high]! : samples[low]!);
 }
 
 /**
  * One track, split into the points each image is responsible for.
  *
- * Two plan items rather than one item that picks a texture per frame, for the
- * reason a lit caption is its own item: every plan item stays one quad, and
+ * An item per image rather than one item that picks a texture per frame, for
+ * the reason a lit caption is its own item: every plan item stays one quad, and
  * neither rasteriser learns that a pointer has shapes.
+ *
+ * Every point goes into every track, visible only in the one drawing it. That
+ * is not redundancy — `cursorAt` interpolates between a track's own consecutive
+ * points, so a track holding only the points it draws would slide its pointer
+ * straight across the span where another image had it.
  *
  * The handover is the whole difficulty. Marking a point invisible in one list
  * and visible in the other leaves *both* lists with an invisible end to the
@@ -1733,29 +1739,48 @@ function handAt(cursor: CursorTrack, at: number): boolean {
  * nanosecond short of the swap, the same trick `withIdleGaps` uses: it finishes
  * its span, the incoming one starts, and nothing is ever missing or doubled.
  */
-function splitByShape(points: readonly ShapedPoint[]): {
-  arrow: CursorPoint[];
-  hand: CursorPoint[];
-} {
-  const arrow: CursorPoint[] = [];
-  const hand: CursorPoint[] = [];
+function splitByShape(
+  points: readonly ShapedPoint[],
+  shapeFor: (kind: CursorKind) => CursorShape,
+): { shape: CursorShape; points: CursorPoint[] }[] {
+  const used = new Map<string, CursorShape>();
+  for (const point of points) {
+    const shape = shapeFor(point.kind);
+    used.set(shape.path, shape);
+  }
+
+  const only = used.size <= 1 ? [...used.values()][0] : null;
+
+  // One item, one texture, one quad — which is every recording made before the
+  // pointer's shape was sampled, and most made since. Answered here rather than
+  // falling out of the general case below, because the general case gives every
+  // track a point for every sample: with one image that would be the same track
+  // it already was, at several times the size.
+  if (only) return points.length === 0 ? [] : [{ shape: only, points: points.map(plain) }];
+
+  const tracks = new Map(
+    [...used].map(([path, shape]) => [path, { shape, points: [] as CursorPoint[] }]),
+  );
 
   for (let index = 0; index < points.length; index += 1) {
     const point = points[index]!;
     const previous = points[index - 1];
+    const path = shapeFor(point.kind).path;
+    const before = previous ? shapeFor(previous.kind).path : path;
 
     // Skipped when the two are already a nanosecond apart, which `withIdleGaps`
     // makes possible: the marker would land on or before its predecessor, and
     // an out-of-order point breaks the binary search that reads it back.
-    if (previous && previous.hand !== point.hand && point.at - 1 > previous.at) {
-      (previous.hand ? hand : arrow).push({ ...plain(point), at: point.at - 1 });
+    if (previous && before !== path && point.at - 1 > previous.at) {
+      tracks.get(before)!.points.push({ ...plain(point), at: point.at - 1 });
     }
 
-    arrow.push({ ...plain(point), visible: point.visible && !point.hand });
-    hand.push({ ...plain(point), visible: point.visible && point.hand });
+    for (const [trackPath, track] of tracks) {
+      track.points.push({ ...plain(point), visible: point.visible && trackPath === path });
+    }
   }
 
-  return { arrow, hand };
+  return [...tracks.values()];
 }
 
 /**

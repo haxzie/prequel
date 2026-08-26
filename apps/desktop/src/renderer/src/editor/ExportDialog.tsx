@@ -222,6 +222,23 @@ export function ExportDialog({
 function Header({ state, poster }: { state: ExportState; poster: string | null }) {
   const { running, result, progress } = state;
 
+  /**
+   * Starts the thumbnail playing, silently.
+   *
+   * `muted` is set on the element here rather than left to the `muted` prop:
+   * React writes it as a property during commit, and Chromium decides whether
+   * an element may autoplay from what it sees at that moment. Lose the race and
+   * the play is refused as unmuted audio — no error anywhere, just a video
+   * frozen on its first frame under a caption inviting a drag.
+   */
+  const play = useCallback((element: HTMLVideoElement | null) => {
+    if (!element) return;
+    element.muted = true;
+    // Rejected when the element is torn down mid-attempt, which is not
+    // something to report — the dialog it belonged to has gone.
+    void element.play().catch(() => undefined);
+  }, []);
+
   return (
     // Edge to edge, and the header is exactly this band: the dialog's own
     // `overflow-hidden` and rounded corners clip it, so it needs no radius of
@@ -249,6 +266,7 @@ function Header({ state, poster }: { state: ExportState; poster: string | null }
           // Muted and looping: this is a thumbnail, and a preview that starts
           // talking over the editor is not what pressing Export asked for.
           <video
+            ref={play}
             src={result.url}
             className="block size-full object-cover"
             autoPlay

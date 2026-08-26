@@ -217,7 +217,12 @@ fn write_manifest(
                 at: sample.at,
                 x: sample.x,
                 y: sample.y,
-                hand: sample.hand,
+                // Empty for the arrow, so the common sample stays three fields.
+                kind: if sample.kind.is_arrow() {
+                    String::new()
+                } else {
+                    sample.kind.as_str().to_owned()
+                },
             })
             .collect(),
     };

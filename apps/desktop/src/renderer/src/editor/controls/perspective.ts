@@ -5,7 +5,7 @@
  * Apart from the component because this is the half that can be wrong without
  * anything looking broken. A plate leaning the opposite way to the export still
  * renders a perfectly convincing trapezium — it is only wrong against
- * `tiltedQuad`, which is in another file and another process's worth of maths
+ * `rotatedQuad`, which is in another file and another process's worth of maths
  * away. Pulled out here, it can be checked against that directly.
  */
 
@@ -13,31 +13,31 @@
  * The CSS transform for a plate at this angle.
  *
  * `rotateY` is written second so it applies *first*, matching the order
- * `tiltedQuad` composes them in — yaw about the vertical axis, then pitch.
+ * `rotatedQuad` composes them in — yaw about the vertical axis, then pitch.
  * Swapping them gives a different plate at large angles.
  *
- * Positive tilt is `rotateX(+tilt)`. CSS points Y down and +Z at the viewer, so
- * a positive `rotateX` sends the top edge away, which is what the renderer does
- * too: `tiltedQuad` divides by `distance - zb`, and the top corner's `zb` is
- * `-halfHeight * sin(pitch)` — negative for a positive tilt, so the top is
- * farther. This was `-tilt` and drew every pitch the opposite way to the
- * export, so "Lean back" leaned forwards in the control that exists to show you
- * what it does.
+ * The angle is passed through unnegated. CSS points Y down and +Z at the
+ * viewer, so a positive `rotateX` sends the top edge away, which is what the
+ * renderer does too: `rotatedQuad` divides by `distance - zb`, and the top
+ * corner's `zb` is `-halfHeight * sin(pitch)` — negative for a positive pitch,
+ * so the top is farther. This negated it once, and drew every pitch the
+ * opposite way to the export, so "Lean back" leaned forwards in the control
+ * that exists to show you what it does.
  */
-export function plateTransform(tilt: number, yaw: number): string {
-  return `rotateX(${String(tilt)}deg) rotateY(${String(yaw)}deg)`;
+export function plateTransform(rotateX: number, rotateY: number): string {
+  return `rotateX(${String(rotateX)}deg) rotateY(${String(rotateY)}deg)`;
 }
 
 /**
  * Which way "away" points, as a CSS gradient angle.
  *
- * Positive tilt leans the top away and positive yaw sends the right edge back,
- * so the far direction is `(yaw, tilt)` with y measured upwards. CSS gradient
+ * A positive pitch leans the top away and a positive yaw sends the right edge
+ * back, so the far direction is `(rotateY, rotateX)` with y measured upwards. CSS gradient
  * angles are clockwise from "to top", which is exactly what `atan2(x, y)`
  * gives — no conversion, and none should be added.
  */
-export function shadingAngle(tilt: number, yaw: number): number {
-  return (Math.atan2(yaw, tilt) * 180) / Math.PI;
+export function shadingAngle(rotateX: number, rotateY: number): number {
+  return (Math.atan2(rotateY, rotateX) * 180) / Math.PI;
 }
 
 /**
@@ -47,8 +47,8 @@ export function shadingAngle(tilt: number, yaw: number): number {
  * `atan2(0, 0)` is a legitimate 0, so a level plate would otherwise pick up a
  * gradient pointing confidently upwards.
  */
-export function shadingStrength(tilt: number, yaw: number): number {
-  return Math.min(Math.hypot(tilt, yaw) / SHADED_AT, 1);
+export function shadingStrength(rotateX: number, rotateY: number): number {
+  return Math.min(Math.hypot(rotateX, rotateY) / SHADED_AT, 1);
 }
 
 /**

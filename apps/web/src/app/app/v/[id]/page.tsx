@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import type { LibraryVideo } from "@/app/app/page";
-import { formatBytes } from "@/app/app/page";
+import { formatBytes } from "@/lib/format";
 import { VideoActions } from "@/components/dashboard/VideoActions";
 import { VideoHeader } from "@/components/dashboard/VideoHeader";
 import { API_URL } from "@/lib/api";

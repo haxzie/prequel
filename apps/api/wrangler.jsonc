@@ -65,8 +65,26 @@
     // exercised while it is being written instead of for the first time on the
     // deploy that ships it.
     "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
-    "POSTHOG_HOST": "https://us.i.posthog.com"
+    "POSTHOG_HOST": "https://us.i.posthog.com",
+    // Dodo Payments. Not secrets — a product id identifies what is being sold
+    // and is visible to anybody who opens a checkout page. The API key and the
+    // webhook signing key are secrets, and live in `.dev.vars`.
+    //
+    // These are the *test* ids, and they only mean anything against the test
+    // host. The production block repeats them with the live ones: a named
+    // environment inherits nothing, so leaving them out there would point live
+    // traffic at products that do not exist.
+    "DODOPAYMENT_MODE": "test",
+    "DODOPAYMENT_BRAND_ID": "",
+    "DODOPAYMENT_PRO_PRODUCT_ID": "",
+    "DODOPAYMENT_SEAT_ADDON_ID": ""
   },
+
+  // Hourly, and for two things no webhook announces: a grace window closing
+  // after a failed renewal, and a seat count that drifted because a hook lost
+  // its call to Dodo. `wrangler dev` does not fire this on its own — trigger one
+  // with `curl <dev-host>/cdn-cgi/local/scheduled`.
+  "triggers": { "crons": ["0 * * * *"] },
 
   "env": {
     "production": {
@@ -86,8 +104,13 @@
         // from the top-level `vars`, so a value left out here is simply absent
         // in production — which for these two is silence rather than an error.
         "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
-        "POSTHOG_HOST": "https://us.i.posthog.com"
+        "POSTHOG_HOST": "https://us.i.posthog.com",
+        "DODOPAYMENT_MODE": "live",
+        "DODOPAYMENT_BRAND_ID": "",
+        "DODOPAYMENT_PRO_PRODUCT_ID": "",
+        "DODOPAYMENT_SEAT_ADDON_ID": ""
       },
+      "triggers": { "crons": ["0 * * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
       "d1_databases": [
         {

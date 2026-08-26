@@ -16,7 +16,8 @@
     "clean": "rm -rf out dist release .turbo node_modules *.tsbuildinfo",
     "icons": "node scripts/make-tray-icons.mjs",
     "cursor": "node scripts/make-cursor.mjs",
-    "app-icon": "node scripts/make-app-icon.mjs"
+    "app-icon": "node scripts/make-app-icon.mjs",
+    "dmg": "swift scripts/make-dmg-background.swift"
   },
   "dependencies": {
     "@prequel/env": "workspace:*",

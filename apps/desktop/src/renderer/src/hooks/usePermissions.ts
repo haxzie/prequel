@@ -7,8 +7,12 @@
  * and nothing tells us about it. Without this the user grants Screen Recording,
  * comes back, and finds the row still saying it is missing.
  *
- * The window is small and short-lived, so a poll every couple of seconds costs
- * nothing worth measuring — and it stops as soon as the window is hidden.
+ * The welcome window is small and short-lived, so a poll every couple of
+ * seconds costs nothing worth measuring — and it stops as soon as the window is
+ * hidden. The panel is neither, which is what `pollMs` is for: it sits on screen
+ * for as long as the app runs, and a timer waking main every two seconds for
+ * the life of a menu-bar app is a real cost for an answer that changes about
+ * once. It refreshes on focus and after a request instead.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -26,7 +30,15 @@ export interface Permissions {
   request: (id: PermissionId) => Promise<void>;
 }
 
-export function usePermissions(): Permissions {
+/**
+ * @param pollMs How often to re-read, or `null` to read only on mount, on focus
+ * and after a request. Note that the two permissions worth polling for —
+ * Screen Recording and Accessibility — are read from a value macOS fixes at
+ * launch, so no amount of polling will ever see either of them turn true. What
+ * polling buys is the camera and microphone rows, and a window that is about to
+ * close anyway.
+ */
+export function usePermissions(pollMs: number | null = POLL_MS): Permissions {
   const [states, setStates] = useState<PermissionState[]>([]);
 
   const refresh = useCallback(async () => {
@@ -36,12 +48,16 @@ export function usePermissions(): Permissions {
   useEffect(() => {
     void refresh();
 
-    const timer = window.setInterval(() => {
-      // Nothing can change while the window is hidden, and a timer that keeps
-      // asking is a timer that keeps waking the main process for no answer.
-      if (document.hidden) return;
-      void refresh();
-    }, POLL_MS);
+    const timer =
+      pollMs === null
+        ? null
+        : window.setInterval(() => {
+            // Nothing can change while the window is hidden, and a timer that
+            // keeps asking is a timer that keeps waking the main process for no
+            // answer.
+            if (document.hidden) return;
+            void refresh();
+          }, pollMs);
 
     // Coming back to the window is the moment a trip to System Settings ends,
     // so it is worth a read that does not wait for the next tick.
@@ -49,10 +65,10 @@ export function usePermissions(): Permissions {
     window.addEventListener("focus", onFocus);
 
     return () => {
-      window.clearInterval(timer);
+      if (timer !== null) window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [refresh]);
+  }, [refresh, pollMs]);
 
   return {
     states,

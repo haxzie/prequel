@@ -32,8 +32,11 @@ shell reads. `packages/recorder`'s `build` and the root `test:rust` set `PATH`
 themselves for that reason. A bare `cargo` typed into a non-interactive shell
 still needs the prefix.
 
-Media tests shell out to `ffmpeg`/`ffprobe`. `PREQUEL_FAKE_RECORDER=1` drives
-the whole UI with no Screen Recording grant.
+Media tests shell out to `ffmpeg`/`ffprobe`.
+
+There is no stub recorder behind an environment variable. A test that needs a
+stand-in imports `recorder.fake.ts` and hands it to `setRecorder`; running the
+app means granting Screen Recording.
 
 After changing Rust that JavaScript calls, rebuild the addon or the change is
 invisible: `cd packages/recorder && PATH="$HOME/.cargo/bin:$PATH" pnpm build`.
