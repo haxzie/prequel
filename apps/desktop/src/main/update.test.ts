@@ -225,3 +225,73 @@ describe("downloading and installing", () => {
     expect(updater.quitAndInstall).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * The check the panel makes.
+ *
+ * Everything here is about a request that nobody asked for. The panel is opened
+ * by a gesture — several times in a minute while a window is chosen, and then
+ * not again for days — so the throttle is the whole feature, and it is the kind
+ * of thing that works perfectly in a manual test either way.
+ */
+describe("the background check", () => {
+  it("asks the first time the panel opens", async () => {
+    const update = await load();
+    update.checkForUpdatesIfDue();
+    await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledOnce());
+  });
+
+  it("does not ask again while the last answer is fresh", async () => {
+    const update = await load();
+
+    update.checkForUpdatesIfDue();
+    await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledOnce());
+
+    // Opening and closing the panel four more times, which is an ordinary
+    // minute of choosing what to record.
+    for (let press = 0; press < 4; press += 1) update.checkForUpdatesIfDue();
+
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce();
+  });
+
+  it("asks again once the answer has gone stale", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const update = await load();
+      update.checkForUpdatesIfDue();
+      await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledOnce());
+
+      vi.advanceTimersByTime(31 * 60 * 1000);
+      update.checkForUpdatesIfDue();
+
+      await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never holds back a check somebody asked for", async () => {
+    const update = await load();
+
+    update.checkForUpdatesIfDue();
+    await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledOnce());
+
+    // The tray's "Check for Updates…" — pressed by somebody who wants an answer
+    // now, and a throttle that swallowed it would be a menu item that does
+    // nothing.
+    await update.checkForUpdates();
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a check that failed, so a machine offline does not ask on every press", async () => {
+    const update = await load();
+
+    updater.checkForUpdates.mockRejectedValueOnce(new Error("offline"));
+    update.checkForUpdatesIfDue();
+    await vi.waitFor(() => expect(updater.checkForUpdates).toHaveBeenCalledOnce());
+
+    update.checkForUpdatesIfDue();
+    expect(updater.checkForUpdates).toHaveBeenCalledOnce();
+  });
+});

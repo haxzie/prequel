@@ -26,7 +26,7 @@ import { Preferences } from "./preferences.js";
 import { RecordingSession } from "./session.js";
 import { applyShortcuts, teardownShortcuts } from "./shortcuts.js";
 import { AppTray } from "./tray.js";
-import { checkForUpdates, onUpdateChanged } from "./update.js";
+import { checkForUpdates, checkForUpdatesIfDue, onUpdateChanged } from "./update.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { EditorWindows } from "./windows/editor.js";
@@ -177,6 +177,10 @@ void app.whenReady().then(() => {
     editors,
     welcome,
     updates,
+    // Every time the panel opens, throttled inside `update.ts`. The launch
+    // check below is the only other one, and a menu-bar app can go weeks
+    // between launches.
+    checkForUpdates: checkForUpdatesIfDue,
   });
 
   registerIpc({ flow });

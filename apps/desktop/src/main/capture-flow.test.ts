@@ -71,6 +71,8 @@ function makeFlow(
 ) {
   const dockCalls: DockCalls = { shown: 0, hidden: 0, visible: false };
   const editors = { opened: [] as string[] };
+  /** How many times the panel opening has asked whether there is a new version. */
+  const updateChecks = { count: 0 };
   const welcome = { closed: 0 };
   let stored: RecordingPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
   const selection = {
@@ -137,9 +139,19 @@ function makeFlow(
     onChange: () => undefined,
     editors: { open: (dir: string) => editors.opened.push(dir) },
     welcome: { close: () => (welcome.closed += 1) },
+    checkForUpdates: () => (updateChecks.count += 1),
   });
 
-  return { flow, camera, selection, editors, welcome, dockCalls, preferences: () => stored };
+  return {
+    flow,
+    camera,
+    selection,
+    editors,
+    welcome,
+    dockCalls,
+    updateChecks,
+    preferences: () => stored,
+  };
 }
 
 let requests: StartRecordingRequest[] = [];
@@ -488,5 +500,59 @@ describe("the welcome flow", () => {
     flow.finishWelcome();
 
     expect(preferences().welcomed).toBe(true);
+  });
+});
+
+/**
+ * Asking for a new version when the panel opens.
+ *
+ * The throttle lives in `main/update.ts`; what is asserted here is the other
+ * half — *when* the flow asks at all. Both failure modes are invisible: asking
+ * on every call makes a request per press of a button that is pressed a lot,
+ * and asking on none of them makes an instance that has been running for a
+ * fortnight never hear about a release.
+ */
+describe("the update check behind the panel", () => {
+  it("asks when the panel goes up", () => {
+    const { flow, updateChecks } = makeFlow();
+
+    flow.showDock();
+
+    expect(updateChecks.count).toBe(1);
+  });
+
+  it("does not ask again for a panel that is already up", () => {
+    // `showDock` is also how the panel is brought back to the front, and it is
+    // called on every return from an editor.
+    const { flow, updateChecks } = makeFlow();
+
+    flow.showDock();
+    flow.showDock();
+    flow.showDock();
+
+    expect(updateChecks.count).toBe(1);
+  });
+
+  it("asks again after the panel has been dismissed and reopened", () => {
+    const { flow, updateChecks } = makeFlow();
+
+    flow.showDock();
+    flow.close();
+    flow.showDock();
+
+    expect(updateChecks.count).toBe(2);
+  });
+
+  it("stays quiet while a recording is running", async () => {
+    // The panel comes back mid-take — a start that failed, an editor closing —
+    // and somebody who is recording is the last person with a use for this.
+    const { flow, updateChecks } = makeFlow();
+
+    await flow.record();
+    updateChecks.count = 0;
+
+    flow.showDock();
+
+    expect(updateChecks.count).toBe(0);
   });
 });

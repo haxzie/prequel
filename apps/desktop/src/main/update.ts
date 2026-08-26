@@ -47,6 +47,22 @@ let state: Omit<UpdateState, "current"> = IDLE_UPDATE;
 let listeners: ((state: UpdateState) => void)[] = [];
 let configured = false;
 
+/**
+ * How long a check stays fresh, for the checks the app makes on its own.
+ *
+ * The panel is opened by a gesture, not on a schedule — several times in a
+ * minute while somebody picks a window, and then not again until Thursday — so
+ * "every time it opens" has to mean something other than a request per press.
+ * Half an hour is far below the rate anything is released at and far above the
+ * rate a menu bar app is opened at, which makes this invisible in both
+ * directions.
+ *
+ * A check somebody *asked* for is never held back by this; see below.
+ */
+const RECHECK_MS = 30 * 60 * 1000;
+
+let lastCheckedAt = 0;
+
 export function updateState(): UpdateState {
   return { ...state, current: app.getVersion() };
 }
@@ -178,6 +194,10 @@ export async function checkForUpdates(): Promise<UpdateState> {
   if (state.status === "downloading" || state.status === "ready") return updateState();
 
   configure();
+  // Stamped at the start rather than on the way out, so two checks cannot
+  // overlap through the await below — and a check that fails still counts, or a
+  // machine with no network would ask again on every single press.
+  lastCheckedAt = Date.now();
   set({ status: "checking", message: null });
 
   try {
@@ -190,6 +210,35 @@ export async function checkForUpdates(): Promise<UpdateState> {
   // `update-available` and `update-not-available` have already run by here and
   // moved the state on; `checking` surviving means neither fired.
   return state.status === "checking" ? set({ status: "idle" }) : updateState();
+}
+
+/**
+ * The check the app makes for itself, when the panel opens.
+ *
+ * A menu bar app is the app nobody quits. The launch check in `index.ts` is the
+ * only other one there is, so an instance running since a fortnight ago has
+ * asked exactly once — and the release it is missing might be the one that fixes
+ * whatever it is about to do. Opening the panel is the moment the user is here
+ * and has not yet started anything, which makes it the one moment a check costs
+ * them nothing.
+ *
+ * Quiet by design. It moves the state, which is what the tray menu reads when
+ * it is built and what the update window listens to; it does not put a window
+ * in front of somebody who just pressed to record. The launch check is where an
+ * update announces itself, because that is a moment with no other intent in it.
+ *
+ * Never awaited by the caller: the panel must appear now, and the answer lands
+ * whenever it lands.
+ */
+export function checkForUpdatesIfDue(): void {
+  if (Date.now() - lastCheckedAt < RECHECK_MS) return;
+
+  void checkForUpdates().catch((cause: unknown) => {
+    // `checkForUpdates` resolves rather than rejecting on a failed check, so
+    // this only catches something unforeseen — and a background check must
+    // never take the panel down with it.
+    log("error", "background update check failed", cause);
+  });
 }
 
 /**

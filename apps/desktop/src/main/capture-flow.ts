@@ -112,6 +112,17 @@ export interface CaptureFlowOptions {
    * reason: nothing about capture depends on it existing.
    */
   updates?: { open: () => void };
+  /**
+   * Looks for a newer version, if nothing has looked recently.
+   *
+   * Called when the panel opens, which for a menu-bar app is the only regular
+   * moment there is: the launch check is the only other one, and an instance
+   * running since a fortnight ago has asked exactly once. Injected rather than
+   * imported so the flow stays testable without Electron, like everything else
+   * here — `main/update.ts` owns both the throttle and the decision to stay
+   * quiet about what it finds.
+   */
+  checkForUpdates?: () => void;
 }
 
 export class CaptureFlow {
@@ -201,9 +212,22 @@ export class CaptureFlow {
    * looking at.
    */
   showDock(): void {
+    // Read before `show`, because this is the transition: `showDock` is also how
+    // the panel is brought back to the front while it is already up, and a check
+    // per press is not what "when the panel opens" means.
+    //
+    // Only from idle. The panel comes back during a recording too — closing an
+    // editor, a start that failed — and somebody who is mid-take is the last
+    // person with any use for an update.
+    const opening = !this.deps.dock.isVisible && this.deps.session.snapshot().status === "idle";
+
     this.deps.dock.show();
     this.syncCamera();
     this.emit();
+
+    // After the panel is up and the state is out. Nothing here is awaited, so
+    // the check cannot delay the window somebody just asked for.
+    if (opening) this.deps.checkForUpdates?.();
   }
 
   open(): void {
