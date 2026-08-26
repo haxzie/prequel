@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { OnboardingForm } from "@/components/dashboard/OnboardingForm";
 import { pageMetadata } from "@/lib/seo";
+import { EXPIRED_PARAM } from "@/lib/auth-gate";
 import { getMe } from "@/lib/session";
 
 export const metadata = pageMetadata({
@@ -26,7 +27,10 @@ export const dynamic = "force-dynamic";
  */
 export default async function OnboardingPage() {
   const me = await getMe();
-  if (!me) redirect("/login");
+  // `expired`, not a bare `/login`: this page is only reachable with a session
+  // cookie, so a null `me` means the Worker refused it — and middleware would
+  // send a bare `/login` carrying that cookie straight back here.
+  if (!me) redirect(`/login?${EXPIRED_PARAM}=1`);
   if (me.teams.length > 0) redirect("/app");
 
   return (

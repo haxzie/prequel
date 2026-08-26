@@ -15,6 +15,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { API_URL } from "./api.ts";
+import { EXPIRED_PARAM, hasSessionCookie } from "./auth-gate.ts";
 
 export interface SessionUser {
   id: string;
@@ -73,8 +74,15 @@ export interface Me {
  * worse outcome than a redirect.
  */
 export const getMe = cache(async (): Promise<Me | null> => {
-  const cookie = (await cookies()).toString();
-  if (!cookie) return null;
+  const jar = await cookies();
+
+  // Specifically a session cookie, not "any cookie at all", which is what this
+  // used to ask. Analytics sets one on every visitor, so a signed-out person
+  // opening `/login` was spending a cross-origin round-trip to Cloudflare to be
+  // told what their own cookie jar already knew.
+  if (!hasSessionCookie(jar)) return null;
+
+  const cookie = jar.toString();
 
   try {
     const response = await fetch(`${API_URL}/v1/me`, {
@@ -124,7 +132,13 @@ export async function requireTeam(next?: string): Promise<{ me: Me; team: Team }
   // `next` carries where to come back to. Without it the desktop handoff sends
   // somebody to sign in and then drops them on the library, with the app still
   // waiting on a deep link that is never coming.
-  if (!me) redirect(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
+  // `expired` when there is nowhere in particular to come back to. The cookie
+  // survived middleware and the Worker refused it, and without the flag the two
+  // gates would volley the request between them — `lib/auth-gate.ts` spells the
+  // loop out. A `next` says the same thing to middleware on its own.
+  if (!me) {
+    redirect(next ? `/login?next=${encodeURIComponent(next)}` : `/login?${EXPIRED_PARAM}=1`);
+  }
 
   const team = activeTeam(me);
   if (!team) redirect("/onboarding");
