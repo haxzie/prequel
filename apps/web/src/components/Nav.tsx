@@ -3,6 +3,7 @@ import Link from "next/link";
 import { NAV } from "@/lib/site";
 
 import { ButtonLink } from "./Button";
+import { GitHubStars } from "./GitHubStars";
 import { AppleIcon } from "./icons";
 import { Container } from "./Section";
 
@@ -56,13 +57,22 @@ export function Nav() {
             Sign in
           </Link>
 
-          {/* Dropped on the narrowest screens: the row cannot hold it, and the
-              hero's own form is a scroll away rather than a navigation.
+          {/* Both dropped on the narrowest screens, together: the row cannot
+              hold them, and the hero's own form is a scroll away rather than a
+              navigation.
 
               The `hidden` sits on a wrapper because the button already carries
               `inline-flex`. Two unprefixed display utilities on one element is
               decided by Tailwind's emit order, not by the order they are
-              written in, and `inline-flex` is the one that wins. */}
+              written in, and `inline-flex` is the one that wins.
+
+              The repository sits before the button rather than after it. The
+              download is what the page is asking for and belongs at the end of
+              the row, where the eye finishes. */}
+          <span className="hidden sm:block">
+            <GitHubStars />
+          </span>
+
           <span className="ml-1.5 hidden sm:block">
             <ButtonLink href="/download" size="sm">
               <AppleIcon className="-mt-0.5 size-4" />

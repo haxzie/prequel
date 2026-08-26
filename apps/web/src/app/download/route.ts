@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { githubHeaders, RELEASES_API, RELEASES_PAGE } from "@/lib/github";
+
 /**
  * `prequel.sh/download` → the current `.dmg`.
  *
@@ -13,12 +15,6 @@ import { NextResponse } from "next/server";
  * share, and it has to sit on the same host as the pages that link to it or the
  * link reads as somebody else's.
  */
-
-const OWNER = "haxzie";
-const REPO = "prequel";
-
-const RELEASES_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=30`;
-const RELEASES_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
 
 /**
  * How long a resolved download is reused for.
@@ -55,14 +51,7 @@ async function current(): Promise<string | null> {
 
   try {
     const response = await fetch(RELEASES_API, {
-      headers: {
-        accept: "application/vnd.github+json",
-        // Raises the rate limit from 60 an hour to 5,000 when it is set.
-        // Optional: without it the route still works, just on a tighter budget.
-        ...(process.env["GITHUB_TOKEN"]
-          ? { authorization: `Bearer ${process.env["GITHUB_TOKEN"]}` }
-          : {}),
-      },
+      headers: githubHeaders(),
       next: { revalidate: REVALIDATE },
     });
 
