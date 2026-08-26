@@ -74,10 +74,10 @@
     // host. The production block repeats them with the live ones: a named
     // environment inherits nothing, so leaving them out there would point live
     // traffic at products that do not exist.
-    "DODOPAYMENT_MODE": "test",
-    "DODOPAYMENT_BRAND_ID": "",
-    "DODOPAYMENT_PRO_PRODUCT_ID": "",
-    "DODOPAYMENT_SEAT_ADDON_ID": ""
+    "DODOPAYMENT_MODE": "live",
+    "DODOPAYMENT_BRAND_ID": "brnd_0Nm8fKKuEmLeZdUchxYCx",
+    "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
+    "DODOPAYMENT_SEAT_ADDON_ID": "adn_0Nm8gUGgL77rAlFrGsaMI"
   },
 
   // Hourly, and for two things no webhook announces: a grace window closing
@@ -106,9 +106,9 @@
         "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
         "POSTHOG_HOST": "https://us.i.posthog.com",
         "DODOPAYMENT_MODE": "live",
-        "DODOPAYMENT_BRAND_ID": "",
-        "DODOPAYMENT_PRO_PRODUCT_ID": "",
-        "DODOPAYMENT_SEAT_ADDON_ID": ""
+        "DODOPAYMENT_BRAND_ID": "brnd_0Nm8fKKuEmLeZdUchxYCx",
+        "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
+        "DODOPAYMENT_SEAT_ADDON_ID": "adn_0Nm8gUGgL77rAlFrGsaMI"
       },
       "triggers": { "crons": ["0 * * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
