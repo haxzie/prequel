@@ -29,7 +29,7 @@ import { AppTray } from "./tray.js";
 import { checkForUpdates, checkForUpdatesIfDue, onUpdateChanged } from "./update.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
-import { EditorWindows } from "./windows/editor.js";
+import { WorkspaceWindow } from "./windows/workspace.js";
 import { SelectionOverlay } from "./windows/selection.js";
 import { SettingsWindow } from "./windows/settings.js";
 import { UpdateWindow } from "./windows/update.js";
@@ -94,12 +94,12 @@ let quitting = false;
  * Whether a real window of ours is on screen.
  *
  * A menu-bar app has no Dock icon, which is right until it owns a window the
- * user has to be able to get back to — there is no Cmd-Tab entry either. Both
- * the editor and the welcome window need one, so the icon is shown while either
- * is open and hidden only once neither is.
+ * user has to be able to get back to — there is no Cmd-Tab entry either. The
+ * app window and the welcome window both need one, so the icon is shown while
+ * any of them is open and hidden only once none is.
  */
 function syncDockIcon(): void {
-  if (editors.openCount > 0 || welcome.isOpen || settings.isOpen || updates.isOpen)
+  if (workspace.isOpen || welcome.isOpen || settings.isOpen || updates.isOpen)
     void app.dock?.show();
   else app.dock?.hide();
 }
@@ -121,17 +121,17 @@ const updates = new UpdateWindow({
   onClose: () => syncDockIcon(),
 });
 
-const editors = new EditorWindows({
-  onFirstOpen: () => {
-    flow?.editorOpened();
+const workspace = new WorkspaceWindow({
+  onOpen: () => {
+    flow?.workspaceOpened();
     syncDockIcon();
   },
-  onLastClose: () => {
+  onClose: (fromCapture) => {
     // The project is still flushed on the way out — that happens in the
     // window's own `closed` handler, which runs either way.
     if (quitting) return;
 
-    flow?.editorClosed();
+    flow?.workspaceClosed(fromCapture);
     syncDockIcon();
   },
 });
@@ -174,7 +174,7 @@ void app.whenReady().then(() => {
     preferences,
     onChange: broadcastDockState,
     settings,
-    editors,
+    workspace,
     welcome,
     updates,
     // Every time the panel opens, throttled inside `update.ts`. The launch
@@ -183,7 +183,7 @@ void app.whenReady().then(() => {
     checkForUpdates: checkForUpdatesIfDue,
   });
 
-  registerIpc({ flow });
+  registerIpc({ flow, workspace });
   tray = new AppTray(session, flow);
 
   // Several surfaces show the account, so they hear about it rather than each
@@ -340,7 +340,7 @@ app.on("will-quit", () => {
     ["selection", () => selection.close()],
     ["camera", () => camera.destroy()],
     ["dock", () => dock.destroy()],
-    ["editors", () => editors.closeAll()],
+    ["workspace", () => workspace.close()],
     ["welcome", () => welcome.close()],
     ["settings", () => settings.close()],
     ["updates", () => updates.close()],

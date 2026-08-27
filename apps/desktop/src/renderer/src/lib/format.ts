@@ -27,3 +27,42 @@ export function formatElapsed(ms: number): string {
   const ss = String(seconds).padStart(2, "0");
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+/**
+ * How long ago something happened, for a list of them.
+ *
+ * Coarse on purpose, and coarser the further back it goes: the question a
+ * library answers is "which of these is the one I made this morning", not how
+ * many minutes ago that was. Past a week the date is more use than the
+ * interval — nobody counts in "23 days ago" — and past a year it needs the year
+ * to be unambiguous at all.
+ */
+export function formatTimeAgo(epochMs: number, now = Date.now()): string {
+  const seconds = Math.round((now - epochMs) / 1000);
+
+  // Also covers a clock that went backwards and a file stamped in the future.
+  // "In 3 minutes" beside a recording is stranger than rounding to the present.
+  if (seconds < 60) return "Just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} ${plural(minutes, "minute")} ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${plural(hours, "hour")} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+
+  const then = new Date(epochMs);
+  const sameYear = then.getFullYear() === new Date(now).getFullYear();
+  return then.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+function plural(count: number, word: string): string {
+  return count === 1 ? word : `${word}s`;
+}

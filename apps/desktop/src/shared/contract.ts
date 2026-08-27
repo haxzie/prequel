@@ -289,7 +289,31 @@ export const IPC_CHANNELS = {
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
   editorPresetImage: "editor:presetImage",
-  editorDeleteRecording: "editor:deleteRecording",
+  /**
+   * The local library.
+   *
+   * Named for the screen rather than for the window, because the window shows
+   * two things and only one of them is a list of these.
+   */
+  projectsList: "projects:list",
+  /** Renderer → main: show this recording in the editor. Answered by a push on
+      `editor:open`, because loading one means probing its media. */
+  projectsOpen: "projects:open",
+  /** Renderer → main: leave the editor. Main flushes the edit before it does. */
+  projectsShow: "projects:show",
+  /**
+   * Main → renderer: the grid is what the window is showing now.
+   *
+   * The window's screen is main's to decide — leaving an editor means writing
+   * its edit first, and the tray can ask for the grid while one is open. So the
+   * renderer asks and then follows this, rather than switching on its own and
+   * trusting the two to agree.
+   */
+  projectsShowing: "projects:showing",
+  projectsRename: "projects:rename",
+  projectsDelete: "projects:delete",
+  /** Renderer → main: cache a still the grid just made. */
+  projectsSavePoster: "projects:savePoster",
   /**
    * Asks where the export should be written, with a save dialog.
    *
@@ -836,12 +860,32 @@ export interface TrackMedia {
   frameRate: number | null;
 }
 
-/** One past recording, as the tray's Open Recent menu lists it. */
-export interface RecentRecording {
+/**
+ * One recording, as the Projects grid and the tray's Open Recent menu list it.
+ *
+ * Not `Project` — that name is taken by the *edit*, in `shared/project.ts`.
+ * This is the card: enough to draw the tile and open the thing, and nothing
+ * that would need the manifest parsed to produce.
+ */
+export interface ProjectSummary {
+  /** Absolute path to the recording's directory. */
   dir: string;
+  /** The name in `project.json` where one was set, else the folder's own. */
   name: string;
-  /** Epoch milliseconds, newest first. */
-  modifiedAt: number;
+  /**
+   * Epoch milliseconds, newest first.
+   *
+   * The manifest's mtime, which is when the take finished — `session.json` is
+   * written once, at the end. Read rather than parsed: a long recording's
+   * manifest carries tens of thousands of cursor samples, and parsing every one
+   * of them to draw a grid costs more than the field is worth.
+   */
+  createdAt: number;
+  /**
+   * A `prequel-media:` URL for the cached still, or null when there is none
+   * yet. The grid makes the missing ones and asks main to keep them.
+   */
+  poster: string | null;
 }
 
 /**

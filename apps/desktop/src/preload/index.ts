@@ -14,6 +14,7 @@ import type {
   PermissionId,
   PermissionState,
   PermissionStatus,
+  ProjectSummary,
   RecordingPreferences,
   ScreenMode,
   SelectionResult,
@@ -40,6 +41,7 @@ export type {
   PermissionId,
   PermissionState,
   PermissionStatus,
+  ProjectSummary,
   RecordingPreferences,
   ScreenMode,
   SelectionResult,
@@ -194,15 +196,6 @@ const api = {
     pickImage: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPickImage, dir),
 
-    /**
-     * Moves the whole recording to the Trash and closes its window.
-     *
-     * Resolves false when the user declines the confirmation, so the caller can
-     * tell "did not happen" from "failed".
-     */
-    deleteRecording: (dir: string): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.editorDeleteRecording, dir),
-
     /** Copies one of the shipped wallpapers into the recording. */
     presetImage: (dir: string, presetId: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPresetImage, dir, presetId),
@@ -301,6 +294,53 @@ const api = {
   library: {
     reveal: (path?: string): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.revealRecordings, path),
+  },
+
+  /**
+   * The local library, as the Projects grid works with it.
+   *
+   * `open` and `show` move the one app window between its two screens; the
+   * editor arrives on `editor.onOpen`, not as their result, because loading a
+   * recording probes its media.
+   */
+  projects: {
+    list: (): Promise<IpcResult<ProjectSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.projectsList),
+
+    /** Shows this recording in the editor. Answered on `editor.onOpen`. */
+    open: (dir: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsOpen, dir),
+
+    /** Back to the grid. Main writes the edit being left behind. */
+    show: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.projectsShow),
+
+    /**
+     * Fires when the grid becomes what the window is showing.
+     *
+     * The answer to `show`, and to anything else that takes the window off a
+     * recording — the tray asking for the grid over an open editor, or the
+     * recording on screen being deleted.
+     */
+    onShowing: (listener: () => void): (() => void) => {
+      const handler = () => listener();
+      ipcRenderer.on(IPC_CHANNELS.projectsShowing, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.projectsShowing, handler);
+    },
+
+    rename: (dir: string, name: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsRename, dir, name),
+
+    /**
+     * Moves the whole recording to the Trash.
+     *
+     * Resolves false when the user declines the confirmation, so the caller can
+     * tell "did not happen" from "failed".
+     */
+    delete: (dir: string): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsDelete, dir),
+
+    /** Caches a still the grid made, so the next open does not have to. */
+    savePoster: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsSavePoster, dir, dataUrl),
   },
 
   /**

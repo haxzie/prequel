@@ -409,6 +409,15 @@ export interface Project {
   /** The manifest `id` this edits. A project beside a different recording is
       worth catching rather than silently applying. */
   recordingId: string;
+  /**
+   * What the library calls this recording. Absent means the folder's own name.
+   *
+   * Kept here rather than in the directory name so a rename never moves the
+   * folder: `prequel-media://` URLs are built from its basename, `manifest.id`
+   * repeats it, and the transcript is discarded when the two disagree. Renaming
+   * on disk would invalidate all three to change a label.
+   */
+  name?: string;
   frame: { width: number; height: number; presetId: string | null };
   /** Every slice inherits from these. */
   defaults: SliceSettings;
@@ -750,6 +759,12 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
   return {
     version: PROJECT_VERSION,
     recordingId,
+    // Optional, and left off entirely when it is not a usable string — a
+    // project that never had one must keep reporting the folder's name rather
+    // than an empty label.
+    ...(typeof stored.name === "string" && stored.name.trim() !== ""
+      ? { name: stored.name.trim() }
+      : {}),
     frame: { width, height, presetId: stored.frame?.presetId ?? null },
     zooms: sanitiseZooms(stored.zooms, duration),
     defaults: {

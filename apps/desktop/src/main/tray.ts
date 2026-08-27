@@ -11,7 +11,8 @@ import type { CaptureFlow } from "./capture-flow.js";
 import { log, logPath } from "./log.js";
 import type { RecordingSession, SessionState } from "./session.js";
 import { acceleratorGlyphs } from "../shared/accelerator.js";
-import { recentRecordings, revealRecordings } from "./session.js";
+import { listProjects } from "./projects.js";
+import { revealRecordings } from "./session.js";
 import { boundToggle } from "./shortcuts.js";
 import { checkForUpdates, installUpdate, updateState } from "./update.js";
 
@@ -156,7 +157,7 @@ export class AppTray {
     const state = this.session.snapshot();
     const active = state.status === "recording" || state.status === "paused";
 
-    const recent = recentRecordings(RECENT_LIMIT);
+    const recent = listProjects().slice(0, RECENT_LIMIT);
 
     return Menu.buildFromTemplate([
       active
@@ -179,6 +180,9 @@ export class AppTray {
         click: () => void this.session.togglePause(),
       },
       { type: "separator" },
+      // The whole library, with thumbnails and the things Open Recent cannot
+      // offer — renaming one, deleting one, seeing what it is before opening it.
+      { label: "Open Recordings", click: () => this.flow.openProjects() },
       {
         label: "Open Recent",
         enabled: recent.length > 0,

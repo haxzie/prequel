@@ -40,9 +40,11 @@ import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
+import { listProjects, renameProject, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
+import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -62,9 +64,17 @@ async function attempt<T>(operation: () => Promise<T> | T): Promise<IpcResult<T>
 
 export interface IpcDeps {
   flow: CaptureFlow;
+  /**
+   * The app window, for the handlers that move it between its two screens.
+   *
+   * Reached directly rather than through the flow, unlike every other surface:
+   * these are not capture commands, and routing "go back to the grid" through
+   * the object that owns the recording lifecycle would put the library in it.
+   */
+  workspace: WorkspaceWindow;
 }
 
-export function registerIpc({ flow }: IpcDeps): void {
+export function registerIpc({ flow, workspace }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     name: env.NEXT_PUBLIC_APP_NAME,
     url: env.NEXT_PUBLIC_APP_URL,
@@ -196,8 +206,43 @@ export function registerIpc({ flow }: IpcDeps): void {
     attempt(() => copyPresetBackground(dir, presetId)),
   );
 
-  ipcMain.handle(IPC_CHANNELS.editorDeleteRecording, (event, dir: string) =>
-    attempt(() => deleteRecording(dir, BrowserWindow.fromWebContents(event.sender))),
+  // ── the library ──────────────────────────────────────────────────────────
+  //
+  // Tagged like the rest of them, and not because the scan throws — it already
+  // answers with an empty list for an unreadable folder. The renderer reads
+  // `result.ok` before `result.value`, so a bare array here is a grid that says
+  // "No recordings yet" over a folder with a hundred takes in it, with nothing
+  // logged on either side. `ipcMain.handle` does not check what its callback
+  // returns and `invoke` answers `any`, so nothing but this catches it.
+  ipcMain.handle(IPC_CHANNELS.projectsList, () => attempt(() => listProjects()));
+
+  ipcMain.handle(IPC_CHANNELS.projectsOpen, (_event, dir: string) =>
+    // Answered by a push on `editor:open` rather than by this promise: opening
+    // a recording probes its media, and the window has to be drawing while that
+    // happens rather than waiting on it.
+    attempt(() => workspace.showProject(dir)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.projectsShow, () => attempt(() => workspace.showProjects()));
+
+  ipcMain.handle(IPC_CHANNELS.projectsRename, (_event, dir: string, name: string) =>
+    attempt(() => renameProject(dir, name)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.projectsDelete, (event, dir: string) =>
+    attempt(async () => {
+      const deleted = await deleteRecording(dir, BrowserWindow.fromWebContents(event.sender));
+      // Back to the grid rather than closing: the editor and the grid share one
+      // window, and closing it over a delete would take the whole app off
+      // screen. Only when it was this recording on show — a delete from the
+      // grid leaves the grid exactly where it is.
+      if (deleted && workspace.currentDir === dir) workspace.showProjects();
+      return deleted;
+    }),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.projectsSavePoster, (_event, dir: string, dataUrl: string) =>
+    attempt(() => savePoster(dir, dataUrl)),
   );
 
   // The sheet hangs off the window that asked, so it cannot open behind the

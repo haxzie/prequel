@@ -6,20 +6,13 @@
  * command means lives here rather than in any one of them. Everything else
  * observes and reacts.
  */
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 import { shell } from "electron";
 
-import type {
-  RecentRecording,
-  SessionState,
-  SessionStatus,
-  StartOptions,
-  Target,
-} from "../shared/contract.js";
-import { MANIFEST_FILE_NAME } from "../shared/manifest.js";
+import type { SessionState, SessionStatus, StartOptions, Target } from "../shared/contract.js";
 import type { Recorder, RecordingResult, StartRecordingRequest } from "./recorder.js";
 import { log } from "./log.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
@@ -267,16 +260,6 @@ export async function revealRecordings(path?: string): Promise<void> {
 }
 
 /**
- * Past recordings, newest first.
- *
- * A directory only counts if it holds a manifest: an interrupted take can leave
- * a folder with a half-written screen track and nothing describing it, and
- * offering that as something to open would only produce an error on click.
- *
- * Sorted by the manifest's own mtime rather than the directory's, which macOS
- * touches for reasons that have nothing to do with when the take was made.
- */
-/**
  * Deletes a take, permanently.
  *
  * Guarded to the recordings directory, and to a directory rather than a file.
@@ -287,16 +270,12 @@ export async function revealRecordings(path?: string): Promise<void> {
  * a 4K recording makes worth caring about.
  */
 export function deleteRecording(path: string, dir = SESSIONS_DIR): boolean {
-  const resolved = resolve(path);
-  const root = resolve(dir);
-
-  // `startsWith(root)` alone would also accept a sibling whose name merely
-  // begins with the root's, so the separator has to be part of the test.
-  if (resolved === root || !resolved.startsWith(root + sep)) {
-    console.warn(`[library] refusing to delete outside the recordings folder: ${resolved}`);
+  if (!insideRecordings(path, dir)) {
+    console.warn(`[library] refusing to delete outside the recordings folder: ${path}`);
     return false;
   }
 
+  const resolved = resolve(path);
   try {
     rmSync(resolved, { recursive: true, force: true });
     return true;
@@ -306,32 +285,22 @@ export function deleteRecording(path: string, dir = SESSIONS_DIR): boolean {
   }
 }
 
-export function recentRecordings(limit = 10, dir = SESSIONS_DIR): RecentRecording[] {
-  if (!existsSync(dir)) return [];
+/**
+ * Whether a path is a recording inside the library, rather than anything else.
+ *
+ * Every path that reaches the library from a renderer goes through here first.
+ * The renderer is the least-trusted process in the app and these operations
+ * delete, overwrite and rename — the same posture `media-protocol.ts` takes for
+ * reads, for the same reason.
+ */
+export function insideRecordings(path: string, dir = SESSIONS_DIR): boolean {
+  const resolved = resolve(path);
+  const root = resolve(dir);
 
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch (cause) {
-    console.warn(`[library] could not read ${dir}:`, cause);
-    return [];
-  }
-
-  const recordings: RecentRecording[] = [];
-  for (const name of entries) {
-    const path = join(dir, name);
-    try {
-      recordings.push({
-        dir: path,
-        name,
-        modifiedAt: statSync(join(path, MANIFEST_FILE_NAME)).mtimeMs,
-      });
-    } catch {
-      // No manifest, or unreadable. Not a recording we can open.
-    }
-  }
-
-  return recordings.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit);
+  // `startsWith(root)` alone would also accept a sibling whose name merely
+  // begins with the root's, so the separator has to be part of the test. The
+  // root itself is not a recording either.
+  return resolved !== root && resolved.startsWith(root + sep);
 }
 
 export { RECORDINGS_DIR, SESSIONS_DIR };

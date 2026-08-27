@@ -70,7 +70,7 @@ function makeFlow(
   picked: SelectionResult | null = null,
 ) {
   const dockCalls: DockCalls = { shown: 0, hidden: 0, visible: false };
-  const editors = { opened: [] as string[] };
+  const workspace = { opened: [] as (string | undefined)[] };
   /** How many times the panel opening has asked whether there is a new version. */
   const updateChecks = { count: 0 };
   const welcome = { closed: 0 };
@@ -137,7 +137,7 @@ function makeFlow(
       update: (patch: Partial<RecordingPreferences>) => (stored = { ...stored, ...patch }),
     } as never,
     onChange: () => undefined,
-    editors: { open: (dir: string) => editors.opened.push(dir) },
+    workspace: { open: (dir?: string) => workspace.opened.push(dir) },
     welcome: { close: () => (welcome.closed += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
   });
@@ -146,7 +146,7 @@ function makeFlow(
     flow,
     camera,
     selection,
-    editors,
+    workspace,
     welcome,
     dockCalls,
     updateChecks,
@@ -229,27 +229,30 @@ describe("starting a recording", () => {
 describe("stopping a recording", () => {
   it("opens an editor on the recording that just finished", async () => {
     // The take is on disk and nothing else in the app would ever show it.
-    const { flow, editors } = makeFlow();
+    const { flow, workspace } = makeFlow();
 
     await flow.record();
     await flow.stop();
 
     // The directory the recorder actually wrote to, rather than a path built a
     // second time from the same rule — which would agree even if it drifted.
-    expect(editors.opened).toEqual([requests[0]!.outputPath]);
+    expect(workspace.opened).toEqual([requests[0]!.outputPath]);
   });
 
   it("leaves behind a session the editor can actually open", async () => {
     // The seam between the two halves of this feature: the recorder writes the
     // manifest and the editor parses it. A shape either side does not agree on
     // would only show up as an editor that refuses to open a real recording.
-    const { flow, editors } = makeFlow({ cameraId: "some-id", cameraLabel: "FaceTime HD Camera" });
+    const { flow, workspace } = makeFlow({
+      cameraId: "some-id",
+      cameraLabel: "FaceTime HD Camera",
+    });
 
     await flow.record();
     await flow.stop();
 
     const manifest = parseManifest(
-      readFileSync(join(editors.opened[0]!, MANIFEST_FILE_NAME), "utf8"),
+      readFileSync(join(workspace.opened[0]!, MANIFEST_FILE_NAME), "utf8"),
     );
 
     expect(manifest.version).toBe(MANIFEST_VERSION);
@@ -264,18 +267,18 @@ describe("stopping a recording", () => {
   it("opens no editor when there was nothing recording", async () => {
     // A stop that recorded nothing leaves no result, and an editor pointed at a
     // directory with no manifest in it would only fail on open.
-    const { flow, editors } = makeFlow();
+    const { flow, workspace } = makeFlow();
 
     await flow.stop();
 
-    expect(editors.opened).toEqual([]);
+    expect(workspace.opened).toEqual([]);
   });
 
   it("still resets the panel when opening the editor throws", async () => {
     // The recording is already safe on disk; a failure to open an editor for it
     // must not surface as a failed stop.
     const { flow } = makeFlow();
-    (flow as unknown as { deps: { editors: { open: () => void } } }).deps.editors.open = () => {
+    (flow as unknown as { deps: { workspace: { open: () => void } } }).deps.workspace.open = () => {
       throw new Error("no manifest");
     };
 
@@ -292,7 +295,7 @@ describe("editor windows", () => {
     // editing one. A picker left up would cover the editor entirely.
     const { flow, camera, selection, dockCalls } = makeFlow({ cameraId: "some-id" });
 
-    flow.editorOpened();
+    flow.workspaceOpened();
 
     expect(dockCalls.hidden).toBe(1);
     expect(camera.shown).toBe(false);
@@ -304,7 +307,7 @@ describe("editor windows", () => {
     // full-screen overlay over the screen they were just looking at.
     const { flow, selection, dockCalls } = makeFlow();
 
-    flow.editorClosed();
+    flow.workspaceClosed(true);
 
     expect(dockCalls.shown).toBe(1);
     expect(selection.opened).toBe(0);
@@ -462,16 +465,16 @@ describe("choosing a source", () => {
       const { flow } = makeFlow();
       flow.showDock();
 
-      flow.editorOpened();
+      flow.workspaceOpened();
 
       expect(flow.state().devicesLive).toBe(false);
     });
 
     it("takes them back when the editor closes", () => {
       const { flow } = makeFlow();
-      flow.editorOpened();
+      flow.workspaceOpened();
 
-      flow.editorClosed();
+      flow.workspaceClosed(true);
 
       expect(flow.state().devicesLive).toBe(true);
     });

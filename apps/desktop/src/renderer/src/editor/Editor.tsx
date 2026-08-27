@@ -15,7 +15,7 @@ import { newProject, type Project, type ZoomSlice } from "../../../shared/projec
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { TrashIcon, WandIcon } from "./icons";
+import { FolderIcon, TrashIcon, WandIcon } from "./icons";
 import type { Images } from "./webgl";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
@@ -54,17 +54,18 @@ const SAVE_DEBOUNCE_MS = 600;
  */
 const ZOOM_PREVIEW_SETTLE_MS = 400;
 
-/** Stable, so the waveform hook does not see a new list on every render. */
-const NO_MEDIA: EditorSession["media"] = [];
-
 /**
- * The editor window.
+ * The editor, one of the app window's two screens.
  *
- * Opened by main when a recording stops, and from the tray's Open Recent. The
- * session arrives over IPC rather than in the route, so a reload restores it.
+ * The session is handed in rather than fetched: `Workspace` above owns which
+ * recording is on show, and subscribing here as well would mean the push
+ * arriving before this had mounted on a switch between two recordings.
+ *
+ * Mounted under a key of the recording's directory, so opening a second
+ * recording is a fresh editor rather than a reducer carrying the first one's
+ * selection, history and playhead into it.
  */
-export function Editor() {
-  const [session, setSession] = useState<EditorSession | null>(null);
+export function Editor({ session, onBack }: { session: EditorSession; onBack: () => void }) {
   const [state, dispatch] = useReducer(editorReducer, newProject("", 0), initialState);
   const [images, setImages] = useState<Images>(new Map());
   // Shown by default: the panel is where the editing happens, and an editor
@@ -91,27 +92,23 @@ export function Editor() {
   const [poster, setPoster] = useState<string | null>(null);
   const grab = useRef<Grab | null>(null);
 
-  useEffect(
-    () =>
-      window.prequel.editor.onOpen((opened) => {
-        setSession(opened);
-        // The manifest's duration, which is the only place the recording's real
-        // length is known — the project itself does not carry one, and every
-        // trim is clamped against this.
-        dispatch({ type: "load", project: opened.project, duration: opened.manifest.duration });
-      }),
-    [],
-  );
+  // The manifest's duration, which is the only place the recording's real
+  // length is known — the project itself does not carry one, and every trim is
+  // clamped against this. Re-run when the session changes because main re-sends
+  // it on every load, which is what restores the edit after an HMR round trip.
+  useEffect(() => {
+    dispatch({ type: "load", project: session.project, duration: session.manifest.duration });
+  }, [session]);
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
   const media = useEditorPlayback(session, slices);
 
   // Off the manifest, so it is fixed for the recording. Recomputing it per
   // render would rebuild an array of every click on every slider drag.
-  const autoMoments = useMemo(() => (session ? momentsOf(session) : []), [session]);
+  const autoMoments = useMemo(() => momentsOf(session), [session]);
 
   const present = useMemo(
-    () => new Set<TrackKind>((session?.media ?? []).map((track) => track.kind)),
+    () => new Set<TrackKind>(session.media.map((track) => track.kind)),
     [session],
   );
 
@@ -238,32 +235,28 @@ export function Editor() {
   };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
-  const peaks = useWaveforms(session?.media ?? NO_MEDIA, session?.manifest.duration ?? 0);
+  const peaks = useWaveforms(session.media, session.manifest.duration);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
-  const filmstrip = useFilmstrip(
-    session?.media ?? NO_MEDIA,
-    session?.manifest.duration ?? 0,
-    CLIP_H,
-  );
+  const filmstrip = useFilmstrip(session.media, session.manifest.duration, CLIP_H);
 
   // The span the camera actually covers, not just whether one was recorded.
   // It opens a few hundred ms after the screen, so a clip cut from the very
   // start of the take genuinely has no camera in it and should not claim to.
   const cameraSpan = useMemo(() => {
-    const track = session?.media.find((candidate) => candidate.kind === "camera");
+    const track = session.media.find((candidate) => candidate.kind === "camera");
     return track ? { start: track.offset, end: track.offset + track.duration } : null;
   }, [session]);
 
   // From the manifest rather than the video element: the inspector needs it to
   // shape the `wide` bubble before the element has necessarily loaded.
   const cameraSource = useMemo(() => {
-    const track = session?.media.find((candidate) => candidate.kind === "camera");
+    const track = session.media.find((candidate) => candidate.kind === "camera");
     return track?.width && track.height ? { width: track.width, height: track.height } : null;
   }, [session]);
 
   const screenSource = useMemo(() => {
-    const track = session?.media.find((candidate) => candidate.kind === "screen");
+    const track = session.media.find((candidate) => candidate.kind === "screen");
     return track?.width && track.height ? { width: track.width, height: track.height } : null;
   }, [session]);
 
@@ -278,17 +271,10 @@ export function Editor() {
     if (selected !== null) setPanelOpen(true);
   }, [selected]);
 
-  if (!session) {
-    return (
-      <Shell>
-        <div className="grid flex-1 place-items-center text-editor-muted">Opening recording…</div>
-      </Shell>
-    );
-  }
-
   return (
     <Shell
       name={session.name}
+      onBack={onBack}
       actions={
         <>
           {/* Runs the automatic pass again over the edit as it stands. Enabled
@@ -322,7 +308,7 @@ export function Editor() {
             title="Move this recording to the Trash"
             aria-label="Move this recording to the Trash"
             className="no-drag grid size-7 place-items-center rounded-lg text-editor-muted hover:bg-cut/20 hover:text-editor-fg [&_svg]:size-4"
-            onClick={() => void window.prequel.editor.deleteRecording(session.dir)}
+            onClick={() => void window.prequel.projects.delete(session.dir)}
           >
             <TrashIcon />
           </button>
@@ -542,10 +528,12 @@ export function Editor() {
 
 function Shell({
   name,
+  onBack,
   actions,
   children,
 }: {
-  name?: string;
+  name: string;
+  onBack: () => void;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -556,8 +544,22 @@ function Shell({
     <div className="editor-theme relative flex min-h-0 flex-1 flex-col overflow-hidden bg-editor-bg text-editor-fg">
       {/* Dragging the bar moves the window, and the inset traffic lights need
           the room on the left. */}
-      <header className="drag flex h-[38px] flex-none items-center gap-3 border-b border-editor-line pr-3 pl-20">
-        <span className="flex-1 truncate text-[13px] font-medium">{name ?? "Editor"}</span>
+      <header className="drag flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line pr-3 pl-20">
+        {/* `no-drag`, or this moves the window instead of navigating — the one
+            mistake this bar makes easy to make. */}
+        <button
+          type="button"
+          onClick={onBack}
+          title="Back to Projects"
+          className="no-drag flex flex-none items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+        >
+          <FolderIcon />
+          Projects
+        </button>
+        <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
+          /
+        </span>
+        <span className="flex-1 truncate pr-1.5 text-[13px] font-medium">{name}</span>
         {actions}
       </header>
       {children}
@@ -657,12 +659,12 @@ function useFirstCut(
  *
  * Debounced because dragging a slider is a 60 Hz stream of changes, and a write
  * per frame would be hard on the disk for no benefit. Flushed on the way out so
- * closing the window cannot lose the last edit — `beforeunload` is synchronous,
- * which is exactly what is needed here.
+ * leaving cannot lose the last edit — `beforeunload` is synchronous, which is
+ * exactly what is needed when the window is closing.
  */
 function usePersistence(session: EditorSession | null, project: unknown, revision: number) {
-  const latest = useRef({ session, project });
-  latest.current = { session, project };
+  const latest = useRef({ session, project, revision });
+  latest.current = { session, project, revision };
 
   useEffect(() => {
     // Revision 0 is the project as loaded. Saving it would create a
@@ -676,16 +678,28 @@ function usePersistence(session: EditorSession | null, project: unknown, revisio
     return () => clearTimeout(timer);
   }, [session, project, revision]);
 
+  // Mounted once, deliberately: the cleanup *is* the unmount flush, and a
+  // dependency here would make it run on every edit and undo the debounce
+  // above. Everything it needs is read off the ref.
   useEffect(() => {
     const flush = () => {
-      const { session: current, project: pending } = latest.current;
-      if (current && revision > 0) {
+      const { session: current, project: pending, revision: at } = latest.current;
+      if (current && at > 0) {
         void window.prequel.editor.saveProject(current.dir, pending as never);
       }
     };
+
     window.addEventListener("beforeunload", flush);
-    return () => window.removeEventListener("beforeunload", flush);
-  }, [revision]);
+
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      // Going back to the grid is not an unload, so `beforeunload` never fires
+      // — and the debounce above cancels its own pending write on the way out.
+      // Without this the last edit before the click is simply gone, which is
+      // the kind of loss nobody notices until they reopen the recording.
+      flush();
+    };
+  }, []);
 }
 
 /**

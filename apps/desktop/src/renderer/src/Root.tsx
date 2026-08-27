@@ -1,10 +1,10 @@
 import { Camera } from "./camera/Camera";
 import { Dock } from "./dock/Dock";
-import { Editor } from "./editor/Editor";
 import { Selection } from "./selection/Selection";
 import { Settings } from "./settings/Settings";
 import { Update } from "./update/Update";
 import { Welcome } from "./welcome/Welcome";
+import { Workspace } from "./workspace/Workspace";
 
 /**
  * Every window loads the same bundle and picks its view from the hash.
@@ -22,8 +22,10 @@ export function Root() {
       return <Selection />;
     case "/camera":
       return <Camera />;
-    case "/editor":
-      return <Editor />;
+    // One route for two screens: which one is showing is pushed by main, so a
+    // reload lands back where the window was rather than on the grid.
+    case "/workspace":
+      return <Workspace />;
     case "/welcome":
       return <Welcome />;
     // Straight to the step the window opened for. A separate route rather than

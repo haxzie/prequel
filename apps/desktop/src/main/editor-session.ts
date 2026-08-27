@@ -24,6 +24,7 @@ import { TRANSCRIPT_FILE_NAME, parseTranscript } from "../shared/transcript.js";
 import { loadProject } from "./editor-project.js";
 import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
+import { insideRecordings } from "./session.js";
 import { getRecorder, type TrackProbe } from "./recorder.js";
 import { ensureWallpaper } from "./wallpaper.js";
 
@@ -109,17 +110,29 @@ function readTranscript(dir: string, recordingId: string): Transcript | null {
 }
 
 /**
- * Moves a whole recording to the Trash, and closes the window editing it.
+ * Moves a whole recording to the Trash.
  *
  * The Trash rather than `rm -rf`: this is minutes of someone's work and every
  * file that made it, and an undo that only Finder can offer is worth far more
  * than the tidiness of removing it outright.
  *
- * Confirmed first, and modal to the editor's own window so it cannot be missed
+ * Confirmed first, and modal to the window that asked so it cannot be missed
  * behind it. Returns false when declined, so the caller can tell that from a
  * failure.
+ *
+ * What happens to the window afterwards is the caller's: the Projects grid and
+ * the editor share one window now, and deleting the recording on screen means
+ * going back to the grid rather than closing the app's only window.
  */
 export async function deleteRecording(dir: string, window: BrowserWindow | null): Promise<boolean> {
+  // The path comes from a renderer, which is the least-trusted process in the
+  // app, and this moves an entire directory tree. Guarded the way every other
+  // library operation is.
+  if (!insideRecordings(dir)) {
+    console.warn(`[library] refusing to trash outside the recordings folder: ${dir}`);
+    return false;
+  }
+
   const { response } = await dialog.showMessageBox(window ?? undefined!, {
     type: "warning",
     buttons: ["Move to Trash", "Cancel"],
@@ -137,7 +150,6 @@ export async function deleteRecording(dir: string, window: BrowserWindow | null)
 
   await shell.trashItem(dir);
   log("info", `moved ${dir} to the Trash`);
-  window?.close();
   return true;
 }
 

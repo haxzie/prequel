@@ -84,16 +84,18 @@ export interface CaptureFlowOptions {
   preferences: Preferences;
   onChange: (state: DockState) => void;
   /**
-   * Opens a finished recording for editing.
+   * The app window: the Projects grid, and the editor.
    *
-   * Injected rather than imported so the flow stays testable without Electron,
-   * and so a failure to open the editor cannot take the stop path down with it.
+   * Called with a directory to land on that recording, without one to land on
+   * the grid. Injected rather than imported so the flow stays testable without
+   * Electron, and so a failure to open the window cannot take the stop path
+   * down with it.
    */
-  editors?: { open: (dir: string) => void };
+  workspace?: { open: (dir?: string) => void };
   /**
    * The welcome window, for closing it once the flow is finished.
    *
-   * Injected for the same reasons as `editors`, and optional for the same
+   * Injected for the same reasons as `workspace`, and optional for the same
    * reason: nothing about capture depends on it existing.
    */
   welcome?: { close: () => void };
@@ -243,14 +245,20 @@ export class CaptureFlow {
 
   /** Opens a recording for editing, hiding the recorder's floating UI. */
   openEditor(dir: string): void {
-    this.deps.editors?.open(dir);
+    this.deps.workspace?.open(dir);
+  }
+
+  /** Opens the Projects grid, for the tray to reach through the flow. */
+  openProjects(): void {
+    this.deps.workspace?.open();
   }
 
   /**
-   * An editor took over. The panel, the bubble and any picker get out of the
-   * way — they exist to set up a recording, and the user is now editing one.
+   * The app window took over. The panel, the bubble and any picker get out of
+   * the way — they exist to set up a recording, and the user is now looking at
+   * one that is already made.
    */
-  editorOpened(): void {
+  workspaceOpened(): void {
     this.deps.selection.cancel();
     this.deps.dock.hide();
     this.deps.camera.hide();
@@ -259,8 +267,15 @@ export class CaptureFlow {
     this.emit();
   }
 
-  /** The last editor closed, so the panel comes back. */
-  editorClosed(): void {
+  /**
+   * The app window closed, so the panel comes back.
+   *
+   * Only when the window was opened by a finished take. Somebody who opened the
+   * grid from the tray to look through it and closed it again did not ask for a
+   * picker over the screen they were just looking at.
+   */
+  workspaceClosed(fromCapture: boolean): void {
+    if (!fromCapture) return;
     this.showDock();
   }
 
