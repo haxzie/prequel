@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse, userAgent, type NextRequest } from "next/server";
 
 import { githubHeaders, RELEASES_API, RELEASES_PAGE } from "@/lib/github";
+import { capture, identify } from "@/lib/posthog-server";
 
 /**
  * `prequel.sh/download` → the current `.dmg`.
@@ -37,12 +38,61 @@ interface Release {
   assets: { name: string; browser_download_url: string }[];
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(request: NextRequest): Promise<Response> {
   const url = (await current()) ?? RELEASES_PAGE;
+
+  track(request, url);
 
   // 302, not 301. A permanent redirect is cached by the browser for as long as
   // it likes, which would pin someone to whichever version they first clicked.
   return NextResponse.redirect(url, 302);
+}
+
+/**
+ * Records the download.
+ *
+ * Here rather than on the buttons that link here, for three reasons. This route
+ * is the only thing every download has in common — the nav, the footer, pricing,
+ * the blog and a URL somebody pasted into Slack all arrive at it. Nothing
+ * renders on a redirect, so `posthog-js` never runs and cannot report it. And a
+ * server-side event is not something a content blocker can remove, which for the
+ * one number the site exists to produce is worth more than the convenience of an
+ * `onClick`.
+ *
+ * Inside `after()`, so the redirect is already on its way: a visitor waiting on
+ * PostHog to answer before their download starts would be a worse site in
+ * exchange for a chart.
+ */
+function track(request: NextRequest, url: string): void {
+  // Crawlers, uptime checks and every chat app that unfurls a link all hit this
+  // URL, and none of them installed anything. Counted as downloads they would
+  // not just inflate the number — they would move it whenever somebody shared
+  // the link, which is exactly when the real number is interesting.
+  if (userAgent(request).isBot) return;
+
+  // A callback, not a promise: passing `capture(...)` would start the request
+  // here, before the redirect is written, which is the one thing this is
+  // arranged to avoid.
+  after(() =>
+    capture("download_started", {
+      distinctId: identify(request),
+      properties: {
+        // Which build people are actually installing, and whether they got one
+        // at all: `RELEASES_PAGE` means GitHub was unreachable or had nothing
+        // with a `.dmg` attached, and a rise in that is a broken button.
+        version: versionOf(url),
+        resolved: url !== RELEASES_PAGE,
+        // Where the click came from, so the funnel can tell the nav button from
+        // the pricing page from a link in someone else's thread.
+        referrer: request.headers.get("referer") ?? "$direct",
+      },
+    }),
+  );
+}
+
+/** The tag out of a release asset URL, or null when it is not one. */
+function versionOf(url: string): string | null {
+  return /\/download\/([^/]+)\//.exec(url)?.[1] ?? null;
 }
 
 /** The newest stable release carrying a `.dmg`, or null. */
