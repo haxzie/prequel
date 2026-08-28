@@ -293,9 +293,15 @@ npm --prefix apps/desktop version 0.2.0 --no-git-tag-version
 git commit -am "Release 0.2.0"
 
 # 2. Tag that commit and push both.
-git tag v0.2.0
+git tag -a v0.2.0 -m "Prequel 0.2.0"
 git push origin main --follow-tags
 ```
+
+`-a` is not decoration. `--follow-tags` pushes **annotated** tags and silently
+ignores lightweight ones, so `git tag v0.2.0` without it pushes the commit,
+reports success, and leaves the tag on your machine — no build, no release, and
+nothing that looks wrong until you go looking for the release that never
+appeared. `git push origin v0.2.0` is the recovery.
 
 The workflow refuses a tag whose version disagrees with the package, because the
 alternative is a release full of files named after the _previous_ version — which
@@ -303,16 +309,19 @@ looks exactly like the wrong build was published and cannot be told apart from
 one. It then creates the GitHub release with notes generated from the commits
 since the last tag.
 
-**Nothing CI publishes is signed.** The config asks for a signed, notarised build
-— `hardenedRuntime: true`, `notarize: true`, and no pinned `identity` so
-electron-builder finds whichever Developer ID is in the keychain — but a runner
-holds no certificate, and `build.yml` sets `CSC_IDENTITY_AUTO_DISCOVERY=false` so
-it does not go looking. Its artifacts are ad-hoc signed, which macOS quarantines
-on anyone else's machine.
-
-A machine with no certificate is not a broken build: electron-builder logs
+**CI signs and notarises only when the secrets are there**, which for this
+repository they are — `CSC_LINK` and `CSC_KEY_PASSWORD` for the certificate,
+`APPLE_API_KEY_BASE64`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER` for notarisation.
+`build.yml` derives `CSC_IDENTITY_AUTO_DISCOVERY` from whether `CSC_LINK` is set,
+so a fork without them is not a broken build: electron-builder logs
 `skipped macOS application code signing … 0 identities found` and produces an
 unsigned `.dmg` anyway.
+
+That distinction matters beyond the download warning. An unsigned build can never
+update **in place** — Squirrel refuses a replacement whose signature does not
+match what is running, so a copy installed from one is stranded on that version
+for ever. Do not tag from a run that was not signed, and if you sign locally as
+well, use the same certificate: the update path compares the two.
 
 ### Signing locally
 
