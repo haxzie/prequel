@@ -15,6 +15,7 @@ import type {
   RecordingPreferences,
   ScreenMode,
   Target,
+  WorkspaceSection,
 } from "../shared/contract.js";
 import { withoutDeviceIds } from "../shared/contract.js";
 import { iconsFor } from "./app-icons.js";
@@ -91,7 +92,10 @@ export interface CaptureFlowOptions {
    * Electron, and so a failure to open the window cannot take the stop path
    * down with it.
    */
-  workspace?: { open: (dir?: string) => void };
+  workspace?: {
+    open: (dir?: string) => void;
+    openSection: (section: WorkspaceSection) => void;
+  };
   /**
    * The welcome window, for closing it once the flow is finished.
    *
@@ -100,17 +104,9 @@ export interface CaptureFlowOptions {
    */
   welcome?: { close: () => void };
   /**
-   * The settings window, for the tray to reach through the flow.
-   *
-   * Injected for the same reasons as the two above. The tray never touches a
-   * window class directly — everything it does goes through here, so there is
-   * one place that knows what opening a surface entails.
-   */
-  settings?: { open: () => void };
-  /**
    * The update window, for the tray to reach through the flow.
    *
-   * Injected for the same reasons as the three above, and optional for the same
+   * Injected for the same reasons as the two above, and optional for the same
    * reason: nothing about capture depends on it existing.
    */
   updates?: { open: () => void };
@@ -178,9 +174,15 @@ export class CaptureFlow {
     this.open();
   }
 
-  /** Opens settings, or focuses the window already open. */
+  /**
+   * Opens Settings, which is a pane of the app window rather than a window.
+   *
+   * The tray never touches a window class directly — everything it does goes
+   * through here, so there is one place that knows what opening a surface
+   * entails.
+   */
   openSettings(): void {
-    this.deps.settings?.open();
+    this.deps.workspace?.openSection("settings");
   }
 
   /** Opens the update window, or focuses the one already open. */

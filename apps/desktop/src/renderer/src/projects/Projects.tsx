@@ -1,11 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ProjectSummary } from "../../../shared/contract";
+import { FILMSTRIP_FRAMES, type ProjectSummary } from "../../../shared/contract";
 import { formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon } from "../editor/icons";
+import { PaneHeader } from "../workspace/PaneHeader";
 import { PencilIcon } from "./icons";
+import { useFilmstrip } from "./useFilmstrip";
 import { usePosters } from "./usePosters";
+
+/**
+ * How long each frame of the hover preview stays up.
+ *
+ * Slow enough to see what is in it — these are frames from minutes apart, not
+ * playback — and fast enough that a whole recording has gone past before anyone
+ * decides the tile is not moving.
+ */
+const FRAME_MS = 700;
 
 /**
  * Every recording on this Mac.
@@ -58,24 +69,14 @@ export function Projects({
   );
 
   return (
-    // `min-h-0 flex-1` rather than `h-full`: this is a flex child of `#root`,
-    // and a flex item that cannot shrink below its content pushes the bottom of
-    // the window out of view instead of letting the middle give way.
-    <div className="editor-theme flex min-h-0 flex-1 flex-col overflow-hidden bg-editor-bg text-editor-fg">
-      {/* Dragging the bar moves the window, and the inset traffic lights need
-          the room on the left. */}
-      <header className="drag flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line pr-3 pl-20">
-        <span className="flex items-center gap-1.5 text-[13px] font-medium [&_svg]:size-3.5">
-          <FolderIcon />
-          Projects
-        </span>
-        <span className="flex-1" />
+    <>
+      <PaneHeader icon={<FolderIcon />} title="Projects">
         {projects !== null && projects.length > 0 && (
           <span className="text-[12px] text-editor-muted">
             {projects.length} {projects.length === 1 ? "recording" : "recordings"}
           </span>
         )}
-      </header>
+      </PaneHeader>
 
       {projects === null ? (
         // Blank rather than a spinner: the list is a directory read, and
@@ -103,7 +104,7 @@ export function Projects({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -128,19 +129,65 @@ function Card({
   onCancelRename: () => void;
   onDelete: () => void;
 }) {
+  /**
+   * Whether the pointer is over this tile, and whether it ever has been.
+   *
+   * The second outlives the first on purpose: leaving the strip mounted keeps
+   * it decoded, so coming back to a tile is instant. Mounting it before the
+   * first hover would mean every tile in the library holding a decoded strip
+   * to show a still.
+   */
+  const [hovering, setHovering] = useState(false);
+  const [warm, setWarm] = useState(false);
+
+  const strip = useFilmstrip(project.dir, project.filmstrip, hovering);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = stripRef.current;
+    if (!hovering || !strip || !element) return;
+
+    let frame = 0;
+    // Written straight to the element rather than through state: a timer that
+    // re-rendered would rebuild the card's label, its two actions and its
+    // field to move a background by a fixed step.
+    const show = () => {
+      element.style.backgroundPosition = `${((frame / (FILMSTRIP_FRAMES - 1)) * 100).toFixed(4)}% 0`;
+    };
+
+    show();
+    const timer = window.setInterval(() => {
+      frame = (frame + 1) % FILMSTRIP_FRAMES;
+      show();
+    }, FRAME_MS);
+
+    return () => window.clearInterval(timer);
+  }, [hovering, strip]);
+
   return (
     <div className="group flex flex-col gap-2">
       {/* The whole thumbnail is the button, and the actions sit over it rather
           than inside it: nesting a button inside a button is invalid, and the
           browser resolves it by dropping one of the two. */}
-      <div className="relative">
+      <div
+        className="relative"
+        onPointerEnter={() => {
+          setHovering(true);
+          setWarm(true);
+        }}
+        onPointerLeave={() => setHovering(false)}
+      >
         <button
           type="button"
           onClick={onOpen}
           disabled={opening}
           title={`Open ${project.name}`}
           className={cn(
-            "block w-full overflow-hidden rounded-xl border border-editor-line bg-editor-panel",
+            // `relative`, so the hover strip's `inset-0` resolves against this
+            // button and is clipped by its rounding. Against the wrapper
+            // outside it — the next positioned ancestor — the strip covers the
+            // border and squares off all four corners the moment it fades in.
+            "relative block w-full overflow-hidden rounded-xl border border-editor-line bg-editor-panel",
             "aspect-video transition-[border-color,opacity] hover:border-editor-accent/60",
             opening && "pointer-events-none opacity-50",
           )}
@@ -159,6 +206,27 @@ function Card({
             <span className="grid size-full place-items-center text-editor-muted/40 [&_svg]:size-6">
               <FolderIcon />
             </span>
+          )}
+
+          {/* The frames, as one strip moved sideways. Over the poster rather
+              than instead of it, so a tile whose strip is still being made
+              keeps its picture instead of going blank under the pointer. */}
+          {warm && strip && (
+            <div
+              ref={stripRef}
+              aria-hidden="true"
+              style={{
+                backgroundImage: `url("${strip}")`,
+                // The strip is `FILMSTRIP_FRAMES` frames wide, so this sizes one
+                // of them to the tile — and a percentage background position
+                // then steps between frames exactly, whatever the tile's size.
+                backgroundSize: `${String(FILMSTRIP_FRAMES * 100)}% 100%`,
+              }}
+              className={cn(
+                "absolute inset-0 transition-opacity duration-150",
+                hovering ? "opacity-100" : "opacity-0",
+              )}
+            />
           )}
         </button>
 

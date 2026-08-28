@@ -40,7 +40,7 @@ import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
-import { listProjects, renameProject, savePoster } from "./projects.js";
+import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
@@ -243,6 +243,10 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.projectsSavePoster, (_event, dir: string, dataUrl: string) =>
     attempt(() => savePoster(dir, dataUrl)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.projectsSaveFilmstrip, (_event, dir: string, dataUrl: string) =>
+    attempt(() => saveFilmstrip(dir, dataUrl)),
   );
 
   // The sheet hangs off the window that asked, so it cannot open behind the

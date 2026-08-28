@@ -24,6 +24,7 @@ import type {
   Target,
   TranscribeProgress,
   UpdateState,
+  WorkspaceSection,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
@@ -49,6 +50,7 @@ export type {
   Target,
   TranscribeProgress,
   UpdateState,
+  WorkspaceSection,
 };
 
 const api = {
@@ -341,6 +343,25 @@ const api = {
     /** Caches a still the grid made, so the next open does not have to. */
     savePoster: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsSavePoster, dir, dataUrl),
+
+    /** The same for the hover preview, which is made on the first hover. */
+    saveFilmstrip: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsSaveFilmstrip, dir, dataUrl),
+  },
+
+  /**
+   * The app window itself.
+   *
+   * Only the sidebar, and only in one direction: which pane is showing is the
+   * renderer's own business right up until the tray asks for Settings, which
+   * has no window of its own to open any more.
+   */
+  workspace: {
+    onSection: (listener: (section: WorkspaceSection) => void): (() => void) => {
+      const handler = (_event: unknown, section: WorkspaceSection) => listener(section);
+      ipcRenderer.on(IPC_CHANNELS.workspaceSection, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.workspaceSection, handler);
+    },
   },
 
   /**

@@ -314,6 +314,16 @@ export const IPC_CHANNELS = {
   projectsDelete: "projects:delete",
   /** Renderer → main: cache a still the grid just made. */
   projectsSavePoster: "projects:savePoster",
+  /** Renderer → main: cache a hover preview the grid just made. */
+  projectsSaveFilmstrip: "projects:saveFilmstrip",
+  /**
+   * Main → renderer: show this pane of the library.
+   *
+   * The tray's Settings item is the only sender. Everything else about which
+   * pane is showing is the renderer's own business — but the tray has no way to
+   * reach into it, and Settings has no window of its own any more.
+   */
+  workspaceSection: "workspace:section",
   /**
    * Asks where the export should be written, with a save dialog.
    *
@@ -918,7 +928,37 @@ export interface ProjectSummary {
    * yet. The grid makes the missing ones and asks main to keep them.
    */
   poster: string | null;
+  /**
+   * A `prequel-media:` URL for the hover preview, or null when there is none.
+   *
+   * `FILMSTRIP_FRAMES` frames from across the recording, side by side in one
+   * image. Made on the first hover rather than with the rest of the grid: it
+   * costs a seek per frame, and a library of forty takes is thirty-nine of them
+   * nobody pointed at.
+   */
+  filmstrip: string | null;
 }
+
+/**
+ * How many frames a filmstrip holds.
+ *
+ * Read by both sides of the strip — the renderer that draws one and the one
+ * that flicks through it — and the two must agree exactly or the preview shows
+ * a seam down the middle of every frame.
+ *
+ * Six is about two seconds at the rate the grid flicks through them, which is
+ * as long as anyone holds still over a tile.
+ */
+export const FILMSTRIP_FRAMES = 6;
+
+/**
+ * Which pane of the app window's library is showing.
+ *
+ * Not a route. The window loads `/workspace` and is told what to show, for the
+ * same reason the editor is — see `windows/workspace.ts` — and this is the
+ * vocabulary the tray uses to ask.
+ */
+export type WorkspaceSection = "projects" | "settings" | "account";
 
 /**
  * How far along an update is.

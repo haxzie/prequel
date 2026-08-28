@@ -13,6 +13,11 @@
  * `project.json` with no live editor to race. Add a path out of the editor that
  * skips the flush and a rename silently loses the last edit before it.
  *
+ * Settings is a pane of this window rather than a window of its own. It used to
+ * be one, and the reason it stopped is the same reason the grid is here: a
+ * menu-bar app has no app menu, so every surface it owns has to be found and
+ * got back to, and three separate windows for one app is three things to find.
+ *
  * The screen on show is pushed, never encoded in the route. The hash has to
  * survive a reload and an HMR round trip and a serialised manifest in it would
  * not — so the window always loads `/workspace`, and `did-finish-load` re-sends
@@ -23,7 +28,7 @@ import { basename, join } from "node:path";
 
 import type { BrowserWindow } from "electron";
 
-import { IPC_CHANNELS } from "../../shared/contract.js";
+import { IPC_CHANNELS, type WorkspaceSection } from "../../shared/contract.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../../shared/manifest.js";
 import { flushProject } from "../editor-project.js";
 import { mirrorConsole } from "../log.js";
@@ -50,12 +55,29 @@ export interface WorkspaceWindowOptions {
    * picker over the screen they were looking at.
    */
   onClose?: (fromCapture: boolean) => void;
+  /**
+   * Called when the window is focused.
+   *
+   * Open at login is owned by macOS, not by `preferences.json`, and the user
+   * can change it in System Settings while the Settings pane sits open. The
+   * tray gets away with reading it live because its menu is rebuilt on every
+   * right-click; a window that stays open has to be told to look again.
+   */
+  onFocus?: () => void;
 }
 
 export class WorkspaceWindow {
   private window: BrowserWindow | null = null;
-  /** The recording the editor is showing, or null on the Projects grid. */
+  /** The recording the editor is showing, or null on the library. */
   private current: string | null = null;
+  /**
+   * Which pane of the library is showing.
+   *
+   * Kept here rather than left to the renderer because the tray can ask for
+   * Settings, and because it has to survive a reload the same way `current`
+   * does — it is re-sent on every `did-finish-load`.
+   */
+  private section: WorkspaceSection = "projects";
   private fromCapture = false;
 
   constructor(private readonly options: WorkspaceWindowOptions = {}) {}
@@ -115,10 +137,12 @@ export class WorkspaceWindow {
     // otherwise go nowhere at all.
     mirrorConsole(window.webContents);
 
-    // Re-sent on every load, which is what restores the editor after a reload
-    // or an HMR round trip. Nothing to send while the grid is showing — it
-    // asks for its own list.
+    // Re-sent on every load, which is what restores the editor and the pane
+    // behind it after a reload or an HMR round trip. The grid still asks for
+    // its own list — only where the window was is pushed.
     window.webContents.on("did-finish-load", () => this.push());
+
+    window.on("focus", () => this.options.onFocus?.());
 
     // `ready-to-show` rather than showing immediately, so the window appears
     // with its first frame drawn instead of as an empty rectangle.
@@ -143,6 +167,28 @@ export class WorkspaceWindow {
   }
 
   /**
+   * Opens the window on one pane of the library, or moves the open one to it.
+   *
+   * The pane is set before anything is created: a new window pushes its state
+   * on `did-finish-load`, and setting this afterwards would land it on the grid
+   * and move it to Settings a frame later.
+   */
+  openSection(section: WorkspaceSection): void {
+    this.section = section;
+
+    if (!this.isOpen) {
+      this.open();
+      return;
+    }
+
+    // Off the editor if one is showing, writing its edit on the way: Settings
+    // is a pane of the library, and the two share this window.
+    this.showProjects(section);
+    this.window?.show();
+    this.window?.focus();
+  }
+
+  /**
    * Shows one recording in the editor.
    *
    * Throws for a directory that is not an openable recording, so the caller can
@@ -160,15 +206,23 @@ export class WorkspaceWindow {
     this.push();
   }
 
-  /** Goes back to the grid, writing the edit being left behind. */
-  showProjects(): void {
+  /**
+   * Goes back to the library, writing the edit being left behind.
+   *
+   * Lands on the grid unless asked for another pane. Leaving an editor is a
+   * request for the list of recordings, not for wherever the sidebar happened
+   * to be before one was opened.
+   */
+  showProjects(section: WorkspaceSection = "projects"): void {
     this.flush();
     this.current = null;
+    this.section = section;
     this.window?.setTitle(GRID_TITLE);
     // Told rather than assumed. The renderer does not decide this — the tray
     // can ask for the grid over an open editor, and deleting the recording on
     // screen takes the window off it.
     this.window?.webContents.send(IPC_CHANNELS.projectsShowing);
+    this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
   }
 
   close(): void {
@@ -177,11 +231,17 @@ export class WorkspaceWindow {
     if (this.window && !this.window.isDestroyed()) this.window.close();
   }
 
-  /** Sends the open recording to the renderer, if there is one. */
+  /** Sends the open recording to the renderer, and the pane behind it. */
   private push(): void {
-    const dir = this.current;
     const window = this.window;
-    if (!dir || !window) return;
+    if (!window) return;
+
+    // Always, and first: this is what a reload or an HMR round trip restores,
+    // and the pane is as much part of where the window was as the recording is.
+    window.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+
+    const dir = this.current;
+    if (!dir) return;
 
     void readEditorSession(dir)
       .then((session) => {

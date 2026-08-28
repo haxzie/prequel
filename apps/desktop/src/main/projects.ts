@@ -28,6 +28,15 @@ import { insideRecordings, SESSIONS_DIR } from "./session.js";
 export const POSTER_FILE_NAME = "poster.jpg";
 
 /**
+ * The cached hover preview, beside the recording it is of.
+ *
+ * One image holding every frame of the preview rather than a folder of them:
+ * the grid shows it by moving a background, so a strip is one request and one
+ * decode where separate files would be several of each, arriving out of order.
+ */
+export const FILMSTRIP_FILE_NAME = "filmstrip.jpg";
+
+/**
  * Every recording, newest first.
  *
  * A directory only counts if it holds a manifest: an interrupted take can leave
@@ -57,6 +66,9 @@ export function listProjects(dir = SESSIONS_DIR): ProjectSummary[] {
         name: displayName(path),
         createdAt: statSync(join(path, MANIFEST_FILE_NAME)).mtimeMs,
         poster: existsSync(join(path, POSTER_FILE_NAME)) ? mediaUrl(name, POSTER_FILE_NAME) : null,
+        filmstrip: existsSync(join(path, FILMSTRIP_FILE_NAME))
+          ? mediaUrl(name, FILMSTRIP_FILE_NAME)
+          : null,
       });
     } catch {
       // No manifest, or unreadable. Not a recording we can open.
@@ -127,8 +139,17 @@ export function renameProject(dir: string, name: string, root = SESSIONS_DIR): v
  * already does.
  */
 export function savePoster(dir: string, dataUrl: string, root = SESSIONS_DIR): void {
+  writeCachedImage(dir, POSTER_FILE_NAME, dataUrl, root);
+}
+
+/** The same, for the strip of frames a tile flicks through on hover. */
+export function saveFilmstrip(dir: string, dataUrl: string, root = SESSIONS_DIR): void {
+  writeCachedImage(dir, FILMSTRIP_FILE_NAME, dataUrl, root);
+}
+
+function writeCachedImage(dir: string, fileName: string, dataUrl: string, root: string): void {
   if (!insideRecordings(dir, root)) {
-    console.warn(`[library] refusing to write a poster outside the recordings folder: ${dir}`);
+    console.warn(`[library] refusing to write ${fileName} outside the recordings folder: ${dir}`);
     return;
   }
 
@@ -137,15 +158,15 @@ export function savePoster(dir: string, dataUrl: string, root = SESSIONS_DIR): v
   // than decoded, because whatever `Buffer.from` made of it would be written to
   // disk and served back as an image.
   if (!dataUrl.startsWith("data:image/jpeg;base64,") || comma === -1) {
-    console.warn(`[library] refusing a poster for ${dir} that is not a JPEG data URL`);
+    console.warn(`[library] refusing a ${fileName} for ${dir} that is not a JPEG data URL`);
     return;
   }
 
   try {
-    writeFileSync(join(dir, POSTER_FILE_NAME), Buffer.from(dataUrl.slice(comma + 1), "base64"));
+    writeFileSync(join(dir, fileName), Buffer.from(dataUrl.slice(comma + 1), "base64"));
   } catch (cause) {
     // A tile without a picture, which is worse-looking rather than broken —
     // and the next time the grid opens it will simply try again.
-    console.warn(`[library] could not cache a poster for ${dir}:`, cause);
+    console.warn(`[library] could not cache ${fileName} for ${dir}:`, cause);
   }
 }

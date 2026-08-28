@@ -31,7 +31,6 @@ import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { WorkspaceWindow } from "./windows/workspace.js";
 import { SelectionOverlay } from "./windows/selection.js";
-import { SettingsWindow } from "./windows/settings.js";
 import { UpdateWindow } from "./windows/update.js";
 import { WelcomeWindow } from "./windows/welcome.js";
 
@@ -99,8 +98,7 @@ let quitting = false;
  * any of them is open and hidden only once none is.
  */
 function syncDockIcon(): void {
-  if (workspace.isOpen || welcome.isOpen || settings.isOpen || updates.isOpen)
-    void app.dock?.show();
+  if (workspace.isOpen || welcome.isOpen || updates.isOpen) void app.dock?.show();
   else app.dock?.hide();
 }
 
@@ -109,19 +107,15 @@ const welcome = new WelcomeWindow({
   onClose: () => syncDockIcon(),
 });
 
-const settings = new SettingsWindow({
-  onOpen: () => syncDockIcon(),
-  onClose: () => syncDockIcon(),
-  // Open at login lives in macOS, so it can change while this window is open.
-  onFocus: () => broadcastLoginItem(loginItemState()),
-});
-
 const updates = new UpdateWindow({
   onOpen: () => syncDockIcon(),
   onClose: () => syncDockIcon(),
 });
 
 const workspace = new WorkspaceWindow({
+  // Open at login lives in macOS, so it can change while the Settings pane is
+  // open in this window.
+  onFocus: () => broadcastLoginItem(loginItemState()),
   onOpen: () => {
     flow?.workspaceOpened();
     syncDockIcon();
@@ -173,7 +167,6 @@ void app.whenReady().then(() => {
     selection,
     preferences,
     onChange: broadcastDockState,
-    settings,
     workspace,
     welcome,
     updates,
@@ -342,7 +335,6 @@ app.on("will-quit", () => {
     ["dock", () => dock.destroy()],
     ["workspace", () => workspace.close()],
     ["welcome", () => welcome.close()],
-    ["settings", () => settings.close()],
     ["updates", () => updates.close()],
     ["tray", () => tray?.destroy()],
   ] as const) {

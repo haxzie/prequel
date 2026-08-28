@@ -16,6 +16,7 @@ import {
   DEFAULT_PREFERENCES,
   type RecordingPreferences,
   type SelectionResult,
+  type WorkspaceSection,
 } from "../shared/contract.js";
 import {
   findTrack,
@@ -70,7 +71,10 @@ function makeFlow(
   picked: SelectionResult | null = null,
 ) {
   const dockCalls: DockCalls = { shown: 0, hidden: 0, visible: false };
-  const workspace = { opened: [] as (string | undefined)[] };
+  const workspace = {
+    opened: [] as (string | undefined)[],
+    sections: [] as WorkspaceSection[],
+  };
   /** How many times the panel opening has asked whether there is a new version. */
   const updateChecks = { count: 0 };
   const welcome = { closed: 0 };
@@ -137,7 +141,10 @@ function makeFlow(
       update: (patch: Partial<RecordingPreferences>) => (stored = { ...stored, ...patch }),
     } as never,
     onChange: () => undefined,
-    workspace: { open: (dir?: string) => workspace.opened.push(dir) },
+    workspace: {
+      open: (dir?: string) => void workspace.opened.push(dir),
+      openSection: (section: WorkspaceSection) => void workspace.sections.push(section),
+    },
     welcome: { close: () => (welcome.closed += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
   });

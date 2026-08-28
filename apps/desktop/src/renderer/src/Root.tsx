@@ -1,7 +1,6 @@
 import { Camera } from "./camera/Camera";
 import { Dock } from "./dock/Dock";
 import { Selection } from "./selection/Selection";
-import { Settings } from "./settings/Settings";
 import { Update } from "./update/Update";
 import { Welcome } from "./welcome/Welcome";
 import { Workspace } from "./workspace/Workspace";
@@ -22,8 +21,9 @@ export function Root() {
       return <Selection />;
     case "/camera":
       return <Camera />;
-    // One route for two screens: which one is showing is pushed by main, so a
-    // reload lands back where the window was rather than on the grid.
+    // One route for every screen the app window has — the library, its panes
+    // and the editor. Which one is showing is pushed by main, so a reload lands
+    // back where the window was rather than on the grid.
     case "/workspace":
       return <Workspace />;
     case "/welcome":
@@ -33,8 +33,6 @@ export function Root() {
     // would fall through to the unknown-route branch.
     case "/welcome/permissions":
       return <Welcome startAt="permissions" />;
-    case "/settings":
-      return <Settings />;
     case "/update":
       return <Update />;
     default:

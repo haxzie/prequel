@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { EditorSession } from "../../../shared/contract";
+import type { EditorSession, WorkspaceSection } from "../../../shared/contract";
 import { Editor } from "../editor/Editor";
-import { Projects } from "../projects/Projects";
+import { Library } from "./Library";
 
 /**
- * The app window: the Projects grid, and the editor for one recording.
+ * The app window: the library, and the editor for one recording.
  *
  * The only navigation state there is. Main owns which recording is open — it
  * has to, because leaving one means writing its edit before the next loads —
  * so this asks main to move and then follows what main pushes back rather than
  * switching on its own and hoping the two agree.
+ *
+ * The library's own pane is the one thing this decides for itself, because
+ * nothing outside the window cares which of them is showing — except the tray's
+ * Settings item, which arrives as a push like everything else.
  */
 export function Workspace() {
   const [session, setSession] = useState<EditorSession | null>(null);
@@ -22,6 +26,16 @@ export function Workspace() {
    * grid's own re-list.
    */
   const [opening, setOpening] = useState<string | null>(null);
+  /**
+   * Which pane of the library is showing.
+   *
+   * Seeded from main on every load rather than defaulting here: the window
+   * restores where it was after a reload, and the tray can open it straight
+   * onto Settings.
+   */
+  const [section, setSection] = useState<WorkspaceSection>("projects");
+
+  useEffect(() => window.prequel.workspace.onSection(setSection), []);
 
   useEffect(
     () =>
@@ -63,6 +77,6 @@ export function Workspace() {
   return session ? (
     <Editor key={session.dir} session={session} onBack={back} />
   ) : (
-    <Projects opening={opening} onOpen={open} />
+    <Library section={section} onSection={setSection} opening={opening} onOpen={open} />
   );
 }
