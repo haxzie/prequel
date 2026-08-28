@@ -468,7 +468,9 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // About the size the pointer appears on screen in a 1080p frame, so an export
   // looks like the recording rather than like a diagram of it.
   cursorSize: 0.035,
-  cursorStyle: "black",
+  // Only what a *new* project starts with. An existing `project.json` names its
+  // own style and keeps it, so nobody's edit changes shape underneath them.
+  cursorStyle: "modern-black",
   cursorAutoHide: false,
   cursorHideAfter: 2,
 };

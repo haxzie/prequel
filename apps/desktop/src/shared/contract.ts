@@ -710,9 +710,41 @@ export interface DockState {
  * pointer, and there is nothing for it to become.
  */
 export const CURSOR_STYLES = [
+  // First, and so the default: `cursorStyle` falls back to this entry for any
+  // id it does not recognise, which is every recording made before the pointer
+  // had a shape to choose at all.
+  {
+    id: "modern-black",
+    label: "Black",
+    shapes: {
+      // Hotspot from `scripts/make-cursor.mjs`, which measures it off the
+      // artwork rather than assuming the corner — this tip is rounded, so the
+      // bounding box's corner is a couple of pixels outside the pointer.
+      arrow: { file: "cursor-modern-black.png", hotspot: { x: 0.0696, y: 0.0752 } },
+      // The other four are the classic set in the same tone, deliberately. A
+      // style is a tone rather than a shape, and the pointer still has to
+      // become a hand over a link and an I-beam in text — the artwork this one
+      // is drawn from offers an arrow and nothing else.
+      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      text: { file: "cursor-black-text.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-h": { file: "cursor-black-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-v": { file: "cursor-black-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "modern-white",
+    label: "White",
+    shapes: {
+      arrow: { file: "cursor-modern-white.png", hotspot: { x: 0.0696, y: 0.0752 } },
+      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      text: { file: "cursor-white-text.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-h": { file: "cursor-white-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
+      "resize-v": { file: "cursor-white-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
   {
     id: "black",
-    label: "Black",
+    label: "Classic Black",
     shapes: {
       arrow: { file: "cursor-black.png", hotspot: { x: 0.055, y: 0.055 } },
       hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
@@ -723,7 +755,7 @@ export const CURSOR_STYLES = [
   },
   {
     id: "white",
-    label: "White",
+    label: "Classic White",
     shapes: {
       arrow: { file: "cursor-white.png", hotspot: { x: 0.055, y: 0.055 } },
       hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
