@@ -116,6 +116,37 @@
     }
   }
 
+  /* The hero arriving. Each element above the fold rises a few pixels and fades
+     up, staggered down the block, so the page reads as settling into place
+     rather than as one thing that was already there.
+
+     `both` rather than the default `none`: every element carries its own delay,
+     and without the backwards fill each one paints at full opacity first and
+     then blinks out the moment its animation starts — the exact flash the
+     entrance exists to avoid.
+
+     Transform and opacity only. The headline is the largest text on the site
+     and animating anything that reflows it would run a layout pass per frame
+     against the whole hero. */
+  --animate-hero-rise: hero-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes hero-rise {
+    from {
+      opacity: 0;
+      /* Small on purpose. The distance is what makes it read as a rise; past
+         about 20px it reads as a slide, and the eye follows it instead of
+         landing on the words. */
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      /* `none`, not `translateY(0)`: this is the element's resting state and
+         leaving a transform on it after the animation would keep it on its own
+         compositor layer for the life of the page. */
+      transform: none;
+    }
+  }
+
   /* Pushing in on the work. */
   @keyframes zoom-push {
     0%,
@@ -309,6 +340,16 @@
    animations want the same answer. */
 @media (prefers-reduced-motion: reduce) {
   [data-wash] > * {
+    animation: none;
+  }
+}
+
+/* The hero's entrance, likewise — and `animation: none` is the whole fix here
+   rather than a starting point. `hero-rise` ends exactly where an untouched
+   element already sits, so dropping it leaves the finished hero rather than a
+   block frozen at opacity 0. */
+@media (prefers-reduced-motion: reduce) {
+  [data-hero-enter] {
     animation: none;
   }
 }
