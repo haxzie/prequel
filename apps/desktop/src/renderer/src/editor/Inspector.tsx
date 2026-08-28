@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch } from "react";
 
 import { cursorStyle } from "../../../shared/contract";
-import { shapeAspect, type Size } from "../../../shared/layout";
+import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
   DEFAULT_LAYOUT,
@@ -532,6 +532,10 @@ function CameraPanel({
   // `custom` is either, depending on what it was dragged out of, which is
   // exactly what `cameraCard` records.
   const slotted = SLOTTED.has(layout.preset) || (layout.preset === "custom" && layout.cameraCard);
+  // Not `!slotted`, which is a different question: `camera-*` is neither a card
+  // beside the screen nor a bubble over it — it *is* the picture, and a picture
+  // that shrank away from a zoom would leave the frame empty.
+  const floats = cameraFloats(layout);
   const aspect = layout.cameraWidth / Math.max(layout.cameraHeight, 0.0001);
 
   return (
@@ -629,6 +633,26 @@ function CameraPanel({
           // On by default because the bubble the user watched while recording
           // was mirrored; off reads as flipped against it.
           onChange={(value) => set("layout", "cameraMirror", value)}
+        />
+      </Field>
+
+      <Field label="Shrink on zoom" inline {...field("layout", "cameraShrinkOnZoom")}>
+        <Toggle
+          value={layout.cameraShrinkOnZoom}
+          disabled={off || !floats}
+          title={floats ? undefined : "Only a camera floating over the screen can shrink"}
+          onChange={(value) => set("layout", "cameraShrinkOnZoom", value)}
+        />
+      </Field>
+
+      <Field label="Size while zoomed" {...field("layout", "cameraShrinkTo")}>
+        <Slider
+          value={layout.cameraShrinkTo}
+          min={0.2}
+          max={1}
+          format={percent}
+          disabled={off || !floats || !layout.cameraShrinkOnZoom}
+          onChange={(value) => set("layout", "cameraShrinkTo", value)}
         />
       </Field>
     </Section>

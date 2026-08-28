@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   clearOverride,
   clearSection,
+  DEFAULT_LAYOUT,
   DEFAULT_SETTINGS,
   DEFAULT_ZOOM,
   hasOverrides,
@@ -336,6 +337,53 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.overrides).toEqual({
       layout: { cameraX: 0.85 },
     });
+  });
+});
+
+describe("reading a project written before the camera could shrink", () => {
+  /**
+   * `cameraShrinkOnZoom` is on for a new project — it is the better default and
+   * the reason it exists. But `sanitiseProject` spreads what is on disk over
+   * `DEFAULT_LAYOUT`, so a key nobody ever wrote takes that default, and every
+   * recording already edited would reopen with its bubble moving in a way its
+   * author never asked for. The rule `perspective` and `vignette` were
+   * defaulted by holds here: a new field reads back the way the project looked
+   * when it was saved.
+   */
+  const opened = (layout: Record<string, unknown>) => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.defaults.layout = layout;
+    return sanitiseProject(project, RECORDING, 10 * S)!.defaults.layout;
+  };
+
+  it("leaves a project that predates it looking the way it did", () => {
+    const { cameraShrinkOnZoom: _dropped, ...before } = newProject(RECORDING, 10 * S).defaults
+      .layout as unknown as Record<string, unknown>;
+
+    expect(opened(before).cameraShrinkOnZoom).toBe(false);
+    // Still the default, so switching it on reads as the size it would have.
+    expect(opened(before).cameraShrinkTo).toBe(DEFAULT_LAYOUT.cameraShrinkTo);
+  });
+
+  it("keeps what a project written since then says, either way", () => {
+    expect(opened({ cameraShrinkOnZoom: true }).cameraShrinkOnZoom).toBe(true);
+    expect(opened({ cameraShrinkOnZoom: false }).cameraShrinkOnZoom).toBe(false);
+  });
+
+  it("starts a new project with it on", () => {
+    expect(newProject(RECORDING, 10 * S).defaults.layout.cameraShrinkOnZoom).toBe(true);
+  });
+
+  it("does not make every slice look like it overrides it", () => {
+    // `migrateLayout` runs over a slice's overrides as well as the defaults, so
+    // writing the key there would make `key in overrides.layout` answer yes for
+    // a clip that overrides nothing — and the panel would show a shrink set on
+    // clips nobody touched.
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S)));
+    project.tracks[0].slices[0].overrides = { layout: { cameraZoom: 1.5 } };
+
+    const slice = sanitiseProject(project, RECORDING, 10 * S)!.tracks[0]!.slices[0]!;
+    expect(Object.keys(slice.overrides.layout ?? {})).toEqual(["cameraZoom"]);
   });
 });
 

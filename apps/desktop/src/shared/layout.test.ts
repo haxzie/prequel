@@ -1612,6 +1612,135 @@ describe("zooming", () => {
     }
   });
 
+  describe("the camera getting out of the way", () => {
+    /**
+     * A zoom brings the picture closer and the bubble does not move, so it ends
+     * up covering more of a frame with less room in it. These pin that it
+     * shrinks with the move, and only where shrinking makes sense.
+     */
+    const withCamera = (over: Partial<SliceSettings["layout"]> = {}) =>
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "over-padded", ...over } });
+
+    const cameraOf = (zooms: ZoomSlice[], over: Partial<SliceSettings["layout"]> = {}) => {
+      const plan = buildRenderPlan(
+        FRAME,
+        { screen: SCREEN, camera: CAMERA },
+        withCamera(over),
+        null,
+        zooms,
+      );
+      const item = plan.items.find(
+        (candidate) => candidate.kind === "image" && candidate.source === "camera",
+      )!;
+      if (item.kind !== "image") throw new Error("wrong item");
+      return { keys: item.motion ?? [], base: item.dstRect, radius: item.shape.radius };
+    };
+
+    it("shrinks to the size it was asked for while a zoom is held", () => {
+      const { keys, base, radius } = cameraOf([region()]);
+
+      expect(rectAt(keys, 4 * S, base, radius).width).toBeCloseTo(base.width * 0.7, 3);
+      expect(rectAt(keys, 4 * S, base, radius).height).toBeCloseTo(base.height * 0.7, 3);
+    });
+
+    it("is back to full size between two zooms that are far apart", () => {
+      const { keys, base, radius } = cameraOf([
+        region({ id: "a", source: { start: 2 * S, end: 3 * S } }),
+        region({ id: "b", source: { start: 7 * S, end: 8 * S } }),
+      ]);
+
+      expect(rectAt(keys, 5 * S, base, radius).width).toBeCloseTo(base.width, 3);
+    });
+
+    it("stays out of the way across a join between two zooms", () => {
+      // The same property the picture's own keys have there: two zooms back to
+      // back never return to rest, so neither may the bubble — a camera that
+      // sprang back to full size at the boundary and shrank again would be the
+      // flinch the morph exists to remove.
+      const { keys, base, radius } = cameraOf([
+        region({ id: "a", source: { start: 2 * S, end: 4 * S }, x: 0.25 }),
+        region({ id: "b", source: { start: 4 * S, end: 6 * S }, x: 0.75 }),
+      ]);
+
+      for (let at = 3.5 * S; at <= 4.5 * S; at += S / 20) {
+        expect(rectAt(keys, at, base, radius).width).toBeCloseTo(base.width * 0.7, 3);
+      }
+    });
+
+    it("shrinks into the corner it is parked in", () => {
+      // The bug this pins: it shrank about its own centre, so a bubble tucked
+      // into a corner walked away from that corner as it got smaller — less in
+      // the way and less tucked away at the same time.
+      //
+      // The near edges keep the margin they had; all the slack comes off the
+      // far side.
+      const { keys, base, radius } = cameraOf([region()], { cameraX: 0.87, cameraY: 0.77 });
+      const held = rectAt(keys, 4 * S, base, radius);
+
+      expect(held.x + held.width).toBeCloseTo(base.x + base.width, 3);
+      expect(held.y + held.height).toBeCloseTo(base.y + base.height, 3);
+    });
+
+    it("shrinks into whichever corner that is", () => {
+      const { keys, base, radius } = cameraOf([region()], { cameraX: 0.13, cameraY: 0.23 });
+      const held = rectAt(keys, 4 * S, base, radius);
+
+      expect(held.x).toBeCloseTo(base.x, 3);
+      expect(held.y).toBeCloseTo(base.y, 3);
+    });
+
+    it("shrinks about the middle when there is no corner to go to", () => {
+      // Nothing is near, so there is nothing to tuck into — and a bubble that
+      // lurched sideways here would be moving for no reason a viewer could see.
+      const { keys, base, radius } = cameraOf([region()], { cameraX: 0.5, cameraY: 0.5 });
+      const held = rectAt(keys, 4 * S, base, radius);
+
+      expect(held.x + held.width / 2).toBeCloseTo(base.x + base.width / 2, 3);
+      expect(held.y + held.height / 2).toBeCloseTo(base.y + base.height / 2, 3);
+    });
+
+    it("keeps its corners in proportion as it shrinks", () => {
+      // A bubble whose radius stayed put would change shape on the way in — at
+      // this size the squircle is a rounded square, and a fixed radius on a
+      // smaller box reads as a different object.
+      const { keys, base, radius } = cameraOf([region()]);
+      const held = rectAt(keys, 4 * S, base, radius);
+
+      expect(held.radius).toBeCloseTo(radius * 0.7, 3);
+    });
+
+    it("takes its shadow with it", () => {
+      const plan = buildRenderPlan(FRAME, { screen: SCREEN, camera: CAMERA }, withCamera(), null, [
+        region(),
+      ]);
+      const shadow = plan.items.filter((item) => item.kind === "shadow").at(-1)!;
+      if (shadow.kind !== "shadow") throw new Error("wrong item");
+
+      const keys = shadow.motion ?? [];
+      expect(keys.length).toBeGreaterThan(0);
+
+      const rest = rectAt(keys, 0, shadow.rect, 0);
+      const held = rectAt(keys, 4 * S, shadow.rect, 0);
+      // Exactly in proportion, bleed and all. The room the blur falls off in is
+      // scaled by the same factor as the picture, so the shadow stays as tight
+      // to the bubble as it was rather than being left behind around it.
+      expect(held.width).toBeCloseTo(rest.width * 0.7, 3);
+    });
+
+    it("leaves a camera that shares the frame alone", () => {
+      // One of two cards cannot shrink without leaving a hole where it was.
+      const { keys } = cameraOf([region()], { preset: "beside" });
+
+      expect(keys).toHaveLength(0);
+    });
+
+    it("leaves the plan alone when it is switched off", () => {
+      const { keys } = cameraOf([region()], { cameraShrinkOnZoom: false });
+
+      expect(keys).toHaveLength(0);
+    });
+  });
+
   it("goes straight from one zoom to the next rather than through rest", () => {
     // The reason the moves had to come out of the slices. Two zooms back to
     // back used to pull all the way out at the boundary and push all the way

@@ -128,6 +128,30 @@ export interface LayoutSettings {
   cameraOffsetX: number;
   cameraOffsetY: number;
   /**
+   * Shrink the bubble while a zoom is pushed in.
+   *
+   * A zoom brings the picture closer without changing the bubble, so the bubble
+   * takes a larger share of a frame that has less room in it — and covers more
+   * of the thing the zoom exists to show.
+   *
+   * Only ever applies to a camera floating *over* the screen. One of two cards
+   * sharing a frame cannot shrink without leaving a hole where it was, which is
+   * why `cameraFloats` in `shared/layout.ts` gates this rather than the setting
+   * standing on its own.
+   */
+  cameraShrinkOnZoom: boolean;
+  /**
+   * How big the bubble gets while a zoom is in, as a fraction of its own size.
+   *
+   * A fraction of itself rather than of the frame, so it means the same thing
+   * whatever size the bubble is — and so changing the bubble's size does not
+   * silently change how far it shrinks.
+   *
+   * One size for every zoom, not one per zoom depth: a 4x zoom does not want a
+   * smaller bubble than a 2x one, it wants the same bubble out of the way.
+   */
+  cameraShrinkTo: number;
+  /**
    * Mirrored by default, because the bubble the user watched while recording
    * was mirrored. An un-mirrored edit reads as flipped against the take.
    */
@@ -472,6 +496,10 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   cameraY: 0.77,
   cameraOffsetX: 0,
   cameraOffsetY: 0,
+  cameraShrinkOnZoom: true,
+  // Small enough to give the picture back a visible amount of room, large
+  // enough that whoever is on camera is still legible rather than a thumbnail.
+  cameraShrinkTo: 0.7,
   cameraMirror: true,
   cursorVisible: true,
   // About the size the pointer appears on screen in a 1080p frame, so an export
@@ -779,7 +807,11 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     frame: { width, height, presetId: stored.frame?.presetId ?? null },
     zooms: sanitiseZooms(stored.zooms, duration),
     defaults: {
-      layout: { ...DEFAULT_LAYOUT, ...migrateLayout(stored.defaults?.layout) },
+      layout: {
+        ...DEFAULT_LAYOUT,
+        ...beforeShrinking(stored.defaults?.layout),
+        ...migrateLayout(stored.defaults?.layout),
+      },
       background: { ...DEFAULT_BACKGROUND, ...stored.defaults?.background },
       audio: { ...DEFAULT_AUDIO, ...stored.defaults?.audio },
     },
@@ -794,6 +826,29 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     ],
     output: outputSettings(stored.output),
   };
+}
+
+/**
+ * Switches the camera's shrink off for a project written before it existed.
+ *
+ * New projects start with it on — it is the better default and the reason it
+ * was added. But `sanitiseProject` spreads what is on disk over
+ * `DEFAULT_LAYOUT`, so a key nobody ever wrote takes that default, and every
+ * recording already edited would come back with its bubble moving in a way its
+ * author never asked for. The rule `perspective` and `vignette` were defaulted
+ * by holds here too: a new field must read back the way the project looked when
+ * it was saved.
+ *
+ * Deliberately *not* part of `migrateLayout`, which is also run over a slice's
+ * overrides — writing the key there would make `key in overrides.layout` answer
+ * yes for every slice, and the panel would show a shrink overridden on clips
+ * that override nothing.
+ */
+function beforeShrinking(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cameraShrinkOnZoom" in stored) return undefined;
+  return { cameraShrinkOnZoom: false };
 }
 
 /**

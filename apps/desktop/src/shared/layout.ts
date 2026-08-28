@@ -385,6 +385,55 @@ export function buildRenderPlan(
       layout.cameraOffsetY,
     );
 
+    /**
+     * The bubble's box, shrunk by however far a zoom has pushed in.
+     *
+     * **It shrinks into the corner it is parked in**, not towards its own
+     * centre. A bubble sitting bottom-left is there to keep out of the way, and
+     * one that shrinks about its middle walks *away* from the corner as it goes
+     * — it gets smaller and less tucked away at the same time, which is the
+     * opposite of the point.
+     *
+     * The size still comes from `place`, because `cover` letterboxes rather
+     * than crops once a bubble is zoomed out past its source and the box would
+     * otherwise disagree with the picture in it. Only where it lands is decided
+     * here.
+     */
+    const shrunk = (amount: number) => {
+      if (amount <= 0) return dstRect;
+
+      const scale = lerp(1, layout.cameraShrinkTo, amount);
+      const { width, height } = place(
+        sources.camera!,
+        boxAt(
+          frame,
+          layout.cameraX,
+          layout.cameraY,
+          Math.max(1, layout.cameraWidth * unit * scale),
+          Math.max(1, layout.cameraHeight * unit * scale),
+        ),
+        slot.fit,
+        layout.cameraZoom,
+        layout.cameraOffsetX,
+        layout.cameraOffsetY,
+      ).dstRect;
+
+      // Measured against the resting box, so the slack all comes off the far
+      // side and the near edges keep the margin they had.
+      return {
+        x:
+          dstRect.x +
+          (dstRect.width - width) *
+            edgeAnchor(dstRect.x, frame.width - (dstRect.x + dstRect.width)),
+        y:
+          dstRect.y +
+          (dstRect.height - height) *
+            edgeAnchor(dstRect.y, frame.height - (dstRect.y + dstRect.height)),
+        width,
+        height,
+      };
+    };
+
     // Two ways to dress the same picture, and which one it gets is the only
     // thing the arrangement changes about it.
     //
@@ -417,17 +466,37 @@ export function buildRenderPlan(
     // it is going is the one entrance that needs no opacity: a plan item has no
     // alpha, and a rectangle of no size draws nothing on any of the three
     // rasterisers because the quad is degenerate before any fragment work.
-    const { keys: motion, shadow: shadowMotion } = enter
-      ? moveKeys(
-          leaving ? reshaped(leaving.dstRect, dstRect) : nothingAt(dstRect),
-          leaving ? cameraRadius(leaving, reshaped(leaving.dstRect, dstRect), unit, enter.from) : 0,
-          dstRect,
-          shape.radius,
-          spread,
-          enter.source.start,
-          moveWindow(enter),
-        )
-      : { keys: [], shadow: [] };
+    //
+    // And shrinking out of the way of a zoom, for a bubble that was asked to.
+    // Only a bubble: one of two cards sharing a frame cannot shrink without
+    // leaving a hole where it was.
+    const presence = zooms && !slot.card && layout.cameraShrinkOnZoom ? zoomPresence(zooms) : [];
+
+    const { keys: motion, shadow: shadowMotion } = cameraKeys(
+      (amount) => {
+        const rect = shrunk(amount);
+        return {
+          rect,
+          // Measured off the box it is on, not off the resting one: a bubble
+          // whose corners stayed put as it shrank would change shape on the way.
+          radius: slot.card
+            ? shape.radius
+            : radiusFor(layout.cameraShape, Math.min(rect.width, rect.height)),
+        };
+      },
+      spread,
+      presence,
+      enter
+        ? {
+            from: leaving ? reshaped(leaving.dstRect, dstRect) : nothingAt(dstRect),
+            radius: leaving
+              ? cameraRadius(leaving, reshaped(leaving.dstRect, dstRect), unit, enter.from)
+              : 0,
+            start: enter.source.start,
+            duration: moveWindow(enter),
+          }
+        : null,
+    );
 
     const moving = motion.length > 0 ? { motion } : {};
 
@@ -487,14 +556,18 @@ export function buildRenderPlan(
     const blur = enter.from.background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
-    const { keys: motion, shadow: shadowMotion } = moveKeys(
-      leaving.dstRect,
-      radius,
-      gone,
-      0,
+    // Nothing to shrink under a zoom here: this camera is on its way out, and
+    // where it is going is nowhere.
+    const { keys: motion, shadow: shadowMotion } = cameraKeys(
+      () => ({ rect: gone, radius: 0 }),
       spread,
-      enter.source.start,
-      moveWindow(enter),
+      [],
+      {
+        from: leaving.dstRect,
+        radius,
+        start: enter.source.start,
+        duration: moveWindow(enter),
+      },
     );
 
     if (motion.length > 0) {
@@ -666,6 +739,34 @@ const CAMERA_SHADOW = 0.7;
  * arriving when the clip ends never shows where it was going.
  */
 const CAMERA_MOVE_NS = 280_000_000;
+
+/**
+ * How decisively a shrinking bubble commits to the edge it is nearest.
+ *
+ * The anchor is where the bubble already sits between the two edges, pushed
+ * out towards the extremes by this much. At 1 it would be the raw fraction,
+ * which keeps a bubble's *relative* place and so lets a corner one drift a few
+ * pixels away from its corner as it shrinks. At 3 anything sitting clearly
+ * nearer one edge pins to that edge exactly, and only a bubble close to the
+ * middle blends — where there is no near corner to shrink into, and shrinking
+ * about the middle is the right answer anyway.
+ *
+ * A hard "whichever is nearer" would do the same for a corner and be
+ * discontinuous down the middle of the frame: a bubble nudged one pixel across
+ * would flip which way it shrank.
+ */
+const ANCHOR_REACH = 3;
+
+/**
+ * Where a shrinking box keeps its edge, 0 holding the near side and 1 the far.
+ *
+ * `before` and `after` are the gaps to the frame on either side of it.
+ */
+function edgeAnchor(before: number, after: number): number {
+  const total = before + after;
+  if (total <= 0) return 0.5;
+  return clamp((before / total - 0.5) * ANCHOR_REACH + 0.5, 0, 1);
+}
 
 /**
  * How far a shot aimed past its range still travels, as a fraction of the
@@ -967,6 +1068,82 @@ function stagesFor(zooms: readonly ZoomSlice[], between: Between[]): Stage[] {
 }
 
 /**
+ * How far into a zoom the shot is over time, 0 at rest and 1 fully in.
+ *
+ * Read off the same stages that place the picture, so nothing else has to work
+ * out for itself when a zoom is happening. The camera bubble shrinks on this,
+ * and a bubble that decided separately would be pulling back while the picture
+ * was still travelling.
+ *
+ * Deliberately says nothing about `level`. A 4x zoom is not further in than a
+ * 2x one as far as this is concerned — it is in, and whatever gets out of its
+ * way gets out of the way by the same amount.
+ *
+ * Opens and closes at 0 like the zoom's own keys, so the stretches between
+ * distant zooms need no samples: interpolating 0 to 0 is 0.
+ */
+function zoomPresence(zooms: readonly ZoomSlice[]): { at: number; amount: number }[] {
+  if (zooms.length === 0) return [];
+
+  const stages = stagesFor(zooms, betweenZooms(zooms));
+  const track: { at: number; amount: number }[] = [];
+
+  const push = (at: number, amount: number) => {
+    // Stages meet exactly, so each one's first sample is the last of the one
+    // before, and they agree on the value there.
+    if (track.length > 0 && track[track.length - 1]!.at >= at) return;
+    track.push({ at, amount });
+  };
+
+  for (const stage of stages) {
+    const span = stage.to - stage.from;
+    const held = stage.fromZoom !== null && stage.toZoom !== null;
+
+    // A hold is fully in throughout, and so is a move from one zoom straight to
+    // another — the picture never returns to rest there, so neither does
+    // anything following it. Two samples say that; sampling a ten second hold
+    // thirty times a second would put three hundred identical keys in the
+    // camera's track.
+    if (held) {
+      push(stage.from, 1);
+      push(stage.to, 1);
+      continue;
+    }
+
+    const zoom = zooms[(stage.fromZoom ?? stage.toZoom)!]!;
+    const steps = Math.max(1, Math.ceil(span / ZOOM_SAMPLE_NS));
+
+    for (let step = 0; step <= steps; step += 1) {
+      const at = Math.round(stage.from + (span * step) / steps);
+      const u = span > 0 ? (at - stage.from) / span : 1;
+      // Moving out is the same curve read backwards, which is what it always
+      // was — the shot eased on `min(into, left)` rather than on two curves.
+      push(at, easeAt(zoom, stage.toZoom === null ? 1 - u : u));
+    }
+  }
+
+  return track;
+}
+
+/** The presence at one instant, interpolated. Zero outside the track. */
+function presenceAt(track: { at: number; amount: number }[], at: number): number {
+  if (track.length === 0 || at <= track[0]!.at || at >= track[track.length - 1]!.at) return 0;
+
+  let low = 0;
+  let high = track.length - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (track[mid]!.at <= at) low = mid;
+    else high = mid;
+  }
+
+  const before = track[low]!;
+  const after = track[high]!;
+  const span = after.at - before.at;
+  return span > 0 ? lerp(before.amount, after.amount, (at - before.at) / span) : before.amount;
+}
+
+/**
  * Where the picture sits, and what it is wearing, at one instant.
  *
  * Everything a zoom does to the frame, as numbers that can be interpolated —
@@ -1243,7 +1420,12 @@ function keyFor(shot: Shot, at: number, spread: number): { key: RectKey; shadow:
 }
 
 /**
- * The camera travelling from where it was to where it now belongs.
+ * The camera's whole track: arriving after a cut, and shrinking under a zoom.
+ *
+ * One function because a plan item carries one `motion`, so these cannot be two
+ * tracks that each write it. Either alone is the common case — a cut with no
+ * zoom under it, or a zoom with nothing to arrive from — and each reduces to
+ * exactly the keys it produced when they were separate.
  *
  * Position, size and corner radius only — the crop, the shape's exponent, the
  * mirror and the border are the incoming slice's from the first frame. The
@@ -1257,56 +1439,80 @@ function keyFor(shot: Shot, at: number, spread: number): { key: RectKey; shadow:
  * showing a crop of another, and the picture would be visibly stretched for the
  * length of the move. Every face in every recording, on every cut.
  */
-function moveKeys(
-  from: Rect,
-  fromRadius: number,
-  to: Rect,
-  toRadius: number,
+function cameraKeys(
+  /** Where the bubble rests, and how round it is, at a given shrink. */
+  resting: (amount: number) => { rect: Rect; radius: number },
   /** Room the shadow needs around the picture at rest, in output pixels. */
   spread: number,
-  start: number,
-  duration: number,
+  /** How far a zoom has pushed in over time. Empty when nothing shrinks. */
+  presence: { at: number; amount: number }[],
+  /** The cut this slice opens on, if the camera has somewhere to arrive from. */
+  enter: { from: Rect; radius: number; start: number; duration: number } | null,
 ): { keys: RectKey[]; shadow: RectKey[] } {
-  if (duration <= 0) return { keys: [], shadow: [] };
+  const settled = resting(0);
 
   // Nothing to say when nothing moves. Two arrangements that leave the camera
   // exactly where it was — `over-full` and `over-padded` both float it at the
   // same fractions — would otherwise carry a track of identical keys.
-  if (
-    from.x === to.x &&
-    from.y === to.y &&
-    from.width === to.width &&
-    from.height === to.height &&
-    fromRadius === toRadius
-  ) {
-    return { keys: [], shadow: [] };
-  }
+  const still =
+    !enter ||
+    enter.duration <= 0 ||
+    (enter.from.x === settled.rect.x &&
+      enter.from.y === settled.rect.y &&
+      enter.from.width === settled.rect.width &&
+      enter.from.height === settled.rect.height &&
+      enter.radius === settled.radius);
 
-  const steps = Math.max(2, Math.ceil(duration / ZOOM_SAMPLE_NS));
+  if (still && presence.length === 0) return { keys: [], shadow: [] };
+
+  // Both tracks in one list of times, because a plan item carries one `motion`
+  // and the two would otherwise be writing over each other. Sampled where each
+  // has something to say: the arrival on its own short window, the shrink
+  // wherever a zoom is moving.
+  const times: number[] = [];
+  if (!still && enter) {
+    const steps = Math.max(2, Math.ceil(enter.duration / ZOOM_SAMPLE_NS));
+    for (let step = 0; step <= steps; step += 1) {
+      times.push(Math.round(enter.start + (enter.duration * step) / steps));
+    }
+  }
+  for (const sample of presence) times.push(sample.at);
+  times.sort((a, b) => a - b);
+
   const keys: RectKey[] = [];
   const shadow: RectKey[] = [];
-
   // What the full spread belongs to, so a picture that is half its final size
   // casts half the shadow. A small object casts a small tight shadow — the same
   // rule the camera's own shadow is sized by when it is a bubble — and without
   // it a camera shrinking away leaves a blur behind after the picture has gone.
-  const settled = Math.min(to.width, to.height);
+  const full = Math.min(settled.rect.width, settled.rect.height);
 
-  for (let step = 0; step <= steps; step += 1) {
-    const at = Math.round(start + (duration * step) / steps);
-    const t = easeOut(step / steps);
+  let written = -Infinity;
+  for (const at of times) {
+    if (at <= written) continue;
+    written = at;
 
-    const rect: Rect = {
-      x: lerp(from.x, to.x, t),
-      y: lerp(from.y, to.y, t),
-      width: lerp(from.width, to.width, t),
-      height: lerp(from.height, to.height, t),
-    };
-    const radius = lerp(fromRadius, toRadius, t);
+    const held = resting(presenceAt(presence, at));
+    let rect = held.rect;
+    let radius = held.radius;
+
+    // Arriving *at wherever the shrink has it*, rather than at its full size:
+    // a cut into a slice that is already zoomed would otherwise put the bubble
+    // down at full size and shrink it a frame later.
+    if (!still && enter && at <= enter.start + enter.duration) {
+      const t = easeOut((at - enter.start) / enter.duration);
+      rect = {
+        x: lerp(enter.from.x, rect.x, t),
+        y: lerp(enter.from.y, rect.y, t),
+        width: lerp(enter.from.width, rect.width, t),
+        height: lerp(enter.from.height, rect.height, t),
+      };
+      radius = lerp(enter.radius, radius, t);
+    }
 
     keys.push({ at, ...rect, radius });
 
-    const grown = settled > 0 ? spread * (Math.min(rect.width, rect.height) / settled) : 0;
+    const grown = full > 0 ? spread * (Math.min(rect.width, rect.height) / full) : 0;
     shadow.push({
       at,
       x: rect.x - grown,
@@ -2388,6 +2594,29 @@ const CAMERA_ROW = 2;
  * the preview's hit-testing and the picker's thumbnails all call this, so there
  * is one answer to "where is the camera" and it cannot be disagreed with.
  */
+/**
+ * Whether the camera floats over the screen rather than sharing the frame.
+ *
+ * The one place this is decided. `layoutBoxes` sets `Slot.card` from it and the
+ * inspector greys out the shrink controls by it, so a control cannot offer
+ * something the plan then declines to do — the same reason `zoomSpanAt` is
+ * shared between the timeline's ghost and the reducer that accepts it.
+ *
+ * `custom` is arrived at from both kinds of arrangement and remembers which in
+ * `cameraCard`; every other arrangement decides for itself.
+ */
+export function cameraFloats(layout: LayoutSettings): boolean {
+  switch (layout.preset) {
+    case "over-full":
+    case "over-padded":
+      return true;
+    case "custom":
+      return !layout.cameraCard;
+    default:
+      return false;
+  }
+}
+
 export function layoutBoxes(
   frame: Size,
   layout: LayoutSettings,
@@ -2401,8 +2630,9 @@ export function layoutBoxes(
 
   // The camera wherever the arrangement leaves it free to be placed. `card` is
   // the arrangement's to decide everywhere but `custom`, which is arrived at
-  // from both kinds and has to be told which it came from.
-  const free = (card = false): Slot => ({
+  // from both kinds and has to be told which it came from — so it is asked of
+  // `cameraFloats` rather than spelled out again here.
+  const free = (): Slot => ({
     area: boxAt(
       frame,
       layout.cameraX,
@@ -2411,7 +2641,7 @@ export function layoutBoxes(
       Math.max(1, layout.cameraHeight * unit),
     ),
     fit: "cover",
-    card,
+    card: !cameraFloats(layout),
   });
 
   // Hidden by the toggle, or because the arrangement has no room for it. The
@@ -2493,7 +2723,7 @@ export function layoutBoxes(
           fit: "cover",
           card: true,
         },
-        camera: withCamera ? free(layout.cameraCard) : null,
+        camera: withCamera ? free() : null,
       };
   }
 }
