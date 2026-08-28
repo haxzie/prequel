@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { DockState } from "../../../shared/contract";
 import { DEFAULT_PREFERENCES, IDLE_SESSION } from "../../../shared/contract";
+import { follow } from "../lib/live";
 
 const INITIAL: DockState = {
   view: "setup",
@@ -27,16 +28,7 @@ export function useDock(): DockState {
   const [state, setState] = useState<DockState>(INITIAL);
 
   useEffect(() => {
-    let live = true;
-    void window.prequel.dock.state().then((initial) => {
-      if (live) setState(initial);
-    });
-
-    const unsubscribe = window.prequel.dock.onChange(setState);
-    return () => {
-      live = false;
-      unsubscribe();
-    };
+    return follow(() => window.prequel.dock.state(), window.prequel.dock.onChange, setState);
   }, []);
 
   return state;

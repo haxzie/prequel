@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 
 import type { UpdateState } from "../../../shared/contract";
 import { IDLE_UPDATE } from "../../../shared/contract";
+import { follow } from "../lib/live";
 
 /** The state, minus the part that moves too fast to render. */
 export type UpdateShape = Omit<UpdateState, "percent">;
@@ -51,8 +52,11 @@ export function useUpdate(): Update {
       );
     };
 
-    void window.prequel.update.state().then(apply);
-    return window.prequel.update.onChange(apply);
+    // `follow` rather than a request and a subscription written out here: the
+    // answer to `state()` can arrive after a change has already been broadcast,
+    // and applying it then left this window reading "Checking for updates…"
+    // with nothing further coming to correct it.
+    return follow(() => window.prequel.update.state(), window.prequel.update.onChange, apply);
   }, []);
 
   return { state, barRef, labelRef };

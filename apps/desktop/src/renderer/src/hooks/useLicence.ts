@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { Entitlement } from "../../../shared/contract";
+import { follow } from "../lib/live";
 
 export function useLicence(): {
   entitlement: Entitlement;
@@ -24,8 +25,11 @@ export function useLicence(): {
   const [entitlement, setEntitlement] = useState<Entitlement>({ status: "unknown" });
 
   useEffect(() => {
-    void window.prequel.licence.state().then(setEntitlement);
-    return window.prequel.licence.onChange(setEntitlement);
+    return follow(
+      () => window.prequel.licence.state(),
+      window.prequel.licence.onChange,
+      setEntitlement,
+    );
   }, []);
 
   const check = useCallback(async () => {

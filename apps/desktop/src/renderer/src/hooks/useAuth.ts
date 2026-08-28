@@ -7,6 +7,8 @@
  */
 import { useEffect, useState } from "react";
 
+import { follow } from "../lib/live";
+
 import type { AuthState } from "../../../shared/contract";
 
 export function useAuth(): AuthState {
@@ -15,8 +17,7 @@ export function useAuth(): AuthState {
   const [state, setState] = useState<AuthState>({ status: "signed-out" });
 
   useEffect(() => {
-    void window.prequel.auth.state().then(setState);
-    return window.prequel.auth.onChange(setState);
+    return follow(() => window.prequel.auth.state(), window.prequel.auth.onChange, setState);
   }, []);
 
   return state;
