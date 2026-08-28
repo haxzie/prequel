@@ -26,7 +26,7 @@ import type { FaqEntry } from "@/lib/faq";
 import { faqPageJsonLd } from "@/lib/seo";
 import { TRIAL_DAYS } from "@/lib/pricing";
 
-import editor from "../../../public/editor.png";
+import editor from "../../../public/editor-shot.png";
 import stage from "../../../public/stage.jpg";
 
 /** What is already done by the time the editor opens on a take. */
@@ -129,14 +129,21 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             sizes="(min-width: 1152px) 1152px, 100vw"
             className="-z-10 object-cover"
           />
+          {/* No border, rounding or shadow of ours. This is a composed shot on
+              a transparent canvas — the window, the camera bubble hanging off
+              its corner and the recording bar below it — and every one of those
+              already carries its own corners and shadow. A `border` would draw
+              a rectangle around the empty space they float in, and `box-shadow`
+              follows the element box rather than the artwork, so it would cast
+              a hard rectangle behind a composition that has none. */}
           <Image
             src={editor}
-            alt="The Prequel editor: a recording on a background, with the layout inspector open and two zoom slices on the timeline."
+            alt="The Prequel editor: a recording on a background with the clip inspector open, the camera bubble beside it, and the recording bar below."
             // Eager rather than lazy — it is the first thing below the hero and
             // would otherwise pop in. `priority` is deprecated in Next 16.
             loading="eager"
             quality={90}
-            className="w-full rounded-xl border border-white/10 shadow-2xl shadow-black/50"
+            className="w-full"
           />
         </div>
       </section>
