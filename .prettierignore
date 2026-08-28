@@ -2,6 +2,10 @@
 packages/recorder/index.js
 packages/recorder/index.d.ts
 
+# drizzle-kit's own bookkeeping, rewritten by every `pnpm --filter @prequel/db
+# generate`. Formatting it once only makes the next generate a red build.
+apps/api/migrations/meta/
+
 # Build output
 dist/
 out/
