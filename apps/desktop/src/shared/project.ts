@@ -229,9 +229,18 @@ export interface ProjectTrack {
  * slices with inherited settings, and this carries neither. It is a track only
  * in the timeline's sense of the word — a row you can put things on.
  *
- * The span *includes* its transitions. Easing in before the slice starts would
- * mean a zoom that visibly begins outside the thing that describes it, and
- * trimming its edge would then move something that already happened.
+ * The span is where the picture is **in close**, and nothing else. The move in
+ * happens in the time before `start` and the move out in the time after `end`,
+ * so a two second slice is two seconds at full zoom rather than two seconds
+ * with most of a move at each end of it.
+ *
+ * The span used to include its transitions, on the reasoning that a zoom should
+ * not visibly begin outside the thing describing it. What that cost was worse:
+ * a slice never showed the level it claimed, and two slices back to back each
+ * had to pass through the un-zoomed frame at the boundary — so moving the shot
+ * from one part of the screen to another pulled all the way out and pushed all
+ * the way back in. `betweenZooms` in `shared/layout.ts` is where the moves are
+ * placed now.
  */
 export interface ZoomSlice {
   id: string;

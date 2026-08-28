@@ -122,8 +122,11 @@ export interface CursorPoint {
  * two look completely different — one is a camera pushing in, the other is a
  * still being enlarged.
  *
- * Every zoom's keys start and end at the un-zoomed rectangle, which is what
- * makes the gaps between zooms free: interpolating from base to base is base.
+ * A zoom's keys start and end at the un-zoomed rectangle — a little outside the
+ * slice, where its moves happen — which is what makes the gaps between zooms
+ * free: interpolating from base to base is base. Two zooms close enough
+ * together to move straight from one to the other share one run of keys that
+ * never passes through it.
  */
 export interface RectKey {
   at: number;
@@ -665,17 +668,6 @@ const CAMERA_SHADOW = 0.7;
 const CAMERA_MOVE_NS = 280_000_000;
 
 /**
- * Turns zoom spans into a sampled destination rectangle.
- *
- * The whole feature lives here. Everything downstream — the canvas, the
- * shader — only knows how to interpolate between two rectangles, which is what
- * keeps a zoom from being a second implementation of "where does the picture
- * sit" on the far side of an IPC boundary.
- *
- * Each span opens and closes on the un-zoomed rectangle, so the flat stretches
- * between zooms need no keys at all: interpolating base to base gives base.
- */
-/**
  * How far a shot aimed past its range still travels, as a fraction of the
  * distance it cannot cover.
  *
@@ -701,6 +693,20 @@ function reach(value: number, min: number, max: number): number {
   return lerp(clamp(value, min, max), value, EDGE_REACH);
 }
 
+/**
+ * Turns zoom slices into a sampled destination rectangle.
+ *
+ * The whole feature lives here. Everything downstream — the canvas, the
+ * shader — only knows how to interpolate between two rectangles, which is what
+ * keeps a zoom from being a second implementation of "where does the picture
+ * sit" on the far side of an IPC boundary.
+ *
+ * **A slice is where the picture is in close, not where it is travelling.** The
+ * moves happen either side of it — see `betweenZooms` — so the track opens and
+ * closes on the un-zoomed rectangle a little outside the outermost slices, and
+ * the flat stretches between distant zooms still need no keys at all:
+ * interpolating base to base gives base.
+ */
 function zoomKeys(
   zooms: readonly ZoomSlice[],
   frame: Size,
@@ -712,94 +718,528 @@ function zoomKeys(
   spread: number,
   cursor?: CursorTrack | null,
 ): { keys: RectKey[]; shadow: RectKey[] } {
-  const keys: RectKey[] = [];
-  const shadow: RectKey[] = [];
+  if (zooms.length === 0) return { keys: [], shadow: [] };
 
-  for (const zoom of zooms) {
-    const span = zoom.source.end - zoom.source.start;
-    if (span <= 0) continue;
+  const between = betweenZooms(zooms);
+  const stages = stagesFor(zooms, between);
+  if (stages.length === 0) return { keys: [], shadow: [] };
 
-    // Both transitions inside the span, and never more than half of it each —
-    // a 0.6s ease on a 0.5s zoom would still be arriving when it has to leave.
-    const ease = Math.min(zoom.speed * 1_000_000_000, span / 2);
-    const steps = Math.max(2, Math.ceil(span / ZOOM_SAMPLE_NS));
-    const stepSeconds = span / steps / 1_000_000_000;
+  // One list of sample times for every stage, in order, so a stage that blends
+  // two zooms can ask both of them about the same instant. Per-zoom grids would
+  // not line up: two zooms have different spans and would land their samples in
+  // different places, and a move between them would be interpolating one shot
+  // against another shot's neighbour.
+  const times: number[] = [];
+  /** Where each stage's samples begin and end in `times`. */
+  const range: { first: number; last: number }[] = [];
 
-    const times = Array.from({ length: steps + 1 }, (_, step) =>
-      Math.round(zoom.source.start + (span * step) / steps),
-    );
+  for (const stage of stages) {
+    const span = stage.to - stage.from;
+    const steps = Math.max(1, Math.ceil(span / ZOOM_SAMPLE_NS));
 
-    const level = Math.max(1, zoom.level);
-
-    // How far the shot may look into the scaled picture before it pulls off the
-    // area the recording filled. Exactly the clamp `rectFor` used to apply to
-    // its own output, rearranged: with `target.x` being `frame.width / 2 -
-    // travel.x`, the two bounds on the rectangle are two bounds on the travel.
-    // The range comes out `base.width * (level - 1)` wide whatever the frame,
-    // and collapses to a point at `level === 1` — an un-zoomed shot has nowhere
-    // to pan to, which is correct.
-    const bounds = {
-      minX: frame.width / 2 - base.x,
-      maxX: frame.width / 2 - base.x + base.width * (level - 1),
-      minY: frame.height / 2 - base.y,
-      maxY: frame.height / 2 - base.y + base.height * (level - 1),
-    };
-
-    // What the shot is aimed at, moment by moment — mapped to output pixels
-    // here rather than followed as fractions of the capture. Mapping first is
-    // what lets the dead zone and the speed limit be stated against the frame,
-    // and it stops the steadying being stronger vertically than horizontally on
-    // every source that is not square.
-    const aims = times.map((at) => {
-      const point =
-        zoom.target === "region"
-          ? { x: zoom.x, y: zoom.y }
-          : zoom.target === "typing"
-            ? (typingCentre(cursor, at) ?? cursorFraction(cursor, at))
-            : cursorFraction(cursor, at);
-
-      return {
-        x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
-        y: ((point.y * source.height - srcRect.y) / srcRect.height) * base.height * level,
-      };
-    });
-
-    // A region is a fixed point: there is nothing to steady and nothing to
-    // catch up with, and putting it through the follow would only make the shot
-    // slide onto it after arriving.
-    const path =
-      zoom.target === "region"
-        ? aims.map((aim) => ({
-            x: reach(aim.x, bounds.minX, bounds.maxX),
-            y: reach(aim.y, bounds.minY, bounds.maxY),
-          }))
-        : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds).map(
-            (point) => ({
-              x: reach(point.x, bounds.minX, bounds.maxX),
-              y: reach(point.y, bounds.minY, bounds.maxY),
-            }),
-          );
+    // Stages meet exactly, so the first sample of one is the last of the one
+    // before. Shared rather than repeated: two keys at the same time is a zero
+    // length for anything downstream that divides by the gap between them.
+    const first =
+      times.length > 0 && times[times.length - 1] === stage.from ? times.length - 1 : times.length;
 
     for (let step = 0; step <= steps; step += 1) {
-      // `path` is where the camera goes; `aims` is where the subject is. They
-      // differ wherever the shot is steadying or has been held short of centre.
-      const at = rectFor(
-        zoom,
-        times[step]!,
-        path[step]!,
-        aims[step]!,
-        ease,
-        frame,
-        base,
-        radius,
-        spread,
-      );
-      keys.push(at.key);
-      shadow.push(at.shadow);
+      const at = Math.round(stage.from + (span * step) / steps);
+      if (times.length > 0 && times[times.length - 1]! >= at) continue;
+      times.push(at);
+    }
+
+    range.push({ first, last: times.length - 1 });
+  }
+
+  // Which samples each zoom has to be able to answer for: its own hold, the
+  // move that brings the picture to it, and the move that takes it away.
+  const reachOf = zooms.map(() => ({ first: times.length, last: -1 }));
+  stages.forEach((stage, index) => {
+    for (const which of [stage.fromZoom, stage.toZoom]) {
+      if (which === null) continue;
+      const seen = reachOf[which]!;
+      seen.first = Math.min(seen.first, range[index]!.first);
+      seen.last = Math.max(seen.last, range[index]!.last);
+    }
+  });
+
+  const shots = zooms.map((zoom, index) =>
+    shotTrack(zoom, times, reachOf[index]!, frame, base, srcRect, source, radius, cursor),
+  );
+
+  const keys: RectKey[] = [];
+  const shadow: RectKey[] = [];
+  let written = -Infinity;
+
+  stages.forEach((stage, index) => {
+    const { first, last } = range[index]!;
+    const span = stage.to - stage.from;
+
+    for (let step = first; step <= last; step += 1) {
+      const at = times[step]!;
+      // Shared boundary samples belong to the stage that reached them first;
+      // both stages agree on the picture there, so the second is a duplicate.
+      if (at <= written) continue;
+      written = at;
+
+      const from = stage.fromZoom === null ? null : shots[stage.fromZoom]!;
+      const to = stage.toZoom === null ? null : shots[stage.toZoom]!;
+      const u = span > 0 ? (at - stage.from) / span : 1;
+
+      const shot = shotAt(from, to, step, u);
+      const pair = keyFor(shot, at, spread);
+      keys.push(pair.key);
+      shadow.push(pair.shadow);
+    }
+  });
+
+  return { keys, shadow };
+}
+
+/**
+ * A cubic bézier's two control points, as the four flat numbers a zoom stores.
+ *
+ * Named so a shot track can carry the curve every move to or from it is read
+ * on, without carrying the whole slice for four numbers.
+ */
+type Curve = Pick<ZoomSlice, "easeInX" | "easeInY" | "easeOutX" | "easeOutY">;
+
+/** A stretch of the recording's own timeline. */
+interface Window {
+  from: number;
+  to: number;
+}
+
+/**
+ * What the picture does either side of a zoom.
+ *
+ * `rest` is the ordinary case: the picture comes forward out of the un-zoomed
+ * frame before the slice, and falls back into it after — `out` is the move away
+ * from the zoom before this point and `in` the move towards the one after, and
+ * either is absent at the ends of the list.
+ *
+ * `morph` is two zooms close enough together that passing through rest between
+ * them would be a flinch rather than a move. The picture goes straight from one
+ * to the other.
+ */
+type Between =
+  { kind: "rest"; out: Window | null; in: Window | null } | { kind: "morph"; span: Window };
+
+/**
+ * Where every move in and move out sits, given the zooms around it.
+ *
+ * **The moves are outside the slices.** A slice says "the picture is in close
+ * here", start to end, and the travel to and from it happens in the time either
+ * side. It used to be the other way round — the span included its transitions —
+ * and two things were wrong with that. A two second zoom with a 0.6s speed was
+ * only actually in close for 0.8s of it, which is not what the timeline showed.
+ * And two zooms back to back both had to pass through rest at the boundary, so
+ * cutting from one part of the screen to another pulled all the way out and
+ * pushed all the way back in, twice as far as the eye needed to travel.
+ *
+ * There are `zooms.length + 1` of these, one before each zoom and one after the
+ * last.
+ */
+function betweenZooms(zooms: readonly ZoomSlice[]): Between[] {
+  const between: Between[] = [];
+
+  for (let index = 0; index <= zooms.length; index += 1) {
+    const before = index > 0 ? zooms[index - 1]! : null;
+    const after = index < zooms.length ? zooms[index]! : null;
+
+    // Before the first zoom. The move in reaches back as far as it needs to and
+    // no further than the start of the recording — a zoom that opens the take
+    // is simply already in close, which is what "no room to travel" means and
+    // is not a pop: there is no earlier frame for it to differ from.
+    if (!before) {
+      const start = after!.source.start;
+      between.push({
+        kind: "rest",
+        out: null,
+        in: { from: Math.max(0, start - easeNs(after!)), to: start },
+      });
+      continue;
+    }
+
+    // After the last. Deliberately unclamped: a move that runs past the end of
+    // the recording is a move nobody sees, and clamping it would make a zoom
+    // that ends on the last frame snap out on the frame before.
+    if (!after) {
+      const end = before.source.end;
+      between.push({ kind: "rest", out: { from: end, to: end + easeNs(before) }, in: null });
+      continue;
+    }
+
+    const gap = after.source.start - before.source.end;
+
+    // Room for both moves to happen in full, with the picture at rest in
+    // between — so they are two separate moves and the gap reads as a gap.
+    if (gap >= easeNs(before) + easeNs(after)) {
+      between.push({
+        kind: "rest",
+        out: { from: before.source.end, to: before.source.end + easeNs(before) },
+        in: { from: after.source.start - easeNs(after), to: after.source.start },
+      });
+      continue;
+    }
+
+    // Not enough room, so the picture never returns to rest: it travels from one
+    // zoom straight to the next. Centred on the middle of the gap and given the
+    // gap's own length, so two zooms with a beat between them use it — and when
+    // there is no gap at all, borrowed evenly from both slices rather than from
+    // whichever happens to come second.
+    const width = Math.max(
+      gap,
+      Math.min(
+        easeNs(before),
+        easeNs(after),
+        // A quarter of a slice from each end at the very most, so a slice with a
+        // morph at both ends still spends half its length actually in close.
+        (before.source.end - before.source.start) / 2,
+        (after.source.end - after.source.start) / 2,
+      ),
+    );
+    const middle = (before.source.end + after.source.start) / 2;
+    between.push({
+      kind: "morph",
+      span: { from: Math.round(middle - width / 2), to: Math.round(middle + width / 2) },
+    });
+  }
+
+  return between;
+}
+
+/** Seconds of travel, as nanoseconds. */
+function easeNs(zoom: ZoomSlice): number {
+  return Math.max(0, zoom.speed) * 1_000_000_000;
+}
+
+/**
+ * One stretch of time over which the picture goes from one thing to another.
+ *
+ * `fromZoom` and `toZoom` are indices into the zoom list, or null for the un-zoomed
+ * picture. Equal indices are a hold — the slice itself, where the shot is fully
+ * in and only following whatever it is aimed at.
+ */
+interface Stage {
+  from: number;
+  to: number;
+  fromZoom: number | null;
+  toZoom: number | null;
+}
+
+/** The whole timeline as moves and holds, in order and meeting exactly. */
+function stagesFor(zooms: readonly ZoomSlice[], between: Between[]): Stage[] {
+  const stages: Stage[] = [];
+
+  for (let index = 0; index < zooms.length; index += 1) {
+    const zoom = zooms[index]!;
+    const before = between[index]!;
+    const after = between[index + 1]!;
+
+    if (before.kind === "rest" && before.in && before.in.to > before.in.from) {
+      stages.push({ from: before.in.from, to: before.in.to, fromZoom: null, toZoom: index });
+    }
+
+    // A morph either side eats into the slice, which is the one place the hold
+    // is shorter than what the timeline shows. `betweenZooms` caps that bite at
+    // a quarter from each end, so this never collapses.
+    const holdFrom = before.kind === "morph" ? before.span.to : zoom.source.start;
+    const holdTo = after.kind === "morph" ? after.span.from : zoom.source.end;
+    stages.push({
+      from: holdFrom,
+      to: Math.max(holdFrom, holdTo),
+      fromZoom: index,
+      toZoom: index,
+    });
+
+    // Pushed here rather than when the next zoom is reached, so the stages come
+    // out in time order without a sort.
+    if (after.kind === "morph") {
+      stages.push({ from: after.span.from, to: after.span.to, fromZoom: index, toZoom: index + 1 });
+    } else if (after.out && after.out.to > after.out.from) {
+      stages.push({ from: after.out.from, to: after.out.to, fromZoom: index, toZoom: null });
     }
   }
 
-  return { keys, shadow };
+  return stages;
+}
+
+/**
+ * Where the picture sits, and what it is wearing, at one instant.
+ *
+ * Everything a zoom does to the frame, as numbers that can be interpolated —
+ * which is what makes a move from one zoom to another the same operation as a
+ * move out of one into the un-zoomed frame. There is no "how far in is this
+ * zoom" any more; there are two shots and a fraction between them.
+ */
+interface Shot {
+  rect: Rect;
+  radius: number;
+  rotateX: number;
+  rotateY: number;
+  perspective: number;
+  vignette: number;
+  /** Absent when the zoom this came from does not soften anything. */
+  focus: { x: number; y: number; safe: number; strength: number } | null;
+}
+
+/**
+ * One zoom's shots, sampled across every moment it has anything to say about.
+ *
+ * Both the fully-in shot and the resting one, because a move needs the pair:
+ * the resting shot is not simply the base rectangle — its depth of field is
+ * focused on the same point, at no strength — and interpolating between the two
+ * reproduces the old `amount` arithmetic exactly, to the bit.
+ */
+interface ShotTrack {
+  /** Index in the shared time list this track's arrays start at. */
+  first: number;
+  /** The zoom's own easing, which every move to or from it is read on. */
+  curve: Curve;
+  rest: Shot[];
+  full: Shot[];
+}
+
+function shotTrack(
+  zoom: ZoomSlice,
+  times: number[],
+  covers: { first: number; last: number },
+  frame: Size,
+  base: Rect,
+  srcRect: Rect,
+  source: Size,
+  radius: number,
+  cursor?: CursorTrack | null,
+): ShotTrack {
+  const at = times.slice(covers.first, covers.last + 1);
+  const level = Math.max(1, zoom.level);
+
+  // Nominal rather than measured. The samples are evenly spaced inside a stage
+  // and only step slightly at the joins between stages, and the filters below
+  // want a rate rather than an exact interval.
+  const stepSeconds = ZOOM_SAMPLE_NS / 1_000_000_000;
+
+  // How far the shot may look into the scaled picture before it pulls off the
+  // area the recording filled. Exactly the clamp `rectFor` used to apply to its
+  // own output, rearranged: with `target.x` being `frame.width / 2 - travel.x`,
+  // the two bounds on the rectangle are two bounds on the travel. The range
+  // comes out `base.width * (level - 1)` wide whatever the frame, and collapses
+  // to a point at `level === 1` — an un-zoomed shot has nowhere to pan to.
+  const bounds = {
+    minX: frame.width / 2 - base.x,
+    maxX: frame.width / 2 - base.x + base.width * (level - 1),
+    minY: frame.height / 2 - base.y,
+    maxY: frame.height / 2 - base.y + base.height * (level - 1),
+  };
+
+  // What the shot is aimed at, moment by moment — mapped to output pixels here
+  // rather than followed as fractions of the capture. Mapping first is what lets
+  // the dead zone and the speed limit be stated against the frame, and it stops
+  // the steadying being stronger vertically than horizontally on every source
+  // that is not square.
+  const aims = at.map((when) => {
+    const point =
+      zoom.target === "region"
+        ? { x: zoom.x, y: zoom.y }
+        : zoom.target === "typing"
+          ? (typingCentre(cursor, when) ?? cursorFraction(cursor, when))
+          : cursorFraction(cursor, when);
+
+    return {
+      x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
+      y: ((point.y * source.height - srcRect.y) / srcRect.height) * base.height * level,
+    };
+  });
+
+  // A region is a fixed point: there is nothing to steady and nothing to catch
+  // up with, and putting it through the follow would only make the shot slide
+  // onto it after arriving.
+  const path =
+    zoom.target === "region"
+      ? aims.map((aim) => ({
+          x: reach(aim.x, bounds.minX, bounds.maxX),
+          y: reach(aim.y, bounds.minY, bounds.maxY),
+        }))
+      : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds).map((point) => ({
+          x: reach(point.x, bounds.minX, bounds.maxX),
+          y: reach(point.y, bounds.minY, bounds.maxY),
+        }));
+
+  const shorter = Math.min(frame.width, frame.height);
+  const width = base.width * level;
+  const height = base.height * level;
+
+  const rest: Shot[] = [];
+  const full: Shot[] = [];
+
+  for (let step = 0; step < at.length; step += 1) {
+    const travel = path[step]!;
+    const aim = aims[step]!;
+
+    // `travel` is how far into the scaled picture the shot is looking, in output
+    // pixels, and where the picture has to sit to put that point in the middle.
+    //
+    // Taken as given rather than clamped again. The bounds above decide how far
+    // a shot may look — including how far past the covering range an edge target
+    // is allowed to reach, which is the whole of `EDGE_REACH` — and a second
+    // clamp here would quietly undo that decision.
+    const moved: Rect = {
+      x: frame.width / 2 - travel.x,
+      y: frame.height / 2 - travel.y,
+      width,
+      height,
+    };
+
+    /**
+     * Where the subject is on screen, which is where the sharp patch belongs.
+     *
+     * Built from `aim`, not from the rectangle's middle. `followPath` steadies
+     * the shot, so it lags a moving cursor by design, and `reach` deliberately
+     * leaves an edge target short of centre. In both cases the thing being
+     * looked at is somewhere other than the middle of the frame — and a depth of
+     * field focused on the middle regardless is focused on whatever the subject
+     * has just left.
+     */
+    const focused = (rect: Rect) => ({
+      x: rect.x + (width > 0 ? (aim.x / width) * rect.width : 0),
+      y: rect.y + (height > 0 ? (aim.y / height) * rect.height : 0),
+    });
+
+    full.push({
+      rect: moved,
+      radius: radius * level,
+      rotateX: zoom.rotateX,
+      rotateY: zoom.rotateY,
+      perspective: zoom.perspective,
+      vignette: zoom.vignette,
+      focus: zoom.blur
+        ? {
+            ...focused(moved),
+            safe: zoom.blurSafe * shorter,
+            strength: zoom.blurStrength * shorter,
+          }
+        : null,
+    });
+
+    rest.push({
+      rect: base,
+      radius,
+      rotateX: 0,
+      rotateY: 0,
+      // The zoom's own, not a neutral value. Moving to and from rest must not
+      // change the eye distance — the angle is what eases, and easing the
+      // distance as well would zoom the lens while the shot travels, which reads
+      // as a dolly and is not what anyone asked for by setting an angle.
+      perspective: zoom.perspective,
+      vignette: 0,
+      focus: zoom.blur ? { ...focused(base), safe: zoom.blurSafe * shorter, strength: 0 } : null,
+    });
+  }
+
+  return { first: covers.first, curve: zoom, rest, full };
+}
+
+/**
+ * The picture at one sample of one stage.
+ *
+ * Four cases, all of them the same blend: into a zoom from rest, out of one back
+ * to rest, held fully in, or straight from one zoom to another.
+ */
+function shotAt(from: ShotTrack | null, to: ShotTrack | null, step: number, u: number): Shot {
+  // Held. The shot is fully in and only following what it is aimed at.
+  if (from && to && from === to) return from.full[step - from.first]!;
+
+  // Moving in. The curve is read forwards, so it leaves rest slowly or quickly
+  // exactly as the control says.
+  if (!from && to) {
+    const track = to;
+    const index = step - track.first;
+    return blend(track.rest[index]!, track.full[index]!, easeAt(track.curve, u));
+  }
+
+  // Moving out, and the same curve read backwards — which is what it always
+  // was: the old code eased on `min(into, left)`, so the exit was the entry in
+  // reverse rather than a second curve.
+  if (from && !to) {
+    const index = step - from.first;
+    return blend(from.rest[index]!, from.full[index]!, easeAt(from.curve, 1 - u));
+  }
+
+  // Straight from one zoom to the next, on the arriving zoom's curve: it is the
+  // shot being moved into, and how a move *arrives* is what is being felt.
+  const a = from!;
+  const b = to!;
+  return blend(a.full[step - a.first]!, b.full[step - b.first]!, easeAt(b.curve, u));
+}
+
+function blend(from: Shot, to: Shot, t: number): Shot {
+  const focus =
+    from.focus || to.focus
+      ? {
+          // A zoom that softens nothing still has a place for the sharp patch —
+          // the same one, at no strength — so a move between one that blurs and
+          // one that does not fades rather than switching.
+          x: lerp(from.focus?.x ?? to.focus!.x, to.focus?.x ?? from.focus!.x, t),
+          y: lerp(from.focus?.y ?? to.focus!.y, to.focus?.y ?? from.focus!.y, t),
+          safe: lerp(from.focus?.safe ?? to.focus!.safe, to.focus?.safe ?? from.focus!.safe, t),
+          strength: lerp(from.focus?.strength ?? 0, to.focus?.strength ?? 0, t),
+        }
+      : null;
+
+  return {
+    rect: {
+      x: lerp(from.rect.x, to.rect.x, t),
+      y: lerp(from.rect.y, to.rect.y, t),
+      width: lerp(from.rect.width, to.rect.width, t),
+      height: lerp(from.rect.height, to.rect.height, t),
+    },
+    radius: lerp(from.radius, to.radius, t),
+    rotateX: lerp(from.rotateX, to.rotateX, t),
+    rotateY: lerp(from.rotateY, to.rotateY, t),
+    perspective: lerp(from.perspective, to.perspective, t),
+    vignette: lerp(from.vignette, to.vignette, t),
+    focus,
+  };
+}
+
+/** The two keys one shot produces: the picture, and the shadow under it. */
+function keyFor(shot: Shot, at: number, spread: number): { key: RectKey; shadow: RectKey } {
+  const quad = rotatedQuad(shot.rect, shot.rotateX, shot.rotateY, shot.perspective);
+
+  // The shadow's own rectangle: the same one, with room around it for the blur
+  // to fall off in. Projected here rather than inflated afterwards, because a
+  // tilted picture's corners are a perspective projection and there is no way to
+  // grow four projected corners by a distance in screen pixels — the angles are
+  // known at this point and nowhere downstream.
+  const bled: Rect = {
+    x: shot.rect.x - spread,
+    y: shot.rect.y - spread,
+    width: shot.rect.width + spread * 2,
+    height: shot.rect.height + spread * 2,
+  };
+  const bledQuad =
+    spread > 0 ? rotatedQuad(bled, shot.rotateX, shot.rotateY, shot.perspective) : quad;
+
+  return {
+    key: {
+      at,
+      ...shot.rect,
+      radius: shot.radius,
+      ...(quad ? { quad } : {}),
+      ...(shot.focus ? { focus: shot.focus } : {}),
+      ...(shot.vignette > 0 ? { vignette: shot.vignette } : {}),
+    },
+    // No focus and no vignette: neither rasteriser reads them for a shadow, and
+    // carrying them would put the depth-of-field twice in every plan.
+    shadow: {
+      at,
+      ...bled,
+      radius: shot.radius,
+      ...(bledQuad ? { quad: bledQuad } : {}),
+    },
+  };
 }
 
 /**
@@ -934,145 +1374,6 @@ function easeOut(t: number): number {
 /** How long a move gets in a slice, which is never more than half of it. */
 function moveWindow(enter: EnterTransition): number {
   return Math.min(CAMERA_MOVE_NS, Math.max(0, enter.source.end - enter.source.start) / 2);
-}
-
-/** Where the picture sits, and how big it is, at one moment of one zoom. */
-function rectFor(
-  zoom: ZoomSlice,
-  at: number,
-  travel: Point,
-  /**
-   * What the shot is *aimed at*, before steadying and before `reach` — the
-   * cursor's own position, in the same scaled-picture pixels as `travel`.
-   *
-   * Distinct from `travel`, which is where the camera has got to. The two agree
-   * only when the shot has caught up and had room to centre the subject; the
-   * depth of field belongs on the subject either way.
-   */
-  aim: Point,
-  ease: number,
-  frame: Size,
-  base: Rect,
-  radius: number,
-  spread: number,
-): { key: RectKey; shadow: RectKey } {
-  // How far in, 0 at both edges of the span and 1 through the middle.
-  const into = at - zoom.source.start;
-  const left = zoom.source.end - at;
-  const amount = easeAt(zoom, Math.min(ease > 0 ? into / ease : 1, ease > 0 ? left / ease : 1));
-  const level = Math.max(1, zoom.level);
-
-  // Scaled about the aimed point and then centred on it, so the thing being
-  // zoomed to ends up in the middle of the frame rather than wherever it
-  // happened to be. The picture is free to run past the edges — that is the
-  // difference between a camera pushing in and a still being cropped.
-  const width = base.width * level;
-  const height = base.height * level;
-
-  // `travel` is how far into the scaled picture the shot is looking, in output
-  // pixels, and where the picture has to sit to put that point in the middle.
-  //
-  // Taken as given rather than clamped again. `zoomKeys` decides how far a shot
-  // may look — including how far past the covering range an edge target is
-  // allowed to reach, which is the whole of `EDGE_REACH` — and a second clamp
-  // here would quietly undo that decision. It did: the clamp was described as a
-  // guard rather than the mechanism, and a guard that silently disagrees with
-  // the mechanism is just the mechanism, in the wrong place.
-  const target = { x: frame.width / 2 - travel.x, y: frame.height / 2 - travel.y };
-
-  const moved: Rect = {
-    x: lerp(base.x, target.x, amount),
-    y: lerp(base.y, target.y, amount),
-    width: lerp(base.width, width, amount),
-    height: lerp(base.height, height, amount),
-  };
-
-  // Eased in with the rest of the move, so the picture leans over as it comes
-  // forward rather than snapping to an angle the moment the zoom begins.
-  // The angle eases in with the move; the perspective does not. Easing the distance
-  // as well would zoom the lens while the shot travels, which reads as a dolly
-  // and is not what anyone asked for by setting an angle.
-  const quad = rotatedQuad(moved, zoom.rotateX * amount, zoom.rotateY * amount, zoom.perspective);
-
-  // Eased in with the move, so the surroundings soften as the shot arrives
-  // rather than snapping out of focus. Measured against the frame, not the
-  // picture, because it is the *viewer's* depth of field.
-  const shorter = Math.min(frame.width, frame.height);
-
-  /**
-   * Where the subject is on screen, which is where the sharp patch belongs.
-   *
-   * Built from `aim`, not from `travel`. This used to be `frame.width / 2`, and
-   * deriving it from `travel` instead would have been the same number by a
-   * longer route — the camera's target is centred *by construction*, since the
-   * picture is positioned precisely to put it there.
-   *
-   * The subject is a different matter. `followPath` steadies the shot, so it
-   * lags a moving cursor by design, and `reach` deliberately leaves an edge
-   * target short of centre. In both cases the thing being looked at is somewhere
-   * other than the middle of the frame — and a depth of field focused on the
-   * middle regardless is focused on whatever the subject has just left.
-   *
-   * Scaled by how far the move has come, so the sharp patch travels *with* the
-   * picture rather than arriving before it.
-   */
-  const aimed = {
-    x: moved.x + (width > 0 ? (aim.x / width) * moved.width : 0),
-    y: moved.y + (height > 0 ? (aim.y / height) * moved.height : 0),
-  };
-
-  const focus = zoom.blur
-    ? {
-        x: aimed.x,
-        y: aimed.y,
-        safe: zoom.blurSafe * shorter,
-        strength: zoom.blurStrength * shorter * amount,
-      }
-    : undefined;
-
-  // Eased in with the move for the same reason the blur is: a zoom should arrive
-  // wearing its vignette rather than the frame darkening before the camera has
-  // started travelling.
-  const vignette = zoom.vignette * amount;
-
-  // The corners grow with the picture. Left alone they would tighten as it
-  // scaled, which reads as the frame changing shape mid-move.
-  const grown = lerp(radius, radius * level, amount);
-
-  // The shadow's own rectangle: the same one, with room around it for the blur
-  // to fall off in. Projected here rather than inflated afterwards, because a
-  // tilted picture's corners are a perspective projection and there is no way
-  // to grow four projected corners by a distance in screen pixels — the angles
-  // are known at this point and nowhere downstream.
-  const bled: Rect = {
-    x: moved.x - spread,
-    y: moved.y - spread,
-    width: moved.width + spread * 2,
-    height: moved.height + spread * 2,
-  };
-  const bledQuad =
-    spread > 0
-      ? rotatedQuad(bled, zoom.rotateX * amount, zoom.rotateY * amount, zoom.perspective)
-      : quad;
-
-  return {
-    key: {
-      at,
-      ...moved,
-      radius: grown,
-      ...(quad ? { quad } : {}),
-      ...(focus ? { focus } : {}),
-      ...(vignette > 0 ? { vignette } : {}),
-    },
-    // No focus and no vignette: neither rasteriser reads them for a shadow, and
-    // carrying them would put the depth-of-field twice in every plan.
-    shadow: {
-      at,
-      ...bled,
-      radius: grown,
-      ...(bledQuad ? { quad: bledQuad } : {}),
-    },
-  };
 }
 
 /**

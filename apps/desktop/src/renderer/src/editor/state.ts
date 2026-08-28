@@ -29,7 +29,13 @@ import { place, totalDuration, type PlacedSlice } from "./timeline";
 /** Shortest slice a cut may leave behind. Below this it cannot be grabbed. */
 const MIN_SLICE_NS = 100_000_000;
 
-/** Shortest zoom worth having. Below this the ease alone would fill it. */
+/**
+ * Shortest zoom worth having.
+ *
+ * The moves in and out live outside the slice, so this is no longer the ease
+ * needing room — it is how briefly the picture can sit in close and still read
+ * as having gone somewhere rather than as a twitch.
+ */
 const MIN_ZOOM_NS = 300_000_000;
 
 export interface EditorState {

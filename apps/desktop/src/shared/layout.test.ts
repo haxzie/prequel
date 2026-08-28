@@ -1508,13 +1508,48 @@ describe("zooming", () => {
     expect(motionOf([]).keys).toHaveLength(0);
   });
 
-  it("opens and closes on the un-zoomed rectangle", () => {
+  it("opens and closes on the un-zoomed rectangle, outside the slice", () => {
     // What makes the gaps between zooms free: interpolating base to base is
     // base, so the flat stretches need no keys of their own.
+    //
+    // Half a second either side of the slice rather than at its edges: the
+    // moves live outside it, so the track starts where the picture sets off and
+    // ends where it has settled back.
     const { keys, base } = motionOf([region()]);
 
-    expect(keys[0]).toMatchObject({ at: 2 * S, ...base });
-    expect(keys[keys.length - 1]).toMatchObject({ at: 6 * S, ...base });
+    expect(keys[0]).toMatchObject({ at: 2 * S - S / 2, ...base });
+    expect(keys[keys.length - 1]).toMatchObject({ at: 6 * S + S / 2, ...base });
+  });
+
+  it("is fully in for the whole of its slice", () => {
+    // The point of the change: a two second slice at 0.5s speed used to be in
+    // close for one second of it. Both edges of the slice are now the deepest
+    // the shot ever gets, and everything between them is that too.
+    const { keys, base, radius } = motionOf([region()]);
+
+    for (const at of [2 * S, 3 * S, 4 * S, 5 * S, 6 * S]) {
+      expect(rectAt(keys, at, base, radius).width).toBeCloseTo(base.width * 2, 3);
+    }
+  });
+
+  it("eases into the slice rather than starting from it", () => {
+    // Halfway through the move in, the picture is on its way and has not
+    // arrived — and the move is over by the time the slice begins.
+    const { keys, base, radius } = motionOf([region()]);
+    const halfway = rectAt(keys, 2 * S - S / 4, base, radius);
+
+    expect(halfway.width).toBeGreaterThan(base.width);
+    expect(halfway.width).toBeLessThan(base.width * 2);
+  });
+
+  it("starts already in close when there is no room to travel", () => {
+    // A zoom on the opening frame has nothing to move away from: the move in
+    // reaches back as far as the start of the recording and no further, which
+    // for a zoom at zero is not at all. Being in close from the first frame is
+    // right — there is no earlier frame for it to differ from.
+    const { keys, base, radius } = motionOf([region({ source: { start: 0, end: 3 * S } })]);
+
+    expect(rectAt(keys, 0, base, radius).width).toBeCloseTo(base.width * 2, 3);
   });
 
   it("scales the whole picture rather than cropping into it", () => {
@@ -1577,14 +1612,39 @@ describe("zooming", () => {
     }
   });
 
-  it("eases rather than cutting", () => {
-    // A quarter of the way into the transition it should be part-way in, not
-    // already there — that is the difference between a camera move and a cut.
-    const { keys, base, radius } = motionOf([region()]);
-    const early = rectAt(keys, 2 * S + S / 8, base, radius);
+  it("goes straight from one zoom to the next rather than through rest", () => {
+    // The reason the moves had to come out of the slices. Two zooms back to
+    // back used to pull all the way out at the boundary and push all the way
+    // back in — twice the distance the eye actually had to travel, and a flinch
+    // in the middle of what should read as one move.
+    const { keys, base, radius } = motionOf([
+      region({ id: "a", source: { start: 2 * S, end: 4 * S }, x: 0.25 }),
+      region({ id: "b", source: { start: 4 * S, end: 6 * S }, x: 0.75 }),
+    ]);
 
-    expect(early.width).toBeGreaterThan(base.width);
-    expect(early.width).toBeLessThan(base.width * 2);
+    // Sampled right through the join. The picture never comes back towards the
+    // un-zoomed frame — it stays fully in and only travels sideways.
+    for (let at = 3.5 * S; at <= 4.5 * S; at += S / 20) {
+      expect(rectAt(keys, at, base, radius).width).toBeCloseTo(base.width * 2, 3);
+    }
+
+    // And it does travel: the two are aimed at opposite sides.
+    expect(rectAt(keys, 3.5 * S, base, radius).x).not.toBeCloseTo(
+      rectAt(keys, 4.5 * S, base, radius).x,
+      0,
+    );
+  });
+
+  it("comes back to rest between zooms that are far enough apart", () => {
+    // The other half of the same rule. A gap with room for both moves is a gap:
+    // the picture settles in the middle of it rather than sliding from one zoom
+    // to the next across four seconds.
+    const { keys, base, radius } = motionOf([
+      region({ id: "a", source: { start: 2 * S, end: 3 * S }, x: 0.25 }),
+      region({ id: "b", source: { start: 7 * S, end: 8 * S }, x: 0.75 }),
+    ]);
+
+    expect(rectAt(keys, 5 * S, base, radius).width).toBeCloseTo(base.width, 3);
   });
 
   it("fits both transitions inside a span too short for them", () => {
