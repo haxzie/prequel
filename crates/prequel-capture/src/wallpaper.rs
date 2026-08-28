@@ -26,7 +26,18 @@ const WALLPAPER_BUNDLE_ID: &str = "com.apple.wallpaper.agent";
 
 /// Also matched on layer, because the agent's bundle id has changed between
 /// macOS releases and the wallpaper is always at the very back.
-const DESKTOP_LAYER: ns::Integer = -2_147_483_648;
+///
+/// A *ceiling*, not the exact level. This used to be `i32::MIN`, compared with
+/// `<=`, which nothing can satisfy — `kCGDesktopWindowLevel` is
+/// -2_147_483_623, twenty-five above it — so the fallback could never match and
+/// the whole thing rested on the bundle id after all. On a Mac where that id
+/// has moved the capture then fails with "no wallpaper window on screen", the
+/// editor falls back to a gradient, and the wallpaper swatch draws a URL with
+/// no file behind it.
+///
+/// Anything below the normal window level and behind everything else is the
+/// desktop, whatever is drawing it.
+const DESKTOP_LAYER: ns::Integer = 0;
 
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -54,14 +65,34 @@ pub fn capture_wallpaper(display_id: u32, path: &Path) -> Result<()> {
                 .is_some_and(|app| app.bundle_id().to_string() == WALLPAPER_BUNDLE_ID)
         })
         // The desktop is the bottom-most layer, which is what identifies it
-        // when the bundle id does not.
+        // when the bundle id does not. Ordinary windows sit at 0 and the menu
+        // bar and dock above that, so the furthest-back negative layer is the
+        // desktop picture.
         .or_else(|| {
             windows
                 .iter()
-                .filter(|window| window.window_layer() <= DESKTOP_LAYER)
+                .filter(|window| window.window_layer() < DESKTOP_LAYER)
                 .min_by_key(|window| window.window_layer())
         })
-        .ok_or_else(|| Error::ScreenCaptureKit("no wallpaper window on screen".to_owned()))?;
+        .ok_or_else(|| {
+            // Said out loud rather than left to be guessed at. The two things
+            // that decide this are the agent's bundle id and the window levels
+            // on screen, and neither is visible from the error alone — this is
+            // the log line that says which of them moved.
+            let seen = windows
+                .iter()
+                .map(|window| {
+                    let owner = window
+                        .owning_app()
+                        .map(|app| app.bundle_id().to_string())
+                        .unwrap_or_else(|| "?".to_owned());
+                    format!("{owner}@{}", window.window_layer())
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            tracing::warn!(windows = %seen, "no wallpaper window among the shareable content");
+            Error::ScreenCaptureKit("no wallpaper window on screen".to_owned())
+        })?;
 
     let filter = sc::ContentFilter::with_desktop_independent_window(wallpaper);
 

@@ -181,14 +181,21 @@ async function namedWallpaperFile(): Promise<string | null> {
   try {
     // The same tool `app-icons.ts` uses, for the same reason: these are binary
     // plists, and nothing will read them as text.
+    //
+    // XML rather than JSON. The store keeps an NSKeyedArchiver blob beside the
+    // file list, JSON has no way to spell a `data` value, and `plutil` refuses
+    // the *whole* conversion over it: "Invalid object in plist for JSON
+    // format". So the fast path did not merely miss the odd wallpaper, it threw
+    // on every Mac whose store holds a blob — which is every Mac using a stock
+    // picture — and the warning it logged said nothing about why.
     const { stdout } = await run("/usr/bin/plutil", [
       "-convert",
-      "json",
+      "xml1",
       "-o",
       "-",
       WALLPAPER_INDEX,
     ]);
-    const found = [...stdout.matchAll(/"relative":"(file:[^"]+)"/g)]
+    const found = [...stdout.matchAll(/<string>(file:[^<]+)<\/string>/g)]
       .map((match) => match[1]!)
       .map((url) => {
         try {
