@@ -2112,6 +2112,70 @@ export interface CursorTrack {
  * would park the pointer against the edge of the picture and hold it there,
  * which reads as a bug rather than as a pointer that has left.
  */
+/**
+ * How long a press takes to dip and come back, in nanoseconds.
+ *
+ * Short enough to read as a press rather than a pulse, long enough to survive
+ * being sampled: at 30fps this is five or six frames, which is the least a
+ * movement can occupy and still be seen rather than glimpsed.
+ */
+const CLICK_NS = 180 * 1_000_000;
+
+/**
+ * How far the pointer shrinks at the bottom of a press.
+ *
+ * Small on purpose. The pointer is already the thing being watched, and a dip
+ * deep enough to be obvious on its own reads as the pointer jumping rather than
+ * as a click — the cue people actually recognise is the *timing*, not the size.
+ */
+const CLICK_DEPTH = 0.82;
+
+/**
+ * Points sampled across a press.
+ *
+ * The dip has to be written into the track as points, because both rasterisers
+ * interpolate `scale` linearly between whichever two they land between. A press
+ * with only its ends sampled is a press that never happened — and the pointer
+ * is usually *still* while it is clicked, so there is rarely a natural sample
+ * anywhere inside the window to borrow.
+ *
+ * Nine points is one every 22ms, which is finer than a 60fps export asks for.
+ */
+const CLICK_STEPS = 8;
+
+/**
+ * The scale a press contributes at a moment, or 1 outside one.
+ *
+ * Down quickly and back more slowly, because that is the shape of a press: the
+ * button gives at once and the finger comes off at its own pace. A symmetric
+ * dip reads as a wobble.
+ *
+ * Overlapping presses — a double-click is two within a few tens of
+ * milliseconds — take the deepest rather than multiplying. Multiplying would
+ * make the second click of a pair visibly deeper than the first, which is the
+ * opposite of what happened.
+ */
+export function pressScale(clicks: readonly number[] | undefined, at: number): number {
+  if (!clicks?.length) return 1;
+
+  let deepest = 1;
+
+  for (const click of clicks) {
+    const t = (at - click) / CLICK_NS;
+    if (t < 0 || t > 1) continue;
+
+    // Rising to 1 at a third of the way through, then easing back to 0.
+    const DOWN = 1 / 3;
+    const phase = t < DOWN ? t / DOWN : 1 - (t - DOWN) / (1 - DOWN);
+    // Smoothstep on each leg, so the turn at the bottom is not a corner.
+    const eased = phase * phase * (3 - 2 * phase);
+
+    deepest = Math.min(deepest, 1 - (1 - CLICK_DEPTH) * eased);
+  }
+
+  return deepest;
+}
+
 function cursorItems(
   cursor: CursorTrack,
   source: Size,
@@ -2127,6 +2191,16 @@ function cursorItems(
   // point at every motion key keeps the two in step.
   const times = new Set(cursor.samples.map((sample) => sample.at));
   for (const key of motion) times.add(key.at);
+
+  // And across every press. The pointer is usually held still while it is
+  // clicked, so its own samples are seconds apart there and the dip would be
+  // interpolated straight through — the animation would exist in the plan and
+  // never be drawn.
+  for (const click of cursor.clicks ?? []) {
+    for (let step = 0; step <= CLICK_STEPS; step++) {
+      times.add(Math.round(click + (CLICK_NS * step) / CLICK_STEPS));
+    }
+  }
 
   const points: ShapedPoint[] = [...times]
     .sort((a, b) => a - b)
@@ -2154,7 +2228,12 @@ function cursorItems(
         at,
         x: placed.x,
         y: placed.y,
-        scale: placed.scale,
+        // Folded into the scale the plan already carries, rather than added to
+        // it as a field of its own. Both rasterisers multiply the pointer's
+        // size by this one number — `compositor.rs` and `webgl.ts`, a line each
+        // — so a press drawn this way cannot come out differently in the
+        // preview and the export.
+        scale: placed.scale * pressScale(cursor.clicks, at),
         visible:
           px >= srcRect.x &&
           px <= srcRect.x + srcRect.width &&
