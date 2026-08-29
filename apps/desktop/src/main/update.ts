@@ -61,6 +61,28 @@ let configured = false;
  */
 const RECHECK_MS = 30 * 60 * 1000;
 
+/**
+ * How long a check is given before it is called a failure.
+ *
+ * `autoUpdater.checkForUpdates()` has no timeout of its own, and a stalled
+ * connection is not a failed one — it neither resolves nor rejects. The state
+ * then sits on `checking` for as long as the socket does, which is a Check for
+ * Updates button that disables itself and never comes back, and a tray item
+ * that says "Checking…" until the app is quit.
+ *
+ * That is not hypothetical. The channel file and the download both live on
+ * `release-assets.githubusercontent.com`, and a route to those addresses that
+ * stalls — one ISP's, one region's — takes 45 seconds to connect where every
+ * other GitHub host takes a tenth of one. The check does finish. Nobody waits
+ * that long to find out.
+ *
+ * Generous rather than tight: a slow connection that is *working* should be
+ * allowed to finish, and this is only the point past which saying so is better
+ * than saying nothing. A late answer still lands — the events keep firing, and
+ * whichever arrives moves the state on from the error.
+ */
+const CHECK_TIMEOUT_MS = 20_000;
+
 let lastCheckedAt = 0;
 
 export function updateState(): UpdateState {
@@ -201,7 +223,7 @@ export async function checkForUpdates(): Promise<UpdateState> {
   set({ status: "checking", message: null });
 
   try {
-    await autoUpdater.checkForUpdates();
+    await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS);
   } catch (cause) {
     log("error", "update check failed", cause);
     return set({ status: "error", message: "Prequel couldn't check for updates." });
@@ -210,6 +232,34 @@ export async function checkForUpdates(): Promise<UpdateState> {
   // `update-available` and `update-not-available` have already run by here and
   // moved the state on; `checking` surviving means neither fired.
   return state.status === "checking" ? set({ status: "idle" }) : updateState();
+}
+
+/**
+ * Rejects if a promise has not settled in time.
+ *
+ * The work is not cancelled, because there is nothing here to cancel it with
+ * and no reason to want to: a check that lands late still fires its events, and
+ * the state moves on from the error to whatever it found. All this decides is
+ * how long the UI claims to be busy.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no answer in ${String(ms)}ms`)), ms);
+    // `unref` so a pending timer cannot hold the process up on quit — a menu bar
+    // app's whole teardown path runs through `will-quit`.
+    timer.unref?.();
+
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause: unknown) => {
+        clearTimeout(timer);
+        reject(cause instanceof Error ? cause : new Error(String(cause)));
+      },
+    );
+  });
 }
 
 /**

@@ -3,7 +3,7 @@ import { app, protocol } from "electron";
 import { validateEnv } from "@prequel/env";
 
 import { flush, track } from "./analytics.js";
-import { onAuthChanged } from "./auth.js";
+import { authState, onAuthChanged } from "./auth.js";
 import { clearEntitlement, onEntitlementChanged, refreshEntitlement } from "./licence.js";
 import { CaptureFlow } from "./capture-flow.js";
 import { migrateLibrary } from "./library-migrate.js";
@@ -193,6 +193,17 @@ void app.whenReady().then(() => {
     if (state.status === "signed-out") clearEntitlement();
     else if (state.status === "signed-in") void refreshEntitlement();
   });
+
+  // And once for a copy that was already signed in when it launched. Signing in
+  // is a transition, and the handler above only ever fires on one — so an
+  // install signed in last week has never asked, `entitlement()` answers
+  // `unknown` for as long as it runs, and the sidebar cannot tell a trial from
+  // a paid team. Export was the only thing that ever asked, which was enough
+  // while export was the only thing that cared.
+  //
+  // One request per launch, not a poll: it costs a menu-bar app that is started
+  // rarely almost nothing, and the answer changes about twice in a lifetime.
+  if (authState().status === "signed-in") void refreshEntitlement();
 
   // The tray menu reads this directly when it is built, but the update window
   // and the Settings pane stay open across a whole download and have to be told.

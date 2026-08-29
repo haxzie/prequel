@@ -119,6 +119,28 @@ describe("checking", () => {
     expect((await update.checkForUpdates()).status).toBe("idle");
   });
 
+  it("reports a check that never answers rather than staying busy", async () => {
+    // The one that reads as a broken updater. A stalled connection neither
+    // resolves nor rejects, so without a deadline the state sits on `checking`
+    // for as long as the socket does — a Check for Updates button that disables
+    // itself and never comes back. Seen for real on a route to GitHub's asset
+    // host that takes 45 seconds to connect.
+    vi.useFakeTimers();
+    try {
+      const update = await load();
+      updater.checkForUpdates.mockReturnValueOnce(new Promise(() => {}));
+
+      const checking = update.checkForUpdates();
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      const state = await checking;
+      expect(state.status).toBe("error");
+      expect(state.message).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports a check that threw rather than staying busy", async () => {
     const update = await load();
     updater.checkForUpdates.mockRejectedValueOnce(new Error("offline"));

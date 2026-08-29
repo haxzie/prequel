@@ -7,14 +7,28 @@
  * every manual test and locks somebody out — or lets everybody in — on a date
  * nobody thought to set the clock to.
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({
   app: { getPath: () => "/tmp" },
   shell: { openExternal: () => undefined },
 }));
 
-const { statusOf } = await import("./licence.js");
+const api = await vi.importActual<typeof import("./api.js")>("./api.js");
+
+const apiFetch = vi.fn();
+vi.mock("./api.js", async () => {
+  const actual = await vi.importActual<typeof import("./api.js")>("./api.js");
+  return { ...actual, apiFetch: (...args: unknown[]) => apiFetch(...args) };
+});
+
+const forgetRejectedSignIn = vi.fn();
+vi.mock("./auth.js", () => ({
+  authToken: () => "a-token",
+  forgetRejectedSignIn: () => forgetRejectedSignIn(),
+}));
+
+const { statusOf, refreshEntitlement } = await import("./licence.js");
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 26, 12, 0, 0);
@@ -49,5 +63,48 @@ describe("statusOf", () => {
     expect(statusOf({ plan: "pro", trialEndsAt: NOW - 400 * DAY }, NOW)).toEqual({
       status: "paid",
     });
+  });
+});
+
+/**
+ * What a refused token does to the sign-in it came from.
+ *
+ * The state this exists to prevent: the app says it is signed in, the account
+ * shows in the sidebar, and every authenticated call disagrees. It reached a
+ * real machine — a stored token the server had stopped accepting — and the only
+ * trace was one warning in a log, because the entitlement check is the only
+ * authenticated call that runs without being asked for.
+ */
+describe("a sign-in the server refuses", () => {
+  beforeEach(() => {
+    apiFetch.mockReset();
+    forgetRejectedSignIn.mockReset();
+  });
+
+  it("is dropped, so the app stops claiming to be signed in", async () => {
+    apiFetch.mockRejectedValue(new api.ApiError("unauthorized", "Sign in to continue.", 401));
+
+    await refreshEntitlement();
+
+    expect(forgetRejectedSignIn).toHaveBeenCalled();
+  });
+
+  it("is kept when the server merely could not be reached", async () => {
+    // The distinction that matters. A refusal is the server saying this token
+    // is nobody; a network failure says nothing about it at all, and signing
+    // somebody out for being on a train would be the worse bug of the two.
+    apiFetch.mockRejectedValue(new Error("offline"));
+
+    await refreshEntitlement();
+
+    expect(forgetRejectedSignIn).not.toHaveBeenCalled();
+  });
+
+  it("is kept when the server fails on its own account", async () => {
+    apiFetch.mockRejectedValue(new api.ApiError("server_error", "Something went wrong.", 500));
+
+    await refreshEntitlement();
+
+    expect(forgetRejectedSignIn).not.toHaveBeenCalled();
   });
 });

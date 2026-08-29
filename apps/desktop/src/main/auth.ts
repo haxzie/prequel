@@ -251,6 +251,27 @@ export function openDashboard(): void {
  * wrong way round. The row is left revoked on the next successful call, and it
  * is useless here either way.
  */
+/**
+ * Drops a sign-in the server has stopped accepting.
+ *
+ * Distinct from `signOut`, which is somebody's decision: no `signed_out` event
+ * to attribute to them, and no revoke call, because the token being refused is
+ * what got us here and asking it to revoke itself would fail the same way.
+ *
+ * Without this the app sits in a state where it says it is signed in and every
+ * authenticated call disagrees — the account shows in the sidebar, the
+ * entitlement can never be fetched, and the reason is a line in a log nobody
+ * reads. Saying "signed out" is not a worse state than that one; it is the true
+ * one, and it is the only one with a button on it that fixes anything.
+ */
+export function forgetRejectedSignIn(): void {
+  if (!read()) return;
+
+  console.warn("[auth] the stored sign-in was refused; signing out");
+  write(null);
+  emit();
+}
+
 export async function signOut(): Promise<void> {
   const token = authToken();
 

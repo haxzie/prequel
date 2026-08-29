@@ -31,7 +31,7 @@ import { app, shell } from "electron";
 
 import type { Entitlement } from "../shared/contract.js";
 import { apiFetch, ApiError, appUrl } from "./api.js";
-import { authToken } from "./auth.js";
+import { authToken, forgetRejectedSignIn } from "./auth.js";
 import { log } from "./log.js";
 
 /**
@@ -180,6 +180,13 @@ export async function refreshEntitlement(): Promise<Entitlement> {
       "[licence] could not check the entitlement:",
       cause instanceof ApiError ? cause.message : cause,
     );
+
+    // A refusal is not a failure to reach the server, it is the server saying
+    // this token is nobody. Left alone, the app goes on claiming to be signed
+    // in while nothing authenticated works — and this is the call that finds
+    // out, because it is the only one that runs unprompted at launch rather
+    // than waiting for somebody to press Export.
+    if (cause instanceof ApiError && cause.status === 401) forgetRejectedSignIn();
 
     return entitlement();
   }
