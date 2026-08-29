@@ -14,7 +14,7 @@
  *
  * `-z-10` puts it above the body's background but below everything in flow. A
  * negative-z child paints after its parent's background and before its parent's
- * content, which is exactly the layer this wants; `Rails` stays above at `z-40`.
+ * content, which is exactly the layer this wants.
  */
 export function Wash() {
   return (

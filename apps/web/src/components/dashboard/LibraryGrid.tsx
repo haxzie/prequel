@@ -21,9 +21,7 @@ export function LibraryGrid({
 }) {
   if (videos.length === 0) {
     return (
-      <div
-        className={`rounded-3xl border border-dashed border-line px-8 py-16 text-center ${className}`}
-      >
+      <div className={`rounded-3xl border border-line px-8 py-16 text-center ${className}`}>
         <p className="text-sm font-medium text-fg">Nothing shared yet</p>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted">
           Export a recording in Prequel and press <span className="text-fg">Share Link</span>. It

@@ -121,7 +121,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             Without a stacking context of its own it escapes to the root and
             paints behind the page background, which reads as the image simply
             not loading. */}
-        <div className="relative isolate mx-auto w-full max-w-6xl overflow-hidden border-y border-dashed border-rule px-6 py-20 sm:px-14 sm:py-28">
+        <div className="relative isolate mx-auto w-full max-w-6xl overflow-hidden px-6 py-20 sm:px-14 sm:py-28">
           <Image
             src={stage}
             alt=""
@@ -173,7 +173,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
         </Container>
       </section>
 
-      <section className="border-y border-dashed border-rule bg-surface/40 py-24">
+      <section className="bg-surface/40 py-24">
         <Container>
           <SectionHeading
             eyebrow="The editor"

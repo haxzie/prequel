@@ -1,6 +1,7 @@
 import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
+import { HeroBackdrop } from "@/components/landing/HeroBackdrop";
 import { ShaderWash } from "@/components/landing/ShaderWash";
 import { SITE } from "@/lib/site";
 
@@ -11,8 +12,14 @@ type HeroProps = {
   eyebrow?: string;
 };
 
-/** How far apart the hero's rows start, in milliseconds. */
-const STAGGER_MS = 90;
+/**
+ * How far apart the hero's rows start, in milliseconds.
+ *
+ * Well under the animation's own length, so the rows overlap heavily rather
+ * than arriving one finished at a time. A stagger longer than the tail of the
+ * ease reads as four separate entrances; this reads as one wave.
+ */
+const STAGGER_MS = 110;
 
 /**
  * The block above the fold, on `/` and on every `/create/<slug>` page.
@@ -40,6 +47,9 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
     // escapes to the body's — which is the layer the CSS wash already sits in.
     // Adding `isolate` here would trap it and paint it behind the page.
     <section className="relative pt-20 pb-16 sm:pt-28">
+      {/* Order matters: both sit at `-z-10` in the same box, so the shader is
+          painted over the static backdrop only because it comes second. */}
+      <HeroBackdrop />
       <ShaderWash />
       <Container>
         {/* Centred, so `mx-auto` on every width-capped child rather than one

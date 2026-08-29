@@ -23,11 +23,13 @@ import { CRTScreen, FlutedGlass, MeshGradient, Shader } from "shaders/react";
  * orange and crimson, the clip's violet, the page background at the dark end.
  * Swapping one background for the other changes the texture, not the colour.
  *
- * `Wash` stays mounted underneath rather than being switched off. This canvas
- * cannot paint anything on a browser without WebGPU — the library's own
- * `onUnavailable` says so and writes nothing to the console — and a hero that
- * silently loses its background on that browser is worse than one that pays for
- * three blurred divs it usually covers.
+ * `HeroBackdrop` sits underneath and is never switched off. This canvas cannot
+ * paint anything on a browser without WebGPU — the library reports that through
+ * `onUnavailable` and writes nothing to the console — so the static layer is
+ * both what fills the second before the first frame and what the hero falls back
+ * to for good. It is drawn from this stack's own sampled output, which is what
+ * makes the cross-fade read as the background sharpening rather than as a
+ * different background arriving.
  */
 export default function ShaderStack() {
   // Off until the renderer says it has a frame. Compiling the stack takes a
@@ -104,8 +106,10 @@ export default function ShaderStack() {
             brightness={1}
             contrast={1.05}
             // The corner darkening is doing structural work, not period
-            // flavour: it is what keeps the wash off the page's dashed rails
-            // and lets the mask above finish the job at the bottom.
+            // flavour: the field runs the full width of the viewport, well past
+            // the content's measure, and the vignette is what stops it ending
+            // against the window edge. The mask above finishes the same job at
+            // the bottom.
             vignetteIntensity={0.9}
             vignetteRadius={0.72}
           >

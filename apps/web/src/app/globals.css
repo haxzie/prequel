@@ -20,12 +20,13 @@
   --bg: #0b0d11; /* the icon's #0F1218, a shade deeper so surfaces read against it */
   --surface: #14161b;
   --elevated: #1a1d23;
+  /* One line weight for everything now. There used to be a second, brighter
+     token for the dashed frame the page was written inside — the vertical rails,
+     the section bands, the footer rules — because a 1px dashed border inks under
+     half its length and needed the extra contrast to read as a rule rather than
+     a smudge. The frame is gone and every border left is drawn continuously, so
+     the brighter value has nothing to correct for. */
   --line: #22262e;
-  /* The same line, brighter, for the dashed frame around the content — the rails,
-     the section bands, the footer. A 1px dashed border inks under half its length,
-     so at `--line` it reads as a smudge rather than a rule. Solid dividers *inside*
-     the content keep `--line`: they are drawn continuously and do not need it. */
-  --rule: #343a45;
   --fg: #eceef1;
   --muted: #8b9198;
 
@@ -44,7 +45,6 @@
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
   --color-line: var(--line);
-  --color-rule: var(--rule);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-brand-from: var(--brand-from);
@@ -116,34 +116,56 @@
     }
   }
 
-  /* The hero arriving. Each element above the fold rises a few pixels and fades
-     up, staggered down the block, so the page reads as settling into place
-     rather than as one thing that was already there.
+  /* The hero arriving. Each element above the fold pulls into focus as it rises
+     — blurred and transparent to sharp and opaque — staggered down the block, so
+     the page reads as settling into place rather than as one thing that was
+     already there.
 
      `both` rather than the default `none`: every element carries its own delay,
-     and without the backwards fill each one paints at full opacity first and
+     and without the backwards fill each one paints sharp and opaque first and
      then blinks out the moment its animation starts — the exact flash the
      entrance exists to avoid.
 
-     Transform and opacity only. The headline is the largest text on the site
-     and animating anything that reflows it would run a layout pass per frame
-     against the whole hero. */
-  --animate-hero-rise: hero-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+     `filter` is the one property here that is not free. It is affordable
+     because this runs once: the six feature-card loops further down animate
+     transform and opacity only, and for the same reason — they are on screen
+     forever and this is over in a second. Nothing here reflows either, which is
+     the line that actually matters; the headline is the largest text on the
+     site and a layout pass per frame would be against the whole hero. */
+  --animate-hero-rise: hero-rise 1.05s cubic-bezier(0.22, 0.8, 0.24, 1) both;
 
   @keyframes hero-rise {
     from {
       opacity: 0;
-      /* Small on purpose. The distance is what makes it read as a rise; past
-         about 20px it reads as a slide, and the eye follows it instead of
-         landing on the words. */
-      transform: translateY(16px);
+      /* Shorter than it would be without the blur. The defocus is doing most of
+         the work of "arriving", so the travel only has to suggest a direction —
+         past about 20px the eye follows the movement instead of landing on the
+         words. */
+      transform: translateY(14px);
+      /* Scaled to the text, not to the box: this is the largest type on the
+         site, and a radius that reads as soft focus on a 60px headline is a
+         smear on 11px small print. Both get the same value because the stagger
+         means no two are at the same point in it at once, and the small print
+         has cleared its blur before the eye reaches it. */
+      filter: blur(10px);
+    }
+    /* Sharp and opaque before it has finished moving. Letting all three land
+       together leaves the last few frames — the slowest part of an ease-out —
+       resolving a blur nobody can see progress in, which is what makes a
+       blur-up read as mushy rather than smooth. */
+    65% {
+      opacity: 1;
+      filter: blur(0);
     }
     to {
       opacity: 1;
-      /* `none`, not `translateY(0)`: this is the element's resting state and
-         leaving a transform on it after the animation would keep it on its own
-         compositor layer for the life of the page. */
+      /* `none`, not `translateY(0)` and not `blur(0)`: these are the element's
+         resting values, and leaving either property set after the animation
+         keeps it on its own compositor layer for the life of the page — with
+         the text rendered through a filter, which switches it off subpixel
+         antialiasing. */
       transform: none;
+      filter: none;
     }
   }
 
@@ -342,6 +364,19 @@
   [data-wash] > * {
     animation: none;
   }
+}
+
+/* `HeroBackdrop` owns the top of the document on the pages that render a hero,
+   and it is opaque, so `Wash` behind it is paint nobody sees — except through
+   the bottom of the backdrop's mask, where the two fade out over different
+   distances and the CSS wash's warm tail bleeds back through a field that has
+   no warm tail of its own.
+
+   `:has()` rather than a prop threaded down from the layout: the layout does not
+   know which of its pages render a hero, and the backdrop is in the server's
+   HTML, so this resolves on the first paint with no flash of both. */
+body:has([data-hero-backdrop]) [data-wash] {
+  display: none;
 }
 
 /* The hero's entrance, likewise — and `animation: none` is the whole fix here

@@ -10,7 +10,7 @@ import { DownloadCta } from "./DownloadButton";
 
 export function Footer() {
   return (
-    <footer className="mt-32 border-t border-dashed border-rule">
+    <footer className="mt-32 border-t border-line">
       <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
         <div>
           <Link href="/" className="flex items-center gap-2.5" aria-label="Prequel home">
@@ -81,7 +81,7 @@ export function Footer() {
         </div>
       </Container>
 
-      <Container className="flex flex-col gap-2 border-t border-dashed border-rule py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
+      <Container className="flex flex-col gap-2 border-t border-line py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
         <p>© {new Date().getFullYear()} Prequel. Made for macOS.</p>
         <p className="font-mono tracking-wide">{SITE.platform}</p>
       </Container>
