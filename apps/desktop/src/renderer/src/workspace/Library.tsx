@@ -4,8 +4,9 @@ import type { WorkspaceSection } from "../../../shared/contract";
 import { cn } from "../lib/cn";
 import { FolderIcon } from "../editor/icons";
 import { Projects } from "../projects/Projects";
-import { AccountIcon, GeneralIcon } from "../settings/icons";
-import { AccountPane, SettingsPane } from "../settings/Settings";
+import { ExternalIcon, GeneralIcon } from "../settings/icons";
+import { SettingsPane } from "../settings/Settings";
+import { AccountMenu } from "./AccountMenu";
 import { PaneHeader } from "./PaneHeader";
 
 /**
@@ -17,14 +18,13 @@ import { PaneHeader } from "./PaneHeader";
  * was one more thing to find, and one more thing left open behind the first.
  *
  * The three capture settings that had a sidebar item each are one Settings pane
- * now. Account keeps its own, because it is the only item here that is not a
- * switch: it says who you are, and it changes on its own while nothing is being
- * set.
+ * now. The account is not a pane at all: who you are is reported rather than
+ * set, and it sits at the foot of the sidebar where it can be read at a glance
+ * instead of behind a tab somebody visits once.
  */
 const SECTIONS = [
   { id: "projects", label: "Projects", Icon: FolderIcon },
   { id: "settings", label: "Settings", Icon: GeneralIcon },
-  { id: "account", label: "Account", Icon: AccountIcon },
 ] as const satisfies readonly {
   id: WorkspaceSection;
   label: string;
@@ -72,18 +72,43 @@ export function Library({
             {item.label}
           </button>
         ))}
+
+        {/* What is not in this window. Separated by a rule rather than merely
+            spaced, because the difference matters before the press and not
+            after: everything above changes what this window shows, everything
+            below hands the user to their browser. */}
+        <hr className="my-2 border-0 border-t border-editor-line" />
+
+        <button
+          type="button"
+          onClick={() => void window.prequel.auth.openDashboard()}
+          className={cn(
+            "no-drag flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13px] transition-colors",
+            "[&_svg]:size-4 [&_svg]:shrink-0",
+            "text-editor-muted hover:bg-white/4 hover:text-editor-fg",
+          )}
+        >
+          Shared Library
+          {/* Pushed to the end, and dimmer than the label: it marks the row
+              rather than labelling it. */}
+          <span className="flex-1" />
+          <span className="text-editor-muted/70 [&_svg]:size-3.5">
+            <ExternalIcon />
+          </span>
+        </button>
+
+        {/* Everything below is anchored to the bottom of the sidebar. */}
+        <span className="flex-1" />
+
+        <AccountMenu />
       </nav>
 
       <main className="flex min-w-0 flex-1 flex-col">
         {section === "projects" ? (
           <Projects opening={opening} onOpen={onOpen} />
-        ) : section === "settings" ? (
+        ) : (
           <Pane icon={<GeneralIcon />} title="Settings">
             <SettingsPane />
-          </Pane>
-        ) : (
-          <Pane icon={<AccountIcon />} title="Account">
-            <AccountPane />
           </Pane>
         )}
       </main>

@@ -39,3 +39,19 @@ export function AccountIcon() {
     </svg>
   );
 }
+
+/**
+ * Lucide `arrow-up-right`.
+ *
+ * The mark for a row that leaves the app. It sits at the far end of its row
+ * rather than beside the label, because it is not what the item *is* — it is
+ * what pressing it does, which is hand you to the browser.
+ */
+export function ExternalIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M7 17 17 7" />
+      <path d="M7 7h10v10" />
+    </svg>
+  );
+}

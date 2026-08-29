@@ -957,8 +957,11 @@ export const FILMSTRIP_FRAMES = 6;
  * Not a route. The window loads `/workspace` and is told what to show, for the
  * same reason the editor is — see `windows/workspace.ts` — and this is the
  * vocabulary the tray uses to ask.
+ *
+ * The account is deliberately absent. It is reported at the foot of the sidebar
+ * rather than being a pane, so there is nothing for anything to ask to be shown.
  */
-export type WorkspaceSection = "projects" | "settings" | "account";
+export type WorkspaceSection = "projects" | "settings";
 
 /**
  * How far along an update is.

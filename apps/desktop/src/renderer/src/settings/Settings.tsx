@@ -3,8 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { AfterRecording, UpdateStatus } from "../../../shared/contract";
 import { Field, Section } from "../editor/controls/Field";
 import { Segmented, Toggle } from "../editor/controls/inputs";
-import { Avatar } from "../components/Avatar";
-import { useAuth } from "../hooks/useAuth";
 import { useDock } from "../hooks/useDock";
 import { ShortcutField } from "./ShortcutField";
 import { useUpdate } from "../update/useUpdate";
@@ -199,95 +197,5 @@ function Shortcuts({ accelerator }: { accelerator: string }) {
         stops the one already running.
       </p>
     </Section>
-  );
-}
-
-/**
- * The account, and the device this Mac is signed in on.
- *
- * Signing in happens in the browser — see `main/auth.ts` for why there is no
- * form here — so this pane is mostly a report on what happened elsewhere.
- *
- * Kept out of `SettingsPane` and given its own sidebar item because it is the
- * one thing here that is not a switch: it is who you are, and it changes
- * underneath the window while nothing is being set.
- */
-export function AccountPane() {
-  const auth = useAuth();
-
-  if (auth.status !== "signed-in") {
-    const waiting = auth.status === "waiting";
-
-    return (
-      <Section title="Account">
-        <p className="text-[13px] leading-relaxed text-editor-muted">
-          Sign in to share recordings with your team. A link works for anyone you send it to — they
-          need no account of their own.
-        </p>
-        <button
-          type="button"
-          disabled={waiting}
-          onClick={() => void window.prequel.auth.signIn()}
-          className="mt-4 self-start rounded-lg bg-selected px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-70"
-        >
-          {waiting ? "Waiting for your browser…" : "Sign in"}
-        </button>
-        {waiting && (
-          <p className="mt-2 text-[11px] text-editor-muted">
-            Finish in the browser and come back — this updates by itself.
-          </p>
-        )}
-      </Section>
-    );
-  }
-
-  const { account } = auth;
-
-  return (
-    <>
-      <Section title="Account">
-        <div className="flex items-center gap-3">
-          <Avatar seed={account.email} size={36} />
-          <div className="min-w-0">
-            <p className="truncate text-[13px] text-editor-fg">{account.name || account.email}</p>
-            <p className="truncate text-[12px] text-editor-muted">{account.email}</p>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Team">
-        <p className="text-[13px] leading-relaxed text-editor-muted">
-          {account.teamName
-            ? `Recordings you share go to ${account.teamName}.`
-            : "You are not in a team yet. Create one on the web to start sharing."}
-        </p>
-        <div className="mt-4 flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => void window.prequel.auth.openDashboard()}
-            className="rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-medium text-editor-fg hover:bg-white/15"
-          >
-            Open library
-          </button>
-          <button
-            type="button"
-            onClick={() => void window.prequel.auth.signOut()}
-            className="text-[12px] text-editor-muted hover:text-editor-fg"
-          >
-            Sign out
-          </button>
-        </div>
-      </Section>
-
-      <Section title="Billing">
-        {/* Deliberately carries no price. `apps/web/src/lib/pricing.ts` is the
-            one file that holds one, and the desktop app may not import across
-            that boundary — so a figure here would be a second copy to keep in
-            step, and the one nobody would remember to update. */}
-        <p className="text-[13px] leading-relaxed text-editor-muted">
-          Your plan, invoices and seats live in your account on the web.
-        </p>
-      </Section>
-    </>
   );
 }
