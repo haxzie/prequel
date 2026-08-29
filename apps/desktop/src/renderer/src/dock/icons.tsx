@@ -262,3 +262,21 @@ export function WarningIcon() {
     </svg>
   );
 }
+
+/**
+ * A newer version is waiting.
+ *
+ * An arrow rising out of a circle rather than the download arrow the update
+ * window's own button implies: the panel shows this from the moment a version
+ * is found through to one sitting downloaded and waiting for a relaunch, and a
+ * downward arrow is only right for the first of those.
+ */
+export function UpdateIcon() {
+  return (
+    <svg {...box} fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="M10 13.5V6.9" strokeLinecap="round" />
+      <path d="M6.9 10 10 6.8l3.1 3.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

@@ -331,9 +331,9 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
 /**
  * Tells every window how far along an update is.
  *
- * Broadcast because three surfaces show it — the update window, the tray menu
- * and the Settings pane — and the download progress that drives it arrives many
- * times a second from a place none of them can see.
+ * Broadcast because four surfaces show it — the update window, the tray menu,
+ * the Settings pane and the recording panel — and the download progress that
+ * drives it arrives many times a second from a place none of them can see.
  */
 export function broadcastUpdateState(state: UpdateState): void {
   for (const contents of webContents.getAllWebContents()) {

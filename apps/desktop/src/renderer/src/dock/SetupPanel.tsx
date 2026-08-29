@@ -17,6 +17,7 @@ import {
 import { DeviceMenu } from "./DeviceMenu";
 import { IconButton } from "./IconButton";
 import { PermissionMenu } from "./PermissionMenu";
+import { UpdateButton } from "./UpdateButton";
 
 /** Short, centred: a full-height rule would meet the panel's border at both
     ends and read as a seam between two panels rather than a separator inside
@@ -144,7 +145,10 @@ export function SetupPanel({ state }: { state: DockState }) {
 
       {/* Last, and absent entirely when there is nothing wrong. At the end
           rather than beside Close because it must not push the controls people
-          reach for before every recording sideways the day it appears. */}
+          reach for before every recording sideways the day it appears. The
+          update button is here for the same reason, and after this one because
+          a missing permission is about the recording that is about to be made
+          and an update is not. */}
       {missing.length > 0 && (
         <>
           <span className={DIVIDER} />
@@ -156,6 +160,8 @@ export function SetupPanel({ state }: { state: DockState }) {
           />
         </>
       )}
+
+      <UpdateButton />
     </div>
   );
 }
