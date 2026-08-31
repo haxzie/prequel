@@ -2,14 +2,9 @@
  * Everything Prequel says to Dodo Payments, and the one thing it listens to.
  *
  * Hand-rolled `fetch` rather than the `dodopayments` SDK, matching `ses.ts`,
- * `posthog.ts`, `r2.ts` and the desktop app's own client: five endpoints and a
+ * `posthog.ts`, `r2.ts` and the desktop app's own client: four endpoints and a
  * signature check do not justify a dependency, and the HTTP shapes are the
  * contract either way.
- *
- * Seat quantities here are always the **total** add-on quantity, never a delta.
- * Dodo's change-plan endpoint replaces the add-on list outright — sending "one
- * more seat" sets the subscription to one seat, which on a team of six reads as
- * five people silently losing what they paid for.
  */
 import { type Env, required } from "../env.ts";
 import { timingSafeEqual } from "./ids.ts";
@@ -36,9 +31,6 @@ const TIMEOUT_MS = 10_000;
  */
 const MAX_SKEW_SECONDS = 5 * 60;
 
-/** Proration modes, of which only these two are ever used. See `seats.ts`. */
-export type ProrationBillingMode = "prorated_immediately" | "do_not_bill";
-
 export class DodoError extends Error {
   constructor(
     readonly status: number,
@@ -62,18 +54,12 @@ async function call<T>(env: Env, path: string, init: RequestInit = {}): Promise<
 
   if (!response.ok) throw new DodoError(response.status, await response.text());
 
-  // 204s come back from the scheduled-change delete. `.json()` on an empty body
-  // throws, and the caller has nothing to read anyway.
-  if (response.status === 204) return undefined as T;
-
   return response.json<T>();
 }
 
 export interface CheckoutOptions {
   /** Travels back on every webhook this subscription ever produces. */
   teamId: string;
-  /** Seats beyond the one the Pro product includes. */
-  seats: number;
   email: string;
   name?: string | null;
   /** A returning payer, so a second subscription lands on the same customer. */
@@ -82,7 +68,7 @@ export interface CheckoutOptions {
 }
 
 /**
- * A hosted checkout for the Pro product plus `seats` add-on seats.
+ * A hosted checkout for the Pro product.
  *
  * `metadata.teamId` is the only link between the page somebody is about to pay
  * on and the team it belongs to. Dodo echoes it on `subscription.active`, which
@@ -91,21 +77,7 @@ export interface CheckoutOptions {
  */
 export async function createCheckout(env: Env, options: CheckoutOptions): Promise<string> {
   const body = {
-    product_cart: [
-      {
-        product_id: required(env, "DODOPAYMENT_PRO_PRODUCT_ID"),
-        quantity: 1,
-        // Omitted entirely at zero seats rather than sent as `quantity: 0`,
-        // which Dodo rejects as an invalid cart line.
-        ...(options.seats > 0
-          ? {
-              addons: [
-                { addon_id: required(env, "DODOPAYMENT_SEAT_ADDON_ID"), quantity: options.seats },
-              ],
-            }
-          : {}),
-      },
-    ],
+    product_cart: [{ product_id: required(env, "DODOPAYMENT_PRO_PRODUCT_ID"), quantity: 1 }],
     customer: options.customerId
       ? { customer_id: options.customerId }
       : { email: options.email, ...(options.name ? { name: options.name } : {}) },
@@ -123,74 +95,19 @@ export async function createCheckout(env: Env, options: CheckoutOptions): Promis
   return session.checkout_url;
 }
 
-export interface DodoAddon {
-  addon_id: string;
-  quantity: number;
-}
-
 export interface DodoSubscription {
   subscription_id: string;
   status: string;
   product_id: string;
   quantity: number;
-  addons: DodoAddon[];
   customer: { customer_id: string; email?: string };
   next_billing_date: string | null;
   cancel_at_next_billing_date: boolean;
   metadata: Record<string, string>;
-  scheduled_change: { addons?: DodoAddon[] } | null;
 }
 
 export function getSubscription(env: Env, subscriptionId: string): Promise<DodoSubscription> {
   return call<DodoSubscription>(env, `/subscriptions/${subscriptionId}`);
-}
-
-/**
- * Sets a subscription's total seat count.
- *
- * `cancelScheduledChange` defaults on because Dodo answers 409 when a plan
- * change is already scheduled, and every call this app makes is meant to
- * replace whatever was scheduled rather than queue behind it.
- */
-export async function setSeats(
-  env: Env,
-  subscriptionId: string,
-  options: {
-    seats: number;
-    prorationBillingMode: ProrationBillingMode;
-    effectiveAt: "immediately" | "next_billing_date";
-    cancelScheduledChange?: boolean;
-  },
-): Promise<void> {
-  await call(env, `/subscriptions/${subscriptionId}/change-plan`, {
-    method: "POST",
-    body: JSON.stringify({
-      product_id: required(env, "DODOPAYMENT_PRO_PRODUCT_ID"),
-      quantity: 1,
-      proration_billing_mode: options.prorationBillingMode,
-      effective_at: options.effectiveAt,
-      addons:
-        options.seats > 0
-          ? [{ addon_id: required(env, "DODOPAYMENT_SEAT_ADDON_ID"), quantity: options.seats }]
-          : [],
-      cancel_scheduled_change_plan: options.cancelScheduledChange ?? true,
-    }),
-  });
-}
-
-/**
- * Drops a pending seat release, because the seat got filled again.
- *
- * A 404 means there was nothing scheduled. That is the desired end state, not a
- * failure — treating it as one would make a double-click on Invite throw.
- */
-export async function cancelScheduledChange(env: Env, subscriptionId: string): Promise<void> {
-  try {
-    await call(env, `/subscriptions/${subscriptionId}/change-plan/scheduled`, { method: "DELETE" });
-  } catch (error) {
-    if (error instanceof DodoError && error.status === 404) return;
-    throw error;
-  }
 }
 
 /** A link to Dodo's own billing portal: card, invoices, cancellation. */

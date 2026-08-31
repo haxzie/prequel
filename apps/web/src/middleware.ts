@@ -48,8 +48,8 @@ export function middleware(request: NextRequest) {
  *
  * `expired` is a page saying the Worker rejected the session — see
  * `lib/auth-gate.ts` for the loop that follows without it. `next` is a flow with
- * a destination of its own: the desktop handoff and an invitation both send
- * people here to come back somewhere specific, and `/app` is not it. Those are
+ * a destination of its own: the desktop handoff sends people here to come back
+ * somewhere specific, and `/app` is not it. Those are
  * left to the page, which resolves them with the Worker's answer rather than a
  * guess — and they are not the case that was flashing, which carries no query at
  * all.

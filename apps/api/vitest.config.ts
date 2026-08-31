@@ -44,7 +44,6 @@ export default defineConfig({
           DODOPAYMENT_MODE: "test",
           DODOPAYMENT_BRAND_ID: "brand_test",
           DODOPAYMENT_PRO_PRODUCT_ID: "pdt_test_pro",
-          DODOPAYMENT_SEAT_ADDON_ID: "addon_test_seat",
           DODOPAYMENT_API_KEY: "test_key",
           // Valid base64 after the prefix, because verification decodes it
           // before it can reject anything — a placeholder that is not base64

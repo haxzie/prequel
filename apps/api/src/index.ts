@@ -46,16 +46,35 @@ app.use("*", (c, next) =>
 );
 
 /**
- * Better Auth owns everything under here — Google, magic links, teams,
- * invitations, sessions. Mounted with `on` over every method because the
- * handler routes internally and a `GET`-only mount silently 404s the callbacks.
+ * The invitation endpoints, which this product does not have.
+ *
+ * Better Auth's organization plugin routes these whether or not anything links
+ * to them, and the `invitation` table they read and write was dropped in
+ * migration `0002` — so left alone they answer 500 with a Drizzle "model not
+ * found", which reads as an outage rather than as a feature that is not here.
+ *
+ * Refused *here*, in front of the handler, rather than in an
+ * `organizationHooks` gate. The adapter resolves the model before any hook
+ * runs, so the hook never gets the chance — and a gate inside the plugin is
+ * what took onboarding down in the first place, by throwing partway through
+ * `createOrganization` with the team row already written.
+ *
+ * 404 and not 402: a refusal that costs money implies paying would lift it, and
+ * the dashboard opened an upgrade modal on exactly that status. Nothing you can
+ * buy adds a teammate today.
  */
-app.on(["GET", "POST"], "/api/auth/*", (c) =>
-  // The execution context goes in because the organization hooks buy and
-  // release seats, and a Dodo round trip does not belong in front of somebody
-  // clicking Accept in an invitation email.
-  createAuth(c.env, c.executionCtx).handler(c.req.raw),
-);
+app.on(["GET", "POST"], "/api/auth/organization/*", async (c, next) => {
+  if (!/invite|invitation/.test(new URL(c.req.url).pathname)) return next();
+
+  return c.json({ message: "Teams are single-member for now.", code: "TEAMS_UNAVAILABLE" }, 404);
+});
+
+/**
+ * Better Auth owns everything else under here — Google, magic links, teams,
+ * sessions. Mounted with `on` over every method because the handler routes
+ * internally and a `GET`-only mount silently 404s the callbacks.
+ */
+app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
 
 app.route("/v1/me", me);
 app.route("/v1/videos", videos);

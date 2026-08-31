@@ -58,10 +58,8 @@ export interface Env {
    */
   DODOPAYMENT_MODE: "test" | "live";
   DODOPAYMENT_BRAND_ID: string;
-  /** The Pro subscription product. Includes one seat, the owner's. */
+  /** The Pro subscription product. One team, one member, one price. */
   DODOPAYMENT_PRO_PRODUCT_ID: string;
-  /** The per-seat add-on attached to it. Every member past the first is one of these. */
-  DODOPAYMENT_SEAT_ADDON_ID: string;
 
   DODOPAYMENT_API_KEY?: string;
   /**

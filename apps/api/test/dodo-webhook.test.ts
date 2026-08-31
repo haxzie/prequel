@@ -22,11 +22,12 @@ import { scalar } from "./helpers.ts";
 const SECRET = env.DODOPAYMENT_WEBHOOK_SECRET!;
 
 /**
- * Catches the seat calls activation makes, and lets everything else through.
+ * Catches anything addressed to Dodo, and lets everything else through.
  *
- * `subscription.active` reconciles seats on the way out, so every delivery in
- * this file would otherwise reach the real Dodo host. A blanket `fetch` stub is
- * not an option — Better Auth and R2 presigning share this Worker's `fetch`.
+ * Nothing in this file should call out any more — the handler only writes to
+ * D1 — so the recorder doubles as the assertion that it does not. A blanket
+ * `fetch` stub is not an option: Better Auth and R2 presigning share this
+ * Worker's `fetch`.
  */
 function interceptDodo() {
   const sent: { url: string; method: string; body: unknown }[] = [];
@@ -203,28 +204,20 @@ describe("verification", () => {
 });
 
 describe("subscription events", () => {
-  it("makes the team Pro and sizes the quota to its seats", async () => {
-    await deliver(envelope("subscription.active", { addons: [{ addon_id: "a", quantity: 2 }] }));
+  it("makes the team Pro and gives it the Pro quota", async () => {
+    await deliver(envelope("subscription.active"));
 
     expect(await plan()).toBe("pro");
-    // Three seats: the two bought plus the one the product includes.
-    expect(await quota()).toBe(3 * 25 * 1024 * 1024 * 1024);
-    expect(await scalar(env.DB.prepare("SELECT seats_purchased FROM subscription"))).toBe(2);
+    expect(await quota()).toBe(25 * 1024 * 1024 * 1024);
   });
 
-  it("settles a seat count that does not match the team on activation", async () => {
-    await deliver(envelope("subscription.active", { addons: [{ addon_id: "a", quantity: 2 }] }));
+  it("calls Dodo back for nothing", async () => {
+    // Activation used to reconcile a seat count on the way out. Teams are
+    // single-member, so a delivery that reaches Dodo at all now means something
+    // has grown back that should not have.
+    await deliver(envelope("subscription.active"));
 
-    // The team is one person holding two bought seats, so reconciliation
-    // schedules the surplus for release rather than refunding it — and does it
-    // without the delivery waiting on Dodo.
-    const change = dodo.find((call) => call.url.includes("/change-plan"));
-
-    expect(change?.body).toMatchObject({
-      addons: [],
-      proration_billing_mode: "do_not_bill",
-      effective_at: "next_billing_date",
-    });
+    expect(dodo).toEqual([]);
   });
 
   it("ignores a repeat of the same delivery", async () => {
@@ -250,7 +243,7 @@ describe("subscription events", () => {
   });
 
   it("downgrades on cancellation without touching the member list", async () => {
-    await deliver(envelope("subscription.active", { addons: [{ addon_id: "a", quantity: 3 }] }));
+    await deliver(envelope("subscription.active"));
     await deliver(envelope("subscription.cancelled", { status: "cancelled" }));
 
     expect(await plan()).toBe("free");
@@ -260,17 +253,11 @@ describe("subscription events", () => {
     expect(await scalar(env.DB.prepare("SELECT dodo_customer_id FROM subscription"))).toBe("cus_1");
   });
 
-  it("takes the seat count from Dodo on a plan change", async () => {
+  it("takes the status from Dodo on a plan change", async () => {
     await deliver(envelope("subscription.active"));
-    await deliver(
-      envelope("subscription.plan_changed", {
-        addons: [{ addon_id: "a", quantity: 4 }],
-        scheduled_change: { addons: [{ addon_id: "a", quantity: 2 }] },
-      }),
-    );
+    await deliver(envelope("subscription.plan_changed", { status: "on_hold" }));
 
-    expect(await scalar(env.DB.prepare("SELECT seats_purchased FROM subscription"))).toBe(4);
-    expect(await scalar(env.DB.prepare("SELECT scheduled_seats FROM subscription"))).toBe(2);
+    expect(await scalar(env.DB.prepare("SELECT status FROM subscription"))).toBe("on_hold");
   });
 
   it("lets a lapsed team resubscribe onto its existing row", async () => {

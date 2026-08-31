@@ -6,7 +6,7 @@ import { Wash } from "@/components/Wash";
 import { CONTACT_EMAIL, SITE } from "@/lib/site";
 
 /**
- * Signing in, creating a team, accepting an invitation, connecting the app.
+ * Signing in, creating a team, connecting the app.
  *
  * One column, one thing to do, and nothing to click away to. The marketing nav
  * belongs to pages that are trying to interest somebody; every page in here is

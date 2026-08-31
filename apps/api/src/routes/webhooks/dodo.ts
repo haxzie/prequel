@@ -20,9 +20,9 @@ import { Hono } from "hono";
 import { schema } from "@prequel/db";
 
 import { database, type Database } from "../../db.ts";
-import { type Deferrable, type Env, required } from "../../env.ts";
+import { type Env, required } from "../../env.ts";
 import { type DodoSubscription, verifyWebhook, type WebhookEnvelope } from "../../lib/dodo.ts";
-import { FREE_QUOTA_BYTES, GRACE_MS, quotaFor, reconcileSeats } from "../../lib/seats.ts";
+import { FREE_QUOTA_BYTES, GRACE_MS, PRO_QUOTA_BYTES } from "../../lib/entitlement.ts";
 import { id } from "../../lib/ids.ts";
 
 const dodo = new Hono<{ Bindings: Env }>();
@@ -52,7 +52,7 @@ dodo.post("/", async (c) => {
   const db = database(c.env);
 
   // The insert is the idempotency check. Dodo retries until it gets a 2xx, so
-  // the same event arrives more than once; a duplicated seat sync is harmless
+  // the same event arrives more than once; a duplicated activation is harmless
   // but a duplicated `cancelled` arriving after a resubscribe would downgrade a
   // team that is paying, and nothing downstream would notice.
   const first = await db
@@ -63,7 +63,7 @@ dodo.post("/", async (c) => {
 
   if (first.length === 0) return c.json({ ok: true, duplicate: true });
 
-  await handle(c.env, db, event, c.executionCtx);
+  await handle(db, event);
 
   // Always 200 once verified, including for an event with no handler. A 4xx on
   // something we simply do not care about makes Dodo retry it until it gives
@@ -71,12 +71,7 @@ dodo.post("/", async (c) => {
   return c.json({ ok: true });
 });
 
-async function handle(
-  env: Env,
-  db: Database,
-  event: WebhookEnvelope,
-  ctx: Deferrable,
-): Promise<void> {
+async function handle(db: Database, event: WebhookEnvelope): Promise<void> {
   const subscription = event.data;
   const teamId = subscription.metadata?.teamId;
 
@@ -91,44 +86,21 @@ async function handle(
       }
 
       await activate(db, teamId, subscription);
-
-      // Membership can have moved between checkout and this arriving — an
-      // invitation accepted in the meantime. Reconciling now buys the seat that
-      // was missed rather than leaving the team a member over its capacity.
-      //
-      // Caught, not awaited. The plan is already written; a Dodo call failing
-      // here must not turn a successful payment into a retry, and the hourly
-      // sweep settles the seat count either way.
-      ctx.waitUntil(
-        reconcileSeats(env, db, teamId).catch((error: unknown) => {
-          console.error("seat reconciliation after activation failed", teamId, error);
-        }),
-      );
       return;
     }
 
     case "subscription.renewed": {
-      // The term rolled over, so any scheduled release has now happened and
-      // Dodo's quantity is the truth about what renewed.
-      await update(db, subscription, {
-        seatsPurchased: seatsOf(subscription),
-        scheduledSeats: null,
-        graceUntil: null,
-        quota: true,
-      });
+      // The term rolled over and the card went through, so whatever grace
+      // window was open is closed.
+      await update(db, subscription, { graceUntil: null });
       return;
     }
 
     case "subscription.plan_changed":
     case "subscription.updated": {
-      // Dodo owns the quantity, not this app. A seat bought through the
-      // customer portal, or an adjustment made by hand in the dashboard, only
-      // reaches the database here.
-      await update(db, subscription, {
-        seatsPurchased: seatsOf(subscription),
-        scheduledSeats: scheduledSeatsOf(subscription),
-        quota: true,
-      });
+      // Dodo owns the status, not this app. A change made through the customer
+      // portal, or by hand in the dashboard, only reaches the database here.
+      await update(db, subscription, {});
       return;
     }
 
@@ -152,33 +124,16 @@ async function handle(
   }
 }
 
-/** The seat add-on's quantity, or zero when the cart has no add-on at all. */
-function seatsOf(subscription: DodoSubscription): number {
-  return subscription.addons?.reduce((total, addon) => total + addon.quantity, 0) ?? 0;
-}
-
-/** The quantity a pending change will drop to, or null when none is pending. */
-function scheduledSeatsOf(subscription: DodoSubscription): number | null {
-  const scheduled = subscription.scheduled_change;
-  if (!scheduled) return null;
-
-  return scheduled.addons?.reduce((total, addon) => total + addon.quantity, 0) ?? 0;
-}
-
 async function activate(
   db: Database,
   teamId: string,
   subscription: DodoSubscription,
 ): Promise<void> {
-  const seats = seatsOf(subscription);
-
   const row = {
     teamId,
     dodoSubscriptionId: subscription.subscription_id,
     dodoCustomerId: subscription.customer.customer_id,
     status: subscription.status,
-    seatsPurchased: seats,
-    scheduledSeats: scheduledSeatsOf(subscription),
     currentPeriodEnd: subscription.next_billing_date
       ? new Date(subscription.next_billing_date)
       : null,
@@ -197,7 +152,7 @@ async function activate(
 
   await db
     .update(schema.organization)
-    .set({ plan: "pro", storageQuotaBytes: quotaFor(seats) })
+    .set({ plan: "pro", storageQuotaBytes: PRO_QUOTA_BYTES })
     .where(eq(schema.organization.id, teamId));
 }
 
@@ -211,12 +166,7 @@ async function activate(
 async function update(
   db: Database,
   subscription: DodoSubscription,
-  fields: {
-    seatsPurchased?: number;
-    scheduledSeats?: number | null;
-    graceUntil?: Date | null;
-    quota?: boolean;
-  },
+  fields: { graceUntil?: Date | null },
 ): Promise<void> {
   const [existing] = await db
     .select()
@@ -237,28 +187,19 @@ async function update(
       currentPeriodEnd: subscription.next_billing_date
         ? new Date(subscription.next_billing_date)
         : existing.currentPeriodEnd,
-      ...(fields.seatsPurchased !== undefined ? { seatsPurchased: fields.seatsPurchased } : {}),
-      ...(fields.scheduledSeats !== undefined ? { scheduledSeats: fields.scheduledSeats } : {}),
       ...(fields.graceUntil !== undefined ? { graceUntil: fields.graceUntil } : {}),
       updatedAt: new Date(),
     })
     .where(eq(schema.subscription.id, existing.id));
-
-  if (fields.quota && fields.seatsPurchased !== undefined) {
-    await db
-      .update(schema.organization)
-      .set({ storageQuotaBytes: quotaFor(fields.seatsPurchased) })
-      .where(eq(schema.organization.id, existing.teamId));
-  }
 }
 
 /**
  * The subscription is over.
  *
- * Members are left exactly where they are. Ejecting everyone but the owner
- * would enforce the one-included-seat rule to the letter and take a team's
- * library away from three people over one declined card; they keep reading,
- * they cannot invite, and the storage quota is the free one again.
+ * The library is left exactly where it is. Deleting videos over a declined card
+ * would make cancelling destructive, and a team that resubscribes a week later
+ * would have nothing to come back to. What changes is the quota, so nothing new
+ * goes up until the card does.
  */
 export async function downgrade(db: Database, subscription: DodoSubscription): Promise<void> {
   const [existing] = await db
@@ -271,13 +212,7 @@ export async function downgrade(db: Database, subscription: DodoSubscription): P
 
   await db
     .update(schema.subscription)
-    .set({
-      status: subscription.status,
-      seatsPurchased: 0,
-      scheduledSeats: null,
-      graceUntil: null,
-      updatedAt: new Date(),
-    })
+    .set({ status: subscription.status, graceUntil: null, updatedAt: new Date() })
     .where(eq(schema.subscription.id, existing.id));
 
   await db

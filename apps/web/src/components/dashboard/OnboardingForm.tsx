@@ -9,7 +9,6 @@ import { authClient } from "@/lib/auth-client";
 export function OnboardingForm({ defaultName }: { defaultName: string }) {
   const router = useRouter();
   const [name, setName] = useState(defaultName);
-  const [invites, setInvites] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,32 +28,10 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
           return;
         }
 
-        const teamId = created.data.id;
-
-        // Set before inviting, so the dashboard the user lands on is this team
-        // rather than whichever the session had before. Without it a second team
-        // created by an existing user opens showing the first one's library.
-        await authClient.organization.setActive({ organizationId: teamId });
-
-        // Invitations are best-effort. Somebody mistyping one address should not
-        // lose the team they just made, and the team settings page can send the
-        // rest — so a failure here is reported and not fatal.
-        const failures: string[] = [];
-
-        for (const email of addresses(invites)) {
-          const sent = await authClient.organization.inviteMember({
-            email,
-            role: "member",
-            organizationId: teamId,
-          });
-          if (sent.error) failures.push(email);
-        }
-
-        if (failures.length > 0) {
-          setBusy(false);
-          setError(`Team created, but we couldn't invite ${failures.join(", ")}.`);
-          return;
-        }
+        // Set so the dashboard the user lands on is this team rather than
+        // whatever the session pointed at before — a sign-in that arrived
+        // before the team existed carries no active organization at all.
+        await authClient.organization.setActive({ organizationId: created.data.id });
 
         // `refresh()` before navigating: the dashboard is a server component
         // that reads the session, and the router cache still holds the version
@@ -72,20 +49,6 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
           maxLength={60}
           className="h-11 rounded-full border border-line bg-surface px-5 text-sm text-fg placeholder:text-muted/70 focus:border-accent focus:outline-none"
         />
-      </label>
-
-      <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-fg">
-          Invite people <span className="font-normal text-muted">— optional</span>
-        </span>
-        <textarea
-          value={invites}
-          onChange={(event) => setInvites(event.target.value)}
-          rows={3}
-          placeholder="ana@example.com, sam@example.com"
-          className="resize-none rounded-2xl border border-line bg-surface px-5 py-3 text-sm text-fg placeholder:text-muted/70 focus:border-accent focus:outline-none"
-        />
-        <span className="text-xs text-muted">Separate addresses with commas or new lines.</span>
       </label>
 
       <Button type="submit" disabled={busy || name.trim().length === 0}>
@@ -107,6 +70,9 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
  * The tail is not decoration: slugs are unique across every team on Prequel, and
  * "Acme" is a name several unrelated companies will pick. Without it the second
  * one to sign up gets a constraint violation on the only step of onboarding.
+ *
+ * A retry therefore never collides with the attempt before it — which mattered
+ * when a failure here left a team row behind holding the slug.
  */
 function slugify(name: string): string {
   const base = name
@@ -117,11 +83,4 @@ function slugify(name: string): string {
     .slice(0, 32);
 
   return `${base || "team"}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function addresses(value: string): string[] {
-  return value
-    .split(/[,\n]/)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.includes("@"));
 }

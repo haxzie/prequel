@@ -23,7 +23,9 @@ export const dynamic = "force-dynamic";
  * "Musthaq's Team" is a thing users discover later and cannot explain.
  *
  * Anyone who already has a team is sent on, so a bookmarked `/onboarding` is not
- * a way to accumulate them.
+ * a way to accumulate them. That guard is not the only one any more: the plugin
+ * itself refuses a second team per account, because this one was telling the
+ * truth about a user having none while the failed attempts piled up behind it.
  */
 export default async function OnboardingPage() {
   const me = await getMe();
@@ -40,8 +42,8 @@ export default async function OnboardingPage() {
       </p>
       <h1 className="text-2xl font-medium tracking-tight text-fg">Create your team</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted">
-        Recordings you share belong to a team, so everyone in it can find them. You can invite
-        people now or later.
+        Recordings you share belong to a team, which is where your library lives. Name it anything;
+        you can change it later.
       </p>
 
       <OnboardingForm defaultName={suggestName(me.user.name, me.user.email)} />

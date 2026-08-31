@@ -15,6 +15,20 @@
       "when": 1787641251455,
       "tag": "0001_freezing_blockbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788159245096,
+      "tag": "0002_rainy_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788161031580,
+      "tag": "0003_misty_thena",
+      "breakpoints": true
     }
   ]
 }

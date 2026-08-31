@@ -6,62 +6,19 @@
  * never been here before and someone returning take exactly the same path.
  */
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { magicLink, organization } from "better-auth/plugins";
 
 import { schema } from "@prequel/db";
 
 import { database } from "./db.ts";
-import type { Deferrable, Env } from "./env.ts";
-import { entitlement, reconcileSeats } from "./lib/seats.ts";
+import type { Env } from "./env.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
 
 export type Auth = ReturnType<typeof createAuth>;
 
-/**
- * @param ctx The request's execution context, when there is one.
- *
- * Seat reconciliation is a call to Dodo, and the hooks below hang off actions a
- * user is waiting on — accepting an invitation is somebody clicking a link in an
- * email. Passed through so that work happens after the response instead of in
- * front of it. `middleware.ts` calls this for `getSession` and needs none of it.
- */
-export function createAuth(env: Env, ctx?: Deferrable) {
+export function createAuth(env: Env) {
   const db = database(env);
-
-  /**
-   * Runs seat reconciliation without the caller waiting on it.
-   *
-   * A failure is logged and left. `reconcileSeats` derives its work from state
-   * rather than from the event, so the hourly sweep picks up whatever this
-   * missed — which is a far better outcome than a member row written and the
-   * request failed because a third party was slow.
-   */
-  const syncSeats = (teamId: string) => {
-    const work = reconcileSeats(env, db, teamId).catch((error: unknown) => {
-      console.error("seat reconciliation failed", teamId, error);
-    });
-
-    if (ctx) ctx.waitUntil(work);
-    else void work;
-  };
-
-  /**
-   * Refuses to grow a team that is not paying.
-   *
-   * 402 rather than 403: the dashboard opens the upgrade modal on this exact
-   * status, and "you may not" and "you have not paid" want different words in
-   * front of the user. `PAYMENT_REQUIRED` is better-call's name for it.
-   */
-  const requireSubscription = async (teamId: string) => {
-    if (await entitlement(db, teamId)) return;
-
-    throw new APIError("PAYMENT_REQUIRED", {
-      message: "Upgrade to Pro to add teammates.",
-      code: "SUBSCRIPTION_REQUIRED",
-    });
-  };
 
   return betterAuth({
     // The Worker's own origin. OAuth callback URLs are built from this and must
@@ -150,65 +107,63 @@ export function createAuth(env: Env, ctx?: Deferrable) {
       }),
 
       organization({
-        // Teams. The plugin owns membership, roles and invitations; nothing
-        // below reimplements any of it.
+        /**
+         * Teams, of exactly one person.
+         *
+         * Multi-member teams are not built yet — inviting, the member list and
+         * the per-seat billing behind them were all removed rather than left
+         * switched off, because a half-wired invitation path is what took
+         * onboarding down for a week. A team is still the thing a video belongs
+         * to, which is why organizations exist at all here.
+         *
+         * `organizationLimit: 1` is the rule, and it is enforced by the plugin
+         * *before* it writes the organization row — so an account that already
+         * has a team is refused rather than quietly given a second one.
+         *
+         * The invitation endpoints are refused in `index.ts`, in front of this
+         * handler rather than in an `organizationHooks` gate. **Nothing here
+         * hooks membership at all any more**, deliberately: the plugin runs
+         * `beforeAddMember` for the creator's own `owner` row inside
+         * `createOrganization`, after the organization is written, so a refusal
+         * there does not refuse to add a member — it refuses to create a team
+         * and leaves the team behind. That is the outage this replaces.
+         */
         allowUserToCreateOrganization: true,
+        organizationLimit: 1,
         creatorRole: "owner",
-        invitationExpiresIn: 60 * 60 * 24 * 7,
         schema: {
           organization: {
             // Declared so the plugin passes these through on create and update
-            // rather than dropping them as unknown fields. They exist for
-            // billing, which is not built yet.
+            // rather than dropping them as unknown fields. Both are billing's,
+            // and `storageQuotaBytes` is what uploads check against.
             additionalFields: {
               plan: { type: "string", required: false, input: false },
               storageQuotaBytes: { type: "number", required: false, input: false },
+              // `input: false` on all three: these are ours to set, and a
+              // client that could name its own `createdBy` could hand its team
+              // to somebody else.
+              createdBy: { type: "string", required: false, input: false },
             },
           },
         },
-        /**
-         * Where billing meets membership.
-         *
-         * All of it hangs off the plugin rather than off routes of our own,
-         * because the plugin *is* the route — invitations, acceptance and
-         * removal are its endpoints under `/api/auth/organization/*`, and a
-         * seat count maintained anywhere else would drift the first time
-         * somebody used one of them directly.
-         *
-         * Who may invite and remove is already the plugin's: `owner` and
-         * `admin` only, which is the rule the product wants. These add what it
-         * costs, not who may.
-         */
+
         organizationHooks: {
-          // Both ways into a team. `beforeAddMember` is the direct path, which
-          // no interface uses today — gating only the invitation would leave it
-          // open the day something does.
-          beforeCreateInvitation: async ({ invitation }) => {
-            await requireSubscription(invitation.organizationId);
-          },
-          beforeAddMember: async ({ member: added }) => {
-            await requireSubscription(added.organizationId);
-          },
-
-          afterAcceptInvitation: async ({ organization: team }) => syncSeats(team.id),
-          afterAddMember: async ({ organization: team }) => syncSeats(team.id),
-          afterRemoveMember: async ({ organization: team }) => syncSeats(team.id),
-        },
-
-        sendInvitationEmail: async ({ email, invitation, organization: team, inviter }) => {
-          const url = `${env.APP_URL}/invite/${invitation.id}`;
-          const who = inviter.user.name || inviter.user.email;
-
-          await sendEmail(env, {
-            to: email,
-            subject: `${who} invited you to ${team.name} on Prequel`,
-            text: `${who} invited you to join ${team.name} on Prequel.\n\n${url}`,
-            html: emailShell(
-              `Join ${team.name}`,
-              `<p><strong>${who}</strong> invited you to their team on Prequel, where the team's screen recordings live.</p>`,
-              { href: url, label: "Accept invitation" },
-            ),
-          });
+          /**
+           * Stamps the creator onto the team, before the team exists.
+           *
+           * The plugin writes the creator's `member` row a few statements after
+           * the organization row, with no transaction across the pair, so there
+           * is a window in which a team exists and nothing records whose it is.
+           * Membership alone cannot close that window — it *is* the thing that
+           * goes missing. This is written in the same statement as the team, so
+           * a team without a creator is not a state the database can reach.
+           *
+           * Safe where a `beforeAddMember` gate was not: this runs before the
+           * insert, so throwing here refuses the team rather than orphaning it.
+           */
+          beforeCreateOrganization: async ({ organization: team, user }) => ({
+            data: { ...team, createdBy: user.id },
+          }),
         },
       }),
     ],

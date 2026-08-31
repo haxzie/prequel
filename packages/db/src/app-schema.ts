@@ -181,7 +181,7 @@ export const rateLimit = sqliteTable(
 );
 
 /**
- * What a team is paying for, and how many seats it has bought.
+ * What a team is paying for.
  *
  * A table of its own rather than columns on `organization`, which is Better
  * Auth's. Every column added there has to be repeated in the plugin's
@@ -197,8 +197,9 @@ export const subscription = sqliteTable("subscription", {
   /**
    * One subscription per team, enforced here rather than by convention.
    *
-   * A second row would mean two Dodo subscriptions both claiming to own the
-   * seat count, and the seat reconciler picking whichever came back first.
+   * A second row would mean two Dodo subscriptions both claiming to say whether
+   * this team is Pro, and the entitlement check reading whichever came back
+   * first.
    */
   teamId: text("team_id")
     .notNull()
@@ -212,23 +213,6 @@ export const subscription = sqliteTable("subscription", {
   dodoCustomerId: text("dodo_customer_id").notNull(),
   /** Dodo's own vocabulary, stored verbatim rather than mapped to ours. */
   status: text("status").notNull(),
-  /**
-   * The add-on quantity: seats *beyond* the one the Pro product includes.
-   *
-   * Capacity, not headcount. A member leaving frees their seat without
-   * refunding it — the team paid for it for the term — so this only ever
-   * falls at a renewal.
-   */
-  seatsPurchased: integer("seats_purchased").notNull().default(0),
-  /**
-   * What a scheduled change will drop `seatsPurchased` to at the next
-   * renewal. Null when nothing is scheduled.
-   *
-   * Mirrors Dodo's `scheduled_change` so the reconciler can tell "already
-   * scheduled to release two seats" from "needs scheduling", without a round
-   * trip on every membership change.
-   */
-  scheduledSeats: integer("scheduled_seats"),
   currentPeriodEnd: integer("current_period_end", { mode: "timestamp" }),
   /**
    * Set when a renewal fails. Past this instant the cron downgrades the team.
@@ -246,7 +230,7 @@ export const subscription = sqliteTable("subscription", {
  * Webhook ids already acted on.
  *
  * Dodo retries until it gets a 2xx, so the same event arrives more than once.
- * Replaying a seat sync is harmless — reconciliation is idempotent — but
+ * Replaying an activation is harmless — it writes the same plan again — but
  * replaying a `subscription.cancelled` that arrived before a resubscribe would
  * downgrade a team that is paying, which nothing downstream would notice.
  *

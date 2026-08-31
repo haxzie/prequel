@@ -14,11 +14,6 @@ export interface Billing {
   /** Which of the three states the account is in. `plan` alone cannot say. */
   trial: Trial;
   storageQuotaBytes: number;
-  /** Seats in use and seats paid for, both excluding the one the plan includes. */
-  seatsUsed: number;
-  seatsPurchased: number;
-  /** What the seat count drops to at renewal, or null when nothing is pending. */
-  scheduledSeats: number | null;
   status: string | null;
   currentPeriodEnd: string | null;
   graceUntil: string | null;
@@ -27,7 +22,7 @@ export interface Billing {
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 /**
- * The plan, the seats, and the two buttons that change either.
+ * The plan, and the two buttons that change it.
  *
  * A client component because both actions end in a redirect to a URL only the
  * API can mint — a checkout session and a portal session are both single-use and
@@ -53,11 +48,11 @@ export function BillingPanel({
   /**
    * Straight to Dodo, with nothing in between.
    *
-   * The invite flow opens `UpgradeDialog` first, and has to: there the upgrade
-   * is the answer to something the user was just refused, so the price and what
-   * a seat costs are news. Here they are already on the billing page reading
-   * exactly that — a modal repeating the page behind it is a click that buys
-   * nothing.
+   * There used to be a confirmation modal in front of this, for the flow where
+   * an upgrade was the answer to something the user had just been refused. That
+   * flow was inviting a teammate, and it is gone. Anybody reaching this button
+   * is already on the billing page reading the price — a modal repeating the
+   * page behind it is a click that buys nothing.
    *
    * Left pending on success. The redirect is in flight, and a button that comes
    * back to life invites a second checkout session.
@@ -102,11 +97,6 @@ export function BillingPanel({
 
   const pro = billing.plan === "pro";
   const trial = billing.trial;
-  // Seats include the one the product comes with, which is what the team
-  // actually counts in heads. The API talks in add-on seats; this does not.
-  const seatsUsed = billing.seatsUsed + 1;
-  const seatsHeld = billing.seatsPurchased + 1;
-  const idle = seatsHeld - seatsUsed;
 
   return (
     <div className="lit mt-8 rounded-2xl border border-line bg-elevated p-6">
@@ -122,21 +112,8 @@ export function BillingPanel({
       {pro ? (
         <>
           <p className="mt-1 text-sm text-muted">
-            {seatsUsed} of {seatsHeld} {seatsHeld === 1 ? "seat" : "seats"} in use,{" "}
             {formatBytes(billing.storageQuotaBytes)} of shared recordings.
           </p>
-
-          {/* A team that shrank. Worth saying out loud, because the seat is
-              still being paid for and the money is not coming back — what it
-              is, is available to fill for free until the renewal. */}
-          {idle > 0 ? (
-            <p className="mt-3 text-sm text-muted">
-              {idle === 1 ? "One seat is" : `${idle} seats are`} free to fill at no extra cost.
-              {billing.scheduledSeats !== null && billing.currentPeriodEnd
-                ? ` Unfilled, ${idle === 1 ? "it drops" : "they drop"} off your bill on ${DATE.format(new Date(billing.currentPeriodEnd))}.`
-                : null}
-            </p>
-          ) : null}
 
           {billing.graceUntil ? (
             <p className="mt-3 text-sm text-brand-from">
@@ -161,12 +138,11 @@ export function BillingPanel({
           </p>
 
           {/* True in both states, and deliberately not folded into the line
-              above: the storage and the seat are what a licence adds, where
-              the trial is about the app. Saying the trial includes teammates
-              would be checkable in one click, and wrong. */}
+              above: the storage is what a licence adds, where the trial is
+              about the app. */}
           <p className="mt-1 text-sm text-muted">
-            One person, {formatBytes(billing.storageQuotaBytes)} of recordings, and no teammates.
-            Prequel is {PRICE_MONTHLY} per seat per month.
+            {formatBytes(billing.storageQuotaBytes)} of recordings. Prequel is {PRICE_MONTHLY} per
+            month.
           </p>
         </>
       )}

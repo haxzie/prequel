@@ -1,0 +1,1 @@
+ALTER TABLE `organization` ADD `created_by` text REFERENCES user(id);

@@ -154,6 +154,22 @@ export const organization = sqliteTable("organization", {
   storageQuotaBytes: integer("storage_quota_bytes")
     .notNull()
     .default(2 * 1024 * 1024 * 1024),
+  /**
+   * Who created this team. Not Better Auth's — ours, stamped in
+   * `beforeCreateOrganization`.
+   *
+   * The plugin records the creator *only* as their `member` row, which makes
+   * membership the sole link between a team and a person. That is fine until
+   * the membership is the thing that fails to be written: the team row survives
+   * with nothing on it that says whose it was, and there is then no query that
+   * can put the two back together. Thirty-seven teams in production are
+   * unattributable for exactly this reason, and no amount of care afterwards
+   * recovers it — the fact was never recorded.
+   *
+   * `set null` rather than cascade, matching `video.ownerId`: deleting an
+   * account must not silently delete a team and cascade through its videos.
+   */
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 
@@ -173,31 +189,11 @@ export const member = sqliteTable(
   (table) => [
     index("member_org_idx").on(table.organizationId),
     index("member_user_idx").on(table.userId),
-    // Accepting the same invitation twice is one click on a stale email, and
-    // two rows would show the person twice in the member list with two roles.
+    // One row per person per team. Teams are single-member today — see
+    // `apps/api/src/auth.ts` — but the constraint is what the *membership*
+    // means rather than what the product currently allows, and it is the thing
+    // that would otherwise let a retry seat somebody twice.
     uniqueIndex("member_org_user_idx").on(table.organizationId, table.userId),
-  ],
-);
-
-export const invitation = sqliteTable(
-  "invitation",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    role: text("role"),
-    status: text("status").notNull().default("pending"),
-    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-    inviterId: text("inviter_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("invitation_org_idx").on(table.organizationId),
-    index("invitation_email_idx").on(table.email),
   ],
 );
 
@@ -209,7 +205,6 @@ export const userRelations = relations(user, ({ many }) => ({
 
 export const organizationRelations = relations(organization, ({ many }) => ({
   members: many(member),
-  invitations: many(invitation),
 }));
 
 export const memberRelations = relations(member, ({ one }) => ({

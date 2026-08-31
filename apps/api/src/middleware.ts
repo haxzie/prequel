@@ -88,10 +88,9 @@ export const requireTeam: MiddlewareHandler<AppContext> = async (c, next) => {
 /**
  * Requires a team, and requires being in charge of it.
  *
- * The first server-side role check in this codebase. Everything else scopes by
- * team alone, and the only role logic that existed was the dashboard hiding the
- * Invite form from a plain member — which stops nothing, because the plugin's
- * endpoints are reachable directly.
+ * The only server-side role check in this codebase. Everything else scopes by
+ * team alone, which is enough while a team is one person — this guards the two
+ * routes that spend money, where "enough for now" is not a thing to rely on.
  *
  * Membership and role in one read, so a member of another team gets the same
  * 403 as a member of this one, rather than leaking that the team exists.

@@ -76,8 +76,7 @@
     // traffic at products that do not exist.
     "DODOPAYMENT_MODE": "test",
     "DODOPAYMENT_BRAND_ID": "",
-    "DODOPAYMENT_PRO_PRODUCT_ID": "",
-    "DODOPAYMENT_SEAT_ADDON_ID": ""
+    "DODOPAYMENT_PRO_PRODUCT_ID": ""
   },
 
   // Hourly, and for two things no webhook announces: a grace window closing
@@ -107,8 +106,7 @@
         "POSTHOG_HOST": "https://us.i.posthog.com",
         "DODOPAYMENT_MODE": "live",
         "DODOPAYMENT_BRAND_ID": "brnd_0Nm8fKKuEmLeZdUchxYCx",
-        "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
-        "DODOPAYMENT_SEAT_ADDON_ID": "adn_0Nm8gUGgL77rAlFrGsaMI"
+        "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ"
       },
       "triggers": { "crons": ["0 * * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],

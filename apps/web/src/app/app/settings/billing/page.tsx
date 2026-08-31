@@ -8,7 +8,7 @@ import { requireTeam } from "@/lib/session";
 
 export const metadata = pageMetadata({
   title: "Billing",
-  description: "Your plan and seats.",
+  description: "Your plan.",
   path: "/app/settings/billing",
   robots: { index: false, follow: false },
 });
@@ -19,15 +19,15 @@ export const dynamic = "force-dynamic";
 const CAN_MANAGE = new Set(["owner", "admin"]);
 
 /**
- * The plan, and what it costs to grow the team.
+ * The plan, and what it costs.
  *
  * Subscription state lives behind `GET /v1/billing` rather than on the session —
- * the team row this page already has says `pro` or `free` and nothing about
- * seats, and seats are the number somebody comes to this page to look at. So it
- * is read here and handed down. The panel stays a client component for the two
- * buttons: checkout and the portal both end in a redirect to a single-use,
- * time-limited URL only the API can mint, so neither can be rendered ahead of
- * the click.
+ * the team row this page already has says `pro` or `free` and nothing about the
+ * renewal date, the grace window or a cancellation, which is what somebody
+ * opens this page to see. So it is read here and handed down. The panel stays a
+ * client component for the two buttons: checkout and the portal both end in a
+ * redirect to a single-use, time-limited URL only the API can mint, so neither
+ * can be rendered ahead of the click.
  */
 export default async function BillingPage() {
   // Together, not one then the other. The subscription read needs nothing from
@@ -40,27 +40,10 @@ export default async function BillingPage() {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-medium tracking-tight text-fg">Billing</h1>
       <p className="mt-1.5 text-sm text-muted">
-        Prequel is {PRICE_MONTHLY} per seat per month at introductory pricing, which goes up later.
-        Your subscription includes one seat; each teammate takes another.
+        Prequel is {PRICE_MONTHLY} per month at introductory pricing, which goes up later.
       </p>
 
       <BillingPanel billing={billing} canManage={CAN_MANAGE.has(team.role)} />
-
-      <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
-        <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">
-          How seats work
-        </p>
-        <ul className="mt-3 space-y-2 text-sm leading-relaxed text-muted">
-          <li>
-            A teammate joining takes a seat. If every seat is taken, one is added and charged for
-            the rest of your month.
-          </li>
-          <li>
-            Removing someone frees their seat but keeps it. Filling it again costs nothing, and if
-            it is still empty at your renewal it drops off the bill then.
-          </li>
-        </ul>
-      </div>
     </div>
   );
 }
@@ -69,9 +52,9 @@ export default async function BillingPage() {
  * The team's subscription, or null.
  *
  * Null rather than a thrown error, on the same reasoning as the library's
- * listing: the rest of this page — what a seat costs, how seats work, the nav
- * around it — is still worth showing, and a 500 would hide all of it behind a
- * Worker that is briefly unreachable.
+ * listing: the rest of this page — the price, the nav around it — is still
+ * worth showing, and a 500 would hide all of it behind a Worker that is briefly
+ * unreachable.
  */
 async function fetchBilling(): Promise<Billing | null> {
   const cookie = (await cookies()).toString();

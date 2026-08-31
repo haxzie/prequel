@@ -36,6 +36,19 @@ const expected = getAuthTables({
 });
 
 /**
+ * Tables the plugin declares that this app deliberately does not have.
+ *
+ * `invitation` is the only one. Teams are single-member — `src/auth.ts` says
+ * why — so the endpoints that write this table are refused in
+ * `beforeCreateInvitation` and the table itself was dropped in `0002`. Checking
+ * for it would fail on a schema that is correct.
+ *
+ * Listed rather than skipped silently so that restoring invitations is a matter
+ * of deleting a line here and finding out exactly what the schema is missing.
+ */
+const OMITTED = new Set(["invitation"]);
+
+/**
  * Every Drizzle table in the schema, keyed by its SQL table name.
  *
  * Widened to `unknown` before the guard. The schema namespace is a union of
@@ -53,6 +66,13 @@ for (const value of Object.values(schema) as unknown[]) {
 describe("the schema Better Auth expects", () => {
   for (const [model, definition] of Object.entries(expected)) {
     const tableName = definition.modelName;
+
+    if (OMITTED.has(tableName)) {
+      it(`deliberately has no \`${tableName}\` table`, () => {
+        expect(tables.has(tableName)).toBe(false);
+      });
+      continue;
+    }
 
     it(`has a \`${tableName}\` table`, () => {
       expect(tables.has(tableName)).toBe(true);
