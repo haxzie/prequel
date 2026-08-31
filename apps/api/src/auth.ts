@@ -14,6 +14,7 @@ import { schema } from "@prequel/db";
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
+import { ensureTeam } from "./lib/teams.ts";
 
 export type Auth = ReturnType<typeof createAuth>;
 
@@ -28,6 +29,36 @@ export function createAuth(env: Env) {
     secret: env.BETTER_AUTH_SECRET,
 
     database: drizzleAdapter(db, { provider: "sqlite", schema }),
+
+    databaseHooks: {
+      user: {
+        create: {
+          /**
+           * Every account gets its team the moment it exists.
+           *
+           * There is no onboarding step any more — see `lib/teams.ts`. This is
+           * where the team comes from for anybody signing in through either
+           * provider, which is every account there is.
+           *
+           * **Failures are swallowed on purpose.** This runs after the user row
+           * is written, so throwing would not undo the account; it would only
+           * turn a successful sign-up into an error page for somebody who does
+           * now have an account, and who would be told to try again with an
+           * address that already exists. The sweep in `cron.ts` creates the
+           * team for anyone this misses, and `/v1/me` creates it on the way to
+           * the dashboard — so the cost of landing here is a delay, not a
+           * broken account.
+           */
+          after: async (user) => {
+            try {
+              await ensureTeam(db, user);
+            } catch (error: unknown) {
+              console.error("could not create a team for a new account", user.id, error);
+            }
+          },
+        },
+      },
+    },
 
     // The dashboard is on prequel.sh and this is on api.prequel.sh. Same site,
     // different origin: every browser call needs `credentials: "include"`, and

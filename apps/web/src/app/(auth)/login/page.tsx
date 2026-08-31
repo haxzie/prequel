@@ -29,7 +29,9 @@ export default async function LoginPage({
   const me = await getMe();
   const { next } = await searchParams;
 
-  if (me) redirect(me.teams.length === 0 ? "/onboarding" : destination(next));
+  // No team to check for any more: one is created with the account, so a
+  // signed-in visitor here is always somebody who can go straight through.
+  if (me) redirect(destination(next));
 
   return (
     <div className="mx-auto w-full max-w-sm px-5 py-12">

@@ -140,8 +140,18 @@ export async function requireTeam(next?: string): Promise<{ me: Me; team: Team }
     redirect(next ? `/login?next=${encodeURIComponent(next)}` : `/login?${EXPIRED_PARAM}=1`);
   }
 
+  /**
+   * A signed-in user always has a team — it is created with the account, and
+   * `/v1/me` creates one on the spot for anybody whose sign-up hook failed. So
+   * this is not a state to route around; it is a bug in the Worker, and there
+   * is no page left to send somebody to.
+   *
+   * Loud rather than a redirect, because the redirect is what hid the last one:
+   * onboarding sent people back to a form that could not succeed, and the
+   * product looked merely annoying instead of broken.
+   */
   const team = activeTeam(me);
-  if (!team) redirect("/onboarding");
+  if (!team) throw new Error("signed in with no team: /v1/me should have created one");
 
   return { me, team };
 }

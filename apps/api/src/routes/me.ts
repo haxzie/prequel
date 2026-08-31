@@ -1,16 +1,18 @@
 /**
  * Who the caller is, and what they can see.
  *
- * Deliberately answers for a user with no team rather than 403ing. That state
- * is real and brief — between a first login and finishing onboarding — and it
- * is exactly what the dashboard reads to decide where to send them. A 403 here
- * would make the onboarding page unreachable for the only people who need it.
+ * Also the last place a missing team is fixed. Teams are created with the
+ * account now, so a signed-in user without one is a sign-up hook that failed —
+ * and there is no onboarding page to send them to any more. Every dashboard
+ * page blocks on this call, so it is the one read that can guarantee the answer
+ * rather than reporting a state nothing downstream knows how to render.
  */
 import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { schema } from "@prequel/db";
 
+import { ensureTeam } from "../lib/teams.ts";
 import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
 
@@ -20,7 +22,8 @@ me.use("*", authenticate);
 
 me.get("/", async (c) => {
   const db = c.get("db");
-  const { userId, teamId } = c.get("identity");
+  const { userId } = c.get("identity");
+  let { teamId } = c.get("identity");
 
   /**
    * Three reads, started together.
@@ -93,6 +96,43 @@ me.get("/", async (c) => {
   if (!account) return c.json({ message: "Sign in to continue." }, 401);
 
   const { createdAt, ...user } = account;
+
+  /**
+   * A user with no team, which should not happen and is cheap to fix here.
+   *
+   * `ensureTeam` re-checks membership before it writes, so two of these racing
+   * cost a wasted read rather than a second team. It is only reachable at all
+   * when the sign-up hook failed, and the alternative — answering with an empty
+   * `teams` and letting the dashboard work out what that means — is the shape
+   * of the bug this whole change exists to remove.
+   */
+  if (teams.length === 0) {
+    const created = await ensureTeam(db, { id: userId, name: user.name, email: user.email }).catch(
+      (error: unknown) => {
+        console.error("could not create a team on /v1/me", userId, error);
+        return null;
+      },
+    );
+
+    if (created) {
+      const [team] = await db
+        .select({
+          id: schema.organization.id,
+          name: schema.organization.name,
+          slug: schema.organization.slug,
+          plan: schema.organization.plan,
+          storageQuotaBytes: schema.organization.storageQuotaBytes,
+        })
+        .from(schema.organization)
+        .where(eq(schema.organization.id, created))
+        .limit(1);
+
+      if (team) {
+        teams.push({ ...team, role: "owner" });
+        teamId = team.id;
+      }
+    }
+  }
 
   /**
    * The trial, resolved against the team the dashboard is about to render.

@@ -7,11 +7,11 @@
  * - A grace window running out. A failed renewal fires `subscription.on_hold`
  *   once, and the moment seven days later when that team stops being Pro is not
  *   an event anywhere. It is just a timestamp going past.
- * - A team with nobody in it. Creating a team is two writes with no transaction
- *   across them — the organization, then the creator's membership — so a
- *   failure between them leaves a team that no query returns and no user can
- *   reach. That gap is Better Auth's and cannot be closed from here, so it is
- *   watched for instead.
+ * - A team with nobody in it, or an account with no team. Creating a team is
+ *   two writes with no transaction across them — the organization, then the
+ *   membership — so a failure between them leaves one or the other stranded.
+ *   Neither is an event; both are just rows that disagree, so they are swept
+ *   for from both ends.
  */
 import { and, eq, isNotNull, lt, ne, notExists, sql } from "drizzle-orm";
 
@@ -21,12 +21,14 @@ import { database } from "./db.ts";
 import type { Env } from "./env.ts";
 import { FREE_QUOTA_BYTES } from "./lib/entitlement.ts";
 import { id } from "./lib/ids.ts";
+import { ensureTeam } from "./lib/teams.ts";
 
 export async function scheduled(env: Env): Promise<void> {
   const db = database(env);
 
   await expireGrace(db);
   await settleTeams(db);
+  await settleUsers(db);
 }
 
 type Database = ReturnType<typeof database>;
@@ -167,4 +169,41 @@ async function repair(
 
   console.warn("team re-seated with its creator", team.id, team.name, team.createdBy);
   return true;
+}
+
+/**
+ * Accounts with no team, which is now a broken account rather than a new one.
+ *
+ * Teams are created with the account — see `lib/teams.ts` — so this only ever
+ * finds someone whose sign-up hook failed. `/v1/me` fixes it too, and faster,
+ * but only for somebody who opens the dashboard: an account that only ever
+ * signs in from the Mac would otherwise sit there unable to share, being told
+ * to create a team by a product that no longer has anywhere to do that.
+ *
+ * Runs after `settleTeams`, so an account whose team merely lost its membership
+ * has already been reunited with it rather than given a second one.
+ */
+async function settleUsers(db: Database): Promise<void> {
+  const stranded = await db
+    .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+    .from(schema.user)
+    .where(
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(schema.member)
+          .where(eq(schema.member.userId, schema.user.id)),
+      ),
+    );
+
+  for (const user of stranded) {
+    // One failure must not stop the sweep: a slug collision on one account has
+    // nothing to do with the next one.
+    const teamId = await ensureTeam(db, user).catch((error: unknown) => {
+      console.error("scheduled team creation failed", user.id, error);
+      return null;
+    });
+
+    if (teamId) console.warn("team created for an account that had none", user.id, teamId);
+  }
 }

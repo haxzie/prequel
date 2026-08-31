@@ -66,5 +66,5 @@ function redirectTo(path: string, request: NextRequest): NextResponse {
 export const config = {
   // `/v/[slug]` is deliberately absent: a share link must work for somebody with
   // no account, which is the entire point of it.
-  matcher: ["/app/:path*", "/onboarding", "/desktop/auth", "/login"],
+  matcher: ["/app/:path*", "/desktop/auth", "/login"],
 };

@@ -48,6 +48,19 @@ async function team(
 
 const teams = () => scalar<number>(env.DB.prepare("SELECT COUNT(*) FROM organization"));
 
+/**
+ * Whether one specific team is still there.
+ *
+ * The sweep also *creates* a team for any account that has none — see
+ * `settleUsers` — so a bare count of organizations no longer says whether the
+ * shell under test survived. Asking about the row by name is what these are
+ * actually about.
+ */
+const survives = async (teamId: string) =>
+  (await scalar<number>(
+    env.DB.prepare("SELECT COUNT(*) FROM organization WHERE id = ?").bind(teamId),
+  )) === 1;
+
 const memberOf = (teamId: string) =>
   scalar<string>(
     env.DB.prepare("SELECT user_id FROM member WHERE organization_id = ?").bind(teamId),
@@ -73,7 +86,7 @@ describe("teams with no members", () => {
     await scheduled(env);
 
     expect(await memberOf("org1")).toBeUndefined();
-    expect(await teams()).toBe(1);
+    expect(await survives("org1")).toBe(true);
   });
 
   it("does not hand somebody a second team when they retried and succeeded", async () => {
@@ -102,7 +115,7 @@ describe("teams with no members", () => {
 
     await scheduled(env);
 
-    expect(await teams()).toBe(0);
+    expect(await survives("org1")).toBe(false);
   });
 
   it("never cascades over a team that has recordings in it", async () => {
@@ -116,7 +129,7 @@ describe("teams with no members", () => {
 
     await scheduled(env);
 
-    expect(await teams()).toBe(1);
+    expect(await survives("org1")).toBe(true);
     expect(await scalar(env.DB.prepare("SELECT COUNT(*) FROM video"))).toBe(1);
   });
 
@@ -129,7 +142,7 @@ describe("teams with no members", () => {
 
     await scheduled(env);
 
-    expect(await teams()).toBe(1);
+    expect(await survives("org1")).toBe(true);
   });
 
   it("leaves healthy teams entirely alone", async () => {
