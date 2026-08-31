@@ -360,10 +360,15 @@ export function buildRenderPlan(
     const blur = background.shadowBlur * unit;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
-    // One track for everything that makes up the picture — the image and the
-    // border around it move together, because they are one object — and a
-    // second for the shadow, which is the same shape with the bleed around it.
-    const { keys: motion, shadow: shadowMotion } = zoomKeys(
+    // Three tracks off the one shot: the picture, the ring one border width
+    // outside it, and the shadow cast by the two of them together. Separate
+    // because each is a different rectangle put through the same tilt, and a
+    // tilted rectangle cannot be grown after the fact — see `keyFor`.
+    const {
+      keys: motion,
+      border: borderMotion,
+      shadow: shadowMotion,
+    } = zoomKeys(
       zooms ?? [],
       frame,
       dstRect,
@@ -371,6 +376,7 @@ export function buildRenderPlan(
       sources.screen,
       shape.radius,
       spread,
+      border,
       cursor,
     );
     const moving = motion.length > 0 ? { motion } : {};
@@ -388,9 +394,7 @@ export function buildRenderPlan(
         blur,
         dy: background.shadowY * unit,
         color: rgba("#000000", background.shadowOpacity),
-        ...(shadowMotion.length > 0
-          ? { motion: shadowMotion.map((key) => grownKey(key, border)) }
-          : {}),
+        ...(shadowMotion.length > 0 ? { motion: shadowMotion } : {}),
       });
     }
 
@@ -435,11 +439,12 @@ export function buildRenderPlan(
         shape: { radius: framed.radius, exponent: outerShape.exponent },
         width: border,
         color: rgba(background.borderColor, background.borderOpacity),
-        // The picture's own track, pushed out with it and then cut to the
-        // frame: the border is fixed in width, so a zoom moves and resizes it
-        // without thickening it.
-        ...(motion.length > 0
-          ? { motion: motion.map((key) => framedKey(grownKey(key, border), frame)) }
+        // The ring's own track, cut to the same frame the picture is cut to, so
+        // it traces the rounded corners the picture ends up drawing rather than
+        // a rectangle it never had. The border is a fixed width, so a zoom
+        // moves and resizes the ring without thickening it.
+        ...(borderMotion.length > 0
+          ? { motion: borderMotion.map((key) => framedKey(key, frame)) }
           : {}),
       });
     }
@@ -717,7 +722,19 @@ function captionItems(
 
     const span = { start: cue.at, end: cue.end };
 
-    items.push({ kind: "caption", path: cue.path, bitmap: cue.bitmap, dstRect, span, words: [] });
+    // Two layers where a look lights one word against the rest of its line: a
+    // flat one carrying the whole cue, and a lit one cropped to the word being
+    // spoken. One layer where there is no rest of the line — a look that shows
+    // a single word at a time draws it once, already in the accent, and the
+    // word boxes go on that item so it draws nothing between words.
+    items.push({
+      kind: "caption",
+      path: cue.path,
+      bitmap: cue.bitmap,
+      dstRect,
+      span,
+      words: cue.litPath ? [] : cue.words,
+    });
 
     if (cue.litPath && cue.words.length > 0) {
       items.push({
@@ -940,15 +957,17 @@ function zoomKeys(
   srcRect: Rect,
   source: Size,
   radius: number,
-  /** How far the shadow's own track is grown past the picture's. */
+  /** How far the shadow's own track is grown past the border's. */
   spread: number,
+  /** How far the border's own track is grown past the picture's. */
+  border: number,
   cursor?: CursorTrack | null,
-): { keys: RectKey[]; shadow: RectKey[] } {
-  if (zooms.length === 0) return { keys: [], shadow: [] };
+): { keys: RectKey[]; border: RectKey[]; shadow: RectKey[] } {
+  if (zooms.length === 0) return { keys: [], border: [], shadow: [] };
 
   const between = betweenZooms(zooms);
   const stages = stagesFor(zooms, between);
-  if (stages.length === 0) return { keys: [], shadow: [] };
+  if (stages.length === 0) return { keys: [], border: [], shadow: [] };
 
   // One list of sample times for every stage, in order, so a stage that blends
   // two zooms can ask both of them about the same instant. Per-zoom grids would
@@ -995,6 +1014,7 @@ function zoomKeys(
   );
 
   const keys: RectKey[] = [];
+  const edges: RectKey[] = [];
   const shadow: RectKey[] = [];
   let written = -Infinity;
 
@@ -1014,13 +1034,14 @@ function zoomKeys(
       const u = span > 0 ? (at - stage.from) / span : 1;
 
       const shot = shotAt(from, to, step, u);
-      const pair = keyFor(shot, at, spread);
-      keys.push(pair.key);
-      shadow.push(pair.shadow);
+      const sampled = keyFor(shot, at, spread, border);
+      keys.push(sampled.key);
+      edges.push(sampled.border);
+      shadow.push(sampled.shadow);
     }
   });
 
-  return { keys, shadow };
+  return { keys, border: edges, shadow };
 }
 
 /**
@@ -1506,23 +1527,42 @@ function blend(from: Shot, to: Shot, t: number): Shot {
   };
 }
 
-/** The two keys one shot produces: the picture, and the shadow under it. */
-function keyFor(shot: Shot, at: number, spread: number): { key: RectKey; shadow: RectKey } {
+/**
+ * The three keys one shot produces: the picture, the border round it, and the
+ * shadow under both.
+ *
+ * Everything that stands off the picture is **projected here rather than
+ * inflated afterwards**, and that is the whole reason this returns three keys
+ * instead of one. A tilted picture's corners are a perspective projection:
+ * there is no way to grow four projected corners by a distance in screen
+ * pixels, because the amount each corner moves depends on how far away it is,
+ * and the angles are known at this point and nowhere downstream. Growing the
+ * rectangle and projecting *that* is the only arithmetic that gives a ring of
+ * even width round a tilted picture.
+ */
+function keyFor(
+  shot: Shot,
+  at: number,
+  spread: number,
+  border: number,
+): { key: RectKey; border: RectKey; shadow: RectKey } {
   const quad = rotatedQuad(shot.rect, shot.rotateX, shot.rotateY, shot.perspective);
 
-  // The shadow's own rectangle: the same one, with room around it for the blur
-  // to fall off in. Projected here rather than inflated afterwards, because a
-  // tilted picture's corners are a perspective projection and there is no way to
-  // grow four projected corners by a distance in screen pixels — the angles are
-  // known at this point and nowhere downstream.
-  const bled: Rect = {
-    x: shot.rect.x - spread,
-    y: shot.rect.y - spread,
-    width: shot.rect.width + spread * 2,
-    height: shot.rect.height + spread * 2,
+  const projected = (by: number): { rect: Rect; quad: number[] | undefined } => {
+    const rect = grow(shot.rect, by);
+    return {
+      rect,
+      quad: by !== 0 ? rotatedQuad(rect, shot.rotateX, shot.rotateY, shot.perspective) : quad,
+    };
   };
-  const bledQuad =
-    spread > 0 ? rotatedQuad(bled, shot.rotateX, shot.rotateY, shot.perspective) : quad;
+
+  // The ring sits one border width outside the picture, so it is the picture's
+  // rectangle grown by that and put through the same tilt.
+  const edge = projected(border);
+  // And the shadow is cast by the two of them together — picture and border are
+  // one object standing off the background — with room around that for the blur
+  // to fall off in.
+  const bled = projected(spread + border);
 
   return {
     key: {
@@ -1533,13 +1573,20 @@ function keyFor(shot: Shot, at: number, spread: number): { key: RectKey; shadow:
       ...(shot.focus ? { focus: shot.focus } : {}),
       ...(shot.vignette > 0 ? { vignette: shot.vignette } : {}),
     },
-    // No focus and no vignette: neither rasteriser reads them for a shadow, and
-    // carrying them would put the depth-of-field twice in every plan.
+    // No focus and no vignette on either of these: neither rasteriser reads
+    // them for a stroke or a shadow, and carrying them would put the
+    // depth-of-field twice in every plan.
+    border: {
+      at,
+      ...edge.rect,
+      radius: shot.radius + border,
+      ...(edge.quad ? { quad: edge.quad } : {}),
+    },
     shadow: {
       at,
-      ...bled,
-      radius: shot.radius,
-      ...(bledQuad ? { quad: bledQuad } : {}),
+      ...bled.rect,
+      radius: shot.radius + border,
+      ...(bled.quad ? { quad: bled.quad } : {}),
     },
   };
 }
@@ -3473,7 +3520,6 @@ function toPaint(background: Background): Paint {
   }
 }
 
-/** `#rrggbb` plus an alpha, as an `rgba()` both rasterisers can read. */
 /** A rectangle grown outwards on every edge. */
 function grow(rect: Rect, by: number): Rect {
   return {
@@ -3485,13 +3531,73 @@ function grow(rect: Rect, by: number): Rect {
 }
 
 /**
- * One key of a track, grown the same way — corner radius included.
+ * A picture cut to the frame, with the source cropped to match.
  *
- * The radius has to grow with it or the ring changes width round the corners as
- * the picture moves: an outward offset of a rounded rectangle is a rounded
- * rectangle whose radius is larger by the offset, and anything else is a
- * different curve running beside the picture's own.
+ * A zoom scales the destination well past every edge — a 1920-wide frame holds
+ * a 3379-wide picture — so the picture's own corners end up off screen and
+ * there is nothing left to round. Cutting the destination back to the frame and
+ * taking the matching slice of the source shows exactly the same pixels, since
+ * the part outside was never drawn, and puts the corners back where they can be
+ * seen. The radius is kept: that is the whole point, so a zoomed moment is
+ * still a rounded picture in a frame rather than a full-bleed rectangle.
+ *
+ * Applied where a picture is *drawn* rather than baked into its motion track,
+ * and that distinction is load-bearing. The track describes the zoom, and other
+ * things read it as such — the pointer is placed at a fraction of where the
+ * picture is being drawn, and a track holding a clamped rectangle would put it
+ * somewhere the pointer never was. So the keys stay true and this is applied on
+ * the way to the rasteriser, in one place, mirrored by `crop_to_frame` in
+ * `crates/prequel-render/src/plan.rs`.
+ *
+ * A tilted picture is left alone. It is positioned by four projected corners
+ * rather than by its rectangle, and a clipped projective quad is a polygon —
+ * which is not something a plan item can hold.
  */
+export function cropToFrame(
+  rect: Rect,
+  src: Rect,
+  frame: Size,
+  tilted: boolean,
+): { rect: Rect; src: Rect } {
+  if (tilted || rect.width <= 0 || rect.height <= 0) return { rect, src };
+
+  const x = Math.max(rect.x, 0);
+  const y = Math.max(rect.y, 0);
+  const right = Math.min(rect.x + rect.width, frame.width);
+  const bottom = Math.min(rect.y + rect.height, frame.height);
+
+  // Fully on screen, which is every moment that is not zoomed in.
+  if (
+    x === rect.x &&
+    y === rect.y &&
+    right === rect.x + rect.width &&
+    bottom === rect.y + rect.height
+  ) {
+    return { rect, src };
+  }
+
+  // Off screen entirely. Left as it was rather than cut to nothing, so the
+  // rasterisers go on drawing nothing rather than dividing by zero.
+  if (right <= x || bottom <= y) return { rect, src };
+
+  // The share of the destination that survived, applied to the source. The two
+  // map linearly onto each other — that is what drawing a rectangle into a
+  // rectangle means — so the fraction taken off one side of one comes off the
+  // same side of the other.
+  const left = (x - rect.x) / rect.width;
+  const top = (y - rect.y) / rect.height;
+
+  return {
+    rect: { x, y, width: right - x, height: bottom - y },
+    src: {
+      x: src.x + left * src.width,
+      y: src.y + top * src.height,
+      width: ((right - x) / rect.width) * src.width,
+      height: ((bottom - y) / rect.height) * src.height,
+    },
+  };
+}
+
 /**
  * A rounded rectangle cut down to the frame it is drawn in.
  *
@@ -3524,25 +3630,34 @@ function withinFrame(rect: Rect, radius: number, frame: Size): { rect: Rect; rad
 
   return {
     rect: { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) },
-    // A corner keeps its curve only while the corner itself is on screen. Cut
-    // past the arc and what is left is square, so the radius comes off with the
-    // edge that was pulled in.
-    radius: Math.max(0, radius - pulled),
+    // The radius survives the cut. The picture this traces is cut to the same
+    // frame and keeps its own rounding — see `cropToFrame` — so a border that
+    // squared itself off here would draw a rectangle round a rounded picture.
+    radius,
   };
 }
 
 /**
  * One key of the border's track, cut to the frame.
  *
- * The tilt goes with it. A key carrying a `quad` is positioned by those four
- * corners and its rectangle is ignored, so clamping the rectangle alone would
- * change nothing on a perspective zoom — and a clipped projective quad is a
- * polygon, which is not something a plan item can hold. So once the picture
- * overflows, the border stops following the tilt and becomes the frame's own
- * edge. While the picture is fully on screen it tracks it exactly, tilt
- * included, because nothing is clamped.
+ * A tilted key is positioned by its four projected corners and its rectangle is
+ * ignored, so clamping the rectangle would change nothing on screen — and a
+ * clipped projective quad is a polygon, which is not something a plan item can
+ * hold. The question a tilted key has to answer is therefore not "does it
+ * overflow" but **"is any edge of the picture still showing"**: while one is,
+ * the ring belongs on that edge, tilt and all, and nothing is clamped.
+ *
+ * Only once the tilted picture covers the frame outright does the ring fall
+ * back to the frame's own edge — and that swap is invisible, because at that
+ * moment the picture has no edge on screen for the old ring to have been
+ * tracing. Deciding on the rectangle instead is what made the border snap to a
+ * straight frame the instant a perspective zoom began, while the picture it was
+ * supposed to be framing was still visibly tilted underneath it.
  */
 function framedKey(key: RectKey, frame: Size): RectKey {
+  const flat = key.quad ? (({ quad: _dropped, ...rest }) => rest)(key) : key;
+  if (key.quad && !coversFrame(key.quad, frame)) return key;
+
   const framed = withinFrame(
     { x: key.x, y: key.y, width: key.width, height: key.height },
     key.radius,
@@ -3555,16 +3670,56 @@ function framedKey(key: RectKey, frame: Size): RectKey {
     framed.rect.width !== key.width ||
     framed.rect.height !== key.height;
 
-  if (!clamped) return key;
+  if (!clamped) return flat;
 
-  const { quad: _dropped, ...rest } = key;
-  return { ...rest, ...framed.rect, radius: framed.radius };
+  return { ...flat, ...framed.rect, radius: framed.radius };
 }
 
-function grownKey(key: RectKey, by: number): RectKey {
-  return { ...key, ...grow(key, by), radius: key.radius + by };
+/**
+ * Whether a tilted picture leaves no part of the frame uncovered.
+ *
+ * All four frame corners inside the quad, which for a convex polygon is every
+ * corner on the same side of every edge. The projection is convex within the
+ * tilt range the app offers — `rotatedQuad` clamps a corner rather than letting
+ * it pass behind the eye, which is the one thing that could fold it.
+ */
+function coversFrame(quad: readonly number[], frame: Size): boolean {
+  if (quad.length < 12) return false;
+
+  // The stored order is top-left, top-right, bottom-left, bottom-right — the
+  // order a triangle strip walks, which is not the order the outline runs in.
+  const outline = [0, 1, 3, 2];
+  const corners = [
+    [0, 0],
+    [frame.width, 0],
+    [frame.width, frame.height],
+    [0, frame.height],
+  ] as const;
+
+  let side = 0;
+
+  for (let edge = 0; edge < 4; edge += 1) {
+    const from = outline[edge]! * 3;
+    const to = outline[(edge + 1) % 4]! * 3;
+    const dx = quad[to]! - quad[from]!;
+    const dy = quad[to + 1]! - quad[from + 1]!;
+
+    for (const [x, y] of corners) {
+      const cross = dx * (y - quad[from + 1]!) - dy * (x - quad[from]!);
+      // Exactly on the edge, which counts as covered and says nothing about
+      // which way round the outline runs.
+      if (Math.abs(cross) < 1e-9) continue;
+
+      const at = cross > 0 ? 1 : -1;
+      if (side === 0) side = at;
+      else if (side !== at) return false;
+    }
+  }
+
+  return true;
 }
 
+/** `#rrggbb` plus an alpha, as an `rgba()` both rasterisers can read. */
 function rgba(hex: string, alpha: number): string {
   const value = hex.replace("#", "");
   const r = parseInt(value.slice(0, 2), 16) || 0;

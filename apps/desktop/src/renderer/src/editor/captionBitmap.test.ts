@@ -88,6 +88,23 @@ describe("cueKey", () => {
     expect(cueKey(CUE, flat, other)).toBe(cueKey(CUE, flat, OPTIONS));
   });
 
+  it("covers the drawing code as well as the style", () => {
+    // Two separate ways the pixels can change, and the key has to move for
+    // both. Hashing the style alone caught an edited `CAPTION_STYLES` and
+    // missed an edited `paint` — which is how a fix to the lit layer shipped
+    // twice without any bitmap being rewritten.
+    //
+    // There is no way to assert the bump itself from here; what this pins is
+    // that the constant is *in* the key, so bumping it does something.
+    const style = captionStyle("highlight");
+    const key = cueKey(CUE, style, OPTIONS);
+
+    expect(key).toMatch(/^[0-9a-f]{8}$/);
+    // A style change and a rasteriser change must not be able to collide into
+    // the same name by cancelling each other out.
+    expect(cueKey(CUE, tweak({ fill: "#123456" }), OPTIONS)).not.toBe(key);
+  });
+
   it("keeps the two layers of one cue apart", () => {
     const { flat, lit } = cuePaths(cueKey(CUE, captionStyle("highlight"), OPTIONS));
 

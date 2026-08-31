@@ -54,6 +54,18 @@ export interface CaptionStyle {
   /** Extra letter spacing, as a fraction of the font size. */
   tracking: number;
   caps: boolean;
+  /**
+   * One word to a cue, rather than a line of them.
+   *
+   * Required by any look that swells the word it lights. The lit word is drawn
+   * over a flat layer that still holds the whole line, so growing it by a
+   * seventh pushes it about ten pixels into the space either side — and the gap
+   * between two words is about ten pixels. It lands on top of its neighbours.
+   *
+   * With one word to a cue there are no neighbours to land on, which is also
+   * the look these styles are imitating: a single word at a time, large.
+   */
+  perWord: boolean;
 }
 
 /**
@@ -79,6 +91,7 @@ const SUBTITLE: CaptionStyle = {
   // A hair tight, which is how SF is set at display sizes.
   tracking: -0.01,
   caps: false,
+  perWord: false,
 };
 
 /**
@@ -104,6 +117,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     lit: { pop: 1 },
     tracking: -0.01,
     caps: false,
+    perWord: false,
   },
   {
     id: "pop",
@@ -111,13 +125,24 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     weight: 800,
     scale: 1.25,
     fill: "#ffffff",
-    stroke: { color: "rgba(0,0,0,0.9)", width: 0.09 },
+    // No outline. A heavy stroke round a word this large is a second shape
+    // competing with the letterform, and the shadow below already lifts it off
+    // the footage.
+    stroke: null,
     shadow: { color: "rgba(0,0,0,0.5)", blur: 0.2, dy: 0.05 },
     plate: null,
-    // Room to swell because there is no plate to collide with.
-    lit: { pop: 1.14 },
+    // Lit, but not swollen at draw time.
+    //
+    // Swelling meant scaling the bitmap up as it was composited, which is both
+    // blurry and — while anything was drawn underneath — wrong: a glyph grown
+    // about its centre does not cover the one beneath it, because the counters
+    // grow too and the smaller strokes show through them. The size this look
+    // wants comes from `scale`, which is applied when the text is rasterised
+    // and therefore sharp.
+    lit: { pop: 1 },
     tracking: -0.01,
     caps: true,
+    perWord: true,
   },
   {
     id: "outline",
@@ -131,6 +156,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     lit: null,
     tracking: 0,
     caps: false,
+    perWord: false,
   },
   {
     id: "band",
@@ -146,6 +172,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     lit: null,
     tracking: 0.01,
     caps: false,
+    perWord: false,
   },
   {
     id: "minimal",
@@ -159,6 +186,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     lit: null,
     tracking: 0.06,
     caps: true,
+    perWord: false,
   },
 ];
 
@@ -238,6 +266,13 @@ function isFiller(text: string): boolean {
 export interface CueOptions {
   /** How many lines a cue may fill before it has to break. */
   lines: number;
+  /**
+   * One word to a cue, for a look that swells the word it lights.
+   *
+   * The line budget is ignored when this is set: a cue is one word, so it is
+   * one line whatever the budget says.
+   */
+  perWord?: boolean;
 }
 
 /**
@@ -287,6 +322,14 @@ export function cuesFrom(words: readonly TranscriptWord[], options: CueOptions):
     // words that are actually drawn — a filler kept in the span would hold the
     // caption up waiting for a sound nobody reads.
     if (isFiller(text)) continue;
+
+    // One to a cue, and none of the grouping below applies: there is no line to
+    // fill, no sentence to end and no silence to break on.
+    if (options.perWord) {
+      current.push({ text, at: word.at, end: word.end, line: 0 });
+      flush();
+      continue;
+    }
 
     const previous = current[current.length - 1];
     const opened = current[0];

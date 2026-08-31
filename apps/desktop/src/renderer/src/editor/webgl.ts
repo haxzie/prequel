@@ -21,6 +21,7 @@
  */
 import {
   captionAt,
+  cropToFrame,
   cursorAt,
   rectAt,
   SHADOW_SPREAD,
@@ -30,6 +31,7 @@ import {
   type RectKey,
   type RenderPlan,
   type Shape,
+  type Size,
 } from "../../../shared/layout";
 
 /** Images the plan names by path — backgrounds, and the pointer. */
@@ -347,7 +349,9 @@ export class WebGlCompositor {
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.program.frame, plan.frame.width, plan.frame.height);
 
-    for (const item of plan.items) this.drawItem(gl, item, sources, images, at);
+    for (const item of plan.items) {
+      this.drawItem(gl, item, sources, images, at, plan.frame);
+    }
 
     gl.bindVertexArray(null);
   }
@@ -411,6 +415,8 @@ export class WebGlCompositor {
     sources: Sources,
     images: Images,
     at: number,
+    /** The output frame, which only the picture needs — to be cut to it. */
+    frame: Size,
   ): void {
     const p = this.program;
     if (!p) return;
@@ -448,8 +454,14 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.source, source, true);
         if (!texture) break;
 
-        const { rect, shape, quad, focus, vignette } = moving(item, at);
-        const src = normalised(item.srcRect, source.videoWidth, source.videoHeight);
+        const moment = moving(item, at);
+        // Cut to the frame, with the source cropped to match, so a zoom that
+        // scales the picture past every edge still draws its rounded corners.
+        // The same arithmetic the exporter runs — see `cropToFrame`.
+        const cut = cropToFrame(moment.rect, item.srcRect, frame, Boolean(moment.quad));
+        const { shape, quad, focus, vignette } = moment;
+        const rect = cut.rect;
+        const src = normalised(cut.src, source.videoWidth, source.videoHeight);
 
         set(gl, p, {
           rect,

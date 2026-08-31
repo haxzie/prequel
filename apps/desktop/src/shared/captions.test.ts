@@ -25,6 +25,16 @@ describe("captionStyle", () => {
     expect(captionStyle("no-such-style").id).toBe("subtitle");
   });
 
+  it("shows one word at a time wherever it swells the lit one", () => {
+    // The lit word is drawn over a flat layer that still holds the whole line,
+    // so a look that grows it pushes it into the words either side — the gap
+    // between two words is about the same as the growth. One word to a cue is
+    // what stops that, and it is the look these styles are imitating anyway.
+    for (const style of CAPTION_STYLES) {
+      if (style.lit && style.lit.pop > 1) expect(style.perWord).toBe(true);
+    }
+  });
+
   it("keeps every look that lights a word off the plated ones", () => {
     // The lit layer is a rectangle cropped out of a bitmap that carries the
     // plate, so growing it would drag the plate's own edge with it and show a
@@ -167,6 +177,31 @@ describe("cuesFrom", () => {
     ];
 
     expect(cuesFrom(words, { lines: 2 })[0]!.lines).toEqual(["murmured words"]);
+  });
+
+  it("gives a per-word look exactly one word to a cue", () => {
+    const cues = cuesFrom(said("one two three four"), { lines: 2, perWord: true });
+
+    expect(cues).toHaveLength(4);
+    for (const cue of cues) {
+      expect(cue.words).toHaveLength(1);
+      expect(cue.lines).toHaveLength(1);
+      expect(cue.lines[0]).toBe(cue.words[0]!.text);
+    }
+  });
+
+  it("still drops fillers and holds a per-word cue towards the next", () => {
+    const words: TranscriptWord[] = [
+      { at: 0, end: SECOND, text: "um", confidence: 0.3 },
+      { at: SECOND, end: 2 * SECOND, text: "right", confidence: 0.9 },
+      { at: 4 * SECOND, end: 5 * SECOND, text: "then", confidence: 0.9 },
+    ];
+    const cues = cuesFrom(words, { lines: 1, perWord: true });
+
+    expect(cues.map((cue) => cue.lines[0])).toEqual(["right", "then"]);
+    // Held towards the next word, never past it, so two are never up at once.
+    expect(cues[0]!.end).toBeLessThanOrEqual(cues[1]!.at);
+    expect(cues[0]!.end).toBeGreaterThan(cues[0]!.words[0]!.end);
   });
 
   it("has nothing to say about a recording with no words", () => {

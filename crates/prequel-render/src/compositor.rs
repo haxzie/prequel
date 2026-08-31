@@ -17,7 +17,8 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, caption_at, cursor_at, rect_at,
+    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, caption_at, crop_to_frame,
+    cursor_at, rect_at,
 };
 use crate::{Error, Result};
 
@@ -420,19 +421,19 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad, _, _) = rect_at(motion, at as i64, *rect, shape.radius);
+                let now = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
                         rect: [
-                            rect.x as f32,
-                            (rect.y + dy) as f32,
-                            rect.width as f32,
-                            rect.height as f32,
+                            now.rect.x as f32,
+                            (now.rect.y + dy) as f32,
+                            now.rect.width as f32,
+                            now.rect.height as f32,
                         ],
                         // Dropped by `dy` with the picture, or a tilted frame's
                         // shadow stays flat underneath and gives it away.
-                        quad: corners_of(&quad, *dy),
-                        shape: [radius as f32, shape.exponent as f32],
+                        quad: corners_of(&now.quad, *dy),
+                        shape: [now.radius as f32, shape.exponent as f32],
                         color_a: rgba(color),
                         mode: MODE_SHADOW,
                         weight: *blur as f32,
@@ -460,19 +461,30 @@ impl Compositor {
 
                 alive.push(self.texture_for(buffer, None)?);
                 // A zoom moves, scales and tilts the whole picture over time.
-                let (dst, radius, quad, focus, vignette) =
-                    rect_at(motion, at as i64, *dst_rect, shape.radius);
+                let now = rect_at(motion, at as i64, *dst_rect, shape.radius);
+                // Cut to the frame, with the source cropped to match, so a zoom
+                // that scales the picture past every edge still draws its
+                // rounded corners. The same arithmetic the preview runs.
+                let (cut, crop) = crop_to_frame(
+                    now.rect,
+                    *src_rect,
+                    Size {
+                        width: frame[0] as f64,
+                        height: frame[1] as f64,
+                    },
+                    !now.quad.is_empty(),
+                );
 
                 Some((
                     Uniforms {
-                        rect: rect_of(&dst),
-                        quad: corners_of(&quad, 0.0),
+                        rect: rect_of(&cut),
+                        quad: corners_of(&now.quad, 0.0),
                         // Normalised against the source's real size, which is
                         // the whole point: a 16:9 camera cropped to a square
                         // and then sampled edge-to-edge comes out stretched.
-                        src: normalised(src_rect, buffer.width(), buffer.height()),
-                        vignette: vignette as f32,
-                        focus: focus.map_or([0.0, 0.0, 1.0, 0.0], |f| {
+                        src: normalised(&crop, buffer.width(), buffer.height()),
+                        vignette: now.vignette as f32,
+                        focus: now.focus.map_or([0.0, 0.0, 1.0, 0.0], |f| {
                             [f.x as f32, f.y as f32, f.safe as f32, f.strength as f32]
                         }),
                         // In the source's own texels, so a given strength looks
@@ -481,7 +493,7 @@ impl Compositor {
                             1.0 / buffer.width().max(1) as f32,
                             1.0 / buffer.height().max(1) as f32,
                         ],
-                        shape: [radius as f32, shape.exponent as f32],
+                        shape: [now.radius as f32, shape.exponent as f32],
                         mode: MODE_IMAGE,
                         mirror: u32::from(*mirror),
                         ..base
@@ -497,12 +509,12 @@ impl Compositor {
                 color,
                 motion,
             } => {
-                let (rect, radius, quad, _, _) = rect_at(motion, at as i64, *rect, shape.radius);
+                let now = rect_at(motion, at as i64, *rect, shape.radius);
                 Some((
                     Uniforms {
-                        rect: rect_of(&rect),
-                        quad: corners_of(&quad, 0.0),
-                        shape: [radius as f32, shape.exponent as f32],
+                        rect: rect_of(&now.rect),
+                        quad: corners_of(&now.quad, 0.0),
+                        shape: [now.radius as f32, shape.exponent as f32],
                         color_a: rgba(color),
                         mode: MODE_STROKE,
                         weight: *width as f32,

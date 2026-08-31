@@ -694,3 +694,64 @@ describe("undo", () => {
     expect(canUndo(loaded)).toBe(false);
   });
 });
+
+describe("opening a recording that already has zooms", () => {
+  /**
+   * The bug: every zoom in a saved project was replaced by a fresh automatic
+   * pass on reopen, and the replacement was then written to disk.
+   *
+   * `Editor` seeds its reducer with a placeholder — `newProject("", 0)` — and
+   * dispatches the real project from an effect. Effects in one commit all read
+   * the state of the render that committed them, so on the first pass every
+   * effect decides from the placeholder: an empty project at revision 0. The
+   * first cut's guard is "revision 0 and no zooms of its own", which the
+   * placeholder passes however many zooms the recording actually has. Its
+   * `setZooms` is dispatched after the `load` and lands on top of it, and
+   * because that counts as an edit the revision goes to 1 and the debounced
+   * write saves the loss.
+   */
+  const AUTO = [
+    {
+      id: "auto-0",
+      source: { start: 0, end: 2 * S },
+      target: "region",
+      x: 0.5,
+      y: 0.5,
+      level: 1.5,
+      speed: 0.6,
+    },
+  ] as never as ReturnType<typeof newProject>["zooms"];
+
+  const MINE = [
+    {
+      id: "zoom-1095-1",
+      source: { start: 4 * S, end: 8 * S },
+      target: "region",
+      x: 0.53,
+      y: 0.61,
+      level: 1.5,
+      speed: 0.6,
+      rotateX: 21,
+      rotateY: -25,
+      perspective: 0.5,
+    },
+  ] as never as ReturnType<typeof newProject>["zooms"];
+
+  const saved = { ...newProject(RECORDING, 10 * S), zooms: MINE };
+
+  it("keeps them when the editor mounts", () => {
+    // The state `Editor` renders with before any effect has run — seeded from
+    // the recording, which is the fix — and the two effects that follow, in the
+    // order they are registered. The guard is `useFirstCut`'s, verbatim.
+    const mounted = initialState(saved, 10 * S);
+    const wouldCut = mounted.revision === 0 && saved.zooms.length === 0;
+
+    let state = editorReducer(mounted, { type: "load", project: saved, duration: 10 * S });
+    if (wouldCut) state = editorReducer(state, { type: "setZooms", zooms: AUTO });
+
+    expect(state.project.zooms).toEqual(MINE);
+    // Nothing was edited, so nothing is written — a reopen that saves is what
+    // made the loss permanent.
+    expect(state.revision).toBe(0);
+  });
+});

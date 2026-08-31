@@ -69,7 +69,15 @@ const ZOOM_PREVIEW_SETTLE_MS = 400;
  * selection, history and playhead into it.
  */
 export function Editor({ session, onBack }: { session: EditorSession; onBack: () => void }) {
-  const [state, dispatch] = useReducer(editorReducer, newProject("", 0), initialState);
+  // Seeded from the recording rather than from a placeholder. Effects in the
+  // first commit all read the state of the render that committed them, so
+  // anything the reducer is seeded with is what every one of them decides from
+  // — and seeding it with an empty project meant they were deciding about a
+  // recording that does not exist. That is how the first cut came to replace a
+  // saved project's zooms on every reopen.
+  const [state, dispatch] = useReducer(editorReducer, session, (opened) =>
+    initialState(opened.project, opened.manifest.duration),
+  );
   const [images, setImages] = useState<Images>(new Map());
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
@@ -665,7 +673,12 @@ function useFirstCut(
 
   useEffect(() => {
     if (!session || made.current) return;
-    if (state.revision !== 0 || state.project.zooms.length > 0) return;
+    // Asked of the project as it was loaded, never of the reducer's copy. The
+    // two are the same now that the reducer is seeded from the session, and
+    // this is deliberately not relying on that: a guard on `state` was what
+    // made this run against a placeholder, and the project on disk is the thing
+    // the question is actually about.
+    if (state.revision !== 0 || session.project.zooms.length > 0) return;
 
     const moments = momentsOf(session);
 
@@ -680,7 +693,7 @@ function useFirstCut(
       hasCursor: session.cursor !== null,
     });
     if (zooms.length > 0) dispatch({ type: "setZooms", zooms });
-  }, [session, state.revision, state.project.zooms.length, dispatch]);
+  }, [session, state.revision, dispatch]);
 }
 
 /**

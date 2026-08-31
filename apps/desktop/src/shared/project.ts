@@ -620,9 +620,17 @@ export const DEFAULT_BACKGROUND: BackgroundSettings = {
   background: { kind: "image", source: "wallpaper", path: WALLPAPER_FILE_NAME },
   padding: 0.06,
   cornerRadius: 0.02,
-  borderWidth: 0,
+  // A hairline of white at low opacity, which is what a border is for here: it
+  // lifts the picture off a dark wallpaper by catching its edge, rather than
+  // drawing a frame round it. A solid one at full opacity reads as a border
+  // *added to* the recording and is the first thing anybody turns back off.
+  //
+  // It needs somewhere to go — the border sits outside the picture, so at zero
+  // padding it falls off the edge and a default that draws nothing would be
+  // worse than no default at all. `padding` above is what makes room for it.
+  borderWidth: 0.009,
   borderColor: "#ffffff",
-  borderOpacity: 1,
+  borderOpacity: 0.131,
   shadowOpacity: 0.45,
   shadowBlur: 0.05,
   shadowY: 0.015,

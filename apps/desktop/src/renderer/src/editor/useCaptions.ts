@@ -127,7 +127,12 @@ export function useCaptions(
           const options = { frame: size, size: current.captionSize, accent: current.captionAccent };
           // Grouped per look, because the line budget is one of the settings a
           // clip can override and it decides where a cue breaks.
-          const cues: Cue[] = cuesFrom(words.words, { lines: current.captionLines });
+          const cues: Cue[] = cuesFrom(words.words, {
+            lines: current.captionLines,
+            // A look that swells the word it lights needs one word to a cue, or
+            // the swollen one lands on its neighbours.
+            perWord: style.perWord,
+          });
           const set: RenderedCue[] = [];
 
           for (const cue of cues) {
@@ -158,13 +163,14 @@ export function useCaptions(
                 at: cue.at,
                 end: cue.end,
                 path: paths.flat,
-                // Without the lit bitmap there is no lit layer to emit, so the
-                // word boxes go with it — a lit item pointing at nothing draws
-                // the flat bitmap's whole width as if it were one word.
                 litPath,
                 bitmap: layout.bitmap,
                 size: layout.size,
-                words: litPath ? layout.words : [],
+                // Boxes wherever a word is cropped out of the bitmap: from the
+                // lit layer where there is one, and from the single layer of a
+                // look that shows one word at a time. Without them the plan
+                // would draw the whole bitmap across the cue's span.
+                words: litPath || style.perWord ? layout.words : [],
               });
             } catch (cause) {
               // One cue that would not draw is one missing caption. The rest of

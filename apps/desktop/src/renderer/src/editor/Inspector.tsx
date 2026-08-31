@@ -922,7 +922,10 @@ function CaptionsPanel({
           min={1}
           max={3}
           step={1}
-          disabled={off}
+          // A look that shows one word at a time has no line to fill, so this
+          // would move a number nothing reads. Dead rather than missing: the
+          // control belongs to captions, not to one look.
+          disabled={off || captionStyle(values.captionStyle).perWord}
           format={(value) => (value === 1 ? "1 line" : `${value} lines`)}
           onChange={(value) => set("captions", "captionLines", value)}
         />

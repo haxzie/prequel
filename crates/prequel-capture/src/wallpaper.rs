@@ -7,11 +7,16 @@
 //! multi-image dynamic HEIC anyway, and `osascript` needs an Automation grant
 //! that fails confusingly.
 //!
-//! Screenshotting the wallpaper window sidesteps all of it, and Prequel is
-//! unusually well placed to do so: it already holds the Screen Recording grant
-//! and cannot function without one. It is also the only approach that is
-//! correct for dynamic and video wallpapers, where there is no still file to
-//! find — what you get is what is on screen.
+//! Screenshotting the desktop sidesteps all of it, and Prequel is unusually
+//! well placed to do so: it already holds the Screen Recording grant and cannot
+//! function without one. It is also the only approach that is correct for
+//! dynamic and video wallpapers, where there is no still file to find — what
+//! you get is what is on screen.
+//!
+//! The screenshot takes the display and excludes every window, rather than
+//! hunting for the window the wallpaper is drawn in. Which window that is has
+//! moved between releases, and a guess that stops matching does not degrade —
+//! it fails outright, and every recording quietly falls back to a gradient.
 
 use std::path::Path;
 use std::sync::mpsc;
@@ -20,24 +25,6 @@ use std::time::Duration;
 use cidre::{cg, ci, cm, ns, sc};
 
 use crate::{Error, Result};
-
-/// The agent that draws the desktop picture.
-const WALLPAPER_BUNDLE_ID: &str = "com.apple.wallpaper.agent";
-
-/// Also matched on layer, because the agent's bundle id has changed between
-/// macOS releases and the wallpaper is always at the very back.
-///
-/// A *ceiling*, not the exact level. This used to be `i32::MIN`, compared with
-/// `<=`, which nothing can satisfy — `kCGDesktopWindowLevel` is
-/// -2_147_483_623, twenty-five above it — so the fallback could never match and
-/// the whole thing rested on the bundle id after all. On a Mac where that id
-/// has moved the capture then fails with "no wallpaper window on screen", the
-/// editor falls back to a gradient, and the wallpaper swatch draws a URL with
-/// no file behind it.
-///
-/// Anything below the normal window level and behind everything else is the
-/// desktop, whatever is drawing it.
-const DESKTOP_LAYER: ns::Integer = 0;
 
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -56,45 +43,21 @@ pub fn capture_wallpaper(display_id: u32, path: &Path) -> Result<()> {
         .or_else(|| displays.iter().next())
         .ok_or(Error::DisplayNotFound(display_id))?;
 
-    let windows = content.windows();
-    let wallpaper = windows
-        .iter()
-        .find(|window| {
-            window
-                .owning_app()
-                .is_some_and(|app| app.bundle_id().to_string() == WALLPAPER_BUNDLE_ID)
-        })
-        // The desktop is the bottom-most layer, which is what identifies it
-        // when the bundle id does not. Ordinary windows sit at 0 and the menu
-        // bar and dock above that, so the furthest-back negative layer is the
-        // desktop picture.
-        .or_else(|| {
-            windows
-                .iter()
-                .filter(|window| window.window_layer() < DESKTOP_LAYER)
-                .min_by_key(|window| window.window_layer())
-        })
-        .ok_or_else(|| {
-            // Said out loud rather than left to be guessed at. The two things
-            // that decide this are the agent's bundle id and the window levels
-            // on screen, and neither is visible from the error alone — this is
-            // the log line that says which of them moved.
-            let seen = windows
-                .iter()
-                .map(|window| {
-                    let owner = window
-                        .owning_app()
-                        .map(|app| app.bundle_id().to_string())
-                        .unwrap_or_else(|| "?".to_owned());
-                    format!("{owner}@{}", window.window_layer())
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            tracing::warn!(windows = %seen, "no wallpaper window among the shareable content");
-            Error::ScreenCaptureKit("no wallpaper window on screen".to_owned())
-        })?;
-
-    let filter = sc::ContentFilter::with_desktop_independent_window(wallpaper);
+    // The display with every window taken off it. What is left is the desktop
+    // picture, whatever is drawing it.
+    //
+    // This used to hunt for the wallpaper's own window — by the agent's bundle
+    // id, then by the furthest-back window layer — and hand that to
+    // `with_desktop_independent_window`. Both tests are guesses about how
+    // WindowServer happens to be arranged, and on macOS 26 neither matches: the
+    // capture failed with "no wallpaper window on screen" and every recording
+    // fell back to a gradient with a blank swatch in the picker.
+    //
+    // Excluding windows asks the question the other way round and needs to know
+    // nothing about who draws the desktop. It is also still right for dynamic
+    // and video wallpapers, where there is no still file to find — what comes
+    // back is what is actually on screen behind everything.
+    let filter = sc::ContentFilter::with_display_excluding_windows(display, &content.windows());
 
     let mut cfg = sc::StreamCfg::new();
     cfg.set_width(display.width() as usize);

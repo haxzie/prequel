@@ -248,29 +248,28 @@ pub struct Focus {
 /// Mirrors `rectAt` in `apps/desktop/src/shared/layout.ts`. Linear between
 /// keys: the easing is already in where the editor put them, which is what
 /// keeps a zoom from being implemented twice on either side of the boundary.
-pub fn rect_at(
-    keys: &[RectKey],
-    at: i64,
-    fallback: Rect,
-    fallback_radius: f64,
-) -> (Rect, f64, Vec<f64>, Option<Focus>, f64) {
+pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) -> Moment {
     let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
-        return (fallback, fallback_radius, Vec::new(), None, 0.0);
+        return Moment {
+            rect: fallback,
+            radius: fallback_radius,
+            quad: Vec::new(),
+            focus: None,
+            vignette: 0.0,
+        };
     };
 
-    let split = |key: &RectKey| {
-        (
-            Rect {
-                x: key.x,
-                y: key.y,
-                width: key.width,
-                height: key.height,
-            },
-            key.radius,
-            key.quad.clone(),
-            key.focus,
-            key.vignette.unwrap_or(0.0),
-        )
+    let split = |key: &RectKey| Moment {
+        rect: Rect {
+            x: key.x,
+            y: key.y,
+            width: key.width,
+            height: key.height,
+        },
+        radius: key.radius,
+        quad: key.quad.clone(),
+        focus: key.focus,
+        vignette: key.vignette.unwrap_or(0.0),
     };
 
     if at <= first.at {
@@ -322,18 +321,93 @@ pub fn rect_at(
     // falling back would darken a frame that asked not to be. Mirrors `rectAt`.
     let vignette = lerp(a.vignette.unwrap_or(0.0), b.vignette.unwrap_or(0.0));
 
-    (
-        Rect {
+    Moment {
+        rect: Rect {
             x: lerp(a.x, b.x),
             y: lerp(a.y, b.y),
             width: lerp(a.width, b.width),
             height: lerp(a.height, b.height),
         },
-        lerp(a.radius, b.radius),
+        radius: lerp(a.radius, b.radius),
         quad,
         focus,
         vignette,
+    }
+}
+
+/// A picture cut to the frame, with the source cropped to match.
+///
+/// Mirrors `cropToFrame` in `apps/desktop/src/shared/layout.ts`, and is pinned
+/// to it by fixtures that are deliberately identical.
+///
+/// A zoom scales the destination well past every edge, so the picture's own
+/// corners end up off screen and there is nothing left to round. Cutting the
+/// destination back and taking the matching slice of the source shows exactly
+/// the same pixels — the part outside was never drawn — and puts the corners
+/// back where they can be seen. The radius is kept, which is the whole point.
+///
+/// Applied where a picture is drawn rather than baked into its motion track:
+/// the track describes the zoom, and the pointer is placed at a fraction of it,
+/// so a track holding a clamped rectangle would put the pointer somewhere it
+/// never was.
+///
+/// A tilted picture is left alone. It is positioned by four projected corners
+/// rather than by its rectangle, and a clipped projective quad is a polygon.
+pub fn crop_to_frame(rect: Rect, src: Rect, frame: Size, tilted: bool) -> (Rect, Rect) {
+    if tilted || rect.width <= 0.0 || rect.height <= 0.0 {
+        return (rect, src);
+    }
+
+    let x = rect.x.max(0.0);
+    let y = rect.y.max(0.0);
+    let right = (rect.x + rect.width).min(frame.width);
+    let bottom = (rect.y + rect.height).min(frame.height);
+
+    // Fully on screen, which is every moment that is not zoomed in — and off
+    // screen entirely, where cutting to nothing would divide by zero.
+    let untouched = x == rect.x
+        && y == rect.y
+        && right == rect.x + rect.width
+        && bottom == rect.y + rect.height;
+    if untouched || right <= x || bottom <= y {
+        return (rect, src);
+    }
+
+    // The share of the destination that survived, applied to the source. The
+    // two map linearly onto each other — that is what drawing a rectangle into
+    // a rectangle means.
+    let left = (x - rect.x) / rect.width;
+    let top = (y - rect.y) / rect.height;
+
+    (
+        Rect {
+            x,
+            y,
+            width: right - x,
+            height: bottom - y,
+        },
+        Rect {
+            x: src.x + left * src.width,
+            y: src.y + top * src.height,
+            width: (right - x) / rect.width * src.width,
+            height: (bottom - y) / rect.height * src.height,
+        },
     )
+}
+
+/// Everything a motion track says about one moment.
+///
+/// A struct rather than the tuple this was, because it grew a sixth field and
+/// `let (rect, radius, _, _, _)` had already stopped saying anything about what
+/// was being ignored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Moment {
+    pub rect: Rect,
+    pub radius: f64,
+    /// Empty when nothing is tilted.
+    pub quad: Vec<f64>,
+    pub focus: Option<Focus>,
+    pub vignette: f64,
 }
 
 fn one() -> f64 {
@@ -826,6 +900,85 @@ mod tests {
     }
 
     #[test]
+    fn cuts_a_zoomed_picture_to_the_frame() {
+        // Deliberately the same numbers as "cuts the picture to the frame and
+        // takes the source to match" in `layout.test.ts`. This arithmetic runs
+        // on both sides — the preview cuts the picture and so does the export —
+        // so the numbers, not the code, are the contract between them.
+        let frame = Size {
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let source = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 2560.0,
+            height: 1440.0,
+        };
+
+        // A picture twice the frame, centred: half is off screen on each axis.
+        let (cut, crop) = crop_to_frame(
+            Rect {
+                x: -960.0,
+                y: -540.0,
+                width: 3840.0,
+                height: 2160.0,
+            },
+            source,
+            frame,
+            false,
+        );
+
+        assert_eq!(cut.x, 0.0);
+        assert_eq!(cut.y, 0.0);
+        assert_eq!(cut.width, 1920.0);
+        assert_eq!(cut.height, 1080.0);
+
+        // A quarter in from each edge, and half the source across.
+        assert_eq!(crop.x, 640.0);
+        assert_eq!(crop.y, 360.0);
+        assert_eq!(crop.width, 1280.0);
+        assert_eq!(crop.height, 720.0);
+    }
+
+    #[test]
+    fn leaves_a_picture_that_fits_and_a_tilted_one_alone() {
+        let frame = Size {
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let source = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 2560.0,
+            height: 1440.0,
+        };
+        let inside = Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 400.0,
+            height: 300.0,
+        };
+
+        // Fully on screen: the common case, and it must not drift or every
+        // unzoomed frame moves.
+        assert_eq!(
+            crop_to_frame(inside, source, frame, false),
+            (inside, source)
+        );
+
+        // Tilted: positioned by four projected corners rather than by its
+        // rectangle, and a clipped projective quad is a polygon.
+        let over = Rect {
+            x: -500.0,
+            y: -500.0,
+            width: 4000.0,
+            height: 3000.0,
+        };
+        assert_eq!(crop_to_frame(over, source, frame, true), (over, source));
+    }
+
+    #[test]
     fn reads_a_caption_item_the_editor_wrote() {
         // The field names are the contract with `layout.ts`, and `dstRect` is
         // the one that is not snake_case on the way in.
@@ -943,7 +1096,7 @@ mod tests {
         // The one piece of zoom arithmetic on this side. `rectAt` in
         // `layout.ts` answers the same, and a difference is a preview and an
         // export framed differently.
-        let (rect, radius, _, _, _) = rect_at(&motion_track(), 50, BASE, 10.0);
+        let Moment { rect, radius, .. } = rect_at(&motion_track(), 50, BASE, 10.0);
         assert_eq!(rect.width, 150.0);
         assert_eq!(rect.x, -25.0);
         // The corners grow with the picture rather than staying put.
@@ -952,15 +1105,20 @@ mod tests {
 
     #[test]
     fn holds_the_first_and_last_key_outside_the_track() {
-        assert_eq!(rect_at(&motion_track(), -1000, BASE, 10.0).0.width, 100.0);
-        assert_eq!(rect_at(&motion_track(), 9999, BASE, 10.0).0.width, 100.0);
+        assert_eq!(
+            rect_at(&motion_track(), -1000, BASE, 10.0).rect.width,
+            100.0
+        );
+        assert_eq!(rect_at(&motion_track(), 9999, BASE, 10.0).rect.width, 100.0);
     }
 
     #[test]
     fn falls_back_when_nothing_zooms() {
         // Every item but a zoomed screen has no keys, and has to draw its own
         // rectangle rather than nothing.
-        let (rect, radius, quad, _, _) = rect_at(&[], 0, BASE, 7.0);
+        let Moment {
+            rect, radius, quad, ..
+        } = rect_at(&[], 0, BASE, 7.0);
         assert_eq!((rect, radius), (BASE, 7.0));
         assert!(quad.is_empty());
     }

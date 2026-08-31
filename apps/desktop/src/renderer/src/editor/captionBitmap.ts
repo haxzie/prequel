@@ -50,13 +50,26 @@ const LINE_HEIGHT = 1.25;
 const WORD_PAD = 0.14;
 
 /**
- * How far the lit layer's glyphs are widened to cover the flat ones beneath,
- * as a fraction of the font size.
+ * Bumped whenever this file changes what it draws.
  *
- * Small enough not to read as a weight change, large enough to swallow a
- * glyph's antialiasing at the sizes a caption is set at.
+ * The style record says *what* a cue looks like and `cueKey` hashes it, which
+ * catches every change made by editing `CAPTION_STYLES`. It cannot catch a
+ * change made here: moving the plate off the lit layer altered every lit
+ * bitmap in the app without altering a single style, so the names stayed put,
+ * main skipped the writes — it never rewrites a file that is already there —
+ * and recordings went on drawing the old pixels. The fix looked like it had
+ * not worked, twice.
+ *
+ * So: change `measure` or `paint` in a way that shows, and bump this.
+ *
+ *   1  the original
+ *   2  plate off the lit layer, hairline in the accent to cover the flat
+ *      layer's glyph edges underneath
+ *   3  that hairline removed again — it made the lit word heavier than its
+ *      neighbours, which reads as the word printed twice rather than as
+ *      emphasis
  */
-const LIT_COVER = 0.05;
+const RASTERISER = 3;
 
 export interface CaptionLayout {
   bitmap: Size;
@@ -84,6 +97,19 @@ export async function rasteriseCue(
   options: CueOptions,
 ): Promise<{ layout: CaptionLayout; flat: Uint8Array; lit: Uint8Array | null }> {
   const measured = measure(cue, style, options);
+
+  // One word to a cue means one layer. There is nothing to light *against* —
+  // no line of unspoken words to sit in — so the word is drawn once, in the
+  // accent, and the plan crops to it. Drawing a white copy underneath was what
+  // made this look like two texts: the lit word is composited over the flat
+  // one, and a glyph does not cover another glyph through its own counters.
+  if (style.perWord) {
+    return {
+      layout: measured.layout,
+      flat: await paint(style, measured, options.accent),
+      lit: null,
+    };
+  }
 
   const flat = await paint(style, measured, null);
   const lit = style.lit ? await paint(style, measured, options.accent) : null;
@@ -255,30 +281,25 @@ async function paint(
   for (const line of measured.lines) {
     if (!line.text) continue;
 
-    // Rounded, so a stroke does not grow spikes off the corners of glyphs at
-    // the widths a caption outline needs.
-    ctx.lineJoin = "round";
-    ctx.miterLimit = 2;
-
     if (style.stroke) {
       ctx.strokeStyle = style.stroke.color;
       ctx.lineWidth = style.stroke.width * measured.fontSize;
-      ctx.strokeText(line.text, line.x, line.y);
-    } else if (lit !== null) {
-      // A hairline in the accent, on the lit layer of a look that has no stroke
-      // of its own.
-      //
-      // The flat layer has already drawn this word in white at exactly this
-      // size, and the lit one is laid over it. Where a glyph edge is half
-      // covered, half the white underneath survives — a pale halo around every
-      // word as it lights. Widening the accent by a fraction of a pixel covers
-      // it. Looks that swell the lit word do not need this: a bigger glyph
-      // already hides the one beneath.
-      ctx.strokeStyle = lit;
-      ctx.lineWidth = LIT_COVER * measured.fontSize;
+      // Rounded, so the stroke does not grow spikes off the corners of glyphs
+      // at the widths a caption outline needs.
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
       ctx.strokeText(line.text, line.x, line.y);
     }
 
+    // The lit pass differs from the flat one by its colour and nothing else.
+    //
+    // Not for want of trying otherwise: the lit word is drawn over the flat one
+    // at the same size, so a half-covered glyph edge keeps some of the white
+    // underneath, and widening the accent to cover that fringe was the obvious
+    // fix. It is the wrong one. A word visibly heavier than the ones beside it
+    // does not read as emphasis — it reads as the same word printed twice,
+    // slightly out of register, which is exactly how it was reported. A 1px
+    // fringe is the cheaper artefact of the two.
     ctx.fillStyle = lit ?? style.fill;
     ctx.fillText(line.text, line.x, line.y);
   }
@@ -317,6 +338,7 @@ function context(width: number, height: number): OffscreenCanvasRenderingContext
  */
 export function cueKey(cue: Cue, style: CaptionStyle, options: CueOptions): string {
   const parts = [
+    RASTERISER,
     JSON.stringify(style),
     options.size.toFixed(4),
     Math.round(options.frame.width),

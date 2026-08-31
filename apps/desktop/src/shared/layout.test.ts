@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRenderPlan,
   captionAt,
+  cropToFrame,
   cursorAt,
   layoutBoxes,
   rectAt,
@@ -510,7 +511,11 @@ describe("decoration", () => {
   });
 
   it("omits a zero-width border", () => {
-    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ background: { ...DEFAULT_SETTINGS.background, borderWidth: 0 } }),
+    );
     expect(plan.items.some((item) => item.kind === "stroke")).toBe(false);
   });
 });
@@ -1477,8 +1482,19 @@ describe("the shadow", () => {
     return item;
   };
 
+  // Without a border, deliberately. The shadow is cast by the picture *and* its
+  // border, which is its own invariant and has its own test — measuring the
+  // bleed against the picture while a border stands between them would be
+  // measuring two things at once, and would break every time the default border
+  // moved.
   const plan = (zooms: ZoomSlice[] = []) =>
-    buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings(), null, zooms);
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ background: { ...DEFAULT_SETTINGS.background, borderWidth: 0 } }),
+      null,
+      zooms,
+    );
 
   it("is given room past the shape that casts it", () => {
     // The bug: a shadow was rasterised only as far as the picture's own
@@ -2589,24 +2605,93 @@ describe("the border through a zoom", () => {
     }
   });
 
-  it("stops following the tilt once the picture overflows", () => {
-    // A key carrying a quad is positioned by those four corners and its
-    // rectangle is ignored, so a clamped rectangle would change nothing on a
-    // perspective zoom. The tilt has to come off with it.
+  it("follows the tilt while the picture still has an edge on screen", () => {
+    // The bug: the border was clamped on its *rectangle*, which a perspective
+    // zoom pushes past the frame long before the tilted picture does. A key
+    // carrying a quad is positioned by those four corners and its rectangle is
+    // ignored, so the clamp did nothing except throw the tilt away — the border
+    // snapped to a straight frame the instant a zoom began, with the picture it
+    // was framing still visibly tilted underneath it.
+    const tilted = zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 });
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      bordered(),
+      null,
+      tilted,
+    );
+    const stroke = strokeOf(plan);
+    const picture = image(plan, "screen")!;
+
+    const showing = (picture.motion ?? []).filter((key) => {
+      // An edge of the picture is inside the frame at this moment, so there is
+      // something for the ring to trace.
+      const xs = (key.quad ?? []).filter((_, index) => index % 3 === 0);
+      return xs.some((x) => x > 1 && x < LANDSCAPE.width - 1);
+    });
+
+    expect(showing.length).toBeGreaterThan(0);
+    for (const key of showing) {
+      const ring = (stroke.motion ?? []).find((candidate) => candidate.at === key.at)!;
+      expect(ring.quad).toBeDefined();
+    }
+  });
+
+  it("stands the tilted ring off the tilted picture by the border's width", () => {
+    // The one thing that cannot be done downstream: a tilted picture's corners
+    // are a perspective projection, so growing the four projected corners by a
+    // distance in screen pixels is not the same shape as projecting a grown
+    // rectangle. Doing it the first way drew the ring *on* the picture's edge
+    // rather than around it, and the stroke lies inside the shape it is given,
+    // so the border ate the outermost pixels of the recording.
+    const tilted = zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 });
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      bordered(),
+      null,
+      tilted,
+    );
+    const stroke = strokeOf(plan);
+    const picture = image(plan, "screen")!;
+
+    // A moment part way into the move, where the picture is tilted and still
+    // has an edge showing, so the ring is a quad rather than the frame.
+    const ring = (stroke.motion ?? []).find((candidate) => candidate.quad)!;
+    const key = (picture.motion ?? []).find((candidate) => candidate.at === ring.at)!;
+    expect(ring.quad).toBeDefined();
+    expect(key.quad).toBeDefined();
+
+    const centre = { x: key.x + key.width / 2, y: key.y + key.height / 2 };
+    for (let corner = 0; corner < 4; corner += 1) {
+      const away = (quad: number[]) =>
+        Math.hypot(quad[corner * 3]! - centre.x, quad[corner * 3 + 1]! - centre.y);
+      // Every corner of the ring is further from the middle than the picture's,
+      // and by something on the order of the border rather than by nothing.
+      const gap = away(ring.quad!) - away(key.quad!);
+      expect(gap).toBeGreaterThan(stroke.width / 2);
+      expect(gap).toBeLessThan(stroke.width * 3);
+    }
+  });
+
+  it("falls back to the frame's edge once the tilted picture covers it", () => {
+    // A clipped projective quad is a polygon, which is not something a plan item
+    // can hold. So the tilt does come off eventually — but only when the picture
+    // covers the frame outright, which is the one moment the swap is invisible:
+    // there is no picture edge on screen for the ring to have been tracing.
+    const tilted = zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 });
     const stroke = strokeOf(
-      buildRenderPlan(
-        LANDSCAPE,
-        { screen: SCREEN, camera: null },
-        bordered(),
-        null,
-        zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 }),
-      ),
+      buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, tilted),
     );
 
-    for (const key of stroke.motion ?? []) {
-      const clamped = key.x <= 1e-6 || key.y <= 1e-6;
-      if (clamped) expect(key.quad).toBeUndefined();
-    }
+    const keys = stroke.motion ?? [];
+    // The middle of the take, which is the zoom held fully in.
+    const held = keys[Math.floor(keys.length / 2)]!;
+    expect(held.quad).toBeUndefined();
+    expect(held.x).toBeCloseTo(0);
+    expect(held.y).toBeCloseTo(0);
+    expect(held.width).toBeCloseTo(LANDSCAPE.width);
+    expect(held.height).toBeCloseTo(LANDSCAPE.height);
   });
 
   it("leaves an unzoomed border exactly where the picture is", () => {
@@ -2641,34 +2726,57 @@ describe("the border through a zoom", () => {
     expect(stroke.rect.width).toBeCloseTo(LANDSCAPE.width);
   });
 
-  it("squares the corners it had to cut through", () => {
-    // Clip a rounded rectangle past its corner arc and what is left is square.
-    // A radius kept at its old value would draw a curve where the picture now
-    // runs straight off the edge.
+  it("keeps the corners round through a zoom", () => {
+    // The picture is cut to the frame with its rounding intact — see
+    // `cropToFrame` — so the border tracing it has to keep its own. Squaring
+    // off here would draw a rectangle round a rounded picture.
     const stroke = strokeOf(
       buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, zoomed()),
     );
 
-    const keys = stroke.motion ?? [];
+    for (const key of stroke.motion ?? []) expect(key.radius).toBeGreaterThan(0);
+  });
 
-    // The track runs past the zoom to ease back out of it, so the *narrowest*
-    // key is the picture sitting untouched on screen — not the first one, which
-    // is already fully zoomed. It keeps every bit of its curve, and is the
-    // control the rest are measured against.
-    const resting = keys.reduce((a, b) => (b.width < a.width ? b : a));
-    expect(resting.radius).toBeGreaterThan(0);
-    expect(resting.width).toBeLessThan(LANDSCAPE.width);
+  it("cuts the picture to the frame and takes the source to match", () => {
+    // The zoom's own track is left true — the pointer is placed at a fraction
+    // of it, so a clamped rectangle there would put the pointer somewhere it
+    // never was. The cut happens on the way to the rasteriser instead.
+    const frame = LANDSCAPE;
+    const source = { x: 0, y: 0, width: 2560, height: 1440 };
 
-    // Fully zoomed from the first key, and there the corners are hundreds of
-    // pixels off screen: nothing of the curve survives.
-    expect(keys[0]!.radius).toBe(0);
-    expect(keys[0]!.width).toBeCloseTo(LANDSCAPE.width);
+    // A picture twice the frame, centred: half of it is off screen on each axis.
+    const cut = cropToFrame(
+      {
+        x: -frame.width / 2,
+        y: -frame.height / 2,
+        width: frame.width * 2,
+        height: frame.height * 2,
+      },
+      source,
+      frame,
+      false,
+    );
 
-    // Only what was cut away comes off the radius, so a picture that overflows
-    // by a few pixels on the way out of a zoom keeps almost all of its curve.
-    // That is deliberate: the corner is still on screen, so it still curves.
-    const grazing = keys.find((key) => key.width >= LANDSCAPE.width - 1e-6 && key.radius > 0);
-    expect(grazing).toBeDefined();
+    expect(cut.rect).toEqual({ x: 0, y: 0, width: frame.width, height: frame.height });
+    // A quarter in from each edge, and half the source across.
+    expect(cut.src.x).toBeCloseTo(source.width * 0.25);
+    expect(cut.src.y).toBeCloseTo(source.height * 0.25);
+    expect(cut.src.width).toBeCloseTo(source.width * 0.5);
+    expect(cut.src.height).toBeCloseTo(source.height * 0.5);
+  });
+
+  it("leaves a picture that fits, and a tilted one, exactly alone", () => {
+    const source = { x: 0, y: 0, width: 2560, height: 1440 };
+    const inside = { x: 100, y: 100, width: 400, height: 300 };
+
+    // Fully on screen: the common case, and it must not drift by a rounding
+    // error or every unzoomed frame in the app moves.
+    expect(cropToFrame(inside, source, LANDSCAPE, false)).toEqual({ rect: inside, src: source });
+
+    // Tilted: positioned by four projected corners rather than by its
+    // rectangle, and a clipped projective quad is a polygon.
+    const over = { x: -500, y: -500, width: 4000, height: 3000 };
+    expect(cropToFrame(over, source, LANDSCAPE, true)).toEqual({ rect: over, src: source });
   });
 });
 
@@ -2803,6 +2911,26 @@ describe("captions in the plan", () => {
     // Boxes with no bitmap to crop them out of would draw the flat bitmap's
     // whole width as if it were one word.
     expect(drawn(LANDSCAPE, {}, [cue({ words })])).toHaveLength(1);
+  });
+
+  it("draws one cropped layer for a look with no flat layer under it", () => {
+    // A look that shows one word at a time has no line of unspoken words to
+    // light against, so it is rasterised once in the accent and the plan crops
+    // to the word. Emitting a flat layer as well is what made this look like
+    // two texts: a glyph grown over another does not cover it, because its
+    // counters grow too and the strokes underneath show through.
+    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1 }];
+    const items = drawn(LANDSCAPE, {}, [cue({ litPath: null, words })]);
+
+    expect(items).toHaveLength(1);
+    const only = items[0]!;
+    if (only.kind !== "caption") throw new Error("no caption");
+
+    // Cropped, so it draws the word and nothing else — and nothing at all
+    // between words.
+    expect(only.words).toEqual(words);
+    expect(captionAt(only, 2_500)).toBeNull();
+    expect(captionAt(only, 1_500)).not.toBeNull();
   });
 
   it("puts both layers in exactly the same place", () => {

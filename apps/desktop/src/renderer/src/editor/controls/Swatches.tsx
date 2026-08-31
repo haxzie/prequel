@@ -1,4 +1,9 @@
-import { BACKGROUND_PRESETS } from "../../../../shared/backgrounds";
+import {
+  BACKGROUND_CATEGORIES,
+  BACKGROUND_CATEGORY_LABELS,
+  BACKGROUND_PRESETS,
+  backgroundsIn,
+} from "../../../../shared/backgrounds";
 import { assetUrl } from "../../../../shared/media-url";
 import type { Background } from "../../../../shared/project";
 import { WALLPAPER_FILE_NAME } from "../../../../shared/project";
@@ -169,61 +174,81 @@ export function ImageSwatches({
     !BACKGROUND_PRESETS.some((preset) => preset.file === path);
 
   return (
-    <div className={GRID}>
-      <button
-        type="button"
-        title="My wallpaper"
-        aria-label="My wallpaper"
-        aria-pressed={path === WALLPAPER_FILE_NAME}
-        className={cn(
-          CELL,
-          "overflow-hidden bg-white/5 bg-cover bg-center",
-          path === WALLPAPER_FILE_NAME ? EDGE_CHOSEN : EDGE,
-        )}
-        // The URL is built whether or not the file is there yet — the desktop
-        // picture is only captured on demand. A background image that 404s
-        // draws nothing, which leaves the cell as a plain swatch, and pressing
-        // it is what triggers the capture. So: no loading state, no hiding it.
-        style={wallpaper ? { backgroundImage: `url("${wallpaper}")` } : undefined}
-        onClick={onPickWallpaper}
-      />
+    <div className="flex flex-col gap-2">
+      {BACKGROUND_CATEGORIES.map((category) => (
+        <div key={category} className="flex flex-col gap-1">
+          <h3 className="text-[10px] font-medium text-editor-muted">
+            {BACKGROUND_CATEGORY_LABELS[category]}
+          </h3>
 
-      {BACKGROUND_PRESETS.map((preset) => (
-        <button
-          key={preset.id}
-          type="button"
-          title={preset.label}
-          aria-label={preset.label}
-          aria-pressed={path === preset.file}
-          className={cn(
-            CELL,
-            "overflow-hidden bg-cover bg-center",
-            path === preset.file ? EDGE_CHOSEN : EDGE,
-          )}
-          // Drawn `cover` and centred, the same way the frame will draw it, so
-          // the cell is a true sample of what lands behind the recording.
-          style={{ backgroundImage: `url("${assetUrl(preset.file)}")` }}
-          onClick={() => onPickPreset(preset.id)}
-        />
+          <div className={GRID}>
+            {/* The desktop picture leads the first group. It is a wallpaper —
+                the user's own — so it belongs with them rather than in a row of
+                its own above the headings. */}
+            {category === BACKGROUND_CATEGORIES[0] && (
+              <button
+                type="button"
+                title="My wallpaper"
+                aria-label="My wallpaper"
+                aria-pressed={path === WALLPAPER_FILE_NAME}
+                className={cn(
+                  CELL,
+                  "overflow-hidden bg-white/5 bg-cover bg-center",
+                  path === WALLPAPER_FILE_NAME ? EDGE_CHOSEN : EDGE,
+                )}
+                // The URL is built whether or not the file is there yet — the
+                // desktop picture is only captured on demand. A background
+                // image that 404s draws nothing, which leaves the cell as a
+                // plain swatch, and pressing it is what triggers the capture.
+                // So: no loading state, no hiding it.
+                style={wallpaper ? { backgroundImage: `url("${wallpaper}")` } : undefined}
+                onClick={onPickWallpaper}
+              />
+            )}
+
+            {backgroundsIn(category).map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                title={preset.label}
+                aria-label={preset.label}
+                aria-pressed={path === preset.file}
+                className={cn(
+                  CELL,
+                  "overflow-hidden bg-cover bg-center",
+                  path === preset.file ? EDGE_CHOSEN : EDGE,
+                )}
+                // Drawn `cover` and centred, the same way the frame will draw
+                // it, so the cell is a true sample of what lands behind the
+                // recording.
+                style={{ backgroundImage: `url("${assetUrl(preset.file)}")` }}
+                onClick={() => onPickPreset(preset.id)}
+              />
+            ))}
+
+            {/* A glyph rather than a sample, because there is nothing to sample
+                yet. It sits at the end of the last group and stays chosen once
+                a file is picked, so the grid still answers "which of these is
+                applied" when the answer is not one of ours. */}
+            {category === BACKGROUND_CATEGORIES[BACKGROUND_CATEGORIES.length - 1] && (
+              <button
+                type="button"
+                title="Choose an image…"
+                aria-label="Choose an image…"
+                aria-pressed={own}
+                className={cn(
+                  CELL,
+                  "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
+                  own ? EDGE_CHOSEN : EDGE,
+                )}
+                onClick={onPickImage}
+              >
+                <ImageIcon />
+              </button>
+            )}
+          </div>
+        </div>
       ))}
-
-      {/* A glyph rather than a sample, because there is nothing to sample yet.
-          It stays chosen once a file is picked, so the grid still answers
-          "which of these is applied" when the answer is not one of ours. */}
-      <button
-        type="button"
-        title="Choose an image…"
-        aria-label="Choose an image…"
-        aria-pressed={own}
-        className={cn(
-          CELL,
-          "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
-          own ? EDGE_CHOSEN : EDGE,
-        )}
-        onClick={onPickImage}
-      >
-        <ImageIcon />
-      </button>
     </div>
   );
 }
