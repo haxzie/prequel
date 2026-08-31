@@ -19,6 +19,7 @@ import {
   type CaptionWord,
   type PlanItem,
   type Rect,
+  type RenderedCue,
   type RenderPlan,
   type Size,
 } from "./layout.js";
@@ -2547,6 +2548,279 @@ describe("perspective", () => {
 
     expect(q).toHaveLength(12);
     for (let index = 2; index < q.length; index += 3) expect(q[index]).toBeGreaterThan(0);
+  });
+});
+
+describe("the border through a zoom", () => {
+  const bordered = (over: Partial<SliceSettings["background"]> = {}) =>
+    settings({
+      background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01, ...over },
+    });
+
+  const strokeOf = (plan: RenderPlan) => {
+    const item = plan.items.find((candidate) => candidate.kind === "stroke");
+    if (item?.kind !== "stroke") throw new Error("no stroke");
+    return item;
+  };
+
+  /** A zoom covering the whole take, so every sampled key is pushed in. */
+  const zoomed = (over: Partial<ZoomSlice> = {}): ZoomSlice[] => [
+    { ...DEFAULT_ZOOM, id: "z", source: { start: 0, end: 4_000_000_000 }, ...over } as ZoomSlice,
+  ];
+
+  it("keeps the border on screen for every moment of a zoom", () => {
+    // The bug: a zoom scales the picture past every edge — at the default level
+    // a 1920-wide frame holds a 3379-wide picture at x=-730 — and the border,
+    // which sits further out again, went with it. A zoomed moment had no frame
+    // round the video at all.
+    const stroke = strokeOf(
+      buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, zoomed()),
+    );
+
+    expect(stroke.motion?.length).toBeGreaterThan(0);
+    for (const key of stroke.motion ?? []) {
+      expect(key.x).toBeGreaterThanOrEqual(-1e-6);
+      expect(key.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(key.x + key.width).toBeLessThanOrEqual(LANDSCAPE.width + 1e-6);
+      expect(key.y + key.height).toBeLessThanOrEqual(LANDSCAPE.height + 1e-6);
+      // Still a border, not a sliver collapsed against an edge.
+      expect(key.width).toBeGreaterThan(LANDSCAPE.width / 2);
+      expect(key.height).toBeGreaterThan(LANDSCAPE.height / 2);
+    }
+  });
+
+  it("stops following the tilt once the picture overflows", () => {
+    // A key carrying a quad is positioned by those four corners and its
+    // rectangle is ignored, so a clamped rectangle would change nothing on a
+    // perspective zoom. The tilt has to come off with it.
+    const stroke = strokeOf(
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: null },
+        bordered(),
+        null,
+        zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 }),
+      ),
+    );
+
+    for (const key of stroke.motion ?? []) {
+      const clamped = key.x <= 1e-6 || key.y <= 1e-6;
+      if (clamped) expect(key.quad).toBeUndefined();
+    }
+  });
+
+  it("leaves an unzoomed border exactly where the picture is", () => {
+    // The clamp must be a no-op whenever the picture is fully on screen, or a
+    // rounding error in it would move every border in the app.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered());
+    const stroke = strokeOf(plan);
+    const picture = image(plan, "screen")!;
+    // The ring sits immediately outside the picture, one border width all round.
+    expect(stroke.rect.x).toBeCloseTo(picture.dstRect.x - stroke.width);
+    expect(stroke.rect.y).toBeCloseTo(picture.dstRect.y - stroke.width);
+    expect(stroke.rect.width).toBeCloseTo(picture.dstRect.width + stroke.width * 2);
+    expect(stroke.rect.height).toBeCloseTo(picture.dstRect.height + stroke.width * 2);
+  });
+
+  it("draws a border on a full-bleed layout, which used to have none", () => {
+    // No padding puts the picture on the frame's own edge, so the ring outside
+    // it was off screen and the border slider did nothing at all.
+    const stroke = strokeOf(
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: null },
+        settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" },
+          background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01, padding: 0 },
+        }),
+      ),
+    );
+
+    expect(stroke.rect.x).toBeGreaterThanOrEqual(-1e-6);
+    expect(stroke.rect.x + stroke.rect.width).toBeLessThanOrEqual(LANDSCAPE.width + 1e-6);
+    expect(stroke.rect.width).toBeCloseTo(LANDSCAPE.width);
+  });
+
+  it("squares the corners it had to cut through", () => {
+    // Clip a rounded rectangle past its corner arc and what is left is square.
+    // A radius kept at its old value would draw a curve where the picture now
+    // runs straight off the edge.
+    const stroke = strokeOf(
+      buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, zoomed()),
+    );
+
+    const keys = stroke.motion ?? [];
+
+    // The track runs past the zoom to ease back out of it, so the *narrowest*
+    // key is the picture sitting untouched on screen — not the first one, which
+    // is already fully zoomed. It keeps every bit of its curve, and is the
+    // control the rest are measured against.
+    const resting = keys.reduce((a, b) => (b.width < a.width ? b : a));
+    expect(resting.radius).toBeGreaterThan(0);
+    expect(resting.width).toBeLessThan(LANDSCAPE.width);
+
+    // Fully zoomed from the first key, and there the corners are hundreds of
+    // pixels off screen: nothing of the curve survives.
+    expect(keys[0]!.radius).toBe(0);
+    expect(keys[0]!.width).toBeCloseTo(LANDSCAPE.width);
+
+    // Only what was cut away comes off the radius, so a picture that overflows
+    // by a few pixels on the way out of a zoom keeps almost all of its curve.
+    // That is deliberate: the corner is still on screen, so it still curves.
+    const grazing = keys.find((key) => key.width >= LANDSCAPE.width - 1e-6 && key.radius > 0);
+    expect(grazing).toBeDefined();
+  });
+});
+
+describe("captions in the plan", () => {
+  /** One cue, already laid out and rasterised the way the renderer hands them over. */
+  const cue = (over: Partial<RenderedCue> = {}): RenderedCue => ({
+    at: 1_000,
+    end: 4_000,
+    path: "captions/cue-3.png",
+    litPath: null,
+    bitmap: { width: 400, height: 100 },
+    // A fifth of the frame's width and a tenth of its height.
+    size: { width: 0.2, height: 0.1 },
+    words: [],
+    ...over,
+  });
+
+  const captions = (over: Partial<SliceSettings["captions"]> = {}) =>
+    settings({ captions: { ...DEFAULT_SETTINGS.captions, captionsOn: true, ...over } });
+
+  const drawn = (
+    frame: Size,
+    over: Partial<SliceSettings["captions"]> = {},
+    cues: RenderedCue[] = [cue()],
+  ) =>
+    buildRenderPlan(
+      frame,
+      { screen: SCREEN, camera: null },
+      captions(over),
+      undefined,
+      undefined,
+      undefined,
+      cues,
+    ).items.filter((item) => item.kind === "caption");
+
+  it("draws nothing when captions are switched off", () => {
+    const items = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      // Explicitly off rather than relying on the default, which is on: a clip
+      // that switches captions off must draw none even with cues to hand.
+      captions({ captionsOn: false }),
+      undefined,
+      undefined,
+      undefined,
+      [cue()],
+    ).items.filter((item) => item.kind === "caption");
+
+    expect(items).toHaveLength(0);
+  });
+
+  it("draws nothing when there is no transcript to draw", () => {
+    expect(drawn(LANDSCAPE, {}, [])).toHaveLength(0);
+  });
+
+  it("sits over everything else", () => {
+    // A caption behind the camera bubble is a caption nobody can read, and the
+    // bubble is the thing that moves.
+    const items = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      captions(),
+      undefined,
+      undefined,
+      undefined,
+      [cue()],
+    ).items;
+
+    expect(items[items.length - 1]!.kind).toBe("caption");
+  });
+
+  it("keeps the cue inside the frame at every position and size", () => {
+    // The one failure that is invisible until the export: a deep offset or a
+    // large size pushing the words off the bottom of the picture.
+    for (const frame of [LANDSCAPE, VERTICAL]) {
+      for (const captionPlace of ["top", "middle", "bottom"] as const) {
+        for (const captionOffset of [0, 0.08, 0.25]) {
+          for (const item of drawn(frame, { captionPlace, captionOffset })) {
+            if (item.kind !== "caption") continue;
+            expect(item.dstRect.x).toBeGreaterThanOrEqual(-1e-6);
+            expect(item.dstRect.y).toBeGreaterThanOrEqual(-1e-6);
+            expect(item.dstRect.x + item.dstRect.width).toBeLessThanOrEqual(frame.width + 1e-6);
+            expect(item.dstRect.y + item.dstRect.height).toBeLessThanOrEqual(frame.height + 1e-6);
+          }
+        }
+      }
+    }
+  });
+
+  it("centres the cue across the frame", () => {
+    const [item] = drawn(LANDSCAPE);
+    if (item?.kind !== "caption") throw new Error("no caption");
+
+    expect(item.dstRect.x + item.dstRect.width / 2).toBeCloseTo(LANDSCAPE.width / 2);
+  });
+
+  it("measures the box against the frame rather than the bitmap", () => {
+    // The preview and the export build plans at different resolutions from the
+    // same bitmaps. A box in bitmap pixels would draw the captions at half size
+    // in one of them.
+    const [wide] = drawn(LANDSCAPE);
+    const [tall] = drawn(VERTICAL);
+    if (wide?.kind !== "caption" || tall?.kind !== "caption") throw new Error("no caption");
+
+    expect(wide.dstRect.width).toBeCloseTo(LANDSCAPE.width * 0.2);
+    expect(tall.dstRect.width).toBeCloseTo(VERTICAL.width * 0.2);
+  });
+
+  it("puts the offset at the edge the position names", () => {
+    const unit = Math.min(LANDSCAPE.width, LANDSCAPE.height);
+
+    const [top] = drawn(LANDSCAPE, { captionPlace: "top", captionOffset: 0.1 });
+    const [bottom] = drawn(LANDSCAPE, { captionPlace: "bottom", captionOffset: 0.1 });
+    if (top?.kind !== "caption" || bottom?.kind !== "caption") throw new Error("no caption");
+
+    expect(top.dstRect.y).toBeCloseTo(0.1 * unit);
+    expect(bottom.dstRect.y + bottom.dstRect.height).toBeCloseTo(LANDSCAPE.height - 0.1 * unit);
+  });
+
+  it("emits a lit layer only when there is a bitmap and boxes for one", () => {
+    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1.1 }];
+
+    const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
+    if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
+
+    // The flat layer draws the whole bitmap; the lit one crops the spoken word
+    // out of it. Two items rather than one item emitting two draws, so every
+    // plan item stays a single quad.
+    expect(flat.words).toEqual([]);
+    expect(lit.words).toEqual(words);
+
+    // Boxes with no bitmap to crop them out of would draw the flat bitmap's
+    // whole width as if it were one word.
+    expect(drawn(LANDSCAPE, {}, [cue({ words })])).toHaveLength(1);
+  });
+
+  it("puts both layers in exactly the same place", () => {
+    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1 }];
+    const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
+    if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
+
+    // The lit word is cropped out of a bitmap laid out identically, so anything
+    // but the same box would slide the highlight off the word it is lighting.
+    expect(lit.dstRect).toEqual(flat.dstRect);
+    expect(lit.bitmap).toEqual(flat.bitmap);
+    expect(lit.span).toEqual(flat.span);
+  });
+
+  it("skips a cue that measured to nothing", () => {
+    // `captionAt` divides by the bitmap's size, and an empty line or a zero
+    // size would take the whole frame down with it.
+    expect(drawn(LANDSCAPE, {}, [cue({ size: { width: 0, height: 0 } })])).toHaveLength(0);
   });
 });
 

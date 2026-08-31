@@ -20,13 +20,22 @@ import type { CaptionStyle, Cue } from "../../../shared/captions";
 import type { CaptionWord, Size } from "../../../shared/layout";
 
 /**
- * The face captions are set in.
+ * The face captions are set in: SF, the system's own.
  *
- * Named concretely rather than as `system-ui`, which Canvas 2D does not
- * resolve — it falls back to a serif, and the first anyone knows about it is a
- * caption set in Times over their screen recording.
+ * `system-ui` first, and this order matters. Canvas 2D does *not* resolve
+ * `-apple-system` or `BlinkMacSystemFont` — both measure identically to a font
+ * name that does not exist, so a stack led by them falls through to whatever
+ * comes next. That is not a theory: at 600 weight and 64px, "Handgloves 123"
+ * measures 432.06 under `-apple-system`, `"SF Pro Display"` and a deliberately
+ * bogus name alike, 484.86 under Helvetica Neue, and 459.82 under `system-ui`.
+ * This stack led with `-apple-system` and so set every caption in Helvetica
+ * Neue, which is what "the font is very bad" turned out to mean.
+ *
+ * `"SF Pro Display"` is not a way to ask for it either — macOS ships SF only as
+ * the dot-prefixed internal `.SF NS` family, so the public name resolves to
+ * nothing. `system-ui` is the only handle on it.
  */
-const FAMILY = '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif';
+const FAMILY = 'system-ui, "Helvetica Neue", Arial, sans-serif';
 
 /** Baseline to baseline, as a multiple of the font size. */
 const LINE_HEIGHT = 1.25;
@@ -39,6 +48,15 @@ const LINE_HEIGHT = 1.25;
  * lit word loses its outline the moment it lights up.
  */
 const WORD_PAD = 0.14;
+
+/**
+ * How far the lit layer's glyphs are widened to cover the flat ones beneath,
+ * as a fraction of the font size.
+ *
+ * Small enough not to read as a weight change, large enough to swallow a
+ * glyph's antialiasing at the sizes a caption is set at.
+ */
+const LIT_COVER = 0.05;
 
 export interface CaptionLayout {
   bitmap: Size;
@@ -192,10 +210,17 @@ function wordBoxes(
 }
 
 /** Draws one pass. `fill` overrides the style's own colour for the lit layer. */
+/**
+ * Draws one pass.
+ *
+ * `lit` is the accent colour on the layer that carries the spoken word, and
+ * null on the flat layer underneath it. The two differ by more than the fill —
+ * see the plate and the stroke below — so it is the mode, not just a colour.
+ */
 async function paint(
   style: CaptionStyle,
   measured: Measured,
-  fill: string | null,
+  lit: string | null,
 ): Promise<Uint8Array> {
   const { bitmap } = measured.layout;
   const ctx = context(bitmap.width, bitmap.height);
@@ -204,12 +229,17 @@ async function paint(
   ctx.letterSpacing = `${measured.tracking}px`;
   ctx.textBaseline = "alphabetic";
 
-  // The plate is drawn on both layers, not only the flat one: the lit word is
-  // composited as a rectangle cropped out of this bitmap, and a transparent
-  // patch would punch a hole in the plate underneath it. Safe only because no
-  // look both carries a plate and swells its lit word — a grown patch would
-  // show its own plate's edge as a seam. `CAPTION_STYLES` keeps that true.
-  if (style.plate && measured.plate) {
+  // The plate goes on the flat layer only.
+  //
+  // The lit word is a rectangle cropped out of this bitmap and drawn *over* the
+  // flat one, so a translucent plate here composites on top of the translucent
+  // plate already there — 0.55 over 0.55 is 0.80, a visibly darker box behind
+  // the one word being spoken. It looked exactly like a second background under
+  // the highlight, which is what it was.
+  //
+  // There is no hole to worry about either way: source-over leaves what is
+  // underneath alone wherever this layer is transparent.
+  if (lit === null && style.plate && measured.plate) {
     ctx.fillStyle = style.plate.color;
     ctx.beginPath();
     ctx.roundRect(0, 0, measured.plate.width, measured.plate.height, measured.plate.radius);
@@ -225,17 +255,31 @@ async function paint(
   for (const line of measured.lines) {
     if (!line.text) continue;
 
+    // Rounded, so a stroke does not grow spikes off the corners of glyphs at
+    // the widths a caption outline needs.
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+
     if (style.stroke) {
       ctx.strokeStyle = style.stroke.color;
       ctx.lineWidth = style.stroke.width * measured.fontSize;
-      // Rounded, so the stroke does not grow spikes off the corners of glyphs
-      // at the widths a caption outline needs.
-      ctx.lineJoin = "round";
-      ctx.miterLimit = 2;
+      ctx.strokeText(line.text, line.x, line.y);
+    } else if (lit !== null) {
+      // A hairline in the accent, on the lit layer of a look that has no stroke
+      // of its own.
+      //
+      // The flat layer has already drawn this word in white at exactly this
+      // size, and the lit one is laid over it. Where a glyph edge is half
+      // covered, half the white underneath survives — a pale halo around every
+      // word as it lights. Widening the accent by a fraction of a pixel covers
+      // it. Looks that swell the lit word do not need this: a bigger glyph
+      // already hides the one beneath.
+      ctx.strokeStyle = lit;
+      ctx.lineWidth = LIT_COVER * measured.fontSize;
       ctx.strokeText(line.text, line.x, line.y);
     }
 
-    ctx.fillStyle = fill ?? style.fill;
+    ctx.fillStyle = lit ?? style.fill;
     ctx.fillText(line.text, line.x, line.y);
   }
 
@@ -256,18 +300,28 @@ function context(width: number, height: number): OffscreenCanvasRenderingContext
 /**
  * A stable name for what a cue draws.
  *
- * Covers everything the pixels depend on and nothing else, so moving the
- * captions up the frame reuses every bitmap while changing the size or the look
- * writes new ones. The frame width is in it because bitmaps are rasterised
- * against the export frame, and exporting at another size has to re-measure.
+ * The *whole* style record, not its id. A name is what decides whether main
+ * rewrites a bitmap — it skips a file that is already there — so anything the
+ * pixels depend on has to be in here or an edit silently keeps the old picture.
+ *
+ * That is not hypothetical. This hashed `style.id` alone, so changing a plate's
+ * colour, or moving the plate out of the bitmap and back, produced the same
+ * name every time: the file was never rewritten, and a recording went on
+ * drawing captions from a build two changes ago. Serialising the record means a
+ * new look cannot forget to invalidate its own bitmaps.
+ *
+ * Position and visibility stay out of it deliberately — neither changes a
+ * pixel, so moving the captions up the frame re-places what is already on disk.
+ * The frame width is in it because bitmaps are measured against the export
+ * frame, and exporting at another size has to re-measure.
  */
 export function cueKey(cue: Cue, style: CaptionStyle, options: CueOptions): string {
   const parts = [
-    style.id,
+    JSON.stringify(style),
     options.size.toFixed(4),
     Math.round(options.frame.width),
     style.lit ? options.accent : "",
-    cue.lines.join(" "),
+    cue.lines.join("|"),
   ].join("|");
 
   // FNV-1a. Not a cryptographic need: this only has to tell two different cues

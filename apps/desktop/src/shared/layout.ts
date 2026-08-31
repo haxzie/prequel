@@ -421,19 +421,26 @@ export function buildRenderPlan(
     }
 
     if (border > 0) {
+      // Cut to the frame, so a zoom that pushes the picture past every edge
+      // still leaves a border drawn round what is on screen.
+      const framed = withinFrame(outer, outerShape.radius, frame);
+
       items.push({
         kind: "stroke",
         // The outer silhouette. Both rasterisers draw a stroke *inside* the
         // shape they are given — the only band a fragment shader can reach,
         // since it cannot paint outside its own quad — so the ring between the
         // picture and this is where the border lands.
-        rect: outer,
-        shape: outerShape,
+        rect: framed.rect,
+        shape: { radius: framed.radius, exponent: outerShape.exponent },
         width: border,
         color: rgba(background.borderColor, background.borderOpacity),
-        // The picture's own track, pushed out with it: the border is fixed in
-        // width, so a zoom moves and resizes it without thickening it.
-        ...(motion.length > 0 ? { motion: motion.map((key) => grownKey(key, border)) } : {}),
+        // The picture's own track, pushed out with it and then cut to the
+        // frame: the border is fixed in width, so a zoom moves and resizes it
+        // without thickening it.
+        ...(motion.length > 0
+          ? { motion: motion.map((key) => framedKey(grownKey(key, border), frame)) }
+          : {}),
       });
     }
   }
@@ -3485,6 +3492,75 @@ function grow(rect: Rect, by: number): Rect {
  * rectangle whose radius is larger by the offset, and anything else is a
  * different curve running beside the picture's own.
  */
+/**
+ * A rounded rectangle cut down to the frame it is drawn in.
+ *
+ * A zoom scales the picture past every edge — at the default level a 1920-wide
+ * frame holds a 3379-wide picture at x=-730 — so the border around it, which
+ * sits further out again, lands entirely off screen and the video loses its
+ * frame for the length of the zoom. Cutting the border to the frame keeps one
+ * drawn round the whole picture instead.
+ *
+ * A no-op whenever the picture is fully on screen, which is every moment that
+ * is not zoomed in. It also fixes a quieter case: a full-bleed layout has no
+ * padding, so its border was always just off the edge and never drawn at all.
+ */
+function withinFrame(rect: Rect, radius: number, frame: Size): { rect: Rect; radius: number } {
+  const x = Math.max(rect.x, 0);
+  const y = Math.max(rect.y, 0);
+  const right = Math.min(rect.x + rect.width, frame.width);
+  const bottom = Math.min(rect.y + rect.height, frame.height);
+
+  const pulled = Math.max(
+    x - rect.x,
+    y - rect.y,
+    rect.x + rect.width - right,
+    rect.y + rect.height - bottom,
+  );
+
+  // Untouched, and returned as it came so the common case cannot drift by a
+  // rounding error.
+  if (pulled <= 0) return { rect, radius };
+
+  return {
+    rect: { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) },
+    // A corner keeps its curve only while the corner itself is on screen. Cut
+    // past the arc and what is left is square, so the radius comes off with the
+    // edge that was pulled in.
+    radius: Math.max(0, radius - pulled),
+  };
+}
+
+/**
+ * One key of the border's track, cut to the frame.
+ *
+ * The tilt goes with it. A key carrying a `quad` is positioned by those four
+ * corners and its rectangle is ignored, so clamping the rectangle alone would
+ * change nothing on a perspective zoom — and a clipped projective quad is a
+ * polygon, which is not something a plan item can hold. So once the picture
+ * overflows, the border stops following the tilt and becomes the frame's own
+ * edge. While the picture is fully on screen it tracks it exactly, tilt
+ * included, because nothing is clamped.
+ */
+function framedKey(key: RectKey, frame: Size): RectKey {
+  const framed = withinFrame(
+    { x: key.x, y: key.y, width: key.width, height: key.height },
+    key.radius,
+    frame,
+  );
+
+  const clamped =
+    framed.rect.x !== key.x ||
+    framed.rect.y !== key.y ||
+    framed.rect.width !== key.width ||
+    framed.rect.height !== key.height;
+
+  if (!clamped) return key;
+
+  const { quad: _dropped, ...rest } = key;
+  return { ...rest, ...framed.rect, radius: framed.radius };
+}
+
 function grownKey(key: RectKey, by: number): RectKey {
   return { ...key, ...grow(key, by), radius: key.radius + by };
 }

@@ -11,7 +11,7 @@
  * transcript comes in on the terminal event, which is why it is held here
  * rather than read back off the session.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { EditorSession } from "../../../shared/contract";
 import type { Transcript } from "../../../shared/transcript";
@@ -35,6 +35,41 @@ export function useTranscription(session: EditorSession): Transcription {
     setStage("idle");
     setProgress(null);
     setError(null);
+  }, [session]);
+
+  /**
+   * Transcribes a recording with a microphone the first time it is opened.
+   *
+   * Automatic rather than a button, because there is nothing to decide: it runs
+   * on this machine, it costs nothing, and a button that everyone presses every
+   * time is a step in the way of the thing they came for.
+   *
+   * Once per session and only when there is no transcript already — the file on
+   * disk is the record of it having run, so reopening a captioned recording
+   * does not transcribe it again. A failure is not retried automatically
+   * either; reopening the recording is what asks for that.
+   */
+  const asked = useRef(false);
+
+  useEffect(() => {
+    asked.current = false;
+  }, [session.dir]);
+
+  useEffect(() => {
+    if (asked.current || session.transcript) return;
+    if (!session.media.some((track) => track.kind === "microphone")) return;
+
+    asked.current = true;
+    setStage("preparing");
+    void window.prequel.editor.transcribe.start(session.dir).then((result) => {
+      if (result.ok) return;
+      // `ALREADY_TRANSCRIBING` is not a failure to report: another window on
+      // the same recording got there first, and its progress is broadcast to
+      // this one anyway.
+      if (result.code === "ALREADY_TRANSCRIBING") return;
+      setStage("failed");
+      setError(result.message ?? "Captions could not be generated.");
+    });
   }, [session]);
 
   useEffect(() => {
@@ -75,20 +110,5 @@ export function useTranscription(session: EditorSession): Transcription {
     stage,
     progress,
     error,
-    onTranscribe: () => {
-      // Cleared here rather than on the first progress event: the button has
-      // already changed under the pointer, and leaving the last failure under
-      // it reads as the new run having failed instantly.
-      setError(null);
-      setStage("preparing");
-      void window.prequel.editor.transcribe.start(session.dir).then((result) => {
-        if (result.ok) return;
-        setStage("failed");
-        setError(result.message ?? "Captions could not be generated.");
-      });
-    },
-    onCancel: () => {
-      void window.prequel.editor.transcribe.cancel();
-    },
   };
 }

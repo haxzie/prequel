@@ -18,7 +18,12 @@ import {
   type Size,
   type SourceSizes,
 } from "../../../shared/layout";
-import type { LayoutSettings, SliceSettings, ZoomSlice } from "../../../shared/project";
+import {
+  captionLook,
+  type LayoutSettings,
+  type SliceSettings,
+  type ZoomSlice,
+} from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
@@ -83,13 +88,14 @@ export function Preview({
   /** Zoom spans, baked into the plan as a sampled crop. */
   zooms: readonly ZoomSlice[];
   /**
-   * Cues that have already been laid out and rasterised.
+   * Cues that have already been laid out and rasterised, by look.
    *
    * Bitmaps rather than text, because the export gets the same ones: laying a
    * line out here and again in the exporter is the mistake this whole module
-   * exists to prevent.
+   * exists to prevent. Keyed by look because caption settings are per clip, so
+   * the set drawn for one clip's style is not the set another wants.
    */
-  cues: readonly RenderedCue[];
+  cues: ReadonlyMap<string, readonly RenderedCue[]>;
   /**
    * Filled in with a way to grab the current frame as a PNG data URL.
    *
@@ -219,7 +225,9 @@ export function Preview({
         },
         zooms,
         arriving,
-        cues,
+        // The set drawn for *this* clip's look. A clip whose captions are off
+        // has no look and gets nothing, which draws nothing.
+        cues.get(captionLook(current.captions)),
       );
 
       // Source time, because that is what the pointer track is indexed by —

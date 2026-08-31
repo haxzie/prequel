@@ -66,14 +66,18 @@ export interface CaptionStyle {
 const SUBTITLE: CaptionStyle = {
   id: "subtitle",
   label: "Subtitle",
-  weight: 600,
+  weight: 500,
   scale: 1,
   fill: "#ffffff",
   stroke: null,
-  shadow: { color: "rgba(0,0,0,0.55)", blur: 0.12, dy: 0.03 },
-  plate: { color: "rgba(0,0,0,0.55)", radius: 0.22, padX: 0.45, padY: 0.28, full: false },
+  // No shadow. A tight dark blur behind white glyphs does not read as depth at
+  // caption size, it reads as a badly drawn outline — the plate is what carries
+  // the contrast here, so the glyph edges are better left clean.
+  shadow: null,
+  plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
   lit: null,
-  tracking: 0,
+  // A hair tight, which is how SF is set at display sizes.
+  tracking: -0.01,
   caps: false,
 };
 
@@ -88,16 +92,17 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   {
     id: "highlight",
     label: "Highlight",
-    weight: 700,
+    weight: 500,
     scale: 1,
     fill: "#ffffff",
     stroke: null,
-    shadow: { color: "rgba(0,0,0,0.55)", blur: 0.12, dy: 0.03 },
-    plate: { color: "rgba(0,0,0,0.6)", radius: 0.22, padX: 0.45, padY: 0.28, full: false },
+    // As `subtitle`: the plate carries the contrast, so the glyphs stay clean.
+    shadow: null,
+    plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
     // Lit but not swollen: on a plate, a word that grows collides with the one
     // beside it, because the plate was measured around the flat layout.
     lit: { pop: 1 },
-    tracking: 0,
+    tracking: -0.01,
     caps: false,
   },
   {
@@ -130,12 +135,14 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   {
     id: "band",
     label: "Band",
-    weight: 600,
+    weight: 500,
     scale: 0.95,
     fill: "#ffffff",
     stroke: null,
     shadow: null,
-    plate: { color: "rgba(0,0,0,0.8)", radius: 0, padX: 0.6, padY: 0.42, full: true },
+    // The same dark as the pill styles, so the looks read as one family and a
+    // band is a difference of shape rather than of colour.
+    plate: { color: "rgba(8,10,14,0.55)", radius: 0, padX: 0.6, padY: 0.42, full: true },
     lit: null,
     tracking: 0.01,
     caps: false,
@@ -143,7 +150,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   {
     id: "minimal",
     label: "Minimal",
-    weight: 500,
+    weight: 400,
     scale: 0.85,
     fill: "#ffffff",
     stroke: null,
@@ -212,6 +219,22 @@ const HOLD_NS = 400_000_000;
 /** Roughly how many characters fit on a line before it has to wrap. */
 const CHARS_PER_LINE = 28;
 
+/**
+ * Sounds that are speech but not words.
+ *
+ * Both engines transcribe verbatim, so a take that opens "Uh, we..." captions
+ * as "Uh, we..." — which is faithful and reads badly. Matched by token rather
+ * than by a confidence floor, deliberately: a floor drops whatever the engine
+ * was least sure of, and what it is least sure of is quiet real words. This
+ * list only ever removes sounds that carry nothing.
+ */
+const FILLER = /^(u+h+|u+m+|e+r+|e+rm+|a+h+|m+h+m+|h+m+|mm+|uh-huh|er+m*)[.,!?]*$/i;
+
+/** Whether a word is a filler sound rather than something that was said. */
+function isFiller(text: string): boolean {
+  return FILLER.test(text.trim());
+}
+
 export interface CueOptions {
   /** How many lines a cue may fill before it has to break. */
   lines: number;
@@ -260,6 +283,10 @@ export function cuesFrom(words: readonly TranscriptWord[], options: CueOptions):
   for (const word of words) {
     const text = word.text.trim();
     if (!text) continue;
+    // Dropped before anything else, so a cue's timing is measured across the
+    // words that are actually drawn — a filler kept in the span would hold the
+    // caption up waiting for a sound nobody reads.
+    if (isFiller(text)) continue;
 
     const previous = current[current.length - 1];
     const opened = current[0];

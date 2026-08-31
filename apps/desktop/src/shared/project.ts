@@ -276,6 +276,24 @@ export interface CaptionSettings {
   captionLines: number;
 }
 
+/**
+ * What a cue's pixels depend on, as one string.
+ *
+ * Caption settings are per clip like every other section, but the cues are
+ * *rasterised* — so two clips that agree on these five leaves can share one set
+ * of bitmaps, and two that disagree need their own. Position and whether they
+ * are shown at all are deliberately absent: neither changes a pixel of the
+ * bitmap, so moving the captions up the frame must not redraw them.
+ */
+export function captionLook(captions: CaptionSettings): string {
+  return [
+    captions.captionStyle,
+    captions.captionSize.toFixed(4),
+    captions.captionAccent,
+    captions.captionLines,
+  ].join("|");
+}
+
 export interface SliceSettings {
   layout: LayoutSettings;
   background: BackgroundSettings;
@@ -618,17 +636,23 @@ export const DEFAULT_AUDIO: AudioSettings = {
 };
 
 export const DEFAULT_CAPTIONS: CaptionSettings = {
-  // Off, so opening a recording never puts words on it that nobody asked for —
-  // and because there is no transcript until somebody asks for one.
-  captionsOn: false,
-  captionStyle: "subtitle",
-  // About a twentieth of the shorter edge: large enough to read on a phone,
-  // small enough that two lines do not take a quarter of the frame.
-  captionSize: 0.05,
+  // On. A recording with a microphone transcribes itself when it is opened, so
+  // by the time anyone looks there are captions to show — and a switch that is
+  // off by default on a feature that ran anyway is friction for nothing.
+  //
+  // Only new projects. One saved before this keeps whatever it had, which is
+  // what stops a build changing how somebody's finished edit looks.
+  captionsOn: true,
+  captionStyle: "highlight",
+  // Broadcast subtitle proportions: about a twenty-fifth of the shorter edge.
+  // Large enough to read on a phone, small enough that two lines do not take a
+  // quarter of the frame. Only new projects get this — one saved before the
+  // change keeps whatever size it was given.
+  captionSize: 0.04,
   captionPlace: "bottom",
   captionOffset: 0.08,
   captionAccent: "#ffd60a",
-  captionLines: 2,
+  captionLines: 1,
 };
 
 export const DEFAULT_SETTINGS: SliceSettings = {

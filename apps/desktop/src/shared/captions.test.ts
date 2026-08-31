@@ -35,6 +35,25 @@ describe("captionStyle", () => {
   });
 });
 
+describe("the styles that carry a plate", () => {
+  it("gives every plated look the same dark", () => {
+    // Subtitle, Highlight and Band are one family: the difference between them
+    // is shape and whether a word lights, never the colour of the plate.
+    const plated = CAPTION_STYLES.filter((style) => style.plate).map((style) => style.plate!.color);
+
+    expect(new Set(plated).size).toBe(1);
+  });
+
+  it("plates the two looks a caption panel opens on", () => {
+    // Highlight is the default, and it read as having no background at all
+    // while a stale bitmap from an older build was still on disk. Both of the
+    // pill styles carry one.
+    for (const id of ["subtitle", "highlight"]) {
+      expect(captionStyle(id).plate).not.toBeNull();
+    }
+  });
+});
+
 describe("cuesFrom", () => {
   it("keeps a phrase together", () => {
     const cues = cuesFrom(said("one two three"), { lines: 2 });
@@ -124,6 +143,30 @@ describe("cuesFrom", () => {
     ];
 
     expect(cuesFrom(words, { lines: 2 })[0]!.lines).toEqual(["real"]);
+  });
+
+  it("leaves out the sounds that are not words", () => {
+    // Both engines transcribe verbatim, so a take opening "Uh, we..." captions
+    // as that unless these are dropped.
+    const words: TranscriptWord[] = [
+      { at: 0, end: SECOND, text: "Uh,", confidence: 0.13 },
+      { at: SECOND, end: 2 * SECOND, text: "um", confidence: 0.4 },
+      { at: 2 * SECOND, end: 3 * SECOND, text: "right", confidence: 0.9 },
+    ];
+
+    expect(cuesFrom(words, { lines: 2 })[0]!.lines).toEqual(["right"]);
+  });
+
+  it("keeps real words the engine was unsure of", () => {
+    // The reason fillers are matched by token and not by a confidence floor:
+    // what an engine scores lowest is quiet real speech, and dropping that
+    // silently removes what somebody said.
+    const words: TranscriptWord[] = [
+      { at: 0, end: SECOND, text: "murmured", confidence: 0.08 },
+      { at: SECOND, end: 2 * SECOND, text: "words", confidence: 0.12 },
+    ];
+
+    expect(cuesFrom(words, { lines: 2 })[0]!.lines).toEqual(["murmured words"]);
   });
 
   it("has nothing to say about a recording with no words", () => {

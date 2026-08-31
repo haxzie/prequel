@@ -111,12 +111,10 @@ export interface CaptionsState {
   ready: boolean;
   /** Non-null while one is being made. 0-1, or null when the stage has no measure. */
   progress: number | null;
-  /** What is happening, for the button's label. */
+  /** What is happening. */
   stage: "idle" | "preparing" | "transcribing" | "failed";
-  /** Why the last attempt failed, if it did. */
+  /** Why the attempt failed, if it did. */
   error: string | null;
-  onTranscribe: () => void;
-  onCancel: () => void;
 }
 
 /**
@@ -137,13 +135,6 @@ export function Inspector(props: InspectorProps) {
 
   const set = (section: SettingsSection, key: string, value: unknown) =>
     dispatch({ type: "setSetting", section, key, value });
-
-  // Captions are a property of the video, not of a clip. The cues are laid out
-  // and rasterised once for the whole recording, so a per-clip look would be a
-  // control that changed nothing about the bitmaps the plan names — and a dead
-  // control is worse than one that is honestly project-wide.
-  const setProject = (section: SettingsSection, key: string, value: unknown) =>
-    dispatch({ type: "setSetting", section, key, value, scope: "project" });
 
   // Only a selected clip can override anything; with nothing selected the
   // inspector *is* the defaults, and marking a field would be claiming
@@ -349,9 +340,11 @@ export function Inspector(props: InspectorProps) {
 
           {active === "captions" && (
             <CaptionsPanel
-              settings={state.project.defaults}
+              settings={settings}
               captions={props.captions}
-              set={setProject}
+              field={field}
+              reset={sectionReset("captions")}
+              set={set}
             />
           )}
         </div>
@@ -841,11 +834,14 @@ function CursorPanel({
 function CaptionsPanel({
   settings,
   captions,
+  field,
+  reset,
   set,
 }: {
-  /** The project defaults, which is where every caption setting lives. */
   settings: SliceSettings;
   captions: CaptionsState;
+  field: FieldProps;
+  reset?: () => void;
   set: Setter;
 }) {
   const values: CaptionSettings = settings.captions;
@@ -855,10 +851,10 @@ function CaptionsPanel({
   const off = !values.captionsOn || !captions.ready;
 
   return (
-    <Section title="Captions">
+    <Section title="Captions" onReset={reset}>
       <Transcription captions={captions} />
 
-      <Field label="Show captions" inline>
+      <Field label="Show captions" inline {...field("captions", "captionsOn")}>
         <Toggle
           value={values.captionsOn}
           disabled={!captions.ready}
@@ -867,7 +863,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Style">
+      <Field label="Style" {...field("captions", "captionStyle")}>
         <CaptionStylePicker
           // Resolved rather than passed through, so a project naming a look this
           // build no longer ships shows the one actually being drawn instead of
@@ -879,7 +875,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Size">
+      <Field label="Size" {...field("captions", "captionSize")}>
         <Slider
           value={values.captionSize}
           min={0.025}
@@ -893,7 +889,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Position">
+      <Field label="Position" {...field("captions", "captionPlace")}>
         <Segmented<CaptionPlace>
           value={values.captionPlace}
           options={[
@@ -906,7 +902,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Distance from edge">
+      <Field label="Distance from edge" {...field("captions", "captionOffset")}>
         <Slider
           value={values.captionOffset}
           min={0}
@@ -920,7 +916,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Lines">
+      <Field label="Lines" {...field("captions", "captionLines")}>
         <Slider
           value={values.captionLines}
           min={1}
@@ -932,7 +928,7 @@ function CaptionsPanel({
         />
       </Field>
 
-      <Field label="Spoken word">
+      <Field label="Spoken word" {...field("captions", "captionAccent")}>
         <ColorField
           value={values.captionAccent}
           onChange={(value) => set("captions", "captionAccent", value)}
@@ -943,40 +939,40 @@ function CaptionsPanel({
 }
 
 /**
- * Making the transcript, and saying how it is going.
+ * How the transcript is coming along.
  *
- * Progress is a bar rather than a spinner because transcribing a long take is
- * minutes of work, and a spinner over minutes is indistinguishable from a hang.
+ * Reports, rather than offers. A recording with a microphone transcribes itself
+ * when it is opened — there is nothing to decide, so there is no button — and
+ * this exists to say why the controls below are dead for the few seconds that
+ * takes, and to say so plainly if it could not be done at all.
+ *
+ * A bar rather than a spinner because a long take is minutes of work, and a
+ * spinner over minutes is indistinguishable from a hang.
  */
 function Transcription({ captions }: { captions: CaptionsState }) {
   const running = captions.stage === "preparing" || captions.stage === "transcribing";
 
+  if (captions.ready && !running && captions.stage !== "failed") return null;
+
   return (
     <div className="mb-3 flex flex-col gap-2 rounded-lg border border-editor-line bg-white/5 p-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-editor-muted">
-          {captions.ready ? "Transcript ready" : "No transcript yet"}
-        </span>
-
-        <button
-          type="button"
-          className={cn(
-            "rounded-md px-2 py-1 text-[11px] font-medium",
-            running ? "bg-white/10 text-editor-fg hover:bg-white/15" : "bg-selected text-white",
-          )}
-          onClick={running ? captions.onCancel : captions.onTranscribe}
-        >
-          {running ? "Cancel" : captions.ready ? "Regenerate" : "Generate captions"}
-        </button>
-      </div>
+      <span className="text-[11px] text-editor-muted">
+        {captions.stage === "failed"
+          ? "No captions"
+          : captions.stage === "preparing"
+            ? "Getting ready to transcribe…"
+            : running
+              ? "Transcribing…"
+              : "No speech to caption"}
+      </span>
 
       {running && (
         <div className="h-1 overflow-hidden rounded-full bg-white/10">
           <div
             className="h-full rounded-full bg-editor-accent transition-[width] duration-200"
-            // Indeterminate stages get a third of the bar rather than none: the
-            // model is being fetched or the file opened, and an empty bar over
-            // that reads as nothing happening.
+            // An indeterminate stage gets a third of the bar rather than none:
+            // the model is being fetched or the file opened, and an empty bar
+            // over that reads as nothing happening.
             style={{ width: `${Math.round((captions.progress ?? 0.33) * 100)}%` }}
           />
         </div>

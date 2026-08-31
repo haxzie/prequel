@@ -198,8 +198,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // The project defaults rather than the playhead's settings: captions are
   // project-wide, and reading them off whichever clip the playhead is under
   // would re-rasterise every cue on every cut.
-  const captions = useCaptions(session, state.project.defaults.captions, captionFrame);
-  useCaptionImages(session, captions.cues, media, setImages);
+  const captions = useCaptions(
+    session,
+    // The live transcript, not the session's: a run that finishes while the
+    // editor is open delivers it here, and the session snapshot never changes.
+    transcription.transcript,
+    // The whole project, not one clip's settings: caption looks are per clip,
+    // so this has to see every override to know which sets to draw.
+    state.project,
+    captionFrame,
+  );
+  useCaptionImages(session, captions.byLook, media, setImages);
 
   const exportState = useExport(session, state.project, state.project.output, captions);
 
@@ -361,7 +370,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               images={images}
               cursor={session.cursor}
               zooms={state.project.zooms}
-              cues={captions.cues}
+              cues={captions.byLook}
               grab={grab}
               onLayout={(patch) => {
                 // One dispatch per key, because that is what the override
@@ -778,7 +787,7 @@ function useAudioMix(
 function useEditorImages(
   session: EditorSession | null,
   project: ReturnType<typeof newProject>,
-  setImages: (images: Images) => void,
+  setImages: (update: (images: Images) => Images) => void,
 ) {
   // Joined so the effect re-runs when the set changes rather than on every
   // edit — a project object is new on each keystroke.
@@ -805,8 +814,16 @@ function useEditorImages(
       image.onload = () => {
         if (cancelled) return;
         loaded.set(path, image);
-        // A fresh Map each time, because the canvas reads it by identity.
-        setImages(new Map(loaded));
+        // A fresh Map each time, because the canvas reads it by identity — but
+        // merged into what is already there rather than replacing it. The
+        // caption bitmaps live in the same map and are put there by
+        // `useCaptionImages`, so replacing it wholesale drops every caption the
+        // moment a background or a pointer image finishes loading.
+        setImages((images) => {
+          const next = new Map(images);
+          for (const [file, picture] of loaded) next.set(file, picture);
+          return next;
+        });
       };
       image.onerror = () => console.warn(`[editor] could not load ${path}`);
     }

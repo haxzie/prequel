@@ -31,7 +31,7 @@ const KEEP = 12;
 
 export function useCaptionImages(
   session: EditorSession | null,
-  cues: readonly RenderedCue[],
+  cues: ReadonlyMap<string, readonly RenderedCue[]>,
   media: { sourceAt: (now: number) => number | null },
   setImages: (update: (images: Images) => Images) => void,
 ): void {
@@ -39,6 +39,14 @@ export function useCaptionImages(
   const pending = useRef(new Set<string>());
   const used = useRef(new Map<string, number>());
   const clock = useRef(0);
+
+  // Read through a ref rather than depended on. `useEditorPlayback` returns a
+  // fresh object every render and the cue list is replaced whenever anything is
+  // redrawn, so either in the dependency array would tear this loop down and
+  // rebuild it on almost every render — discarding whatever image was in flight
+  // at the time, since the old run's cleanup marks itself cancelled.
+  const latest = useRef({ cues, media });
+  latest.current = { cues, media };
 
   useEffect(() => {
     if (!session) return;
@@ -53,15 +61,20 @@ export function useCaptionImages(
       // Null before the media is ready, and between slices at a cut. Nothing to
       // load rather than a window around zero, which would decode the first
       // cues of the recording every time the playhead crossed a gap.
-      const at = media.sourceAt(performance.now());
+      const at = latest.current.media.sourceAt(performance.now());
       if (at === null) return;
       clock.current += 1;
 
+      // Across every look, not only the clip under the playhead: a cut into a
+      // clip with a different style would otherwise have to decode its first
+      // cue on the frame it appears, which is a visible blank.
       const wanted = new Set<string>();
-      for (const cue of cues) {
-        if (cue.end < at - REACH_NS || cue.at > at + REACH_NS) continue;
-        wanted.add(cue.path);
-        if (cue.litPath) wanted.add(cue.litPath);
+      for (const set of latest.current.cues.values()) {
+        for (const cue of set) {
+          if (cue.end < at - REACH_NS || cue.at > at + REACH_NS) continue;
+          wanted.add(cue.path);
+          if (cue.litPath) wanted.add(cue.litPath);
+        }
       }
 
       for (const path of wanted) used.current.set(path, clock.current);
@@ -137,5 +150,6 @@ export function useCaptionImages(
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [session, cues, media, setImages]);
+    // Only the recording. Everything that changes per frame is read off `latest`.
+  }, [session, setImages]);
 }

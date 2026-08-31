@@ -17,6 +17,7 @@ import { buildRenderPlan, type RenderedCue, type Size } from "../../../shared/la
 import type { TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
 import {
+  captionLook,
   outputFrame,
   resolveSettings,
   type OutputSettings,
@@ -64,7 +65,7 @@ export function useExport(
   session: EditorSession | null,
   project: Project,
   output: OutputSettings,
-  captions: { cues: readonly RenderedCue[]; drawing: boolean },
+  captions: { byLook: ReadonlyMap<string, readonly RenderedCue[]>; drawing: boolean },
 ): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
@@ -127,7 +128,7 @@ export function useExport(
       format: output.format,
       // The plan is laid out inside the *export's* frame, not the editor's, so
       // a scaled-down export is the same composition rather than a crop of it.
-      slices: buildSlices(session, project, size, captions.cues),
+      slices: buildSlices(session, project, size, captions.byLook),
       offsets: offsetsOf(session),
     });
 
@@ -140,7 +141,7 @@ export function useExport(
         error: { code: result.code, message: result.message },
       });
     }
-  }, [session, project, output, captions.cues]);
+  }, [session, project, output, captions.byLook]);
 
   const cancel = useCallback(() => void window.prequel.editor.export.cancel(), []);
 
@@ -203,7 +204,7 @@ function buildSlices(
   session: EditorSession,
   project: Project,
   frame: Size,
-  cues: readonly RenderedCue[],
+  cues: ReadonlyMap<string, readonly RenderedCue[]>,
 ): ExportSlice[] {
   const sources = sourceSizes(session);
 
@@ -242,11 +243,15 @@ function buildSlices(
               source: slice.source,
             }
           : null,
-        // Every cue, not only the ones inside this slice: a caption item that
-        // falls outside the slice's own span simply never draws, and filtering
-        // here would be a second answer to a question `captionAt` already
-        // answers per frame.
-        cues,
+        // This clip's own look. Caption settings are per clip, so a clip that
+        // styles its captions differently is handed the set drawn for it —
+        // and one whose captions are off has no look and gets nothing.
+        //
+        // Every cue in that set, not only the ones inside this clip: a caption
+        // whose span falls outside simply never draws, and filtering here would
+        // be a second answer to a question `captionAt` already answers per
+        // frame.
+        cues.get(captionLook(settings.captions)),
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,

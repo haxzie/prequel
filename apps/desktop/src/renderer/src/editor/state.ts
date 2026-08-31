@@ -97,15 +97,6 @@ export type EditorAction =
       section: SettingsSection;
       key: string;
       value: unknown;
-      /**
-       * Write to the project defaults even with a clip selected.
-       *
-       * For settings that are a property of the video rather than of a clip.
-       * Captions are the case: the cues are laid out and rasterised once for
-       * the whole recording, so a per-clip look would be a control that
-       * silently did nothing to the bitmaps the plan names.
-       */
-      scope?: "project";
     }
   | {
       type: "resetSection";
@@ -616,15 +607,12 @@ function withSlices(project: Project, slices: Slice[]): Project {
  * With a slice selected the value becomes an override on that slice — always,
  * even when it equals the default. With nothing selected it edits the project
  * defaults, and every slice that has not overridden the key follows.
- *
- * `scope: "project"` opts out of that entirely, for settings that belong to the
- * video rather than to a clip.
  */
 function writeSetting(
   state: EditorState,
   action: Extract<EditorAction, { type: "setSetting" }>,
 ): EditorState {
-  if (!state.selectedSliceId || action.scope === "project") {
+  if (!state.selectedSliceId) {
     return edit(state, (project) => ({
       ...project,
       defaults: {
