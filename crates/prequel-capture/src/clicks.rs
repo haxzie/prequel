@@ -45,6 +45,40 @@ struct RawClick {
     y: f64,
 }
 
+/// A stretch of the recording somebody was typing through.
+///
+/// A span rather than the keystrokes it was made of, and that is the whole
+/// design. What every layer of this manifest promises is that a recording never
+/// carries what was typed, and per-keystroke timing is a weaker promise than it
+/// sounds: the gaps between presses are enough to narrow down what the presses
+/// were. Coalesced and rounded here, at the point of capture, so the finer
+/// timing never reaches a file at all — what survives is "typing, from about
+/// here to about here", which is exactly what hiding the pointer needs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KeySpan {
+    pub start: MediaTime,
+    pub end: MediaTime,
+}
+
+/// Longest quiet stretch inside one span.
+///
+/// A second: long enough to hold a sentence together through a pause for
+/// thought, short enough that typing and then reaching for the mouse ends it.
+const KEY_GAP_NS: MediaTime = 1_000_000_000;
+
+/// What a span's ends are rounded out to.
+///
+/// A tenth of a second, which is coarse enough that the presses inside cannot
+/// be counted back out of it and fine enough to hide a pointer on time.
+const KEY_ROUNDING_NS: MediaTime = 100_000_000;
+
+/// Fewest presses that count as typing.
+///
+/// A shortcut is one key and a fistful of modifiers, which are not keys and do
+/// not arrive here. A word is several. Below this nothing is recorded at all,
+/// so a recording of somebody hitting Cmd-S carries no trace that they did.
+const KEYS_PER_SPAN: usize = 3;
+
 /// Presses since the tap started.
 ///
 /// A process-wide buffer rather than something threaded through the callback's
@@ -52,6 +86,13 @@ struct RawClick {
 /// crate is a single slot — and a static sidesteps handing a raw pointer to a
 /// callback that outlives the frame it was created in.
 static CLICKS: Mutex<Vec<RawClick>> = Mutex::new(Vec::new());
+
+/// Host times of key presses since the tap started.
+///
+/// Times and nothing else — no key code, no modifiers, and never the character.
+/// Even these do not outlive the recording: `key_spans` coalesces them on the
+/// way out and only the spans are written.
+static KEYS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
 /// The tap thread's run loop, so it can be stopped from the outside.
 static RUN_LOOP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -93,6 +134,9 @@ pub fn start() -> bool {
     if let Ok(mut clicks) = CLICKS.lock() {
         clicks.clear();
     }
+    if let Ok(mut keys) = KEYS.lock() {
+        keys.clear();
+    }
     DISABLES.store(0, Ordering::Relaxed);
 
     let (started, ready) = std::sync::mpsc::channel();
@@ -105,7 +149,9 @@ pub fn start() -> bool {
                 SESSION_TAP,
                 HEAD_INSERT,
                 LISTEN_ONLY,
-                (1 << EVENT_LEFT_MOUSE_DOWN) | (1 << EVENT_RIGHT_MOUSE_DOWN),
+                (1 << EVENT_LEFT_MOUSE_DOWN)
+                    | (1 << EVENT_RIGHT_MOUSE_DOWN)
+                    | (1 << EVENT_KEY_DOWN),
                 on_event,
                 std::ptr::null_mut(),
             );
@@ -187,6 +233,74 @@ pub fn stop(region: Region, to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<
     samples
 }
 
+/// Stretches of the recording somebody was typing through, on the session
+/// timeline.
+///
+/// Drained separately from `stop` rather than returned beside the clicks, so
+/// the two tracks stay two things: one is where the pointer was pressed, and
+/// this one deliberately has no position in it at all.
+pub fn key_spans(to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<KeySpan> {
+    // Drained whatever happens, or the next recording inherits this one's.
+    let raw = KEYS
+        .lock()
+        .map(|mut keys| std::mem::take(&mut *keys))
+        .unwrap_or_default();
+
+    let spans = coalesce(&raw, to_media);
+    tracing::info!("captured {} typing spans", spans.len());
+
+    spans
+}
+
+/// Turns key press times into the spans the manifest carries.
+///
+/// Split out from `key_spans` for the reason `convert` is split out of `stop`,
+/// and tested harder than it looks like it needs to be: this function is the
+/// only thing standing between a recording and a usable record of somebody's
+/// keystroke timing.
+fn coalesce(raw: &[u64], to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<KeySpan> {
+    // A press during a paused stretch belongs to no moment of the recording.
+    let mut times: Vec<MediaTime> = raw.iter().filter_map(|host| to_media(*host)).collect();
+    // The tap pushes in order, but a host time inside a pause is subtracted
+    // from, and sorting is cheaper than reasoning about whether that can
+    // reorder two presses either side of one.
+    times.sort_unstable();
+
+    let mut spans: Vec<KeySpan> = Vec::new();
+    let mut count = 0usize;
+
+    for at in times {
+        match spans.last_mut() {
+            Some(span) if at.saturating_sub(span.end) <= KEY_GAP_NS => {
+                span.end = at;
+                count += 1;
+            }
+            _ => {
+                // The span that just ended is kept only if enough went into it.
+                if count < KEYS_PER_SPAN {
+                    spans.pop();
+                }
+                spans.push(KeySpan { start: at, end: at });
+                count = 1;
+            }
+        }
+    }
+    if count < KEYS_PER_SPAN {
+        spans.pop();
+    }
+
+    // Rounded outwards, and only now: rounding as they were collected would
+    // put presses in the same bucket and leave the count recoverable from the
+    // spans. Out rather than to nearest, so a span never claims to have ended
+    // before the last press in it.
+    for span in &mut spans {
+        span.start = span.start - span.start % KEY_ROUNDING_NS;
+        span.end = span.end.next_multiple_of(KEY_ROUNDING_NS);
+    }
+
+    spans
+}
+
 /// Puts raw presses in the recording's terms.
 ///
 /// Split out from `stop` so it can be tested without the process-wide buffer —
@@ -242,6 +356,16 @@ extern "C" fn on_event(
         return event;
     }
 
+    // A key, which is recorded as a moment and nothing else. The event is not
+    // read at all — not the code, not the modifiers — so there is nothing here
+    // that could become what somebody typed.
+    if kind == EVENT_KEY_DOWN {
+        if let Ok(mut keys) = KEYS.lock() {
+            keys.push(host_now());
+        }
+        return event;
+    }
+
     // The mask should mean nothing else arrives, but a notification already
     // proved otherwise, and `CGEventGetLocation` on one of those returns a
     // position that would be recorded as a click nobody made.
@@ -277,6 +401,9 @@ const HEAD_INSERT: u32 = 0;
 const LISTEN_ONLY: u32 = 1;
 const EVENT_LEFT_MOUSE_DOWN: u32 = 1;
 const EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
+/// `kCGEventKeyDown`. Key *up* is deliberately not in the mask: a press is a
+/// moment, and two events per key would only be twice as much to throw away.
+const EVENT_KEY_DOWN: u32 = 10;
 
 /// `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput`.
 ///
@@ -367,5 +494,78 @@ mod tests {
     #[test]
     fn stopping_without_starting_is_harmless() {
         assert_eq!(stop(REGION, |_| Some(0)), vec![]);
+    }
+
+    /// Presses at these moments, in milliseconds, through an identity clock.
+    fn typed(ms: &[u64]) -> Vec<KeySpan> {
+        let raw: Vec<u64> = ms.iter().map(|at| at * 1_000_000).collect();
+        coalesce(&raw, Some)
+    }
+
+    #[test]
+    fn a_shortcut_leaves_no_trace_at_all() {
+        // One press with modifiers on it — Cmd-S, Cmd-Tab. The modifiers are
+        // not keys and never reach the tap, so this is what a shortcut looks
+        // like from here, and a recording must not carry that it happened.
+        assert_eq!(typed(&[500]), vec![]);
+        assert_eq!(typed(&[500, 4000]), vec![]);
+    }
+
+    #[test]
+    fn a_run_of_typing_becomes_one_span() {
+        // Both ends land on the tenth-of-a-second grid, and a press anywhere
+        // inside a bucket comes back as the bucket — which is what makes the
+        // rounding a blur rather than a shift.
+        assert_eq!(
+            typed(&[1000, 1120, 1260, 1400]),
+            vec![KeySpan {
+                start: 1_000_000_000,
+                end: 1_400_000_000
+            }]
+        );
+        assert_eq!(
+            typed(&[1099, 1120, 1260, 1301]),
+            typed(&[1000, 1120, 1260, 1400])
+        );
+    }
+
+    #[test]
+    fn a_pause_long_enough_to_reach_for_the_mouse_ends_the_span() {
+        let spans = typed(&[1000, 1100, 1200, 3000, 3100, 3200]);
+        assert_eq!(spans.len(), 2);
+        assert!(spans[0].end < spans[1].start);
+    }
+
+    #[test]
+    fn the_presses_cannot_be_counted_back_out_of_the_spans() {
+        // The point of the whole function. Four presses and eleven presses over
+        // the same stretch have to come back as the same span, because the gaps
+        // between them are enough to narrow down what was typed.
+        let few = typed(&[1000, 1300, 1600, 1900]);
+        let many = typed(&[
+            1000, 1090, 1180, 1270, 1360, 1450, 1540, 1630, 1720, 1810, 1900,
+        ]);
+
+        assert_eq!(few, many);
+        for span in few {
+            assert_eq!(span.start % KEY_ROUNDING_NS, 0);
+            assert_eq!(span.end % KEY_ROUNDING_NS, 0);
+        }
+    }
+
+    #[test]
+    fn a_span_covers_every_press_that_went_into_it() {
+        // Rounded outwards, never to nearest: a span that ended before its last
+        // press would show the pointer again mid-word.
+        let spans = typed(&[1050, 1150, 1290]);
+        assert!(spans[0].start <= 1_050_000_000);
+        assert!(spans[0].end >= 1_290_000_000);
+    }
+
+    #[test]
+    fn drops_presses_made_while_the_recording_was_paused() {
+        // `to_media` answers None for a host time inside a paused stretch, and
+        // typing through a pause is not typing that happened in the recording.
+        assert_eq!(coalesce(&[1, 2, 3], |_| None), vec![]);
     }
 }

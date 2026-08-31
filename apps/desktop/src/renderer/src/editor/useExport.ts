@@ -5,7 +5,7 @@
  * preview draws with, so the exporter receives geometry rather than settings —
  * see `shared/layout.ts` for why that matters.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   cursorImages,
@@ -13,7 +13,7 @@ import {
   type ExportProgress,
   type ExportSlice,
 } from "../../../shared/contract";
-import { buildRenderPlan, type Size } from "../../../shared/layout";
+import { buildRenderPlan, type RenderedCue, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
 import {
@@ -64,6 +64,7 @@ export function useExport(
   session: EditorSession | null,
   project: Project,
   output: OutputSettings,
+  captions: { cues: readonly RenderedCue[]; drawing: boolean },
 ): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
@@ -73,6 +74,11 @@ export function useExport(
     () => outputFrame(project.frame, output.shortEdge),
     [project.frame, output.shortEdge],
   );
+
+  // Read through a ref because `start` runs long after it was created, and the
+  // bitmaps it has to wait for are still being written while it does.
+  const drawing = useRef(captions.drawing);
+  drawing.current = captions.drawing;
 
   const start = useCallback(async () => {
     if (!session) return;
@@ -103,6 +109,13 @@ export function useExport(
       error: null,
     });
 
+    // Captions are laid out and written by the renderer, and an export that
+    // starts mid-draw silently produces a plainer video — the plan names
+    // bitmaps that are not on disk yet, and the exporter skips what it cannot
+    // decode. Waited for after the save dialog, so the wait is never the first
+    // thing that happens when Export is pressed.
+    await settled(drawing);
+
     const size = outputFrame(project.frame, output.shortEdge);
 
     const result = await window.prequel.editor.export.start({
@@ -114,7 +127,7 @@ export function useExport(
       format: output.format,
       // The plan is laid out inside the *export's* frame, not the editor's, so
       // a scaled-down export is the same composition rather than a crop of it.
-      slices: buildSlices(session, project, size),
+      slices: buildSlices(session, project, size, captions.cues),
       offsets: offsetsOf(session),
     });
 
@@ -127,7 +140,7 @@ export function useExport(
         error: { code: result.code, message: result.message },
       });
     }
-  }, [session, project, output]);
+  }, [session, project, output, captions.cues]);
 
   const cancel = useCallback(() => void window.prequel.editor.export.cancel(), []);
 
@@ -171,8 +184,27 @@ export function useExport(
   };
 }
 
+/**
+ * Waits for the caption bitmaps to stop being written.
+ *
+ * Polled rather than awaited on a promise because the drawing is driven by a
+ * debounce in another hook, which has no completion to hand out — and a slider
+ * still under a finger can restart it, so the answer has to be re-asked rather
+ * than remembered.
+ */
+async function settled(drawing: { current: boolean }): Promise<void> {
+  while (drawing.current) {
+    await new Promise((resume) => setTimeout(resume, 50));
+  }
+}
+
 /** Resolves every slice into geometry and gain the exporter can render. */
-function buildSlices(session: EditorSession, project: Project, frame: Size): ExportSlice[] {
+function buildSlices(
+  session: EditorSession,
+  project: Project,
+  frame: Size,
+  cues: readonly RenderedCue[],
+): ExportSlice[] {
   const sources = sourceSizes(session);
 
   const all = slicesOf(project);
@@ -198,6 +230,10 @@ function buildSlices(session: EditorSession, project: Project, frame: Size): Exp
           ...cursorImages(settings.layout.cursorStyle),
           size: settings.layout.cursorSize,
           hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
+          // Resolved here rather than in the plan, like `hideAfter`: a track
+          // with no spans and one the user asked to keep the pointer through
+          // are the same thing to draw.
+          keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
         },
         project.zooms,
         previous
@@ -206,6 +242,11 @@ function buildSlices(session: EditorSession, project: Project, frame: Size): Exp
               source: slice.source,
             }
           : null,
+        // Every cue, not only the ones inside this slice: a caption item that
+        // falls outside the slice's own span simply never draws, and filtering
+        // here would be a second answer to a question `captionAt` already
+        // answers per frame.
+        cues,
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,

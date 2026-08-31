@@ -287,6 +287,21 @@ const api = {
         return () => ipcRenderer.off(IPC_CHANNELS.transcribeProgress, handler);
       },
     },
+
+    captions: {
+      /**
+       * Hands main one cue's pixels to write into the recording.
+       *
+       * Answers with the path it wrote, or null if it could not — a missing
+       * bitmap is a plainer video, and the rest of the cues are still worth
+       * drawing.
+       */
+      write: (dir: string, file: string, bytes: Uint8Array): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorWriteCaption, dir, file, bytes),
+
+      sweep: (dir: string, keep: string[]): Promise<IpcResult<void>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorSweepCaptions, dir, keep),
+    },
   },
 
   sources: {

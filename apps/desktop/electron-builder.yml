@@ -80,6 +80,15 @@ mac:
     NSCameraUsageDescription: Prequel records your camera when you turn it on for a recording.
     NSMicrophoneUsageDescription: Prequel records your microphone when you turn it on for a recording.
     NSAudioCaptureUsageDescription: Prequel records your computer's audio when system audio is enabled.
+    # Captions are transcribed on this Mac and nothing is uploaded, but macOS
+    # gates the Speech framework on this key regardless — and it does not fail
+    # the call, it terminates the process. Confirmed the hard way: a helper
+    # without it aborts with a TCC crash report on the first
+    # `SFSpeechRecognizer.requestAuthorization`.
+    #
+    # Only the macOS 14-25 path ever asks. `SpeechAnalyzer`, which is what runs
+    # on macOS 26 and up, needs no authorisation at all.
+    NSSpeechRecognitionUsageDescription: Prequel transcribes your recording on this Mac to make captions. The audio never leaves your machine.
     # Claims prequel:// so the browser can hand a finished sign-in back to the
     # app. `app.setAsDefaultProtocolClient` alone is not enough for a packaged
     # build — Launch Services reads the scheme out of Info.plist, and without

@@ -42,6 +42,7 @@ import { permissionStates, relaunchApp, requestPermission } from "./permissions.
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
+import { sweepCaptions, writeCaption } from "./captions.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
@@ -204,6 +205,16 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.editorPresetImage, (_event, dir: string, presetId: string) =>
     attempt(() => copyPresetBackground(dir, presetId)),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.editorWriteCaption,
+    (_event, dir: string, file: string, bytes: Uint8Array) =>
+      attempt(() => writeCaption(dir, file, bytes)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.editorSweepCaptions, (_event, dir: string, keep: string[]) =>
+    attempt(() => sweepCaptions(dir, keep)),
   );
 
   // ── the library ──────────────────────────────────────────────────────────

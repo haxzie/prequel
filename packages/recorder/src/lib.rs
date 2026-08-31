@@ -17,6 +17,7 @@ use prequel_capture as capture;
 mod export;
 mod logging;
 mod probe;
+mod transcribe;
 
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
 pub use logging::set_log_file;
@@ -122,8 +123,8 @@ fn write_manifest(
     camera: Option<&camera::CameraSummary>,
 ) {
     use prequel_session::{
-        ClickSample, CursorSample, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, SourceInfo,
-        TrackKind, TypingSample,
+        ClickSample, CursorSample, KeySpan, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest,
+        SourceInfo, TrackKind, TypingSample,
     };
 
     let mut tracks = vec![track(
@@ -193,6 +194,17 @@ fn write_manifest(
                 at: click.at,
                 x: click.x,
                 y: click.y,
+            })
+            .collect(),
+        // When typing was happening, to the nearest tenth of a second and no
+        // finer — never a key, and never enough timing to infer one. The editor
+        // hides the pointer through these and nothing else reads them.
+        keys: screen
+            .keys
+            .iter()
+            .map(|span| KeySpan {
+                start: span.start,
+                end: span.end,
             })
             .collect(),
         // Bounds of whatever field had keyboard focus, never a keystroke.

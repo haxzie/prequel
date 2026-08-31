@@ -143,6 +143,24 @@ pub struct Manifest {
     /// of the field that had keyboard focus.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub typing: Vec<TypingSample>,
+    /// Stretches of the recording somebody was typing through.
+    ///
+    /// The one thing here that comes from the keyboard, and it is deliberately
+    /// the least that could be useful: when typing started and when it stopped,
+    /// rounded to a tenth of a second, with runs of fewer than three presses
+    /// left out entirely. No key code, no modifiers, no count, and nothing fine
+    /// enough to read the timing between presses back out of — which is itself
+    /// enough to narrow down what was typed. The editor hides the pointer
+    /// through these, and that is all they are for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<KeySpan>,
+}
+
+/// A stretch somebody was typing through. See `Manifest::keys`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct KeySpan {
+    pub start: MediaTime,
+    pub end: MediaTime,
 }
 
 /// A press, sampled during the recording.
@@ -240,6 +258,7 @@ mod tests {
             ],
             cursor_baked: false,
             clicks: Vec::new(),
+            keys: Vec::new(),
             typing: Vec::new(),
             cursor: vec![CursorSample {
                 at: 0,

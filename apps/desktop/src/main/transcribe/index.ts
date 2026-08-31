@@ -6,8 +6,12 @@
  * than a resolved promise. Two channels for one job is how an editor comes to
  * show a finished state and a running spinner at the same time.
  *
- * Unlike the export, none of the work happens in Rust. The provider is reached
- * over HTTP from here, so there is no addon call and nothing to rebuild.
+ * Like the export, the work happens in Rust — and in the Swift behind it. That
+ * is a change: this used to upload `mic.m4a` to OpenAI through our own Worker.
+ * Nothing leaves the machine now, so there is no size ceiling, no allowance to
+ * count against an install, and — because both Apple engines measure each word
+ * rather than interpolating from a segment — the transcript can carry times
+ * good enough to light a word with.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,10 +29,7 @@ import {
 } from "../../shared/transcript.js";
 import { track } from "../analytics.js";
 import { log } from "../log.js";
-import { apiUrl } from "../api.js";
-import { authToken } from "../auth.js";
-import { installId } from "../install-id.js";
-import { openai } from "./openai.js";
+import { apple } from "./apple.js";
 import { TranscribeError, type Transcriber } from "./transcriber.js";
 
 /** The directory currently being transcribed, or null. */
@@ -69,18 +70,26 @@ export async function startTranscribe(dir: string): Promise<void> {
     }
 
     const provider = transcriber();
-    broadcast({ stage: "uploading", error: null });
+    broadcast({ stage: "preparing", progress: null, error: null });
 
-    const audio = await readFile(join(dir, TRACK_FILE_NAMES.microphone));
-    if (audio.byteLength > provider.maxBytes) {
+    // Asked before the work rather than discovered from a failed run, and it
+    // never prompts. A machine with no on-device model has to be told so, not
+    // shown a permission dialog and then an error.
+    if (!(await provider.available())) {
       throw new TranscribeError(
-        "TOO_LONG",
-        `This recording's audio is larger than ${provider.name} accepts.`,
+        "NO_LOCAL_MODEL",
+        "macOS has no on-device speech model for this language. Add it in System Settings under Keyboard, Dictation.",
       );
     }
 
-    broadcast({ stage: "transcribing", error: null });
-    const result = await provider.transcribe(audio, controller.signal);
+    // The path rather than the bytes: the engine opens the file itself, and
+    // reading a half-hour take in only to hand it straight back would be the
+    // peak memory of the whole app for nothing.
+    const audio = join(dir, TRACK_FILE_NAMES.microphone);
+
+    const result = await provider.transcribe(audio, controller.signal, (stage, progress) =>
+      broadcast({ stage, progress, error: null }),
+    );
 
     const transcript: Transcript = {
       version: TRANSCRIPT_VERSION,
@@ -97,10 +106,10 @@ export async function startTranscribe(dir: string): Promise<void> {
 
     await writeFile(join(dir, TRANSCRIPT_FILE_NAME), JSON.stringify(transcript, null, 2), "utf8");
 
-    finish({ stage: "done", error: null, transcript });
+    finish({ stage: "done", progress: 1, error: null, transcript });
   } catch (cause) {
     if (controller.signal.aborted) {
-      finish({ stage: "cancelled", error: null });
+      finish({ stage: "cancelled", progress: null, error: null });
       return;
     }
 
@@ -113,7 +122,7 @@ export async function startTranscribe(dir: string): Promise<void> {
     // window closes, and a failed transcription is the kind of thing a user
     // reports hours later.
     console.error(`transcription failed: ${error.message}`);
-    finish({ stage: "failed", error });
+    finish({ stage: "failed", progress: null, error });
   }
 }
 
@@ -125,23 +134,12 @@ export function cancelTranscribe(): void {
 /**
  * The provider to use.
  *
- * One today. A second is a new file beside `openai.ts` and a branch here — the
- * shape the rest of this module depends on is `Transcriber`, which carries the
- * two things that differ in ways the UI can see: the size it accepts and
- * whether its word times are real.
+ * One, and on this machine. A second is a new file beside `apple.ts` and a
+ * branch here; the shape the rest of this module depends on is `Transcriber`.
  */
 function transcriber(): Transcriber {
-  return openai(baseUrl, installId, authToken);
+  return apple();
 }
-
-/**
- * Where the transcription route lives.
- *
- * `apiUrl` rather than a copy of the fallback chain: sharing and signing in call
- * the same Worker, and three separate resolutions of "where is the API" is how
- * one of them ends up on production while the others talk to `wrangler dev`.
- */
-const baseUrl = apiUrl;
 
 function finish(update: Omit<TranscribeProgress, "dir">): void {
   // Read before it is cleared: the editor keys progress on the directory, and a

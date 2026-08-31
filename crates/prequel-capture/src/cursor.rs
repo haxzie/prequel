@@ -1,10 +1,21 @@
-//! Where the pointer was, sampled alongside the video.
+//! Where the pointer was, sampled on its own thread against the session clock.
 //!
 //! Recorded during capture because it cannot be recovered afterwards: the
 //! cursor is drawn into the frames, but its position is not something an editor
 //! can read back out of them. Without this, zoom-to-cursor is only ever
 //! possible for recordings made after it is added — which is why it is worth
 //! sampling now, before there is any UI that uses it.
+//!
+//! Sampled from `spawn_cursor` rather than from the frame callback, and the
+//! reason is worth stating because the callback is the obvious place and it is
+//! wrong. `pointer_location` answers where the pointer is *now*; a frame
+//! callback carries the time the frame was *captured*, and ScreenCaptureKit
+//! delivers it a queue's worth of encoding later. Filing a position read now
+//! under a timestamp from a tenth of a second ago moves the whole track ahead
+//! of the picture — measured at 130-180ms against the clicks, which are stamped
+//! by their own tap — and jitter in that delay stretches and squeezes the time
+//! between samples, so a hand moving at one speed is recorded as moving at two.
+//! Neither survives reading the clock in the same breath as the position.
 //!
 //! Straight CoreGraphics rather than a cidre binding, matching `permission.rs`:
 //! two functions, and the global pointer location has no Objective-C wrapper
@@ -20,8 +31,17 @@ use prequel_session::MediaTime;
 ///
 /// A screen recording runs at 60 fps, and a sample per frame would put tens of
 /// thousands of entries in the manifest for a ten-minute take. Half that rate
-/// is indistinguishable once the path is smoothed.
+/// is indistinguishable once the path is smoothed, which `smoothPath` in
+/// `shared/layout.ts` does.
+///
+/// The sampler thread sleeps for `SAMPLE_INTERVAL`, and the gate below is the
+/// same number so the two cannot drift apart. Missing the gate by a fraction of
+/// a millisecond would silently halve the rate.
 const SAMPLE_INTERVAL_NS: MediaTime = 33_000_000;
+
+/// `SAMPLE_INTERVAL_NS` as the sampler thread's sleep.
+pub const SAMPLE_INTERVAL: std::time::Duration =
+    std::time::Duration::from_nanos(SAMPLE_INTERVAL_NS);
 
 /// Movement below this is not worth an entry.
 ///
@@ -147,9 +167,10 @@ impl CursorTrack {
 
     /// Records the pointer's position, if this moment is worth a sample.
     ///
-    /// Called from the video callback, so it is on the capture's hot path — the
-    /// rate and movement gates are there to keep it to a couple of loads and a
-    /// comparison for the frames it skips.
+    /// `at` must be the media time of the moment this is *called*, not of some
+    /// frame that arrived around now — the position is read inside, from the
+    /// window server, as of now. See the note at the top of the file for what
+    /// filing one under the other does to the track.
     pub fn sample(&mut self, at: MediaTime) {
         // A region with no area cannot be divided by. Belt and braces: the
         // recorder refuses an empty capture before it gets this far.
@@ -677,6 +698,15 @@ mod tests {
         // And asking about the live one must not crash, whatever the pointer
         // happens to be doing while the tests run.
         refresh_pointer_shape();
+    }
+
+    #[test]
+    fn the_sampler_sleeps_exactly_as_long_as_the_gate_demands() {
+        // The two halves of one rate: `spawn_cursor` sleeps for the duration
+        // and `sample` gates on the nanoseconds. A sleep a hair shorter than
+        // the gate has every other tick rejected, and the track then comes back
+        // at half the rate with nothing anywhere to say why.
+        assert_eq!(SAMPLE_INTERVAL.as_nanos() as u64, SAMPLE_INTERVAL_NS);
     }
 
     #[test]

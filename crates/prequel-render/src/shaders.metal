@@ -224,10 +224,23 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
     float d = shape_distance(p, half_size, u.shape.x, u.shape.y);
 
     if (u.mode == 4) {
-        // A stroke is the band either side of the edge.
-        float half_width = max(u.weight, 0.5) * 0.5;
-        float band = 1.0 - smoothstep(half_width - 0.5, half_width + 0.5, abs(d));
-        return premultiplied(u.colorA.rgb, u.colorA.a * band);
+        // A stroke lies *inside* the silhouette: the band between the edge and
+        // the same shape inset by its width, which is `d + width` — an inward
+        // offset of a rounded rect is a rounded rect of radius r - width.
+        //
+        // Centred on the edge, as this was, half the band falls outside the
+        // rectangle the quad covers, and a fragment shader cannot paint outside
+        // its own geometry. Along a straight edge that half was simply missing,
+        // so a 10px border drew 5px; at a corner the square quad still covers
+        // the area outside the curve, so there the whole band survived. The
+        // border came out half width on the sides and full width round the
+        // corners, which reads as corners of the wrong radius rather than as a
+        // border of the wrong width. It also matches the canvas preview, which
+        // insets its path and has always drawn the whole stroke inside.
+        float width = max(u.weight, 0.5);
+        float outer = 1.0 - smoothstep(-0.5, 0.5, d);
+        float inner = 1.0 - smoothstep(-0.5, 0.5, d + width);
+        return premultiplied(u.colorA.rgb, u.colorA.a * (outer - inner));
     }
 
     // One pixel of feathering at the edge. Without it a circle drawn at export

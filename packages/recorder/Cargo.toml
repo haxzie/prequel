@@ -15,8 +15,10 @@ prequel-capture = { workspace = true }
 prequel-encode = { workspace = true }
 prequel-render = { workspace = true }
 prequel-session = { workspace = true }
+prequel-speech = { workspace = true }
 napi = { version = "3", default-features = false, features = ["napi8"] }
 napi-derive = "3"
+serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }

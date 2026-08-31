@@ -14,12 +14,13 @@
  * first-listed on top, so the list below reads outermost-first, the same way the
  * shader tree does.
  *
- * The colours are not invented. They were sampled off the shader's own canvas on
- * a 9 × 5 grid, composited against the page background at the same 0.75 the
- * canvas is shown at, and the pools below sit where the sampled maxima sat: the
- * crimson low and left, the violet low and right, the sun's orange as a hint
- * behind the mark. What cannot be matched is that the real field drifts, so this
- * is one plausible frame of it rather than any particular one.
+ * The colours are not invented. They are the icon's own — the clip's violet, the
+ * sun gradient's crimson and orange, the same values `ShaderStack` feeds the
+ * mesh — laid out where the shader's canvas was sampled on a 9 × 5 grid and
+ * composited against the page background: the crimson low and left, the violet
+ * low and right, the sun's orange as a hint behind the mark. What cannot be
+ * matched is that the real field drifts, so this is one plausible frame of it
+ * rather than any particular one.
  *
  * Opaque, deliberately. It covers `Wash` completely inside its own box, and the
  * rule in `globals.css` that hides `Wash` on hero pages is what stops the two
@@ -55,13 +56,22 @@ export function HeroBackdrop() {
           // The mesh, as three pools. Low and to the sides, which is where the
           // sampled maxima were and is also the only arrangement that leaves the
           // headline sitting over the darkest part of the frame.
-          "radial-gradient(58% 62% at 79% 86%, #5f0a86 0%, rgb(95 10 134 / 0) 72%)",
-          "radial-gradient(52% 68% at 17% 58%, #5b0a3c 0%, rgb(91 10 60 / 0) 74%)",
-          "radial-gradient(46% 48% at 47% 96%, #6b0357 0%, rgb(107 3 87 / 0) 76%)",
-          // The sun, behind the mark. The faintest layer here by some way: it is
-          // the one hue the mesh only reaches at the very top of its ramp, so it
-          // shows up in the real thing as a warm cast rather than as a pool.
-          "radial-gradient(38% 30% at 50% 10%, rgb(225 75 21 / 0.16) 0%, rgb(225 75 21 / 0) 72%)",
+          //
+          // The sun gets the left, the clip's violet the right — the balance the
+          // stack settles into, and the reverse of what was here before. Each is
+          // a `-deep` token from `globals.css` — `--brand-from-deep`,
+          // `--brand-to-deep`, `--iris-deep` — composited over `--bg` again at
+          // roughly the weight the vignette and the canvas's own 0.75 leave it
+          // at. Written out rather than read through `var()` because the fade
+          // to nothing has to name the same colour at zero alpha, and an oklab
+          // ramp to bare `transparent` greys out through the middle.
+          "radial-gradient(58% 62% at 79% 86%, #31153a 0%, rgb(49 21 58 / 0) 72%)",
+          "radial-gradient(52% 68% at 17% 58%, #7e3115 0%, rgb(126 49 21 / 0) 74%)",
+          "radial-gradient(46% 48% at 47% 96%, #591739 0%, rgb(89 23 57 / 0) 76%)",
+          // The sun again, behind the mark, as a cast rather than a pool — the
+          // warm is already carried by the pool on the left, and this is only
+          // what keeps the mark from sitting on flat background.
+          "radial-gradient(38% 30% at 50% 10%, rgb(225 75 21 / 0.14) 0%, rgb(225 75 21 / 0) 72%)",
         ].join(", "),
         // Only the flutes tile. Everything after them is a single pass over the
         // whole box, and leaving them all at `auto` would tile the pools too.

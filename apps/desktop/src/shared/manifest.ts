@@ -121,6 +121,20 @@ export interface ClickSample {
   y: number;
 }
 
+/**
+ * A stretch of the recording somebody was typing through.
+ *
+ * Deliberately the least that could be useful: when typing started and when it
+ * stopped, rounded to a tenth of a second, with runs of fewer than three
+ * presses left out entirely. No key, no count, and nothing fine enough to read
+ * the timing between presses back out of. The pointer is hidden through these
+ * and nothing else reads them.
+ */
+export interface KeySpan {
+  start: MediaTime;
+  end: MediaTime;
+}
+
 /** A focused text area, sampled during the recording. */
 export interface TypingSample {
   at: MediaTime;
@@ -165,6 +179,14 @@ export interface Manifest {
    * clearly than where the pointer travelled.
    */
   clicks?: ClickSample[];
+  /**
+   * When somebody was typing — never a key, and never what was typed.
+   *
+   * Absent on every recording made before the pointer learned to get out of the
+   * way, which is why nothing downstream may treat an empty list as "nobody
+   * typed" rather than "this recording does not say".
+   */
+  keys?: KeySpan[];
 }
 
 export class ManifestError extends Error {}

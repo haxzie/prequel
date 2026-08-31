@@ -247,10 +247,13 @@ void main() {
   }
 
   if (u_mode == 4) {
-    // A stroke is the band either side of the edge.
-    float halfWidth = max(u_weight, 0.5) * 0.5;
-    float band = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, abs(d));
-    fragColor = premultiplied(u_colorA.rgb, u_colorA.a * band);
+    // A stroke lies inside the silhouette, between the edge and the same shape
+    // inset by its width. Verbatim from shaders.metal, where the note on what
+    // straddling the edge did to the corners lives.
+    float width = max(u_weight, 0.5);
+    float outer = 1.0 - smoothstep(-0.5, 0.5, d);
+    float inner = 1.0 - smoothstep(-0.5, 0.5, d + width);
+    fragColor = premultiplied(u_colorA.rgb, u_colorA.a * (outer - inner));
     return;
   }
 

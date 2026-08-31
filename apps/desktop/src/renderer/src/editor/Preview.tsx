@@ -14,6 +14,7 @@ import {
   placement,
   type PlanSource,
   type Rect,
+  type RenderedCue,
   type Size,
   type SourceSizes,
 } from "../../../shared/layout";
@@ -61,6 +62,7 @@ export function Preview({
   images,
   cursor,
   zooms,
+  cues,
   grab: grabRef,
   onLayout,
 }: {
@@ -80,6 +82,14 @@ export function Preview({
   cursor: CursorLayer | null;
   /** Zoom spans, baked into the plan as a sampled crop. */
   zooms: readonly ZoomSlice[];
+  /**
+   * Cues that have already been laid out and rasterised.
+   *
+   * Bitmaps rather than text, because the export gets the same ones: laying a
+   * line out here and again in the exporter is the mistake this whole module
+   * exists to prevent.
+   */
+  cues: readonly RenderedCue[];
   /**
    * Filled in with a way to grab the current frame as a PNG data URL.
    *
@@ -202,9 +212,14 @@ export function Preview({
           ...cursorImages(current.layout.cursorStyle),
           size: current.layout.cursorSize,
           hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
+          // Resolved here rather than in the plan, like `hideAfter`: a track
+          // with no spans and one the user asked to keep the pointer through
+          // are the same thing to draw.
+          keys: current.layout.cursorHideWhileTyping ? cursor.keys : [],
         },
         zooms,
         arriving,
+        cues,
       );
 
       // Source time, because that is what the pointer track is indexed by —

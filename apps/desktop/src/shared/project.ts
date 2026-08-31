@@ -168,6 +168,16 @@ export interface LayoutSettings {
   /** Pointer height, as a fraction of the frame's shorter edge. */
   cursorSize: number;
   /**
+   * How much of the recorded path's stepping to take out, from 0 to 1.
+   *
+   * The pointer is sampled from the video callback — 30 Hz at best, and nothing
+   * at all while the screen holds still — so drawn exactly as recorded it turns
+   * a corner at every sample and crosses each gap at one constant speed. This
+   * is how far behind its own recording the drawn pointer is allowed to run in
+   * exchange for a continuous path; 0 draws the samples as they were taken.
+   */
+  cursorSmoothing: number;
+  /**
    * Which pointer to draw. See `CURSOR_STYLES`.
    *
    * A tone rather than a shape: the arrow becomes a hand over anything the
@@ -187,6 +197,19 @@ export interface LayoutSettings {
   cursorAutoHide: boolean;
   /** How long it has to be still first, in seconds. */
   cursorHideAfter: number;
+  /**
+   * Hide the pointer while somebody is typing.
+   *
+   * A pointer parked over a text field through a paragraph of typing is the
+   * thing an eye keeps returning to while the words it should be reading go in
+   * somewhere else. It comes back the moment the pointer moves, so it is never
+   * missing when it is being used.
+   *
+   * Only recordings made once the capture started noting when typing happened
+   * carry the spans this needs; an older one draws the pointer throughout
+   * whatever this says.
+   */
+  cursorHideWhileTyping: boolean;
 }
 
 export type Background =
@@ -204,6 +227,8 @@ export interface BackgroundSettings {
   cornerRadius: number;
   borderWidth: number;
   borderColor: string;
+  /** How opaque the border is, 0 to 1. A tinted edge rather than a solid one. */
+  borderOpacity: number;
   shadowOpacity: number;
   shadowBlur: number;
   shadowY: number;
@@ -216,10 +241,46 @@ export interface AudioSettings {
   systemMuted: boolean;
 }
 
+/** Where a cue sits against the frame. */
+export type CaptionPlace = "top" | "middle" | "bottom";
+
+export interface CaptionSettings {
+  /**
+   * Draw captions at all.
+   *
+   * Off by default, and off for every project saved before captions existed —
+   * see `beforeCaptions`. Turning it on with no transcript draws nothing rather
+   * than erroring; the panel is what offers to make one.
+   */
+  captionsOn: boolean;
+  /**
+   * Which look to draw. See `CAPTION_STYLES`.
+   *
+   * A string rather than the union, for the same reason `cursorStyle` is one:
+   * a project written by a build with looks this one does not have still opens,
+   * because `captionStyle()` falls back rather than throwing.
+   */
+  captionStyle: string;
+  /** Cap height, as a fraction of the frame's shorter edge. */
+  captionSize: number;
+  captionPlace: CaptionPlace;
+  /**
+   * How far in from that edge, as a fraction of the shorter edge.
+   *
+   * Ignored by `middle`, which has no edge to be offset from.
+   */
+  captionOffset: number;
+  /** The colour the spoken word is lit in. Looks with no lit layer ignore it. */
+  captionAccent: string;
+  /** How many lines a cue may fill before it breaks into another. */
+  captionLines: number;
+}
+
 export interface SliceSettings {
   layout: LayoutSettings;
   background: BackgroundSettings;
   audio: AudioSettings;
+  captions: CaptionSettings;
 }
 
 export type SettingsSection = keyof SliceSettings;
@@ -505,11 +566,15 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // About the size the pointer appears on screen in a 1080p frame, so an export
   // looks like the recording rather than like a diagram of it.
   cursorSize: 0.035,
+  // Enough to take the 30 Hz corners out of an ordinary move without the
+  // pointer visibly trailing the hand that made it.
+  cursorSmoothing: 0.4,
   // Only what a *new* project starts with. An existing `project.json` names its
   // own style and keeps it, so nobody's edit changes shape underneath them.
   cursorStyle: "modern-black",
   cursorAutoHide: false,
   cursorHideAfter: 2,
+  cursorHideWhileTyping: true,
 };
 
 /** The wallpaper file main copies into a recording. */
@@ -539,6 +604,7 @@ export const DEFAULT_BACKGROUND: BackgroundSettings = {
   cornerRadius: 0.02,
   borderWidth: 0,
   borderColor: "#ffffff",
+  borderOpacity: 1,
   shadowOpacity: 0.45,
   shadowBlur: 0.05,
   shadowY: 0.015,
@@ -551,10 +617,25 @@ export const DEFAULT_AUDIO: AudioSettings = {
   systemMuted: false,
 };
 
+export const DEFAULT_CAPTIONS: CaptionSettings = {
+  // Off, so opening a recording never puts words on it that nobody asked for —
+  // and because there is no transcript until somebody asks for one.
+  captionsOn: false,
+  captionStyle: "subtitle",
+  // About a twentieth of the shorter edge: large enough to read on a phone,
+  // small enough that two lines do not take a quarter of the frame.
+  captionSize: 0.05,
+  captionPlace: "bottom",
+  captionOffset: 0.08,
+  captionAccent: "#ffd60a",
+  captionLines: 2,
+};
+
 export const DEFAULT_SETTINGS: SliceSettings = {
   layout: DEFAULT_LAYOUT,
   background: DEFAULT_BACKGROUND,
   audio: DEFAULT_AUDIO,
+  captions: DEFAULT_CAPTIONS,
 };
 
 /**
@@ -690,6 +771,7 @@ export function resolveSettings(
     layout: { ...defaults.layout, ...overrides?.layout },
     background: { ...defaults.background, ...overrides?.background },
     audio: { ...defaults.audio, ...overrides?.audio },
+    captions: { ...defaults.captions, ...overrides?.captions },
   };
 }
 
@@ -810,10 +892,12 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
       layout: {
         ...DEFAULT_LAYOUT,
         ...beforeShrinking(stored.defaults?.layout),
+        ...beforeSmoothing(stored.defaults?.layout),
         ...migrateLayout(stored.defaults?.layout),
       },
       background: { ...DEFAULT_BACKGROUND, ...stored.defaults?.background },
       audio: { ...DEFAULT_AUDIO, ...stored.defaults?.audio },
+      captions: { ...DEFAULT_CAPTIONS, ...stored.defaults?.captions },
     },
     tracks: [
       {
@@ -849,6 +933,21 @@ function beforeShrinking(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cameraShrinkOnZoom" in stored) return undefined;
   return { cameraShrinkOnZoom: false };
+}
+
+/**
+ * Leaves the pointer unsmoothed in a project written before smoothing existed.
+ *
+ * `beforeShrinking`'s rule, for the same reason: a new default that changes how
+ * an edit already on disk plays back is a project that came back different from
+ * the one its author saved. New recordings get the smoothing; an old one is one
+ * slider away from it.
+ */
+function beforeSmoothing(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cursorSmoothing" in stored) return undefined;
+  return { cursorSmoothing: 0 };
 }
 
 /**

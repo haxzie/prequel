@@ -19,7 +19,7 @@ use prequel_encode::{
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
-use crate::clicks::ClickSample;
+use crate::clicks::{ClickSample, KeySpan};
 use crate::cursor::{CursorSample, CursorTrack, Region};
 use crate::error::{Error, Result};
 use crate::targets::{Bounds, Target, TargetKind};
@@ -124,6 +124,9 @@ pub struct RecordingSummary {
     /// Where the pointer was pressed. The strongest signal in the recording
     /// about what mattered and when.
     pub clicks: Vec<ClickSample>,
+    /// Stretches somebody was typing through — no key, no count, no fine
+    /// timing. See `clicks::KeySpan`.
+    pub keys: Vec<KeySpan>,
 }
 
 impl RecordingSummary {
@@ -197,8 +200,6 @@ struct Inner {
     /// Frames ScreenCaptureKit sent with no pixel buffer because the screen
     /// had not changed.
     idle_frames: u64,
-    /// Pointer positions, sampled on the same timeline as the video.
-    cursor: CursorTrack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,10 +255,6 @@ impl Inner {
         let SampleDecision::Accept(pts) = self.video.accept(&self.clock, host_ns) else {
             return;
         };
-
-        // Sampled against the accepted media time, so the track shares the
-        // timeline the frames are on — a paused span is excluded from both.
-        self.cursor.sample(pts);
 
         let Some(writer) = self.writer.as_mut() else {
             return;
@@ -327,13 +324,20 @@ pub struct ScreenRecorder {
     /// application that does not answer would stall the recording rather than
     /// merely miss a sample.
     typing: Arc<Mutex<TypingTrack>>,
+    /// Where the pointer was, collected on its own thread.
+    ///
+    /// Off the capture callback for a stronger reason than typing's: the
+    /// callback could take the sample cheaply enough, but it has no honest
+    /// timestamp to file it under. See `cursor.rs`.
+    cursor: Arc<Mutex<CursorTrack>>,
     /// The captured rectangle, kept so the clicks can be put in its terms when
     /// the recording stops.
     sampled: Region,
-    /// Stops both sampler threads. One flag rather than two: they start and
-    /// stop with the recording and nothing ever wants one without the other.
+    /// Stops every sampler thread. One flag rather than three: they start and
+    /// stop with the recording and nothing ever wants one without the others.
     samplers_stop: Arc<AtomicBool>,
     typing_thread: Option<std::thread::JoinHandle<()>>,
+    cursor_thread: Option<std::thread::JoinHandle<()>>,
     /// Whether the system is showing the link cursor, refreshed on its own
     /// thread for the same reason typing is: `NSCursor` is AppKit, and the
     /// capture callback is no place to call into it sixty times a second.
@@ -457,7 +461,6 @@ impl ScreenRecorder {
             video: TrackTimeline::new(),
             failure: None,
             idle_frames: 0,
-            cursor: CursorTrack::new(sampled),
         }));
 
         // A tap that cannot be made is logged and the recording carries on
@@ -477,8 +480,10 @@ impl ScreenRecorder {
         }
 
         let typing = Arc::new(Mutex::new(TypingTrack::new(sampled)));
+        let cursor = Arc::new(Mutex::new(CursorTrack::new(sampled)));
         let samplers_stop = Arc::new(AtomicBool::new(false));
         let typing_thread = spawn_typing(&typing, &samplers_stop, clock.clone());
+        let cursor_thread = Some(spawn_cursor(&cursor, &samplers_stop, clock.clone()));
         let shape_thread = Some(spawn_pointer_shape(&samplers_stop));
 
         let sink = FrameSink::with(Arc::clone(&state));
@@ -511,8 +516,10 @@ impl ScreenRecorder {
             width,
             height,
             typing,
+            cursor,
             samplers_stop,
             typing_thread,
+            cursor_thread,
             shape_thread,
             sampled,
         })
@@ -542,6 +549,9 @@ impl ScreenRecorder {
         // sample of a recording that is still running.
         self.samplers_stop.store(true, Ordering::Relaxed);
         if let Some(thread) = self.typing_thread.take() {
+            let _ = thread.join();
+        }
+        if let Some(thread) = self.cursor_thread.take() {
             let _ = thread.join();
         }
         if let Some(thread) = self.shape_thread.take() {
@@ -601,13 +611,18 @@ impl ScreenRecorder {
             idle_frames: inner.idle_frames,
             system_audio,
             microphone,
-            cursor: {
-                // Logged because an empty track is indistinguishable from
-                // "cursor capture is broken" once the recording is on disk.
-                tracing::debug!("captured {} cursor samples", inner.cursor.len());
-                inner.cursor.take_samples()
-            },
+            cursor: self
+                .cursor
+                .lock()
+                .map(|mut track| {
+                    // Logged because an empty track is indistinguishable from
+                    // "cursor capture is broken" once the recording is on disk.
+                    tracing::debug!("captured {} cursor samples", track.len());
+                    track.take_samples()
+                })
+                .unwrap_or_default(),
             clicks: crate::clicks::stop(self.sampled, |host| self.clock.media_time(host).ok()),
+            keys: crate::clicks::key_spans(|host| self.clock.media_time(host).ok()),
             typing: self
                 .typing
                 .lock()
@@ -670,6 +685,45 @@ fn spawn_typing(
             }
         }
     }))
+}
+
+/// Starts sampling where the pointer is.
+///
+/// Its own thread, and unlike typing's not because the lookup is expensive —
+/// `pointer_location` is one CoreGraphics call — but because of what a
+/// timestamp means. The position it reads is the pointer's *now*, so the only
+/// honest thing to file it under is the clock read in the same breath. The
+/// frame callback has no such time to offer: its `pts` is when the frame was
+/// captured, and it runs a queue's worth of encoding later.
+///
+/// It also samples at a steady rate, which the callback could not. Frames stop
+/// arriving entirely while the screen holds still — the cursor is composited
+/// afterwards, so moving the pointer changes nothing on screen to deliver —
+/// and a pointer crossing a static window was being sampled a fifth as often as
+/// one crossing a video.
+fn spawn_cursor(
+    track: &Arc<Mutex<CursorTrack>>,
+    stop: &Arc<AtomicBool>,
+    clock: SharedClock,
+) -> std::thread::JoinHandle<()> {
+    let track = Arc::clone(track);
+    let stop = Arc::clone(stop);
+
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(crate::cursor::SAMPLE_INTERVAL);
+
+            // The same clock the frames are on, so a paused span is excluded
+            // from the track exactly as it is from the video, and a sample
+            // taken before the first frame has no media time to belong to.
+            let Ok(at) = clock.media_time(host_now()) else {
+                continue;
+            };
+            if let Ok(mut track) = track.lock() {
+                track.sample(at);
+            }
+        }
+    })
 }
 
 /// Watches what shape the system cursor is, so the editor can follow it.

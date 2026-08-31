@@ -116,16 +116,39 @@ export default function ShaderStack() {
             <MeshGradient
               // The icon's sunrise, weighted dark: the first two stops hold the
               // bottom fifth of the ramp at the page background, and the four
-              // above them climb crimson → violet → orange. The weighting is
+              // above them climb violet → crimson → orange. The weighting is
               // what makes it read as light pooling in a dark room rather than
               // as a coloured panel behind the text.
+              //
+              // The three middle stops are the `-deep` tokens from
+              // `globals.css` — `--iris-deep`, `--brand-to-deep`,
+              // `--brand-from-deep` — which is the icon's palette at the value
+              // the artwork shows it rather than at the neat token. The note
+              // beside them explains why a field this size cannot use the neat
+              // one. They are written out because the shader takes plain
+              // colours and never sees a custom property; `Wash` and
+              // `HeroBackdrop` read the same three through `var()`.
+              //
+              // The positions are not evenly spread, and the spacing is doing
+              // more work than the hues. Two things push what you see towards
+              // the middle of the ramp: a mesh only touches the extremes at a
+              // few cell centres, and `smoothness` at 3.4 blends neighbouring
+              // cells hard enough that a band reads as its average. So a hue's
+              // share of the range is its share of the frame, and the sun
+              // parked above 0.8 came out as nothing at all — the hero was
+              // uniformly violet against an icon that is mostly orange.
+              //
+              // The warm end therefore gets the top 40% and the violet and
+              // crimson are compressed into a seventh of the range each. That
+              // is roughly their share of the icon, where the sun gradient
+              // fills the upper half and the clip is a stroke.
               stops={[
                 { color: "#0b0d11", position: 0 },
-                { color: "#1b0820", position: 0.22 },
-                { color: "#8e1450", position: 0.46 },
-                { color: "#a410c9", position: 0.66 },
-                { color: "#e14b15", position: 0.85 },
-                { color: "#ffb066", position: 1 },
+                { color: "#1e1e1e", position: 0.14 },
+                { color: "#3e1848", position: 0.3 },
+                { color: "#731a46", position: 0.46 },
+                { color: "#b04017", position: 0.64 },
+                { color: "#e14b15", position: 1 },
               ]}
               colorSpace="oklab"
               count={6}

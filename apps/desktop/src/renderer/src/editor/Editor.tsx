@@ -11,7 +11,7 @@ import {
 import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
-import { newProject, type Project, type ZoomSlice } from "../../../shared/project";
+import { newProject, outputFrame, type Project, type ZoomSlice } from "../../../shared/project";
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
@@ -24,6 +24,9 @@ import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { Preview, type Grab } from "./Preview";
+import { useCaptions } from "./useCaptions";
+import { useCaptionImages } from "./useCaptionImages";
+import { useTranscription } from "./useTranscription";
 import {
   settingsOf,
   canUndo,
@@ -183,7 +186,22 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [],
   );
 
-  const exportState = useExport(session, state.project, state.project.output);
+  // Drawn against the export frame rather than the editor's, so one set of
+  // bitmaps serves the preview and the export and the preview only samples
+  // them down. `useExport` lays its plan out in this frame too.
+  const captionFrame = useMemo(
+    () => outputFrame(state.project.frame, state.project.output.shortEdge),
+    [state.project.frame, state.project.output.shortEdge],
+  );
+
+  const transcription = useTranscription(session);
+  // The project defaults rather than the playhead's settings: captions are
+  // project-wide, and reading them off whichever clip the playhead is under
+  // would re-rasterise every cue on every cut.
+  const captions = useCaptions(session, state.project.defaults.captions, captionFrame);
+  useCaptionImages(session, captions.cues, media, setImages);
+
+  const exportState = useExport(session, state.project, state.project.output, captions);
 
   /**
    * Opens the dialog, then fills its picture in.
@@ -343,6 +361,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               images={images}
               cursor={session.cursor}
               zooms={state.project.zooms}
+              cues={captions.cues}
               grab={grab}
               onLayout={(patch) => {
                 // One dispatch per key, because that is what the override
@@ -375,6 +394,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               dispatch={dispatch}
               present={present}
               hasCursor={session.cursor !== null}
+              captions={transcription}
               frame={state.project.frame}
               cameraSource={cameraSource}
               onPreviewZoom={previewZoom}

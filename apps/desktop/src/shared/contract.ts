@@ -7,7 +7,14 @@
  */
 import type { RecordingResult } from "@prequel/recorder";
 
-import type { CursorSample, Manifest, MediaTime, TrackKind, TypingSample } from "./manifest.js";
+import type {
+  CursorSample,
+  KeySpan,
+  Manifest,
+  MediaTime,
+  TrackKind,
+  TypingSample,
+} from "./manifest.js";
 import type { CursorTrack, RenderPlan } from "./layout.js";
 import type { Project } from "./project.js";
 import type { Transcript } from "./transcript.js";
@@ -290,6 +297,14 @@ export const IPC_CHANNELS = {
   editorPickImage: "editor:pickImage",
   editorPresetImage: "editor:presetImage",
   /**
+   * Caption bitmaps, drawn in the renderer and written by main.
+   *
+   * The renderer is the only side with a font engine and main is the only side
+   * with a filesystem, so a cue crosses here as pixels rather than as text.
+   */
+  editorWriteCaption: "editor:writeCaption",
+  editorSweepCaptions: "editor:sweepCaptions",
+  /**
    * The local library.
    *
    * Named for the screen rather than for the window, because the window shows
@@ -456,14 +471,23 @@ export interface ExportProgress {
  * a terminal stage on this channel rather than a resolved promise, so there is
  * one channel and no race between "finished" arriving twice by two routes.
  *
- * No frame counts. A provider reports nothing until it has finished, so a
- * percentage here would be invented — and an invented bar that sits at 40% for
- * a minute is worse than an honest indeterminate one.
+ * `preparing` covers everything before any audio has been read — asking for
+ * permission, and fetching a speech model the machine does not have yet. It is
+ * its own stage because the second of those is a download, and a bar that has
+ * not moved for a minute needs to be able to say why.
  */
 export interface TranscribeProgress {
   /** Which recording this is about; the editor ignores progress for others. */
   dir: string;
-  stage: "uploading" | "transcribing" | "done" | "failed" | "cancelled";
+  stage: "preparing" | "transcribing" | "done" | "failed" | "cancelled";
+  /**
+   * How far through, 0-1, or null when the stage has no measure.
+   *
+   * Honest rather than invented: null draws an indeterminate bar, and a stage
+   * that cannot say how far along it is reports null rather than a number that
+   * sits still for a minute.
+   */
+  progress: number | null;
   error: { code: string | null; message: string } | null;
   /** Present only on `done`. */
   transcript?: Transcript;
@@ -846,6 +870,13 @@ export interface CursorLayer {
    * is one, and the pointer for the stretches where nothing is focused.
    */
   typing: TypingSample[];
+  /**
+   * Stretches somebody was typing through, for hiding the pointer.
+   *
+   * Empty on every recording made before the capture noted them, which is not
+   * the same as nobody having typed — the setting simply has nothing to act on.
+   */
+  keys: KeySpan[];
 }
 
 export interface EditorSession {

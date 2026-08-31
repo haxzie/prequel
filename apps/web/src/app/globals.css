@@ -35,6 +35,20 @@
   --accent: #4e84f9; /* the playhead */
   --iris: #c000f0; /* the clip stroke */
   --lilac: #eeacff; /* the clip handles */
+
+  /* The same three hues at the value the icon actually shows them, which is
+     what a background field wants and the tokens above are not.
+
+     `--iris` is the clip's *stroke*: the artwork paints it neat along a
+     hairline and at 0.2 over the #1e1e1e body everywhere else. Spread across a
+     viewport-sized field the neat value stops reading as light and becomes a
+     lit lilac panel that takes the frame over — so these are each hue over that
+     same body, the composite the mark itself displays. Foreground accents keep
+     the tokens above; anything painting a whole field behind content uses
+     these. `HeroBackdrop`, `Wash` and the shader's mesh all sit on them. */
+  --brand-from-deep: #b04017;
+  --brand-to-deep: #731a46;
+  --iris-deep: #3e1848;
 }
 
 /* `inline` substitutes the var() into each utility rather than its value, which
@@ -52,6 +66,9 @@
   --color-accent: var(--accent);
   --color-iris: var(--iris);
   --color-lilac: var(--lilac);
+  --color-brand-from-deep: var(--brand-from-deep);
+  --color-brand-to-deep: var(--brand-to-deep);
+  --color-iris-deep: var(--iris-deep);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
@@ -279,6 +296,781 @@
       transform: translate(0, 0);
     }
   }
+
+  /*
+    The zoom demo below the hero. A dozen animations that have to agree with
+    each other frame for frame — the playhead's position, which slice is lit,
+    where the picture is pushed to, where the pointer is, what it has just
+    changed — so every one is 16s and they all start in the same style
+    resolution. Give any one a different duration and the playhead drifts off
+    its own slices within a minute, which is the failure the whole layout is
+    meant to demonstrate the absence of.
+
+    Four 4s slices, so a slice is 25% and slice n starts at 25n%. Times below
+    are percentages of the whole 16s, not of a slice.
+
+    The order inside a slice is the thing to get right, and it took a wrong
+    version to see it. The pointer must arrive and press while the picture is
+    still at rest, and the push must answer the press — not overlap it. When the
+    push began first the pointer was racing across a frame that was already
+    moving, and every click read as though it had landed somewhere else. So,
+    offsets from the start of each slice:
+
+      +0 → +3    the pointer travels, picture at rest
+      +4         it presses, and everything the press causes starts *here* —
+                 the ring, the selection, the tool, and the two slower ones,
+                 the typing and the drag
+      +4.5 → +11 the push, which overlaps whatever the press started
+      +11 → +21  the hold
+      +21 → +25  back to rest
+
+    The overlap matters. An earlier cut waited for the push to land before it
+    began typing or drawing, which put a second and a bit of nothing between the
+    button going down and anything happening — and a click that causes nothing
+    for a second does not read as having caused the thing that follows it.
+
+    Which is also the order the product works in: it sees a click, then it
+    frames it.
+  */
+  --animate-demo-screen: demo-screen 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-demo-tilt: demo-tilt 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-demo-cursor: demo-cursor 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-demo-click: demo-click 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-demo-ripple: demo-ripple 16s cubic-bezier(0.33, 1, 0.68, 1) infinite;
+  --animate-demo-type: demo-type 16s linear infinite;
+  /* Two animations in one token, not two classes on the element. Both would
+     resolve to the `animation` shorthand and the later utility would replace
+     the earlier rather than adding to it — the caret would blink or it would
+     move, never both. */
+  --animate-demo-caret: demo-caret 16s linear infinite, demo-caret-step 16s linear infinite;
+  --animate-demo-blink: demo-blink 1.06s steps(2, jump-none) infinite;
+  --animate-demo-placeholder: demo-placeholder 16s linear infinite;
+  --animate-demo-address-ring: demo-address-ring 16s linear infinite;
+  --animate-demo-draw: demo-draw 16s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  --animate-demo-select: demo-select 16s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  --animate-demo-selected-row: demo-selected-row 16s linear infinite;
+  --animate-demo-tool-picked: demo-tool-picked 16s linear infinite;
+  --animate-demo-playhead: demo-playhead 16s linear infinite;
+  --animate-demo-slice: demo-slice 16s linear infinite backwards;
+
+  /*
+    The layouts demo below it. Three animations on one 24s period — six 4s
+    steps — and the same rule applies as above: the two boxes and the row lit
+    beside them have to agree, so they share a duration and start together.
+
+    A step is 16.667%, and each animation holds its layout for the first
+    ~78% of its step and travels to the next one over the remaining ~3.7% of the
+    cycle. Holding rather than easing continuously is the point: a layout
+    nobody has time to read is a shape-shifting blob.
+  */
+  --animate-layouts-screen: layouts-screen 24s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-layouts-camera: layouts-camera 24s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-layouts-slice: layouts-slice 24s linear infinite backwards;
+  /* `demo-playhead` and not a keyframe of its own: a sweep from one edge of the
+     track to the other is the same two keyframes at any duration, and the only
+     thing this demo needs to differ is the period. */
+  --animate-layouts-playhead: demo-playhead 24s linear infinite;
+
+  /*
+    The picture, pushed in. Every keyframe lists the same functions in the same
+    order — CSS interpolates two transforms component-wise only while the
+    function lists match, and falls back to a matrix blend the moment they do
+    not, which turns a push-in into a shear.
+
+    `translate` runs last in the string and so is applied first: it carries the
+    point of interest to the centre, and `scale` then blows up about that
+    centre. The offsets are `50% - target`, as percentages of the picture's own
+    box, which keeps them correct at every viewport width.
+
+    The targets were read off the laid-out mock rather than estimated, and all
+    four sit centre frame. Getting there was a layout problem, not an animation
+    one. The picture is the same size as the frame that crops it, so an offset
+    is only safe up to `0.5 - 0.5 / scale`; past that the picture's own edge
+    travels into the frame and there is nothing behind it. Rearranged: a target
+    can only be centred at all if it is at least `0.5 / scale` from the
+    picture's edge, so a subject too near the side gets clamped and ends up
+    pinned to the edge of the frame instead of in the middle of it.
+
+    That is why the window floats on the background rather than filling the
+    frame. Against a full-bleed window the address bar sat four per cent from
+    the top and would have needed a fourteen-times push before it could be
+    centred; floated in, it sits at sixteen and 3.6x centres it outright. Each
+    scale below clears the minimum its own target needs by about a fifth, which
+    is the margin the tilts eat into.
+  */
+  @keyframes demo-screen {
+    0%,
+    4.5% {
+      transform: scale(1) translate(0%, 0%);
+    }
+    11%,
+    21% {
+      transform: scale(3.6) translate(17.3%, 33.6%);
+    }
+    25%,
+    29.5% {
+      transform: scale(1) translate(0%, 0%);
+    }
+    36%,
+    46% {
+      transform: scale(2.3) translate(14.3%, -22%);
+    }
+    50%,
+    54.5% {
+      transform: scale(1) translate(0%, 0%);
+    }
+    61%,
+    71% {
+      transform: scale(2.6) translate(-11%, -0.9%);
+    }
+    75%,
+    79.5% {
+      transform: scale(1) translate(0%, 0%);
+    }
+    86%,
+    96% {
+      transform: scale(3.2) translate(3.7%, -31.5%);
+    }
+    100% {
+      transform: scale(1) translate(0%, 0%);
+    }
+  }
+
+  /*
+    The tilt, on its own element and its own track.
+
+    Split from the push for a reason entirely about sharpness: a transform
+    animation containing a 3D rotation has no maximum scale the compositor can
+    compute, so it stops trying, rasterises the layer at 1x and magnifies the
+    texture. Keeping the rotations out here leaves `demo-screen` as plain scale
+    and translate, whose maximum can be read straight off the keyframes.
+
+    It also rotates about the frame's own centre instead of a point the push has
+    already carried a long way off it, which is what used to drag the picture's
+    edge into shot and force the tilts to stay timid.
+  */
+  @keyframes demo-tilt {
+    0%,
+    4.5% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+    11%,
+    21% {
+      transform: rotateX(0deg) rotateY(7deg);
+    }
+    25%,
+    29.5% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+    36%,
+    46% {
+      transform: rotateX(7deg) rotateY(-12deg);
+    }
+    50%,
+    54.5% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+    61%,
+    71% {
+      transform: rotateX(-8deg) rotateY(11deg);
+    }
+    75%,
+    79.5% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+    86%,
+    96% {
+      transform: rotateX(13deg) rotateY(-7deg);
+    }
+    100% {
+      transform: rotateX(0deg) rotateY(0deg);
+    }
+  }
+
+  /*
+    The pointer. The animated element is a full-size layer with the arrow drawn
+    in its top-left corner, not the arrow itself: a percentage `translate`
+    resolves against the moving element's own box, so an arrow-sized box would
+    step in arrow-sized units and never reach the far side of the picture. At
+    the layer's size the percentages are the picture's own coordinates, which is
+    what lets these read as the same numbers as the zoom targets above.
+
+    Every move finishes by +3, before its slice's push begins at +4.5. It starts
+    where it finished so the loop has no jump back.
+
+    Slice two is the only one that travels during its own hold: drawing a frame
+    is a drag, so the pointer presses at the frame's top-left corner, the push
+    lands, and only then does it cross to the bottom-right with `demo-draw`
+    opening the frame out under it.
+  */
+  @keyframes demo-cursor {
+    0% {
+      transform: translate(46.3%, 81.5%);
+    }
+    3%,
+    25% {
+      transform: translate(32.7%, 16.4%);
+    }
+    28%,
+    29% {
+      transform: translate(25.5%, 66.1%);
+    }
+    37%,
+    50% {
+      transform: translate(45.9%, 77.9%);
+    }
+    53%,
+    75% {
+      transform: translate(61%, 50.9%);
+    }
+    78%,
+    100% {
+      transform: translate(46.3%, 81.5%);
+    }
+  }
+
+  /*
+    The press, and the counter-scale that keeps the pointer its own size.
+
+    Both live on one track because both write `transform` and the later
+    declaration would otherwise simply win.
+
+    The figure at each hold is `2 / scale`, not `1 / scale`: the pointer sits
+    inside the push *and* inside the supersample's static half-scale, so it has
+    to undo both. At rest that is 2, which the halving turns back into 1. A
+    pointer inside a picture blown up 3.6x is drawn at 0.56 and lands on screen
+    the size it has at rest — glued to the content, constant to the eye, which
+    is how the app composites one into a recording.
+
+    The dip is off 2 rather than off the hold value because the press now
+    happens while the picture is still at rest.
+  */
+  @keyframes demo-click {
+    0% {
+      transform: scale(2);
+    }
+    4% {
+      transform: scale(1.56);
+    }
+    4.5% {
+      transform: scale(2);
+    }
+    11%,
+    21% {
+      transform: scale(0.5556);
+    }
+    25% {
+      transform: scale(2);
+    }
+    29% {
+      transform: scale(1.56);
+    }
+    29.5% {
+      transform: scale(2);
+    }
+    36%,
+    46% {
+      transform: scale(0.8696);
+    }
+    50% {
+      transform: scale(2);
+    }
+    54% {
+      transform: scale(1.56);
+    }
+    54.5% {
+      transform: scale(2);
+    }
+    61%,
+    71% {
+      transform: scale(0.7692);
+    }
+    75% {
+      transform: scale(2);
+    }
+    79% {
+      transform: scale(1.56);
+    }
+    79.5% {
+      transform: scale(2);
+    }
+    86%,
+    96% {
+      transform: scale(0.625);
+    }
+    100% {
+      transform: scale(2);
+    }
+  }
+
+  /* The ring the press leaves behind. Two thirds of a second, so it is finished
+     before the push has really moved — a ring still expanding while the frame
+     scales under it grows twice and reads as a mistake. Held at zero opacity
+     between presses rather than removed, so there is one element and one
+     animation rather than four of each. */
+  @keyframes demo-ripple {
+    0%,
+    3.9% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    4% {
+      opacity: 0.65;
+      transform: scale(0.55);
+    }
+    7% {
+      opacity: 0;
+      transform: scale(2);
+    }
+    25%,
+    28.9% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    29% {
+      opacity: 0.65;
+      transform: scale(0.55);
+    }
+    32% {
+      opacity: 0;
+      transform: scale(2);
+    }
+    50%,
+    53.9% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    54% {
+      opacity: 0.65;
+      transform: scale(0.55);
+    }
+    57% {
+      opacity: 0;
+      transform: scale(2);
+    }
+    75%,
+    78.9% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    79% {
+      opacity: 0.65;
+      transform: scale(0.55);
+    }
+    82% {
+      opacity: 0;
+      transform: scale(2);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+  }
+
+  /*
+    What each press changes, and the one constraint that decides all of it: a
+    state that persists cannot be reset where it can be seen.
+
+    Each press leaves something behind — an address in the bar, a frame on the
+    canvas, a selection, a picked tool — and a loop has to put every one back
+    before 0%. There is exactly one place per state where that is invisible: a
+    slice whose push has the thing in question outside the crop.
+
+      the address      cleared at 90%, inside slice four's hold, a 3.2x push on
+                       the toolbar at the bottom of the window
+      frame, selection
+      and picked tool  cleared at 13%, inside slice one's hold, a 3.6x push on
+                       the address bar — the canvas, the layer tree and the
+                       toolbar are all well below the crop
+
+    Which is why the address bar is empty at rest while the canvas is not: the
+    address is cleared late in the cycle, and the rest carries whatever state the
+    previous pass finished in.
+
+    Everything here turns over on the frame the pointer presses — 4, 29, 54, 79
+    — and not on the frame the push begins. A control that reacts a beat after
+    the click is the thing that makes a demo look staged.
+  */
+  @keyframes demo-type {
+    0%,
+    4% {
+      clip-path: inset(0 100% 0 0);
+      animation-timing-function: steps(9, jump-start);
+    }
+    15%,
+    89% {
+      clip-path: inset(0 0 0 0);
+    }
+    90%,
+    100% {
+      clip-path: inset(0 100% 0 0);
+    }
+  }
+
+  /* When the caret exists at all. Separate from the step below because they are
+     two halves of one behaviour that happen to write different properties. */
+  @keyframes demo-caret {
+    0%,
+    3.9% {
+      opacity: 0;
+    }
+    4%,
+    18% {
+      opacity: 1;
+    }
+    19%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /*
+    The caret, keeping up with the letters.
+
+    `clip-path` hides the text without narrowing it — the span still occupies
+    all nine characters — so a caret placed after it in flow sits at the end of
+    an address that has not been typed yet, with a gap where the hidden letters
+    are. It therefore steps left to right itself, in `ch`, over the same interval
+    and on the same `steps(9, jump-start)` as the reveal. `ch` is exact rather
+    than approximate only because the value is set in the mono face; in the
+    proportional one the ninth character would be nowhere near nine ch.
+  */
+  @keyframes demo-caret-step {
+    0%,
+    4% {
+      transform: translateX(-9ch);
+      animation-timing-function: steps(9, jump-start);
+    }
+    15%,
+    89% {
+      transform: translateX(0ch);
+    }
+    90%,
+    100% {
+      transform: translateX(-9ch);
+    }
+  }
+
+  @keyframes demo-blink {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes demo-placeholder {
+    0%,
+    3.9% {
+      opacity: 1;
+    }
+    5%,
+    89% {
+      opacity: 0;
+    }
+    91%,
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* The field lighting up under the press. Without it the address types itself
+     into a box that never acknowledged being clicked. */
+  @keyframes demo-address-ring {
+    0%,
+    3.9% {
+      box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+    }
+    4%,
+    89% {
+      box-shadow:
+        inset 0 0 0 1px var(--accent),
+        0 0 0 3px color-mix(in oklab, var(--accent) 28%, transparent);
+    }
+    91%,
+    100% {
+      box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+    }
+  }
+
+  /* The frame drawn out under the drag, which starts on the press at 29% and
+     runs to 37% — the same interval the pointer crosses from the frame's
+     top-left corner to its bottom-right, and overlapping the push rather than
+     waiting for it. It used to begin at 36%, a second and a bit after the
+     button went down, which read as the click having done nothing.
+     `transform-origin` is the corner the pointer pressed at, so it opens from
+     there rather than growing out of its own middle. */
+  @keyframes demo-draw {
+    0%,
+    12% {
+      opacity: 1;
+      transform: scale(1, 1);
+    }
+    13%,
+    28% {
+      opacity: 0;
+      transform: scale(0.02, 0.02);
+    }
+    29% {
+      opacity: 1;
+      transform: scale(0.02, 0.02);
+    }
+    37%,
+    100% {
+      opacity: 1;
+      transform: scale(1, 1);
+    }
+  }
+
+  @keyframes demo-select {
+    0%,
+    12% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    13%,
+    53.9% {
+      opacity: 0;
+      transform: scale(1.04);
+    }
+    54% {
+      opacity: 1;
+      transform: scale(1.04);
+    }
+    57%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The layer row that lights up with the selection on the canvas. A design tool
+     highlights both, and a selection that showed on the artboard while the tree
+     ignored it reads as broken without anybody being able to say why. */
+  @keyframes demo-selected-row {
+    0%,
+    12% {
+      background-color: color-mix(in oklab, var(--accent) 55%, transparent);
+      color: var(--fg);
+    }
+    13%,
+    53.9% {
+      background-color: transparent;
+      color: color-mix(in oklab, var(--fg) 45%, transparent);
+    }
+    54%,
+    100% {
+      background-color: color-mix(in oklab, var(--accent) 55%, transparent);
+      color: var(--fg);
+    }
+  }
+
+  @keyframes demo-tool-picked {
+    0%,
+    12% {
+      background-color: var(--accent);
+      color: #fff;
+    }
+    13%,
+    78.9% {
+      background-color: transparent;
+      color: color-mix(in oklab, var(--fg) 45%, transparent);
+    }
+    79%,
+    100% {
+      background-color: var(--accent);
+      color: #fff;
+    }
+  }
+
+  /* The playhead. The element that moves is a full-width rail with the head
+     pinned to its left edge, so `translateX(100%)` is exactly one track width
+     and the head finishes on the last frame rather than wherever a guessed
+     pixel offset happened to put it. */
+  @keyframes demo-playhead {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* One keyframe for all four slices, each started a slice later with
+     `animation-delay`. `backwards` is what makes the delay readable: without it
+     slice four would sit lit for the first twelve seconds of the page's life
+     and then start behaving. */
+  @keyframes demo-slice {
+    0% {
+      background-color: color-mix(in oklab, var(--accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--accent) 32%, transparent);
+      color: var(--muted);
+    }
+    1%,
+    24% {
+      background-color: color-mix(in oklab, var(--accent) 62%, transparent);
+      border-color: color-mix(in oklab, var(--accent) 92%, transparent);
+      color: var(--fg);
+    }
+    25%,
+    100% {
+      background-color: color-mix(in oklab, var(--accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--accent) 32%, transparent);
+      color: var(--muted);
+    }
+  }
+
+  /*
+    The screen picture, moving between six layouts.
+
+    `inset` and not `transform`, which is the opposite of the choice the zoom
+    demo makes, and for a reason that only applies here: a layout change
+    changes the *shape* of the box, and a transform can only scale it. A 16:9
+    window scaled into a split's 8:9 half is a squashed window; the same window
+    given a narrower box reflows the furniture inside it, which is what a real
+    layout switch does to a real recording.
+
+    Every offset is a percentage of its own axis, so the same absolute distance
+    is written 6% down the frame and 3.4% across it — a 16:9 frame is 16 units
+    by 9, and 6/9 = 3.375/16. Change the frame's aspect and every figure here
+    has to be worked out again.
+  */
+  @keyframes layouts-screen {
+    /* Full frame, camera over. */
+    0%,
+    12.9% {
+      inset: 0 0 0 0;
+      border-radius: 0;
+      opacity: 1;
+    }
+    /* Padded screen, camera over: one padding, expressed on both axes. */
+    16.7%,
+    29.6% {
+      inset: 6% 3.4% 6% 3.4%;
+      border-radius: 1.1cqw;
+    }
+    /* Side by side. The screen keeps 16:9 and the camera takes the square that
+       is left after one gap, which is why the two are 57.5% and 32.3% wide and
+       not half the frame each. */
+    33.3%,
+    46.3% {
+      inset: 21.2% 39.1% 21.2% 3.4%;
+      border-radius: 1.1cqw;
+    }
+    /* Screen above the camera. */
+    50%,
+    62.9% {
+      inset: 6% 22.9% 39.8% 22.9%;
+      border-radius: 1.1cqw;
+    }
+    /* Split down the middle. Edge to edge and square-cornered, because a gap
+       between two halves of one frame reads as two windows. */
+    66.7%,
+    79.6% {
+      inset: 0 50% 0 0;
+      border-radius: 0;
+      opacity: 1;
+    }
+    /* Camera only. The screen fades where it stands rather than sliding off:
+       it has to be back at full frame for the loop, and a picture that leaves
+       and returns by a different route reads as two different pictures. */
+    83.3%,
+    96.3% {
+      inset: 0 0 0 0;
+      border-radius: 0;
+      opacity: 0;
+    }
+    100% {
+      inset: 0 0 0 0;
+      border-radius: 0;
+      opacity: 1;
+    }
+  }
+
+  /*
+    The camera, on the same clock.
+
+    `border-radius: 50%` for the two layouts where it is a bubble over the
+    screen and a shared corner radius for the ones where it is a card beside it
+    — the app's own rule, and the reason it is animated rather than switched:
+    the bubble rounding out into a card is what says the two are the same
+    picture in a different layout.
+  */
+  @keyframes layouts-camera {
+    /* Bottom right of a full-frame screen. 34% of the height and 19.1% of the
+       width are the same distance, so the bubble stays square — which is what
+       `corner-shape: squircle` needs to draw the shape the app defaults to
+       rather than a stretched one. */
+    0%,
+    12.9% {
+      inset: 60% 3.4% 6% 77.5%;
+      border-radius: 50%;
+    }
+    /* Inside the padded screen's own edge, not the frame's. */
+    16.7%,
+    29.6% {
+      inset: 58% 5.5% 10% 76.5%;
+      border-radius: 50%;
+    }
+    /* Beside the screen, matched to its height. */
+    33.3%,
+    46.3% {
+      inset: 21.2% 3.4% 21.2% 64.3%;
+      border-radius: 1.1cqw;
+    }
+    /* Below it, centred. */
+    50%,
+    62.9% {
+      inset: 66.2% 42.2% 6% 42.2%;
+      border-radius: 1.1cqw;
+    }
+    /* The right half of the split. */
+    66.7%,
+    79.6% {
+      inset: 0 0 0 50%;
+      border-radius: 0;
+    }
+    /* The whole frame. */
+    83.3%,
+    96.3% {
+      inset: 0 0 0 0;
+      border-radius: 0;
+    }
+    100% {
+      inset: 60% 3.4% 6% 77.5%;
+      border-radius: 50%;
+    }
+  }
+
+  /* One keyframe for all six slices, each started a step later with
+     `animation-delay`. The same shape as `demo-slice` and deliberately the same
+     colours — the two tracks are one control drawn twice — but it cannot be the
+     same keyframe, because the lit window is a share of the period and six
+     slices hold theirs for 16.7% where four hold it for 25%.
+
+     `backwards` for the reason `demo-slice` needs it: without it the last slice
+     would sit lit for the first twenty seconds of the page's life and only then
+     start behaving. */
+  @keyframes layouts-slice {
+    0% {
+      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      color: var(--muted);
+    }
+    1%,
+    15.6% {
+      background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
+      color: var(--fg);
+    }
+    16.7%,
+    100% {
+      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      color: var(--muted);
+    }
+  }
 }
 
 /*
@@ -387,6 +1179,63 @@ body:has([data-hero-backdrop]) [data-wash] {
   [data-hero-enter] {
     animation: none;
   }
+}
+
+/*
+  The zoom demo, stopped. Every part of it is decoration and none of it is the
+  only way to reach anything, so the answer is the same as the wash's: stop,
+  rather than slow down.
+
+  The second rule is what makes the still coherent. `animation: none` on its own
+  leaves the picture unzoomed, the playhead at the left and no slice lit — a
+  timeline that has plainly not started. Lighting the first slice by hand reads
+  as one paused at its first cut, which is what it is.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-zoom-demo] *,
+  [data-zoom-demo] *::after {
+    animation: none;
+  }
+
+  [data-zoom-demo] [data-demo-slice="0"] {
+    background-color: color-mix(in oklab, var(--accent) 62%, transparent);
+    border-color: color-mix(in oklab, var(--accent) 92%, transparent);
+    color: var(--fg);
+  }
+}
+
+/*
+  The layouts demo, stopped. Both boxes already carry the first
+  layout's geometry as their own style — the animation only overrides it
+  while it runs — so `animation: none` leaves a finished picture here rather
+  than the collapsed boxes an offsetless absolute element would be. Only the
+  first slice on the track has to be lit by hand.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-layout-demo] * {
+    animation: none;
+  }
+
+  [data-layout-demo] [data-demo-slice="0"] {
+    background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
+    border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
+    color: var(--fg);
+  }
+}
+
+/*
+  The layouts track is purple where the zoom track is blue.
+
+  One custom property rather than a second set of keyframes and a second ruler:
+  `DemoTimeline` draws both, so the colour is the only thing that differs and it
+  is inherited rather than passed. `--iris` is the icon's clip stroke, and that
+  is the point — the zoom demo's slices are the blue of the playhead, and these
+  are the purple of the clips the playhead runs over. Nothing sets
+  `--track-accent` above this, so the zoom track keeps the `var(--accent)`
+  fallback written at each use site.
+*/
+[data-layout-demo] {
+  --track-accent: var(--iris);
 }
 
 @utility brand-gradient {

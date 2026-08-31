@@ -11,7 +11,10 @@ import type {
   ExportProgress as NativeExportProgress,
   RecordingResult,
   RecordingState,
+  SpeechAvailability,
   TrackProbe,
+  TranscribeOptions,
+  TranscribeUpdate,
 } from "@prequel/recorder";
 
 import type { PermissionStatus, Target, TargetKind } from "../shared/contract.js";
@@ -22,8 +25,11 @@ export type {
   PermissionStatus,
   RecordingResult,
   RecordingState,
+  SpeechAvailability,
   Target,
   TrackProbe,
+  TranscribeOptions,
+  TranscribeUpdate,
 };
 
 /**
@@ -146,6 +152,28 @@ export interface Recorder {
   cancelExport(): void;
 
   /**
+   * What macOS can transcribe here, without asking anyone for permission.
+   *
+   * Cheap and prompt-free on purpose: the editor calls it to decide whether to
+   * offer captions at all, and a TCC dialog nobody asked for is worse than a
+   * button that says it cannot.
+   */
+  speechAvailability(locale: string): SpeechAvailability;
+
+  /**
+   * Starts an on-device transcription. Same shape as `startExport`, and for the
+   * same reasons — a long job on its own thread, with completion arriving as a
+   * terminal update rather than a resolved promise.
+   */
+  startTranscribe(
+    options: TranscribeOptions,
+    onProgress: (error: Error | null, update: TranscribeUpdate) => void,
+  ): void;
+
+  /** Asks the running transcription to stop. Safe when nothing is running. */
+  cancelTranscribe(): void;
+
+  /**
    * Points the native side's diagnostics at the app's log file.
    *
    * Every Rust crate here logs through `tracing`, which discards everything
@@ -170,6 +198,7 @@ export const RecorderErrorCode = {
   CameraNotFound: "CAMERA_NOT_FOUND",
   CameraUnavailable: "CAMERA_UNAVAILABLE",
   RecorderPoisoned: "RECORDER_POISONED",
+  AlreadyTranscribing: "ALREADY_TRANSCRIBING",
 } as const;
 
 export type RecorderErrorCode = (typeof RecorderErrorCode)[keyof typeof RecorderErrorCode];

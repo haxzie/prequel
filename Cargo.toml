@@ -15,6 +15,7 @@ prequel-capture = { path = "crates/prequel-capture" }
 prequel-session = { path = "crates/prequel-session" }
 prequel-encode = { path = "crates/prequel-encode" }
 prequel-render = { path = "crates/prequel-render" }
+prequel-speech = { path = "crates/prequel-speech" }
 
 # Apple framework bindings. cidre covers ScreenCaptureKit, AVFoundation,
 # VideoToolbox and CoreMedia with one shared type system, so CMSampleBuffers

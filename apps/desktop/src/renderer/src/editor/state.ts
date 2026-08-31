@@ -12,6 +12,7 @@
  * and hard on the disk.
  */
 import {
+  clearOverride,
   clearSection,
   DEFAULT_ZOOM,
   DEFAULT_ZOOM_LENGTH,
@@ -96,8 +97,29 @@ export type EditorAction =
       section: SettingsSection;
       key: string;
       value: unknown;
+      /**
+       * Write to the project defaults even with a clip selected.
+       *
+       * For settings that are a property of the video rather than of a clip.
+       * Captions are the case: the cues are laid out and rasterised once for
+       * the whole recording, so a per-clip look would be a control that
+       * silently did nothing to the bitmaps the plan names.
+       */
+      scope?: "project";
     }
-  | { type: "resetSection"; section: SettingsSection }
+  | {
+      type: "resetSection";
+      section: SettingsSection;
+      /**
+       * Only these keys, for a section shown across more than one panel.
+       *
+       * `background` holds both the paint and the frame around the picture, and
+       * they sit under separate headers with a Reset each. Without this, the
+       * Frame header's Reset would put back the background image too, which
+       * reads as the button having done something else entirely.
+       */
+      keys?: string[];
+    }
   | { type: "addZoom"; at: MediaTime }
   | { type: "setZooms"; zooms: ZoomSlice[] }
   | { type: "selectZoom"; zoomId: string | null }
@@ -285,7 +307,14 @@ function apply(
       return writeSetting(state, action);
 
     case "resetSection":
-      return editSelected(state, (overrides) => clearSection(overrides, action.section));
+      return editSelected(state, (overrides) =>
+        action.keys
+          ? action.keys.reduce(
+              (next, key) => clearOverride(next, action.section, key as never),
+              overrides,
+            )
+          : clearSection(overrides, action.section),
+      );
 
     case "addZoom":
       return addZoom(state, action.at);
@@ -587,12 +616,15 @@ function withSlices(project: Project, slices: Slice[]): Project {
  * With a slice selected the value becomes an override on that slice — always,
  * even when it equals the default. With nothing selected it edits the project
  * defaults, and every slice that has not overridden the key follows.
+ *
+ * `scope: "project"` opts out of that entirely, for settings that belong to the
+ * video rather than to a clip.
  */
 function writeSetting(
   state: EditorState,
   action: Extract<EditorAction, { type: "setSetting" }>,
 ): EditorState {
-  if (!state.selectedSliceId) {
+  if (!state.selectedSliceId || action.scope === "project") {
     return edit(state, (project) => ({
       ...project,
       defaults: {

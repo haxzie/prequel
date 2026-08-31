@@ -333,6 +333,28 @@ export function createFakeRecorder(): Recorder {
 
     cancelExport: () => undefined,
 
+    // No engine behind the fake, so captions are reported as unavailable
+    // rather than as present-but-broken — which is what the editor already
+    // knows how to say.
+    speechAvailability: (locale) => ({ analyzer: false, recogniser: false, locale }),
+
+    // Failed rather than silently done, for the same reason the export is: an
+    // editor left waiting on a transcript that will never arrive is a spinner
+    // that never stops.
+    startTranscribe: (_options, onProgress) => {
+      setTimeout(
+        () =>
+          onProgress(null, {
+            stage: "failed",
+            code: "NO_LOCAL_MODEL",
+            message: "the fake recorder cannot transcribe",
+          }),
+        0,
+      );
+    },
+
+    cancelTranscribe: () => undefined,
+
     // Nothing native to route; the fake's own warnings go through console.
     setLogFile: () => undefined,
 

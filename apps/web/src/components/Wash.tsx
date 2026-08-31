@@ -7,6 +7,10 @@
  * Overlapping blurs keep each hue at full saturation and let them mix only where
  * they meet, which is what reads as light rather than as a fill.
  *
+ * The hues are the `-deep` tokens, shared with `HeroBackdrop` and the shader's
+ * mesh — see the note beside them in `globals.css` for why a field wants the
+ * composited value and not the neat one.
+ *
  * `absolute`, not `fixed`: this belongs to the top of the *document* and should
  * scroll away with the hero. Body establishes no containing block, so `top-0`
  * resolves against the initial containing block — the document origin — and the
@@ -39,13 +43,20 @@ export function Wash() {
       {/* Pulled above the top edge so only the lower, widest part of each circle
           is on the page — a circle wholly inside reads as a dot.
 
+          The `-deep` tokens rather than the plain ones, so the pages without a
+          hero are lit by the same three colours as the pages with one. Neat
+          `--iris` here was a bright lilac wash across the top of `/pricing`
+          while `/` had a dark field, and the two read as different sites.
+
           The opacities look high for something meant to be subtle and are not:
           the blur spreads each circle over a hundred pixels in every direction
           and most of its area is off screen, so what actually lands on the page is
-          a fraction of the figure. */}
-      <div className="animate-drift-a absolute -top-48 -left-24 size-[540px] rounded-full bg-brand-from opacity-[0.15] blur-[110px] will-change-transform" />
-      <div className="animate-drift-b absolute -top-56 left-1/3 size-[600px] rounded-full bg-brand-to opacity-[0.15] blur-[110px] will-change-transform" />
-      <div className="animate-drift-c absolute -top-48 -right-24 size-[540px] rounded-full bg-iris opacity-[0.12] blur-[110px] will-change-transform" />
+          a fraction of the figure. They are up from the 0.15 the neat tokens
+          needed, because the composite carries about half the luminance — the
+          same amount of light, from a colour that is no longer a panel. */}
+      <div className="animate-drift-a absolute -top-48 -left-24 size-[540px] rounded-full bg-brand-from-deep opacity-[0.3] blur-[110px] will-change-transform" />
+      <div className="animate-drift-b absolute -top-56 left-1/3 size-[600px] rounded-full bg-brand-to-deep opacity-[0.3] blur-[110px] will-change-transform" />
+      <div className="animate-drift-c absolute -top-48 -right-24 size-[540px] rounded-full bg-iris-deep opacity-[0.26] blur-[110px] will-change-transform" />
     </div>
   );
 }

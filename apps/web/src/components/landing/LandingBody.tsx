@@ -1,13 +1,12 @@
 import {
   ChevronDown,
-  // Aliased: `Image` is already taken by next/image in this file.
+  // Aliased because a bare `Image` in a Next file reads as `next/image`.
   Image as ImageIcon,
   MousePointer2,
   SlidersHorizontal,
   Webcam,
   ZoomIn,
 } from "lucide-react";
-import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { ButtonLink } from "@/components/Button";
@@ -20,14 +19,13 @@ import {
   TimelineIllustration,
   ZoomIllustration,
 } from "@/components/editor-illustrations";
+import { LayoutDemo } from "@/components/landing/LayoutDemo";
+import { ZoomDemo } from "@/components/landing/ZoomDemo";
 import { Container, Eyebrow, SectionHeading } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import type { FaqEntry } from "@/lib/faq";
 import { faqPageJsonLd } from "@/lib/seo";
 import { TRIAL_DAYS } from "@/lib/pricing";
-
-import editor from "../../../public/editor-shot.png";
-import stage from "../../../public/stage.jpg";
 
 /** What is already done by the time the editor opens on a take. */
 const ALREADY_DONE = [
@@ -112,41 +110,18 @@ const PRESETS = [
 export function LandingBody({ faq }: { faq: FaqEntry[] }) {
   return (
     <>
-      <section>
-        {/* The stage is a panel between the rails rather than a full-bleed
-            band: the gradient stops where the page's borders do, and the
-            screenshot sits inside it with the gradient reading as a frame.
+      {/* The first thing under the hero, and the only place on the page where
+          the product is shown doing something rather than described. It
+          replaced a composed screenshot of the editor: the still could show the
+          zoom slices sitting on a timeline but not the push in, which is the
+          part worth seeing. */}
+      <ZoomDemo />
 
-            `isolate` keeps the backdrop's negative z-index inside this panel.
-            Without a stacking context of its own it escapes to the root and
-            paints behind the page background, which reads as the image simply
-            not loading. */}
-        <div className="relative isolate mx-auto w-full max-w-6xl overflow-hidden px-6 py-20 sm:px-14 sm:py-28">
-          <Image
-            src={stage}
-            alt=""
-            fill
-            sizes="(min-width: 1152px) 1152px, 100vw"
-            className="-z-10 object-cover"
-          />
-          {/* No border, rounding or shadow of ours. This is a composed shot on
-              a transparent canvas — the window, the camera bubble hanging off
-              its corner and the recording bar below it — and every one of those
-              already carries its own corners and shadow. A `border` would draw
-              a rectangle around the empty space they float in, and `box-shadow`
-              follows the element box rather than the artwork, so it would cast
-              a hard rectangle behind a composition that has none. */}
-          <Image
-            src={editor}
-            alt="The Prequel editor: a recording on a background with the clip inspector open, the camera bubble beside it, and the recording bar below."
-            // Eager rather than lazy — it is the first thing below the hero and
-            // would otherwise pop in. `priority` is deprecated in Next 16.
-            loading="eager"
-            quality={90}
-            className="w-full"
-          />
-        </div>
-      </section>
+      {/* Directly under it, because the two make one argument between them: the
+          zoom demo shows the camera moving *within* the picture, and this one
+          shows the picture itself being re-arranged. Split apart by a section of
+          prose they read as two unrelated animations. */}
+      <LayoutDemo />
 
       <section className="py-24">
         <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">

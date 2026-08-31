@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch } from "react";
 
+import { captionStyle } from "../../../shared/captions";
 import { cursorStyle } from "../../../shared/contract";
 import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
@@ -8,14 +9,18 @@ import {
   overriddenKeys,
   WALLPAPER_FILE_NAME,
   type Background,
+  type BackgroundSettings,
   type LayoutPreset,
   type LayoutSettings,
   type SettingsSection,
+  type CaptionPlace,
+  type CaptionSettings,
   type SliceSettings,
   type ZoomSlice,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { CameraMap } from "./controls/CameraMap";
+import { CaptionStylePicker } from "./controls/CaptionStylePicker";
 import { CursorPicker } from "./controls/CursorPicker";
 import { LayoutPicker } from "./controls/LayoutPicker";
 import { Field, Section } from "./controls/Field";
@@ -24,12 +29,15 @@ import { PerspectivePad } from "./controls/PerspectivePad";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
 import {
   AudioIcon,
+  BackdropIcon,
   CameraIcon,
+  CaptionsIcon,
   CircleIcon,
   CursorIcon,
   CloseIcon,
   FillIcon,
   FocusIcon,
+  FrameIcon,
   GradientIcon,
   ImageIcon,
   LayoutIcon,
@@ -53,6 +61,8 @@ export interface InspectorProps {
   present: Set<TrackKind>;
   /** Whether the pointer is a layer here, or already part of the picture. */
   hasCursor: boolean;
+  /** How the transcript is doing, so the captions panel can offer to make one. */
+  captions: CaptionsState;
   /** Output size, so the camera map can take the frame's own proportions. */
   frame: Size;
   /** The camera track's own dimensions, or null when there is no camera. */
@@ -90,6 +100,26 @@ export interface InspectorProps {
 }
 
 /**
+ * What the captions panel needs to know about the transcript, and how to start
+ * one.
+ *
+ * Passed in rather than read here for the reason `hasCursor` is: the transcript
+ * belongs to the session, and the session is deliberately not in `EditorState`.
+ */
+export interface CaptionsState {
+  /** True once there is a usable transcript on disk. */
+  ready: boolean;
+  /** Non-null while one is being made. 0-1, or null when the stage has no measure. */
+  progress: number | null;
+  /** What is happening, for the button's label. */
+  stage: "idle" | "preparing" | "transcribing" | "failed";
+  /** Why the last attempt failed, if it did. */
+  error: string | null;
+  onTranscribe: () => void;
+  onCancel: () => void;
+}
+
+/**
  * The controls for whatever is selected.
  *
  * With a clip selected, every change becomes an override on that clip. With
@@ -108,6 +138,13 @@ export function Inspector(props: InspectorProps) {
   const set = (section: SettingsSection, key: string, value: unknown) =>
     dispatch({ type: "setSetting", section, key, value });
 
+  // Captions are a property of the video, not of a clip. The cues are laid out
+  // and rasterised once for the whole recording, so a per-clip look would be a
+  // control that changed nothing about the bitmaps the plan names — and a dead
+  // control is worse than one that is honestly project-wide.
+  const setProject = (section: SettingsSection, key: string, value: unknown) =>
+    dispatch({ type: "setSetting", section, key, value, scope: "project" });
+
   // Only a selected clip can override anything; with nothing selected the
   // inspector *is* the defaults, and marking a field would be claiming
   // otherwise. There is no per-field reset — the section header has one.
@@ -115,10 +152,15 @@ export function Inspector(props: InspectorProps) {
     overridden: scoped && overriddenKeys(slice?.overrides, section).has(key),
   });
 
-  const sectionReset = (section: SettingsSection) =>
-    scoped && Object.keys(slice?.overrides[section] ?? {}).length > 0
-      ? () => dispatch({ type: "resetSection", section })
-      : undefined;
+  // `keys` narrows both halves of the button to part of a section: whether it
+  // is offered at all, and what it puts back. Background and Frame are two
+  // panels over the one `background` section, and either header resetting the
+  // whole of it would undo edits the person cannot see from where they are.
+  const sectionReset = (section: SettingsSection, keys?: string[]) => {
+    const overridden = Object.keys(slice?.overrides[section] ?? {});
+    const touched = keys ? overridden.some((key) => keys.includes(key)) : overridden.length > 0;
+    return scoped && touched ? () => dispatch({ type: "resetSection", section, keys }) : undefined;
+  };
 
   // A selected zoom takes over the panel: it is not a clip, and none of the
   // clip's questions — what does it override, what does it inherit — apply.
@@ -176,6 +218,8 @@ export function Inspector(props: InspectorProps) {
 
   const categories: Category[] = [
     { id: "layout", label: "Layout", Icon: LayoutIcon },
+    { id: "background", label: "Background", Icon: BackdropIcon },
+    { id: "frame", label: "Frame", Icon: FrameIcon },
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
@@ -183,6 +227,12 @@ export function Inspector(props: InspectorProps) {
       ? [{ id: "audio" as const, label: "Audio", Icon: AudioIcon }]
       : []),
     ...(props.hasCursor ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }] : []),
+    // Only where there is a voice to caption. A recording with no microphone
+    // has nothing to transcribe, and offering the panel anyway would be a
+    // section whose every control is dead.
+    ...(props.present.has("microphone")
+      ? [{ id: "captions" as const, label: "Captions", Icon: CaptionsIcon }]
+      : []),
   ];
 
   // A category can disappear — open a recording with no camera while Camera is
@@ -232,28 +282,38 @@ export function Inspector(props: InspectorProps) {
           />
 
           {active === "layout" && (
-            <>
-              <LayoutPanel
-                settings={settings}
-                frame={props.frame}
-                cameraSource={props.cameraSource}
-                cameraPresent={props.present.has("camera")}
-                fileUrl={props.fileUrl}
-                field={field}
-                reset={sectionReset("layout")}
-                set={set}
-              />
-              <BackgroundPanel
-                settings={settings}
-                field={field}
-                reset={sectionReset("background")}
-                set={set}
-                onPickWallpaper={props.onPickWallpaper}
-                onPickImage={props.onPickImage}
-                onPickPreset={props.onPickPreset}
-                wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
-              />
-            </>
+            <LayoutPanel
+              settings={settings}
+              frame={props.frame}
+              cameraSource={props.cameraSource}
+              cameraPresent={props.present.has("camera")}
+              fileUrl={props.fileUrl}
+              field={field}
+              reset={sectionReset("layout")}
+              set={set}
+            />
+          )}
+
+          {active === "background" && (
+            <BackgroundPanel
+              settings={settings}
+              field={field}
+              reset={sectionReset("background", PAINT_KEYS)}
+              set={set}
+              onPickWallpaper={props.onPickWallpaper}
+              onPickImage={props.onPickImage}
+              onPickPreset={props.onPickPreset}
+              wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
+            />
+          )}
+
+          {active === "frame" && (
+            <FramePanel
+              settings={settings}
+              field={field}
+              reset={sectionReset("background", FRAME_KEYS)}
+              set={set}
+            />
           )}
 
           {active === "camera" && (
@@ -284,6 +344,14 @@ export function Inspector(props: InspectorProps) {
               reset={sectionReset("layout")}
               set={set}
               cursorUrl={props.fileUrl}
+            />
+          )}
+
+          {active === "captions" && (
+            <CaptionsPanel
+              settings={state.project.defaults}
+              captions={props.captions}
+              set={setProject}
             />
           )}
         </div>
@@ -340,8 +408,8 @@ const PANEL =
 /** What the pair occupies when open: rail, gap, panel, and the margin beside. */
 export const PANEL_WIDTH = "24rem";
 
-/** The inspector's four destinations. */
-type CategoryId = "layout" | "camera" | "audio" | "cursor";
+/** The inspector's destinations. */
+type CategoryId = "layout" | "background" | "frame" | "camera" | "audio" | "cursor" | "captions";
 
 /**
  * A selected zoom's destinations.
@@ -523,14 +591,14 @@ function CameraPanel({
   // with them, so turning the camera off and on again moves everything below —
   // and hides what turning it back on is going to do.
   const off = !layout.cameraVisible;
-  // Wherever the camera is a card beside the screen it takes the same corner
-  // radius the screen does, or the two halves of a split frame read as two
-  // unrelated pictures. Shape reverts to being the bubble's business, and so do
-  // the proportions that go with it — a shape control that visibly does nothing
-  // is worse than one that is plainly unavailable.
+  // Where the camera is a card beside the screen, the arrangement decides how
+  // big it is and where it sits — so those controls are unavailable rather than
+  // visibly doing nothing. Shape is not among them: the camera is round because
+  // it is a camera, in every arrangement, and nothing in the Frame panel
+  // reaches it.
   //
-  // `custom` is either, depending on what it was dragged out of, which is
-  // exactly what `cameraCard` records.
+  // `custom` is either a card or a bubble, depending on what it was dragged out
+  // of, which is exactly what `cameraCard` records.
   const slotted = SLOTTED.has(layout.preset) || (layout.preset === "custom" && layout.cameraCard);
   // Not `!slotted`, which is a different question: `camera-*` is neither a card
   // beside the screen nor a bubble over it — it *is* the picture, and a picture
@@ -558,7 +626,7 @@ function CameraPanel({
       <Field label="Shape" {...field("layout", "cameraShape")}>
         <Segmented
           value={layout.cameraShape}
-          disabled={off || slotted}
+          disabled={off}
           iconsOnly
           options={[
             { value: "circle", label: "Circle", icon: <CircleIcon /> },
@@ -716,6 +784,29 @@ function CursorPanel({
         />
       </Field>
 
+      <Field label="Smoothing" {...field("layout", "cursorSmoothing")}>
+        <Slider
+          value={layout.cursorSmoothing}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={off}
+          // A share of the smoothing rather than the lag in milliseconds it
+          // buys: what anyone is judging is the path on screen, and nobody
+          // picks a pointer by how far behind their hand it runs.
+          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+          onChange={(value) => set("layout", "cursorSmoothing", value)}
+        />
+      </Field>
+
+      <Field label="Hide while typing" inline {...field("layout", "cursorHideWhileTyping")}>
+        <Toggle
+          value={layout.cursorHideWhileTyping}
+          disabled={off}
+          onChange={(value) => set("layout", "cursorHideWhileTyping", value)}
+        />
+      </Field>
+
       <Field label="Hide when still" inline {...field("layout", "cursorAutoHide")}>
         <Toggle
           value={layout.cursorAutoHide}
@@ -736,6 +827,165 @@ function CursorPanel({
         />
       </Field>
     </Section>
+  );
+}
+
+/**
+ * Captions, drawn from what was said.
+ *
+ * The one panel whose controls need something made before they do anything, so
+ * the transcript's own state sits above them rather than in a dialog: with no
+ * transcript there is nothing to style, and the button that makes one is the
+ * first thing the eye should land on.
+ */
+function CaptionsPanel({
+  settings,
+  captions,
+  set,
+}: {
+  /** The project defaults, which is where every caption setting lives. */
+  settings: SliceSettings;
+  captions: CaptionsState;
+  set: Setter;
+}) {
+  const values: CaptionSettings = settings.captions;
+  // Off when captions are switched off *or* when there is nothing to draw. Both
+  // are the same thing to the controls, and a live style picker over a
+  // recording with no words is a promise the preview will not keep.
+  const off = !values.captionsOn || !captions.ready;
+
+  return (
+    <Section title="Captions">
+      <Transcription captions={captions} />
+
+      <Field label="Show captions" inline>
+        <Toggle
+          value={values.captionsOn}
+          disabled={!captions.ready}
+          title={captions.ready ? undefined : "Generate captions first"}
+          onChange={(value) => set("captions", "captionsOn", value)}
+        />
+      </Field>
+
+      <Field label="Style">
+        <CaptionStylePicker
+          // Resolved rather than passed through, so a project naming a look this
+          // build no longer ships shows the one actually being drawn instead of
+          // no selection at all.
+          value={captionStyle(values.captionStyle).id}
+          accent={values.captionAccent}
+          disabled={off}
+          onChange={(value) => set("captions", "captionStyle", value)}
+        />
+      </Field>
+
+      <Field label="Size">
+        <Slider
+          value={values.captionSize}
+          min={0.025}
+          max={0.11}
+          step={0.001}
+          disabled={off}
+          // Against the default rather than as a fraction, the way the pointer's
+          // size is: 0.05 of the shorter edge means nothing to anyone.
+          format={(value) => `${(value / 0.05).toFixed(1)}×`}
+          onChange={(value) => set("captions", "captionSize", value)}
+        />
+      </Field>
+
+      <Field label="Position">
+        <Segmented<CaptionPlace>
+          value={values.captionPlace}
+          options={[
+            { value: "top", label: "Top" },
+            { value: "middle", label: "Middle" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+          disabled={off}
+          onChange={(value) => set("captions", "captionPlace", value)}
+        />
+      </Field>
+
+      <Field label="Distance from edge">
+        <Slider
+          value={values.captionOffset}
+          min={0}
+          max={0.25}
+          step={0.005}
+          // Middle has no edge to be measured from, so the control says so by
+          // going dead rather than by moving nothing.
+          disabled={off || values.captionPlace === "middle"}
+          format={percent}
+          onChange={(value) => set("captions", "captionOffset", value)}
+        />
+      </Field>
+
+      <Field label="Lines">
+        <Slider
+          value={values.captionLines}
+          min={1}
+          max={3}
+          step={1}
+          disabled={off}
+          format={(value) => (value === 1 ? "1 line" : `${value} lines`)}
+          onChange={(value) => set("captions", "captionLines", value)}
+        />
+      </Field>
+
+      <Field label="Spoken word">
+        <ColorField
+          value={values.captionAccent}
+          onChange={(value) => set("captions", "captionAccent", value)}
+        />
+      </Field>
+    </Section>
+  );
+}
+
+/**
+ * Making the transcript, and saying how it is going.
+ *
+ * Progress is a bar rather than a spinner because transcribing a long take is
+ * minutes of work, and a spinner over minutes is indistinguishable from a hang.
+ */
+function Transcription({ captions }: { captions: CaptionsState }) {
+  const running = captions.stage === "preparing" || captions.stage === "transcribing";
+
+  return (
+    <div className="mb-3 flex flex-col gap-2 rounded-lg border border-editor-line bg-white/5 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-editor-muted">
+          {captions.ready ? "Transcript ready" : "No transcript yet"}
+        </span>
+
+        <button
+          type="button"
+          className={cn(
+            "rounded-md px-2 py-1 text-[11px] font-medium",
+            running ? "bg-white/10 text-editor-fg hover:bg-white/15" : "bg-selected text-white",
+          )}
+          onClick={running ? captions.onCancel : captions.onTranscribe}
+        >
+          {running ? "Cancel" : captions.ready ? "Regenerate" : "Generate captions"}
+        </button>
+      </div>
+
+      {running && (
+        <div className="h-1 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-editor-accent transition-[width] duration-200"
+            // Indeterminate stages get a third of the bar rather than none: the
+            // model is being fetched or the file opened, and an empty bar over
+            // that reads as nothing happening.
+            style={{ width: `${Math.round((captions.progress ?? 0.33) * 100)}%` }}
+          />
+        </div>
+      )}
+
+      {captions.stage === "failed" && captions.error && (
+        <p className="text-[11px] text-red-300">{captions.error}</p>
+      )}
+    </div>
   );
 }
 
@@ -856,7 +1106,42 @@ function BackgroundPanel({
           </div>
         </Field>
       )}
+    </Section>
+  );
+}
 
+/**
+ * The edge around the screen recording: how far it is inset, and what is drawn
+ * on it.
+ *
+ * The screen's, and only the screen's. The camera keeps its own shape in every
+ * arrangement — see the note in `buildRenderPlan` — so nothing here rounds a
+ * face or draws a ring round one.
+ *
+ * Its own panel rather than more fields under Background, though the two write
+ * to the same settings section. What paints behind the picture and what the
+ * picture's own edge looks like are separate decisions — someone rounding the
+ * corners is not choosing a wallpaper — and one column holding both was long
+ * enough that the frame controls were reached by scrolling past colours.
+ *
+ * Every value here is a fraction of the frame's shorter edge, so a look
+ * survives 16:9 becoming 9:16.
+ */
+function FramePanel({
+  settings,
+  field,
+  reset,
+  set,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  reset?: () => void;
+  set: Setter;
+}) {
+  const { background } = settings;
+
+  return (
+    <Section title="Frame" onReset={reset}>
       <Field label="Padding" {...field("background", "padding")}>
         <Slider
           value={background.padding}
@@ -887,13 +1172,31 @@ function BackgroundPanel({
         />
       </Field>
 
+      {/* Only once there is a border to dress. A swatch and an opacity slider
+          attached to a zero-width edge change nothing on screen, which reads as
+          broken. */}
       {background.borderWidth > 0 && (
-        <Field label="Border colour" {...field("background", "borderColor")}>
-          <ColorField
-            value={background.borderColor}
-            onChange={(value) => set("background", "borderColor", value)}
-          />
-        </Field>
+        <>
+          <Field label="Border colour" {...field("background", "borderColor")}>
+            <ColorField
+              value={background.borderColor}
+              onChange={(value) => set("background", "borderColor", value)}
+            />
+          </Field>
+
+          {/* Opacity rather than transparency, because that is the number the
+              slider holds: 100% is the solid edge, and a control that read
+              "0%" for an opaque border would be the wrong way round. */}
+          <Field label="Border opacity" {...field("background", "borderOpacity")}>
+            <Slider
+              value={background.borderOpacity}
+              min={0}
+              max={1}
+              format={percent}
+              onChange={(value) => set("background", "borderOpacity", value)}
+            />
+          </Field>
+        </>
       )}
 
       <Field label="Shadow" {...field("background", "shadowOpacity")}>
@@ -905,9 +1208,57 @@ function BackgroundPanel({
           onChange={(value) => set("background", "shadowOpacity", value)}
         />
       </Field>
+
+      {/* The two that shape the shadow, kept behind it having one to shape:
+          a blur and an offset on an invisible shadow are two sliders that do
+          nothing. `shadowBlur` and `shadowY` had no controls at all while these
+          fields lived under Background, for want of column. */}
+      {background.shadowOpacity > 0 && (
+        <>
+          <Field label="Shadow blur" {...field("background", "shadowBlur")}>
+            <Slider
+              value={background.shadowBlur}
+              min={0}
+              max={0.15}
+              format={percent}
+              onChange={(value) => set("background", "shadowBlur", value)}
+            />
+          </Field>
+
+          <Field label="Shadow offset" {...field("background", "shadowY")}>
+            <Slider
+              value={background.shadowY}
+              min={0}
+              max={0.08}
+              format={percent}
+              onChange={(value) => set("background", "shadowY", value)}
+            />
+          </Field>
+        </>
+      )}
     </Section>
   );
 }
+
+/**
+ * The `background` section, split the way the two panels above split it.
+ *
+ * Named here rather than inline so the two lists are visibly exhaustive: a key
+ * added to `BackgroundSettings` and left out of both would sit in a clip's
+ * overrides with no Reset that clears it.
+ */
+const PAINT_KEYS: (keyof BackgroundSettings)[] = ["background"];
+
+const FRAME_KEYS: (keyof BackgroundSettings)[] = [
+  "padding",
+  "cornerRadius",
+  "borderWidth",
+  "borderColor",
+  "borderOpacity",
+  "shadowOpacity",
+  "shadowBlur",
+  "shadowY",
+];
 
 function AudioPanel({
   settings,

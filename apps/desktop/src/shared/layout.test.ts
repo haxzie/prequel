@@ -58,7 +58,13 @@ function settings(overrides: Partial<SliceSettings> = {}): SliceSettings {
     layout: { ...base.layout, ...overrides.layout },
     background: { ...base.background, ...overrides.background },
     audio: { ...base.audio, ...overrides.audio },
+    captions: { ...base.captions, ...overrides.captions },
   };
+}
+
+/** Settings that draw the pointer exactly where it was sampled. */
+function unsmoothed(): SliceSettings {
+  return settings({ layout: { ...DEFAULT_SETTINGS.layout, cursorSmoothing: 0 } });
 }
 
 function image(plan: RenderPlan, source: "screen" | "camera") {
@@ -447,7 +453,7 @@ describe("decoration", () => {
     expect(plan.items.some((item) => item.kind === "shadow")).toBe(false);
   });
 
-  it("strokes the border over the screen, sharing its shape", () => {
+  it("strokes the border round the outside of the screen", () => {
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: null },
@@ -458,12 +464,48 @@ describe("decoration", () => {
       (item): item is Extract<PlanItem, { kind: "stroke" }> => item.kind === "stroke",
     )!;
     const screen = image(plan, "screen")!;
+    const width = 10.8;
 
-    // Same rect and same corner shape, or the border floats off the edge it is
-    // supposed to be tracing.
-    expect(stroke.rect).toEqual(screen.dstRect);
-    expect(stroke.shape).toEqual(screen.shape);
-    expect(stroke.width).toBeCloseTo(10.8);
+    // A frame around the picture, not over it. Both rasterisers stroke inside
+    // the shape they are given, so the ring lands between the picture's edge
+    // and this — which means this box is the picture grown by the border's
+    // width, corner radius included, or the ring changes width at the corners.
+    expect(stroke.width).toBeCloseTo(width);
+    expect(stroke.rect.x).toBeCloseTo(screen.dstRect.x - width);
+    expect(stroke.rect.y).toBeCloseTo(screen.dstRect.y - width);
+    expect(stroke.rect.width).toBeCloseTo(screen.dstRect.width + width * 2);
+    expect(stroke.rect.height).toBeCloseTo(screen.dstRect.height + width * 2);
+    expect(stroke.shape.radius).toBeCloseTo(screen.shape.radius + width);
+    expect(stroke.shape.exponent).toBe(screen.shape.exponent);
+
+    // And the shadow is cast by the two of them together, or the border reads
+    // as a ring painted on the background rather than as the picture's edge.
+    const shadow = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "shadow" }> => item.kind === "shadow",
+    )!;
+    expect(shadow.shape.radius).toBeCloseTo(stroke.shape.radius);
+  });
+
+  it("takes the border's opacity into its colour", () => {
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        background: {
+          ...DEFAULT_SETTINGS.background,
+          borderWidth: 0.01,
+          borderColor: "#ff0000",
+          borderOpacity: 0.5,
+        },
+      }),
+    );
+
+    const stroke = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "stroke" }> => item.kind === "stroke",
+    )!;
+    // One colour with an alpha in it, because a plan item has no opacity of its
+    // own and both rasterisers read the alpha off the colour.
+    expect(stroke.color).toBe("rgba(255, 0, 0, 0.5)");
   });
 
   it("omits a zero-width border", () => {
@@ -515,7 +557,9 @@ describe("the pointer layer", () => {
   it("maps a fraction of the capture onto the screen's own rectangle", () => {
     // The whole reason the mapping lives here: the manifest records a fraction
     // of what was captured, and only this function knows where that ended up.
-    const plan = planWith();
+    // Unsmoothed, so a point is still the sample it came from — where the
+    // smoothing puts it instead is pinned on its own below.
+    const plan = planWith(unsmoothed());
     const screen = plan.items.find((item) => item.kind === "image")!;
     const item = cursorItem(plan);
 
@@ -805,13 +849,111 @@ describe("hiding a parked pointer", () => {
     const item = buildRenderPlan(
       { width: 1920, height: 1080 },
       { screen: SCREEN, camera: null },
-      settings(),
+      // Unsmoothed, so "left alone" can be read straight off the count: the
+      // smoothing writes the path at the output cadence and a point is then no
+      // longer a sample.
+      unsmoothed(),
       { ...still, hideAfter: null },
     ).items.find((candidate) => candidate.kind === "cursor")!;
     if (item.kind !== "cursor") throw new Error("wrong item");
 
     expect(item.points).toHaveLength(still.samples.length);
     expect(cursorAt(item.points, 20_000_000_000)).not.toBeNull();
+  });
+});
+
+describe("smoothing the pointer's path", () => {
+  const SHAPES = { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } };
+
+  /** The pointer's screen position over time, read the way a rasteriser reads it. */
+  const drawn = (
+    samples: { at: number; x: number; y: number }[],
+    smoothing: number,
+    hideAfter: number | null = null,
+  ) => {
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, cursorSmoothing: smoothing } }),
+      { shapes: SHAPES, size: 0.035, hideAfter, samples },
+    ).items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return item;
+  };
+
+  /** A hand crossing the screen and turning back, sampled at the rate the capture manages. */
+  const ZIGZAG = Array.from({ length: 30 }, (_, step) => ({
+    at: step * 33_000_000,
+    x: 0.3 + (step % 6 < 3 ? step % 6 : 6 - (step % 6)) * 0.06,
+    y: 0.4 + (step % 4 < 2 ? step % 4 : 4 - (step % 4)) * 0.05,
+  }));
+
+  /** The largest change in velocity between two output frames, in pixels. */
+  const worstKink = (item: ReturnType<typeof drawn>) => {
+    const frame = 16_666_666;
+    const at = (step: number) => cursorAt(item.points, step * frame);
+    let worst = 0;
+
+    for (let step = 2; step * frame <= ZIGZAG[ZIGZAG.length - 1]!.at; step += 1) {
+      const [a, b, c] = [at(step - 2), at(step - 1), at(step)];
+      if (!a || !b || !c) continue;
+      worst = Math.max(worst, Math.hypot(c.x - 2 * b.x + a.x, c.y - 2 * b.y + a.y));
+    }
+
+    return worst;
+  };
+
+  it("takes the corners out of a path sampled slower than the frame rate", () => {
+    // The failure the control exists for. Drawn as sampled, every one of those
+    // turns lands inside a single frame and the pointer changes direction in
+    // one step; that step is the stepping people see. Deliberately a harder
+    // path than a hand makes — it turns every hundred milliseconds, which is
+    // most of what the smoothing can reach — so the margin here is the floor
+    // rather than what an ordinary move gets.
+    expect(worstKink(drawn(ZIGZAG, 0.4))).toBeLessThan(worstKink(drawn(ZIGZAG, 0)) / 3);
+  });
+
+  it("draws the samples as they were taken when it is off", () => {
+    const item = drawn(ZIGZAG, 0);
+    expect(item.points.map((point) => point.at)).toEqual(ZIGZAG.map((sample) => sample.at));
+  });
+
+  it("arrives where the pointer actually went", () => {
+    // A smoothed path that settles anywhere else is a pointer that misses what
+    // it was pointing at, which is worse than the stepping it was fixing.
+    const straight = drawn(ZIGZAG, 1);
+    const raw = drawn(ZIGZAG, 0);
+    const last = ZIGZAG[ZIGZAG.length - 1]!.at;
+
+    const settled = cursorAt(straight.points, last + 2_000_000_000)!;
+    const stopped = cursorAt(raw.points, last)!;
+
+    // Inside a pixel of it, at the strength that lags furthest.
+    expect(Math.hypot(settled.x - stopped.x, settled.y - stopped.y)).toBeLessThan(1);
+  });
+
+  it("leaves a parked pointer's gap in the track for the auto-hide to find", () => {
+    // The smoothing writes points at the output cadence, and filling in a gap
+    // this way would quietly switch off "hide when still" — the gap is the only
+    // record that the pointer was parked at all.
+    const parked = [
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 33_000_000, x: 0.3, y: 0.3 },
+      { at: 10_000_000_000, x: 0.301, y: 0.301 },
+    ];
+    const item = drawn(parked, 1, 2);
+
+    expect(cursorAt(item.points, 1_000_000_000)).not.toBeNull();
+    expect(cursorAt(item.points, 5_000_000_000)).toBeNull();
+  });
+
+  it("keeps its points in order at every strength", () => {
+    // `cursorAt` binary-searches them, and one point out of order reads as a
+    // pointer that jumps back for a frame.
+    for (const smoothing of [0, 0.2, 0.5, 1]) {
+      const times = drawn(ZIGZAG, smoothing).points.map((point) => point.at);
+      expect(times, `at ${smoothing}`).toEqual([...times].sort((a, b) => a - b));
+    }
   });
 });
 
@@ -1215,10 +1357,10 @@ describe("the arrangements", () => {
     expect(off.screen!.area.y).toBeGreaterThanOrEqual(-1e-6);
   });
 
-  it("dresses a slotted camera as a card and a floating one as a bubble", () => {
-    // The one thing an arrangement changes about the camera itself. A card
-    // beside another card has to be cut and lifted the same way, or a split
-    // frame reads as two unrelated pictures.
+  it("gives the camera its own shape in every arrangement", () => {
+    // The frame belongs to the screen recording. A card beside the screen used
+    // to take the screen's corner radius, which meant the Frame panel reshaped
+    // the camera — so rounding the screen's corners rounded somebody's face.
     const radius = (preset: LayoutPreset) => {
       const plan = buildRenderPlan(
         LANDSCAPE,
@@ -1231,8 +1373,23 @@ describe("the arrangements", () => {
       };
     };
 
+    // A circle is a circle whether it stands beside the screen or floats over
+    // it: half the shorter edge of the box it is in, never the screen's radius.
     const slotted = radius("split");
-    expect(slotted.camera).toEqual(slotted.screen);
+    const card = image(
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "split", cameraShape: "circle" },
+        }),
+      ),
+      "camera",
+    )!;
+    expect(slotted.camera.radius).toBeCloseTo(
+      Math.min(card.dstRect.width, card.dstRect.height) / 2,
+    );
+    expect(slotted.camera.radius).not.toBeCloseTo(slotted.screen!.radius);
 
     const floating = radius("over-padded");
     const bubble = image(
@@ -1293,7 +1450,9 @@ describe("the arrangements", () => {
     );
   });
 
-  it("gives a slotted camera the border the screen gets, and a bubble none", () => {
+  it("puts the border round the screen only, in every arrangement", () => {
+    // One stroke, always the screen's. A stroke round the camera is a ring
+    // drawn on somebody's face, which is not what a border slider promises.
     const strokes = (preset: LayoutPreset) =>
       buildRenderPlan(
         LANDSCAPE,
@@ -1304,8 +1463,9 @@ describe("the arrangements", () => {
         }),
       ).items.filter((item) => item.kind === "stroke").length;
 
-    expect(strokes("split")).toBe(2);
+    expect(strokes("split")).toBe(1);
     expect(strokes("over-padded")).toBe(1);
+    expect(strokes("camera-padded")).toBe(0);
   });
 });
 
@@ -2056,6 +2216,86 @@ describe("following the cursor", () => {
   });
 });
 
+describe("hiding the pointer while typing", () => {
+  const S = 1_000_000_000;
+  const SHAPES = { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } };
+
+  /** A pointer parked at the same spot from 0 to 10s, sampled as the capture would. */
+  const PARKED = [
+    { at: 0, x: 0.4, y: 0.4 },
+    { at: 10 * S, x: 0.401, y: 0.401 },
+  ];
+
+  /** A pointer crossing the picture over the same ten seconds. */
+  const CROSSING = Array.from({ length: 300 }, (_, step) => ({
+    at: step * 33_000_000,
+    x: 0.1 + step * 0.002,
+    y: 0.4,
+  }));
+
+  const drawnAt = (
+    samples: { at: number; x: number; y: number }[],
+    keys: { start: number; end: number }[],
+    at: number,
+  ) => {
+    const items = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings(),
+      { shapes: SHAPES, size: 0.035, hideAfter: null, samples, keys },
+    ).items.filter((item) => item.kind === "cursor");
+
+    return items.some((item) => item.kind === "cursor" && cursorAt(item.points, at) !== null);
+  };
+
+  const TYPED = [{ start: 2 * S, end: 5 * S }];
+
+  it("takes the pointer off the picture for the length of the typing", () => {
+    expect(drawnAt(PARKED, TYPED, 1 * S)).toBe(true);
+    expect(drawnAt(PARKED, TYPED, 3 * S)).toBe(false);
+    expect(drawnAt(PARKED, TYPED, 8 * S)).toBe(true);
+  });
+
+  it("leaves it alone when the recording has no typing in it", () => {
+    // Every recording made before the capture noted typing, which is not the
+    // same as one where nobody typed — so an empty list may only ever mean
+    // "draw the pointer".
+    for (const at of [1 * S, 3 * S, 8 * S]) expect(drawnAt(PARKED, [], at)).toBe(true);
+  });
+
+  it("keeps a moving pointer on screen through it", () => {
+    // Somebody typing with one hand and moving the mouse with the other. A
+    // pointer that vanishes while it is travelling reads as a dropped frame,
+    // and the one being moved is the one being used.
+    expect(drawnAt(CROSSING, TYPED, 3 * S)).toBe(true);
+  });
+
+  it("writes its edges in without putting the points out of order", () => {
+    // The markers are inserted mid-list, and `cursorAt` binary-searches what
+    // comes out. One edge written behind the point before it reads as a pointer
+    // that jumps back for a frame.
+    const items = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings(),
+      { shapes: SHAPES, size: 0.035, hideAfter: null, samples: CROSSING, keys: TYPED },
+    ).items.filter((item) => item.kind === "cursor");
+
+    for (const item of items) {
+      if (item.kind !== "cursor") continue;
+      const times = item.points.map((point) => point.at);
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    }
+  });
+
+  it("brings it back a moment after the last press, not on the instant", () => {
+    // A pause between words is inside the span already; this is the end of the
+    // sentence, where the pointer flashing back on reads as a flicker.
+    expect(drawnAt(PARKED, TYPED, 5 * S + 200_000_000)).toBe(false);
+    expect(drawnAt(PARKED, TYPED, 5 * S + 600_000_000)).toBe(true);
+  });
+});
+
 describe("following typing", () => {
   const S = 1_000_000_000;
   const FRAME: Size = { width: 1920, height: 1080 };
@@ -2131,6 +2371,27 @@ describe("following typing", () => {
     // A field focused a minute back says nothing about where the interesting
     // part of the picture is now, so the shot goes back to the pointer.
     expect(shotAt("typing", FIELD, 10 * S).x).toBeCloseTo(shotAt("cursor", [], 10 * S).x, 0);
+  });
+
+  it("keeps following the pointer when the field is the whole window", () => {
+    // An editor, a terminal, a note: the focused element is one text area
+    // filling the window, and its middle is the middle of the frame wherever
+    // the caret is. Aiming there parked the shot dead centre for as long as
+    // somebody kept typing, and the pointer went wherever it liked without the
+    // camera — which is the failure this was reported as.
+    const page: Span[] = [{ at: 0, x: 0, y: 0, width: 1, height: 1 }];
+
+    expect(shotAt("typing", page, 3 * S)).toEqual(shotAt("cursor", [], 3 * S));
+  });
+
+  it("still frames a field that only spans one direction", () => {
+    // A search bar across the head of a window says nothing about where along
+    // it to look and everything about how far down, so it is worth keeping.
+    // Deliberately at the opposite end of the frame from the pointer, or the
+    // two aims agree and the test cannot tell which one was used.
+    const bar: Span[] = [{ at: 0, x: 0, y: 0.02, width: 1, height: 0.08 }];
+
+    expect(shotAt("typing", bar, 3 * S).y).not.toBeCloseTo(shotAt("cursor", [], 3 * S).y, 0);
   });
 });
 

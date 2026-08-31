@@ -310,6 +310,26 @@ describe("writing settings", () => {
     expect(overrides.layout).toBeUndefined();
     expect(overrides.audio).toBeDefined();
   });
+
+  it("resets only the named keys of a section", () => {
+    // Background and Frame are two panels over the one `background` section, so
+    // the Frame header's Reset must leave the picture behind the frame alone.
+    const state = run(
+      start(),
+      { type: "setSetting", section: "background", key: "cornerRadius", value: 0.08 },
+      {
+        type: "setSetting",
+        section: "background",
+        key: "background",
+        value: { kind: "solid", color: "#123456" },
+      },
+      { type: "resetSection", section: "background", keys: ["cornerRadius", "padding"] },
+    );
+    const overrides = selectedSlice(state)!.overrides;
+
+    expect(overrides.background?.cornerRadius).toBeUndefined();
+    expect(overrides.background?.background).toEqual({ kind: "solid", color: "#123456" });
+  });
 });
 
 describe("activeSettings", () => {

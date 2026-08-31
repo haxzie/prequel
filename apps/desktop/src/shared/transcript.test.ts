@@ -21,6 +21,13 @@ import {
 
 const RECORDING = "rec-1";
 
+/**
+ * A stored transcript, written by the build that uploaded to OpenAI.
+ *
+ * Deliberately still that provider: transcription happens on the machine now,
+ * but a recording captioned before the change has one of these beside it and
+ * must keep opening. `parseTranscript` gates on the version, never the name.
+ */
 const transcript = (over: Partial<Transcript> = {}): string =>
   JSON.stringify({
     version: TRANSCRIPT_VERSION,

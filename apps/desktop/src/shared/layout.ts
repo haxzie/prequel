@@ -230,6 +230,36 @@ export type PlanItem =
       words: CaptionWord[];
     };
 
+/**
+ * A cue that has already been laid out and rasterised, ready to be placed.
+ *
+ * The plan's input, not its output. Text is measured and drawn exactly once —
+ * in the renderer, to a PNG per cue — because a line laid out twice is the same
+ * class of mistake as a camera positioned twice, and this is what comes back.
+ *
+ * `size` is a fraction of the frame rather than the bitmap's own pixels: the
+ * preview and the export build plans at different resolutions against the same
+ * bitmaps, and a box in bitmap pixels would draw the captions at half size in
+ * one of them. The *position* is deliberately not baked in, so moving the
+ * captions up the frame does not re-rasterise every cue.
+ */
+export interface RenderedCue {
+  at: number;
+  end: number;
+  /** The flat layer's bitmap, relative to the session directory. */
+  path: string;
+  /**
+   * The lit layer's bitmap, laid out identically in the accent colour, or null
+   * for a look that does not light the spoken word.
+   */
+  litPath: string | null;
+  bitmap: Size;
+  /** How much of the frame the bitmap covers, as fractions of each edge. */
+  size: Size;
+  /** Word boxes, in bitmap pixels. Empty for a look with no lit layer. */
+  words: CaptionWord[];
+}
+
 /** One word's box within a caption bitmap, and when it is the spoken one. */
 export interface CaptionWord {
   /** Source time this word becomes the active one. */
@@ -272,6 +302,7 @@ export function buildRenderPlan(
   cursor?: CursorTrack | null,
   zooms?: readonly ZoomSlice[],
   enter?: EnterTransition | null,
+  cues?: readonly RenderedCue[],
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -307,6 +338,23 @@ export function buildRenderPlan(
     );
     const shape: Shape = { radius: background.cornerRadius * unit, exponent: 2 };
 
+    /**
+     * The border, which sits *outside* the picture rather than over it.
+     *
+     * A frame is around a picture, not on top of one: an inset border eats the
+     * outer pixels of the recording — a menu bar, the edge of a window — and
+     * the wider it is the more of the thing being demonstrated it covers. Outset
+     * costs nothing but room in the padding.
+     *
+     * Which is the one thing to know about it: at zero padding the picture
+     * already fills the frame, so there is nowhere outside it to draw and the
+     * border falls off the edge. Full bleed and a frame are two different
+     * pictures, and the padding slider is what chooses between them.
+     */
+    const border = background.borderWidth * unit;
+    const outer = grow(dstRect, border);
+    const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
+
     // Room around the shadow for its blur to fall off in, in output pixels.
     // Both rasterisers take it back off again to find the silhouette.
     const blur = background.shadowBlur * unit;
@@ -330,19 +378,19 @@ export function buildRenderPlan(
     if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
-        rect: {
-          x: dstRect.x - spread,
-          y: dstRect.y - spread,
-          width: dstRect.width + spread * 2,
-          height: dstRect.height + spread * 2,
-        },
-        // The picture's own radius, not the grown rectangle's: what is being
-        // drawn is the silhouette, and the bleed is only somewhere to draw it.
-        shape,
+        // Cast by the picture *and* its border, which are one object standing
+        // off the background. A shadow that stopped at the picture would leave
+        // the border reading as a ring painted on the wallpaper behind it.
+        rect: grow(outer, spread),
+        // The silhouette's own radius, not the grown rectangle's: what is being
+        // drawn is the shape, and the bleed is only somewhere to draw it.
+        shape: outerShape,
         blur,
         dy: background.shadowY * unit,
         color: rgba("#000000", background.shadowOpacity),
-        ...(shadowMotion.length > 0 ? { motion: shadowMotion } : {}),
+        ...(shadowMotion.length > 0
+          ? { motion: shadowMotion.map((key) => grownKey(key, border)) }
+          : {}),
       });
     }
 
@@ -359,17 +407,33 @@ export function buildRenderPlan(
     // After the screen and before the border, so the pointer sits on the
     // picture but not over the frame's own edge.
     if (cursor && layout.cursorVisible) {
-      items.push(...cursorItems(cursor, sources.screen, srcRect, dstRect, unit, motion));
+      items.push(
+        ...cursorItems(
+          cursor,
+          sources.screen,
+          srcRect,
+          dstRect,
+          unit,
+          motion,
+          layout.cursorSmoothing,
+        ),
+      );
     }
 
-    if (background.borderWidth > 0) {
+    if (border > 0) {
       items.push({
         kind: "stroke",
-        rect: dstRect,
-        shape,
-        width: background.borderWidth * unit,
-        color: background.borderColor,
-        ...moving,
+        // The outer silhouette. Both rasterisers draw a stroke *inside* the
+        // shape they are given — the only band a fragment shader can reach,
+        // since it cannot paint outside its own quad — so the ring between the
+        // picture and this is where the border lands.
+        rect: outer,
+        shape: outerShape,
+        width: border,
+        color: rgba(background.borderColor, background.borderOpacity),
+        // The picture's own track, pushed out with it: the border is fixed in
+        // width, so a zoom moves and resizes it without thickening it.
+        ...(motion.length > 0 ? { motion: motion.map((key) => grownKey(key, border)) } : {}),
       });
     }
   }
@@ -434,29 +498,32 @@ export function buildRenderPlan(
       };
     };
 
-    // Two ways to dress the same picture, and which one it gets is the only
-    // thing the arrangement changes about it.
+    // The camera's own shape, in every arrangement.
     //
-    // A camera sharing the frame with the screen is a card standing beside
-    // another card, and it has to be cut and lifted the same way or a split
-    // frame reads as two unrelated pictures pasted together. A camera floating
-    // *over* the screen is a bubble: its own shape, and a shadow measured
-    // against itself rather than against the frame, because every other
-    // distance here is a fraction of the frame's shorter edge and the bubble is
-    // a fraction of that again. A blur sized for the screen is one the bubble
-    // would vanish into, and a drop sized for the screen would put the shadow
-    // out from under it entirely. A small object casts a small tight shadow.
-    const shape: Shape = slot.card
-      ? { radius: background.cornerRadius * unit, exponent: 2 }
-      : {
-          // A circle is the degenerate case of the rounded rect, so there is
-          // one code path rather than a special case that could drift from it.
-          // The radius is measured off the shorter edge, or a wide bubble's
-          // corners would grow with its width and swallow the picture.
-          radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
-          exponent: SHAPE_EXPONENT[layout.cameraShape],
-        };
+    // Not the frame's corner radius, even where the camera is a card beside the
+    // screen. The frame — its radius, its border — is the screen recording's,
+    // and a picture of a person is not a screenshot: a face is round in this
+    // app whatever is next to it, and `cameraShape` is the one control that
+    // says how round. A card that followed the screen's radius also meant the
+    // Frame panel silently reshaped the camera, which is not what anyone
+    // dragging a corner-radius slider is asking for.
+    //
+    // A circle is the degenerate case of the rounded rect, so there is one code
+    // path rather than a special case that could drift from it. The radius is
+    // measured off the shorter edge, or a wide camera's corners would grow with
+    // its width and swallow the picture.
+    const shape: Shape = {
+      radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
+      exponent: SHAPE_EXPONENT[layout.cameraShape],
+    };
 
+    // A shadow measured against the camera itself rather than against the
+    // frame, because every other distance here is a fraction of the frame's
+    // shorter edge and a bubble is a fraction of that again. A blur sized for
+    // the screen is one the bubble would vanish into, and a drop sized for the
+    // screen would put the shadow out from under it entirely. A small object
+    // casts a small tight shadow. A card is large enough to take the frame's
+    // own numbers.
     const against = slot.card ? unit : Math.min(dstRect.width, dstRect.height);
     const blur = background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
@@ -479,9 +546,7 @@ export function buildRenderPlan(
           rect,
           // Measured off the box it is on, not off the resting one: a bubble
           // whose corners stayed put as it shrank would change shape on the way.
-          radius: slot.card
-            ? shape.radius
-            : radiusFor(layout.cameraShape, Math.min(rect.width, rect.height)),
+          radius: radiusFor(layout.cameraShape, Math.min(rect.width, rect.height)),
         };
       },
       spread,
@@ -489,9 +554,7 @@ export function buildRenderPlan(
       enter
         ? {
             from: leaving ? reshaped(leaving.dstRect, dstRect) : nothingAt(dstRect),
-            radius: leaving
-              ? cameraRadius(leaving, reshaped(leaving.dstRect, dstRect), unit, enter.from)
-              : 0,
+            radius: leaving ? cameraRadius(reshaped(leaving.dstRect, dstRect), enter.from) : 0,
             start: enter.source.start,
             duration: moveWindow(enter),
           }
@@ -527,19 +590,10 @@ export function buildRenderPlan(
       ...moving,
     });
 
-    // Only a card takes the border. A stroke around a bubble is a ring, which
-    // is a different design decision from a frame around a picture, and one
-    // nobody asked for by dragging the border slider.
-    if (slot.card && background.borderWidth > 0) {
-      items.push({
-        kind: "stroke",
-        rect: dstRect,
-        shape,
-        width: background.borderWidth * unit,
-        color: background.borderColor,
-        ...moving,
-      });
-    }
+    // No border, in any arrangement. The border belongs to the frame around the
+    // screen recording; a stroke around the camera is a ring drawn round
+    // somebody's face, which is a different decision from framing a picture and
+    // one nobody asked for by dragging the border slider.
   } else if (leaving && enter && sources.camera) {
     // This arrangement has no camera and the one before it did. Without this the
     // bubble is simply gone on the cut, which reads as the camera failing rather
@@ -551,7 +605,7 @@ export function buildRenderPlan(
     // nothing either way, and a resting value that could ever draw would be a
     // bubble reappearing at the end of a clip that has no camera in it.
     const gone = nothingAt(leaving.dstRect);
-    const radius = cameraRadius(leaving, leaving.dstRect, unit, enter.from);
+    const radius = cameraRadius(leaving.dstRect, enter.from);
     const against = leaving.card ? unit : Math.min(leaving.dstRect.width, leaving.dstRect.height);
     const blur = enter.from.background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
@@ -573,7 +627,7 @@ export function buildRenderPlan(
     if (motion.length > 0) {
       const shape: Shape = {
         radius,
-        exponent: leaving.card ? 2 : SHAPE_EXPONENT[enter.from.layout.cameraShape],
+        exponent: SHAPE_EXPONENT[enter.from.layout.cameraShape],
       };
 
       if (enter.from.background.shadowOpacity > 0) {
@@ -603,21 +657,85 @@ export function buildRenderPlan(
     }
   }
 
+  // Last, so captions sit over everything. A caption behind the camera bubble
+  // is a caption nobody can read, and the bubble is the thing that moves.
+  items.push(...captionItems(frame, settings.captions, cues));
+
   return { frame, items };
 }
 
 /**
- * The corner radius the camera has in a given arrangement, at a given size.
+ * Places already-rasterised cues in the frame.
+ *
+ * One item per cue for the flat layer, plus a second carrying the word boxes
+ * for looks that light the spoken word — which is what `PlanItem.Caption`
+ * already expects, and why it holds `words` rather than emitting two draws from
+ * one item. Both point at bitmaps laid out identically, so the lit word lands
+ * exactly over the flat one it replaces.
+ */
+function captionItems(
+  frame: Size,
+  captions: SliceSettings["captions"],
+  cues: readonly RenderedCue[] | undefined,
+): PlanItem[] {
+  if (!captions.captionsOn || !cues || cues.length === 0) return [];
+
+  const unit = Math.min(frame.width, frame.height);
+  const items: PlanItem[] = [];
+
+  for (const cue of cues) {
+    const width = cue.size.width * frame.width;
+    const height = cue.size.height * frame.height;
+    // A cue that measured to nothing — an empty line, a style with a zero size —
+    // would divide by zero in `captionAt`. Skipped rather than clamped, since
+    // there is nothing to see either way.
+    if (width <= 0 || height <= 0) continue;
+
+    const inset = captions.captionOffset * unit;
+    const y =
+      captions.captionPlace === "top"
+        ? inset
+        : captions.captionPlace === "middle"
+          ? (frame.height - height) / 2
+          : frame.height - height - inset;
+
+    const dstRect: Rect = {
+      x: (frame.width - width) / 2,
+      // Clamped so a large size or a deep offset cannot push the words off the
+      // frame entirely — the one failure that is invisible until the export.
+      y: Math.max(0, Math.min(y, frame.height - height)),
+      width,
+      height,
+    };
+
+    const span = { start: cue.at, end: cue.end };
+
+    items.push({ kind: "caption", path: cue.path, bitmap: cue.bitmap, dstRect, span, words: [] });
+
+    if (cue.litPath && cue.words.length > 0) {
+      items.push({
+        kind: "caption",
+        path: cue.litPath,
+        bitmap: cue.bitmap,
+        dstRect,
+        span,
+        words: cue.words,
+      });
+    }
+  }
+
+  return items;
+}
+
+/**
+ * The corner radius the camera has at a given size.
  *
  * Split out because a move needs it twice: once for where the camera is going,
  * which the branch above already computes, and once for where it came from —
- * and the rule differs between a card, whose radius is a fraction of the frame,
- * and a bubble, whose radius is a fraction of itself.
+ * and the shape it is leaving is the previous slice's, not this one's.
  */
-function cameraRadius(slot: Slot, rect: Rect, unit: number, settings: SliceSettings): number {
-  return slot.card
-    ? settings.background.cornerRadius * unit
-    : radiusFor(settings.layout.cameraShape, Math.min(rect.width, rect.height));
+function cameraRadius(rect: Rect, settings: SliceSettings): number {
+  return radiusFor(settings.layout.cameraShape, Math.min(rect.width, rect.height));
 }
 
 /** How often a zoom is sampled. Fine enough that a straight line between two
@@ -1611,11 +1729,30 @@ function typingCentre(cursor: CursorTrack | null | undefined, at: number): Point
   // the interesting part of the picture is now.
   if (at - span.at > TYPING_STALE_NS) return null;
 
+  // A field the size of the picture is not a field, it is the page. An editor,
+  // a terminal, a note — the focused element is one `AXTextArea` filling the
+  // window, and its middle is the middle of the frame however far up the corner
+  // the caret actually is. Aiming there parks the shot dead centre and stops it
+  // following the pointer, which is the one thing this is documented never to
+  // do. Wide and short is still worth having: a chat box across the foot of a
+  // window says nothing about *where* along it, and everything about how far
+  // down.
+  if (span.width > TYPING_MAX_SPAN && span.height > TYPING_MAX_SPAN) return null;
+
   return { x: span.x + span.width / 2, y: span.y + span.height / 2 };
 }
 
 /** How long a focused field stays the answer after it was last seen. */
 const TYPING_STALE_NS = 3_000_000_000;
+
+/**
+ * How much of the frame a focused field may cover in *both* directions and
+ * still be worth aiming at.
+ *
+ * Half. A field that wide and that tall has its middle within a quarter-frame
+ * of the centre wherever it sits, which is no better than not aiming at all.
+ */
+const TYPING_MAX_SPAN = 0.5;
 
 /**
  * Takes the shake out of a path without moving it.
@@ -1724,8 +1861,8 @@ function followPath(
     const wasX = x;
     const wasY = y;
 
-    [x, vx] = damp(x, vx, targetX, stepSeconds);
-    [y, vy] = damp(y, vy, targetY, stepSeconds);
+    [x, vx] = damp(x, vx, targetX, stepSeconds, FOLLOW_SECONDS);
+    [y, vy] = damp(y, vy, targetY, stepSeconds, FOLLOW_SECONDS);
 
     // On the move as a whole rather than per axis: a diagonal flick is not
     // licence to travel half again as fast as a straight one.
@@ -1801,14 +1938,19 @@ function hold(value: number, aim: number, half: number): number {
  * because a filter's velocity jumps the moment its target does, and the target
  * here moves every time the pointer crosses the dead zone. Each jump is small;
  * one per frame is a stutter.
+ *
+ * `seconds` is the caller's rather than this file's: the camera and the pointer
+ * both want a spring, and want it tuned an order of magnitude apart — half a
+ * second behind reads as a camera following a hand, and as a broken pointer.
  */
 function damp(
   value: number,
   velocity: number,
   target: number,
   stepSeconds: number,
+  seconds: number,
 ): [number, number] {
-  const w = 2 / FOLLOW_SECONDS;
+  const w = 2 / seconds;
   const gap = value - target;
   const rate = velocity + w * gap;
   const decay = Math.exp(-w * stepSeconds);
@@ -2097,6 +2239,15 @@ export interface CursorTrack {
    * — where nothing is focused.
    */
   typing?: readonly TypingSpan[];
+  /**
+   * Stretches somebody was typing through, or nothing to leave the pointer on
+   * screen while they do.
+   *
+   * The setting is resolved into this by the caller, the way `hideAfter` is: a
+   * track with no spans and a track the user asked to keep the pointer through
+   * are the same thing to draw, and neither is worth a second field.
+   */
+  keys?: readonly { start: number; end: number }[];
 }
 
 /**
@@ -2176,6 +2327,130 @@ export function pressScale(clicks: readonly number[] | undefined, at: number): n
   return deepest;
 }
 
+/**
+ * How far behind the recorded pointer the drawn one runs at the top of the
+ * slider, in seconds.
+ *
+ * The spring's time constant. Anything longer stops reading as the hand that
+ * made the recording — it arrives after the click it was going to, which is the
+ * one thing a smoothed pointer must never do.
+ */
+const SMOOTH_SECONDS = 0.12;
+
+/**
+ * How often the smoothed path is written down, in nanoseconds.
+ *
+ * The output cadence rather than the capture's, because the corners being taken
+ * out are the ones the plan's own straight lines put in: knots left where the
+ * samples already were would join up into the same polyline.
+ */
+const SMOOTH_STEP = 16_666_666;
+
+/**
+ * The longest span the smoothing steps through, in nanoseconds.
+ *
+ * A gap longer than this is a parked pointer — the capture writes a sample only
+ * when it moves — and stepping through it would fill in the very gap
+ * `withIdleGaps` reads as stillness. Half a second is the shortest auto-hide
+ * the control offers, so no gap that could hide a pointer is ever filled.
+ */
+const SMOOTH_MAX_SPAN = 500_000_000;
+
+/**
+ * The recorded path with the sampling taken back out of it.
+ *
+ * The track is written from the video callback, so it is sampled at 30 Hz at
+ * best and not at all while the screen holds still — a pointer crossing a
+ * static window is a hundred pixels further on by the next sample. Drawn the
+ * way the plan draws it, every sample is then a corner and every span a dash at
+ * one constant speed, which is the stepping this exists to take out.
+ *
+ * A critically damped spring chasing the recorded path, evaluated at the output
+ * cadence: it rounds the corners, fills in what the capture never saw, and
+ * cannot overshoot into a wobble the hand never made. Done here rather than in
+ * either rasteriser, so the export draws the same path the preview does without
+ * a line of Rust — the same reasoning as `withIdleGaps`.
+ */
+function smoothPath(samples: CursorTrack["samples"], strength: number): CursorTrack["samples"] {
+  const seconds = SMOOTH_SECONDS * clamp(strength, 0, 1);
+  if (seconds <= 0 || samples.length < 2) return samples;
+
+  // How long the spring is given to arrive once the pointer stops. Four time
+  // constants is well inside a pixel of the target, and stopping there is what
+  // leaves the rest of a parked pointer's gap in the track.
+  const settle = seconds * 4 * 1_000_000_000;
+
+  const out = [samples[0]!];
+  let x = samples[0]!.x;
+  let y = samples[0]!.y;
+  let vx = 0;
+  let vy = 0;
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const from = samples[index - 1]!;
+    const to = samples[index]!;
+    const span = to.at - from.at;
+
+    // Two samples at one moment is a broken manifest rather than a span, and
+    // dividing a step across it would put a NaN in every point after it.
+    if (span <= 0) {
+      out.push({ ...to, x, y });
+      continue;
+    }
+
+    // A park is stepped through only as far as the settle; a span short enough
+    // to be movement, all the way.
+    const stepped = span > SMOOTH_MAX_SPAN ? Math.min(span, settle) : span;
+    const steps = Math.max(1, Math.ceil(stepped / SMOOTH_STEP));
+    const stepSeconds = stepped / steps / 1_000_000_000;
+
+    for (let step = 1; step <= steps; step += 1) {
+      const at = from.at + (stepped * step) / steps;
+      // Aimed at where the recording says the pointer was *at this moment*, not
+      // at the sample ending the span: a spring pulled straight to the next
+      // sample arrives in jerks, and the jerks are what is being smoothed.
+      const u = (at - from.at) / span;
+      [x, vx] = damp(x, vx, from.x + (to.x - from.x) * u, stepSeconds, seconds);
+      [y, vy] = damp(y, vy, from.y + (to.y - from.y) * u, stepSeconds, seconds);
+
+      // The shape steps at the sample that recorded it, so a point inside the
+      // span still belongs to the sample it started from.
+      const recorded = step === steps && stepped === span ? to : from;
+      out.push({ ...recorded, at: Math.round(at), x, y });
+    }
+
+    // The far end of a park, exactly as recorded, and the spring put back on it
+    // rather than left wherever the settle reached — otherwise a pointer that
+    // sat still for a minute starts its next move from a stale position and
+    // takes the whole park's worth of lag with it.
+    if (stepped < span) {
+      out.push(to);
+      x = to.x;
+      y = to.y;
+      vx = 0;
+      vy = 0;
+    }
+  }
+
+  // And the end of the track, which has no next sample to settle against: left
+  // here, the last frames of a recording hold the pointer wherever the spring
+  // had got to rather than where the hand actually stopped — a stop is where
+  // the eye looks, and it is the one place the lag would be read as an error.
+  //
+  // Nothing to settle when the recording ends on a park: the spring was put
+  // back on that sample already, and knots repeating it would do nothing but
+  // push the auto-hide's own clock later.
+  const end = samples[samples.length - 1]!;
+  const settleSeconds = SMOOTH_STEP / 1_000_000_000;
+  for (let step = 1; (x !== end.x || y !== end.y) && step * SMOOTH_STEP <= settle; step += 1) {
+    [x, vx] = damp(x, vx, end.x, settleSeconds, seconds);
+    [y, vy] = damp(y, vy, end.y, settleSeconds, seconds);
+    out.push({ ...end, at: end.at + step * SMOOTH_STEP, x, y });
+  }
+
+  return out;
+}
+
 function cursorItems(
   cursor: CursorTrack,
   source: Size,
@@ -2183,20 +2458,26 @@ function cursorItems(
   dstRect: Rect,
   unit: number,
   motion: readonly RectKey[],
+  smoothing: number,
 ): PlanItem[] {
+  // Smoothed once, up front, and read as the track from here down: the points
+  // are written at the smoothed path's own moments, and nothing below this line
+  // needs to know the recording was sampled at a different rate.
+  const path: CursorTrack = { ...cursor, samples: smoothPath(cursor.samples, smoothing) };
+
   // Sampled wherever *either* moves. The pointer's own samples are written
   // only when it moves, so a pointer held still through a zoom has two points
   // a second apart — and interpolating its screen position between them would
   // slide it across the picture while the picture was itself moving. Adding a
   // point at every motion key keeps the two in step.
-  const times = new Set(cursor.samples.map((sample) => sample.at));
+  const times = new Set(path.samples.map((sample) => sample.at));
   for (const key of motion) times.add(key.at);
 
   // And across every press. The pointer is usually held still while it is
   // clicked, so its own samples are seconds apart there and the dip would be
   // interpolated straight through — the animation would exist in the plan and
   // never be drawn.
-  for (const click of cursor.clicks ?? []) {
+  for (const click of path.clicks ?? []) {
     for (let step = 0; step <= CLICK_STEPS; step++) {
       times.add(Math.round(click + (CLICK_NS * step) / CLICK_STEPS));
     }
@@ -2205,7 +2486,7 @@ function cursorItems(
   const points: ShapedPoint[] = [...times]
     .sort((a, b) => a - b)
     .map((at) => {
-      const point = cursorFraction(cursor, at);
+      const point = cursorFraction(path, at);
       const px = point.x * source.width;
       const py = point.y * source.height;
 
@@ -2233,23 +2514,28 @@ function cursorItems(
         // size by this one number — `compositor.rs` and `webgl.ts`, a line each
         // — so a press drawn this way cannot come out differently in the
         // preview and the export.
-        scale: placed.scale * pressScale(cursor.clicks, at),
+        scale: placed.scale * pressScale(path.clicks, at),
         visible:
           px >= srcRect.x &&
           px <= srcRect.x + srcRect.width &&
           py >= srcRect.y &&
           py <= srcRect.y + srcRect.height,
-        kind: cursorKind(cursor, at),
+        kind: cursorKind(path, at),
       };
     });
 
-  const timed = cursor.hideAfter === null ? points : withIdleGaps(points, cursor.hideAfter);
-  const size = Math.max(1, cursor.size * unit);
+  // Typing first, then stillness. A pointer hidden for typing is also, by then,
+  // a pointer that has not moved — running the idle pass over the result lets
+  // one long stretch of writing produce one hidden span rather than two
+  // overlapping ones.
+  const quiet = withTypingGaps(points, path.keys, unit);
+  const timed = path.hideAfter === null ? quiet : withIdleGaps(quiet, path.hideAfter);
+  const size = Math.max(1, path.size * unit);
 
   // The image each point is drawn with, which is not the kind it was recorded
   // as: a style that ships no I-beam draws the arrow there, so those points
   // belong to the arrow rather than to an item with no texture behind it.
-  const shapeFor = (kind: CursorKind): CursorShape => cursor.shapes[kind] ?? cursor.shapes.arrow;
+  const shapeFor = (kind: CursorKind): CursorShape => path.shapes[kind] ?? path.shapes.arrow;
 
   return splitByShape(timed, shapeFor).map(({ shape, points: drawn }) => ({
     kind: "cursor" as const,
@@ -2367,6 +2653,144 @@ function splitByShape(
   }
 
   return [...tracks.values()];
+}
+
+/**
+ * How long the pointer stays out of the way after the last press of a run.
+ *
+ * Long enough that a pause between words does not flash it back on — the spans
+ * themselves already hold a run together through a second of thought, and this
+ * covers the end of one. Short enough that reaching for the mouse finds the
+ * pointer already there.
+ */
+const TYPING_TAIL_NS = 400_000_000;
+
+/**
+ * How fast the pointer has to be going to stay on screen through typing, in
+ * fractions of the frame's shorter edge per second.
+ *
+ * The escape hatch, and the reason this is not simply "hidden between these two
+ * times". A pointer that vanishes while it is travelling reads as a dropped
+ * frame, and somebody who types with one hand while moving the mouse with the
+ * other is owed the pointer they are moving. About twenty pixels a second in a
+ * 1080-tall frame: a parked pointer's drift is orders of magnitude under it,
+ * and the slowest deliberate move is orders over.
+ */
+const TYPING_STILL_RATE = 0.02;
+
+/**
+ * Hides the pointer through the stretches somebody was typing.
+ *
+ * Expressed as invisible points rather than as a rule either rasteriser has to
+ * know about, exactly as `withIdleGaps` is: a span with an invisible end draws
+ * nothing, so the export gets this without a line of Rust.
+ *
+ * Held markers at both edges for the same reason that function needs them, and
+ * it is the whole difficulty here. A parked pointer has *no points* between the
+ * sample it stopped at and the one it moved off — that gap is what says it was
+ * parked — so marking points invisible would hide nothing at all through the
+ * one case this exists for. The edges are written in instead: the pointer is
+ * held where it was, disappears a nanosecond later, and comes back at the far
+ * end.
+ */
+function withTypingGaps<T extends CursorPoint>(
+  points: T[],
+  keys: readonly { start: number; end: number }[] | undefined,
+  unit: number,
+): T[] {
+  if (!keys?.length || points.length < 2) return points;
+
+  const hidden = hiddenSpans(points, keys, TYPING_STILL_RATE * unit);
+  if (hidden.length === 0) return points;
+
+  const out: T[] = [];
+  let index = 0;
+  let open = false;
+
+  /** The pointer's own place at a moment, as a point to write in. */
+  const held = (at: number, like: T, visible: boolean): T => {
+    const place = cursorAt(points, at)!;
+    return { ...like, at, x: place.x, y: place.y, scale: place.scale, visible };
+  };
+
+  for (const point of points) {
+    // Every edge that falls at or before this point, in order — both of them
+    // for a stretch that begins and ends inside one gap, which is what a pointer
+    // parked through a paragraph looks like.
+    while (index < hidden.length) {
+      const span = hidden[index]!;
+      if (!open && span.from <= point.at) {
+        out.push(held(span.from - 1, point, true));
+        // Not when the point itself is the edge: it is about to be pushed
+        // invisible at exactly this moment anyway.
+        if (point.at > span.from) out.push(held(span.from, point, false));
+        open = true;
+        continue;
+      }
+      if (open && span.to <= point.at) {
+        out.push(held(span.to, point, true));
+        open = false;
+        index += 1;
+        continue;
+      }
+      break;
+    }
+
+    out.push(open ? { ...point, visible: false } : point);
+  }
+
+  return out;
+}
+
+/**
+ * The stretches to hide, from the spans that were typed through.
+ *
+ * Two things happen here. Overlapping windows are merged — the tail on one span
+ * can reach into the next — and each is cut short wherever the pointer set off,
+ * which is the escape that keeps a pointer being moved on screen.
+ */
+function hiddenSpans(
+  points: readonly CursorPoint[],
+  keys: readonly { start: number; end: number }[],
+  still: number,
+): { from: number; to: number }[] {
+  const windows: { from: number; to: number }[] = [];
+  for (const span of keys) {
+    const last = windows[windows.length - 1];
+    if (last && span.start <= last.to) last.to = Math.max(last.to, span.end + TYPING_TAIL_NS);
+    else windows.push({ from: span.start, to: span.end + TYPING_TAIL_NS });
+  }
+
+  const hidden: { from: number; to: number }[] = [];
+  let index = 0;
+
+  for (const window of windows) {
+    // Nothing to take off the picture: the pointer had already left it.
+    if (cursorAt(points, window.from) === null) continue;
+
+    // The last point at or before the window opens. Walks forward once across
+    // the whole track, because both lists are in order.
+    while (index + 1 < points.length && points[index + 1]!.at <= window.from) index += 1;
+
+    let to = window.to;
+    for (let step = index; step + 1 < points.length && points[step]!.at < window.to; step += 1) {
+      const a = points[step]!;
+      const b = points[step + 1]!;
+      if (b.at <= window.from || b.at <= a.at) continue;
+
+      // Measured across the whole segment, not per frame: while the pointer is
+      // parked the two ends of its gap are seconds apart, and the drift between
+      // them is orders of magnitude under this.
+      if (Math.hypot(b.x - a.x, b.y - a.y) / ((b.at - a.at) / 1_000_000_000) > still) {
+        to = Math.max(window.from, a.at);
+        break;
+      }
+    }
+
+    if (to > window.from) hidden.push({ from: window.from, to });
+  }
+
+  return hidden;
 }
 
 /**
@@ -3043,6 +3467,28 @@ function toPaint(background: Background): Paint {
 }
 
 /** `#rrggbb` plus an alpha, as an `rgba()` both rasterisers can read. */
+/** A rectangle grown outwards on every edge. */
+function grow(rect: Rect, by: number): Rect {
+  return {
+    x: rect.x - by,
+    y: rect.y - by,
+    width: rect.width + by * 2,
+    height: rect.height + by * 2,
+  };
+}
+
+/**
+ * One key of a track, grown the same way — corner radius included.
+ *
+ * The radius has to grow with it or the ring changes width round the corners as
+ * the picture moves: an outward offset of a rounded rectangle is a rounded
+ * rectangle whose radius is larger by the offset, and anything else is a
+ * different curve running beside the picture's own.
+ */
+function grownKey(key: RectKey, by: number): RectKey {
+  return { ...key, ...grow(key, by), radius: key.radius + by };
+}
+
 function rgba(hex: string, alpha: number): string {
   const value = hex.replace("#", "");
   const r = parseInt(value.slice(0, 2), 16) || 0;

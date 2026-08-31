@@ -190,6 +190,7 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
     samples: manifest.cursor,
     typing: manifest.typing ?? [],
     clicks: (manifest.clicks ?? []).map((click) => click.at),
+    keys: manifest.keys ?? [],
   };
 }
 

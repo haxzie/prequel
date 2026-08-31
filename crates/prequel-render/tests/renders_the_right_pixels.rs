@@ -746,3 +746,103 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn draws_a_border_of_one_width_all_the_way_round() {
+    // The border bug. A stroke was drawn as a band centred on the picture's
+    // edge, so half of it fell outside the rectangle the quad covers — and a
+    // fragment shader cannot paint outside its own geometry. Along a straight
+    // edge that half was simply missing, so a 16px border drew 8px; at a corner
+    // the square quad still covers the area outside the curve, so the whole
+    // band survived there. Thin sides and fat corners read as corners of the
+    // wrong radius, which is how it was reported.
+    //
+    // Pinned in pixels because every shape assertion passes on it: the item is
+    // in the plan, its width is right, and the export is the right size.
+    let dir = scratch("prequel-pixels-border");
+    let source = split_frame(200, 200, [255, 255, 255], [255, 255, 255]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+
+    // Inset far enough that the background shows all round it, with a border
+    // wide enough that half of it is unmistakable.
+    let picture = Rect {
+        x: 40.0,
+        y: 40.0,
+        width: 240.0,
+        height: 160.0,
+    };
+    let radius = 30.0;
+    let width = 16.0;
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                paint: Paint::Solid {
+                    color: "#0000ff".into(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: picture,
+                shape: Shape {
+                    radius,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                motion: Vec::new(),
+            },
+            PlanItem::Stroke {
+                rect: picture,
+                shape: Shape {
+                    radius,
+                    exponent: 2.0,
+                },
+                width,
+                color: "#ff0000".into(),
+                motion: Vec::new(),
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+
+    // Three quarters of the way through the border on a straight edge. With
+    // only the inner half drawn this is the white picture.
+    near(frame.at(160, 52), (255, 0, 0), "the middle of the top edge");
+    // And the picture starts where the border ends, rather than a third of the
+    // way into it.
+    near(frame.at(160, 62), (255, 255, 255), "inside the top edge");
+
+    // The corner, along the diagonal from the arc's centre at (70, 70). Just
+    // outside the curve is background: a border that bulges past the silhouette
+    // is one the shadow no longer fits.
+    near(frame.at(45, 45), (0, 0, 255), "outside the top-left corner");
+    // And just inside it is border, the same as the straight edges above.
+    near(frame.at(55, 55), (255, 0, 0), "inside the top-left corner");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

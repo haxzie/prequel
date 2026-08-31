@@ -420,6 +420,37 @@ export function GradientIcon() {
   );
 }
 
+/** Lucide `palette`, for the paint behind the picture. */
+export function BackdropIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" />
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `frame`. The edge around the picture, which is what this panel sets.
+ *
+ * Not `RoundedIcon`, which is already the corner *shape* control inside the
+ * camera panel — one glyph meaning both "round the corners" and "everything
+ * about the edge" would make the rail's meaning depend on where you saw it.
+ */
+export function FrameIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 9h16" />
+      <path d="M4 15h16" />
+      <path d="M9 4v16" />
+      <path d="M15 4v16" />
+    </svg>
+  );
+}
+
 /** Lucide `image`. */
 export function ImageIcon() {
   return (
@@ -446,6 +477,16 @@ export function ZoomIcon() {
     <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
       <circle cx="11" cy="11" r="7" />
       <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+/** Lucide `captions`. The CC plate, drawn as two short runs of text. */
+export function CaptionsIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="14" x="3" y="5" rx="2" />
+      <path d="M7 15h4M15 15h2M7 11h2M13 11h4" />
     </svg>
   );
 }
