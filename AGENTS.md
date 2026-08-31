@@ -23,7 +23,7 @@ PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace --all-targets
 
 **Building needs Xcode 26 or newer**, whatever macOS you are on.
 `crates/prequel-speech` compiles `SpeechAnalyzer`, which does not exist in an
-older SDK, so the file will not compile against one — the *app* still runs on
+older SDK, so the file will not compile against one — the _app_ still runs on
 macOS 14, because the analyzer sits behind `if #available`. `build.rs` checks
 and says so; without that the failure is thirty lines of "cannot find
 'SpeechAnalyzer' in scope", which names a symbol rather than the problem. CI has
