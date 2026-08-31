@@ -34,6 +34,21 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # `SpeechAnalyzer` is a macOS 26 API, and the runner's default is Xcode
+      # 16.4 — whose SDK does not contain it, so `crates/prequel-speech` fails
+      # to compile with "cannot find 'SpeechAnalyzer' in scope" rather than
+      # with anything that names the real problem. The app still *runs* on
+      # macOS 14: the analyzer is behind `if #available`, and a newer SDK is
+      # what makes that gate work at all.
+      #
+      # Newest 26 present rather than a pinned patch, so an image update that
+      # drops 26.3 for 26.4 does not break the build.
+      - name: Build against the macOS 26 SDK
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "Using $xcode"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2

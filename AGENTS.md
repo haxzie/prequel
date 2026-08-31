@@ -21,6 +21,15 @@ PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace
 PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace --all-targets
 ```
 
+**Building needs Xcode 26 or newer**, whatever macOS you are on.
+`crates/prequel-speech` compiles `SpeechAnalyzer`, which does not exist in an
+older SDK, so the file will not compile against one — the *app* still runs on
+macOS 14, because the analyzer sits behind `if #available`. `build.rs` checks
+and says so; without that the failure is thirty lines of "cannot find
+'SpeechAnalyzer' in scope", which names a symbol rather than the problem. CI has
+to pick an Xcode explicitly for the same reason: the macOS runner image defaults
+to 16.4 and carries 26 alongside it.
+
 `cargo` is often not on `PATH` in a non-interactive shell — prefix it rather
 than concluding Rust is unavailable.
 
