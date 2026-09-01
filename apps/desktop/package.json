@@ -5,10 +5,10 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "node scripts/sync-backgrounds.mjs && electron-vite dev",
+    "build": "node scripts/sync-backgrounds.mjs && electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && node scripts/check-release-env.mjs && electron-builder",
+    "package": "node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",
     "install:app": "node scripts/install.mjs",
     "ship": "pnpm package && pnpm install:app",
     "test": "vitest run",
@@ -17,11 +17,13 @@
     "icons": "node scripts/make-tray-icons.mjs",
     "cursor": "node scripts/make-cursor.mjs",
     "app-icon": "node scripts/make-app-icon.mjs",
-    "dmg": "swift scripts/make-dmg-background.swift"
+    "dmg": "swift scripts/make-dmg-background.swift",
+    "backgrounds": "node scripts/sync-backgrounds.mjs"
   },
   "dependencies": {
     "@prequel/env": "workspace:*",
     "@prequel/recorder": "workspace:*",
+    "blurhash": "^2.0.5",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {

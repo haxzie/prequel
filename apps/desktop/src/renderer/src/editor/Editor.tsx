@@ -24,6 +24,7 @@ import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { Preview, type Grab } from "./Preview";
+import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useTranscription } from "./useTranscription";
@@ -203,6 +204,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   );
 
   const transcription = useTranscription(session);
+  const backgrounds = useBackgrounds();
+  /** The background being downloaded, so its swatch can say so. */
+  const [pendingBackground, setPendingBackground] = useState<string | null>(null);
   // The project defaults rather than the playhead's settings: captions are
   // project-wide, and reading them off whichever clip the playhead is under
   // would re-rasterise every cue on every cut.
@@ -412,6 +416,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               present={present}
               hasCursor={session.cursor !== null}
               captions={transcription}
+              backgrounds={backgrounds}
+              pendingBackground={pendingBackground}
               frame={state.project.frame}
               cameraSource={cameraSource}
               onPreviewZoom={previewZoom}
@@ -442,16 +448,29 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                   });
                 }
               }}
-              onPickPreset={async (presetId) => {
-                const result = await window.prequel.editor.presetImage(session.dir, presetId);
-                if (result.ok && result.value) {
-                  dispatch({
-                    type: "setSetting",
-                    section: "background",
-                    key: "background",
-                    value: { kind: "image", source: "preset", path: result.value.path },
-                  });
+              onPickPreset={async (file) => {
+                // Fetched first, applied second. Applying straight away named a
+                // file that was not there yet, so the composition went dark for
+                // as long as the download took — the picture that is already on
+                // screen is a better thing to look at than nothing. The spinner
+                // on the swatch is what says the choice was registered.
+                setPendingBackground(file);
+                const result = await window.prequel.editor.backgrounds.ensure(session.dir, file);
+                setPendingBackground((current) => (current === file ? null : current));
+
+                if (!result.ok || !result.value) {
+                  // Nothing is applied. A background that cannot be fetched
+                  // leaves the one that is working alone.
+                  console.warn(`[editor] could not fetch ${file}`);
+                  return;
                 }
+
+                dispatch({
+                  type: "setSetting",
+                  section: "background",
+                  key: "background",
+                  value: { kind: "image", source: "preset", path: file },
+                });
               }}
               onPickImage={async () => {
                 const result = await window.prequel.editor.pickImage(session.dir);
@@ -796,6 +815,13 @@ function useAudioMix(
  * means an omission shows up as something quietly missing from the picture and
  * nowhere else. That is exactly how the pointer came to be absent from both the
  * preview and the export while every other part of it worked.
+ *
+ * A failed load is retried, because this effect is keyed on the *set* of paths
+ * and choosing the same background again does not change it. Without the retry
+ * one failure was permanent for the life of the editor: main would fetch the
+ * bytes correctly on the next attempt and the picture would still never appear,
+ * which is how a single bad download turned into a dozen backgrounds that
+ * "do not get set".
  */
 function useEditorImages(
   session: EditorSession | null,
@@ -811,9 +837,10 @@ function useEditorImages(
 
     let cancelled = false;
     const loaded: Images = new Map();
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const wanted = paths.split("\u0000");
 
-    for (const path of wanted) {
+    const load = (path: string, attempt: number) => {
       const image = new Image();
       // Before `src`, or the request is already in flight without it. The same
       // reason the media elements carry it: `prequel-media:` is a different
@@ -822,7 +849,11 @@ function useEditorImages(
       // takes the whole frame down with it — a blank preview, from a missing
       // attribute on a background nobody was looking at.
       image.crossOrigin = "anonymous";
-      image.src = mediaUrl(recordingName(session.dir), path);
+      // The query is a cache-buster and nothing more: `resolveMediaPath` reads
+      // only the pathname, so it never reaches the file lookup. Without it a
+      // retry can be answered from Chromium's cache with the same failure.
+      const url = mediaUrl(recordingName(session.dir), path);
+      image.src = attempt === 0 ? url : `${url}?retry=${attempt}`;
 
       image.onload = () => {
         if (cancelled) return;
@@ -838,14 +869,34 @@ function useEditorImages(
           return next;
         });
       };
-      image.onerror = () => console.warn(`[editor] could not load ${path}`);
-    }
+
+      image.onerror = () => {
+        if (cancelled) return;
+        if (attempt >= RETRY_DELAYS.length) {
+          console.warn(`[editor] could not load ${path}`);
+          return;
+        }
+        timers.push(setTimeout(() => load(path, attempt + 1), RETRY_DELAYS[attempt]!));
+      };
+    };
+
+    for (const path of wanted) load(path, 0);
 
     return () => {
       cancelled = true;
+      for (const timer of timers) clearTimeout(timer);
     };
   }, [session, paths, setImages]);
 }
+
+/**
+ * How long to wait before each retry of a failed image load.
+ *
+ * Long enough at the end to cover a background still being downloaded on a slow
+ * connection, and bounded so a genuinely missing file settles rather than
+ * retrying for ever.
+ */
+const RETRY_DELAYS = [300, 900, 2500, 6000] as const;
 
 /** Every distinct image path the plan can name, across defaults and clips. */
 function imagePaths(project: ReturnType<typeof newProject>, cursors: readonly string[]): string[] {

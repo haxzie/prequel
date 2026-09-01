@@ -1,9 +1,5 @@
-import {
-  BACKGROUND_CATEGORIES,
-  BACKGROUND_CATEGORY_LABELS,
-  BACKGROUND_PRESETS,
-  backgroundsIn,
-} from "../../../../shared/backgrounds";
+import { BackgroundSkeleton, BackgroundSwatch } from "./BackgroundSwatch";
+import type { Backgrounds } from "../useBackgrounds";
 import { assetUrl } from "../../../../shared/media-url";
 import type { Background } from "../../../../shared/project";
 import { WALLPAPER_FILE_NAME } from "../../../../shared/project";
@@ -154,6 +150,8 @@ export function GradientSwatches({
 export function ImageSwatches({
   path,
   wallpaper,
+  backgrounds,
+  pending,
   onPickWallpaper,
   onPickPreset,
   onPickImage,
@@ -162,30 +160,47 @@ export function ImageSwatches({
   path: string | null;
   /** URL for the desktop picture inside the recording. */
   wallpaper: string | null;
+  /** The hosted catalogue, or the shipped presets when there is neither. */
+  backgrounds: Backgrounds;
+  /** The file currently being downloaded, if any. */
+  pending: string | null;
   onPickWallpaper: () => void;
-  onPickPreset: (presetId: string) => void;
+  onPickPreset: (file: string) => void;
   onPickImage: () => void;
 }) {
+  const known = backgrounds.groups.flatMap((group) => group.items);
+
   // A file the user chose: an image is applied, and it is neither the desktop
-  // picture nor one of the shipped ones.
+  // picture nor one we offer.
   const own =
     path !== null &&
     path !== WALLPAPER_FILE_NAME &&
-    !BACKGROUND_PRESETS.some((preset) => preset.file === path);
+    !known.some((listing) => listing.file === path);
 
   return (
     <div className="flex flex-col gap-2">
-      {BACKGROUND_CATEGORIES.map((category) => (
-        <div key={category} className="flex flex-col gap-1">
-          <h3 className="text-[10px] font-medium text-editor-muted">
-            {BACKGROUND_CATEGORY_LABELS[category]}
-          </h3>
+      {backgrounds.loading && (
+        <div className="flex flex-col gap-1">
+          <span className="h-2.5 w-16 animate-pulse rounded bg-white/10" />
+          <div className={GRID}>
+            {/* Ten, which is about what a group holds. A count that changes as
+                the real one arrives would reflow the panel twice. */}
+            {Array.from({ length: 10 }, (_, index) => (
+              <BackgroundSkeleton key={index} cell={CELL} edge={EDGE} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {backgrounds.groups.map((group, index) => (
+        <div key={group.id} className="flex flex-col gap-1">
+          <h3 className="text-[10px] font-medium text-editor-muted">{group.label}</h3>
 
           <div className={GRID}>
             {/* The desktop picture leads the first group. It is a wallpaper —
                 the user's own — so it belongs with them rather than in a row of
                 its own above the headings. */}
-            {category === BACKGROUND_CATEGORIES[0] && (
+            {index === 0 && (
               <button
                 type="button"
                 title="My wallpaper"
@@ -200,55 +215,52 @@ export function ImageSwatches({
                 // desktop picture is only captured on demand. A background
                 // image that 404s draws nothing, which leaves the cell as a
                 // plain swatch, and pressing it is what triggers the capture.
-                // So: no loading state, no hiding it.
                 style={wallpaper ? { backgroundImage: `url("${wallpaper}")` } : undefined}
                 onClick={onPickWallpaper}
               />
             )}
 
-            {backgroundsIn(category).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                title={preset.label}
-                aria-label={preset.label}
-                aria-pressed={path === preset.file}
-                className={cn(
-                  CELL,
-                  "overflow-hidden bg-cover bg-center",
-                  path === preset.file ? EDGE_CHOSEN : EDGE,
-                )}
-                // Drawn `cover` and centred, the same way the frame will draw
-                // it, so the cell is a true sample of what lands behind the
-                // recording.
-                style={{ backgroundImage: `url("${assetUrl(preset.file)}")` }}
-                onClick={() => onPickPreset(preset.id)}
+            {group.items.map((listing) => (
+              <BackgroundSwatch
+                key={listing.id}
+                listing={listing}
+                chosen={path === listing.file}
+                busy={pending === listing.file}
+                cell={CELL}
+                edge={EDGE}
+                chosenEdge={EDGE_CHOSEN}
+                onChoose={() => onPickPreset(listing.file)}
               />
             ))}
-
-            {/* A glyph rather than a sample, because there is nothing to sample
-                yet. It sits at the end of the last group and stays chosen once
-                a file is picked, so the grid still answers "which of these is
-                applied" when the answer is not one of ours. */}
-            {category === BACKGROUND_CATEGORIES[BACKGROUND_CATEGORIES.length - 1] && (
-              <button
-                type="button"
-                title="Choose an image…"
-                aria-label="Choose an image…"
-                aria-pressed={own}
-                className={cn(
-                  CELL,
-                  "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
-                  own ? EDGE_CHOSEN : EDGE,
-                )}
-                onClick={onPickImage}
-              >
-                <ImageIcon />
-              </button>
-            )}
           </div>
         </div>
       ))}
+
+      {/* Its own section rather than a cell tacked onto the last group: what it
+          offers is not one of ours, and a glyph sitting among the samples read
+          as a swatch that had failed to load. */}
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[10px] font-medium text-editor-muted">Custom</h3>
+
+        <div className={GRID}>
+          <button
+            type="button"
+            title="Choose an image…"
+            aria-label="Choose an image…"
+            // Stays chosen once a file is picked, so the grid still answers
+            // "which of these is applied" when the answer is not one of ours.
+            aria-pressed={own}
+            className={cn(
+              CELL,
+              "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
+              own ? EDGE_CHOSEN : EDGE,
+            )}
+            onClick={onPickImage}
+          >
+            <ImageIcon />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

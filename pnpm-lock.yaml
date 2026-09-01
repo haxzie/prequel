@@ -54,6 +54,9 @@ importers:
       '@prequel/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -72,6 +75,9 @@ importers:
       '@prequel/recorder':
         specifier: workspace:*
         version: link:../../packages/recorder
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -2884,6 +2890,9 @@ packages:
 
   bluebird@3.7.2:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
+
+  blurhash@2.0.5:
+    resolution: {integrity: sha512-cRygWd7kGBQO3VEhPiTgq4Wc43ctsM+o46urrmPOiuAe+07fzlSB9OJVdpgDL0jPqXUVQ9ht7aq7kxOeJHRK+w==}
 
   boolean@3.2.0:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
@@ -7068,6 +7077,8 @@ snapshots:
   blake3-wasm@2.1.5: {}
 
   bluebird@3.7.2: {}
+
+  blurhash@2.0.5: {}
 
   boolean@3.2.0:
     optional: true

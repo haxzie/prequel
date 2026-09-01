@@ -81,8 +81,6 @@ export interface LayoutSettings {
   screenY: number;
   screenWidth: number;
   screenHeight: number;
-  /** 1 fits the frame; above that crops in. */
-  screenZoom: number;
   screenOffsetX: number;
   screenOffsetY: number;
   cameraVisible: boolean;
@@ -549,7 +547,6 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenY: 0.5,
   screenWidth: 1,
   screenHeight: 1,
-  screenZoom: 1,
   screenOffsetX: 0,
   screenOffsetY: 0,
   cameraVisible: true,
@@ -613,11 +610,15 @@ export const FALLBACK_BACKGROUND: Background = {
 };
 
 export const DEFAULT_BACKGROUND: BackgroundSettings = {
-  // The user's own desktop, because a screen recording sitting on the wallpaper
-  // it was taken against reads as one image rather than as a screenshot pasted
-  // onto something. Main captures it when a recording is first opened, and
-  // falls back to `FALLBACK_BACKGROUND` if it cannot.
-  background: { kind: "image", source: "wallpaper", path: WALLPAPER_FILE_NAME },
+  // A shipped picture rather than the user's own desktop.
+  //
+  // The desktop was the better idea — a recording sitting on the wallpaper it
+  // was taken against reads as one image rather than a screenshot pasted onto
+  // something — but capturing it is not reliable enough to open on. It depends
+  // on finding the desktop behind every window, and when that fails the first
+  // thing anyone sees is a blank frame. This is still there under `My
+  // wallpaper` for anyone who wants it.
+  background: { kind: "image", source: "preset", path: "monterey.jpg" },
   padding: 0.06,
   cornerRadius: 0.02,
   // A hairline of white at low opacity, which is what a border is for here: it
@@ -992,6 +993,9 @@ function beforeSmoothing(
  *
  * Returns a partial, because it is spread over `DEFAULT_LAYOUT` — a key nobody
  * ever wrote must fall through to its default rather than arrive as undefined.
+ *
+ * It is also where a key that has been *removed* is stripped, for the same
+ * reason and without a version bump.
  */
 function migrateLayout(
   stored: Partial<LayoutSettings> | undefined,
@@ -1005,6 +1009,12 @@ function migrateLayout(
   const migrated: Partial<LayoutSettings> = { ...stored };
   delete (migrated as { screenFit?: unknown }).screenFit;
   delete (migrated as { cameraSize?: unknown }).cameraSize;
+  // The screen's own zoom, removed once the zoom moments made it a second
+  // answer to the same question. Dropped rather than left to sit unread: a
+  // slice that overrode it would otherwise keep `key in overrides.layout`
+  // answering yes for a setting no control can reach, and the Screen section
+  // would offer a Reset for something invisible.
+  delete (migrated as { screenZoom?: unknown }).screenZoom;
 
   if (migrated.preset === undefined && legacy.screenFit !== undefined) {
     const full = legacy.screenFit === "cover";

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,8 +22,23 @@ describe("the background catalogue", () => {
     }
   });
 
-  it("shows five wallpapers", () => {
-    expect(backgroundsIn("wallpapers")).toHaveLength(5);
+  it("ships the picture a fresh project opens on", () => {
+    // `DEFAULT_BACKGROUND` names this file, and `withBackground` copies it into
+    // every new recording. A preset that stopped existing would leave the first
+    // frame anyone sees blank.
+    expect(BACKGROUND_PRESETS.some((preset) => preset.file === "monterey.jpg")).toBe(true);
+  });
+
+  it("ships a file for every preset", () => {
+    // A preset naming a file that is not in `resources/backgrounds` is a swatch
+    // that draws nothing and a background that renders blank — which is exactly
+    // how the missing desktop picture behaved, and it took a log line from four
+    // days earlier to work out why.
+    const dir = new URL("../../resources/backgrounds/", import.meta.url);
+
+    for (const preset of BACKGROUND_PRESETS) {
+      expect(existsSync(new URL(preset.file, dir))).toBe(true);
+    }
   });
 
   it("leaves no group empty", () => {

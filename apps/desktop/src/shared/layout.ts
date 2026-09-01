@@ -332,7 +332,7 @@ export function buildRenderPlan(
       sources.screen,
       slot.area,
       slot.fit,
-      layout.screenZoom,
+      NO_ZOOM,
       layout.screenOffsetX,
       layout.screenOffsetY,
     );
@@ -3306,14 +3306,7 @@ export function placement(
 
   const fitted =
     which === "screen"
-      ? place(
-          source,
-          slot.area,
-          slot.fit,
-          layout.screenZoom,
-          layout.screenOffsetX,
-          layout.screenOffsetY,
-        )
+      ? place(source, slot.area, slot.fit, NO_ZOOM, layout.screenOffsetX, layout.screenOffsetY)
       : place(
           source,
           slot.area,
@@ -3400,6 +3393,16 @@ function halves(area: Rect, gap: number, sideBySide: boolean): [Rect, Rect] {
     { x: area.x, y: area.y + height + gap, width: area.width, height },
   ];
 }
+
+/**
+ * What the screen is placed at, now that it has no zoom of its own.
+ *
+ * The static `screenZoom` slider is gone: how far into the recording to push is
+ * what a zoom moment answers, and two controls for one question are two ways
+ * for the shot in the preview and the shot on the timeline to disagree. The
+ * camera keeps its own, which crops a different picture entirely.
+ */
+const NO_ZOOM = 1;
 
 /**
  * Where a picture lands, and which part of it is shown.

@@ -1013,6 +1013,10 @@ describe("the screen is never stretched", () => {
     // Both pictures, now: the camera reaches its crop through the same fitter
     // the screen does, and in an arrangement that hands it a tall column there
     // is nothing about a webcam's own proportions to fall back on.
+    //
+    // Only the camera is zoomed — it is the one picture with a zoom of its own
+    // — but the screen is checked at every frame, source and arrangement, which
+    // is where its shape was ever at risk.
     for (const frame of FRAMES) {
       for (const source of SOURCES) {
         for (const preset of PRESETS) {
@@ -1021,7 +1025,7 @@ describe("the screen is never stretched", () => {
               frame,
               { screen: source, camera: CAMERA },
               settings({
-                layout: { ...settings().layout, preset, screenZoom: zoom, cameraZoom: zoom },
+                layout: { ...settings().layout, preset, cameraZoom: zoom },
               }),
             );
 
@@ -1084,41 +1088,43 @@ describe("the screen is never stretched", () => {
 
   it("never samples outside the recording", () => {
     for (const frame of FRAMES) {
-      for (const screenZoom of [0.05, 0.5, 1, 3]) {
-        const source = { width: 2560, height: 1440 };
-        const plan = buildRenderPlan(
-          frame,
-          { screen: source, camera: null },
-          settings({
-            layout: {
-              ...settings().layout,
-              preset: "over-full",
-              screenZoom,
-              screenOffsetX: 0.4,
-              screenOffsetY: -0.4,
-            },
-          }),
-        );
-        const { srcRect } = image(plan, "screen")!;
+      const source = { width: 2560, height: 1440 };
+      const plan = buildRenderPlan(
+        frame,
+        { screen: source, camera: null },
+        settings({
+          layout: {
+            ...settings().layout,
+            preset: "over-full",
+            // Pushed hard into both corners, which is what the clamp is for.
+            screenOffsetX: 0.4,
+            screenOffsetY: -0.4,
+          },
+        }),
+      );
+      const { srcRect } = image(plan, "screen")!;
 
-        expect(srcRect.x).toBeGreaterThanOrEqual(0);
-        expect(srcRect.y).toBeGreaterThanOrEqual(0);
-        expect(srcRect.x + srcRect.width).toBeLessThanOrEqual(source.width + 1e-6);
-        expect(srcRect.y + srcRect.height).toBeLessThanOrEqual(source.height + 1e-6);
-      }
+      expect(srcRect.x).toBeGreaterThanOrEqual(0);
+      expect(srcRect.y).toBeGreaterThanOrEqual(0);
+      expect(srcRect.x + srcRect.width).toBeLessThanOrEqual(source.width + 1e-6);
+      expect(srcRect.y + srcRect.height).toBeLessThanOrEqual(source.height + 1e-6);
     }
   });
 
   it("letterboxes rather than stretching once the whole recording is on show", () => {
     // Zooming out past that point cannot fill the frame — the pixels were never
     // recorded — so the picture shrinks inside it instead.
+    //
+    // Through the camera, which is the only picture with a zoom of its own now.
+    // `camera-full` hands it the whole frame under `cover`, exactly as
+    // `over-full` does the screen, so this is the same branch it always was.
     const frame = { width: 1080, height: 1920 };
     const plan = buildRenderPlan(
       frame,
-      { screen: { width: 2560, height: 1440 }, camera: null },
-      settings({ layout: { ...settings().layout, preset: "over-full", screenZoom: 0.5 } }),
+      { screen: null, camera: { width: 2560, height: 1440 } },
+      settings({ layout: { ...settings().layout, preset: "camera-full", cameraZoom: 0.5 } }),
     );
-    const { dstRect } = image(plan, "screen")!;
+    const { dstRect } = image(plan, "camera")!;
 
     expect(dstRect.width).toBeLessThan(frame.width);
     // Still centred in what it was given.

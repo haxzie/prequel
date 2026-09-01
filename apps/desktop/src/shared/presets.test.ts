@@ -16,7 +16,7 @@ import {
   presetForSize,
   SOLID_PRESETS,
 } from "./presets.js";
-import { DEFAULT_BACKGROUND, WALLPAPER_FILE_NAME } from "./project.js";
+import { DEFAULT_BACKGROUND } from "./project.js";
 
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -78,13 +78,15 @@ describe("gradient presets", () => {
 });
 
 describe("the default background", () => {
-  it("is the user's own wallpaper", () => {
-    // A recording sitting on the desktop it was taken against reads as one
-    // image rather than as a screenshot pasted onto something.
+  it("is a shipped picture, not the desktop", () => {
+    // The desktop was the better idea — a recording sitting on the wallpaper it
+    // was taken against reads as one image — but capturing it depends on
+    // finding the desktop behind every window, and when that fails the first
+    // thing anyone sees is a blank frame. It is still offered as `My wallpaper`.
     expect(DEFAULT_BACKGROUND.background).toEqual({
       kind: "image",
-      source: "wallpaper",
-      path: WALLPAPER_FILE_NAME,
+      source: "preset",
+      path: "monterey.jpg",
     });
   });
 });

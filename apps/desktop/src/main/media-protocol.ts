@@ -26,6 +26,7 @@ import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
+import { thumbnailPath } from "./backgrounds.js";
 import { SESSIONS_DIR } from "./session.js";
 
 export { MEDIA_SCHEME } from "../shared/media-url.js";
@@ -114,6 +115,14 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
   if (parsed.host === "asset") {
     if (parts.length !== 1) return null;
     return assetPath(parts[0]!);
+  }
+
+  // A background thumbnail main has cached. One segment, and the name is
+  // checked against the same pattern the API accepts, so there is no path to
+  // traverse — `thumbnailPath` answers null for anything else.
+  if (parsed.host === "background") {
+    if (parts.length !== 1) return null;
+    return thumbnailPath(parts[0]!);
   }
 
   // A finished export, by name. Exact match against what main registered —

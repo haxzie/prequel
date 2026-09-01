@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type {
+  BackgroundsCatalogue,
   AppInfo,
   AuthState,
   BackgroundImage,
@@ -286,6 +287,23 @@ const api = {
         ipcRenderer.on(IPC_CHANNELS.transcribeProgress, handler);
         return () => ipcRenderer.off(IPC_CHANNELS.transcribeProgress, handler);
       },
+    },
+
+    backgrounds: {
+      /**
+       * The hosted catalogue, or null when there is neither a cache nor a
+       * network — the picker then falls back to what the app ships.
+       */
+      catalogue: (): Promise<IpcResult<BackgroundsCatalogue | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.backgroundsCatalogue),
+
+      /** Caches one thumbnail. Answers whether it can be drawn now. */
+      thumbnail: (file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.backgroundsThumbnail, file),
+
+      /** Puts the full picture inside the recording, so it can be drawn. */
+      ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
     },
 
     captions: {

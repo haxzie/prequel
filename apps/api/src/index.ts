@@ -13,6 +13,7 @@ import { cors } from "hono/cors";
 import { createAuth } from "./auth.ts";
 import { scheduled } from "./cron.ts";
 import type { Env } from "./env.ts";
+import backgrounds from "./routes/backgrounds.ts";
 import billing from "./routes/billing.ts";
 import desktop from "./routes/desktop.ts";
 import events from "./routes/events.ts";
@@ -80,6 +81,7 @@ app.route("/v1/me", me);
 app.route("/v1/videos", videos);
 app.route("/v1/desktop", desktop);
 app.route("/v1/transcribe", transcribe);
+app.route("/v1/backgrounds", backgrounds);
 app.route("/v1/events", events);
 app.route("/v1/billing", billing);
 

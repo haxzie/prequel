@@ -19,6 +19,7 @@ import {
   type ZoomSlice,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
+import type { Backgrounds } from "./useBackgrounds";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
 import { CursorPicker } from "./controls/CursorPicker";
@@ -63,6 +64,10 @@ export interface InspectorProps {
   hasCursor: boolean;
   /** How the transcript is doing, so the captions panel can offer to make one. */
   captions: CaptionsState;
+  /** The hosted background catalogue, or the shipped presets as a fallback. */
+  backgrounds: Backgrounds;
+  /** The background being downloaded, so its swatch can say so. */
+  pendingBackground: string | null;
   /** Output size, so the camera map can take the frame's own proportions. */
   frame: Size;
   /** The camera track's own dimensions, or null when there is no camera. */
@@ -77,7 +82,7 @@ export interface InspectorProps {
   onPreviewZoom: () => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
-  onPickPreset: (presetId: string) => void;
+  onPickPreset: (file: string) => void;
   /**
    * A file inside the recording, as something the renderer can load.
    *
@@ -294,6 +299,8 @@ export function Inspector(props: InspectorProps) {
               onPickWallpaper={props.onPickWallpaper}
               onPickImage={props.onPickImage}
               onPickPreset={props.onPickPreset}
+              backgrounds={props.backgrounds}
+              pendingBackground={props.pendingBackground}
               wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
             />
           )}
@@ -435,10 +442,11 @@ type FieldProps = <S extends SettingsSection>(
 type Setter = (section: SettingsSection, key: string, value: unknown) => void;
 
 /**
- * Arrangements the two pictures can be in, and how far into the screen to crop.
+ * Arrangements the two pictures can be in.
  *
- * `screenZoom` is still a crop, not a scale: the arrangement fixes the box, and
- * the zoom decides how much of the recording fills it.
+ * No zoom of its own: how far into the recording to push is what a zoom moment
+ * answers, and a second, static control for the same question was one the
+ * timeline knew nothing about.
  */
 function LayoutPanel({
   settings,
@@ -495,17 +503,6 @@ function LayoutPanel({
           }}
         />
       </Field>
-
-      <Field label="Zoom" {...field("layout", "screenZoom")}>
-        <Slider
-          value={layout.screenZoom}
-          min={0.5}
-          max={3}
-          step={0.01}
-          format={(value) => `${value.toFixed(2)}×`}
-          onChange={(value) => set("layout", "screenZoom", value)}
-        />
-      </Field>
     </Section>
   );
 }
@@ -539,7 +536,6 @@ function cameraAgreement(preset: LayoutPreset, visible: boolean): LayoutPreset |
  */
 function freshFraming(layout: LayoutSettings, cameraSource: Size | null): Partial<LayoutSettings> {
   return {
-    screenZoom: DEFAULT_LAYOUT.screenZoom,
     screenOffsetX: DEFAULT_LAYOUT.screenOffsetX,
     screenOffsetY: DEFAULT_LAYOUT.screenOffsetY,
     screenX: DEFAULT_LAYOUT.screenX,
@@ -996,6 +992,8 @@ function BackgroundPanel({
   onPickWallpaper,
   onPickImage,
   onPickPreset,
+  backgrounds,
+  pendingBackground,
   wallpaperUrl,
 }: {
   settings: SliceSettings;
@@ -1004,7 +1002,9 @@ function BackgroundPanel({
   set: Setter;
   onPickWallpaper: () => void;
   onPickImage: () => void;
-  onPickPreset: (presetId: string) => void;
+  onPickPreset: (file: string) => void;
+  backgrounds: Backgrounds;
+  pendingBackground: string | null;
   wallpaperUrl: string;
 }) {
   const { background } = settings;
@@ -1089,6 +1089,8 @@ function BackgroundPanel({
               wallpaper={wallpaperUrl}
               onPickWallpaper={onPickWallpaper}
               onPickPreset={onPickPreset}
+              backgrounds={backgrounds}
+              pending={pendingBackground}
               onPickImage={onPickImage}
             />
 

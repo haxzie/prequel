@@ -20,6 +20,11 @@ import { cn } from "../../lib/cn";
  * same thing as two rectangles is understood before it is finished being looked
  * at, and the grid is scanned rather than read.
  *
+ * Grouped by what the arrangement puts in the frame, because that is the order
+ * the choice is actually made in: what is in the picture first, how it is
+ * arranged second. As ten unlabelled cells in one block, the two camera-only
+ * arrangements read as two more variations on the six above them.
+ *
  * Every thumbnail is drawn by asking `layoutBoxes` where the pictures go and
  * scaling the answer down. Drawing them by hand would be a second
  * implementation of the layout, and it would be wrong the first time a rule
@@ -34,18 +39,56 @@ import { cn } from "../../lib/cn";
  * by a thumbnail that showed neither.
  */
 
-/** The arrangements, in the order they appear. Five to a row. */
-const PRESETS: { value: LayoutPreset; label: string; camera: boolean }[] = [
-  { value: "over-full", label: "Full screen, camera over", camera: true },
-  { value: "over-padded", label: "Padded screen, camera over", camera: true },
-  { value: "beside", label: "Screen and camera side by side", camera: true },
-  { value: "stacked", label: "Screen above the camera", camera: true },
-  { value: "split", label: "Split down the middle", camera: true },
-  { value: "split-stacked", label: "Split across the middle", camera: true },
-  { value: "screen-full", label: "Screen only, full frame", camera: false },
-  { value: "screen-padded", label: "Screen only, padded", camera: false },
-  { value: "camera-full", label: "Camera only, full frame", camera: true },
-  { value: "camera-padded", label: "Camera only, padded", camera: true },
+/**
+ * The arrangements, in the order they appear. Four to a row.
+ *
+ * `camera` sits on the group rather than on each arrangement: it is the same
+ * question the heading already answers, and two places to state it is one place
+ * for them to disagree.
+ *
+ * Each label still says in full what the cell is, rather than leaning on the
+ * heading above it. A heading is not associated with the buttons under it, so
+ * "Full frame" alone is what a screen reader would announce, twice, in two
+ * different groups.
+ */
+const GROUPS: {
+  id: string;
+  label: string;
+  /** Needs a camera track, so the whole group greys out without one. */
+  camera: boolean;
+  presets: { value: LayoutPreset; label: string }[];
+}[] = [
+  {
+    id: "both",
+    label: "Screen and camera",
+    camera: true,
+    presets: [
+      { value: "over-full", label: "Full screen, camera over" },
+      { value: "over-padded", label: "Padded screen, camera over" },
+      { value: "beside", label: "Screen and camera side by side" },
+      { value: "stacked", label: "Screen above the camera" },
+      { value: "split", label: "Split down the middle" },
+      { value: "split-stacked", label: "Split across the middle" },
+    ],
+  },
+  {
+    id: "camera",
+    label: "Camera only",
+    camera: true,
+    presets: [
+      { value: "camera-full", label: "Camera only, full frame" },
+      { value: "camera-padded", label: "Camera only, padded" },
+    ],
+  },
+  {
+    id: "screen",
+    label: "Screen only",
+    camera: false,
+    presets: [
+      { value: "screen-full", label: "Screen only, full frame" },
+      { value: "screen-padded", label: "Screen only, padded" },
+    ],
+  },
 ];
 
 /**
@@ -63,6 +106,8 @@ const THUMB_SOURCES = { screen: { width: 16, height: 9 }, camera: { width: 16, h
 const CELL =
   "relative grid aspect-square place-items-center rounded-md bg-white/5 p-0.5 " +
   "hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
+
+const GRID = "grid grid-cols-4 gap-1";
 
 export function LayoutPicker({
   frame,
@@ -92,41 +137,55 @@ export function LayoutPicker({
   const paint = backgroundCss(background.background, fileUrl);
 
   return (
-    <div className="grid grid-cols-5 gap-1">
-      {PRESETS.map((preset) => {
-        const off = preset.camera && !cameraPresent;
+    <div className="flex flex-col gap-2">
+      {GROUPS.map((group) => (
+        <div key={group.id} className="flex flex-col gap-1">
+          <h3 className="text-[10px] font-medium text-editor-muted">{group.label}</h3>
 
-        return (
-          <button
-            key={preset.value}
-            type="button"
-            aria-label={preset.label}
-            title={preset.label}
-            aria-pressed={preset.value === value}
-            disabled={off}
-            className={cn(CELL, preset.value === value && "ring-2 ring-editor-accent ring-inset")}
-            onClick={() => onChange(preset.value)}
-          >
-            <Plate frame={frame} preset={preset.value} background={background} paint={paint} />
-          </button>
-        );
-      })}
+          <div className={GRID}>
+            {group.presets.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                aria-label={preset.label}
+                title={preset.label}
+                aria-pressed={preset.value === value}
+                disabled={group.camera && !cameraPresent}
+                className={cn(
+                  CELL,
+                  preset.value === value && "ring-2 ring-editor-accent ring-inset",
+                )}
+                onClick={() => onChange(preset.value)}
+              >
+                <Plate frame={frame} preset={preset.value} background={background} paint={paint} />
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
-      {/* Only while it is the state. `custom` is not something to pick — it is
-          where a resize lands — so a cell offering it would be an arrangement
-          that does nothing when clicked. Shown when it applies so the picker
-          always has an answer to "which one is this". */}
+      {/* Its own group rather than a cell tacked onto the last one, following
+          the background picker: `custom` is not something to pick — it is where
+          a resize lands — so a cell offering it among the arrangements would be
+          one that does nothing when clicked. Shown only while it is the state,
+          so the picker always has an answer to "which one is this". */}
       {value === "custom" && (
-        <button
-          type="button"
-          aria-label="Custom"
-          title="Custom — dragged by hand"
-          aria-pressed
-          className={cn(CELL, "ring-2 ring-editor-accent ring-inset")}
-          onClick={() => onChange("custom")}
-        >
-          <span className="text-[9px] text-editor-muted">Custom</span>
-        </button>
+        <div className="flex flex-col gap-1">
+          <h3 className="text-[10px] font-medium text-editor-muted">Custom</h3>
+
+          <div className={GRID}>
+            <button
+              type="button"
+              aria-label="Custom"
+              title="Custom — dragged by hand"
+              aria-pressed
+              className={cn(CELL, "ring-2 ring-editor-accent ring-inset")}
+              onClick={() => onChange("custom")}
+            >
+              <span className="text-[9px] text-editor-muted">Custom</span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

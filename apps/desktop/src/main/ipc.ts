@@ -42,6 +42,7 @@ import { permissionStates, relaunchApp, requestPermission } from "./permissions.
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
+import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
 import { sweepCaptions, writeCaption } from "./captions.js";
 import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
@@ -205,6 +206,20 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.editorPresetImage, (_event, dir: string, presetId: string) =>
     attempt(() => copyPresetBackground(dir, presetId)),
+  );
+
+  // ── backgrounds ──────────────────────────────────────────────────────────
+  //
+  // The renderer cannot fetch these itself: its CSP is
+  // `connect-src 'self' prequel-media:`.
+  ipcMain.handle(IPC_CHANNELS.backgroundsCatalogue, () => attempt(() => catalogue()));
+
+  ipcMain.handle(IPC_CHANNELS.backgroundsThumbnail, (_event, file: string) =>
+    attempt(() => ensureThumbnail(file)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, dir: string, file: string) =>
+    attempt(() => ensureBackground(dir, file)),
   );
 
   ipcMain.handle(

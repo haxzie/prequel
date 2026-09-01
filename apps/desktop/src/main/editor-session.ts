@@ -26,7 +26,8 @@ import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
 import { insideRecordings } from "./session.js";
 import { getRecorder, type TrackProbe } from "./recorder.js";
-import { ensureWallpaper } from "./wallpaper.js";
+import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
+import { copyPresetBackground, ensureWallpaper } from "./wallpaper.js";
 
 /**
  * Reads one recording into the payload its editor window needs.
@@ -207,11 +208,29 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
  */
 async function withBackground(dir: string, project: Project): Promise<Project> {
   const background = project.defaults.background.background;
-  if (background.kind !== "image" || background.source !== "wallpaper") return project;
+  if (background.kind !== "image") return project;
+
+  // A shipped picture, which is what a fresh project now opens on. Copied in
+  // for the same reason the desktop picture is: the plan names a file inside
+  // the recording, so one that was never copied draws nothing.
+  if (background.source === "preset") {
+    const preset = BACKGROUND_PRESETS.find((candidate) => candidate.file === background.path);
+    if (preset && copyPresetBackground(dir, preset.id)) return project;
+
+    console.warn(`[editor] could not copy ${background.path} into ${dir}`);
+    return withFallback(project);
+  }
+
+  if (background.source !== "wallpaper") return project;
 
   if (await ensureWallpaper(dir)) return project;
 
   console.warn(`[editor] no wallpaper for ${dir}; falling back to a gradient`);
+  return withFallback(project);
+}
+
+/** The project with its default background swapped for one that always draws. */
+function withFallback(project: Project): Project {
   return {
     ...project,
     defaults: {

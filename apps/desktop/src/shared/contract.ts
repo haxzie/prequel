@@ -302,6 +302,15 @@ export const IPC_CHANNELS = {
    * The renderer is the only side with a font engine and main is the only side
    * with a filesystem, so a cue crosses here as pixels rather than as text.
    */
+  /**
+   * The hosted background catalogue, and the pictures in it.
+   *
+   * Every one of these is a main-process call because the editor's CSP is
+   * `connect-src 'self' prequel-media:` — a window cannot reach the API at all.
+   */
+  backgroundsCatalogue: "backgrounds:catalogue",
+  backgroundsThumbnail: "backgrounds:thumbnail",
+  backgroundsEnsure: "backgrounds:ensure",
   editorWriteCaption: "editor:writeCaption",
   editorSweepCaptions: "editor:sweepCaptions",
   /**
@@ -491,6 +500,36 @@ export interface TranscribeProgress {
   error: { code: string | null; message: string } | null;
   /** Present only on `done`. */
   transcript?: Transcript;
+}
+
+/**
+ * One background as the API describes it.
+ *
+ * `thumbnail` and `raw` are paths on the API rather than URLs the renderer
+ * could use — it cannot reach the network. They are here because main needs
+ * them and this is the shape the API sends.
+ */
+export interface BackgroundListing {
+  id: string;
+  label: string;
+  category: string;
+  /** The file name, which is what a project stores and what a recording holds. */
+  file: string;
+  md5: string;
+  bytes: number;
+  width: number;
+  height: number;
+  /** Drawn while the thumbnail is still being fetched. */
+  blurhash: string;
+  thumbnail: string;
+  raw: string;
+}
+
+export interface BackgroundsCatalogue {
+  version: number;
+  updated: string;
+  categories: { id: string; label: string }[];
+  backgrounds: BackgroundListing[];
 }
 
 /**

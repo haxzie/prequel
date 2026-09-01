@@ -510,7 +510,21 @@ export function Preview({
   };
 
   return (
-    <div ref={box} className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden p-6">
+    <div
+      ref={box}
+      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden p-6"
+      // The dotted surround. A click that lands out here is the same "nothing"
+      // the canvas already treats as a deselect, and without it a ring put on
+      // the camera could only be taken off by finding an empty patch of the
+      // composition itself — which a full-bleed arrangement does not have.
+      //
+      // `currentTarget` only. The picture, the ring and the handles all sit in
+      // the box below this one, so anything with a target of its own is left to
+      // the canvas, where the hit testing lives.
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) setSelected(null);
+      }}
+    >
       {/* Sized to the picture so the ring inside it can be placed in frame
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}

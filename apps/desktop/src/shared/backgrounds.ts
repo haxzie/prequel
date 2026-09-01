@@ -10,9 +10,11 @@
  * seen in a square or vertical frame — which is why the busiest part of each is
  * near the centre.
  *
- * Grouped, because eleven swatches in one grid is a wall rather than a choice:
- * `Wallpapers` are the photographs, `Aurora` the grainy gradient glows, and
- * `Lights` the graphic studies. The order of `BACKGROUND_CATEGORIES` is the
+ * Grouped, because a single grid of these is a wall rather than a choice:
+ * `Wallpapers` are the pictures, `Aurora` the dark saturated glows,
+ * `Soft Light` the pale pastel ones, and `Glass` the refracted and faceted
+ * ones. The picker adds a `Custom` section of its own after these, holding the
+ * file picker — it has no presets, so it is not a category here. The order of `BACKGROUND_CATEGORIES` is the
  * order the picker shows them in, and a preset's `category` is the only thing
  * that decides where it lands — moving one is a one-word edit.
  *
@@ -25,7 +27,7 @@
  */
 
 /** The groups the picker shows, in the order it shows them. */
-export const BACKGROUND_CATEGORIES = ["wallpapers", "aurora", "lights"] as const;
+export const BACKGROUND_CATEGORIES = ["wallpapers", "aurora", "softlight", "glass"] as const;
 
 export type BackgroundCategory = (typeof BACKGROUND_CATEGORIES)[number];
 
@@ -33,7 +35,8 @@ export type BackgroundCategory = (typeof BACKGROUND_CATEGORIES)[number];
 export const BACKGROUND_CATEGORY_LABELS: Record<BackgroundCategory, string> = {
   wallpapers: "Wallpapers",
   aurora: "Aurora",
-  lights: "Lights",
+  softlight: "Soft Light",
+  glass: "Glass",
 };
 
 export interface BackgroundPreset {
@@ -46,7 +49,9 @@ export interface BackgroundPreset {
 }
 
 export const BACKGROUND_PRESETS: BackgroundPreset[] = [
-  // Photographs of somewhere real.
+  // Somewhere real, or drawn to look like it.
+  { id: "monterey", label: "Monterey", file: "monterey.jpg", category: "wallpapers" },
+  { id: "sequoia", label: "Sequoia", file: "sequoia.jpg", category: "wallpapers" },
   { id: "alpenglow", label: "Alpenglow", file: "alpenglow.jpg", category: "wallpapers" },
   { id: "dune", label: "Dune", file: "dune.jpg", category: "wallpapers" },
   { id: "canyon", label: "Canyon", file: "canyon.jpg", category: "wallpapers" },
@@ -59,10 +64,36 @@ export const BACKGROUND_PRESETS: BackgroundPreset[] = [
   { id: "iris", label: "Iris", file: "iris.jpg", category: "aurora" },
   { id: "nebula", label: "Nebula", file: "nebula.jpg", category: "aurora" },
   { id: "blush", label: "Blush", file: "blush.jpg", category: "aurora" },
+  { id: "indigo", label: "Indigo", file: "indigo.jpg", category: "aurora" },
+  { id: "cobalt", label: "Cobalt", file: "cobalt.jpg", category: "aurora" },
+  { id: "lilac", label: "Lilac", file: "lilac.jpg", category: "aurora" },
+  { id: "dusk", label: "Dusk", file: "dusk.jpg", category: "aurora" },
+  { id: "ember", label: "Ember", file: "ember.jpg", category: "aurora" },
+  { id: "sage", label: "Sage", file: "sage.jpg", category: "aurora" },
 
-  // Drawn light rather than photographed: rays and a lit ridge.
-  { id: "sequoia", label: "Sequoia", file: "sequoia.jpg", category: "lights" },
-  { id: "monterey", label: "Monterey", file: "monterey.jpg", category: "lights" },
+  // Pale and low-contrast. These arrived perfectly smooth — a flat patch
+  // measured 0.3 where the rest of the catalogue measures nearly 3 — so grain
+  // was added when they were brought in, for the banding reason above. Judge
+  // any replacement the same way rather than by eye: the encoder is what
+  // decides, and it does so after the file looks fine.
+  { id: "peony", label: "Peony", file: "peony.jpg", category: "softlight" },
+  { id: "reef", label: "Reef", file: "reef.jpg", category: "softlight" },
+  { id: "meadow", label: "Meadow", file: "meadow.jpg", category: "softlight" },
+  { id: "linen", label: "Linen", file: "linen.jpg", category: "softlight" },
+  { id: "bluebell", label: "Bluebell", file: "bluebell.jpg", category: "softlight" },
+  { id: "apricot", label: "Apricot", file: "apricot.jpg", category: "softlight" },
+  { id: "sherbet", label: "Sherbet", file: "sherbet.jpg", category: "softlight" },
+  { id: "fern", label: "Fern", file: "fern.jpg", category: "softlight" },
+  { id: "glacier", label: "Glacier", file: "glacier.jpg", category: "softlight" },
+  { id: "orchid", label: "Orchid", file: "orchid.jpg", category: "softlight" },
+
+  // Light through something: refracted, faceted, ribbed. Dark, so the footage
+  // in front of them carries the frame.
+  { id: "prism", label: "Prism", file: "prism.jpg", category: "glass" },
+  { id: "caustic", label: "Caustic", file: "caustic.jpg", category: "glass" },
+  { id: "facet", label: "Facet", file: "facet.jpg", category: "glass" },
+  { id: "fluted", label: "Fluted", file: "fluted.jpg", category: "glass" },
+  { id: "reeded", label: "Reeded", file: "reeded.jpg", category: "glass" },
 ];
 
 /** The presets in one group, in catalogue order. */

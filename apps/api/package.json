@@ -12,7 +12,8 @@
     "migrate:remote": "wrangler d1 migrations apply prequel --remote --env production",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .turbo node_modules dist .wrangler *.tsbuildinfo"
+    "clean": "rm -rf .turbo node_modules dist .wrangler *.tsbuildinfo",
+    "backgrounds": "node --experimental-strip-types scripts/upload-backgrounds.ts"
   },
   "dependencies": {
     "@prequel/db": "workspace:*",
@@ -26,6 +27,7 @@
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "5.20260815.1",
     "@prequel/typescript-config": "workspace:*",
+    "blurhash": "^2.0.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "wrangler": "^4.125.0"

@@ -37,6 +37,17 @@ export function exportUrl(fileName: string): string {
 }
 
 /**
+ * A URL for a background thumbnail main has cached.
+ *
+ * A fourth host rather than a path under `recording`: these live in the app's
+ * own cache directory, not inside any recording, and the `recording` route's
+ * traversal guard is written against the recordings directory.
+ */
+export function backgroundUrl(fileName: string): string {
+  return `${MEDIA_SCHEME}://background/${encodeURIComponent(fileName)}`;
+}
+
+/**
  * A URL for one of the app's own shipped images.
  *
  * A second host rather than a second scheme: the privileges, the CSP entry and
