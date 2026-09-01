@@ -57,7 +57,7 @@ describe("the background catalogue", () => {
   });
 
   it("finds a preset by the id a project stored", () => {
-    expect(backgroundPreset("aurora")?.file).toBe("aurora.jpg");
+    expect(backgroundPreset("monterey")?.file).toBe("monterey.jpg");
     expect(backgroundPreset("no-such-preset")).toBeUndefined();
   });
 });

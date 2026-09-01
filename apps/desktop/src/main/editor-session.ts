@@ -27,6 +27,7 @@ import { mediaUrl } from "./media-protocol.js";
 import { insideRecordings } from "./session.js";
 import { getRecorder, type TrackProbe } from "./recorder.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
+import { ensureBackground } from "./backgrounds.js";
 import { copyPresetBackground, ensureWallpaper } from "./wallpaper.js";
 
 /**
@@ -210,14 +211,27 @@ async function withBackground(dir: string, project: Project): Promise<Project> {
   const background = project.defaults.background.background;
   if (background.kind !== "image") return project;
 
-  // A shipped picture, which is what a fresh project now opens on. Copied in
-  // for the same reason the desktop picture is: the plan names a file inside
-  // the recording, so one that was never copied draws nothing.
+  // A catalogue picture, which is what a fresh project opens on. Provided for
+  // the same reason the desktop picture is: the plan names a file inside the
+  // recording, so one that is not there draws nothing.
   if (background.source === "preset") {
+    // Already beside the recording's own media, which is where it lands whether
+    // it was copied out of the bundle or downloaded. Asked first, and it is the
+    // answer almost every time: only one picture ships now, so without this
+    // every project that chose one of the other thirty-one would be handed a
+    // gradient the next time it was opened — with the picture it actually wants
+    // sitting unread in the same folder.
+    if (existsSync(join(dir, background.path))) return project;
+
     const preset = BACKGROUND_PRESETS.find((candidate) => candidate.file === background.path);
     if (preset && copyPresetBackground(dir, preset.id)) return project;
 
-    console.warn(`[editor] could not copy ${background.path} into ${dir}`);
+    // Not one of the few that ship, and not here yet: fetch it, exactly as
+    // choosing it in the picker would. That is a recording opened on a machine
+    // which has never held this picture — moved off another Mac, or restored.
+    if (await ensureBackground(dir, background.path)) return project;
+
+    console.warn(`[editor] could not provide ${background.path} for ${dir}`);
     return withFallback(project);
   }
 
