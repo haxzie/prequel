@@ -34,6 +34,11 @@ describe("the background catalogue", () => {
     // that draws nothing and a background that renders blank — which is exactly
     // how the missing desktop picture behaved, and it took a log line from four
     // days earlier to work out why.
+    //
+    // That directory is generated and git-ignored, so `pnpm test` runs
+    // `sync-backgrounds.mjs` first, the way `build` and `package` do. This
+    // therefore checks the script's own output: the floor it copies has to
+    // cover every preset shipped here, and nothing else keeps the two in step.
     const dir = new URL("../../resources/backgrounds/", import.meta.url);
 
     for (const preset of BACKGROUND_PRESETS) {

@@ -11,7 +11,7 @@
     "package": "node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",
     "install:app": "node scripts/install.mjs",
     "ship": "pnpm package && pnpm install:app",
-    "test": "vitest run",
+    "test": "node scripts/sync-backgrounds.mjs && vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "clean": "rm -rf out dist release .turbo node_modules *.tsbuildinfo",
     "icons": "node scripts/make-tray-icons.mjs",
