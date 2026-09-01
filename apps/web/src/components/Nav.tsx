@@ -5,6 +5,7 @@ import { NAV } from "@/lib/site";
 import { ButtonLink } from "./Button";
 import { GitHubStars } from "./GitHubStars";
 import { AppleIcon } from "./icons";
+import { NavMenu } from "./NavMenu";
 import { Container } from "./Section";
 
 export function Nav() {
@@ -41,7 +42,9 @@ export function Nav() {
             Prequel
           </Link>
 
-          <nav className="flex items-center gap-1">
+          {/* Gone below `sm`, where the row cannot hold it. The same links are
+              in the menu at the other end of the header — see `NavMenu`. */}
+          <nav className="hidden items-center gap-1 sm:flex">
             {NAV.map((item) => (
               <Link
                 key={item.href}
@@ -75,9 +78,9 @@ export function Nav() {
             Sign in
           </Link>
 
-          {/* Both dropped on the narrowest screens, together: the row cannot
-              hold them, and the hero's own form is a scroll away rather than a
-              navigation.
+          {/* Both out of the row on the narrowest screens, and into the menu
+              beside them rather than dropped: a header that keeps only a
+              wordmark and a sign-in link has stopped being navigation.
 
               The `hidden` sits on a wrapper because the button already carries
               `inline-flex`. Two unprefixed display utilities on one element is
@@ -97,6 +100,10 @@ export function Nav() {
               Download
             </ButtonLink>
           </span>
+
+          {/* Rendered here and passed down, so the count is still fetched on
+              the server — the note in `NavMenu` has the reason. */}
+          <NavMenu stars={<GitHubStars />} />
         </div>
       </Container>
     </header>

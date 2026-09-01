@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
@@ -6,7 +8,9 @@ import { ShaderWash } from "@/components/landing/ShaderWash";
 import { SITE } from "@/lib/site";
 
 type HeroProps = {
-  title: string;
+  /** A node and not a string: the home page draws three of its words as chips.
+      Every other page passes a plain string, which is still one of these. */
+  title: ReactNode;
   lede: string;
   /** Small caps line above the heading. The home page passes none. */
   eyebrow?: string;
@@ -79,9 +83,15 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
               <Eyebrow>{eyebrow}</Eyebrow>
             </div>
           ) : null}
+          {/* The leading opens up only when the title contains a chip. A chip
+              is taller than the letters around it and tilted on top of that, so
+              at 1.05 the raised corner of one on the second line lands in the
+              first — but a plain sentence wants the tight setting, and every
+              page but the home one passes a plain sentence. `has-` asks the
+              content rather than adding a prop each page has to get right. */}
           <h1
             data-hero-enter
-            className="animate-hero-rise text-[2rem] leading-[1.05] font-normal tracking-tight text-balance text-fg sm:text-6xl"
+            className="animate-hero-rise text-[2rem] leading-[1.05] font-normal tracking-tight text-balance text-fg has-[[data-hero-chip]]:leading-[1.5] sm:text-6xl"
             style={rise()}
           >
             {title}

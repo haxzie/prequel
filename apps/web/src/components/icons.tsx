@@ -16,10 +16,11 @@
  * hair high because the leaf puts the mark's optical centre below its
  * geometric one.
  *
- * Used only to say which platform the build is for, beside the word Mac. Apple's
+ * Used only to say which platform the build is for, beside the word Mac — on the
+ * download button and in the home page's headline, and nowhere else. Apple's
  * trademark guidelines are strict about their marks — the note in
- * `content/competitors.ts` is where that came up before — so this belongs on a
- * download button and nowhere else on the site.
+ * `content/competitors.ts` is where that came up before — so it always sits
+ * beside the word and never stands in for it.
  */
 export function AppleIcon({ className = "" }: { className?: string }) {
   return (
@@ -50,6 +51,46 @@ export function StarIcon({ className = "" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
       <path d="M12 2.6l2.92 5.92 6.53.95-4.72 4.6 1.11 6.5L12 17.5l-5.84 3.07 1.11-6.5-4.72-4.6 6.53-.95z" />
+    </svg>
+  );
+}
+
+/**
+ * The hamburger, and the cross it becomes.
+ *
+ * Stroked, unlike the three marks above: those are logos and outlining one
+ * draws a different logo, while these are ordinary icons and want the weight of
+ * the text beside them. `round` caps so the bars end the way the pill buttons
+ * around them do.
+ */
+export function MenuIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+
+export function CloseIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
 }
