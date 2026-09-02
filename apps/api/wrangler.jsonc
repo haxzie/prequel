@@ -48,13 +48,16 @@
     // access form" Google Form, readable by anyone who opens the form.
     "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
     "WAITLIST_FIELD": "entry.348125812",
-    "SES_REGION": "us-east-1",
-    // A verified address, so magic links actually send while developing. The
-    // production sender below is the one that belongs to the product — SES will
-    // not send from an unverified identity, and while the account is in the
-    // sandbox it will not send *to* an unverified one either, so this address
-    // doubles as the only inbox that can receive a test link.
-    "SES_FROM": "Prequel <musthaq@sequel.sh>",
+    // ap-south-1, because that is where the `prequel.sh` domain is verified and
+    // where the account has production access. us-east-1 has neither: one
+    // identity that failed verification, and the sandbox still on. Sending from
+    // the wrong region fails with "Email address is not verified" naming the
+    // sender, which reads as a bad sender rather than a bad region.
+    "SES_REGION": "ap-south-1",
+    // The product's address in development too. A verified *domain* rather than
+    // one address, so there is no second sender to keep verified, and a magic
+    // link opened while developing comes from where it will in production.
+    "SES_FROM": "Prequel <hello@prequel.sh>",
     // PostHog's project token is public — write-only, and served to every
     // browser that loads the site — so it is a var here rather than a secret in
     // `.dev.vars`, the same call `WAITLIST_ENDPOINT` above makes.
@@ -94,11 +97,11 @@
         "GITHUB_REPO": "haxzie/prequel",
         "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
         "WAITLIST_FIELD": "entry.348125812",
-        "SES_REGION": "us-east-1",
-        // Verify the `prequel.sh` domain in SES before deploying, or every
-        // magic link and invitation fails with an error naming the sender.
-        // Sending Prequel's mail from another brand's domain would also cost
-        // deliverability, which is the slow version of the same failure.
+        // Same region as above, and for the same reason: the domain is verified
+        // there and nowhere else.
+        "SES_REGION": "ap-south-1",
+        // Sending Prequel's mail from another brand's domain would work and
+        // cost deliverability, which is the slow version of an outright bounce.
         "SES_FROM": "Prequel <hello@prequel.sh>",
         // Repeated rather than inherited: a named environment inherits nothing
         // from the top-level `vars`, so a value left out here is simply absent

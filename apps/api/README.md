@@ -198,11 +198,12 @@ node scripts/ses-status.mjs add you@example.com  # start verifying one
 A verified identity works as sender _and_ recipient, so verifying one address is
 enough to send yourself a magic link and click it.
 
-For production, verify the `prequel.sh` **domain** — DNS records rather than a
-click — and request production access to lift the sandbox. `SES_FROM` in the
-production env is `hello@prequel.sh` and will fail until that domain is verified;
-sending Prequel's mail from some other domain would work but costs deliverability,
-which is the slow version of the same failure.
+Both environments send as `hello@prequel.sh` from **ap-south-1**, which is where
+the `prequel.sh` domain is verified and where the account has production access.
+Nothing is verified in us-east-1, so a region left at the AWS default fails with
+an error naming the _sender_, which sends you looking in the wrong place.
+Sending Prequel's mail from some other domain would work but costs
+deliverability, which is the slow version of the same failure.
 
 ## Billing, and the three tiers
 
