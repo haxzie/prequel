@@ -252,6 +252,7 @@ function buildSlices(
         // be a second answer to a question `captionAt` already answers per
         // frame.
         cues.get(captionLook(settings.captions)),
+        project.blurs,
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,

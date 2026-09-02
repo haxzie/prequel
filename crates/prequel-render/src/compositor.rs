@@ -287,7 +287,7 @@ impl Compositor {
             });
             if needs_alloc {
                 let mut desc = mtl::TextureDesc::new_2d(
-                    mtl::PixelFormat::Bgra8UNorm,
+                    target.texture.pixel_format(),
                     w,
                     h,
                     false,
@@ -351,9 +351,17 @@ impl Compositor {
                 // A keyframe can decay to zero width/height when opacity fades out,
                 // which means the blur is gone and we skip drawing it.
                 if active_rect.width <= 0.0 || active_rect.height <= 0.0 {
-                    // Resume the main pass
+                    // Resume the main pass with Load so prior contents survive.
+                    let resume_desc = mtl::RenderPassDesc::new();
+                    {
+                        let attachments = resume_desc.color_attaches();
+                        let mut attachment = attachments.get(0);
+                        attachment.set_texture(Some(&target.texture));
+                        attachment.set_load_action(mtl::LoadAction::Load);
+                        attachment.set_store_action(mtl::StoreAction::Store);
+                    }
                     encoder = cmd
-                        .new_render_cmd_enc(&descriptor)
+                        .new_render_cmd_enc(&resume_desc)
                         .ok_or_else(|| Error::Metal("could not resume render encoder".to_owned()))?;
                     encoder.set_render_ps(&self.pipeline);
                     continue;
@@ -385,6 +393,7 @@ impl Compositor {
                         attachment.set_load_action(mtl::LoadAction::Load);
                         attachment.set_store_action(mtl::StoreAction::Store);
                     }
+                    println!("Drawing blur with active_rect: {:?}, sigma: {}", active_rect, sigma);
                     let mut blur_enc = cmd
                         .new_render_cmd_enc(&blur_desc)
                         .ok_or_else(|| Error::Metal("could not create a blur encoder".to_owned()))?;

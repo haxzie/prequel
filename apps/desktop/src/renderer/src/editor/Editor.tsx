@@ -395,14 +395,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               blurs={state.project.blurs}
               onAddBlur={(region) => {
                 // Determine source time
-                const at = media.sourceAt() ?? 0;
+                const at = Math.round(media.sourceAt() ?? 0);
                 dispatch({ type: "addBlur", at, region });
                 setBlurDrawMode(false);
               }}
               selectedBlurId={state.selectedBlurId}
               onSelectBlur={(id) => dispatch({ type: "selectBlur", blurId: id })}
               onUpdateBlur={(blur) => {
-                const time = media.sourceAt() ?? 0;
+                const time = Math.round(media.sourceAt() ?? 0);
                 // Find or add keyframe at current time
                 const keyframes = [...(blur.keyframes || [])];
                 const existingIdx = keyframes.findIndex((k) => Math.abs(k.time - time) < 50_000_000);

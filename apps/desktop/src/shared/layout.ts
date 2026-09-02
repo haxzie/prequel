@@ -850,7 +850,7 @@ function blurItems(
       const kcy2 = Math.min(ky + kheight, dstRect.y + dstRect.height);
       
       return {
-        at: time,
+        at: Math.round(time),
         x: kcx,
         y: kcy,
         width: Math.max(0, kcx2 - kcx),
@@ -861,27 +861,27 @@ function blurItems(
 
     let keys: RectKey[] = [];
     if (region.keyframes && region.keyframes.length > 0) {
-      keys = region.keyframes.map((kf) => toKey(kf.time, kf.x, kf.y, kf.width, kf.height));
+      keys = region.keyframes.map((kf) => toKey(Math.round(kf.time), kf.x, kf.y, kf.width, kf.height));
       const first = keys[0]!;
-      if (first.at > region.source.start) {
-        keys.unshift({ ...first, at: region.source.start });
+      if (first.at > Math.round(region.source.start)) {
+        keys.unshift({ ...first, at: Math.round(region.source.start) });
       }
       const last = keys[keys.length - 1]!;
-      if (last.at < region.source.end) {
-        keys.push({ ...last, at: region.source.end });
+      if (last.at < Math.round(region.source.end)) {
+        keys.push({ ...last, at: Math.round(region.source.end) });
       }
     } else {
       keys = [
-        toKey(region.source.start, region.x, region.y, region.width, region.height),
-        toKey(region.source.end, region.x, region.y, region.width, region.height),
+        toKey(Math.round(region.source.start), region.x, region.y, region.width, region.height),
+        toKey(Math.round(region.source.end), region.x, region.y, region.width, region.height),
       ];
     }
 
     // Wrap with zero-sized keys to hide before start and after end
     const firstActive = keys[0]!;
     const lastActive = keys[keys.length - 1]!;
-    keys.unshift({ ...firstActive, at: region.source.start - 1, width: 0, height: 0 });
-    keys.push({ ...lastActive, at: region.source.end + 1, width: 0, height: 0 });
+    keys.unshift({ ...firstActive, at: Math.round(region.source.start) - 1, width: 0, height: 0 });
+    keys.push({ ...lastActive, at: Math.round(region.source.end) + 1, width: 0, height: 0 });
 
     items.push({
       kind: "blur",
@@ -1709,7 +1709,7 @@ function keyFor(
 
   return {
     key: {
-      at,
+      at: Math.round(at),
       ...shot.rect,
       radius: shot.radius,
       ...(quad ? { quad } : {}),
@@ -1720,13 +1720,13 @@ function keyFor(
     // them for a stroke or a shadow, and carrying them would put the
     // depth-of-field twice in every plan.
     border: {
-      at,
+      at: Math.round(at),
       ...edge.rect,
       radius: shot.radius + border,
       ...(edge.quad ? { quad: edge.quad } : {}),
     },
     shadow: {
-      at,
+      at: Math.round(at),
       ...bled.rect,
       radius: shot.radius + border,
       ...(bled.quad ? { quad: bled.quad } : {}),
@@ -2907,7 +2907,7 @@ function withTypingGaps<T extends CursorPoint>(
   /** The pointer's own place at a moment, as a point to write in. */
   const held = (at: number, like: T, visible: boolean): T => {
     const place = cursorAt(points, at)!;
-    return { ...like, at, x: place.x, y: place.y, scale: place.scale, visible };
+    return { ...like, at: Math.round(at), x: place.x, y: place.y, scale: place.scale, visible };
   };
 
   for (const point of points) {
