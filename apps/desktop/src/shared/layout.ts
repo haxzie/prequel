@@ -20,6 +20,8 @@ import type { CursorKind } from "./manifest.js";
 import type {
   Background,
   BackgroundSettings,
+  BlurKeyframe,
+  BlurSlice,
   CameraShape,
   LayoutSettings,
   SliceSettings,
@@ -228,6 +230,31 @@ export type PlanItem =
        * item emitting two draws, so every plan item stays one quad.
        */
       words: CaptionWord[];
+    }
+  | {
+      kind: "blur";
+      /**
+       * Where to apply the Gaussian blur, in output pixels.
+       *
+       * Already mapped from source fractions by `buildRenderPlan` — the same
+       * rule as cursor positions and zoom targets: the transform lives in one
+       * place so the preview and the exporter cannot disagree about where the
+       * region is.
+       */
+      rect: Rect;
+      /**
+       * Gaussian sigma in output pixels.
+       *
+       * Computed from `BlurRegion.strength * unit` so it scales with the output
+       * resolution, the same way shadow blur and padding do.
+       */
+      sigma: number;
+      /**
+       * Keyframes for motion tracking. If present, the rasterisers interpolate
+       * these to find the region's position at the current frame time, rather
+       * than using `rect`.
+       */
+      keys?: readonly RectKey[];
     };
 
 /**
@@ -303,6 +330,7 @@ export function buildRenderPlan(
   zooms?: readonly ZoomSlice[],
   enter?: EnterTransition | null,
   cues?: readonly RenderedCue[],
+  blurs?: readonly BlurSlice[],
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -448,6 +476,11 @@ export function buildRenderPlan(
           : {}),
       });
     }
+
+    // Blur regions drawn after the screen picture and its border, but before the
+    // camera bubble. They obscure recorded content — a password, a notification —
+    // without covering the composition layer above it.
+    items.push(...blurItems(blurs, srcRect, dstRect, sources.screen, unit));
   }
 
   if (sources.camera && boxes.camera) {
@@ -746,6 +779,116 @@ function captionItems(
         words: cue.words,
       });
     }
+  }
+
+  return items;
+}
+
+/**
+ * Maps blur regions from source fractions to output-pixel plan items.
+ *
+ * The source frame may be larger than the crop window (`srcRect`) that the
+ * layout placed on screen, so a region that falls fully outside the visible
+ * crop is skipped. One that overlaps the edge is clamped to what is visible.
+ *
+ * The mapping is the same linear transform the cursor uses: every coordinate
+ * that has to live in two rasterisers goes through this one function, so they
+ * cannot disagree. `dstRect` is the output rectangle; `srcRect` is the crop
+ * of the source that lands inside it.
+ */
+function blurItems(
+  blurs: readonly BlurSlice[] | undefined,
+  srcRect: Rect,
+  dstRect: Rect,
+  screen: Size | null,
+  unit: number,
+): PlanItem[] {
+  if (!screen || !blurs || blurs.length === 0) return [];
+
+  // How many output pixels one source pixel covers.
+  const scaleX = dstRect.width / srcRect.width;
+  const scaleY = dstRect.height / srcRect.height;
+
+  const items: PlanItem[] = [];
+
+  for (const region of blurs) {
+    // Source fractions → source pixels, then offset by the crop origin.
+    const rx = region.x * screen.width - srcRect.x;
+    const ry = region.y * screen.height - srcRect.y;
+    const rw = region.width * screen.width;
+    const rh = region.height * screen.height;
+
+    // Source pixels → output pixels.
+    const x = dstRect.x + (rx - rw / 2) * scaleX;
+    const y = dstRect.y + (ry - rh / 2) * scaleY;
+    const width = rw * scaleX;
+    const height = rh * scaleY;
+
+    // Clamp to the screen's own dstRect so the blur does not bleed outside
+    // the picture onto the background. A region that lies entirely outside is
+    // skipped — nothing to blur there.
+    const cx = Math.max(x, dstRect.x);
+    const cy = Math.max(y, dstRect.y);
+    const cx2 = Math.min(x + width, dstRect.x + dstRect.width);
+    const cy2 = Math.min(y + height, dstRect.y + dstRect.height);
+    if (cx2 <= cx || cy2 <= cy) continue;
+
+    const toKey = (time: number, rxParam: number, ryParam: number, rwParam: number, rhParam: number): RectKey => {
+      const krx = rxParam * screen.width - srcRect.x;
+      const kry = ryParam * screen.height - srcRect.y;
+      const krw = rwParam * screen.width;
+      const krh = rhParam * screen.height;
+      
+      const kx = dstRect.x + (krx - krw / 2) * scaleX;
+      const ky = dstRect.y + (kry - krh / 2) * scaleY;
+      const kwidth = krw * scaleX;
+      const kheight = krh * scaleY;
+      
+      const kcx = Math.max(kx, dstRect.x);
+      const kcy = Math.max(ky, dstRect.y);
+      const kcx2 = Math.min(kx + kwidth, dstRect.x + dstRect.width);
+      const kcy2 = Math.min(ky + kheight, dstRect.y + dstRect.height);
+      
+      return {
+        at: time,
+        x: kcx,
+        y: kcy,
+        width: Math.max(0, kcx2 - kcx),
+        height: Math.max(0, kcy2 - kcy),
+        radius: 0,
+      };
+    };
+
+    let keys: RectKey[] = [];
+    if (region.keyframes && region.keyframes.length > 0) {
+      keys = region.keyframes.map((kf) => toKey(kf.time, kf.x, kf.y, kf.width, kf.height));
+      const first = keys[0]!;
+      if (first.at > region.source.start) {
+        keys.unshift({ ...first, at: region.source.start });
+      }
+      const last = keys[keys.length - 1]!;
+      if (last.at < region.source.end) {
+        keys.push({ ...last, at: region.source.end });
+      }
+    } else {
+      keys = [
+        toKey(region.source.start, region.x, region.y, region.width, region.height),
+        toKey(region.source.end, region.x, region.y, region.width, region.height),
+      ];
+    }
+
+    // Wrap with zero-sized keys to hide before start and after end
+    const firstActive = keys[0]!;
+    const lastActive = keys[keys.length - 1]!;
+    keys.unshift({ ...firstActive, at: region.source.start - 1, width: 0, height: 0 });
+    keys.push({ ...lastActive, at: region.source.end + 1, width: 0, height: 0 });
+
+    items.push({
+      kind: "blur",
+      rect: { x: cx, y: cy, width: cx2 - cx, height: cy2 - cy },
+      sigma: region.strength * unit,
+      keys,
+    });
   }
 
   return items;

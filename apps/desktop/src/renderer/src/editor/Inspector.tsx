@@ -10,6 +10,7 @@ import {
   WALLPAPER_FILE_NAME,
   type Background,
   type BackgroundSettings,
+  type BlurSlice,
   type LayoutPreset,
   type LayoutSettings,
   type SettingsSection,
@@ -43,6 +44,7 @@ import {
   ImageIcon,
   LayoutIcon,
   PerspectiveIcon,
+  RedactIcon,
   RoundedIcon,
   ScreenIcon,
   SolidIcon,
@@ -102,6 +104,25 @@ export interface InspectorProps {
    * with no visible way to change it.
    */
   onClose: () => void;
+  /**
+   * Whether the preview is currently in blur-draw mode.
+   *
+   * Passed back in rather than derived here: Preview owns the draw state, and
+   * the Inspector only needs to know whether to show the button as active.
+   */
+  blurDrawMode?: boolean;
+  /** Toggle blur-draw mode in the preview. */
+  onToggleBlurDraw?: () => void;
+  /** The blur regions array */
+  blurs?: readonly BlurSlice[];
+  /** Selected blur id */
+  selectedBlurId?: string | null;
+  /** Select a blur */
+  onSelectBlur?: (id: string | null) => void;
+  /** Update a blur */
+  onUpdateBlur?: (blur: BlurSlice) => void;
+  /** Delete a blur */
+  onDeleteBlur?: (id: string) => void;
 }
 
 /**
@@ -171,41 +192,41 @@ export function Inspector(props: InspectorProps) {
     const panel = { zoom, frame: props.frame, hasCursor: props.hasCursor, onChange: change };
 
     return (
-      <div className={SHELL}>
-        <nav className={RAIL}>
-          {ZOOM_TABS.map(({ id, label, Icon }) => (
+      <div className={ SHELL }>
+        <nav className={ RAIL }>
+          { ZOOM_TABS.map(({ id, label, Icon }) => (
             <button
-              key={id}
+              key={ id }
               type="button"
-              aria-current={id === zoomTab}
+              aria-current={ id === zoomTab }
               // The label the icon replaced, kept where it is still needed: as
               // the accessible name, and as the tooltip that is now the only
               // way to find out what a glyph means.
-              aria-label={label}
-              title={label}
-              className={railButton(id === zoomTab)}
-              onClick={() => setZoomTab(id)}
+              aria-label={ label }
+              title={ label }
+              className={ railButton(id === zoomTab) }
+              onClick={ () => setZoomTab(id) }
             >
               <Icon />
             </button>
-          ))}
+          )) }
         </nav>
 
-        <aside className={PANEL}>
+        <aside className={ PANEL }>
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             <PanelHeader
               title="Zoom"
-              icon={<ZoomIcon />}
+              icon={ <ZoomIcon /> }
               // The blue a zoom is drawn in on the timeline. The panel and the
               // chip it belongs to say the same thing about what is selected.
               tone="border-selected/60 bg-selected/35 text-white"
-              onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
+              onDelete={ () => dispatch({ type: "deleteZoom", zoomId: zoom.id }) }
               deleteLabel="Remove zoom"
-              onClose={props.onClose}
+              onClose={ props.onClose }
             />
-            {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
-            {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
-            {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+            { zoomTab === "motion" && <ZoomMotionPanel { ...panel } /> }
+            { zoomTab === "perspective" && <ZoomPerspectivePanel { ...panel } /> }
+            { zoomTab === "focus" && <ZoomFocusPanel { ...panel } /> }
           </div>
         </aside>
       </div>
@@ -229,6 +250,8 @@ export function Inspector(props: InspectorProps) {
     ...(props.present.has("microphone")
       ? [{ id: "captions" as const, label: "Captions", Icon: CaptionsIcon }]
       : []),
+    // Always shown: any recording can have a region blurred.
+    { id: "redact" as const, label: "Redact", Icon: RedactIcon },
   ];
 
   // A category can disappear — open a recording with no camera while Camera is
@@ -237,28 +260,28 @@ export function Inspector(props: InspectorProps) {
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
 
   return (
-    <div className={SHELL}>
-      <nav className={RAIL}>
-        {categories.map(({ id, label, Icon }) => (
+    <div className={ SHELL }>
+      <nav className={ RAIL }>
+        { categories.map(({ id, label, Icon }) => (
           <button
-            key={id}
+            key={ id }
             type="button"
-            aria-current={id === active}
-            aria-label={label}
-            title={label}
-            className={railButton(id === active)}
-            onClick={() => setTab(id)}
+            aria-current={ id === active }
+            aria-label={ label }
+            title={ label }
+            className={ railButton(id === active) }
+            onClick={ () => setTab(id) }
           >
             <Icon />
           </button>
-        ))}
+        )) }
       </nav>
 
-      <aside className={PANEL}>
+      <aside className={ PANEL }>
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <PanelHeader
-            title={scoped ? "Clip" : "All clips"}
-            icon={<ScreenIcon />}
+            title={ scoped ? "Clip" : "All clips" }
+            icon={ <ScreenIcon /> }
             // The purple a clip is drawn in on the timeline, and a neutral one
             // for the defaults, which are not a thing on the timeline at all.
             tone={
@@ -274,86 +297,99 @@ export function Inspector(props: InspectorProps) {
                 : undefined
             }
             deleteLabel="Remove clip"
-            onClose={props.onClose}
+            onClose={ props.onClose }
           />
 
-          {active === "layout" && (
+          { active === "layout" && (
             <LayoutPanel
-              settings={settings}
-              frame={props.frame}
-              cameraSource={props.cameraSource}
-              cameraPresent={props.present.has("camera")}
-              fileUrl={props.fileUrl}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
+              settings={ settings }
+              frame={ props.frame }
+              cameraSource={ props.cameraSource }
+              cameraPresent={ props.present.has("camera") }
+              fileUrl={ props.fileUrl }
+              field={ field }
+              reset={ sectionReset("layout") }
+              set={ set }
             />
-          )}
+          ) }
 
-          {active === "background" && (
+          { active === "background" && (
             <BackgroundPanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("background", PAINT_KEYS)}
-              set={set}
-              onPickWallpaper={props.onPickWallpaper}
-              onPickImage={props.onPickImage}
-              onPickPreset={props.onPickPreset}
-              backgrounds={props.backgrounds}
-              pendingBackground={props.pendingBackground}
-              wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
+              settings={ settings }
+              field={ field }
+              reset={ sectionReset("background", PAINT_KEYS) }
+              set={ set }
+              onPickWallpaper={ props.onPickWallpaper }
+              onPickImage={ props.onPickImage }
+              onPickPreset={ props.onPickPreset }
+              backgrounds={ props.backgrounds }
+              pendingBackground={ props.pendingBackground }
+              wallpaperUrl={ props.fileUrl(WALLPAPER_FILE_NAME) }
             />
-          )}
+          ) }
 
-          {active === "frame" && (
+          { active === "frame" && (
             <FramePanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("background", FRAME_KEYS)}
-              set={set}
+              settings={ settings }
+              field={ field }
+              reset={ sectionReset("background", FRAME_KEYS) }
+              set={ set }
             />
-          )}
+          ) }
 
-          {active === "camera" && (
+          { active === "camera" && (
             <CameraPanel
-              settings={settings}
-              frame={props.frame}
-              cameraSource={props.cameraSource}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
+              settings={ settings }
+              frame={ props.frame }
+              cameraSource={ props.cameraSource }
+              field={ field }
+              reset={ sectionReset("layout") }
+              set={ set }
             />
-          )}
+          ) }
 
-          {active === "audio" && (
+          { active === "audio" && (
             <AudioPanel
-              settings={settings}
-              present={props.present}
-              field={field}
-              reset={sectionReset("audio")}
-              set={set}
+              settings={ settings }
+              present={ props.present }
+              field={ field }
+              reset={ sectionReset("audio") }
+              set={ set }
             />
-          )}
+          ) }
 
-          {active === "cursor" && (
+          { active === "cursor" && (
             <CursorPanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
-              cursorUrl={props.fileUrl}
+              settings={ settings }
+              field={ field }
+              reset={ sectionReset("layout") }
+              set={ set }
+              cursorUrl={ props.fileUrl }
             />
-          )}
+          ) }
 
-          {active === "captions" && (
+          { active === "captions" && (
             <CaptionsPanel
-              settings={settings}
-              captions={props.captions}
-              field={field}
-              reset={sectionReset("captions")}
-              set={set}
+              settings={ settings }
+              captions={ props.captions }
+              field={ field }
+              reset={ sectionReset("captions") }
+              set={ set }
             />
-          )}
+          ) }
+
+          { active === "redact" && (
+            <RedactPanel
+              settings={ settings }
+              blurDrawMode={ props.blurDrawMode ?? false }
+              onToggleBlurDraw={ props.onToggleBlurDraw }
+              blurs={ props.blurs ?? [] }
+              selectedBlurId={ props.selectedBlurId }
+              onSelectBlur={ props.onSelectBlur }
+              onUpdateBlur={ props.onUpdateBlur }
+              onDeleteBlur={ props.onDeleteBlur }
+            />
+          ) }
         </div>
       </aside>
     </div>
@@ -409,7 +445,15 @@ const PANEL =
 export const PANEL_WIDTH = "24rem";
 
 /** The inspector's destinations. */
-type CategoryId = "layout" | "background" | "frame" | "camera" | "audio" | "cursor" | "captions";
+type CategoryId =
+  | "layout"
+  | "background"
+  | "frame"
+  | "camera"
+  | "audio"
+  | "cursor"
+  | "captions"
+  | "redact";
 
 /**
  * A selected zoom's destinations.
@@ -470,18 +514,18 @@ function LayoutPanel({
   const { layout } = settings;
 
   return (
-    <Section title="Screen" onReset={reset}>
-      <Field label="Layout" {...field("layout", "preset")}>
+    <Section title="Screen" onReset={ reset }>
+      <Field label="Layout" { ...field("layout", "preset") }>
         <LayoutPicker
-          frame={frame}
+          frame={ frame }
           // The composition's own background and padding, so a padded
           // arrangement is told apart from a full-bleed one by the thing that
           // actually differs between them.
-          background={settings.background}
-          fileUrl={fileUrl}
-          value={layout.preset}
-          cameraPresent={cameraPresent}
-          onChange={(preset) => {
+          background={ settings.background }
+          fileUrl={ fileUrl }
+          value={ layout.preset }
+          cameraPresent={ cameraPresent }
+          onChange={ (preset) => {
             set("layout", "preset", preset);
             // The toggle and the arrangement are two ways of asking the same
             // question, so picking a screen-only arrangement has to answer it
@@ -500,7 +544,7 @@ function LayoutPanel({
             for (const [key, value] of Object.entries(freshFraming(layout, cameraSource))) {
               set("layout", key, value);
             }
-          }}
+          } }
         />
       </Field>
     </Section>
@@ -596,11 +640,11 @@ function CameraPanel({
   const aspect = layout.cameraWidth / Math.max(layout.cameraHeight, 0.0001);
 
   return (
-    <Section title="Camera" onReset={reset}>
-      <Field label="Camera" inline {...field("layout", "cameraVisible")}>
+    <Section title="Camera" onReset={ reset }>
+      <Field label="Camera" inline { ...field("layout", "cameraVisible") }>
         <Toggle
-          value={layout.cameraVisible}
-          onChange={(value) => {
+          value={ layout.cameraVisible }
+          onChange={ (value) => {
             set("layout", "cameraVisible", value);
             // The arrangement has to agree. Switching the camera off inside one
             // built around it would leave the screen alone in half a frame, and
@@ -608,16 +652,16 @@ function CameraPanel({
             // all — a toggle that visibly does nothing is worse than no toggle.
             const answer = cameraAgreement(layout.preset, value);
             if (answer) set("layout", "preset", answer);
-          }}
+          } }
         />
       </Field>
 
-      <Field label="Shape" {...field("layout", "cameraShape")}>
+      <Field label="Shape" { ...field("layout", "cameraShape") }>
         <Segmented
-          value={layout.cameraShape}
-          disabled={off}
+          value={ layout.cameraShape }
+          disabled={ off }
           iconsOnly
-          options={[
+          options={ [
             { value: "circle", label: "Circle", icon: <CircleIcon /> },
             { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
             { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
@@ -627,89 +671,89 @@ function CameraPanel({
               title: "The camera at its own size, corners rounded",
               icon: <WideIcon />,
             },
-          ]}
-          onChange={(value) => {
+          ] }
+          onChange={ (value) => {
             set("layout", "cameraShape", value);
             // The shape decides the proportions once, here, rather than on
             // every frame. Derived during layout instead, a bubble someone had
             // dragged to a shape of their own would snap back to a square the
             // next time this control was touched.
             set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
-          }}
+          } }
         />
       </Field>
 
-      <Field label="Size" {...field("layout", "cameraHeight")}>
+      <Field label="Size" { ...field("layout", "cameraHeight") }>
         <Slider
-          value={layout.cameraHeight}
-          min={0.05}
-          max={0.6}
-          format={percent}
-          disabled={off || slotted}
-          onChange={(value) => {
+          value={ layout.cameraHeight }
+          min={ 0.05 }
+          max={ 0.6 }
+          format={ percent }
+          disabled={ off || slotted }
+          onChange={ (value) => {
             set("layout", "cameraHeight", value);
             // Both edges together, so resizing keeps whatever proportions the
             // bubble has rather than squaring it off.
             set("layout", "cameraWidth", value * aspect);
-          }}
+          } }
         />
       </Field>
 
-      <Field label="Zoom" {...field("layout", "cameraZoom")}>
+      <Field label="Zoom" { ...field("layout", "cameraZoom") }>
         <Slider
-          value={layout.cameraZoom}
-          min={1}
-          max={3}
-          step={0.01}
-          format={(value) => `${value.toFixed(2)}×`}
-          disabled={off}
-          onChange={(value) => set("layout", "cameraZoom", value)}
+          value={ layout.cameraZoom }
+          min={ 1 }
+          max={ 3 }
+          step={ 0.01 }
+          format={ (value) => `${value.toFixed(2)}×` }
+          disabled={ off }
+          onChange={ (value) => set("layout", "cameraZoom", value) }
         />
       </Field>
 
-      <Field label="Position" {...field("layout", "cameraX")}>
+      <Field label="Position" { ...field("layout", "cameraX") }>
         <CameraMap
-          frame={frame}
-          shape={layout.cameraShape}
-          size={layout.cameraHeight}
-          aspect={aspect}
-          x={layout.cameraX}
-          y={layout.cameraY}
-          disabled={off || slotted}
-          onChange={(x, y) => {
+          frame={ frame }
+          shape={ layout.cameraShape }
+          size={ layout.cameraHeight }
+          aspect={ aspect }
+          x={ layout.cameraX }
+          y={ layout.cameraY }
+          disabled={ off || slotted }
+          onChange={ (x, y) => {
             set("layout", "cameraX", x);
             set("layout", "cameraY", y);
-          }}
+          } }
         />
       </Field>
 
-      <Field label="Mirror" inline {...field("layout", "cameraMirror")}>
+      <Field label="Mirror" inline { ...field("layout", "cameraMirror") }>
         <Toggle
-          value={layout.cameraMirror}
-          disabled={off}
+          value={ layout.cameraMirror }
+          disabled={ off }
           // On by default because the bubble the user watched while recording
           // was mirrored; off reads as flipped against it.
-          onChange={(value) => set("layout", "cameraMirror", value)}
+          onChange={ (value) => set("layout", "cameraMirror", value) }
         />
       </Field>
 
-      <Field label="Shrink on zoom" inline {...field("layout", "cameraShrinkOnZoom")}>
+      <Field label="Shrink on zoom" inline { ...field("layout", "cameraShrinkOnZoom") }>
         <Toggle
-          value={layout.cameraShrinkOnZoom}
-          disabled={off || !floats}
-          title={floats ? undefined : "Only a camera floating over the screen can shrink"}
-          onChange={(value) => set("layout", "cameraShrinkOnZoom", value)}
+          value={ layout.cameraShrinkOnZoom }
+          disabled={ off || !floats }
+          title={ floats ? undefined : "Only a camera floating over the screen can shrink" }
+          onChange={ (value) => set("layout", "cameraShrinkOnZoom", value) }
         />
       </Field>
 
-      <Field label="Size while zoomed" {...field("layout", "cameraShrinkTo")}>
+      <Field label="Size while zoomed" { ...field("layout", "cameraShrinkTo") }>
         <Slider
-          value={layout.cameraShrinkTo}
-          min={0.2}
-          max={1}
-          format={percent}
-          disabled={off || !floats || !layout.cameraShrinkOnZoom}
-          onChange={(value) => set("layout", "cameraShrinkTo", value)}
+          value={ layout.cameraShrinkTo }
+          min={ 0.2 }
+          max={ 1 }
+          format={ percent }
+          disabled={ off || !floats || !layout.cameraShrinkOnZoom }
+          onChange={ (value) => set("layout", "cameraShrinkTo", value) }
         />
       </Field>
     </Section>
@@ -739,80 +783,80 @@ function CursorPanel({
   const off = !layout.cursorVisible;
 
   return (
-    <Section title="Cursor" onReset={reset}>
-      <Field label="Pointer" inline {...field("layout", "cursorVisible")}>
+    <Section title="Cursor" onReset={ reset }>
+      <Field label="Pointer" inline { ...field("layout", "cursorVisible") }>
         <Toggle
-          value={layout.cursorVisible}
-          onChange={(value) => set("layout", "cursorVisible", value)}
+          value={ layout.cursorVisible }
+          onChange={ (value) => set("layout", "cursorVisible", value) }
         />
       </Field>
 
-      <Field label="Style" {...field("layout", "cursorStyle")}>
+      <Field label="Style" { ...field("layout", "cursorStyle") }>
         <CursorPicker
           // Resolved rather than passed straight through, so a project naming a
           // style this build no longer ships shows the one actually being drawn
           // instead of no selection at all.
-          value={cursorStyle(layout.cursorStyle).id}
-          imageUrl={cursorUrl}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorStyle", value)}
+          value={ cursorStyle(layout.cursorStyle).id }
+          imageUrl={ cursorUrl }
+          disabled={ off }
+          onChange={ (value) => set("layout", "cursorStyle", value) }
         />
       </Field>
 
-      <Field label="Size" {...field("layout", "cursorSize")}>
+      <Field label="Size" { ...field("layout", "cursorSize") }>
         <Slider
-          value={layout.cursorSize}
-          min={0.015}
-          max={0.12}
-          step={0.001}
-          disabled={off}
+          value={ layout.cursorSize }
+          min={ 0.015 }
+          max={ 0.12 }
+          step={ 0.001 }
+          disabled={ off }
           // Shown against the default rather than as a fraction: 0.035 of the
           // shorter edge means nothing to anyone.
-          format={(value) => `${(value / 0.035).toFixed(1)}×`}
-          onChange={(value) => set("layout", "cursorSize", value)}
+          format={ (value) => `${(value / 0.035).toFixed(1)}×` }
+          onChange={ (value) => set("layout", "cursorSize", value) }
         />
       </Field>
 
-      <Field label="Smoothing" {...field("layout", "cursorSmoothing")}>
+      <Field label="Smoothing" { ...field("layout", "cursorSmoothing") }>
         <Slider
-          value={layout.cursorSmoothing}
-          min={0}
-          max={1}
-          step={0.05}
-          disabled={off}
+          value={ layout.cursorSmoothing }
+          min={ 0 }
+          max={ 1 }
+          step={ 0.05 }
+          disabled={ off }
           // A share of the smoothing rather than the lag in milliseconds it
           // buys: what anyone is judging is the path on screen, and nobody
           // picks a pointer by how far behind their hand it runs.
-          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
-          onChange={(value) => set("layout", "cursorSmoothing", value)}
+          format={ (value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`) }
+          onChange={ (value) => set("layout", "cursorSmoothing", value) }
         />
       </Field>
 
-      <Field label="Hide while typing" inline {...field("layout", "cursorHideWhileTyping")}>
+      <Field label="Hide while typing" inline { ...field("layout", "cursorHideWhileTyping") }>
         <Toggle
-          value={layout.cursorHideWhileTyping}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorHideWhileTyping", value)}
+          value={ layout.cursorHideWhileTyping }
+          disabled={ off }
+          onChange={ (value) => set("layout", "cursorHideWhileTyping", value) }
         />
       </Field>
 
-      <Field label="Hide when still" inline {...field("layout", "cursorAutoHide")}>
+      <Field label="Hide when still" inline { ...field("layout", "cursorAutoHide") }>
         <Toggle
-          value={layout.cursorAutoHide}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorAutoHide", value)}
+          value={ layout.cursorAutoHide }
+          disabled={ off }
+          onChange={ (value) => set("layout", "cursorAutoHide", value) }
         />
       </Field>
 
-      <Field label="After" {...field("layout", "cursorHideAfter")}>
+      <Field label="After" { ...field("layout", "cursorHideAfter") }>
         <Slider
-          value={layout.cursorHideAfter}
-          min={0.5}
-          max={10}
-          step={0.5}
-          disabled={off || !layout.cursorAutoHide}
-          format={(value) => `${value}s`}
-          onChange={(value) => set("layout", "cursorHideAfter", value)}
+          value={ layout.cursorHideAfter }
+          min={ 0.5 }
+          max={ 10 }
+          step={ 0.5 }
+          disabled={ off || !layout.cursorAutoHide }
+          format={ (value) => `${value}s` }
+          onChange={ (value) => set("layout", "cursorHideAfter", value) }
         />
       </Field>
     </Section>
@@ -847,90 +891,90 @@ function CaptionsPanel({
   const off = !values.captionsOn || !captions.ready;
 
   return (
-    <Section title="Captions" onReset={reset}>
-      <Transcription captions={captions} />
+    <Section title="Captions" onReset={ reset }>
+      <Transcription captions={ captions } />
 
-      <Field label="Show captions" inline {...field("captions", "captionsOn")}>
+      <Field label="Show captions" inline { ...field("captions", "captionsOn") }>
         <Toggle
-          value={values.captionsOn}
-          disabled={!captions.ready}
-          title={captions.ready ? undefined : "Generate captions first"}
-          onChange={(value) => set("captions", "captionsOn", value)}
+          value={ values.captionsOn }
+          disabled={ !captions.ready }
+          title={ captions.ready ? undefined : "Generate captions first" }
+          onChange={ (value) => set("captions", "captionsOn", value) }
         />
       </Field>
 
-      <Field label="Style" {...field("captions", "captionStyle")}>
+      <Field label="Style" { ...field("captions", "captionStyle") }>
         <CaptionStylePicker
           // Resolved rather than passed through, so a project naming a look this
           // build no longer ships shows the one actually being drawn instead of
           // no selection at all.
-          value={captionStyle(values.captionStyle).id}
-          accent={values.captionAccent}
-          disabled={off}
-          onChange={(value) => set("captions", "captionStyle", value)}
+          value={ captionStyle(values.captionStyle).id }
+          accent={ values.captionAccent }
+          disabled={ off }
+          onChange={ (value) => set("captions", "captionStyle", value) }
         />
       </Field>
 
-      <Field label="Size" {...field("captions", "captionSize")}>
+      <Field label="Size" { ...field("captions", "captionSize") }>
         <Slider
-          value={values.captionSize}
-          min={0.025}
-          max={0.11}
-          step={0.001}
-          disabled={off}
+          value={ values.captionSize }
+          min={ 0.025 }
+          max={ 0.11 }
+          step={ 0.001 }
+          disabled={ off }
           // Against the default rather than as a fraction, the way the pointer's
           // size is: 0.05 of the shorter edge means nothing to anyone.
-          format={(value) => `${(value / 0.05).toFixed(1)}×`}
-          onChange={(value) => set("captions", "captionSize", value)}
+          format={ (value) => `${(value / 0.05).toFixed(1)}×` }
+          onChange={ (value) => set("captions", "captionSize", value) }
         />
       </Field>
 
-      <Field label="Position" {...field("captions", "captionPlace")}>
+      <Field label="Position" { ...field("captions", "captionPlace") }>
         <Segmented<CaptionPlace>
-          value={values.captionPlace}
-          options={[
+          value={ values.captionPlace }
+          options={ [
             { value: "top", label: "Top" },
             { value: "middle", label: "Middle" },
             { value: "bottom", label: "Bottom" },
-          ]}
-          disabled={off}
-          onChange={(value) => set("captions", "captionPlace", value)}
+          ] }
+          disabled={ off }
+          onChange={ (value) => set("captions", "captionPlace", value) }
         />
       </Field>
 
-      <Field label="Distance from edge" {...field("captions", "captionOffset")}>
+      <Field label="Distance from edge" { ...field("captions", "captionOffset") }>
         <Slider
-          value={values.captionOffset}
-          min={0}
-          max={0.25}
-          step={0.005}
+          value={ values.captionOffset }
+          min={ 0 }
+          max={ 0.25 }
+          step={ 0.005 }
           // Middle has no edge to be measured from, so the control says so by
           // going dead rather than by moving nothing.
-          disabled={off || values.captionPlace === "middle"}
-          format={percent}
-          onChange={(value) => set("captions", "captionOffset", value)}
+          disabled={ off || values.captionPlace === "middle" }
+          format={ percent }
+          onChange={ (value) => set("captions", "captionOffset", value) }
         />
       </Field>
 
-      <Field label="Lines" {...field("captions", "captionLines")}>
+      <Field label="Lines" { ...field("captions", "captionLines") }>
         <Slider
-          value={values.captionLines}
-          min={1}
-          max={3}
-          step={1}
+          value={ values.captionLines }
+          min={ 1 }
+          max={ 3 }
+          step={ 1 }
           // A look that shows one word at a time has no line to fill, so this
           // would move a number nothing reads. Dead rather than missing: the
           // control belongs to captions, not to one look.
-          disabled={off || captionStyle(values.captionStyle).perWord}
-          format={(value) => (value === 1 ? "1 line" : `${value} lines`)}
-          onChange={(value) => set("captions", "captionLines", value)}
+          disabled={ off || captionStyle(values.captionStyle).perWord }
+          format={ (value) => (value === 1 ? "1 line" : `${value} lines`) }
+          onChange={ (value) => set("captions", "captionLines", value) }
         />
       </Field>
 
-      <Field label="Spoken word" {...field("captions", "captionAccent")}>
+      <Field label="Spoken word" { ...field("captions", "captionAccent") }>
         <ColorField
-          value={values.captionAccent}
-          onChange={(value) => set("captions", "captionAccent", value)}
+          value={ values.captionAccent }
+          onChange={ (value) => set("captions", "captionAccent", value) }
         />
       </Field>
     </Section>
@@ -956,30 +1000,30 @@ function Transcription({ captions }: { captions: CaptionsState }) {
   return (
     <div className="mb-3 flex flex-col gap-2 rounded-lg border border-editor-line bg-white/5 p-2">
       <span className="text-[11px] text-editor-muted">
-        {captions.stage === "failed"
+        { captions.stage === "failed"
           ? "No captions"
           : captions.stage === "preparing"
             ? "Getting ready to transcribe…"
             : running
               ? "Transcribing…"
-              : "No speech to caption"}
+              : "No speech to caption" }
       </span>
 
-      {running && (
+      { running && (
         <div className="h-1 overflow-hidden rounded-full bg-white/10">
           <div
             className="h-full rounded-full bg-editor-accent transition-[width] duration-200"
             // An indeterminate stage gets a third of the bar rather than none:
             // the model is being fetched or the file opened, and an empty bar
             // over that reads as nothing happening.
-            style={{ width: `${Math.round((captions.progress ?? 0.33) * 100)}%` }}
+            style={ { width: `${Math.round((captions.progress ?? 0.33) * 100)}%` } }
           />
         </div>
-      )}
+      ) }
 
-      {captions.stage === "failed" && captions.error && (
-        <p className="text-[11px] text-red-300">{captions.error}</p>
-      )}
+      { captions.stage === "failed" && captions.error && (
+        <p className="text-[11px] text-red-300">{ captions.error }</p>
+      ) }
     </div>
   );
 }
@@ -1029,84 +1073,84 @@ function BackgroundPanel({
   useEffect(() => setStyle(paint.kind), [paint.kind]);
 
   return (
-    <Section title="Background" onReset={reset}>
+    <Section title="Background" onReset={ reset }>
       {/* No label over it. "Style" restated what three tabs reading Image,
           Solid and Gradient already say, and a tab row is the one control in
           this panel that names itself. The override this field would have
           marked is still reachable: the section header carries Reset whenever
           anything in it is set for the clip. */}
       <Tabs
-        value={style}
-        options={[
+        value={ style }
+        options={ [
           { value: "image", label: "Image", icon: <ImageIcon /> },
           { value: "solid", label: "Solid", icon: <SolidIcon /> },
           { value: "gradient", label: "Gradient", icon: <GradientIcon /> },
-        ]}
-        onChange={setStyle}
+        ] }
+        onChange={ setStyle }
       />
 
       {/* Each grid is passed the applied value only when it is that grid's own
           style. Otherwise nothing is marked as chosen — a colour highlighted
           while the frame is showing an image would be claiming something
           untrue. */}
-      {style === "solid" && (
+      { style === "solid" && (
         <SolidSwatches
-          value={paint.kind === "solid" ? paint.color : null}
+          value={ paint.kind === "solid" ? paint.color : null }
           // A whole background rather than a patch of the old one: what is
           // applied may not be a solid, so there is nothing to spread.
-          onChange={(color) => setPaint({ kind: "solid", color })}
+          onChange={ (color) => setPaint({ kind: "solid", color }) }
         />
-      )}
+      ) }
 
-      {style === "gradient" && (
+      { style === "gradient" && (
         <>
           <GradientSwatches
-            value={paint.kind === "gradient" ? paint : null}
-            onChange={(preset) => setPaint({ kind: "gradient", ...preset })}
+            value={ paint.kind === "gradient" ? paint : null }
+            onChange={ (preset) => setPaint({ kind: "gradient", ...preset }) }
           />
           {/* Only once one is applied. An angle slider for a gradient that is
               not on screen has nothing to turn. */}
-          {paint.kind === "gradient" && (
+          { paint.kind === "gradient" && (
             <Field label="Angle">
               <Slider
-                value={paint.angle}
-                min={0}
-                max={360}
-                step={1}
-                format={(value) => `${Math.round(value)}°`}
-                onChange={(angle) => setPaint({ ...paint, angle })}
+                value={ paint.angle }
+                min={ 0 }
+                max={ 360 }
+                step={ 1 }
+                format={ (value) => `${Math.round(value)}°` }
+                onChange={ (angle) => setPaint({ ...paint, angle }) }
               />
             </Field>
-          )}
+          ) }
         </>
-      )}
+      ) }
 
-      {style === "image" && (
+      { style === "image" && (
         <Field label="Image">
           <div className="flex flex-col gap-1.5">
             <ImageSwatches
-              path={paint.kind === "image" ? paint.path : null}
-              wallpaper={wallpaperUrl}
-              onPickWallpaper={onPickWallpaper}
-              onPickPreset={onPickPreset}
-              backgrounds={backgrounds}
-              pending={pendingBackground}
-              onPickImage={onPickImage}
+              path={ paint.kind === "image" ? paint.path : null }
+              wallpaper={ wallpaperUrl }
+              onPickWallpaper={ onPickWallpaper }
+              onPickPreset={ onPickPreset }
+              backgrounds={ backgrounds }
+              pending={ pendingBackground }
+              onPickImage={ onPickImage }
             />
 
             <p
               className="truncate text-[11px] text-editor-muted"
-              title={paint.kind === "image" ? paint.path : undefined}
+              title={ paint.kind === "image" ? paint.path : undefined }
             >
-              {paint.kind === "image" && paint.path
+              { paint.kind === "image" && paint.path
                 ? // Copied into the recording, so the export is the same
-                  // tomorrow even after the desktop picture changes.
-                  paint.path
-                : "No image chosen yet"}
+                // tomorrow even after the desktop picture changes.
+                paint.path
+                : "No image chosen yet" }
             </p>
           </div>
         </Field>
-      )}
+      ) }
     </Section>
   );
 }
@@ -1142,71 +1186,71 @@ function FramePanel({
   const { background } = settings;
 
   return (
-    <Section title="Frame" onReset={reset}>
-      <Field label="Padding" {...field("background", "padding")}>
+    <Section title="Frame" onReset={ reset }>
+      <Field label="Padding" { ...field("background", "padding") }>
         <Slider
-          value={background.padding}
-          min={0}
-          max={0.25}
-          format={percent}
-          onChange={(value) => set("background", "padding", value)}
+          value={ background.padding }
+          min={ 0 }
+          max={ 0.25 }
+          format={ percent }
+          onChange={ (value) => set("background", "padding", value) }
         />
       </Field>
 
-      <Field label="Corner radius" {...field("background", "cornerRadius")}>
+      <Field label="Corner radius" { ...field("background", "cornerRadius") }>
         <Slider
-          value={background.cornerRadius}
-          min={0}
-          max={0.1}
-          format={percent}
-          onChange={(value) => set("background", "cornerRadius", value)}
+          value={ background.cornerRadius }
+          min={ 0 }
+          max={ 0.1 }
+          format={ percent }
+          onChange={ (value) => set("background", "cornerRadius", value) }
         />
       </Field>
 
-      <Field label="Border" {...field("background", "borderWidth")}>
+      <Field label="Border" { ...field("background", "borderWidth") }>
         <Slider
-          value={background.borderWidth}
-          min={0}
-          max={0.02}
-          format={percent}
-          onChange={(value) => set("background", "borderWidth", value)}
+          value={ background.borderWidth }
+          min={ 0 }
+          max={ 0.02 }
+          format={ percent }
+          onChange={ (value) => set("background", "borderWidth", value) }
         />
       </Field>
 
       {/* Only once there is a border to dress. A swatch and an opacity slider
           attached to a zero-width edge change nothing on screen, which reads as
           broken. */}
-      {background.borderWidth > 0 && (
+      { background.borderWidth > 0 && (
         <>
-          <Field label="Border colour" {...field("background", "borderColor")}>
+          <Field label="Border colour" { ...field("background", "borderColor") }>
             <ColorField
-              value={background.borderColor}
-              onChange={(value) => set("background", "borderColor", value)}
+              value={ background.borderColor }
+              onChange={ (value) => set("background", "borderColor", value) }
             />
           </Field>
 
           {/* Opacity rather than transparency, because that is the number the
               slider holds: 100% is the solid edge, and a control that read
               "0%" for an opaque border would be the wrong way round. */}
-          <Field label="Border opacity" {...field("background", "borderOpacity")}>
+          <Field label="Border opacity" { ...field("background", "borderOpacity") }>
             <Slider
-              value={background.borderOpacity}
-              min={0}
-              max={1}
-              format={percent}
-              onChange={(value) => set("background", "borderOpacity", value)}
+              value={ background.borderOpacity }
+              min={ 0 }
+              max={ 1 }
+              format={ percent }
+              onChange={ (value) => set("background", "borderOpacity", value) }
             />
           </Field>
         </>
-      )}
+      ) }
 
-      <Field label="Shadow" {...field("background", "shadowOpacity")}>
+      <Field label="Shadow" { ...field("background", "shadowOpacity") }>
         <Slider
-          value={background.shadowOpacity}
-          min={0}
-          max={1}
-          format={percent}
-          onChange={(value) => set("background", "shadowOpacity", value)}
+          value={ background.shadowOpacity }
+          min={ 0 }
+          max={ 1 }
+          format={ percent }
+          onChange={ (value) => set("background", "shadowOpacity", value) }
         />
       </Field>
 
@@ -1214,29 +1258,29 @@ function FramePanel({
           a blur and an offset on an invisible shadow are two sliders that do
           nothing. `shadowBlur` and `shadowY` had no controls at all while these
           fields lived under Background, for want of column. */}
-      {background.shadowOpacity > 0 && (
+      { background.shadowOpacity > 0 && (
         <>
-          <Field label="Shadow blur" {...field("background", "shadowBlur")}>
+          <Field label="Shadow blur" { ...field("background", "shadowBlur") }>
             <Slider
-              value={background.shadowBlur}
-              min={0}
-              max={0.15}
-              format={percent}
-              onChange={(value) => set("background", "shadowBlur", value)}
+              value={ background.shadowBlur }
+              min={ 0 }
+              max={ 0.15 }
+              format={ percent }
+              onChange={ (value) => set("background", "shadowBlur", value) }
             />
           </Field>
 
-          <Field label="Shadow offset" {...field("background", "shadowY")}>
+          <Field label="Shadow offset" { ...field("background", "shadowY") }>
             <Slider
-              value={background.shadowY}
-              min={0}
-              max={0.08}
-              format={percent}
-              onChange={(value) => set("background", "shadowY", value)}
+              value={ background.shadowY }
+              min={ 0 }
+              max={ 0.08 }
+              format={ percent }
+              onChange={ (value) => set("background", "shadowY", value) }
             />
           </Field>
         </>
-      )}
+      ) }
     </Section>
   );
 }
@@ -1287,48 +1331,48 @@ function AudioPanel({
   }
 
   return (
-    <Section title="Audio" onReset={reset}>
-      {present.has("microphone") && (
+    <Section title="Audio" onReset={ reset }>
+      { present.has("microphone") && (
         <>
-          <Field label="Microphone" inline {...field("audio", "micMuted")}>
+          <Field label="Microphone" inline { ...field("audio", "micMuted") }>
             <Toggle
-              value={!audio.micMuted}
-              onChange={(value) => set("audio", "micMuted", !value)}
+              value={ !audio.micMuted }
+              onChange={ (value) => set("audio", "micMuted", !value) }
             />
           </Field>
-          <Field label="Microphone volume" {...field("audio", "micVolume")}>
+          <Field label="Microphone volume" { ...field("audio", "micVolume") }>
             <Slider
-              value={audio.micVolume}
-              min={0}
-              max={2}
-              format={percent}
-              disabled={audio.micMuted}
-              onChange={(value) => set("audio", "micVolume", value)}
+              value={ audio.micVolume }
+              min={ 0 }
+              max={ 2 }
+              format={ percent }
+              disabled={ audio.micMuted }
+              onChange={ (value) => set("audio", "micVolume", value) }
             />
           </Field>
         </>
-      )}
+      ) }
 
-      {present.has("system_audio") && (
+      { present.has("system_audio") && (
         <>
-          <Field label="System audio" inline {...field("audio", "systemMuted")}>
+          <Field label="System audio" inline { ...field("audio", "systemMuted") }>
             <Toggle
-              value={!audio.systemMuted}
-              onChange={(value) => set("audio", "systemMuted", !value)}
+              value={ !audio.systemMuted }
+              onChange={ (value) => set("audio", "systemMuted", !value) }
             />
           </Field>
-          <Field label="System volume" {...field("audio", "systemVolume")}>
+          <Field label="System volume" { ...field("audio", "systemVolume") }>
             <Slider
-              disabled={audio.systemMuted}
-              value={audio.systemVolume}
-              min={0}
-              max={2}
-              format={percent}
-              onChange={(value) => set("audio", "systemVolume", value)}
+              disabled={ audio.systemMuted }
+              value={ audio.systemVolume }
+              min={ 0 }
+              max={ 2 }
+              format={ percent }
+              onChange={ (value) => set("audio", "systemVolume", value) }
             />
           </Field>
         </>
-      )}
+      ) }
     </Section>
   );
 }
@@ -1373,16 +1417,16 @@ function PanelHeader({
   return (
     <header className="flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
       <span
-        className={cn(
+        className={ cn(
           "grid size-6 flex-none place-items-center rounded-md border [&_svg]:size-3.5",
           tone,
-        )}
+        ) }
         aria-hidden
       >
-        {icon}
+        { icon }
       </span>
 
-      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
+      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{ title }</p>
 
       {/* Delete first, close last. Close is the one that has to be in the same
           place every time — it is on every panel, where delete comes and goes
@@ -1394,30 +1438,30 @@ function PanelHeader({
           Red on hover where close stays neutral — the pair have to be
           distinguishable at a glance, and at this size the colour is quicker to
           read than the glyph. */}
-      {onDelete && (
+      { onDelete && (
         <button
           type="button"
-          title={deleteLabel}
-          aria-label={deleteLabel}
-          className={cn(
+          title={ deleteLabel }
+          aria-label={ deleteLabel }
+          className={ cn(
             "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
             "transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-3.5",
-          )}
-          onClick={onDelete}
+          ) }
+          onClick={ onDelete }
         >
           <TrashIcon />
         </button>
-      )}
+      ) }
 
       <button
         type="button"
         title="Close the panel"
         aria-label="Close the panel"
-        className={cn(
+        className={ cn(
           "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
           "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
-        )}
-        onClick={onClose}
+        ) }
+        onClick={ onClose }
       >
         <CloseIcon />
       </button>
@@ -1540,8 +1584,8 @@ function ZoomMotionPanel({
           — this only stops it being offered as something to pick by hand. */}
       <Field label="Follow">
         <Segmented
-          value={zoom.target}
-          options={[
+          value={ zoom.target }
+          options={ [
             {
               value: "cursor",
               label: "Cursor",
@@ -1551,8 +1595,8 @@ function ZoomMotionPanel({
               icon: <CursorIcon />,
             },
             { value: "region", label: "Region", icon: <FillIcon /> },
-          ]}
-          onChange={(target) => onChange({ target })}
+          ] }
+          onChange={ (target) => onChange({ target }) }
         />
       </Field>
 
@@ -1560,10 +1604,10 @@ function ZoomMotionPanel({
           where the shot sits, so a map of somewhere to put it is answering a
           question that is not being asked — it used to sit there greyed out,
           which reads as something broken rather than something irrelevant. */}
-      {zoom.target === "region" && (
+      { zoom.target === "region" && (
         <Field label="Area">
           <CameraMap
-            frame={frame}
+            frame={ frame }
             shape="rounded"
             // A point, not a box. The box could not be dragged into a corner —
             // its own edges were clamped to the map — so the one thing this
@@ -1571,37 +1615,37 @@ function ZoomMotionPanel({
             point
             // Still passed: the outline behind the dot draws the share of the
             // frame the shot will show.
-            size={1 / Math.max(1, zoom.level)}
-            aspect={frame.width / frame.height}
+            size={ 1 / Math.max(1, zoom.level) }
+            aspect={ frame.width / frame.height }
             radius="5px"
-            x={zoom.x}
-            y={zoom.y}
-            onChange={(x, y) => onChange({ x, y })}
+            x={ zoom.x }
+            y={ zoom.y }
+            onChange={ (x, y) => onChange({ x, y }) }
           />
         </Field>
-      )}
+      ) }
 
       <Field label="Level">
         <Slider
-          value={zoom.level}
-          min={1.2}
-          max={4}
-          step={0.1}
-          format={(value) => `${value.toFixed(1)}×`}
-          onChange={(level) => onChange({ level })}
+          value={ zoom.level }
+          min={ 1.2 }
+          max={ 4 }
+          step={ 0.1 }
+          format={ (value) => `${value.toFixed(1)}×` }
+          onChange={ (level) => onChange({ level }) }
         />
       </Field>
 
       <Field label="Speed">
         <Slider
-          value={zoom.speed}
-          min={0}
-          max={2}
-          step={0.05}
+          value={ zoom.speed }
+          min={ 0 }
+          max={ 2 }
+          step={ 0.05 }
           // Seconds, not a rate: "how long does it take" is the question
           // anyone actually has about a camera move.
-          format={(value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`)}
-          onChange={(speed) => onChange({ speed })}
+          format={ (value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`) }
+          onChange={ (speed) => onChange({ speed }) }
         />
       </Field>
 
@@ -1613,14 +1657,14 @@ function ZoomMotionPanel({
       <Field label="Ease">
         <div className="flex flex-col gap-2">
           <Segmented
-            value={easingName(zoom)}
-            options={EASINGS.map((preset) => ({ value: preset.name, label: preset.label }))}
-            onChange={(name) => {
+            value={ easingName(zoom) }
+            options={ EASINGS.map((preset) => ({ value: preset.name, label: preset.label })) }
+            onChange={ (name) => {
               const preset = EASINGS.find((candidate) => candidate.name === name);
               if (preset) onChange(preset.curve);
-            }}
+            } }
           />
-          <EasingPad curve={zoom} onChange={onChange} />
+          <EasingPad curve={ zoom } onChange={ onChange } />
         </div>
       </Field>
     </Section>
@@ -1654,11 +1698,11 @@ function ZoomPerspectivePanel({
           anyone arrives at one. */}
       <Field label="Perspective">
         <PerspectivePad
-          rotateX={zoom.rotateX}
-          rotateY={zoom.rotateY}
-          perspective={zoom.perspective}
-          limit={TILT_LIMIT}
-          onChange={onChange}
+          rotateX={ zoom.rotateX }
+          rotateY={ zoom.rotateY }
+          perspective={ zoom.perspective }
+          limit={ TILT_LIMIT }
+          onChange={ onChange }
         />
       </Field>
 
@@ -1669,24 +1713,24 @@ function ZoomPerspectivePanel({
           call the setting once it is chosen. */}
       <Field label="Angles">
         <div className="grid grid-cols-3 gap-1">
-          {TILTS.map((preset) => {
+          { TILTS.map((preset) => {
             const here =
               Math.abs(zoom.rotateX - preset.rotateX) < 0.5 &&
               Math.abs(zoom.rotateY - preset.rotateY) < 0.5;
 
             return (
               <button
-                key={preset.label}
+                key={ preset.label }
                 type="button"
-                aria-pressed={here}
-                className={cn(
+                aria-pressed={ here }
+                className={ cn(
                   "flex flex-col items-center gap-1 rounded-md px-1 py-1.5",
                   "text-[10px] transition-colors",
                   here
                     ? "bg-selected text-white"
                     : "bg-white/5 text-editor-muted hover:bg-white/10",
-                )}
-                onClick={() => onChange({ rotateX: preset.rotateX, rotateY: preset.rotateY })}
+                ) }
+                onClick={ () => onChange({ rotateX: preset.rotateX, rotateY: preset.rotateY }) }
               >
                 {/* Fixed and shallower than the pad's. The pad splays with the
                     zoom's perspective because it is showing this shot; a thumbnail is
@@ -1695,22 +1739,22 @@ function ZoomPerspectivePanel({
                     perspective was dragged. */}
                 <span
                   className="grid h-6 w-full place-items-center"
-                  style={{ perspective: THUMB_PERSPECTIVE }}
+                  style={ { perspective: THUMB_PERSPECTIVE } }
                   aria-hidden="true"
                 >
                   <PerspectivePlate
-                    rotateX={preset.rotateX}
-                    rotateY={preset.rotateY}
-                    className={cn(
+                    rotateX={ preset.rotateX }
+                    rotateY={ preset.rotateY }
+                    className={ cn(
                       "h-4 w-7 rounded-[2px] border",
                       here ? "border-white/70 bg-white/25" : "border-white/25 bg-white/10",
-                    )}
+                    ) }
                   />
                 </span>
-                {preset.label}
+                { preset.label }
               </button>
             );
-          })}
+          }) }
         </div>
       </Field>
 
@@ -1721,36 +1765,36 @@ function ZoomPerspectivePanel({
           camera's field of view. */}
       <Field label="Depth">
         <Slider
-          value={zoom.perspective}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value < 0.02 ? "Flat" : percent(value))}
-          onChange={(perspective) => onChange({ perspective })}
+          value={ zoom.perspective }
+          min={ 0 }
+          max={ 1 }
+          step={ 0.01 }
+          format={ (value) => (value < 0.02 ? "Flat" : percent(value)) }
+          onChange={ (perspective) => onChange({ perspective }) }
         />
       </Field>
 
       <Field label="Tilt">
         <Slider
-          value={zoom.rotateX}
-          min={-TILT_LIMIT}
-          max={TILT_LIMIT}
-          step={1}
+          value={ zoom.rotateX }
+          min={ -TILT_LIMIT }
+          max={ TILT_LIMIT }
+          step={ 1 }
           // Degrees, and signed: the sign is the whole difference between
           // leaning towards the viewer and away from them.
-          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(rotateX) => onChange({ rotateX })}
+          format={ (value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°` }
+          onChange={ (rotateX) => onChange({ rotateX }) }
         />
       </Field>
 
       <Field label="Yaw">
         <Slider
-          value={zoom.rotateY}
-          min={-TILT_LIMIT}
-          max={TILT_LIMIT}
-          step={1}
-          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(rotateY) => onChange({ rotateY })}
+          value={ zoom.rotateY }
+          min={ -TILT_LIMIT }
+          max={ TILT_LIMIT }
+          step={ 1 }
+          format={ (value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°` }
+          onChange={ (rotateY) => onChange({ rotateY }) }
         />
       </Field>
     </Section>
@@ -1780,32 +1824,32 @@ function ZoomFocusPanel({
   return (
     <Section title="Focus">
       <Field label="Blur around" inline>
-        <Toggle value={zoom.blur} onChange={(blur) => onChange({ blur })} />
+        <Toggle value={ zoom.blur } onChange={ (blur) => onChange({ blur }) } />
       </Field>
 
       <Field label="Sharp area">
         <Slider
-          value={zoom.blurSafe}
-          min={0.05}
-          max={0.9}
-          step={0.01}
-          disabled={!zoom.blur}
-          format={percent}
-          onChange={(blurSafe) => onChange({ blurSafe })}
+          value={ zoom.blurSafe }
+          min={ 0.05 }
+          max={ 0.9 }
+          step={ 0.01 }
+          disabled={ !zoom.blur }
+          format={ percent }
+          onChange={ (blurSafe) => onChange({ blurSafe }) }
         />
       </Field>
 
       <Field label="Strength">
         <Slider
-          value={zoom.blurStrength}
-          min={0}
-          max={0.04}
-          step={0.001}
-          disabled={!zoom.blur}
+          value={ zoom.blurStrength }
+          min={ 0 }
+          max={ 0.04 }
+          step={ 0.001 }
+          disabled={ !zoom.blur }
           // Against the default rather than as a fraction of the shorter edge,
           // which is not a number anyone has an opinion about.
-          format={(value) => `${(value / 0.012).toFixed(1)}×`}
-          onChange={(blurStrength) => onChange({ blurStrength })}
+          format={ (value) => `${(value / 0.012).toFixed(1)}×` }
+          onChange={ (blurStrength) => onChange({ blurStrength }) }
         />
       </Field>
 
@@ -1815,14 +1859,103 @@ function ZoomFocusPanel({
           front of it would be a second way to say the same thing. */}
       <Field label="Vignette">
         <Slider
-          value={zoom.vignette}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value === 0 ? "Off" : percent(value))}
-          onChange={(vignette) => onChange({ vignette })}
+          value={ zoom.vignette }
+          min={ 0 }
+          max={ 1 }
+          step={ 0.01 }
+          format={ (value) => (value === 0 ? "Off" : percent(value)) }
+          onChange={ (vignette) => onChange({ vignette }) }
         />
       </Field>
+    </Section>
+  );
+}
+
+
+/**
+ * Controls for blurring rectangles of the recorded screen.
+ *
+ * Two states: empty (no regions yet) and a list with per-region strength
+ * controls. A button at the top switches the preview to draw mode; a second
+ * tap exits it.
+ */
+function RedactPanel({
+  settings,
+  blurDrawMode,
+  onToggleBlurDraw,
+  blurs,
+  selectedBlurId,
+  onSelectBlur,
+  onUpdateBlur,
+  onDeleteBlur,
+}: {
+  settings: SliceSettings;
+  blurDrawMode: boolean;
+  onToggleBlurDraw?: () => void;
+  blurs: readonly BlurSlice[];
+  selectedBlurId?: string | null;
+  onSelectBlur?: (id: string | null) => void;
+  onUpdateBlur?: (blur: BlurSlice) => void;
+  onDeleteBlur?: (id: string) => void;
+}) {
+  const regions = blurs;
+
+  return (
+    <Section title="Redact">
+
+      { regions.length === 0 && !blurDrawMode && (
+        <p className="px-4 pb-4 text-xs text-white/40">
+          No regions yet. Draw one on the preview to get started.
+        </p>
+      ) }
+      <div className="flex flex-col">
+        { regions.map((region, index) => (
+          <div key={ region.id } className="border-t border-editor-line px-4 py-3">
+            <div
+              className={ cn(
+                "group relative flex h-[38px] items-center rounded pl-2 pr-1 transition-colors",
+                region.id === selectedBlurId
+                  ? "bg-blue-600/20 text-white"
+                  : "text-white/60 hover:bg-white/5",
+              ) }
+              onPointerDown={ () => onSelectBlur?.(region.id) }
+            >
+              <div className="flex-1 truncate text-xs font-medium">Blur { index + 1 }</div>
+              <button
+                title="Delete"
+                className={ cn(
+                  "ml-2 flex h-6 w-6 items-center justify-center rounded p-1 transition-colors hover:bg-white/10 hover:text-white focus:outline-none",
+                  region.id === selectedBlurId ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                ) }
+                onPointerDown={ (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                } }
+                onClick={ (e) => {
+                  e.stopPropagation();
+                  onDeleteBlur?.(region.id);
+                } }
+              >
+                <TrashIcon />
+              </button>
+            </div>
+            { region.id === selectedBlurId && (
+              <div className="mt-2">
+                <Field label="Strength">
+                  <Slider
+                    value={ region.strength }
+                    min={ 0.005 }
+                    max={ 0.06 }
+                    step={ 0.001 }
+                    format={ (value) => `${Math.round((value / 0.015) * 100)}%` }
+                    onChange={ (strength) => onUpdateBlur?.({ ...region, strength }) }
+                  />
+                </Field>
+              </div>
+            ) }
+          </div>
+        )) }
+      </div>
     </Section>
   );
 }

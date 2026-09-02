@@ -20,6 +20,8 @@ import {
 } from "../../../shared/layout";
 import {
   captionLook,
+  type BlurKeyframe,
+  type BlurSlice,
   type LayoutSettings,
   type SliceSettings,
   type ZoomSlice,
@@ -28,6 +30,41 @@ import { cn } from "../lib/cn";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
 import type { EditorPlayback } from "./useEditorPlayback";
+
+function interpolateBlur(region: BlurSlice, at: number): Omit<BlurSlice, "id" | "source"> {
+  const keys = region.keyframes;
+  if (!keys || keys.length === 0) return region;
+
+  const kFirst = keys[0];
+  if (!kFirst) return region;
+  if (at <= kFirst.time) {
+    return { x: kFirst.x, y: kFirst.y, width: kFirst.width, height: kFirst.height, strength: region.strength };
+  }
+
+  const kLast = keys[keys.length - 1];
+  if (!kLast) return region;
+  if (at >= kLast.time) {
+    return { x: kLast.x, y: kLast.y, width: kLast.width, height: kLast.height, strength: region.strength };
+  }
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k1 = keys[i];
+    const k2 = keys[i + 1];
+    if (k1 && k2 && at >= k1.time && at < k2.time) {
+      const t = (at - k1.time) / (k2.time - k1.time);
+      // ease-in-out cosine
+      const eased = (1 - Math.cos(t * Math.PI)) / 2;
+      return {
+        x: k1.x + (k2.x - k1.x) * eased,
+        y: k1.y + (k2.y - k1.y) * eased,
+        width: k1.width + (k2.width - k1.width) * eased,
+        height: k1.height + (k2.height - k1.height) * eased,
+        strength: region.strength,
+      };
+    }
+  }
+  return region;
+}
 
 /**
  * The composited frame.
@@ -70,6 +107,13 @@ export function Preview({
   cues,
   grab: grabRef,
   onLayout,
+  blurDrawMode,
+  onAddBlur,
+  blurs,
+  selectedBlurId,
+  onSelectBlur,
+  onUpdateBlur,
+  onDeleteBlur,
 }: {
   frame: Size;
   settings: SliceSettings;
@@ -111,6 +155,23 @@ export function Preview({
    * put the knowledge of *which* keys a gesture touches in two places.
    */
   onLayout: (patch: Partial<LayoutSettings>) => void;
+  /**
+   * When true the canvas switches to blur-draw mode: the user drags out a
+   * rectangle rather than moving the camera or screen.
+   *
+   * Normal camera/screen drag handling is disabled while this is active, so
+   * the two modes never collide.
+   */
+  blurDrawMode?: boolean;
+  /** Called with the completed region after a draw gesture finishes. */
+  onAddBlur?: (region: Omit<BlurSlice, "id" | "source">) => void;
+  /** Current blurs, shown as an overlay so the user can see what is blurred. */
+  blurs?: readonly BlurSlice[];
+  /** Which blur is selected, for highlighting. */
+  selectedBlurId?: string | null;
+  onSelectBlur?: (id: string | null) => void;
+  onUpdateBlur?: (blur: BlurSlice) => void;
+  onDeleteBlur?: (id: string) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -119,6 +180,7 @@ export function Preview({
   const grab = useRef<Grip | null>(null);
   /** The selection ring. Positioned from the draw loop, never by React. */
   const outline = useRef<HTMLDivElement>(null);
+  const blurOutline = useRef<HTMLDivElement>(null);
   /** Waiting to be handed the next drawn frame, or null when nobody asked. */
   const wanted = useRef<((shot: string | null) => void) | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
@@ -131,10 +193,20 @@ export function Preview({
    */
   const [selected, setSelected] = useState<PlanSource | null>(null);
 
+  /**
+   * The rectangle being drawn in blur-draw mode.
+   *
+   * Written directly to the SVG overlay every pointer-move rather than through
+   * React state, matching the rAF contract: values that change per frame go
+   * straight to the DOM.
+   */
+  const blurDraft = useRef<SVGRectElement | null>(null);
+  const blurDraftStart = useRef<{ x: number; y: number } | null>(null);
+
   // Read through refs so changing a setting does not restart the loop — the
   // next frame simply picks the new values up.
-  const latest = useRef({ frame, settings, enter, images, fitted, selected });
-  latest.current = { frame, settings, enter, images, fitted, selected };
+  const latest = useRef({ frame, settings, enter, images, fitted, selected, blurs, selectedBlurId });
+  latest.current = { frame, settings, enter, images, fitted, selected, blurs, selectedBlurId };
 
   // Fits the frame's aspect ratio into whatever space the window is giving
   // this pane, at any output size. `contentRect` is the padded box, so the
@@ -180,6 +252,7 @@ export function Preview({
         images: loaded,
         fitted: box,
         selected: ringed,
+        blurs,
       } = latest.current;
       const screen = media.getElement("screen");
       const camera = media.getElement("camera");
@@ -228,6 +301,7 @@ export function Preview({
         // The set drawn for *this* clip's look. A clip whose captions are off
         // has no look and gets nothing, which draws nothing.
         cues.get(captionLook(current.captions)),
+        blurs,
       );
 
       // Source time, because that is what the pointer track is indexed by —
@@ -240,6 +314,37 @@ export function Preview({
       // with the sources' own dimensions and with a drag in flight, and React
       // is told about neither on the frame it happens.
       ring(outline.current, ringed, size, current, sizes, box, zooms, at);
+      
+      blurRing(
+        blurOutline.current,
+        latest.current.blurs?.find((b) => b.id === latest.current.selectedBlurId) ?? null,
+        size,
+        fitted,
+        at,
+      );
+
+      // Same for the blur overlays, they must interpolate during playback smoothly.
+      for (const blur of latest.current.blurs ?? []) {
+        const el = document.getElementById(`blur-rect-${blur.id}`);
+        if (!el) continue;
+        
+        if (at < blur.source.start || at >= blur.source.end) {
+          el.style.display = "none";
+          continue;
+        }
+        
+        el.style.display = "block";
+        const active = interpolateBlur(blur, at);
+        const scale = box.width / size.width;
+        const rw = active.width * size.width * scale;
+        const rh = active.height * size.height * scale;
+        const rx = active.x * size.width * scale - rw / 2;
+        const ry = active.y * size.height * scale - rh / 2;
+        el.setAttribute("x", String(rx));
+        el.setAttribute("y", String(ry));
+        el.setAttribute("width", String(rw));
+        el.setAttribute("height", String(rh));
+      }
 
       // Read here and nowhere else. The context is created without
       // `preserveDrawingBuffer`, so the drawing buffer is cleared as soon as
@@ -290,14 +395,22 @@ export function Preview({
   // selected. On the window rather than the canvas: the ring stays up while the
   // panels beside it are being used, so the canvas rarely has focus.
   useEffect(() => {
-    if (!selected) return;
+    if (!selected && !selectedBlurId) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelected(null);
+      if (event.key === "Escape") {
+        setSelected(null);
+        onSelectBlur?.(null);
+      } else if ((event.key === "Backspace" || event.key === "Delete") && selectedBlurId) {
+        // Prevent deleting the whole slide or navigating back in the browser
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        event.preventDefault();
+        onDeleteBlur?.(selectedBlurId);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  }, [selected, selectedBlurId, onSelectBlur, onDeleteBlur]);
 
   /**
    * Where a pointer is in the output frame, in its own pixels.
@@ -348,6 +461,31 @@ export function Preview({
   /** What is under the pointer: a corner to pull, a picture to drag, or nothing. */
   const find = (point: Point): Grip | null => {
     const near = HANDLE * grain();
+    
+    // Blur regions sit on top of the composition, so hit test them first.
+    if (blurs && !blurDrawMode) {
+      // Iterate in reverse so the topmost region is hit first
+      for (let i = blurs.length - 1; i >= 0; i--) {
+        const region = blurs[i]!;
+        if (!region) continue;
+        const at = media.sourceAt() ?? 0;
+        if (at < region.source.start || at >= region.source.end) continue;
+        
+        const active = interpolateBlur(region, at);
+        const rw = active.width * frame.width;
+        const rh = active.height * frame.height;
+        const rx = active.x * frame.width - rw / 2;
+        const ry = active.y * frame.height - rh / 2;
+        const box = { x: rx, y: ry, width: rw, height: rh };
+        
+        const corner = selectedBlurId === region.id ? cornerAt(box, point, near) : null;
+        if (corner) return { kind: "resizeBlur", regionId: region.id, corner, box, from: point };
+        if (inside(box, point)) {
+          return { kind: "moveBlur", regionId: region.id, box, from: point };
+        }
+      }
+    }
+
     const { screen, camera } = pictures();
 
     // The camera first, because in every arrangement that stacks them it is the
@@ -409,7 +547,7 @@ export function Preview({
   };
 
   /** The keys one gesture writes, worked out from where the pointer has got to. */
-  const patchFor = (grip: Grip, point: Point, aspect: boolean): Partial<LayoutSettings> => {
+  const patchFor = (grip: Extract<Grip, { target: PlanSource }>, point: Point, aspect: boolean): Partial<LayoutSettings> => {
     const unit = Math.min(frame.width, frame.height);
     const { layout } = settings;
 
@@ -539,11 +677,40 @@ export function Preview({
           style={{ width: fitted.width, height: fitted.height }}
           onPointerDown={(event) => {
             const point = framePoint(event);
+
+            // Blur-draw mode: start drawing a rectangle instead of dragging
+            // a composition element. Normal layout interactions are suspended
+            // so the two never collide.
+            if (blurDrawMode) {
+              blurDraftStart.current = point;
+              if (blurDraft.current) {
+                blurDraft.current.style.display = "block";
+                const s = fitted.width / frame.width;
+                blurDraft.current.setAttribute("x", String(point.x * s));
+                blurDraft.current.setAttribute("y", String(point.y * s));
+                blurDraft.current.setAttribute("width", "0");
+                blurDraft.current.setAttribute("height", "0");
+              }
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+
             const found = find(point);
             // Empty background drops the selection, the same click that would
             // drop it on a canvas anywhere else.
-            setSelected(found?.target ?? null);
-            if (!found) return;
+            if (!found) {
+              setSelected(null);
+              onSelectBlur?.(null);
+              return;
+            }
+
+            if ("target" in found) {
+              setSelected(found.target);
+              onSelectBlur?.(null);
+            } else if ("regionId" in found) {
+              setSelected(null);
+              onSelectBlur?.(found.regionId);
+            }
 
             // Alt turns a drag on a picture into a pan of what it is showing. The
             // corners keep resizing either way — there is nothing else a corner
@@ -572,14 +739,31 @@ export function Preview({
           onPointerMove={(event) => {
             const point = framePoint(event);
 
+            // Update the blur draft rectangle directly on the SVG element.
+            if (blurDrawMode && blurDraftStart.current && blurDraft.current) {
+              const s = fitted.width / frame.width;
+              const x0 = blurDraftStart.current.x * s;
+              const y0 = blurDraftStart.current.y * s;
+              const x1 = point.x * s;
+              const y1 = point.y * s;
+              blurDraft.current.setAttribute("x", String(Math.min(x0, x1)));
+              blurDraft.current.setAttribute("y", String(Math.min(y0, y1)));
+              blurDraft.current.setAttribute("width", String(Math.abs(x1 - x0)));
+              blurDraft.current.setAttribute("height", String(Math.abs(y1 - y0)));
+              event.currentTarget.style.cursor = "crosshair";
+              return;
+            }
+
             if (!grab.current) {
               // Written straight to the element: this fires far more often than a
               // render, and routing a cursor change through state would rebuild
               // the editor to change one CSS property.
               const found = find(point);
               event.currentTarget.style.cursor = !found
-                ? ""
-                : found.kind === "resize"
+                ? blurDrawMode
+                  ? "crosshair"
+                  : ""
+                : found.kind === "resize" || found.kind === "resizeBlur"
                   ? CORNER_CURSOR[found.corner]
                   : event.altKey
                     ? "move"
@@ -587,10 +771,66 @@ export function Preview({
               return;
             }
 
+            if (grab.current.kind === "moveBlur" || grab.current.kind === "resizeBlur") {
+              const grip = grab.current;
+              const region = blurs?.find(r => r.id === grip.regionId);
+              if (region && onUpdateBlur) {
+                let box: Rect;
+                if (grip.kind === "resizeBlur") {
+                  box = pulled(grip.box, grip.corner, point, event.shiftKey);
+                } else {
+                  box = {
+                    ...grip.box,
+                    x: grip.box.x + (point.x - grip.from.x),
+                    y: grip.box.y + (point.y - grip.from.y),
+                  };
+                  grip.from = point;
+                }
+                grip.box = box;
+                
+                onUpdateBlur({
+                  ...region,
+                  x: (box.x + box.width / 2) / frame.width,
+                  y: (box.y + box.height / 2) / frame.height,
+                  width: box.width / frame.width,
+                  height: box.height / frame.height,
+                });
+              }
+              event.currentTarget.style.cursor = grip.kind === "moveBlur" ? "grabbing" : CORNER_CURSOR[grip.corner];
+              return;
+            }
+
             if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
-            onLayout(patchFor(grab.current, point, event.shiftKey));
+            onLayout(patchFor(grab.current as Extract<Grip, { target: PlanSource }>, point, event.shiftKey));
           }}
           onPointerUp={(event) => {
+            // Commit blur draw gesture.
+            if (blurDrawMode && blurDraftStart.current) {
+              const point = framePoint(event);
+              const start = blurDraftStart.current;
+              blurDraftStart.current = null;
+              if (blurDraft.current) blurDraft.current.style.display = "none";
+
+              const minX = Math.min(start.x, point.x) / frame.width;
+              const minY = Math.min(start.y, point.y) / frame.height;
+              const maxX = Math.max(start.x, point.x) / frame.width;
+              const maxY = Math.max(start.y, point.y) / frame.height;
+              const w = maxX - minX;
+              const h = maxY - minY;
+              // Discard tiny drags (accidental clicks).
+              if (w > 0.01 && h > 0.01) {
+                onAddBlur?.({
+                  x: minX + w / 2,
+                  y: minY + h / 2,
+                  width: w,
+                  height: h,
+                  strength: 0.015,
+                });
+              }
+              event.currentTarget.style.cursor = "crosshair";
+              return;
+            }
+
             grab.current = null;
             event.currentTarget.style.cursor = "";
           }}
@@ -599,8 +839,64 @@ export function Preview({
           }}
         />
 
-        {/* Drawn over the picture, never in it: the canvas is the composition
-            and this is a note about it, so it must not reach the export or the
+        {/* Blur region overlay — dashed rectangles over each blurred area, and
+            a live draft while drawing. Both are pointer-events-none: hit testing
+            lives with the canvas and this is a visual note on top of it. The SVG
+            is the same pixel size as the fitted canvas so coordinates are 1:1. */}
+        <svg
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0"
+          style={{ width: fitted.width, height: fitted.height }}
+          viewBox={`0 0 ${fitted.width} ${fitted.height}`}
+        >
+          {(blurs ?? []).map((region) => {
+            // Map blur region source fractions back to fitted-canvas pixels.
+            // The preview canvas maps frame pixels to fitted pixels at a uniform
+            // scale, so we need: fitted_px = source_frac * screen_src_frac *
+            // screen_dst_px / fitted_scale.
+            //
+            // For the overlay we approximate using the frame dimensions since we
+            // do not have screen srcRect here (Preview does not expose it). The
+            // result is accurate when the screen fills the frame, which is the
+            // common case; in padded layouts it is slightly over-sized but still
+            // centred on the right content.
+            const scale = fitted.width / frame.width;
+            const rx = region.x * frame.width * scale;
+            const ry = region.y * frame.height * scale;
+            const rw = region.width * frame.width * scale;
+            const rh = region.height * frame.height * scale;
+            const isSelected = region.id === selectedBlurId;
+            return (
+              <rect
+                key={region.id}
+                id={`blur-rect-${region.id}`}
+                x={rx - rw / 2}
+                y={ry - rh / 2}
+                width={rw}
+                height={rh}
+                fill="rgba(0,100,255,0.08)"
+                stroke={isSelected ? "#4299e1" : "rgba(66,153,225,0.6)"}
+                strokeWidth={isSelected ? 2 : 1.5}
+                strokeDasharray="4 3"
+                rx={2}
+                style={{ display: "none" }}
+              />
+            );
+          })}
+          {/* The rectangle being drawn — updated every pointermove directly. */}
+          <rect
+            ref={blurDraft}
+            fill="rgba(0,100,255,0.08)"
+            stroke="#4299e1"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            rx={2}
+            style={{ display: "none" }}
+          />
+        </svg>
+
+        {/* Selection ring for screen/camera — drawn over everything else.
+            Not in the canvas: the composition must not reach the export or the
             grabbed poster frame. `pointer-events-none` leaves every gesture
             with the canvas underneath, which is where the hit testing that put
             the ring here lives — two things listening for a drag on the same
@@ -623,6 +919,25 @@ export function Preview({
                 // Centred on the corner rather than tucked inside it, so the
                 // handle marks the point the drag actually pivots about.
                 "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                HANDLE_AT[corner],
+              )}
+            />
+          ))}
+        </div>
+        
+        {/* Selection ring for the active blur region. Mutually exclusive with the main ring
+            in terms of interaction, but handled identically. */}
+        <div
+          ref={blurOutline}
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 border border-blue-500"
+          style={{ display: "none" }}
+        >
+          {CORNERS.map((corner) => (
+            <span
+              key={corner}
+              className={cn(
+                "absolute size-2 rounded-[2px] border border-blue-500 bg-white shadow-sm",
                 HANDLE_AT[corner],
               )}
             />
@@ -677,7 +992,35 @@ function ring(
   // drag it runs on every frame that also lays the canvas out.
   element.style.transform = `translate(${x * scale}px, ${y * scale}px)`;
   element.style.width = `${width * scale}px`;
+  element.style.width = `${width * scale}px`;
   element.style.height = `${height * scale}px`;
+}
+
+function blurRing(
+  element: HTMLDivElement | null,
+  selectedBlur: BlurSlice | null,
+  frame: Size,
+  fitted: Size,
+  at: number,
+): void {
+  if (!element) return;
+
+  if (!selectedBlur || at < selectedBlur.source.start || at >= selectedBlur.source.end || fitted.width <= 0) {
+    element.style.display = "none";
+    return;
+  }
+
+  const scale = fitted.width / frame.width;
+  const active = interpolateBlur(selectedBlur, at);
+  const rw = active.width * frame.width * scale;
+  const rh = active.height * frame.height * scale;
+  const rx = active.x * frame.width * scale - rw / 2;
+  const ry = active.y * frame.height * scale - rh / 2;
+
+  element.style.display = "block";
+  element.style.transform = `translate(${rx}px, ${ry}px)`;
+  element.style.width = `${rw}px`;
+  element.style.height = `${rh}px`;
 }
 
 /** Clockwise from the top left, which is the order the handles read in. */
@@ -709,7 +1052,9 @@ type Corner = "nw" | "ne" | "sw" | "se";
 type Grip =
   | { kind: "move"; target: PlanSource; box: Rect; from: Point }
   | { kind: "resize"; target: PlanSource; corner: Corner; box: Rect; from: Point }
-  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number };
+  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number }
+  | { kind: "moveBlur"; regionId: string; box: Rect; from: Point }
+  | { kind: "resizeBlur"; regionId: string; corner: Corner; box: Rect; from: Point };
 
 /** How close to a corner counts as grabbing it, in points on screen. */
 const HANDLE = 12;

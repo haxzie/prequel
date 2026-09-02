@@ -149,6 +149,24 @@ pub enum PlanItem {
         #[serde(default)]
         words: Vec<CaptionWord>,
     },
+    /// A Gaussian blur applied to a rectangular region of the already-composited
+    /// frame.
+    ///
+    /// Drawn after the screen image and its border, before the camera bubble:
+    /// it obscures recorded content (passwords, notifications) without covering
+    /// the composition layer. The rect and sigma arrive pre-computed by
+    /// `shared/layout.ts` so the two rasterisers cannot disagree about where
+    /// the region falls or how strong the blur is.
+    Blur {
+        /// Where to blur, in output pixels — already mapped from source fractions.
+        rect: Rect,
+        /// Gaussian sigma in output pixels.
+        sigma: f64,
+        /// Optional keyframes for motion tracking. If present, they are interpolated
+        /// at the current frame time rather than using the static `rect`.
+        #[serde(default)]
+        keys: Option<Vec<RectKey>>,
+    },
 }
 
 /// A half-open range of source time.

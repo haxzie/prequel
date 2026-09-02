@@ -35,7 +35,7 @@ struct Uniforms {
     // Gradient direction, already resolved from an angle.
     float2 gradient;
 
-    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke.
+    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke, 5 blur.
     uint mode;
     // Stroke width, or shadow blur radius, in pixels.
     float weight;
@@ -248,6 +248,34 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
     float coverage = 1.0 - smoothstep(-0.5, 0.5, d);
     if (coverage <= 0.0) {
         discard_fragment();
+    }
+
+    if (u.mode == 5) {
+        // Gaussian blur of the scene snapshot captured before this draw.
+        //
+        // Sixteen taps on a Vogel spiral — the same pattern as sample_focused
+        // and the WebGL MODE_BLUR branch in webgl.ts. u.weight carries sigma in
+        // output pixels; u.texel maps output pixels to UV coords on the scratch
+        // texture.
+        //
+        // Reads from the scratch texture rather than the live render target:
+        // Metal cannot sample from and draw into the same texture in one pass,
+        // so the compositor copies the output into `blur_scratch` first.
+        if (u.weight <= 0.0) {
+            discard_fragment();
+        }
+        float2 uv = u.src.xy + in.uv * u.src.zw;
+        float4 total = float4(0.0);
+        for (int tap = 0; tap < 16; tap++) {
+            float turn = float(tap) * 2.399963;
+            float reach = sqrt(float(tap) + 0.5) / 4.0;
+            float2 offset = float2(cos(turn), sin(turn)) * reach * u.weight * u.texel;
+            total += image.sample(smp, uv + offset);
+        }
+        float4 blurred = total / 16.0;
+        // The blurred region covers the underlying picture completely;
+        // use `coverage` only for the one-pixel edge feather.
+        return float4(blurred.rgb * coverage, coverage);
     }
 
     if (u.mode == 2) {

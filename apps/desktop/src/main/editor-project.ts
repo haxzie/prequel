@@ -9,7 +9,7 @@
  * closing its window, which does not wait for a promise — so the last edit is
  * flushed synchronously on the way out rather than being raced by teardown.
  */
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Ns, Project } from "../shared/project.js";
@@ -92,6 +92,7 @@ function write(dir: string, project: Project): void {
   const temporary = `${path}.tmp`;
 
   try {
+    mkdirSync(dir, { recursive: true });
     writeFileSync(temporary, JSON.stringify(project, null, 2));
     renameSync(temporary, path);
   } catch (cause) {

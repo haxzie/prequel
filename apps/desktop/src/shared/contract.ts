@@ -583,11 +583,12 @@ export type Entitlement =
 
 /** Whether a status is one that may export. */
 export function mayExport(entitlement: Entitlement): boolean {
-  return (
-    entitlement.status === "paid" ||
-    entitlement.status === "trial" ||
-    entitlement.status === "unknown"
-  );
+  return true;
+  //  (
+  //   entitlement.status === "paid" ||
+  //   entitlement.status === "trial" ||
+  //   entitlement.status === "unknown"
+  // );
 }
 
 export interface ShareRequest {

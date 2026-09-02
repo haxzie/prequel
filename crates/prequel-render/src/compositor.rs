@@ -71,6 +71,7 @@ const MODE_GRADIENT: u32 = 1;
 const MODE_IMAGE: u32 = 2;
 const MODE_SHADOW: u32 = 3;
 const MODE_STROKE: u32 = 4;
+const MODE_BLUR: u32 = 5;
 
 /**
  * A texture and everything that has to outlive it.
@@ -93,6 +94,14 @@ pub struct Compositor {
     pipeline: arc::R<mtl::RenderPipelineState>,
     textures: arc::R<cv::MetalTextureCache>,
     pool: arc::R<cv::PixelBufPool>,
+    /// Scratch texture for blur: the output region is copied here before the
+    /// blur pass reads it. Allocated once and reused.
+    ///
+    /// Metal cannot read from and write to the same render target in one pass,
+    /// so the blur region is copied out first. The scratch is always the output
+    /// frame's full size rather than the region's — the blit is simpler and the
+    /// cost is one full-frame copy, not multiple region copies.
+    blur_scratch: Option<arc::R<mtl::Texture>>,
     /// Background images, decoded once and reused for every frame that uses
     /// them — a wallpaper re-uploaded per frame would dominate the export.
     images: HashMap<String, Held>,
@@ -171,6 +180,7 @@ impl Compositor {
             pipeline,
             textures,
             pool,
+            blur_scratch: None,
             images: HashMap::new(),
             caption_use: HashMap::new(),
             caption_clock: 0,
@@ -265,42 +275,185 @@ impl Compositor {
         // valid while its wrapper is alive, and this one is being drawn into.
         let target = self.texture_for(&output, None)?;
 
-        let descriptor = mtl::RenderPassDesc::new();
-        let attachments = descriptor.color_attaches();
-        let mut attachment = attachments.get(0);
-        attachment.set_texture(Some(&target.texture));
-        attachment.set_load_action(mtl::LoadAction::Clear);
-        attachment.set_store_action(mtl::StoreAction::Store);
-        attachment.set_clear_color(mtl::ClearColor::clear());
+        let has_blur = plan.items.iter().any(|item| matches!(item, PlanItem::Blur { .. }));
 
+        // Allocate the full-frame scratch texture the first time a blur region
+        // appears, or when the output size changed between exports.
+        if has_blur {
+            let w = output.width();
+            let h = output.height();
+            let needs_alloc = self.blur_scratch.as_ref().map_or(true, |t| {
+                t.width() != w || t.height() != h
+            });
+            if needs_alloc {
+                let mut desc = mtl::TextureDesc::new_2d(
+                    mtl::PixelFormat::Bgra8UNorm,
+                    w,
+                    h,
+                    false,
+                );
+                desc.set_usage(mtl::TextureUsage::SHADER_READ | mtl::TextureUsage::SHADER_WRITE
+                    | mtl::TextureUsage::RENDER_TARGET);
+                let scratch = self
+                    .device
+                    .new_texture(&desc)
+                    .ok_or_else(|| Error::Metal("could not allocate blur scratch texture".to_owned()))?;
+                self.blur_scratch = Some(scratch);
+            }
+        }
+
+        let frame = [plan.frame.width as f32, plan.frame.height as f32];
+
+        // Partition the plan into runs of ordinary items and individual blur
+        // items. Each blur item ends the current render encoder, copies the
+        // output into the scratch texture, runs a blur pass, then resumes.
+        //
+        // Everything kept alive until `cmd.wait_until_completed()`.
+        let mut alive: Vec<Held> = Vec::new();
+
+        // Build one command buffer per logical pass. Metal encourages submitting
+        // all work in one buffer; the wait at the end covers all of them.
         let cmd = self
             .queue
             .new_cmd_buf()
             .ok_or_else(|| Error::Metal("could not create a command buffer".to_owned()))?;
+
+        // Open the first (and usually only) main render pass.
+        let descriptor = mtl::RenderPassDesc::new();
+        {
+            let attachments = descriptor.color_attaches();
+            let mut attachment = attachments.get(0);
+            attachment.set_texture(Some(&target.texture));
+            attachment.set_load_action(mtl::LoadAction::Clear);
+            attachment.set_store_action(mtl::StoreAction::Store);
+            attachment.set_clear_color(mtl::ClearColor::clear());
+        }
+
         let mut encoder = cmd
             .new_render_cmd_enc(&descriptor)
             .ok_or_else(|| Error::Metal("could not create a render encoder".to_owned()))?;
-
         encoder.set_render_ps(&self.pipeline);
 
-        let frame = [plan.frame.width as f32, plan.frame.height as f32];
-        // Every texture drawn this frame, kept alive until the GPU is done with
-        // it. Dropping one mid-flight leaves the draw sampling freed memory.
-        let mut alive: Vec<Held> = Vec::new();
-
         for item in &plan.items {
-            // Sources are resolved by the caller; `None` means the track had no
-            // frame for this moment — before the camera opened, say — and the
-            // item is skipped rather than drawn from nothing.
+            if let PlanItem::Blur { rect, sigma, keys } = item {
+                // End the main pass, copy the output into the scratch texture,
+                // then blur it back. A new main pass continues afterwards.
+                //
+                // Metal does not allow reading from and writing to the same
+                // texture in one render pass: the blit is mandatory.
+                unsafe { encoder.end_encoding() };
+
+                let active_rect = if let Some(keys) = keys {
+                    crate::plan::rect_at(keys, at as i64, *rect, 0.0).rect
+                } else {
+                    *rect
+                };
+                // A keyframe can decay to zero width/height when opacity fades out,
+                // which means the blur is gone and we skip drawing it.
+                if active_rect.width <= 0.0 || active_rect.height <= 0.0 {
+                    // Resume the main pass
+                    encoder = cmd
+                        .new_render_cmd_enc(&descriptor)
+                        .ok_or_else(|| Error::Metal("could not resume render encoder".to_owned()))?;
+                    encoder.set_render_ps(&self.pipeline);
+                    continue;
+                }
+
+                if let Some(scratch) = &mut self.blur_scratch {
+                    // Copy output → scratch (full frame; simpler than a region blit).
+                    let mut blit = cmd
+                        .new_blit_cmd_enc()
+                        .ok_or_else(|| Error::Metal("could not create a blit encoder".to_owned()))?;
+                    unsafe {
+                        blit.copy_texture(
+                            &target.texture, 0, 0,
+                            mtl::Origin { x: 0, y: 0, z: 0 },
+                            mtl::Size { width: target.texture.width(), height: target.texture.height(), depth: 1 },
+                            &mut **scratch, 0, 0,
+                            mtl::Origin { x: 0, y: 0, z: 0 },
+                        );
+                        blit.end_encoding();
+                    }
+
+                    // Blur pass: read from scratch, write to the output at the region.
+                    let blur_desc = mtl::RenderPassDesc::new();
+                    {
+                        let attachments = blur_desc.color_attaches();
+                        let mut attachment = attachments.get(0);
+                        attachment.set_texture(Some(&target.texture));
+                        // Load the existing contents so the blur composites onto them.
+                        attachment.set_load_action(mtl::LoadAction::Load);
+                        attachment.set_store_action(mtl::StoreAction::Store);
+                    }
+                    let mut blur_enc = cmd
+                        .new_render_cmd_enc(&blur_desc)
+                        .ok_or_else(|| Error::Metal("could not create a blur encoder".to_owned()))?;
+                    blur_enc.set_render_ps(&self.pipeline);
+
+                    let w = target.texture.width() as f64;
+                    let h = target.texture.height() as f64;
+                    // The blur rect is in output pixels; map to 0-1 UV over the
+                    // scratch texture (which is output-sized).
+                    let src = [
+                        (active_rect.x / w) as f32,
+                        (active_rect.y / h) as f32,
+                        (active_rect.width / w) as f32,
+                        (active_rect.height / h) as f32,
+                    ];
+                    let blur_uniforms = Uniforms {
+                        quad: [[0.0; 4]; 4],
+                        rect: rect_of(&active_rect),
+                        src,
+                        focus: [0.0, 0.0, 1.0, 0.0],
+                        // One texel of the scratch texture.
+                        texel: [1.0 / w as f32, 1.0 / h as f32],
+                        shape: [0.0, 2.0],
+                        frame,
+                        _align: [0.0; 2],
+                        color_a: [0.0; 4],
+                        color_b: [0.0; 4],
+                        gradient: [0.0, 1.0],
+                        mode: MODE_BLUR,
+                        // sigma in output pixels — the shader uses texel to
+                        // convert to UV offsets.
+                        weight: *sigma as f32,
+                        mirror: 0,
+                        vignette: 0.0,
+                    };
+                    let blur_buf = self
+                        .device
+                        .new_buf_with_slice(&[blur_uniforms], mtl::ResOpts::default())
+                        .ok_or_else(|| Error::Metal("could not allocate blur uniforms".to_owned()))?;
+                    blur_enc.set_vertex_buf_at(Some(&blur_buf), 0, 0);
+                    blur_enc.set_fragment_buf_at(Some(&blur_buf), 0, 0);
+                    blur_enc.set_fragment_texture_at(Some(scratch.as_ref()), 0);
+                    blur_enc.draw_primitives(mtl::Primitive::TriangleStrip, 0, 4);
+                    unsafe { blur_enc.end_encoding() };
+                }
+
+                // Resume the main pass with Load so prior contents survive.
+                let resume_desc = mtl::RenderPassDesc::new();
+                {
+                    let attachments = resume_desc.color_attaches();
+                    let mut attachment = attachments.get(0);
+                    attachment.set_texture(Some(&target.texture));
+                    attachment.set_load_action(mtl::LoadAction::Load);
+                    attachment.set_store_action(mtl::StoreAction::Store);
+                }
+                encoder = cmd
+                    .new_render_cmd_enc(&resume_desc)
+                    .ok_or_else(|| Error::Metal("could not create a resumed render encoder".to_owned()))?;
+                encoder.set_render_ps(&self.pipeline);
+                continue;
+            }
+
+            // Ordinary item — the original per-item path.
             let (uniforms, texture) =
                 match self.uniforms_for(item, frame, screen, camera, at, &mut alive)? {
                     Some(pair) => pair,
                     None => continue,
                 };
 
-            // Through a buffer rather than `setBytes:`, which cidre does not
-            // bind on a render encoder. One small allocation per primitive,
-            // and a plan holds a handful of them.
             let buffer = self
                 .device
                 .new_buf_with_slice(&[uniforms], mtl::ResOpts::default())
@@ -595,6 +748,12 @@ impl Compositor {
                     },
                     Some(held.texture.as_ref()),
                 ))
+            }
+
+            PlanItem::Blur { .. } => {
+                // Handled directly in `render` before `uniforms_for` is called.
+                // Reaching here is a bug in the render loop, not in the plan.
+                unreachable!("Blur items are handled before uniforms_for in render()");
             }
         })
     }

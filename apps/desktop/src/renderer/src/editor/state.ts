@@ -18,6 +18,7 @@ import {
   DEFAULT_ZOOM_LENGTH,
   resolveSettings,
   setOverride,
+  type BlurSlice,
   type Project,
   type SettingsSection,
   type Slice,
@@ -39,6 +40,11 @@ const MIN_SLICE_NS = 100_000_000;
  */
 const MIN_ZOOM_NS = 300_000_000;
 
+/** Shortest blur worth having. */
+const MIN_BLUR_NS = 100_000_000;
+/** Default blur length when added (1 second). */
+export const DEFAULT_BLUR_LENGTH = 1_000_000_000;
+
 export interface EditorState {
   project: Project;
   /** Which slice the inspector is editing, or null for the project defaults. */
@@ -51,6 +57,12 @@ export interface EditorState {
    * what does it override, what does it inherit — has no answer for a zoom.
    */
   selectedZoomId: string | null;
+  /**
+   * Which blur is selected, or null.
+   *
+   * Selected on click or creation, dropped on deletion or when a slice/zoom is selected.
+   */
+  selectedBlurId: string | null;
   /**
    * How much recording there actually is, in source time.
    *
@@ -126,13 +138,21 @@ export type EditorAction =
    * the same edge produce identical coalesce keys, and without this they would
    * merge into a single undo step.
    */
-  | { type: "beginEdit" };
+  | { type: "beginEdit" }
+  | { type: "addBlur"; at: MediaTime; region?: Omit<BlurSlice, "id" | "source"> }
+  | { type: "setBlurs"; blurs: BlurSlice[] }
+  | { type: "selectBlur"; blurId: string | null }
+  | { type: "deleteBlur"; blurId: string }
+  | { type: "setBlur"; blurId: string; patch: Partial<BlurSlice> }
+  | { type: "moveBlur"; blurId: string; start: MediaTime }
+  | { type: "trimBlur"; blurId: string; edge: "start" | "end"; source: MediaTime };
 
 export function initialState(project: Project, duration: MediaTime = 0): EditorState {
   return {
     project,
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
+    selectedBlurId: null,
     // Zero until a recording is opened, which is the honest answer: the
     // placeholder project this starts on describes no media at all. Every trim
     // is clamped against it, and clamping to zero is harmless because there is
@@ -183,6 +203,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       selectedZoomId: previous.zooms.some((zoom) => zoom.id === state.selectedZoomId)
         ? state.selectedZoomId
         : null,
+      selectedBlurId: previous.blurs.some((blur) => blur.id === state.selectedBlurId)
+        ? state.selectedBlurId
+        : null,
     };
   }
 
@@ -230,6 +253,11 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "addZoom":
     case "deleteZoom":
     case "setZooms":
+    case "addBlur":
+    case "deleteBlur":
+    case "setBlurs":
+    case "setBlur":
+    case "selectBlur":
       return { coalesce: null };
 
     // Dragged, so every one of these arrives as a stream keyed by what is being
@@ -240,6 +268,11 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
       return { coalesce: `moveZoom:${action.zoomId}` };
     case "trimZoom":
       return { coalesce: `trimZoom:${action.zoomId}:${action.edge}` };
+
+    case "moveBlur":
+      return { coalesce: `moveBlur:${action.blurId}` };
+    case "trimBlur":
+      return { coalesce: `trimBlur:${action.blurId}:${action.edge}` };
 
     default:
       return null;
@@ -267,13 +300,16 @@ function apply(
       return initialState(action.project, action.duration);
 
     case "select":
-      // Not a change worth persisting, so the revision stays put. Selecting a
-      // clip drops the zoom selection: the inspector shows one thing at a time,
-      // and leaving both set would make "what am I editing" unanswerable.
-      return { ...state, selectedSliceId: action.sliceId, selectedZoomId: null };
-
+      // A slice selection is meant to give the inspector a target. A selected
+      // clip drops the zoom and blur selection: the inspector shows one thing at a time,
+      // and it is what the user just touched.
+      return { ...state, selectedSliceId: action.sliceId, selectedZoomId: null, selectedBlurId: null };
+      
     case "selectZoom":
-      return { ...state, selectedZoomId: action.zoomId, selectedSliceId: null };
+      return { ...state, selectedZoomId: action.zoomId, selectedSliceId: null, selectedBlurId: null };
+
+    case "selectBlur":
+      return { ...state, selectedBlurId: action.blurId, selectedSliceId: null, selectedZoomId: null };
 
     case "setFrame":
       return edit(state, (project) => ({ ...project, frame: action.frame }));
@@ -338,8 +374,49 @@ function apply(
 
     case "trimZoom":
       return trimZoom(state, action);
+
+    case "addBlur":
+      return addBlur(state, action.at, action.region);
+    
+    case "setBlurs":
+      // A whole-list replacement for drag reordering in the inspector.
+      // Retains selection if the selected blur survives the swap.
+      return edit(state, (project) => ({ ...project, blurs: action.blurs }));
+
+    case "deleteBlur":
+      return {
+        ...edit(state, (project) => ({
+          ...project,
+          blurs: project.blurs.filter((blur) => blur.id !== action.blurId),
+        })),
+        selectedBlurId: null,
+      };
+
+    case "setBlur":
+      return edit(state, (project) => ({
+        ...project,
+        blurs: project.blurs.map((blur) =>
+          blur.id === action.blurId ? { ...blur, ...action.patch } : blur,
+        ),
+      }));
+
+    case "moveBlur":
+      return moveBlur(state, action);
+
+    case "trimBlur":
+      return trimBlur(state, action);
   }
 }
+
+/**
+ * Updates the blur regions list on a slice override or on the project defaults.
+ *
+ * When `sliceId` is null the change goes to `project.defaults.blur`, which
+ * every slice without its own override inherits. When it is a slice id the
+ * change goes to that slice's override block through `setOverride`, keeping the
+ * flat-leaf invariant intact.
+ */
+
 
 /**
  * Drops a zoom on the timeline at `at`.
@@ -472,6 +549,105 @@ function trimZoom(
     zooms: project.zooms.map((candidate) =>
       candidate.id === action.zoomId ? { ...candidate, source } : candidate,
     ),
+  }));
+}
+
+/**
+ * Drops a blur on the timeline at `at`.
+ *
+ * Unlike zooms, blurs CAN overlap since you can blur multiple different areas at once.
+ */
+function addBlur(
+  state: EditorState,
+  at: MediaTime,
+  region?: Omit<BlurSlice, "id" | "source">,
+): EditorState {
+  const duration = sourceEnd(state.project);
+  const start = Math.max(0, Math.min(at, duration));
+  const end = Math.min(start + DEFAULT_BLUR_LENGTH, duration);
+
+  if (end - start < MIN_BLUR_NS) return state;
+
+  const blur: BlurSlice = {
+    id: `blur-${String(state.revision)}-${String(state.project.blurs.length)}`,
+    source: { start, end },
+    x: region?.x ?? 0.5,
+    y: region?.y ?? 0.5,
+    width: region?.width ?? 0.1,
+    height: region?.height ?? 0.1,
+    strength: region?.strength ?? 0.015,
+  };
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      blurs: [...project.blurs, blur].sort((a, b) => a.source.start - b.source.start),
+    })),
+    selectedBlurId: blur.id,
+    selectedSliceId: null,
+    selectedZoomId: null,
+  };
+}
+
+/**
+ * Slides a whole blur along the timeline.
+ */
+function moveBlur(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "moveBlur" }>,
+): EditorState {
+  const { blurs } = state.project;
+  const index = blurs.findIndex((blur) => blur.id === action.blurId);
+  const blur = blurs[index];
+  if (!blur) return state;
+
+  const length = blur.source.end - blur.source.start;
+  const floor = 0;
+  const ceiling = state.duration;
+
+  const start = clampTo(action.start, floor, Math.max(floor, ceiling - length));
+
+  return edit(state, (project) => ({
+    ...project,
+    blurs: project.blurs.map((candidate) =>
+      candidate.id === action.blurId
+        ? { ...candidate, source: { start, end: start + length } }
+        : candidate,
+    ).sort((a, b) => a.source.start - b.source.start),
+  }));
+}
+
+/** Moves one edge of a blur. */
+function trimBlur(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "trimBlur" }>,
+): EditorState {
+  const { blurs } = state.project;
+  const index = blurs.findIndex((blur) => blur.id === action.blurId);
+  const blur = blurs[index];
+  if (!blur) return state;
+
+  const floor = 0;
+  const ceiling = sourceEnd(state.project);
+
+  const source =
+    action.edge === "start"
+      ? {
+          start: clampTo(action.source, floor, blur.source.end - MIN_BLUR_NS),
+          end: blur.source.end,
+        }
+      : {
+          start: blur.source.start,
+          end: clampTo(action.source, blur.source.start + MIN_BLUR_NS, ceiling),
+        };
+
+  if (source.end - source.start < MIN_BLUR_NS) return state;
+
+  return edit(state, (project) => ({
+    ...project,
+    blurs: project.blurs.map((candidate) =>
+      candidate.id === action.blurId ? { ...candidate, source } : candidate,
+    ).sort((a, b) => a.source.start - b.source.start),
   }));
 }
 

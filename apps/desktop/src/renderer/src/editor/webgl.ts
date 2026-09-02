@@ -53,6 +53,7 @@ const MODE_GRADIENT = 1;
 const MODE_IMAGE = 2;
 const MODE_SHADOW = 3;
 const MODE_STROKE = 4;
+const MODE_BLUR = 5;
 
 /**
  * The two shader sources, exported for `webgl.test.ts` and nothing else.
@@ -263,6 +264,30 @@ void main() {
   float coverage = 1.0 - smoothstep(-0.5, 0.5, d);
   if (coverage <= 0.0) discard;
 
+  if (u_mode == 5) {
+    // Gaussian blur of the scene texture captured before this item.
+    //
+    // Sixteen taps on a Vogel spiral — the same pattern as sampleFocused — but
+    // with a fixed radius rather than a per-pixel one. u_weight carries sigma
+    // in output pixels; u_texel maps pixels to UV coords on the scene texture.
+    //
+    // Sampling the scene texture rather than the source video is what makes the
+    // blur apply to the already-composited picture (crops, zooms, and all)
+    // rather than to the raw recording. u_src carries the rect's own UV window
+    // into the scene texture, normalised the same way image UVs are.
+    if (u_weight <= 0.0) discard;
+    vec2 uv = u_src.xy + v_uv * u_src.zw;
+    vec4 total = vec4(0.0);
+    for (int tap = 0; tap < 16; tap++) {
+      float turn = float(tap) * 2.399963;
+      float reach = sqrt(float(tap) + 0.5) / 4.0;
+      vec2 offset = vec2(cos(turn), sin(turn)) * reach * u_weight * u_texel;
+      total += texture(u_image, uv + offset);
+    }
+    fragColor = vec4((total / 16.0).rgb * coverage, coverage);
+    return;
+  }
+
   if (u_mode == 2) {
     vec2 uv = v_uv;
     if (u_mirror != 0) uv.x = 1.0 - uv.x;
@@ -313,6 +338,16 @@ export class WebGlCompositor {
   private program: Program | null = null;
   private vao: WebGLVertexArrayObject | null = null;
 
+  /**
+   * Framebuffer and its backing texture, used for blur.
+   *
+   * Created on first blur item, and resized when the backing dimensions change.
+   * Null when no blur region has ever been drawn.
+   */
+  private fbo: WebGLFramebuffer | null = null;
+  private fboTex: WebGLTexture | null = null;
+  private fboBacking: Backing = { width: 0, height: 0 };
+
   /** One texture per source, reused: a new one per frame would thrash. */
   private readonly textures = new Map<string, WebGLTexture>();
   /** Which images have been uploaded, so a still one is not re-sent. */
@@ -327,6 +362,10 @@ export class WebGlCompositor {
    * `at` is source time, for the items that move. The canvas is sized by the
    * caller; everything here works in output pixels and is scaled by the
    * viewport, exactly as the exporter's own frame does.
+   *
+   * When the plan contains blur items a framebuffer captures the scene up to
+   * that point; the blur item then samples it. Without blur items the FBO is
+   * never touched and the path is identical to before.
    */
   draw(
     canvas: HTMLCanvasElement,
@@ -341,6 +380,13 @@ export class WebGlCompositor {
     const gl = this.context(canvas);
     if (!gl || !this.program) return;
 
+    const hasBlur = plan.items.some((item) => item.kind === "blur");
+
+    if (hasBlur) {
+      // Ensure the FBO and its texture match the current backing size.
+      this.ensureFbo(gl, backing);
+    }
+
     gl.viewport(0, 0, backing.width, backing.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -350,6 +396,13 @@ export class WebGlCompositor {
     gl.uniform2f(this.program.frame, plan.frame.width, plan.frame.height);
 
     for (const item of plan.items) {
+      if (item.kind === "blur") {
+        // Before drawing the blur, snapshot the current canvas into the FBO
+        // texture so the blur shader can sample the already-composited scene.
+        this.snapshotToFbo(gl, canvas, backing);
+        this.drawBlur(gl, item, backing, plan.frame, at);
+        continue;
+      }
       this.drawItem(gl, item, sources, images, at, plan.frame);
     }
 
@@ -365,8 +418,12 @@ export class WebGlCompositor {
     this.textures.clear();
     if (this.program) gl.deleteProgram(this.program.program);
     if (this.vao) gl.deleteVertexArray(this.vao);
+    if (this.fbo) gl.deleteFramebuffer(this.fbo);
+    if (this.fboTex) gl.deleteTexture(this.fboTex);
     this.program = null;
     this.vao = null;
+    this.fbo = null;
+    this.fboTex = null;
   }
 
   private context(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
@@ -544,6 +601,130 @@ export class WebGlCompositor {
         break;
       }
     }
+  }
+
+  /**
+   * Ensures the FBO and its texture match `backing`.
+   *
+   * Resized when the canvas dimensions change — a stale texture would sample
+   * from the wrong part of the scene when the window is resized. Created from
+   * nothing on the first call.
+   */
+  private ensureFbo(gl: WebGL2RenderingContext, backing: Backing): void {
+    if (
+      this.fboTex &&
+      this.fbo &&
+      this.fboBacking.width === backing.width &&
+      this.fboBacking.height === backing.height
+    ) {
+      return;
+    }
+
+    if (!this.fbo) this.fbo = gl.createFramebuffer();
+    if (!this.fbo) return;
+
+    if (this.fboTex) gl.deleteTexture(this.fboTex);
+    this.fboTex = gl.createTexture();
+    if (!this.fboTex) return;
+
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      backing.width,
+      backing.height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    this.fboBacking = { ...backing };
+  }
+
+  /**
+   * Copies the current canvas into the FBO texture.
+   *
+   * `copyTexSubImage2D` reads from the current read framebuffer — the canvas
+   * default — into the bound texture, without an allocation. Cheaper than
+   * `texImage2D` for a same-size copy.
+   *
+   * The FBO is only bound for the blur draw; this snapshot reads from
+   * the canvas so it does not interfere with the draw already in progress.
+   */
+  private snapshotToFbo(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement, backing: Backing): void {
+    if (!this.fboTex) return;
+    void canvas; // canvas is the implicit read framebuffer (gl.BACK)
+
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+    gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, backing.width, backing.height);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  /**
+   * Draws one blur region by sampling the FBO scene texture.
+   *
+   * The region arrives as absolute output pixels from the plan. The shader
+   * samples with a 16-tap Vogel spiral at the given sigma; the scene texture
+   * UV is the region normalised against the backing size.
+   */
+  private drawBlur(
+    gl: WebGL2RenderingContext,
+    item: Extract<PlanItem, { kind: "blur" }>,
+    backing: Backing,
+    frame: Size,
+    at: number,
+  ): void {
+    const p = this.program;
+    if (!p || !this.fboTex) return;
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+
+    const activeRect = item.keys && item.keys.length > 0 
+      ? rectAt(item.keys, at, item.rect, 0)
+      : item.rect;
+      
+    if (activeRect.width <= 0 || activeRect.height <= 0) return;
+
+    // The blur rect is in output pixels; the FBO UV maps backing pixels.
+    // scale converts output pixels → backing pixels.
+    const scale = backing.width / frame.width;
+    const bx = activeRect.x * scale;
+    const by = activeRect.y * scale;
+    const bw = activeRect.width * scale;
+    const bh = activeRect.height * scale;
+
+    // Normalised UV window of the region inside the FBO texture.
+    const src: [number, number, number, number] = [
+      bx / backing.width,
+      by / backing.height,
+      bw / backing.width,
+      bh / backing.height,
+    ];
+
+    // sigma is in output pixels; convert to backing pixels for the shader.
+    const sigmaInBacking = item.sigma * scale;
+
+    set(gl, p, {
+      rect: activeRect,
+      shape: { radius: 0, exponent: 2 },
+      mode: MODE_BLUR,
+      src,
+      weight: sigmaInBacking,
+      // One texel of the FBO texture — the blur kernel is measured in its pixels.
+      texel: [1 / backing.width, 1 / backing.height],
+    });
+    drawQuad(gl);
+
+    // Rebind nothing: the next item's upload() will bind its own texture.
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   /** A background fill: flat, a gradient, or an image scaled to cover. */
