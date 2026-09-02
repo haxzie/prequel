@@ -24,6 +24,8 @@
  * is exactly the off-by-one nobody exercises by hand.
  */
 
+import type { Plan } from "./entitlement.ts";
+
 export const TRIAL_DAYS = 14;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,8 +52,10 @@ export interface Trial {
  * deciding whether to pay, and re-deriving it there from a sign-up date would be
  * the second implementation this file exists to prevent.
  */
-export function trialStatus(plan: "free" | "pro", endsAt: number, now = Date.now()): Trial {
-  if (plan === "pro") return { status: "paid", daysLeft: 0, endsAt };
+export function trialStatus(plan: Plan, endsAt: number, now = Date.now()): Trial {
+  // Any tier but `free` has been paid for. Naming `pro` alone here is what would
+  // tell somebody holding the lifetime licence that their trial had run out.
+  if (plan !== "free") return { status: "paid", daysLeft: 0, endsAt };
 
   const remaining = endsAt - now;
   if (remaining <= 0) return { status: "expired", daysLeft: 0, endsAt };

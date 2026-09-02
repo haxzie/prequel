@@ -126,9 +126,23 @@ export class WorkspaceWindow {
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
       title: this.current ? basename(this.current) : GRID_TITLE,
-      // A dark-surfaced tool that ships its own background; leaving this white
-      // flashes a white rectangle on open.
-      backgroundColor: "#16171a",
+      // The chrome is translucent over whatever the window is sitting on, the
+      // way a native editor's is.
+      //
+      // `hud` rather than `under-window`, which is what this was first written
+      // as and which looked like nothing at all: `under-window` is the faintest
+      // material AppKit has, and against dark chrome on a dark desktop the
+      // difference from a flat fill is not visible. `hud` is heavily frosted and
+      // already dark, which is what this palette wants. The renderer paints
+      // three depths of scrim over it — see `--editor-glass` in `index.css` —
+      // because a window gets exactly one material and the depth has to come
+      // from somewhere.
+      //
+      // No `backgroundColor` to go with it. `createWindow` forces a transparent
+      // one, because an opaque colour is painted over the material; the white
+      // flash that `#16171a` used to prevent is already covered by
+      // `ready-to-show` below, which holds the window back until it has a frame.
+      vibrancy: "hud",
     });
 
     this.window = window;

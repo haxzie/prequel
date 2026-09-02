@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 import { cn } from "../lib/cn";
 
@@ -17,6 +17,15 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
   /** The device this controls is switched off — present, but not in use. */
   off?: boolean;
+  /**
+   * Passed straight through to the button.
+   *
+   * React 19 treats `ref` as an ordinary prop, so the spread below carries it —
+   * but `ButtonHTMLAttributes` does not declare it, and without this the
+   * caller that measures this control to place a menu against it does not
+   * typecheck.
+   */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /**

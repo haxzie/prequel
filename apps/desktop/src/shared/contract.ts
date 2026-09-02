@@ -201,17 +201,52 @@ export const PANEL_INSET = 18;
 export const PANEL_HEIGHT = 44;
 
 /**
- * Extra window height reserved above the panel while a drop-up is open.
+ * The gap between the top of the panel and the drop-up above it.
  *
- * A drop-up is drawn above the control that opened it, which puts it outside a
- * window that is only as tall as the panel — it gets clipped away to a sliver.
- * The window therefore grows upward for as long as a menu is open, and the
- * panel stays put because it is anchored to the window's bottom edge.
- *
- * Only while open: the added area is transparent, and leaving it there
- * permanently would put a large invisible rectangle over the screen.
+ * Shared because neither side can work it out alone: the menu is its own
+ * window now, so main positions it, while the renderer's cap on how tall a
+ * list may grow is measured from the same gap.
  */
-export const DOCK_MENU_HEADROOM = 200;
+export const DOCK_MENU_GAP = 10;
+
+/**
+ * How tall a *device list* may grow before it scrolls instead.
+ *
+ * A cap on the list, not on the menu. It used to be both, because the drop-up
+ * was drawn inside headroom the dock's window was grown by and anything taller
+ * was clipped away. The menu is its own window now, so prose — the permissions
+ * panel — simply takes the height it needs, and only an unbounded list of
+ * devices still needs a limit.
+ */
+export const DOCK_LIST_MAX_HEIGHT = 180;
+
+/** How close a drop-up may come to the top of the screen. */
+export const DOCK_MENU_MARGIN = 8;
+
+/**
+ * An open drop-up, as main needs to see it.
+ *
+ * The menu is a second window, so main has to size and place it — and it can
+ * do neither from `DockState`. The device lists live in the dock *renderer*
+ * (`useMediaDevices`), not in main, and Chromium only fills in device labels
+ * for a renderer that has already opened a stream: a second renderer calling
+ * `enumerateDevices` for itself would get a list of blank names and no error.
+ * So the dock hands over the list it already has.
+ *
+ * `anchorX` is the centre of the control that opened it, in dock-window
+ * coordinates. Main adds the window's own x and clamps to the display, which
+ * is the nudging the two menu components used to do against `window.innerWidth`
+ * back when they were trapped inside the dock's window.
+ */
+export type DockMenu =
+  | {
+      kind: "camera" | "microphone";
+      anchorX: number;
+      devices: MediaDevice[];
+      /** `null` means the device is switched off. */
+      selectedId: string | null;
+    }
+  | { kind: "permissions"; anchorX: number; missing: PermissionId[] };
 
 /** What the panel is currently showing. */
 export type DockView = "setup" | "recording";
@@ -280,8 +315,12 @@ export const IPC_CHANNELS = {
   preferences: "prefs:get",
   updatePreferences: "prefs:update",
   ensureDeviceAccess: "devices:ensureAccess",
-  /** Renderer → main: a drop-up opened or closed, so the window can make room. */
+  /** Renderer → main: which drop-up is open, or `null`. Drives the menu window. */
   dockMenu: "dock:menu",
+  /** Renderer → main: the open drop-up's measured size, so its window can match. */
+  dockMenuSize: "dock:menuSize",
+  /** Main → menu renderer: what to draw. */
+  dockMenuContent: "dock:menuContent",
   /** Renderer → main: the panel's natural width, so the window can match it. */
   dockWidth: "dock:width",
   /** Renderer → main: the camera preview failed, or recovered. */
@@ -740,6 +779,19 @@ export interface DockState {
   session: SessionState;
   /** Set while an overlay is up, so the panel can dim its own controls. */
   selecting: boolean;
+  /**
+   * Which drop-up is open, if any.
+   *
+   * Main owns this rather than the panel, because the menu is its own window
+   * now and closes itself when something in it is picked. Were the panel to
+   * keep the flag locally it would still believe the menu was open, and the
+   * change it had just made to the preferences would re-send the content and
+   * open it straight back up.
+   *
+   * The kind only. The menu's *content* travels on `dock:menu` instead, so a
+   * device list is not broadcast to every window on every state change.
+   */
+  openMenu: DockMenu["kind"] | null;
   /**
    * Why the camera preview failed, if it did.
    *

@@ -11,6 +11,7 @@ import { app, BrowserWindow, ipcMain, systemPreferences, webContents } from "ele
 import { env } from "@prequel/env";
 
 import type {
+  DockMenu,
   DockState,
   IpcResult,
   UpdateState,
@@ -176,7 +177,11 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, open: boolean) => flow.setMenuOpen(open));
+  ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, menu: DockMenu | null) => flow.setMenu(menu));
+
+  ipcMain.handle(IPC_CHANNELS.dockMenuSize, (_event, size: { width: number; height: number }) =>
+    flow.setMenuSize(size),
+  );
 
   ipcMain.handle(IPC_CHANNELS.dockWidth, (_event, width: number) => flow.setPanelWidth(width));
 

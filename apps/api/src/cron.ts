@@ -19,7 +19,7 @@ import { schema } from "@prequel/db";
 
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
-import { FREE_QUOTA_BYTES } from "./lib/entitlement.ts";
+import { applyPlan } from "./lib/entitlement.ts";
 import { id } from "./lib/ids.ts";
 import { ensureTeam } from "./lib/teams.ts";
 
@@ -60,12 +60,12 @@ async function expireGrace(db: Database): Promise<void> {
 
     // The library is left alone, the same as on an outright cancellation. What
     // changes is the quota, so nothing new goes up until the card does.
-    await db
-      .update(schema.organization)
-      .set({ plan: "free", storageQuotaBytes: FREE_QUOTA_BYTES })
-      .where(eq(schema.organization.id, subscription.teamId));
+    //
+    // Recomputed rather than set to `free`: a team that also holds the lifetime
+    // licence falls back to that allowance, not to nothing.
+    const plan = await applyPlan(db, subscription.teamId);
 
-    console.warn("grace expired, team downgraded", subscription.teamId);
+    console.warn("grace expired, team moved to", plan, subscription.teamId);
   }
 }
 
@@ -88,10 +88,13 @@ const ORPHAN_GRACE_MS = 60 * 60 * 1000;
  * exactly the team they named. Deleting it instead would be correct only in the
  * sense that the row would be gone.
  *
- * What cannot be repaired is only deleted when it is provably empty: no videos
- * and no subscription. A team with videos and no members is a different fault
- * with somebody's recordings inside it, and cascading it away here would turn a
- * bookkeeping problem into data loss. That one is logged and left.
+ * What cannot be repaired is only deleted when it is provably empty: no videos,
+ * no subscription and no purchase. A team with videos and no members is a
+ * different fault with somebody's recordings inside it, and cascading it away
+ * here would turn a bookkeeping problem into data loss. A team holding the
+ * lifetime licence is the same fault with somebody's money in it — the row is
+ * the entitlement, and the cascade would be the only record of it going. Both
+ * are logged and left.
  */
 async function settleTeams(db: Database): Promise<void> {
   const orphans = await db
@@ -122,13 +125,21 @@ async function settleTeams(db: Database): Promise<void> {
       .from(schema.video)
       .where(eq(schema.video.teamId, team.id));
 
-    const [subscription] = await db
-      .select({ id: schema.subscription.id })
-      .from(schema.subscription)
-      .where(eq(schema.subscription.teamId, team.id))
-      .limit(1);
+    const [[subscription], [purchase]] = await Promise.all([
+      db
+        .select({ id: schema.subscription.id })
+        .from(schema.subscription)
+        .where(eq(schema.subscription.teamId, team.id))
+        .limit(1),
 
-    if (count > 0 || subscription) {
+      db
+        .select({ id: schema.purchase.id })
+        .from(schema.purchase)
+        .where(eq(schema.purchase.teamId, team.id))
+        .limit(1),
+    ]);
+
+    if (count > 0 || subscription || purchase) {
       console.error("team has no members but is not empty", team.id, team.name);
       continue;
     }

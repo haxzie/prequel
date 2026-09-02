@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { PLANS, TRIAL_DAYS } from "@/lib/pricing";
+import { LIFETIME_PLAN, PRO_PLAN, TRIAL_DAYS } from "@/lib/pricing";
 import type { Trial } from "@/lib/session";
 
 /**
@@ -18,9 +18,11 @@ import type { Trial } from "@/lib/session";
  * them apart — `plan` stays `free` right through a trial — which is why the
  * verdict comes from the API.
  *
- * It does not name the plan. There is exactly one paid licence and it is called
- * "Prequel" — see `lib/pricing.ts` — so a card headed with that name inside the
- * Prequel dashboard reads as a link to the homepage rather than as an offer.
+ * It does not name a plan, and with two of them that is now the point rather
+ * than an accident: this card is 140 pixels of sidebar, and a choice belongs on
+ * the page it links to. It shows the monthly rate because that is the number
+ * somebody weighs a countdown against, with the one-off named beside it so
+ * nobody arrives at the billing page surprised there is a second option.
  *
  * It links to the billing page rather than straight to a checkout: checkout is
  * owner-and-admin only, and a card that opens a payment page for somebody who is
@@ -28,10 +30,10 @@ import type { Trial } from "@/lib/session";
  */
 export function UpgradeCard({ trial, className = "" }: { trial: Trial; className?: string }) {
   const copy = COPY[trial.status === "trial" ? "trial" : "expired"];
-  // The price and its cadence both come from `lib/pricing.ts`, which is the only
-  // file allowed to carry either. Writing "per user, per month" out here would
-  // be a second cadence to keep in step with a plan that has one.
-  const licence = PLANS[0];
+  // Both prices come from `lib/pricing.ts`, which is the only file allowed to
+  // carry either, and by name rather than by index — reordering the cards on
+  // the pricing page must not change what the sidebar quotes.
+  const licence = PRO_PLAN;
 
   return (
     <Link
@@ -46,11 +48,13 @@ export function UpgradeCard({ trial, className = "" }: { trial: Trial; className
 
       <p className="mt-1.5 text-xs leading-relaxed text-muted">{copy.body}</p>
 
-      {licence ? (
-        <p className="mt-2 text-xs text-fg">
-          {licence.price} <span className="text-muted">{licence.cadence}</span>
-        </p>
-      ) : null}
+      <p className="mt-2 text-xs text-fg">
+        {licence.price} <span className="text-muted">{licence.cadence}</span>
+        <span className="text-muted">
+          {" "}
+          · or {LIFETIME_PLAN.price} {LIFETIME_PLAN.cadence}
+        </span>
+      </p>
 
       <span className="mt-3 flex items-center gap-1 text-xs font-medium text-fg">
         {copy.action}

@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
-import type { DockState, ScreenMode } from "../../../shared/contract";
+import type {
+  DockMenu,
+  DockState,
+  MediaDevice,
+  PermissionId,
+  RecordingPreferences,
+  ScreenMode,
+} from "../../../shared/contract";
 import { missingPermissions } from "../../../shared/permissions";
 import { useMediaDevices } from "../hooks/useMediaDevices";
 import { usePermissions } from "../hooks/usePermissions";
@@ -34,7 +41,19 @@ export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
   const cameras = useMediaDevices("videoinput");
   const microphones = useMediaDevices("audioinput");
-  const [open, setOpen] = useState<"camera" | "mic" | "permissions" | null>(null);
+  // Which drop-up is open comes from main, not from here: the menu is its own
+  // window and closes itself when a device is picked in it. A local flag would
+  // still say "open", and the preference change it had just made would re-send
+  // the content and open it straight back up.
+  const open = state.openMenu;
+  /**
+   * Where the open menu is anchored, in this window's coordinates.
+   *
+   * A ref because it is written by a click and read while rebuilding the
+   * payload — holding it in state would re-render the whole panel to record a
+   * number that changes nothing on screen.
+   */
+  const anchor = useRef(0);
 
   // No timer. The panel is up for as long as the app is, and the two
   // permissions that matter here are read from a value macOS fixes at launch —
@@ -50,21 +69,53 @@ export function SetupPanel({ state }: { state: DockState }) {
     microphone: preferences.micId !== null,
   });
 
-  // The window is only as tall as the panel, so main has to grow it before a
-  // drop-up can be drawn above it — otherwise the menu is clipped to a sliver
-  // of its bottom edge.
+  /**
+   * What the open drop-up should be drawing, pushed to main.
+   *
+   * Re-sent whenever its contents change and not only when it opens: a device
+   * unplugged while the list is up has to leave the list. Keyed on the
+   * serialised content rather than on the object, which is rebuilt on every
+   * render and would otherwise send an identical payload per keystroke of the
+   * audio meter.
+   */
+  const menu = buildMenu(open, anchor.current, {
+    cameras,
+    microphones,
+    preferences,
+    missing,
+  });
+  const serialised = JSON.stringify(menu);
+  const latest = useRef(menu);
+  latest.current = menu;
   useEffect(() => {
-    void window.prequel.dock.setMenuOpen(open !== null);
-  }, [open]);
+    void window.prequel.dock.setMenu(latest.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialised]);
 
   // The warning can disappear under an open menu — granting the last missing
   // permission from inside it is the ordinary way that happens — and a menu
-  // whose button has gone leaves the window grown around nothing.
+  // left open over nothing is a frosted panel floating on the desktop.
   useEffect(() => {
-    if (open === "permissions" && missing.length === 0) setOpen(null);
+    if (open === "permissions" && missing.length === 0) void window.prequel.dock.setMenu(null);
   }, [open, missing.length]);
 
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
+
+  /**
+   * Where the open menu is anchored, in this window's coordinates.
+   *
+   * A ref because it is written by a click and read while building the payload
+   * above — putting it in state would re-render the panel to record a number
+   * that changes nothing on screen.
+   */
+  const toggle = (kind: DockMenu["kind"], anchorX: number) => {
+    anchor.current = anchorX;
+    void window.prequel.dock.setMenu(
+      open === kind
+        ? null
+        : buildMenu(kind, anchorX, { cameras, microphones, preferences, missing }),
+    );
+  };
 
   return (
     // Sized to its contents — this is the panel's natural width, and what the
@@ -111,14 +162,13 @@ export function SetupPanel({ state }: { state: DockState }) {
           selectedLabel={preferences.cameraLabel}
           error={cameraError}
           open={open === "camera"}
-          onToggle={() => setOpen(open === "camera" ? null : "camera")}
-          onSelect={(device) => {
+          onToggle={(anchorX) => toggle("camera", anchorX)}
+          onSelect={(device) =>
             void window.prequel.dock.updatePreferences({
               cameraId: device?.deviceId ?? null,
               cameraLabel: device?.label ?? null,
-            });
-            setOpen(null);
-          }}
+            })
+          }
           OnIcon={CameraIcon}
           OffIcon={CameraOffIcon}
         />
@@ -129,15 +179,14 @@ export function SetupPanel({ state }: { state: DockState }) {
           selectedId={preferences.micId}
           selectedLabel={preferences.micLabel}
           meter
-          open={open === "mic"}
-          onToggle={() => setOpen(open === "mic" ? null : "mic")}
-          onSelect={(device) => {
+          open={open === "microphone"}
+          onToggle={(anchorX) => toggle("microphone", anchorX)}
+          onSelect={(device) =>
             void window.prequel.dock.updatePreferences({
               micId: device?.deviceId ?? null,
               micLabel: device?.label ?? null,
-            });
-            setOpen(null);
-          }}
+            })
+          }
           OnIcon={MicIcon}
           OffIcon={MicOffIcon}
         />
@@ -154,9 +203,8 @@ export function SetupPanel({ state }: { state: DockState }) {
           <span className={DIVIDER} />
           <PermissionMenu
             missing={missing}
-            permissions={permissions}
             open={open === "permissions"}
-            onToggle={() => setOpen(open === "permissions" ? null : "permissions")}
+            onToggle={(anchorX) => toggle("permissions", anchorX)}
           />
         </>
       )}
@@ -164,4 +212,34 @@ export function SetupPanel({ state }: { state: DockState }) {
       <UpdateButton />
     </div>
   );
+}
+
+/**
+ * The open drop-up's content, as main needs it.
+ *
+ * Built here rather than in the menu's own window because the device lists are
+ * this renderer's: Chromium only fills in device labels for a renderer that has
+ * already opened a stream, so a second one enumerating for itself would get a
+ * list of blank names and no error at all.
+ */
+function buildMenu(
+  kind: DockMenu["kind"] | null,
+  anchorX: number,
+  from: {
+    cameras: MediaDevice[];
+    microphones: MediaDevice[];
+    preferences: RecordingPreferences;
+    missing: PermissionId[];
+  },
+): DockMenu | null {
+  if (kind === null) return null;
+  if (kind === "permissions") return { kind, anchorX, missing: from.missing };
+
+  const camera = kind === "camera";
+  return {
+    kind,
+    anchorX,
+    devices: camera ? from.cameras : from.microphones,
+    selectedId: camera ? from.preferences.cameraId : from.preferences.micId,
+  };
 }

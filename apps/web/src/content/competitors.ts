@@ -26,15 +26,15 @@
  *  edit for every page. It does appear in the prose below, where a sentence
  *  needs it — grep for it there when it moves.
  *
- *  **Argue on the video, not on the price.** Prequel is $14 per user per month
- *  and is no longer the cheapest thing in this category: Screen Studio billed
- *  yearly and Tella's Pro tier both come in under it, and ScreenFlow's one-off
- *  licence overtakes it after about fourteen months. A page that claims
- *  otherwise is checkable in one click by exactly the person it is aimed at,
- *  and it takes every other number on all six pages down with it. The claim
- *  these pages are built to make is the finished video — zooms that follow the
- *  work, a perspective tilt, focus falling away from the subject, a camera
- *  framed afterwards — and where a rival is cheaper, they say so.
+ *  **Argue on the video, not on the price.** Prequel is $9 a month, or $29 once,
+ *  which is at or under most of this category rather than over it. That makes
+ *  the number safe to state — it did not use to be — but it is still not the
+ *  argument these pages are built to make. A page that leads on being cheapest
+ *  invites the reader to re-check it the next time somebody runs a sale, and it
+ *  takes every other number on all six pages with it when they find one. The
+ *  claim is the finished video — zooms that follow the work, a perspective
+ *  tilt, focus falling away from the subject, a camera framed afterwards — and
+ *  where a rival is still cheaper, they say so.
  */
 
 import type { FaqEntry } from "@/lib/faq";
@@ -75,8 +75,9 @@ export type FeatureKey = (typeof FEATURE_ROWS)[number]["key"];
  * do not have is the fastest way to lose the argument in the thread where it
  * gets posted.
  *
- * `shareLinks` and `workspace` are in the one plan, like everything else in
- * `lib/pricing.ts`. They live here because leaving them off the table did not
+ * `shareLinks` and `workspace` are in both plans, like everything else in
+ * `lib/pricing.ts` — the two differ only in how much may be kept on a shared
+ * link, never in whether a feature exists. They live here because leaving them off the table did not
  * make the pages more modest, it made them silent on the one axis Loom, Tella,
  * Descript and Cap are bought for — and silence on a comparison table reads as
  * a cross.
@@ -102,7 +103,7 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   iosCapture: false,
   maxExport: "4K, 120 fps",
   platforms: "macOS 14+, Apple Silicon",
-  licence: "$14/user/month, 14-day trial",
+  licence: "$9/month or $29 once, 14-day trial",
 };
 
 export type Competitor = {
@@ -216,16 +217,16 @@ export const competitors: Competitor[] = [
       { label: "screen.studio pricing", url: "https://screen.studio/#pricing" },
     ],
     heading: "Looking for a Screen Studio alternative?",
-    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $14 per user per month — under their monthly rate, over their yearly one — with a fourteen-day trial to judge the output before you pay.",
+    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $29 once, which is the lifetime licence they stopped selling in 2025. Fourteen days free to judge the output before you pay.",
     title: "Screen Studio alternative for Mac",
     description:
-      "A Screen Studio alternative for macOS at $14 per user per month: the same automatic zooms, a perspective tilt and framed camera on top, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
+      "A Screen Studio alternative for macOS at $9 a month, or $29 once for a lifetime licence: the same automatic zooms, a perspective tilt and framed camera on top, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
     navLabel: "vs Screen Studio",
     faq: [
       {
         question: "What is the best Screen Studio alternative?",
         answer:
-          "It depends on what pushed you to look. If it was the video, Prequel is the closest thing to it — the same automatic zooms, plus a perspective tilt, focus falling away from whatever the zoom is aimed at, and export at 4K 120 where Screen Studio stops at 4K 60. If it was the price, be careful which number you are comparing: Prequel is $14 per user per month against their $29 monthly, but their yearly rate works out at $9 a month and is the cheaper of the two. If it was macOS-only, neither of us has a Windows build and you want something cross-platform.",
+          "It depends on what pushed you to look. If it was the video, Prequel is the closest thing to it — the same automatic zooms, plus a perspective tilt, focus falling away from whatever the zoom is aimed at, and export at 4K 120 where Screen Studio stops at 4K 60. If it was the price, be careful which number you are comparing: their $29 is the monthly rate and their yearly one works out at $9 a month, which is what Prequel charges monthly — so the two are level if you commit to a year with them, and Prequel is a third of the price if you do not. There is also a $29 lifetime licence here, which is the thing they withdrew in 2025. If it was macOS-only, neither of us has a Windows build and you want something cross-platform.",
       },
       {
         question: "How much does Screen Studio cost?",
@@ -240,7 +241,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a free Screen Studio alternative?",
         answer:
-          "Not Prequel — it is $14 per user per month, after a fourteen-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
+          "Not Prequel — it is $9 a month, or $29 once, after a fourteen-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
       },
       {
         question: "Is Prequel a good Screen Studio alternative?",
@@ -297,16 +298,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Loom alternative?",
-    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed, the dead air gone — then gives you a link if you want one, and a file you own either way. $14 per user per month against Loom's $18.",
+    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed, the dead air gone — then gives you a link if you want one, and a file you own either way. $9 a month against Loom's $18, or $29 once and never again.",
     title: "Loom alternative for Mac",
     description:
-      "A Loom alternative for macOS that records locally and hands back a cinematic MP4 — automatic zooms, a perspective tilt, a framed camera — with no upload and no account needed to watch it. $14 per user per month.",
+      "A Loom alternative for macOS that records locally and hands back a cinematic MP4 — automatic zooms, a perspective tilt, a framed camera — with no upload and no account needed to watch it. $9 a month, or $29 once.",
     navLabel: "vs Loom",
     faq: [
       {
         question: "What is the best Loom alternative?",
         answer:
-          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background, the dead air trimmed — and still gives you a shareable link, at $14 per user per month against Loom's $18. What Loom keeps is the analytics and the integrations.",
+          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background, the dead air trimmed — and still gives you a shareable link, at $9 a month against Loom's $18 — or $29 once, with nothing to renew. What Loom keeps is the analytics and the integrations.",
       },
       {
         question: "How much does Loom cost?",
@@ -381,10 +382,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a lighter Camtasia alternative?",
-    lede: "Camtasia is a full video editor you drive by hand, sold as an annual subscription whose cheapest tier watermarks your exports. Prequel makes the cinematic pass for you — zooms on the work, a perspective tilt, focus falling away from the subject, a framed camera — then gets out of the way. $14 per user per month, with nothing held back and no watermark on anything.",
+    lede: "Camtasia is a full video editor you drive by hand, sold as an annual subscription whose cheapest tier watermarks your exports. Prequel makes the cinematic pass for you — zooms on the work, a perspective tilt, focus falling away from the subject, a framed camera — then gets out of the way. $9 a month, or $29 once, with nothing held back and no watermark on anything.",
     title: "Camtasia alternative for Mac",
     description:
-      "A Camtasia alternative for macOS at $14 per user per month: automatic zooms and a perspective tilt instead of manual keyframes, and 4K export that is never watermarked — where Camtasia's cheapest tier still stamps one on.",
+      "A Camtasia alternative for macOS at $9 a month or $29 once: automatic zooms and a perspective tilt instead of manual keyframes, and 4K export that is never watermarked — where Camtasia's cheapest tier still stamps one on.",
     navLabel: "vs Camtasia",
     faq: [
       {
@@ -395,7 +396,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Camtasia's cheapest plan watermark exports?",
         answer:
-          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel never watermarks anything, on the trial or on a licence — there is one plan at $14 per user per month and the export is always the full file.",
+          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel never watermarks anything, on the trial or on either plan — $9 a month or $29 once, and the export is always the full file.",
       },
       {
         question: "Does Camtasia have automatic zoom?",
@@ -456,16 +457,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a ScreenFlow alternative?",
-    lede: "ScreenFlow is a deep manual editor that has not had a major version since June 2021. Prequel is built for the Macs that shipped since, and makes the cinematic pass itself — zooms from your clicks, a perspective tilt, focus falling away from the subject, 4K at 120 fps. $14 per user per month against their $199.99 once.",
+    lede: "ScreenFlow is a deep manual editor that has not had a major version since June 2021. Prequel is built for the Macs that shipped since, and makes the cinematic pass itself — zooms from your clicks, a perspective tilt, focus falling away from the subject, 4K at 120 fps. $9 a month against their $199.99 once — or $29 once, which is the same kind of purchase for a seventh of the money.",
     title: "ScreenFlow alternative for Mac",
     description:
-      "A ScreenFlow alternative for macOS with automatic zooms, a perspective tilt and hardware 4K 120 export, at $14 per user per month. What ScreenFlow costs, what version it is on, and where it has stalled.",
+      "A ScreenFlow alternative for macOS with automatic zooms, a perspective tilt and hardware 4K 120 export, at $9 a month or $29 once. What ScreenFlow costs, what version it is on, and where it has stalled.",
     navLabel: "vs ScreenFlow",
     faq: [
       {
         question: "How much does ScreenFlow cost?",
         answer:
-          "$199.99 for ScreenFlow 10, as a one-off licence tied to a single machine — moving between a laptop and a desktop means deactivating one to use the other. Historically, major upgrades were paid. Worth doing the arithmetic honestly: Prequel is $14 per user per month, so a ScreenFlow licence is the cheaper of the two from about fourteen months in, and what you are weighing after that is a stalled editor you drive by hand against one that arrives directed. Checked on 21 August 2026.",
+          "$199.99 for ScreenFlow 10, as a one-off licence tied to a single machine — moving between a laptop and a desktop means deactivating one to use the other. Historically, major upgrades were paid. Worth doing the arithmetic honestly, because it no longer runs their way: Prequel is $9 a month, so a ScreenFlow licence only becomes the cheaper of the two after about twenty-two months — and Prequel's own one-off licence is $29, a seventh of theirs and never overtaken. What you are weighing is a stalled editor you drive by hand against one that arrives directed. Checked on 21 August 2026.",
       },
       {
         question: "Is ScreenFlow still being developed?",
@@ -530,10 +531,10 @@ export const competitors: Competitor[] = [
       { label: "Descript security", url: "https://www.descript.com/security" },
     ],
     heading: "Looking for a Descript alternative for screen recording?",
-    lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen: automatic zooms, a perspective tilt, focus falling away from the subject, recorded and rendered on your own Mac and uploaded only when you ask. $14 per user per month, under every paid Descript tier.",
+    lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen: automatic zooms, a perspective tilt, focus falling away from the subject, recorded and rendered on your own Mac and uploaded only when you ask. $9 a month, or $29 once — under every paid Descript tier either way.",
     title: "Descript alternative for Mac screen recording",
     description:
-      "A Descript alternative for macOS screen recording at $14 per user per month: automatic zooms, a perspective tilt, local-only processing and exports that are never watermarked or capped. Compared on price and features.",
+      "A Descript alternative for macOS screen recording at $9 a month or $29 once: automatic zooms, a perspective tilt, local-only processing and exports that are never watermarked or capped. Compared on price and features.",
     navLabel: "vs Descript",
     faq: [
       {
@@ -544,7 +545,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Descript watermark free exports?",
         answer:
-          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $14 per user per month after a fourteen-day trial, which is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
+          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $9 a month, or $29 once, after a fourteen-day trial, and either is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
       },
       {
         question: "Does Descript store my recordings in the cloud?",
@@ -602,16 +603,16 @@ export const competitors: Competitor[] = [
       { label: "Tella plans", url: "https://www.tella.com/help/introduction/plans" },
     ],
     heading: "Looking for a Tella alternative?",
-    lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $14 per user per month, between Tella's $13 Pro and $19 Premium.",
+    lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $9 a month, under both Tella's $13 Pro and its $19 Premium, or $29 once.",
     title: "Tella alternative for Mac",
     description:
-      "A Tella alternative for macOS with automatic zooms, a perspective tilt and 4K 120 export, recorded and rendered locally — $14 per user per month against Tella's $13 Pro and $19 Premium.",
+      "A Tella alternative for macOS with automatic zooms, a perspective tilt and 4K 120 export, recorded and rendered locally — $9 a month, or $29 once, against Tella's $13 Pro and $19 Premium.",
     navLabel: "vs Tella",
     faq: [
       {
         question: "Does Tella have a free plan?",
         answer:
-          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, with a fourteen-day trial rather than seven and one price at the end of it — $14 per user per month — instead of tiers that decide what your export is allowed to be.",
+          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, with a fourteen-day trial rather than seven, and two ways to pay at the end of it — $9 a month or $29 once — neither of which decides what your export is allowed to be.",
       },
       {
         question: "How much does Tella cost?",

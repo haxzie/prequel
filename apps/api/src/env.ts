@@ -58,8 +58,17 @@ export interface Env {
    */
   DODOPAYMENT_MODE: "test" | "live";
   DODOPAYMENT_BRAND_ID: string;
-  /** The Pro subscription product. One team, one member, one price. */
+  /** The Pro subscription product. Billed monthly, and it lapses. */
   DODOPAYMENT_PRO_PRODUCT_ID: string;
+  /**
+   * The lifetime licence: one charge, no renewal.
+   *
+   * Read by the webhook as well as by checkout, and that is the important half.
+   * Dodo sends `payment.succeeded` for every charge it makes — including each
+   * renewal of a subscription — so this id is what separates a purchase from a
+   * renewal. Leaving it unset makes the handler throw rather than guess.
+   */
+  DODOPAYMENT_LIFETIME_PRODUCT_ID: string;
 
   DODOPAYMENT_API_KEY?: string;
   /**

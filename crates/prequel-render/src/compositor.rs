@@ -42,6 +42,14 @@ struct Uniforms {
     /// Depth of field: what stays sharp in output pixels, how far around it,
     /// and the widest blur beyond. A strength of 0 softens nothing.
     focus: [f32; 4],
+    /// Motion blur on the pointer: the streak as a vector in the quad's own uv,
+    /// how much of the quad on each side is padding, and non-zero to enable it.
+    ///
+    /// Beside `focus` for the reason `src` above is beside `rect`: both are
+    /// `float4`, MSL aligns them to 16 bytes, and every field after them stays
+    /// naturally aligned. Appending it after the `u32`s would silently shift
+    /// the whole tail.
+    smear: [f32; 4],
     /// One texel of the sampled image, so a blur is measured in its own pixels.
     texel: [f32; 2],
     shape: [f32; 2],
@@ -507,6 +515,8 @@ impl Compositor {
             // image — those override it below.
             src: [0.0, 0.0, 1.0, 1.0],
             focus: [0.0, 0.0, 1.0, 0.0],
+            // Off. Only the pointer ever turns it on.
+            smear: [0.0; 4],
             texel: [0.0; 2],
             shape: [0.0, 2.0],
             frame,
@@ -707,16 +717,34 @@ impl Compositor {
                 // pointer grows towards the near edge with everything on it.
                 let size = size * point.scale;
 
+                // The streak needs room, so the quad is grown around the
+                // sprite and the shader maps back off the padding. Half the
+                // streak each side, because it is drawn centred on the
+                // position. Mirrors the same three lines in `webgl.ts`.
+                let streak = point.smear_x.hypot(point.smear_y);
+                let pad = streak * 0.5;
+                let grown = size + pad * 2.0;
+
                 Some((
                     Uniforms {
                         // The hotspot is the point that lands on the position:
                         // for an arrow that is its tip, not its middle, so the
                         // image is offset rather than centred.
                         rect: [
-                            (point.x - hotspot.x * size) as f32,
-                            (point.y - hotspot.y * size) as f32,
-                            size as f32,
-                            size as f32,
+                            (point.x - hotspot.x * size - pad) as f32,
+                            (point.y - hotspot.y * size - pad) as f32,
+                            grown as f32,
+                            grown as f32,
+                        ],
+                        // In the grown quad's own uv, which is what the shader
+                        // works in. Off entirely below a pixel: a streak that
+                        // short is not visible, and the taps cost the same
+                        // whether they move or not.
+                        smear: [
+                            (point.smear_x / grown) as f32,
+                            (point.smear_y / grown) as f32,
+                            (pad / grown) as f32,
+                            if streak >= 1.0 { 1.0 } else { 0.0 },
                         ],
                         mode: MODE_IMAGE,
                         ..base
@@ -917,21 +945,24 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, quad), 0);
         assert_eq!(offset_of!(Uniforms, rect), 64);
         assert_eq!(offset_of!(Uniforms, src), 80);
-        // `focus` is a `float4`, so it goes on a 16-byte boundary and the two
-        // `float2`s follow it.
+        // `focus` and `smear` are `float4`s, so both go on 16-byte boundaries
+        // and the three `float2`s follow them. `smear` was added here rather
+        // than at the end precisely so this block stays readable: every offset
+        // below it moved by exactly 16, and none of them changed shape.
         assert_eq!(offset_of!(Uniforms, focus), 96);
-        assert_eq!(offset_of!(Uniforms, texel), 112);
-        assert_eq!(offset_of!(Uniforms, shape), 120);
-        assert_eq!(offset_of!(Uniforms, frame), 128);
-        assert_eq!(offset_of!(Uniforms, color_a), 144);
-        assert_eq!(offset_of!(Uniforms, color_b), 160);
-        assert_eq!(offset_of!(Uniforms, gradient), 176);
-        assert_eq!(offset_of!(Uniforms, mode), 184);
-        assert_eq!(offset_of!(Uniforms, weight), 188);
-        assert_eq!(offset_of!(Uniforms, mirror), 192);
+        assert_eq!(offset_of!(Uniforms, smear), 112);
+        assert_eq!(offset_of!(Uniforms, texel), 128);
+        assert_eq!(offset_of!(Uniforms, shape), 136);
+        assert_eq!(offset_of!(Uniforms, frame), 144);
+        assert_eq!(offset_of!(Uniforms, color_a), 160);
+        assert_eq!(offset_of!(Uniforms, color_b), 176);
+        assert_eq!(offset_of!(Uniforms, gradient), 192);
+        assert_eq!(offset_of!(Uniforms, mode), 200);
+        assert_eq!(offset_of!(Uniforms, weight), 204);
+        assert_eq!(offset_of!(Uniforms, mirror), 208);
 
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 200);
+        assert_eq!(size_of::<Uniforms>(), 216);
     }
 
     #[test]

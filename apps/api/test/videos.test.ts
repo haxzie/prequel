@@ -99,6 +99,22 @@ describe("POST /v1/videos", () => {
     expect(response.status).toBe(507);
   });
 
+  it("never refuses a team whose storage is unlimited", async () => {
+    // The word on the pricing page, checked against the thing that enforces it.
+    // Pro's quota is a sentinel rather than a large cap precisely so this can
+    // never come back 507 — a team sold "unlimited" and then told they are out
+    // of storage is worse off than one that was never promised it.
+    await env.DB.prepare(
+      "UPDATE organization SET plan = 'pro', storage_quota_bytes = ? WHERE id = 'org1'",
+    )
+      .bind(Number.MAX_SAFE_INTEGER)
+      .run();
+
+    // A petabyte, which is past anything a real export reaches and past every
+    // round number a cap would plausibly have been set to.
+    expect((await create(1_000_000_000_000_000)).status).toBe(200);
+  });
+
   it("does not count an abandoned upload against the quota", async () => {
     await create(900);
 

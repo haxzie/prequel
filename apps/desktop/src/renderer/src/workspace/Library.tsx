@@ -47,11 +47,19 @@ export function Library({
     // `min-h-0 flex-1` rather than `h-full`: this is a flex child of `#root`,
     // and a flex item that cannot shrink below its content pushes the bottom of
     // the window out of view instead of letting the middle give way.
-    <div className="editor-theme flex min-h-0 flex-1 overflow-hidden bg-editor-bg text-editor-fg">
+    <div className="editor-theme flex min-h-0 flex-1 overflow-hidden bg-editor-glass text-editor-fg">
       {/* Dragging the sidebar moves the window, and the inset traffic lights
           need the room at the top of it. The buttons opt back out, or a press
           on one would move the window instead of switching the pane. */}
-      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-editor-line p-3 pt-10">
+      {/* Translucent white rather than `--editor-line`, and the labels below
+          are white rather than `--editor-muted`, for the reason `--dock-hover`
+          is written the way it is: those two tones were picked against an
+          opaque `#16171a`, and this surface is not opaque any more. Whatever
+          the window sits on raises the luminance here by an amount nothing can
+          predict, so a fixed dark hairline sinks into it and a fixed muted grey
+          loses the contrast it was chosen for. A white alpha rides whatever is
+          behind it instead. */}
+      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/12 p-3 pt-10">
         {SECTIONS.map((item) => (
           <button
             key={item.id}
@@ -64,8 +72,8 @@ export function Library({
               // against it.
               "[&_svg]:size-4 [&_svg]:shrink-0",
               section === item.id
-                ? "bg-white/8 text-editor-fg"
-                : "text-editor-muted hover:bg-white/4 hover:text-editor-fg",
+                ? "bg-white/15 text-editor-fg"
+                : "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
             )}
           >
             <item.Icon />
@@ -77,7 +85,7 @@ export function Library({
             spaced, because the difference matters before the press and not
             after: everything above changes what this window shows, everything
             below hands the user to their browser. */}
-        <hr className="my-2 border-0 border-t border-editor-line" />
+        <hr className="my-2 border-0 border-t border-white/12" />
 
         <button
           type="button"
@@ -85,14 +93,14 @@ export function Library({
           className={cn(
             "no-drag flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13px] transition-colors",
             "[&_svg]:size-4 [&_svg]:shrink-0",
-            "text-editor-muted hover:bg-white/4 hover:text-editor-fg",
+            "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
           )}
         >
           Shared Library
           {/* Pushed to the end, and dimmer than the label: it marks the row
               rather than labelling it. */}
           <span className="flex-1" />
-          <span className="text-editor-muted/70 [&_svg]:size-3.5">
+          <span className="text-editor-fg/45 [&_svg]:size-3.5">
             <ExternalIcon />
           </span>
         </button>
@@ -103,7 +111,9 @@ export function Library({
         <AccountMenu />
       </nav>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      {/* Thicker than the sidebar beside it: this is where the recordings are
+          read, and the sidebar is where the frost belongs. */}
+      <main className="flex min-w-0 flex-1 flex-col bg-editor-scrim">
         {section === "projects" ? (
           <Projects opening={opening} onOpen={onOpen} />
         ) : (

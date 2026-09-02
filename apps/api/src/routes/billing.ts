@@ -5,17 +5,19 @@
  * open to the whole team, which today is one person.
  *
  * Nothing here changes a plan. Checkout hands back a Dodo URL and the portal
- * hands back a Dodo URL; the subscription row is only ever written by the
- * webhook, so what this app believes about a subscription came from Dodo rather
- * than from an optimistic write next to a redirect the user may never follow.
+ * hands back a Dodo URL; the subscription and purchase rows are only ever
+ * written by the webhook, so what this app believes about a payment came from
+ * Dodo rather than from an optimistic write next to a redirect the user may
+ * never follow.
  */
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { schema } from "@prequel/db";
 
+import { required } from "../env.ts";
 import { createCheckout, portalSession } from "../lib/dodo.ts";
-import { entitlement } from "../lib/entitlement.ts";
+import { customerId, entitlement, purchase } from "../lib/entitlement.ts";
 import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, requireAdmin, requireTeam, type AppContext } from "../middleware.ts";
 
@@ -82,14 +84,34 @@ billing.get("/", async (c) => {
   });
 });
 
-/** A checkout for the team. One product, one seat, no add-ons. */
+/**
+ * A checkout for one of the two products.
+ *
+ * Which one is asked for by the caller and defaults to Pro, so the dashboard's
+ * existing button needs no body. The refusals below are per-product rather than
+ * "does this team have anything": somebody holding the lifetime licence buying
+ * Pro for the larger allowance is a sale, not a mistake, and refusing it was
+ * the shape this endpoint had when there was only one thing to sell.
+ */
 billing.post("/checkout", requireAdmin, async (c) => {
   const db = c.get("db");
   const { userId } = c.get("identity");
   const teamId = c.get("identity").teamId!;
 
-  if (await entitlement(db, teamId)) {
+  const body = (await c.req.json().catch(() => null)) as { plan?: unknown } | null;
+  const plan = body?.plan === "lifetime" ? "lifetime" : "pro";
+
+  const [subscription, bought] = await Promise.all([entitlement(db, teamId), purchase(db, teamId)]);
+
+  if (plan === "pro" && subscription) {
     return c.json({ message: "This team already has a subscription.", code: "ALREADY_PRO" }, 409);
+  }
+
+  if (plan === "lifetime" && bought) {
+    return c.json(
+      { message: "This team already owns the lifetime licence.", code: "ALREADY_LIFETIME" },
+      409,
+    );
   }
 
   const [user] = await db
@@ -100,46 +122,42 @@ billing.post("/checkout", requireAdmin, async (c) => {
 
   if (!user) return c.json({ message: "Sign in to continue." }, 401);
 
-  // A cancelled subscription leaves its row behind, and with it the Dodo
-  // customer. Reusing it keeps one payer's cards and invoices together instead
-  // of scattering them over a new customer per resubscribe.
-  const [previous] = await db
-    .select({ customerId: schema.subscription.dodoCustomerId })
-    .from(schema.subscription)
-    .where(eq(schema.subscription.teamId, teamId!))
-    .limit(1);
-
   const url = await createCheckout(c.env, {
     teamId,
+    productId: required(
+      c.env,
+      plan === "lifetime" ? "DODOPAYMENT_LIFETIME_PRODUCT_ID" : "DODOPAYMENT_PRO_PRODUCT_ID",
+    ),
     email: user.email,
     name: user.name,
-    customerId: previous?.customerId ?? null,
+    // A cancelled subscription leaves its row behind, and a purchase leaves one
+    // for good. Reusing the customer keeps one payer's cards and invoices
+    // together instead of scattering them over a new customer per purchase.
+    customerId: await customerId(db, teamId),
     returnUrl: `${c.env.APP_URL}/app/settings/billing?checkout=done`,
   });
 
   return c.json({ url });
 });
 
-/** Dodo's own portal: card, invoices, cancellation. Everything this app does not do. */
+/**
+ * Dodo's own portal: card, invoices, cancellation. Everything this app does not do.
+ *
+ * Addressed by the customer rather than by the subscription, so it opens for
+ * somebody who only ever bought the lifetime licence. They have no subscription
+ * row at all, and their receipt is in there.
+ */
 billing.post("/portal", requireAdmin, async (c) => {
   const db = c.get("db");
   const teamId = c.get("identity").teamId!;
 
-  const [subscription] = await db
-    .select({ customerId: schema.subscription.dodoCustomerId })
-    .from(schema.subscription)
-    .where(eq(schema.subscription.teamId, teamId!))
-    .limit(1);
+  const customer = await customerId(db, teamId);
 
-  if (!subscription) {
-    return c.json({ message: "This team has never subscribed.", code: "NO_SUBSCRIPTION" }, 404);
+  if (!customer) {
+    return c.json({ message: "This team has never paid for anything.", code: "NO_CUSTOMER" }, 404);
   }
 
-  const url = await portalSession(
-    c.env,
-    subscription.customerId,
-    `${c.env.APP_URL}/app/settings/billing`,
-  );
+  const url = await portalSession(c.env, customer, `${c.env.APP_URL}/app/settings/billing`);
 
   return c.json({ url });
 });

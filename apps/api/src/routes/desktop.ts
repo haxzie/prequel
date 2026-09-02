@@ -204,7 +204,18 @@ desktop.get("/entitlement", authenticate, async (c) => {
     : [];
 
   return c.json({
-    plan: team?.plan ?? "free",
+    /**
+     * `lifetime` is answered as `pro`, deliberately.
+     *
+     * The Mac app's only question is whether this account may export, and the
+     * builds already in the field parse exactly two values — `main/licence.ts`
+     * reads anything else as "not paid" and shows the paywall to somebody who
+     * has paid. Widening the wire is not worth doing to a client that cannot be
+     * updated retroactively, and the app has no use for the distinction: the
+     * two tiers differ only in how much may be *uploaded*, which the share
+     * endpoint decides on its own.
+     */
+    plan: team?.plan === "lifetime" ? "pro" : (team?.plan ?? "free"),
     // Milliseconds, because `Date` on the other side takes milliseconds and a
     // unit that has to be remembered is a unit that gets forgotten.
     trialEndsAt: trialEndsAt(account.createdAt),

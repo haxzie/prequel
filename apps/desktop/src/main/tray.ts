@@ -4,7 +4,7 @@
 import { fileURLToPath } from "node:url";
 
 import { app, Menu, nativeImage, shell, Tray } from "electron";
-import type { MenuItemConstructorOptions } from "electron";
+import type { MenuItemConstructorOptions, NativeImage } from "electron";
 
 import { authState, beginSignIn, openDashboard } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
@@ -66,6 +66,68 @@ function icon(name: string) {
   // highlighted state, and it looks wrong in half the configurations.
   image.setTemplateImage(true);
   return image;
+}
+
+/**
+ * How tall a menu row's glyph is drawn, in points.
+ *
+ * Sits just under the 14-point system menu font, so a glyph reads as the
+ * label's equal rather than as a picture beside it. 16 — the size an icon
+ * *file* for a menu row would be — is visibly too big here, because a symbol
+ * fills its box where an icon file carries its own padding.
+ *
+ * Height only, never width: SF Symbols share a cap height and differ in width
+ * by design — `pause` is narrow, `folder` is wide — and squaring them off would
+ * squash half of them into a grid the menu does not lay out anyway.
+ */
+const MENU_ICON_HEIGHT = 13;
+
+/**
+ * One SF Symbol, sized and tinted for a menu row.
+ *
+ * `createFromNamedImage` takes a name straight out of the SF Symbols app, so
+ * nothing here ships a picture: the glyphs come from macOS and follow whatever
+ * the user is running. Three things it does not do on its own, each measured
+ * rather than assumed.
+ *
+ * A name that is not a symbol comes back as an **empty image**, not an error.
+ * An empty icon is a blank gap in a menu where every other row has one, so a
+ * typo survives review and is only ever caught by someone looking closely at
+ * the menu. Reported the same way, and for the same reason, as the tray image
+ * above.
+ *
+ * **`pointSize` is not the size the image comes back at, and what comes back is
+ * 1×.** `getScaleFactors()` answers `[1]` however it is asked for, and the
+ * pixels run about two and a half times the `pointSize` — 40×38 for 16, and not
+ * by a constant factor either. Resizing that to N points leaves macOS N pixels
+ * to draw across 2N on a Retina display: a glyph both larger than it should be
+ * and soft beside the text it sits next to. Rendering at twice the height and
+ * re-tagging through `createFromBuffer` is the only way to say "these pixels
+ * are 2×" — nothing sets that on an image that already exists.
+ *
+ * And a symbol arrives **not marked as a template**, unlike a `xxxTemplate.png`
+ * read from disk. Without the flag it keeps its own dark fill when macOS
+ * highlights the row, and the glyph vanishes into the blue.
+ */
+function symbol(name: string): NativeImage {
+  // Asked for at twice the drawn height, so the bitmap being resized down is a
+  // comfortable margin larger than the target rather than level with it.
+  const image = nativeImage.createFromNamedImage(name, { pointSize: MENU_ICON_HEIGHT * 2 });
+
+  if (image.isEmpty()) {
+    // `console.error` rather than `log`, like the tray image above: mirrored
+    // into the log file *and* visible under `pnpm dev`, which is where a symbol
+    // that does not exist should be caught.
+    console.error(`no SF Symbol named "${name}" — that menu item will have a blank icon`);
+    return image;
+  }
+
+  const sized = nativeImage.createFromBuffer(
+    image.resize({ height: MENU_ICON_HEIGHT * 2 }).toPNG(),
+    { scaleFactor: 2 },
+  );
+  sized.setTemplateImage(true);
+  return sized;
 }
 
 export class AppTray {
@@ -163,6 +225,7 @@ export class AppTray {
       active
         ? {
             label: "Stop Recording",
+            icon: symbol("stop.circle"),
             accelerator: boundToggle() ?? undefined,
             // Through the flow rather than straight to the session: the flow is
             // what resets the panel and opens the editor, so stopping from here
@@ -171,46 +234,68 @@ export class AppTray {
           }
         : {
             label: "Start Recording…",
+            icon: symbol("record.circle"),
             accelerator: boundToggle() ?? undefined,
             click: () => this.flow.open(),
           },
       {
         label: state.status === "paused" ? "Resume" : "Pause",
+        // The glyph follows the label rather than the state it is in: this row
+        // says what pressing it does, and an icon disagreeing with the word
+        // beside it is worse than no icon.
+        icon: symbol(state.status === "paused" ? "play.circle" : "pause.circle"),
         enabled: active,
         click: () => void this.session.togglePause(),
       },
       { type: "separator" },
       // The whole library, with thumbnails and the things Open Recent cannot
       // offer — renaming one, deleting one, seeing what it is before opening it.
-      { label: "Open Recordings", click: () => this.flow.openProjects() },
+      {
+        label: "Open Recordings",
+        icon: symbol("square.grid.2x2"),
+        click: () => this.flow.openProjects(),
+      },
       {
         label: "Open Recent",
+        icon: symbol("clock.arrow.circlepath"),
         enabled: recent.length > 0,
+        // The recordings themselves stay bare. Ten rows of the same glyph is
+        // texture rather than information, and the names are what is being
+        // read here.
         submenu: recent.map((recording) => ({
           label: recording.name,
           click: () => this.flow.openEditor(recording.dir),
         })),
       },
-      { label: "Show Recordings in Finder", click: () => void revealRecordings() },
+      {
+        label: "Show Recordings in Finder",
+        icon: symbol("folder"),
+        click: () => void revealRecordings(),
+      },
       // The shared library, for the recordings that are not on this Mac. Only
       // once there is an account — an item that opens a sign-in page is a
       // promise the menu cannot keep.
       ...(authState().status === "signed-in"
-        ? [{ label: "Open Shared Library", click: () => openDashboard() }]
+        ? [{ label: "Open Shared Library", icon: symbol("cloud"), click: () => openDashboard() }]
         : []),
       // Reachable from the one menu that is always there, so a user can find
       // the log without being told where it lives.
-      { label: "Show Log in Finder", click: () => shell.showItemInFolder(logPath()) },
+      {
+        label: "Show Log in Finder",
+        icon: symbol("doc.text"),
+        click: () => shell.showItemInFolder(logPath()),
+      },
       { type: "separator" },
       ...(authState().status === "signed-in"
         ? []
-        : [{ label: "Sign In…", click: () => beginSignIn() }]),
+        : [{ label: "Sign In…", icon: symbol("person.crop.circle"), click: () => beginSignIn() }]),
       // What the app can say about its own version, from the one menu that is
       // always there. The menu is rebuilt on every right-click, so this reads
       // live state without anything having to push it.
       updateItem(this.flow),
       {
         label: "Settings…",
+        icon: symbol("gearshape"),
         accelerator: "Cmd+,",
         // Through the flow, like everything else here — the tray never reaches
         // for a window class directly.
@@ -219,6 +304,7 @@ export class AppTray {
       { type: "separator" },
       {
         label: "Quit Prequel",
+        icon: symbol("power"),
         accelerator: "Cmd+Q",
         click: () => {
           // Logged because this is the only quit path a menu-bar app has: if
@@ -247,17 +333,30 @@ function updateItem(flow: CaptureFlow): MenuItemConstructorOptions {
 
   switch (state.status) {
     case "ready":
-      return { label: "Restart to Update", click: () => installUpdate() };
+      return {
+        label: "Restart to Update",
+        icon: symbol("restart.circle"),
+        click: () => installUpdate(),
+      };
 
     case "downloading":
-      return { label: `Downloading… ${state.percent}%`, enabled: false };
+      return {
+        label: `Downloading… ${state.percent}%`,
+        icon: symbol("arrow.down.circle"),
+        enabled: false,
+      };
 
     case "available":
-      return { label: `Update to ${state.version}…`, click: () => flow.openUpdate() };
+      return {
+        label: `Update to ${state.version}…`,
+        icon: symbol("arrow.down.circle"),
+        click: () => flow.openUpdate(),
+      };
 
     default:
       return {
         label: "Check for Updates…",
+        icon: symbol("arrow.triangle.2.circlepath"),
         click: () => {
           // Opened first, not after: a check is a network round trip, and a menu
           // item that does nothing visible for a second reads as one that did

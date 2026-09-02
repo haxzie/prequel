@@ -471,6 +471,15 @@ export function WideIcon() {
   );
 }
 
+/** The same plate as `WideIcon`, stood on end: taller than it is wide. */
+export function PortraitIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="12" height="20" x="6" y="2" rx="2" />
+    </svg>
+  );
+}
+
 /** Lucide `zoom-in`, without the plus — a zoom span says nothing about direction. */
 export function ZoomIcon() {
   return (

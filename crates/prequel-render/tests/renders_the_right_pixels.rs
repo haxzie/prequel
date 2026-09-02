@@ -512,6 +512,10 @@ fn swaps_the_pointer_image_partway_through() {
         y: (OUT_H / 2) as f64,
         scale: 1.0,
         visible,
+        // Sharp. This test is about which pointer image is on screen when, and
+        // a streak would soften exactly the pixels it samples to decide.
+        smear_x: 0.0,
+        smear_y: 0.0,
     };
 
     let output = dir.join("export.mp4");
@@ -586,6 +590,106 @@ fn swaps_the_pointer_image_partway_through() {
         frame_at(&output, 8).at(OUT_W / 2, OUT_H / 2),
         (0, 0, 255),
         "the hand after the swap",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn smears_the_pointer_along_the_way_it_is_going() {
+    // The whole of motion blur is its direction, and nothing downstream can
+    // catch that being wrong: the editor computes the streak once and both
+    // rasterisers draw whatever vector they are handed. So this asserts the
+    // pixels — a streak drawn across the path instead of along it, or one drawn
+    // at the wrong end, passes every shape assertion there is.
+    let dir = scratch("prequel-pixels-cursor-smear");
+
+    let source = solid(200, [0, 0, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+    write_png(&dir.join("arrow.png"), &solid(64, [255, 255, 255]));
+
+    let centre = Point { x: 0.5, y: 0.5 };
+    // Two pointers' worth, horizontal. Drawn centred on the position, so the
+    // lit run reaches SPRITE / 2 + SMEAR / 2 either side of the middle.
+    const SPRITE: f64 = 40.0;
+    const SMEAR: f64 = 80.0;
+
+    let point = |at: i64| CursorPoint {
+        at,
+        x: (OUT_W / 2) as f64,
+        y: (OUT_H / 2) as f64,
+        scale: 1.0,
+        visible: true,
+        smear_x: SMEAR,
+        smear_y: 0.0,
+    };
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                motion: Vec::new(),
+            },
+            PlanItem::Cursor {
+                path: "arrow.png".to_owned(),
+                size: SPRITE,
+                hotspot: centre,
+                points: vec![point(0), point(S as i64)],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = frame_at(&output, 2);
+    let middle = (OUT_W / 2, OUT_H / 2);
+    let lit = |pixel: (u8, u8, u8)| pixel.0 as u16 + pixel.1 as u16 + pixel.2 as u16;
+
+    // Well past the sprite's own edge, along the streak. Sharp, this is black.
+    let along = lit(frame.at(middle.0 + 40, middle.1));
+    // The same distance across it, where nothing is travelling.
+    let across = lit(frame.at(middle.0, middle.1 + 40));
+
+    assert!(
+        along > 90,
+        "the streak should reach 40px along the travel, got {along}"
+    );
+    assert!(
+        across < 30,
+        "nothing should be smeared across the travel, got {across}"
+    );
+    // And the sprite is still the brightest thing: a smear that dimmed the
+    // pointer itself as much as its tail would read as the pointer fading.
+    assert!(
+        lit(frame.at(middle.0, middle.1)) > along,
+        "the pointer should stay brighter than its own streak"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

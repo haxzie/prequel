@@ -32,6 +32,10 @@ const RADIUS: Record<CameraShape, string> = {
   squircle: "28%",
   rounded: "18%",
   wide: "4px",
+  // A length for the same reason `wide` uses one: this box is taller than it is
+  // wide, and a percentage resolved per axis would round the short edges harder
+  // than the long ones.
+  portrait: "4px",
 };
 
 export function CameraMap({

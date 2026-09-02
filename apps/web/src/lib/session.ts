@@ -28,7 +28,7 @@ export interface Team {
   id: string;
   name: string;
   slug: string;
-  plan: "free" | "pro";
+  plan: "free" | "pro" | "lifetime";
   storageQuotaBytes: number;
   role: string;
 }

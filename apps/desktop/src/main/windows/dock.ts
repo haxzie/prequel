@@ -8,16 +8,13 @@
  */
 import { screen, type BrowserWindow, type Rectangle } from "electron";
 
-import {
-  DOCK_MENU_HEADROOM,
-  PANEL_HEIGHT,
-  PANEL_INSET,
-  type DockView,
-} from "../../shared/contract.js";
+import { PANEL_HEIGHT, type DockMenu, type DockView } from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
+import { DockMenuWindow } from "./dock-menu.js";
 
 /**
- * The size of the visible panel. The window is larger — see `windowSize`.
+ * The size of the visible panel, which is now also the window's own — see
+ * `windowSize`.
  *
  * Setup's width is only a starting point: the panel's real width depends on
  * the device names in it, which main has no way to measure, so the renderer
@@ -60,16 +57,27 @@ const FRAME_MS = 16;
 export class DockWindow {
   private window: BrowserWindow | null = null;
   private view: DockView = "setup";
-  private menuOpen = false;
   private animation: ReturnType<typeof setInterval> | null = null;
   /** The setup panel's measured width, once the renderer has reported one. */
   private contentWidth: number | null = null;
+  /**
+   * The drop-ups, which are a second window.
+   *
+   * Owned here rather than beside this one in `capture-flow`, because every
+   * event that has to close or move a menu — hiding, collapsing to the
+   * recording view, being dragged across the screen — arrives at the dock.
+   */
+  readonly menu = new DockMenuWindow();
 
   /** Creates the window without showing it, so its id exists to be excluded. */
   prepare(): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) return this.window;
 
-    const window = createPanel({ ...this.windowSize(), movable: true });
+    // The same material as the editor's chrome. The window is exactly the pill
+    // now — no transparent margin, no headroom — because the material fills the
+    // window's rectangle and anything the window is bigger than the panel by
+    // would be frosted too. See `DockMenuWindow` for where the drop-ups went.
+    const window = createPanel({ ...this.windowSize(), movable: true, vibrancy: "hud" });
     // One layer above the selection overlays, which sit at `screen-saver` so
     // they can cover full-screen apps. Without the extra level the panel
     // disappears behind its own picker, and the camera and microphone cannot be
@@ -77,6 +85,17 @@ export class DockWindow {
     // them.
     window.setAlwaysOnTop(true, "screen-saver", 1);
     void loadRoute(window, "/dock");
+
+    // An open menu is its own window and does not move with this one, so a
+    // dragged dock would otherwise leave it stranded where the panel used to
+    // be. `move` fires throughout the drag, and repositioning is cheaper than
+    // closing — a menu that vanishes because the panel was nudged reads as the
+    // click having missed.
+    window.on("move", () => {
+      if (!this.menu.isOpen) return;
+      const { x, y } = window.getBounds();
+      this.menu.follow({ x, y });
+    });
 
     this.window = window;
     return window;
@@ -94,7 +113,7 @@ export class DockWindow {
   }
 
   hide(): void {
-    this.menuOpen = false;
+    this.menu.hide();
     this.stopAnimation();
     // As in `CameraWindow.hide`: `?.` does not cover a window Electron has
     // already destroyed, which is what a quit leaves behind.
@@ -115,9 +134,10 @@ export class DockWindow {
   setView(view: DockView): void {
     if (this.view === view) return;
     this.view = view;
-    // The recording view has no menus, and a stale headroom would leave an
-    // invisible rectangle hanging over the screen.
-    this.menuOpen = false;
+    // The recording view has none of the controls a menu belongs to, so a menu
+    // left open would be a frosted panel floating over the screen with nothing
+    // underneath it.
+    this.menu.hide();
     // Animated: pressing Record should read as the panel collapsing into the
     // recording controls, not as one window being swapped for another.
     this.reposition({ animate: true });
@@ -142,15 +162,17 @@ export class DockWindow {
   }
 
   /**
-   * Grows the window upward so an open drop-up has somewhere to be drawn.
+   * Opens a drop-up above the panel, or closes the one that is open.
    *
-   * Without this the menu is clipped to whatever fits inside the panel's own
-   * height, which is a few pixels of its bottom edge.
+   * The menu is a window of its own — see `DockMenuWindow` — so this window
+   * does not change shape for it any more. What it does supply is where the
+   * panel currently is, which is the frame `menu.anchorX` is measured in.
    */
-  setMenuOpen(open: boolean): void {
-    if (this.menuOpen === open) return;
-    this.menuOpen = open;
-    this.reposition();
+  setMenu(menu: DockMenu | null): void {
+    const window = this.browserWindow();
+    if (!window) return;
+    const { x, y } = window.getBounds();
+    this.menu.open(menu, { x, y });
   }
 
   browserWindow(): BrowserWindow | null {
@@ -159,6 +181,7 @@ export class DockWindow {
 
   destroy(): void {
     this.stopAnimation();
+    this.menu.destroy();
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
   }
@@ -203,17 +226,18 @@ export class DockWindow {
   }
 
   /**
-   * The window is the panel plus a transparent margin on every side, which is
-   * where its CSS drop shadow lands — macOS would otherwise draw a rectangular
-   * shadow around a rounded panel — plus headroom for an open drop-up.
+   * The window is exactly the panel.
+   *
+   * It used to be the panel plus a transparent margin for its CSS drop shadow
+   * and headroom for an open drop-up. A vibrant window can afford neither: the
+   * material fills the window's rectangle, so any part of the window the panel
+   * does not cover is frosted desktop hanging in mid-air. macOS draws the
+   * corners and the shadow now, and the drop-ups moved to their own window.
    */
   private windowSize(): { width: number; height: number } {
     const { width, height } = SIZES[this.view];
     const panel = this.view === "setup" ? (this.contentWidth ?? width) : width;
-    return {
-      width: panel + PANEL_INSET * 2,
-      height: height + PANEL_INSET * 2 + (this.menuOpen ? DOCK_MENU_HEADROOM : 0),
-    };
+    return { width: panel, height };
   }
 
   private reposition(options: { animate?: boolean; duration?: number } = {}): void {
@@ -260,9 +284,7 @@ export class DockWindow {
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     window.setBounds({
       x: Math.round(workArea.x + (workArea.width - size.width) / 2),
-      // Measured to the panel, so neither the transparent margin nor the
-      // drop-up headroom pushes it visibly up the screen.
-      y: Math.round(workArea.y + workArea.height - size.height - BOTTOM_MARGIN + PANEL_INSET),
+      y: Math.round(workArea.y + workArea.height - size.height - BOTTOM_MARGIN),
       ...size,
     });
   }

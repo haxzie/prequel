@@ -1,5 +1,6 @@
 import { Camera } from "./camera/Camera";
 import { Dock } from "./dock/Dock";
+import { DockMenu } from "./dock/DockMenu";
 import { Selection } from "./selection/Selection";
 import { Update } from "./update/Update";
 import { Welcome } from "./welcome/Welcome";
@@ -17,6 +18,10 @@ export function Root() {
   switch (route) {
     case "/dock":
       return <Dock />;
+    // The panel's drop-ups, which are a window of their own so that they can
+    // carry the same frosted material the panel does — see `DockMenu`.
+    case "/dock-menu":
+      return <DockMenu />;
     case "/selection":
       return <Selection />;
     case "/camera":

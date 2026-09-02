@@ -17,6 +17,7 @@ import {
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import app from "../src/index.ts";
+import { FREE_QUOTA_BYTES, LIFETIME_QUOTA_BYTES, PRO_QUOTA_BYTES } from "../src/lib/entitlement.ts";
 import { scalar } from "./helpers.ts";
 
 const SECRET = env.DODOPAYMENT_WEBHOOK_SECRET!;
@@ -42,6 +43,15 @@ function interceptDodo() {
         method: init?.method ?? "GET",
         body: init?.body ? JSON.parse(String(init.body)) : null,
       });
+
+      // `GET /payments/{id}` is the one call the handler makes for an answer
+      // rather than for effect — `redeem` reads the cart back from it when a
+      // delivery arrived without one. `dodoPayment` is what it finds; null
+      // stands for Dodo being unable to say, which must not be swallowed.
+      if (url.includes("/payments/")) {
+        return dodoPayment ? Response.json(dodoPayment) : new Response("gone", { status: 500 });
+      }
+
       return Response.json({ ok: true });
     }
 
@@ -53,12 +63,22 @@ function interceptDodo() {
 
 let dodo: { url: string; method: string; body: unknown }[] = [];
 
+/** What `GET /payments/{id}` answers with, per test. Null means it fails. */
+let dodoPayment: { product_cart: { product_id: string; quantity: number }[] } | null = null;
+
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
 beforeEach(async () => {
-  for (const table of ["webhook_event", "subscription", "member", "organization", "user"]) {
+  for (const table of [
+    "webhook_event",
+    "purchase",
+    "subscription",
+    "member",
+    "organization",
+    "user",
+  ]) {
     await env.DB.exec(`DELETE FROM ${table}`);
   }
 
@@ -68,6 +88,7 @@ beforeEach(async () => {
     "INSERT INTO member (id, organization_id, user_id, role) VALUES ('m1', 'org1', 'u1', 'owner')",
   );
 
+  dodoPayment = null;
   dodo = interceptDodo();
 });
 
@@ -118,6 +139,30 @@ function envelope(type: string, data: Record<string, unknown> = {}) {
       cancel_at_next_billing_date: false,
       metadata: { teamId: "org1" },
       scheduled_change: null,
+      ...data,
+    },
+  });
+}
+
+/**
+ * A one-off charge.
+ *
+ * `subscription_id: null` by default, because that is what a real purchase
+ * looks like. The tests that matter most set it to something.
+ */
+function payment(data: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    business_id: "biz_1",
+    type: "payment.succeeded",
+    timestamp: new Date().toISOString(),
+    data: {
+      payload_type: "Payment",
+      payment_id: "pay_1",
+      status: "succeeded",
+      subscription_id: null,
+      customer: { customer_id: "cus_1", email: "ana@example.com" },
+      product_cart: [{ product_id: "pdt_test_life", quantity: 1 }],
+      metadata: { teamId: "org1" },
       ...data,
     },
   });
@@ -208,7 +253,7 @@ describe("subscription events", () => {
     await deliver(envelope("subscription.active"));
 
     expect(await plan()).toBe("pro");
-    expect(await quota()).toBe(25 * 1024 * 1024 * 1024);
+    expect(await quota()).toBe(PRO_QUOTA_BYTES);
   });
 
   it("calls Dodo back for nothing", async () => {
@@ -247,7 +292,7 @@ describe("subscription events", () => {
     await deliver(envelope("subscription.cancelled", { status: "cancelled" }));
 
     expect(await plan()).toBe("free");
-    expect(await quota()).toBe(2 * 1024 * 1024 * 1024);
+    expect(await quota()).toBe(FREE_QUOTA_BYTES);
     expect(await scalar(env.DB.prepare("SELECT COUNT(*) FROM member"))).toBe(1);
     // The customer survives the cancellation: it is what a resubscribe reuses.
     expect(await scalar(env.DB.prepare("SELECT dodo_customer_id FROM subscription"))).toBe("cus_1");
@@ -274,12 +319,108 @@ describe("subscription events", () => {
   it("answers 200 to an event it does not handle", async () => {
     // A 4xx here makes Dodo retry until it gives up on the endpoint, taking the
     // events that do matter with it.
-    expect((await deliver(envelope("payment.succeeded"))).status).toBe(200);
+    expect((await deliver(envelope("dispute.opened"))).status).toBe(200);
   });
 
   it("ignores an update for a subscription it has never seen", async () => {
     // Dodo does not promise ordering, so this can arrive before `active`.
     expect((await deliver(envelope("subscription.updated"))).status).toBe(200);
     expect(await scalar(env.DB.prepare("SELECT COUNT(*) FROM subscription"))).toBe(0);
+  });
+});
+
+/**
+ * The lifetime licence, and the three ways of accidentally giving it away.
+ *
+ * Dodo sends `payment.succeeded` for every charge it makes, so this event is
+ * not evidence of anything on its own. Each test below is a delivery that looks
+ * exactly like a purchase to a handler missing one guard, and every one of them
+ * fails silently in production: the team is already Pro, the quota is already
+ * the larger of the two, and the only symptom is a purchase row that outlives a
+ * cancellation somebody wanted.
+ */
+describe("one-time payments", () => {
+  const purchases = () => scalar<number>(env.DB.prepare("SELECT COUNT(*) FROM purchase"));
+
+  it("grants the lifetime licence and its quota", async () => {
+    await deliver(payment());
+
+    expect(await plan()).toBe("lifetime");
+    expect(await quota()).toBe(LIFETIME_QUOTA_BYTES);
+    expect(await purchases()).toBe(1);
+  });
+
+  it("grants nothing for a renewal, which is also a payment.succeeded", async () => {
+    // The one that would hand a lifetime licence to every subscriber, every
+    // month. A renewal carries the subscription it renewed; a purchase does not.
+    await deliver(payment({ subscription_id: "sub_dodo_1" }));
+
+    expect(await purchases()).toBe(0);
+    expect(await plan()).toBe("free");
+  });
+
+  it("grants nothing for a payment for the subscription product", async () => {
+    // The opening charge of a new Pro subscription, which arrives carrying the
+    // same `metadata.teamId` from the same checkout.
+    await deliver(payment({ product_cart: [{ product_id: "pdt_test_pro", quantity: 1 }] }));
+
+    expect(await purchases()).toBe(0);
+    expect(await plan()).toBe("free");
+  });
+
+  it("grants nothing for a payment that names no team", async () => {
+    await deliver(payment({ metadata: {} }));
+
+    expect(await purchases()).toBe(0);
+    expect(await plan()).toBe("free");
+  });
+
+  it("fetches the cart when the delivery did not carry one", async () => {
+    // A live `payment.succeeded` does carry `product_cart`, but the summary
+    // shape Dodo serves elsewhere does not — and an absent cart reads as "not
+    // the lifetime product", which is indistinguishable from a genuine no-op.
+    // The charge would succeed and the licence would never be granted.
+    dodoPayment = { product_cart: [{ product_id: "pdt_test_life", quantity: 1 }] };
+
+    await deliver(payment({ product_cart: undefined }));
+
+    expect(await plan()).toBe("lifetime");
+    expect(await purchases()).toBe(1);
+    expect(dodo.some((call) => call.url.includes("/payments/"))).toBe(true);
+  });
+
+  it("lets Dodo retry when the cart cannot be read at all", async () => {
+    // The one branch where giving up silently loses a licence somebody paid
+    // for, so it must not answer 200 and be forgotten.
+    dodoPayment = null;
+
+    const response = await deliver(payment({ product_cart: undefined }));
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(await purchases()).toBe(0);
+  });
+
+  it("does not buy the licence twice on a redelivery", async () => {
+    await deliver(payment());
+    // A different webhook id, so the idempotency table does not catch this one.
+    // The unique constraint on the team is what has to.
+    await deliver(payment({ payment_id: "pay_2" }));
+
+    expect(await purchases()).toBe(1);
+  });
+
+  it("leaves a paying subscriber on Pro, and drops them to lifetime on cancellation", async () => {
+    // The whole reason the plan is recomputed rather than written. Cancelling
+    // used to set `free` outright, which would take away something bought once.
+    await deliver(envelope("subscription.active"));
+    await deliver(payment());
+
+    expect(await plan()).toBe("pro");
+    expect(await quota()).toBe(PRO_QUOTA_BYTES);
+
+    await deliver(envelope("subscription.cancelled", { status: "cancelled" }));
+
+    expect(await plan()).toBe("lifetime");
+    expect(await quota()).toBe(LIFETIME_QUOTA_BYTES);
   });
 });

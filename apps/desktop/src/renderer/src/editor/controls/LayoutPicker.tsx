@@ -15,14 +15,14 @@ import { cn } from "../../lib/cn";
 /**
  * The arrangement, as a grid of the shapes it makes.
  *
- * Ten small pictures rather than a list of names. "Padded screen with the
+ * Eleven small pictures rather than a list of names. "Padded screen with the
  * camera beside it, matched to its height" is a sentence nobody reads twice; the
  * same thing as two rectangles is understood before it is finished being looked
  * at, and the grid is scanned rather than read.
  *
  * Grouped by what the arrangement puts in the frame, because that is the order
  * the choice is actually made in: what is in the picture first, how it is
- * arranged second. As ten unlabelled cells in one block, the two camera-only
+ * arranged second. As eleven unlabelled cells in one block, the two camera-only
  * arrangements read as two more variations on the six above them.
  *
  * Every thumbnail is drawn by asking `layoutBoxes` where the pictures go and
@@ -66,6 +66,7 @@ const GROUPS: {
       { value: "over-full", label: "Full screen, camera over" },
       { value: "over-padded", label: "Padded screen, camera over" },
       { value: "beside", label: "Screen and camera side by side" },
+      { value: "beside-flush", label: "Screen and camera side by side, no padding" },
       { value: "stacked", label: "Screen above the camera" },
       { value: "split", label: "Split down the middle" },
       { value: "split-stacked", label: "Split across the middle" },
@@ -100,6 +101,21 @@ const GROUPS: {
  * disagree about *which* arrangement it is showing, and it cannot.
  */
 const THUMB_SOURCES = { screen: { width: 16, height: 9 }, camera: { width: 16, height: 9 } };
+
+/**
+ * The least padding a thumbnail will draw, whatever the composition's is.
+ *
+ * A deliberate and narrow lie. Everywhere else these plates are exact, because
+ * a picker that promises one thing and exports another is worse than no picker
+ * — but a plate is about forty pixels tall, and the default 0.06 of the shorter
+ * edge comes to a pixel and a half on it. At that size "padded" and "full
+ * frame" are the same picture, and two cells that cannot be told apart are a
+ * worse failure than a gap drawn wider than it will be.
+ *
+ * Only a floor: turn the padding up and the thumbnail follows it exactly, which
+ * is the case anyone actually checks a thumbnail against.
+ */
+const THUMB_MIN_PADDING = 0.1;
 
 // Square, so the cell is the same size whatever shape the output frame is and
 // the grid does not reflow when someone switches to a vertical preset.
@@ -230,7 +246,9 @@ function Plate({
   const boxes = layoutBoxes(
     frame,
     { ...DEFAULT_LAYOUT, preset } as LayoutSettings,
-    background,
+    // Floored, and only for the geometry — see `THUMB_MIN_PADDING`. The paint
+    // below still comes from the composition's own background untouched.
+    { ...background, padding: Math.max(background.padding, THUMB_MIN_PADDING) },
     THUMB_SOURCES,
   );
 

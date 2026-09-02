@@ -23,6 +23,16 @@ struct Uniforms {
     // Depth of field: xy is what stays sharp in output pixels, z how far
     // around it, w the widest blur beyond. A w of 0 softens nothing.
     float4 focus;
+    // Motion blur on the pointer: xy is the streak as a vector in this quad's
+    // own uv, z how much of the quad on each side is padding the streak is
+    // allowed to run into, w non-zero to enable it at all.
+    //
+    // Beside `focus` rather than appended, and deliberately: every `float4` in
+    // this struct sits at a multiple of 16, and adding one after the `float2`s
+    // would put the tail at an offset Rust and MSL disagree about — which
+    // compiles, runs, and renders the wrong colour. See the note on `_align`
+    // in `compositor.rs`.
+    float4 smear;
     // One texel of the sampled image, so a blur is measured in its own pixels.
     float2 texel;
     // Superellipse: x = radius, y = exponent.
@@ -180,6 +190,46 @@ static float4 sample_focused(texture2d<float> image, sampler smp, constant Unifo
     return total / 16.0;
 }
 
+// The pointer, smeared along the direction it is travelling.
+//
+// The streak arrives finished, in this quad's uv, because the editor computed
+// it once — see `CursorPoint.smearX` in `shared/layout.ts`. Nothing here knows
+// a speed, a direction or a frame rate, which is the only reason the preview
+// and the export cannot disagree about it.
+//
+// The quad arrives grown by `smear.z` on each side so the streak has somewhere
+// to be drawn; without that it would stop dead at the sprite's own edge, which
+// reads as the pointer being clipped rather than as motion. `inner` maps back
+// off that padding, and a tap landing outside the sprite contributes nothing
+// rather than the clamped edge texel — which would smear the arrow's tip into
+// a stripe running the length of the streak.
+//
+// Nine taps, not the sixteen `sample_focused` uses: those cover a disc and
+// these cover a line, so the same density needs far fewer. Plain samples
+// rather than focused ones — the pointer sits on the focal plane, and 9 × 16
+// taps to defocus something already sharp is not worth the frame time.
+//
+// Mirrors `sampleSmeared` in `apps/desktop/src/renderer/src/editor/webgl.ts`.
+static float4 sample_smeared(texture2d<float> image, sampler smp, constant Uniforms &u,
+                             float2 uv) {
+    float pad = u.smear.z;
+    float span = max(1.0 - 2.0 * pad, 0.0001);
+
+    float4 total = float4(0.0);
+    for (int tap = 0; tap < 9; tap++) {
+        // Centred on the position: half the streak trails the pointer and half
+        // leads it. Trailing only would sit the sprite at the end of its own
+        // smear and read as the pointer lagging behind the cursor.
+        float along = float(tap) / 8.0 - 0.5;
+        float2 inner = (uv + u.smear.xy * along - pad) / span;
+        if (any(inner < 0.0) || any(inner > 1.0)) {
+            continue;
+        }
+        total += image.sample(smp, u.src.xy + inner * u.src.zw);
+    }
+    return total / 9.0;
+}
+
 // Source-over blending is configured for premultiplied colour, so every return
 // carries its alpha folded into the RGB. Verbatim from `premultiplied` in
 // `apps/desktop/src/renderer/src/editor/webgl.ts`.
@@ -283,11 +333,18 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         if (u.mirror != 0) {
             uv.x = 1.0 - uv.x;
         }
-        // Mapped into the source rect, so a crop is honoured rather than the
-        // whole texture being stretched across the destination. Mirroring is
-        // applied first, so it flips the crop rather than moving it.
-        uv = u.src.xy + uv * u.src.zw;
-        float4 sampled = sample_focused(image, smp, u, uv, in.screen);
+        // A moving pointer, which maps its own uv — the quad it is drawn in is
+        // larger than the sprite, so the shared mapping below would stretch it.
+        float4 sampled;
+        if (u.smear.w != 0.0) {
+            sampled = sample_smeared(image, smp, u, uv);
+        } else {
+            // Mapped into the source rect, so a crop is honoured rather than the
+            // whole texture being stretched across the destination. Mirroring is
+            // applied first, so it flips the crop rather than moving it.
+            uv = u.src.xy + uv * u.src.zw;
+            sampled = sample_focused(image, smp, u, uv, in.screen);
+        }
         // `sampled` is already premultiplied — `image.rs` decodes through
         // `KCG_IMAGE_ALPHA_PREMULTIPLIED_FIRST` and a camera frame is opaque —
         // so only `coverage` is folded in here. Running it through

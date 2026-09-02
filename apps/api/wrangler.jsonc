@@ -76,13 +76,14 @@
     // traffic at products that do not exist.
     "DODOPAYMENT_MODE": "test",
     "DODOPAYMENT_BRAND_ID": "",
-    "DODOPAYMENT_PRO_PRODUCT_ID": ""
+    "DODOPAYMENT_PRO_PRODUCT_ID": "",
+    "DODOPAYMENT_LIFETIME_PRODUCT_ID": ""
   },
 
   // Hourly, and for two things no webhook announces: a grace window closing
-  // after a failed renewal, and a seat count that drifted because a hook lost
-  // its call to Dodo. `wrangler dev` does not fire this on its own — trigger one
-  // with `curl <dev-host>/cdn-cgi/local/scheduled`.
+  // after a failed renewal, and rows left disagreeing when a team was created
+  // but its membership was not. `wrangler dev` does not fire this on its own —
+  // trigger one with `curl <dev-host>/cdn-cgi/local/scheduled`.
   "triggers": { "crons": ["0 * * * *"] },
 
   "env": {
@@ -106,7 +107,8 @@
         "POSTHOG_HOST": "https://us.i.posthog.com",
         "DODOPAYMENT_MODE": "live",
         "DODOPAYMENT_BRAND_ID": "brnd_0Nm8fKKuEmLeZdUchxYCx",
-        "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ"
+        "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
+        "DODOPAYMENT_LIFETIME_PRODUCT_ID": "pdt_0Nmfhrp46FPz4Y0C8ExmS"
       },
       "triggers": { "crons": ["0 * * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],

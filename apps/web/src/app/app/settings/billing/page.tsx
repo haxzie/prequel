@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 
 import { BillingPanel, type Billing } from "@/components/dashboard/BillingPanel";
 import { API_URL } from "@/lib/api";
-import { PRICE_MONTHLY } from "@/lib/pricing";
+import { PRICE_LIFETIME, PRICE_MONTHLY } from "@/lib/pricing";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
 
@@ -40,7 +40,9 @@ export default async function BillingPage() {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-medium tracking-tight text-fg">Billing</h1>
       <p className="mt-1.5 text-sm text-muted">
-        Prequel is {PRICE_MONTHLY} per month at introductory pricing, which goes up later.
+        Prequel is {PRICE_MONTHLY} a month, or {PRICE_LIFETIME} once. Both are the whole app, and
+        differ only in how much you can keep on a shareable link. Introductory pricing, which goes
+        up later.
       </p>
 
       <BillingPanel billing={billing} canManage={CAN_MANAGE.has(team.role)} />

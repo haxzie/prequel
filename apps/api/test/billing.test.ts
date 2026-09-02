@@ -39,6 +39,7 @@ beforeEach(async () => {
   for (const table of [
     "device_token",
     "session",
+    "purchase",
     "subscription",
     "member",
     "organization",
@@ -186,6 +187,18 @@ async function subscribe({ status = "active", graceUntil = null as number | null
   await env.DB.exec("UPDATE organization SET plan = 'pro' WHERE id = 'org1'");
 }
 
+/** The lifetime licence. One row, no status, nothing that lapses. */
+async function buyLifetime() {
+  // `prepare`, not `exec`: D1's `exec` splits on newlines and treats each line
+  // as a whole statement, which turns a wrapped INSERT into "incomplete input".
+  await env.DB.prepare(
+    `INSERT INTO purchase (id, team_id, dodo_payment_id, dodo_customer_id, product_id)
+     VALUES ('p1', 'org1', 'pay_1', 'cus_life', 'pdt_test_life')`,
+  ).run();
+
+  await env.DB.exec("UPDATE organization SET plan = 'lifetime' WHERE id = 'org1'");
+}
+
 describe("GET /v1/billing", () => {
   it("answers for a team that has never paid", async () => {
     const response = await call("/v1/billing", ownerToken);
@@ -259,6 +272,52 @@ describe("POST /v1/billing/checkout", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ code: "ALREADY_PRO" });
   });
+
+  it("sells the lifetime product when that is what was asked for", async () => {
+    const sent = interceptDodo();
+
+    await call("/v1/billing/checkout", ownerToken, {
+      method: "POST",
+      body: JSON.stringify({ plan: "lifetime" }),
+    });
+
+    const cart = (sent[0]?.body as { product_cart: { product_id: string }[] }).product_cart;
+    expect(cart[0]?.product_id).toBe("pdt_test_life");
+  });
+
+  it("defaults to Pro, so a body-less request still buys the subscription", async () => {
+    const sent = interceptDodo();
+
+    await call("/v1/billing/checkout", ownerToken, { method: "POST" });
+
+    const cart = (sent[0]?.body as { product_cart: { product_id: string }[] }).product_cart;
+    expect(cart[0]?.product_id).toBe("pdt_test_pro");
+  });
+
+  it("lets somebody who owns the lifetime licence subscribe to Pro", async () => {
+    // The larger allowance is a sale, not a mistake. Refusing this is what the
+    // endpoint did when there was only one thing to sell.
+    await buyLifetime();
+    const sent = interceptDodo();
+
+    const response = await call("/v1/billing/checkout", ownerToken, { method: "POST" });
+
+    expect(response.status).toBe(200);
+    // On the customer they already paid as, so both receipts sit together.
+    expect(sent[0]?.body).toMatchObject({ customer: { customer_id: "cus_life" } });
+  });
+
+  it("refuses to sell the lifetime licence twice", async () => {
+    await buyLifetime();
+
+    const response = await call("/v1/billing/checkout", ownerToken, {
+      method: "POST",
+      body: JSON.stringify({ plan: "lifetime" }),
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "ALREADY_LIFETIME" });
+  });
 });
 
 describe("POST /v1/billing/portal", () => {
@@ -266,11 +325,22 @@ describe("POST /v1/billing/portal", () => {
     expect((await call("/v1/billing/portal", memberToken, { method: "POST" })).status).toBe(403);
   });
 
-  it("404s for a team that has never subscribed", async () => {
+  it("404s for a team that has never paid for anything", async () => {
     const response = await call("/v1/billing/portal", ownerToken, { method: "POST" });
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toMatchObject({ code: "NO_SUBSCRIPTION" });
+    await expect(response.json()).resolves.toMatchObject({ code: "NO_CUSTOMER" });
+  });
+
+  it("opens for a team that only ever bought the lifetime licence", async () => {
+    // No subscription row at all, and their receipt is still in the portal.
+    // Addressing this endpoint by the subscription is what used to 404 them.
+    await buyLifetime();
+    interceptDodo();
+
+    const response = await call("/v1/billing/portal", ownerToken, { method: "POST" });
+
+    expect(response.status).toBe(200);
   });
 
   it("hands back a portal link once there is a customer", async () => {

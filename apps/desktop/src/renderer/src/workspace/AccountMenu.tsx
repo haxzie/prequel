@@ -58,7 +58,7 @@ function UpgradeCard({ entitlement }: { entitlement: Entitlement }) {
   const ending = entitlement.status === "expired";
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-editor-line bg-white/5 p-2.5">
+    <div className="flex flex-col gap-2 rounded-lg border border-white/12 bg-white/8 p-2.5">
       <div>
         <p className="text-[12px] font-medium text-editor-fg">
           {ending
@@ -67,7 +67,7 @@ function UpgradeCard({ entitlement }: { entitlement: Entitlement }) {
               ? `${String(entitlement.daysLeft)} ${entitlement.daysLeft === 1 ? "day" : "days"} left`
               : "Free trial"}
         </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-editor-muted">
+        <p className="mt-0.5 text-[11px] leading-snug text-editor-fg/65">
           {ending ? "Upgrade to keep exporting." : "Upgrade for unlimited exports."}
         </p>
       </div>
@@ -91,7 +91,7 @@ function SignIn({ waiting }: { waiting: boolean }) {
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
         "[&_svg]:size-4 [&_svg]:shrink-0",
-        waiting ? "text-editor-muted" : "text-editor-muted hover:bg-white/5 hover:text-editor-fg",
+        waiting ? "text-editor-fg/50" : "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
       )}
     >
       <AccountIcon />

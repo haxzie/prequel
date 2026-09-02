@@ -11,7 +11,7 @@ import {
   formatVerified,
   type Competitor,
 } from "@/content/competitors";
-import { PLANS, TRIAL_DAYS } from "@/lib/pricing";
+import { LIFETIME_PLAN, PLANS, PRO_PLAN, TRIAL_DAYS } from "@/lib/pricing";
 import { SITE } from "@/lib/site";
 
 /** Where a competitor's logo goes, if we have one. See `public/logos/README.md`. */
@@ -163,10 +163,12 @@ export function AtAGlance({ competitor }: { competitor: Competitor }) {
       name: SITE.name,
       tagline: SITE.tagline,
       // Built from `lib/pricing.ts` rather than written here, so a change of
-      // price is one edit for all of these pages. The cadence we actually bill
-      // and nothing beside it: an annualised figure next to a rival who bills
-      // yearly would be a number nobody is charged.
-      price: `${PLANS[0]?.price} ${PLANS[0]?.cadence}`,
+      // price is one edit for all of these pages. By name rather than by index:
+      // reordering the cards on the pricing page must not silently change the
+      // number quoted here. The cadence we actually bill and nothing beside it —
+      // an annualised figure next to a rival who bills yearly would be a number
+      // nobody is charged — plus the one-off, which is not a cadence at all.
+      price: `${PRO_PLAN.price} ${PRO_PLAN.cadence}, or ${LIFETIME_PLAN.price} once`,
       free: `${TRIAL_DAYS}-day trial, then paid`,
       platforms: PREQUEL_FEATURES.platforms,
     },
