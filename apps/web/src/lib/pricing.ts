@@ -8,7 +8,7 @@
  *
  *  **Two plans, and the app in both is the same app.** Pro is $9 a month, the
  *  lifetime licence is $29 once, and the only thing that differs is how much
- *  may be kept on the shareable-link side: 1 TB against 5 GB. Nothing about
+ *  may be kept on the shareable-link side: unlimited against 5 GB. Nothing about
  *  recording, editing or exporting is held back on either — no watermark, no
  *  length cap, no resolution tier, no feature behind the more expensive one. So
  *  nothing on this site should describe a feature as "Pro", and any sentence
@@ -22,13 +22,14 @@
  *  the quotas are written in decimal on both sides precisely so "5 GB" is the
  *  same string in the copy and in the dashboard.
  *
- *  **The rate is introductory.** Every surface that shows it says so, and none
- *  of them says more than that: there is no struck-out regular price, because
- *  there is not one to strike out, and no promise that an early licence keeps
- *  this rate for life. That last one is a commitment to honour indefinitely on
- *  every licence sold at this price, and it is not something a page is allowed
- *  to invent on the way to a better conversion rate. When the price rises
- *  again, raising it here is the whole change.
+ *  **The price is stated, not sold.** No struck-out regular price, because
+ *  there is not one to strike out; no countdown; no "introductory" label on the
+ *  cards, which only ever asked the reader to hurry. And no promise that a
+ *  licence bought today keeps this rate for life — that is a commitment to
+ *  honour indefinitely on every licence sold at this price, and it is not
+ *  something a page is allowed to invent on the way to a better conversion
+ *  rate. The FAQ answers honestly if somebody asks whether it will rise. When
+ *  it does, changing it here is the whole change.
  *
  *  **Write the month, and never annualise it.** `$9 a month` is what is
  *  charged. `$108 a year` is a number nobody is billed, and inventing a cadence
@@ -51,8 +52,14 @@ export const PRICE_MONTHLY = "$9";
 export const PRICE_LIFETIME = "$29";
 export const TRIAL_DAYS = 14;
 
-/** What each plan may keep on the sharing side. Mirrors `entitlement.ts`. */
-export const STORAGE_PRO = "1 TB";
+/**
+ * What each plan may keep on the sharing side. Mirrors `entitlement.ts`.
+ *
+ * "Unlimited" is the literal truth rather than a round number standing in for
+ * one: Pro's quota is a sentinel the upload check cannot reach. If that ever
+ * becomes a real cap, this word has to change with it.
+ */
+export const STORAGE_PRO = "Unlimited";
 export const STORAGE_LIFETIME = "5 GB";
 
 export type Plan = {
@@ -61,6 +68,14 @@ export type Plan = {
   cadence: string;
   /** Under the price. Says how it is billed, not what it includes. */
   billing: string;
+  /**
+   * The pill above the card, on the one we point at.
+   *
+   * Copy rather than a boolean, because "Recommended" is a claim and it belongs
+   * in the file that carries the other claims. Not "Most popular" — that is a
+   * fact about sales we do not have, where this is an opinion we do.
+   */
+  badge?: string;
   summary: string;
   features: string[];
   featured?: boolean;
@@ -87,33 +102,35 @@ const EVERYTHING = [
   "No length limit and no watermark",
 ];
 
-export const PRO_PLAN: Plan = {
-  name: "Pro",
-  price: PRICE_MONTHLY,
-  cadence: "a month",
-  billing: `Billed monthly · ${TRIAL_DAYS} days free`,
-  summary: `The whole app, and room for ${STORAGE_PRO} of shared recordings.`,
-  features: [...EVERYTHING, `${STORAGE_PRO} of shared recordings`],
-  featured: true,
-};
-
 export const LIFETIME_PLAN: Plan = {
   name: "Lifetime",
   price: PRICE_LIFETIME,
   cadence: "once",
   billing: `One payment · ${TRIAL_DAYS} days free`,
-  summary: `The same app, bought once, with ${STORAGE_LIFETIME} of shared recordings.`,
+  summary: `Buy it once. Best if you record now and then.`,
   features: [...EVERYTHING, `${STORAGE_LIFETIME} of shared recordings`],
+  featured: true,
+  badge: "Recommended",
+};
+
+export const PRO_PLAN: Plan = {
+  name: "Pro",
+  price: PRICE_MONTHLY,
+  cadence: "a month",
+  billing: `Billed monthly · ${TRIAL_DAYS} days free`,
+  summary: `Best if you record for work every week.`,
+  features: [...EVERYTHING, "Unlimited shared recordings"],
 };
 
 /**
- * Pro first, and read by name everywhere but the pricing page itself.
+ * Card order on the pricing page, and nothing else.
  *
  * `Comparison.tsx` and the dashboard's upgrade card used to index this array,
- * so reordering the cards would have silently changed the price quoted on all
- * six comparison pages. They import `PRO_PLAN` now.
+ * so reordering it would have silently changed the price quoted on all six
+ * comparison pages. They import `PRO_PLAN` by name instead, which is what makes
+ * this order a layout decision rather than a pricing one.
  */
-export const PLANS: Plan[] = [PRO_PLAN, LIFETIME_PLAN];
+export const PLANS: Plan[] = [LIFETIME_PLAN, PRO_PLAN];
 
 /**
  * What both plans cover.
@@ -146,21 +163,21 @@ export const INCLUDED: [string, string][] = [
   ["Transcripts", "Included"],
   ["Sharing", "Uploads and shareable links"],
   ["Rendering", "On your Mac, never uploaded"],
-  ["Storage", `${STORAGE_PRO} on Pro, ${STORAGE_LIFETIME} on Lifetime`],
+  ["Storage", `Unlimited on Pro, ${STORAGE_LIFETIME} on Lifetime`],
 ];
 
 export const FAQ: { question: string; answer: string }[] = [
   {
     question: "What is the difference between the two plans?",
-    answer: `Storage, and nothing else. Both are the whole app — 4K at 120 frames per second, every preset, transcripts, no watermark and no limit on a take — and both export the same file. Pro keeps ${STORAGE_PRO} of shared recordings for ${PRICE_MONTHLY} a month; the lifetime licence keeps ${STORAGE_LIFETIME} and is bought once for ${PRICE_LIFETIME}. Storage only applies to recordings you upload for a shareable link. What you export to your own Mac is not counted and has no limit.`,
+    answer: `Storage, and nothing else. Both are the whole app — 4K at 120 frames per second, every preset, transcripts, no watermark and no limit on a take — and both export the same file. Buy the lifetime licence once for ${PRICE_LIFETIME} and you keep ${STORAGE_LIFETIME} of shared recordings, which is plenty if you make a video now and then. Pro is ${PRICE_MONTHLY} a month with unlimited storage, which is the one to pick if you are sharing recordings for work every week. Storage only counts recordings you upload for a shareable link — what you export to your own Mac is never counted and has no limit.`,
   },
   {
-    question: "Why is it called introductory pricing?",
-    answer: `Because it is going up. ${PRICE_MONTHLY} a month is what Prequel costs while it is new, and the rate is set here rather than promised anywhere — there is no struck-out "regular" price to compare it against and no claim that signing up today locks it in forever. When it rises, it rises.`,
+    question: "Will the price go up?",
+    answer: `It might. ${PRICE_MONTHLY} a month and ${PRICE_LIFETIME} once are what Prequel costs today, and we would rather say that plainly than dress it up with a countdown — there is no struck-out "regular" price to compare it against, and no claim that signing up today locks the rate in forever. If it rises, it rises, and the page will say the new number.`,
   },
   {
     question: "Is the lifetime licence really for life?",
-    answer: `It is one payment for the app, with no renewal and nothing to cancel. What it does not do is grow: it comes with ${STORAGE_LIFETIME} of shared recordings and stays there. If you outgrow that you can subscribe to Pro at ${PRICE_MONTHLY} a month for ${STORAGE_PRO}, and stopping that subscription later puts you back on the ${STORAGE_LIFETIME} you already own rather than on nothing.`,
+    answer: `It is one payment for the app, with no renewal and nothing to cancel. What it does not do is grow: it comes with ${STORAGE_LIFETIME} of shared recordings and stays there. If you outgrow that — which usually means you have started recording for work rather than occasionally — you can subscribe to Pro at ${PRICE_MONTHLY} a month for unlimited storage, and stopping that subscription later puts you back on the ${STORAGE_LIFETIME} you already own rather than on nothing.`,
   },
   {
     question: "Is there a free plan?",

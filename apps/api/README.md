@@ -210,8 +210,13 @@ Dodo Payments, as **two products** and one team-wide tier derived from them:
 
 | Product  | Env var                           | Price      | Storage |
 | -------- | --------------------------------- | ---------- | ------- |
-| Pro      | `DODOPAYMENT_PRO_PRODUCT_ID`      | $9 / month | 1 TB    |
+| Pro      | `DODOPAYMENT_PRO_PRODUCT_ID`      | $9 / month | none    |
 | Lifetime | `DODOPAYMENT_LIFETIME_PRODUCT_ID` | $29 once   | 5 GB    |
+
+Pro's allowance is a sentinel rather than a cap — `PRO_QUOTA_BYTES` is
+`Number.MAX_SAFE_INTEGER`, so the upload check can never refuse it, because the
+site says "Unlimited" and a cap dressed up as one is a promise the uploader
+eventually breaks.
 
 Both are the whole app. **Storage is the only thing that differs** — nothing is
 gated by tier, so no route should ever ask "is this team Pro" to decide whether

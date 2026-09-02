@@ -21,3 +21,23 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
+
+/**
+ * The value `apps/api/src/lib/entitlement.ts` stores to mean "no limit".
+ *
+ * Repeated rather than imported: `apps/web` shares no code with `apps/api`
+ * beyond request and response types, so the two agree by being written the same
+ * on both sides. It is `Number.MAX_SAFE_INTEGER`, which survives JSON exactly.
+ */
+const UNLIMITED_QUOTA_BYTES = Number.MAX_SAFE_INTEGER;
+
+/**
+ * A quota, as a person would say it.
+ *
+ * `formatBytes` on the unlimited sentinel prints "9007 TB", which is not a
+ * number anybody was sold and reads as a bug next to the word the pricing page
+ * uses. Every surface that shows an allowance goes through this.
+ */
+export function formatQuota(bytes: number): string {
+  return bytes >= UNLIMITED_QUOTA_BYTES ? "Unlimited" : formatBytes(bytes);
+}

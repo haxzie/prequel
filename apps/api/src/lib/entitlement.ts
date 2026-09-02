@@ -34,7 +34,23 @@ import type { Database } from "../db.ts";
  */
 export const FREE_QUOTA_BYTES = 2 * 1000 ** 3;
 export const LIFETIME_QUOTA_BYTES = 5 * 1000 ** 3;
-export const PRO_QUOTA_BYTES = 1000 ** 4;
+
+/**
+ * Pro is unlimited, and this is what "unlimited" is stored as.
+ *
+ * A sentinel rather than a very large round number, because the site says
+ * "Unlimited" and a cap dressed up as one is a promise the uploader eventually
+ * breaks — somebody who was sold no limit being told they are out of storage is
+ * worse than never having claimed it. `storage_quota_bytes` is `NOT NULL` and
+ * the upload check is `used + size > quota`, so the cheapest way to mean "never
+ * refuse" is a number that arithmetic cannot reach: 2^53-1 bytes is eight
+ * petabytes, it survives D1 and JSON exactly, and it needs no branch at the
+ * point of enforcement.
+ *
+ * The dashboard prints it as the word rather than as the number — see
+ * `formatQuota` in `apps/web/src/lib/format.ts`, which recognises this value.
+ */
+export const PRO_QUOTA_BYTES = Number.MAX_SAFE_INTEGER;
 
 /** How long a failed renewal keeps working before the team is downgraded. */
 export const GRACE_MS = 7 * 24 * 60 * 60 * 1000;

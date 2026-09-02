@@ -1,6 +1,6 @@
 import { LibraryGrid } from "@/components/dashboard/LibraryGrid";
 import { API_URL } from "@/lib/api";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, formatQuota } from "@/lib/format";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
 import { cookies } from "next/headers";
@@ -53,7 +53,7 @@ export default async function LibraryPage() {
           </p>
         </div>
         <p className="font-mono text-xs text-muted">
-          {formatBytes(library.usage)} of {formatBytes(team.storageQuotaBytes)}
+          {formatBytes(library.usage)} of {formatQuota(team.storageQuotaBytes)}
         </p>
       </div>
 

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 
-import { formatBytes } from "@/lib/format";
+import { formatQuota } from "@/lib/format";
 import { Button } from "@/components/Button";
 import { api, ApiError } from "@/lib/api";
-import { PRICE_LIFETIME, PRICE_MONTHLY, STORAGE_PRO } from "@/lib/pricing";
+import { PRICE_LIFETIME, PRICE_MONTHLY } from "@/lib/pricing";
 import type { Trial } from "@/lib/session";
 
 /** What `GET /v1/billing` answers with. The page reads it; this draws it. */
@@ -117,7 +117,7 @@ export function BillingPanel({
       {paid ? (
         <>
           <p className="mt-1 text-sm text-muted">
-            {formatBytes(billing.storageQuotaBytes)} of shared recordings.
+            {formatQuota(billing.storageQuotaBytes)} shared storage.
           </p>
 
           {/* Only a subscription has a date to say anything about. The lifetime
@@ -137,8 +137,8 @@ export function BillingPanel({
             // plan who fills it up should not have to find out from a refused
             // upload that there was a way to keep going.
             <p className="mt-3 text-sm text-muted">
-              Bought once, with nothing to renew. Subscribe to Pro for {STORAGE_PRO} if you need the
-              room.
+              Bought once, with nothing to renew. Subscribe to Pro for unlimited storage if you need
+              the room.
             </p>
           ) : null}
         </>
@@ -157,7 +157,7 @@ export function BillingPanel({
               above: the storage is what a licence adds, where the trial is
               about the app. */}
           <p className="mt-1 text-sm text-muted">
-            {formatBytes(billing.storageQuotaBytes)} of recordings. Prequel is {PRICE_MONTHLY} a
+            {formatQuota(billing.storageQuotaBytes)} of recordings. Prequel is {PRICE_MONTHLY} a
             month, or {PRICE_LIFETIME} once.
           </p>
         </>
