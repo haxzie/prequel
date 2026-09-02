@@ -422,6 +422,7 @@ impl Compositor {
                         rect: rect_of(&active_rect),
                         src,
                         focus: [0.0, 0.0, 1.0, 0.0],
+                        smear: [0.0; 4],
                         // One texel of the scratch texture.
                         texel: [1.0 / w as f32, 1.0 / h as f32],
                         shape: [0.0, 2.0],
