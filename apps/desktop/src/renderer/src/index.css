@@ -58,6 +58,7 @@
   --color-sunrise-cool: var(--sunrise-cool);
 
   --color-dock-bg: var(--dock-bg);
+  --color-dock-menu: var(--dock-menu);
   --color-dock-line: var(--dock-line);
   --color-dock-fg: var(--dock-fg);
   --color-dock-muted: var(--dock-muted);
@@ -71,6 +72,9 @@
   --color-dot-off: var(--dot-off);
 
   --color-editor-bg: var(--editor-bg);
+  --color-editor-glass: var(--editor-glass);
+  --color-editor-scrim: var(--editor-scrim);
+  --color-editor-veil: var(--editor-veil);
   --color-editor-panel: var(--editor-panel);
   --color-editor-line: var(--editor-line);
   --color-editor-fg: var(--editor-fg);
@@ -80,12 +84,19 @@
   --color-layout-screen: var(--layout-screen);
   --color-layout-camera: var(--layout-camera);
   --color-slice-fill: var(--slice-fill);
+  --color-slice-fill-active: var(--slice-fill-active);
   --color-slice-edge: var(--slice-edge);
+  --color-slice-edge-active: var(--slice-edge-active);
+  --color-slice-ring: var(--slice-ring);
+  --color-zoom-fill: var(--zoom-fill);
+  --color-zoom-edge: var(--zoom-edge);
+  --color-zoom-ring: var(--zoom-ring);
   --color-wave: var(--wave);
   --color-indicator: var(--indicator);
   --color-cut: var(--cut);
   --color-export: var(--export);
   --color-toggle: var(--toggle);
+  --color-play: var(--play);
 
   /* The window resizes between the panel's two shapes; fading the incoming view
      in over that keeps the swap from reading as one panel being replaced by
@@ -239,12 +250,17 @@ body {
    matter what is behind it — a translucent, theme-following panel reads as part
    of whatever it happens to be sitting on.
 
-   Translucent, but not blurred. `backdrop-filter` only samples what the page
-   itself drew, and the desktop behind a transparent window is not that — the
-   rule is silently a no-op here. Real window blur means an NSVisualEffectView
-   (Electron's `vibrancy`), which fills the whole window rectangle and would
-   paint over the transparent margin and the drop-up headroom. So: enough
-   opacity to stay readable over busy content, and no false blur. */
+   Really blurred, the same way the editor's chrome is: the dock's window is
+   vibrant (`vibrancy: "hud"`), so what these two colours paint is a scrim over
+   an `NSVisualEffectView` rather than a fill over the desktop. `backdrop-filter`
+   is still no use here and never was — it only samples what the page itself
+   drew, and the desktop behind a window is not that.
+
+   A material fills its window's whole rectangle, which is why the dock's window
+   is now exactly the pill and the drop-ups are a second window of their own.
+   Lighter than they were as fills, because the frost behind them is already
+   doing most of the work of separating the panel from the wallpaper; much below
+   these and the controls stop holding against a bright desktop. */
 /**
  * The editor's palette, dark whatever the system theme is.
  *
@@ -255,6 +271,35 @@ body {
  */
 @utility editor-theme {
   --editor-bg: #16171a;
+  /* Three depths of the same colour, over the window's one vibrancy material.
+
+     Electron gives a window exactly one `NSVisualEffectView`, so a frosted
+     sidebar beside a near-solid timeline cannot be two materials — it is one
+     material seen through three thicknesses of the same scrim. That is also how
+     a native app does it: the depth is in what is painted over the material,
+     not in the material itself.
+
+     `--editor-bg` above stays opaque and stays what the composition is drawn on.
+     The preview has to show the recording's own background, and a translucent
+     surface under it would take the hue of whatever the window happens to be
+     over — the same trap `--layout-screen` below is written the way it is to
+     avoid.
+
+     Below about 0.25 body text stops holding against a bright wallpaper, and
+     above about 0.95 the material may as well not be there. */
+  /* The library's sidebar and the editor's chrome, where the frost is the
+     point — but still a surface rather than a hole, and still something small
+     text has to be legible on. 0.3 read as missing rather than as glass; 0.6
+     was a surface but left the sidebar's labels fighting whatever was behind
+     them. Deliberately kept under `--editor-scrim`, so the sidebar still sits
+     behind the content beside it. */
+  --editor-glass: rgba(22, 23, 26, 0.75);
+  /* Enough to read a grid of recordings against. */
+  --editor-scrim: rgba(22, 23, 26, 0.82);
+  /* Nearly solid, for the transport and the timeline. A clip is a small shape
+     against a long strip, and a wallpaper showing through the gaps between
+     clips is texture competing with the thing being edited. */
+  --editor-veil: rgba(22, 23, 26, 0.93);
   --editor-panel: #1c1e22;
   --editor-line: #2a2d33;
   --editor-fg: #eceef1;
@@ -291,8 +336,32 @@ body {
   /* Named for the model's "slice" rather than the UI's "clip": `bg-clip-*` is
      Tailwind's own `background-clip` namespace, and a `bg-clip-fill` of ours
      sitting in it is a collision waiting to be introduced. */
-  --slice-fill: #3a2d5e;
-  --slice-edge: #6d4fd0;
+  /* Two pairs, resting and active, rather than one pair dimmed.
+
+     A clip used to say "not selected" by dropping to 60% opacity, which is what
+     made a whole row of them look switched off — and it cannot come back now
+     that the fill is meant to be solid. Two solid steps of the same purple do
+     the same job without it: the row reads as lit rather than as faded, and the
+     selected clip is the brighter one rather than the only opaque one.
+
+     The step has to survive a bright frame showing through the filmstrip, which
+     is why it is a step in *both* the fill and the edge and not in the fill
+     alone. Hover takes the active pair without the ring, so the difference is
+     shown before it is committed to. */
+  --slice-fill: #2b2247;
+  --slice-fill-active: #3a2d5e;
+  /* The bands down a clip's two sides, which are also what the trim handles
+     are drawn on. Wide enough to grab, so the edge and the handle are one
+     shape rather than a hairline with a separate grip sitting inside it. */
+  --slice-edge: #4c3795;
+  --slice-edge-active: #6d4fd0;
+  /* The selected clip's outline, on top of the pair above rather than instead
+     of it: the fill carries the filmstrip, and saying "selected" by lightening
+     it alone would wash the frames out at exactly the moment they are being
+     looked at. Light enough to read against the edge it is drawn over — the
+     outline runs across the handles, so it has to stand off `--slice-edge` and
+     not only off `--slice-fill`. */
+  --slice-ring: #c0a8ff;
   /* The waveform standing along the bottom of a clip. A lighter step of the
      clip's own purple rather than a colour of its own: it is a texture
      describing the clip, not something to be read against it, and anything with
@@ -302,6 +371,25 @@ body {
      crosses stays findable in a way a brighter shade of the same colour does
      not. */
   --indicator: #3b9dff;
+  /* A zoom: a translucent blue wash inside an opaque outline, filling in solid
+     when it is the thing being edited.
+
+     One fill and one edge, where this briefly carried four tokens for a
+     gradient and a pair of end caps. Both are gone — the caps because a handle
+     no longer has a plate behind it, the fall because the state is now carried
+     by how solid the fill is, and a bar that changed both its opacity and its
+     shading between states was saying one thing twice.
+
+     Translucent at rest is what keeps the row readable: a zoom sits directly
+     under the clips, and a solid block the length of one pulls the eye off the
+     filmstrip above it. Filled means "this is the one you are editing", which
+     is the only time it should win that contest. */
+  --zoom-fill: #3f86dc;
+  /* Opaque at both states, and light enough to hold its own against a wash of
+     the same colour behind it. It was a dark navy while the fill was a bright
+     gradient it had to sit under; against 25% of that blue it disappeared. */
+  --zoom-edge: #6ea9f0;
+  --zoom-ring: #a9d3ff;
   /* Where a cut would land. Red because it is destructive and because it must
      never be mistaken for the playhead sitting next to it. */
   --cut: #ff4d5e;
@@ -311,13 +399,28 @@ body {
   /* A switch that is on. The same green, because both mean "this is live" —
      and it is the one state worth spotting across a panel of controls. */
   --toggle: #30a46c;
+  /* Play. The same green again, and still its own token: "playback will start"
+     and "this switch is on" are not the same idea, and one name shared between
+     them would make retuning either retune both — the reason `--dock-warn`
+     below is not `--dot-live`. */
+  --play: #30a46c;
 }
 
 @utility dock-theme {
-  --dock-bg: rgba(40, 47, 56, 0.85);
-  /* Close to the background rather than a bright hairline: the edge should
-     define the shape without drawing attention to itself. */
-  --dock-line: #333b45;
+  --dock-bg: rgba(40, 47, 56, 0.55);
+  /* A step darker than the panel. The two are separate windows over the same
+     material, and a menu that matched the panel exactly would read as a piece
+     of it that had come loose rather than as something laid over it. */
+  --dock-menu: rgba(32, 38, 46, 0.66);
+  /* Dividers, and only dividers: both windows are shaped and outlined by macOS
+     now, so nothing here is a border any more.
+
+     Translucent white rather than the dark tone this was, for the same reason
+     `--dock-hover` below is: the surface under it is frosted desktop, not a
+     fixed colour, and a dark hairline drawn on glass reads as grime on it
+     rather than as a rule between two things. Light enough to find, faint
+     enough that a strip of three of them is not what the eye lands on. */
+  --dock-line: rgba(255, 255, 255, 0.16);
   --dock-fg: #eceef1;
   --dock-muted: #98a0a9;
   /* Lighter than the background, and translucent white rather than a fixed

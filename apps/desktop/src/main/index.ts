@@ -1,4 +1,4 @@
-import { app, protocol } from "electron";
+import { app, nativeTheme, protocol } from "electron";
 
 import { validateEnv } from "@prequel/env";
 
@@ -150,6 +150,19 @@ app.on("second-instance", (_event, argv) => {
 
 void app.whenReady().then(() => {
   registerMediaProtocol();
+
+  // The editor's palette is dark whatever the system theme is; the workspace
+  // window's vibrancy is not. An `NSVisualEffectView` takes its material from
+  // the app's `NSAppearance`, so under a light system theme `under-window`
+  // returns a pale frosted white for dark chrome to sit on — a bright halo
+  // around the window and hairlines that vanish into it. Forcing the
+  // appearance is the only lever there is: Electron has no per-window
+  // equivalent, and the material cannot be told to disagree with its app.
+  //
+  // Nothing else moves. `--muted` in the camera bubble and in the unknown-route
+  // fallback are the only two things in the tree reading the global light/dark
+  // tokens, and both already sit on a dark surface.
+  nativeTheme.themeSource = "dark";
 
   // Routes the addon's `tracing` output into the same file, so a Rust-side
   // warning during an export is not silently dropped.

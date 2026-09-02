@@ -29,11 +29,7 @@ export function Dock() {
     if (!row) return;
 
     const report = () => {
-      // The panel's border is outside the row and inside the window, so it has
-      // to be added back — read from the box rather than hardcoded, so it stays
-      // right if the border ever changes.
-      const borders = element.offsetWidth - element.clientWidth;
-      void window.prequel.dock.setWidth(Math.ceil(row.getBoundingClientRect().width) + borders);
+      void window.prequel.dock.setWidth(Math.ceil(row.getBoundingClientRect().width));
     };
 
     report();
@@ -49,21 +45,21 @@ export function Dock() {
       ref={panel}
       data-view={state.view}
       className={
-        // Anchored to the bottom of a window that is taller than the panel:
-        // `--panel-inset` of transparent margin for the drop shadow, plus
-        // whatever headroom an open drop-up needs above.
+        // The panel *is* the window now, so it fills it: the window is vibrant,
+        // and a frosted material fills the window's rectangle, so any part of
+        // the window the panel did not cover would be frosted desktop hanging
+        // in mid-air.
         //
-        // The width fills the window, which is what lets the window animate its
-        // width and take the panel smoothly with it — the natural width lives on
-        // the setup row, which is what gets measured and reported to main.
+        // No radius, no border, no shadow, and no margin to cast one into.
+        // macOS draws the corners and the shadow around a vibrant window
+        // itself, and a CSS pill inside it would be a second, inset outline
+        // around the frosted one. `--dock-bg` is a scrim over the material
+        // rather than a fill — see `dock-theme`.
         //
-        // The shadow is drawn here rather than by the window: macOS shapes a
-        // window's own shadow to the window rectangle, which around a rounded
-        // panel reads as a second, squarer border. `overflow-visible` is what
-        // lets the drop-ups escape the panel's bounds.
-        "dock-theme m-(--panel-inset) mt-auto h-(--panel-height) w-[calc(100%-var(--panel-inset)*2)] " +
-        "overflow-visible rounded-xl border border-dock-line bg-dock-bg text-dock-fg " +
-        "shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
+        // Filling the window is also what lets the window animate its width and
+        // take the panel smoothly with it; the natural width lives on the setup
+        // row, which is what gets measured and reported to main.
+        "dock-theme size-full bg-dock-bg text-dock-fg"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}

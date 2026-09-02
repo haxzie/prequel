@@ -106,6 +106,18 @@ export interface CursorPoint {
       entirely. Marked rather than omitted: a hole between two samples would be
       interpolated straight through. */
   visible: boolean;
+  /**
+   * How far the pointer smears here, as a vector in output pixels.
+   *
+   * The finished streak, not a speed: the plan carries what is drawn, and both
+   * rasterisers read these two numbers and multiply nothing. A speed here would
+   * leave each of them to pick a direction and a shutter, which is two answers
+   * to "where is the pointer going" — the same mistake `scale` above exists to
+   * avoid for a click. Zero wherever the pointer is still, which is most of a
+   * recording.
+   */
+  smearX: number;
+  smearY: number;
 }
 
 /**
@@ -286,7 +298,16 @@ export interface RenderPlan {
 }
 
 /** Superellipse exponent per camera shape. */
-const SHAPE_EXPONENT = { circle: 2, squircle: 4, rounded: 2, wide: 2 } as const;
+const SHAPE_EXPONENT = { circle: 2, squircle: 4, rounded: 2, wide: 2, portrait: 2 } as const;
+
+/**
+ * How tall `portrait` stands, per unit of width.
+ *
+ * 9:16 — the shape a phone records in, and the one a vertical frame is cut for.
+ * The camera is covered into it rather than fitted, so a landscape webcam is
+ * cropped to its middle, which is where a face is.
+ */
+const PORTRAIT_ASPECT = 9 / 16;
 
 /**
  * Turns settings into a flat list of things to draw.
@@ -420,6 +441,7 @@ export function buildRenderPlan(
           unit,
           motion,
           layout.cursorSmoothing,
+          layout.cursorMotionBlur,
         ),
       );
     }
@@ -2153,6 +2175,22 @@ function rotatedQuad(
  * pointer near the leading edge is drawn larger than one at the far edge, which
  * is what makes it read as lying on the picture rather than over it.
  */
+/**
+ * A key's four corners, projected or flat.
+ *
+ * The corner order `rotatedQuad` writes and `onPlane` reads: top-left,
+ * top-right, bottom-left, bottom-right, three numbers each. An untilted key's
+ * divisor is 1 at every corner, which is what makes it the identity projection
+ * rather than a special case.
+ */
+function cornersOf(key: RectKey): number[] {
+  if (key.quad && key.quad.length === 12) return [...key.quad];
+
+  const right = key.x + key.width;
+  const bottom = key.y + key.height;
+  return [key.x, key.y, 1, right, key.y, 1, key.x, bottom, 1, right, bottom, 1];
+}
+
 function onPlane(quad: readonly number[], u: number, v: number): Point & { scale: number } {
   const weights = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
 
@@ -2349,6 +2387,27 @@ const CLICK_DEPTH = 0.82;
 const CLICK_STEPS = 8;
 
 /**
+ * The shutter a smear is measured against, in nanoseconds.
+ *
+ * One frame at 60fps, fixed rather than taken from the export's own frame rate.
+ * The streak is part of the look, and a look that changed length because a file
+ * was written at 30fps instead of 60 would be a preview that stopped matching
+ * its export the moment the format changed — which is the whole class of bug
+ * the plan exists to prevent.
+ */
+const SMEAR_SHUTTER_NS = 16_666_667;
+
+/**
+ * The longest streak, in pointers.
+ *
+ * A pointer moved between displays, or one whose samples straddle a cut, has an
+ * apparent velocity with no upper bound — and an uncapped streak from one is a
+ * bar drawn across the whole frame. Beyond about this the smear stops reading
+ * as speed anyway and starts reading as a smudge on the lens.
+ */
+const SMEAR_CAP = 1.5;
+
+/**
  * The scale a press contributes at a moment, or 1 outside one.
  *
  * Down quickly and back more slowly, because that is the shape of a press: the
@@ -2513,6 +2572,7 @@ function cursorItems(
   unit: number,
   motion: readonly RectKey[],
   smoothing: number,
+  motionBlur: number,
 ): PlanItem[] {
   // Smoothed once, up front, and read as the track from here down: the points
   // are written at the smoothed path's own moments, and nothing below this line
@@ -2569,6 +2629,11 @@ function cursorItems(
         // — so a press drawn this way cannot come out differently in the
         // preview and the export.
         scale: placed.scale * pressScale(path.clicks, at),
+        // Placeholders. `withSmear` fills these in at the end, once the gaps
+        // are in and every point's real neighbours are known — measuring here
+        // would use neighbours that are about to change.
+        smearX: 0,
+        smearY: 0,
         visible:
           px >= srcRect.x &&
           px <= srcRect.x + srcRect.width &&
@@ -2585,19 +2650,64 @@ function cursorItems(
   const quiet = withTypingGaps(points, path.keys, unit);
   const timed = path.hideAfter === null ? quiet : withIdleGaps(quiet, path.hideAfter);
   const size = Math.max(1, path.size * unit);
+  // Last, so it measures the list that is actually drawn — see `withSmear`.
+  const smeared = withSmear(timed, motionBlur, size);
 
   // The image each point is drawn with, which is not the kind it was recorded
   // as: a style that ships no I-beam draws the arrow there, so those points
   // belong to the arrow rather than to an item with no texture behind it.
   const shapeFor = (kind: CursorKind): CursorShape => path.shapes[kind] ?? path.shapes.arrow;
 
-  return splitByShape(timed, shapeFor).map(({ shape, points: drawn }) => ({
+  return splitByShape(smeared, shapeFor).map(({ shape, points: drawn }) => ({
     kind: "cursor" as const,
     path: shape.path,
     size,
     hotspot: shape.hotspot,
     points: drawn,
   }));
+}
+
+/**
+ * Writes each point's streak, from the path it is actually drawn on.
+ *
+ * A central difference rather than the step to the next point: the streak is
+ * meant to be the direction of travel *through* this moment, and one-sided it
+ * lags half a sample — visible as the smear swinging late around a corner.
+ *
+ * Run over the finished list, after the typing and idle gaps have been put in,
+ * so a point inserted by those is measured against the neighbours it actually
+ * ends up between. And after `smoothPath`, which is the point of doing it here
+ * at all: a streak taken off the raw 30 Hz samples points where the recording
+ * jittered rather than where the drawn pointer visibly went.
+ */
+function withSmear(points: ShapedPoint[], strength: number, size: number): ShapedPoint[] {
+  // Not "cheaper when it is off" — the fields have to exist either way, because
+  // a missing one lerps to `NaN` in both rasterisers rather than to nothing.
+  if (strength <= 0 || points.length < 2) {
+    return points.map((point) => ({ ...point, smearX: 0, smearY: 0 }));
+  }
+
+  const cap = size * SMEAR_CAP;
+
+  return points.map((point, index) => {
+    const before = points[index - 1] ?? point;
+    const after = points[index + 1] ?? point;
+    const span = after.at - before.at;
+    // Two points at one instant, or a single-point track. Neither has a
+    // direction, and dividing by the span would hand back an infinity.
+    if (span <= 0) return { ...point, smearX: 0, smearY: 0 };
+
+    const perShutter = (strength * SMEAR_SHUTTER_NS) / span;
+    const x = (after.x - before.x) * perShutter;
+    const y = (after.y - before.y) * perShutter;
+
+    // Clamped by length, not per axis: clamping x and y separately would turn a
+    // fast diagonal into a streak pointing somewhere the pointer never went.
+    const length = Math.hypot(x, y);
+    const held = length > cap ? cap / length : 1;
+
+    return { ...point, smearX: x * held, smearY: y * held };
+  });
 }
 
 /** A point plus the pointer the system was showing there. Never leaves this file. */
@@ -2611,6 +2721,8 @@ function plain(point: ShapedPoint): CursorPoint {
     y: point.y,
     scale: point.scale,
     visible: point.visible,
+    smearX: point.smearX,
+    smearY: point.smearY,
   };
 }
 
@@ -2915,10 +3027,19 @@ export function rectAt(
   // is not the same as projecting the interpolated angle, but at a thirtieth of
   // a second apart the difference is far below a pixel — and it keeps both
   // rasterisers ignorant of what a tilt even is.
+  //
+  // A key with no quad is filled in from its own rectangle rather than being
+  // treated as having nothing to say. This used to take whichever quad existed
+  // and hold it for the whole span, which put a hard jump wherever a track has
+  // a tilted key next to a flat one — exactly the boundary `framedKey` creates
+  // when a tilted picture grows to cover the frame. The ring stayed frozen at
+  // the last tilt and then snapped to the frame's rectangle in a single frame.
+  // A rectangle is a quad whose corners are its own, so blending into it is
+  // continuous, which is what that boundary always claimed to be.
   const quad =
-    a.quad && b.quad && a.quad.length === b.quad.length
-      ? a.quad.map((value, index) => lerp(value, b.quad![index]!, t))
-      : (b.quad ?? a.quad);
+    a.quad || b.quad
+      ? cornersOf(a).map((value, index) => lerp(value, cornersOf(b)[index]!, t))
+      : undefined;
 
   const focus =
     a.focus && b.focus
@@ -3016,7 +3137,7 @@ export function captionAt(
 export function cursorAt(
   points: readonly CursorPoint[],
   at: number,
-): { x: number; y: number; scale: number } | null {
+): { x: number; y: number; scale: number; smearX: number; smearY: number } | null {
   if (points.length === 0) return null;
 
   // Before the first sample the pointer had not moved yet, so it was wherever
@@ -3048,6 +3169,8 @@ export function cursorAt(
     x: a.x + (b.x - a.x) * t,
     y: a.y + (b.y - a.y) * t,
     scale: a.scale + (b.scale - a.scale) * t,
+    smearX: a.smearX + (b.smearX - a.smearX) * t,
+    smearY: a.smearY + (b.smearY - a.smearY) * t,
   };
 }
 
@@ -3093,7 +3216,13 @@ function aspectOf(source: Size | null | undefined): number {
  * frame instead is what would make a resized bubble snap back to a square.
  */
 export function shapeAspect(shape: CameraShape, source?: Size | null): number {
-  return shape === "wide" ? aspectOf(source) : 1;
+  if (shape === "wide") return aspectOf(source);
+  // A constant rather than the source stood on end: `wide` exists to show the
+  // camera uncropped, and `portrait` exists to fill a tall frame — taking the
+  // webcam's own aspect here would make the shape depend on the hardware, and a
+  // 4:3 camera would give a portrait barely taller than a square.
+  if (shape === "portrait") return PORTRAIT_ASPECT;
+  return 1;
 }
 
 /**
@@ -3142,7 +3271,6 @@ function inset(frame: Size, by: number): Rect {
  * spends it on a picture too thin to show a face.
  */
 const CAMERA_COLUMN = 2 / 3;
-const CAMERA_ROW = 2;
 
 /**
  * Where both pictures go.
@@ -3166,6 +3294,10 @@ export function cameraFloats(layout: LayoutSettings): boolean {
   switch (layout.preset) {
     case "over-full":
     case "over-padded":
+    // Its box is placed by the arrangement, but its size and shape are the
+    // camera's own — so it is a bubble that happens to sit in a slot rather
+    // than a card, and everything that asks this question wants the former.
+    case "stacked":
       return true;
     case "custom":
       return !layout.cameraCard;
@@ -3240,15 +3372,56 @@ export function layoutBoxes(
     case "camera-padded":
       return { screen: null, camera: { area: padded, fit: "contain", card: true } };
 
-    case "beside":
+    case "beside": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+      const [screen, camera] = matched(padded, gap, aspectOf(sources.screen));
+      return {
+        screen: { area: screen, fit: "cover", card: true },
+        camera: { area: camera, fit: "cover", card: true },
+      };
+    }
+
+    // Side by side with the frame's edges as the only boundary. `beside` inside
+    // a `padded` area of nothing at all, which is why it shares `matched` — the
+    // arrangement is the same one, and only the area it is given differs.
+    case "beside-flush": {
+      if (!withCamera) {
+        return { screen: { area: whole, fit: "cover", card: false }, camera: null };
+      }
+      const [screen, camera] = matched(whole, 0, aspectOf(sources.screen));
+      // `card: false`, because a rounded corner or a shadow is a picture
+      // sitting *on* the frame — and the point of this arrangement is that
+      // there is no frame left to sit on.
+      return {
+        screen: { area: screen, fit: "cover", card: false },
+        camera: { area: camera, fit: "cover", card: false },
+      };
+    }
+
     case "stacked": {
       if (!withCamera) {
         return { screen: { area: padded, fit: "contain", card: true }, camera: null };
       }
-      const [screen, camera] = matched(padded, gap, aspectOf(sources.screen), layout.preset);
+      // Sized from the camera's own settings rather than from a share of the
+      // screen: this is the one slotted arrangement where the bubble is a
+      // separate object under the picture rather than the other half of a
+      // split, so the Size and Shape controls are the right place to decide
+      // how big it is and what shape it takes.
+      const [screen, camera] = overUnder(
+        padded,
+        gap,
+        aspectOf(sources.screen),
+        Math.max(1, layout.cameraWidth * unit),
+        Math.max(1, layout.cameraHeight * unit),
+      );
       return {
         screen: { area: screen, fit: "cover", card: true },
-        camera: { area: camera, fit: "cover", card: true },
+        // `card: false`, so `cameraShape` decides its corners — a circle stays
+        // a circle here rather than becoming a rounded card the moment the
+        // arrangement is picked.
+        camera: { area: camera, fit: "cover", card: false },
       };
     }
 
@@ -3325,55 +3498,84 @@ export function placement(
 }
 
 /**
- * Two boxes sharing an area, one edge matched to the other's.
+ * Two boxes side by side, matched in height.
  *
  * The screen keeps its own proportions and the camera takes what is left, which
  * is what puts a 16:9 recording beside a portrait crop of a webcam. Where what
- * is left would be thinner than `CAMERA_COLUMN` (or, stacked, wider than
- * `CAMERA_ROW`), the pair shrinks off its matched edge until the camera has the
- * shape it was promised — both stay the same height as each other throughout,
- * and the pair stays centred in the area.
+ * is left would be thinner than `CAMERA_COLUMN`, the pair shrinks in height
+ * until the camera has the shape it was promised — both stay the same height as
+ * each other throughout, and the pair stays centred in the area.
  *
  * The screen is still the prominent one: at a 16:9 recording and these limits
  * it takes about seven tenths of the row. That falls out of the arithmetic
  * rather than being asked for, because it is the screen's own proportions doing
  * it — a squarer recording gets a squarer split, which is the honest answer.
  */
-function matched(
+function matched(area: Rect, gap: number, screenAspect: number): [Rect, Rect] {
+  const room = Math.max(0, area.width - gap);
+  // Full height first, and only give it up if the leftover is too thin.
+  let height = area.height;
+  if (height * screenAspect + height * CAMERA_COLUMN > room) {
+    height = room / (screenAspect + CAMERA_COLUMN);
+  }
+
+  const screenWidth = height * screenAspect;
+  const y = area.y + (area.height - height) / 2;
+  // The camera takes everything left rather than exactly `CAMERA_COLUMN`, so
+  // a narrow recording hands it the surplus instead of leaving a hole.
+  return [
+    { x: area.x, y, width: screenWidth, height },
+    { x: area.x + screenWidth + gap, y, width: Math.max(0, room - screenWidth), height },
+  ];
+}
+
+/**
+ * The screen at its own size on top, the camera underneath at its own.
+ *
+ * Not the vertical twin of `matched`, which is what this was. That gave the
+ * camera the screen's full width, and a webcam stretched the width of a 16:9
+ * recording is a band of face across the bottom of the frame — the arrangement
+ * read as two screens rather than as a recording with someone talking over it.
+ *
+ * The camera's box arrives already decided, from the Size and Shape controls.
+ * Every other slotted arrangement works its camera out from the space left
+ * over, because in those the two pictures are halves of one split; here the
+ * bubble is a separate object sitting under the picture, and the control that
+ * says how big a bubble is should be the one that says it.
+ *
+ * The screen gives up width when the two together are taller than the area —
+ * the same trade `matched` makes, and for the same reason: losing some of the
+ * frame is cheaper than a picture that runs off the bottom of it.
+ */
+function overUnder(
   area: Rect,
   gap: number,
   screenAspect: number,
-  preset: "beside" | "stacked",
+  cameraWidth: number,
+  cameraHeight: number,
 ): [Rect, Rect] {
-  if (preset === "beside") {
-    const room = Math.max(0, area.width - gap);
-    // Full height first, and only give it up if the leftover is too thin.
-    let height = area.height;
-    if (height * screenAspect + height * CAMERA_COLUMN > room) {
-      height = room / (screenAspect + CAMERA_COLUMN);
-    }
+  const room = Math.max(0, area.height - gap - cameraHeight);
 
-    const screenWidth = height * screenAspect;
-    const y = area.y + (area.height - height) / 2;
-    // The camera takes everything left rather than exactly `CAMERA_COLUMN`, so
-    // a narrow recording hands it the surplus instead of leaving a hole.
-    return [
-      { x: area.x, y, width: screenWidth, height },
-      { x: area.x + screenWidth + gap, y, width: Math.max(0, room - screenWidth), height },
-    ];
-  }
-
-  const room = Math.max(0, area.height - gap);
-  let width = area.width;
-  if (width / screenAspect + width / CAMERA_ROW > room) {
-    width = room / (1 / screenAspect + 1 / CAMERA_ROW);
-  }
+  // The screen takes the whole width unless that makes the pair too tall, in
+  // which case it takes whatever height is left. The camera does not shrink
+  // with it: it was asked for at a size, and quietly overriding that is what
+  // this change exists to stop.
+  const width = Math.min(area.width, Math.max(1, room * screenAspect));
 
   const screenHeight = width / screenAspect;
   const x = area.x + (area.width - width) / 2;
+
   return [
     { x, y: area.y, width, height: screenHeight },
-    { x, y: area.y + screenHeight + gap, width, height: Math.max(0, room - screenHeight) },
+    {
+      // Centred under the screen rather than aligned to either edge: it is the
+      // secondary picture, and hanging it off one side makes the frame read as
+      // lopsided rather than as deliberate.
+      x: area.x + (area.width - cameraWidth) / 2,
+      y: area.y + screenHeight + gap,
+      width: cameraWidth,
+      height: cameraHeight,
+    },
   ];
 }
 
@@ -3502,8 +3704,11 @@ function place(
 function radiusFor(shape: CameraShape, edge: number): number {
   if (shape === "rounded") return edge * 0.18;
   // Modest, because the point of `wide` is the whole picture — a heavy round
-  // starts eating the corners of what it was chosen to show.
-  if (shape === "wide") return edge * 0.12;
+  // starts eating the corners of what it was chosen to show. `portrait` is the
+  // same picture stood on end and takes the same restraint; measured off the
+  // shorter edge, as every radius here is, so a tall bubble is not rounded
+  // proportionally harder than a wide one.
+  if (shape === "wide" || shape === "portrait") return edge * 0.12;
   return edge / 2;
 }
 

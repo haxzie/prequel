@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, type ComponentType } from "react";
 
 import type { MediaDevice } from "../../../shared/contract";
-import { PANEL_INSET, withoutDeviceIds } from "../../../shared/contract";
+import { withoutDeviceIds } from "../../../shared/contract";
 import { useAudioLevel } from "../hooks/useAudioLevel";
 import { useDock } from "../hooks/useDock";
 import { cn } from "../lib/cn";
@@ -50,7 +50,14 @@ interface DeviceMenuProps {
    */
   meter?: boolean;
   open: boolean;
-  onToggle: () => void;
+  /**
+   * Opens or closes the chooser, reporting the centre of the control that did
+   * it in window coordinates.
+   *
+   * The menu is its own window now, so main places it — and the only frame
+   * this renderer can measure in is its own window's.
+   */
+  onToggle: (anchorX: number) => void;
   /**
    * Reports the whole device, not just its id: the label is what the native
    * recorder can resolve, since Chromium's ids are salted per origin.
@@ -101,25 +108,15 @@ export function DeviceMenu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, selected?.deviceId, selectedId]);
 
-  // Centred on its device by default, then nudged back inside the window if
-  // that would hang it over an edge — which it does for the rightmost device,
-  // whose menu is wider than the control that opened it.
-  const menu = useRef<HTMLUListElement>(null);
-  useLayoutEffect(() => {
-    const element = menu.current;
-    if (!open || !element) return;
-
-    element.style.transform = "translateX(-50%)";
-    const { left, right } = element.getBoundingClientRect();
-
-    const past = right - (window.innerWidth - PANEL_INSET);
-    const before = PANEL_INSET - left;
-    const shift = past > 0 ? -past : before > 0 ? before : 0;
-
-    if (shift !== 0) {
-      element.style.transform = `translateX(calc(-50% + ${Math.round(shift)}px))`;
-    }
-  }, [open, devices.length, selectedId]);
+  // The chooser's anchor: this control's centre, handed to main when it opens.
+  // Nudging a menu back inside the screen edge used to happen here against
+  // `window.innerWidth`, and belongs to main now — the edge that matters is the
+  // display's, not this window's.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const toggle = () => {
+    const box = trigger.current?.getBoundingClientRect();
+    onToggle(box ? box.left + box.width / 2 : 0);
+  };
 
   const levelRef = useAudioLevel(
     meter && enabled && devicesLive ? (selected?.deviceId ?? null) : null,
@@ -131,7 +128,7 @@ export function DeviceMenu({
 
   // With exactly one device there is nothing to choose between, so turning it
   // on picks it — no menu, no decision.
-  const toggle = () => {
+  const flip = () => {
     if (enabled) {
       onSelect(null);
       return;
@@ -152,13 +149,13 @@ export function DeviceMenu({
       : `${name} ${status}`;
 
   return (
-    <div className="relative flex items-center gap-0.5">
+    <div className="flex items-center gap-0.5">
       <IconButton
         off={!enabled}
         title={unavailable ? label : `Turn ${kind} ${enabled ? "off" : "on"}`}
         aria-pressed={enabled}
         disabled={unavailable}
-        onClick={toggle}
+        onClick={flip}
       >
         {!enabled ? (
           <OffIcon />
@@ -184,6 +181,7 @@ export function DeviceMenu({
           "which device is this, and can I change it", so making only the
           chevron clickable turns a wide, obvious target into a 16px one. */}
       <button
+        ref={trigger}
         type="button"
         className={cn(
           "no-drag flex h-[30px] items-center gap-1.5 rounded-lg px-1.5 text-xs text-dock-fg",
@@ -194,7 +192,7 @@ export function DeviceMenu({
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={unavailable}
-        onClick={onToggle}
+        onClick={toggle}
       >
         <span
           className={cn("size-1.5 flex-none rounded-full", STATUS_COLOUR[status][kind])}
@@ -209,62 +207,6 @@ export function DeviceMenu({
         </span>
         <ChevronIcon />
       </button>
-
-      {open && (
-        <ul
-          ref={menu}
-          // Never taller than the headroom the window was grown by, or the top
-          // of the list is clipped away again. Opaque, because a menu has to be
-          // readable over whatever it covers — including the panel's own
-          // controls. The horizontal transform is owned by the effect above.
-          className={
-            "no-drag absolute bottom-[calc(100%+10px)] left-1/2 z-10 m-0 max-h-[180px] " +
-            "min-w-[200px] max-w-[320px] list-none overflow-y-auto rounded-[10px] border " +
-            "border-dock-line bg-[#2c333d] p-1 shadow-[0_6px_20px_rgba(0,0,0,0.45)]"
-          }
-          role="listbox"
-          aria-label={`${kind} devices`}
-        >
-          {devices.map((device) => (
-            <li key={device.deviceId}>
-              <MenuItem selected={device.deviceId === selectedId} onClick={() => onSelect(device)}>
-                {device.label}
-              </MenuItem>
-            </li>
-          ))}
-          <li className="mx-1.5 my-1 h-px bg-dock-line" />
-          <li>
-            <MenuItem selected={selectedId === null} onClick={() => onSelect(null)}>
-              Off
-            </MenuItem>
-          </li>
-        </ul>
-      )}
     </div>
-  );
-}
-
-function MenuItem({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={selected}
-      className={cn(
-        "block w-full truncate rounded-[7px] px-[9px] py-1.5 text-left text-xs hover:bg-dock-hover",
-        selected ? "font-semibold text-dock-selected" : "text-dock-fg",
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
   );
 }

@@ -909,6 +909,105 @@ describe("smoothing the pointer's path", () => {
     return worst;
   };
 
+  /** The same harness, with the blur turned up rather than the smoothing. */
+  const blurred = (
+    samples: { at: number; x: number; y: number }[],
+    motionBlur: number,
+    smoothing = 0,
+  ) => {
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cursorSmoothing: smoothing,
+          cursorMotionBlur: motionBlur,
+        },
+      }),
+      { shapes: SHAPES, size: 0.035, hideAfter: null, samples },
+    ).items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return item;
+  };
+
+  /** A pointer crossing the frame at a steady rate, left to right. */
+  const SWEEP = Array.from({ length: 10 }, (_, step) => ({
+    at: step * 33_000_000,
+    x: 0.1 + step * 0.08,
+    y: 0.5,
+  }));
+
+  it("smears a moving pointer along its travel and not across it", () => {
+    // The direction is the whole feature: a streak across the path is not
+    // motion blur, it is a smudge, and nothing downstream would catch it —
+    // both rasterisers draw whatever vector they are handed.
+    const middle = blurred(SWEEP, 1).points[4]!;
+
+    expect(middle.smearX).toBeGreaterThan(0);
+    expect(Math.abs(middle.smearY)).toBeLessThan(Math.abs(middle.smearX) / 20);
+  });
+
+  it("leaves a still pointer sharp", () => {
+    const parked = Array.from({ length: 6 }, (_, step) => ({
+      at: step * 33_000_000,
+      x: 0.5,
+      y: 0.5,
+    }));
+
+    for (const point of blurred(parked, 1).points) {
+      expect(Math.hypot(point.smearX, point.smearY)).toBeLessThan(0.001);
+    }
+  });
+
+  it("draws nothing smeared when it is switched off", () => {
+    // The fields still have to be there: absent, they lerp to NaN in both
+    // rasterisers rather than to nothing.
+    for (const point of blurred(SWEEP, 0).points) {
+      expect(point.smearX).toBe(0);
+      expect(point.smearY).toBe(0);
+    }
+  });
+
+  it("caps the streak a teleport would otherwise produce", () => {
+    // A pointer moved between displays, or one whose samples straddle a cut,
+    // has an apparent velocity with no upper bound. Uncapped it draws a bar
+    // across the frame.
+    const jump = [
+      { at: 0, x: 0.01, y: 0.5 },
+      { at: 1_000_000, x: 0.99, y: 0.5 },
+      { at: 2_000_000, x: 0.01, y: 0.5 },
+    ];
+    const item = blurred(jump, 1);
+
+    for (const point of item.points) {
+      expect(Math.hypot(point.smearX, point.smearY)).toBeLessThanOrEqual(item.size * 1.5 + 0.001);
+    }
+  });
+
+  it("measures the streak off the smoothed path, not the raw samples", () => {
+    // Smoothing takes the 30 Hz corners out of the drawn path. A streak taken
+    // off the raw samples would point where the recording jittered rather than
+    // where the pointer visibly went — worst exactly at the corners, which is
+    // where a wrong direction is most visible.
+    const raw = blurred(ZIGZAG, 1, 0);
+    const smooth = blurred(ZIGZAG, 1, 1);
+
+    const spread = (item: ReturnType<typeof blurred>) => {
+      const angles = item.points
+        .filter((point) => Math.hypot(point.smearX, point.smearY) > 0.01)
+        .map((point) => Math.atan2(point.smearY, point.smearX));
+      let worst = 0;
+      for (let i = 1; i < angles.length; i += 1) {
+        const step = Math.abs(angles[i]! - angles[i - 1]!);
+        worst = Math.max(worst, Math.min(step, Math.PI * 2 - step));
+      }
+      return worst;
+    };
+
+    expect(spread(smooth)).toBeLessThan(spread(raw));
+  });
+
   it("takes the corners out of a path sampled slower than the frame rate", () => {
     // The failure the control exists for. Drawn as sampled, every one of those
     // turns lands inside a single frame and the pointer changes direction in
@@ -965,9 +1064,9 @@ describe("smoothing the pointer's path", () => {
 
 describe("cursorAt", () => {
   const points = [
-    { at: 0, x: 0, y: 0, scale: 1, visible: true },
-    { at: 100, x: 100, y: 200, scale: 1, visible: true },
-    { at: 200, x: 0, y: 0, scale: 1, visible: false },
+    { at: 0, x: 0, y: 0, scale: 1, visible: true, smearX: 0, smearY: 0 },
+    { at: 100, x: 100, y: 200, scale: 1, visible: true, smearX: 4, smearY: 8 },
+    { at: 200, x: 0, y: 0, scale: 1, visible: false, smearX: 0, smearY: 0 },
   ];
 
   it("interpolates between two samples", () => {
@@ -989,6 +1088,13 @@ describe("cursorAt", () => {
 
   it("has nothing to say about an empty track", () => {
     expect(cursorAt([], 0)).toBeNull();
+  });
+
+  it("interpolates the streak with the position", () => {
+    // The smear is carried on the point rather than derived from the two
+    // neighbours here, so it has to be lerped like everything else — left
+    // un-lerped it would step at each sample while the pointer moved smoothly.
+    expect(cursorAt(points, 50)).toMatchObject({ smearX: 2, smearY: 4 });
   });
 });
 
@@ -1242,11 +1348,20 @@ describe("the arrangements", () => {
     expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
   });
 
-  it("matches the camera to the screen's width, under it", () => {
+  it("sets the camera under the screen, narrower than it and centred", () => {
+    // Deliberately *not* matched to the screen's width, which is what this did
+    // once. A webcam stretched the full width of a 16:9 recording is a band of
+    // face across the bottom of the frame, and the arrangement reads as two
+    // screens rather than as a recording with someone talking over it.
     const { screen, camera } = boxes("stacked");
 
-    expect(camera!.area.width).toBeCloseTo(screen!.area.width);
-    expect(camera!.area.x).toBeCloseTo(screen!.area.x);
+    // At the default camera size against a 16:9 recording. Not an invariant —
+    // the camera keeps whatever size its own controls ask for, and a tall
+    // recording shrinks the screen past it.
+    expect(camera!.area.width).toBeLessThan(screen!.area.width);
+    // Centred on the screen, so neither edge is favoured.
+    const middle = (box: Rect) => box.x + box.width / 2;
+    expect(middle(camera!.area)).toBeCloseTo(middle(screen!.area));
     expect(camera!.area.y).toBeGreaterThan(screen!.area.y + screen!.area.height - 0.001);
     expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
   });
@@ -1285,12 +1400,56 @@ describe("the arrangements", () => {
         );
         const row = stacked.camera!.area;
 
+        // Stacked, the camera's box comes from its own settings and is not
+        // negotiated with the screen at all — so there is nothing here to
+        // defend about its shape. A tall recording shrinks the screen until
+        // the camera is the wider of the two, which is correct: the size asked
+        // for is the size drawn.
+        //
+        // What still has to hold is that the two never collide and neither
+        // leaves the frame, however little room the recording's shape leaves.
         expect(row.height, where).toBeGreaterThan(0);
-        expect(row.width / row.height, where).toBeLessThanOrEqual(2 + 1e-6);
-        expect(row.width, where).toBeCloseTo(stacked.screen!.area.width);
+        expect(stacked.screen!.area.height, where).toBeGreaterThan(0);
         expect(overlap(stacked.screen!.area, row), where).toBeCloseTo(0);
+        expect(row.y + row.height, where).toBeLessThanOrEqual(frame.height + 1e-6);
       }
     }
+  });
+
+  it("takes the stacked camera's size from its own controls", () => {
+    // The change this pins: the camera under the screen is a bubble with its
+    // own Size and Shape, not the leftover half of a split. Doubling the size
+    // control has to double what is drawn — it used to do nothing at all here,
+    // because the arrangement worked the box out from the screen's width.
+    const at = (cameraHeight: number) =>
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset: "stacked", cameraHeight },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: CAMERA },
+      ).camera!.area;
+
+    expect(at(0.3).height).toBeCloseTo(at(0.15).height * 2);
+  });
+
+  it("runs the flush pair to the frame's own edges", () => {
+    // The whole point of the arrangement: `beside` inside no padding at all.
+    // A stray gap here would be indistinguishable from `beside` at a small
+    // padding, which is the one thing this preset exists not to be.
+    const { screen, camera } = boxes("beside-flush");
+
+    // Edge to edge across the frame, and meeting in the middle with no gap.
+    expect(screen!.area.x).toBeCloseTo(0);
+    expect(camera!.area.x).toBeCloseTo(screen!.area.x + screen!.area.width);
+    expect(camera!.area.x + camera!.area.width).toBeCloseTo(LANDSCAPE.width);
+    // Matched in height to each other, and centred rather than stretched to the
+    // frame's full height: the screen box keeps the recording's own aspect, and
+    // forcing it taller would crop the thing being demonstrated.
+    expect(camera!.area.height).toBeCloseTo(screen!.area.height);
+    expect(screen!.area.y + screen!.area.height / 2).toBeCloseTo(LANDSCAPE.height / 2);
+    // No card, because there is no frame left for a picture to sit on.
+    expect(screen!.card).toBe(false);
+    expect(camera!.card).toBe(false);
   });
 
   it("still leaves the screen the prominent one beside a wide recording", () => {
@@ -1713,6 +1872,37 @@ describe("zooming", () => {
     for (const at of [2 * S, 3 * S, 4 * S, 5 * S, 6 * S]) {
       expect(rectAt(keys, at, base, radius).width).toBeCloseTo(base.width * 2, 3);
     }
+  });
+
+  it("blends a tilted key into a flat one instead of snapping", () => {
+    // The bug: a border on a perspective zoom would hold the last tilt for a
+    // whole span and then jump to the frame's rectangle in a single frame.
+    // `framedKey` drops the quad once a tilted picture covers the frame, so a
+    // track legitimately has a tilted key next to a flat one — and taking
+    // whichever quad existed and holding it made that boundary a cliff.
+    //
+    // A rectangle is a quad whose corners are its own, so the two blend.
+    const flat = { at: 2 * S, x: 0, y: 0, width: 100, height: 50, radius: 0 };
+    const tilted = {
+      ...flat,
+      at: S,
+      // Corners in `rotatedQuad`'s order, pulled in at the top: a picture
+      // leaning away from the viewer.
+      quad: [20, 10, 1, 80, 10, 1, 0, 50, 1, 100, 50, 1],
+    };
+
+    const corner = (at: number) => rectAt([tilted, flat], at, flat, 0).quad!.slice(0, 2);
+
+    // Arriving at the flat key, the top-left corner has reached the rectangle's
+    // own — not jumped to it from wherever the tilt left it.
+    const [x, y] = corner(2 * S - 1);
+    expect(x).toBeCloseTo(flat.x, 1);
+    expect(y).toBeCloseTo(flat.y, 1);
+
+    // And it got there by travelling: halfway along it is halfway between.
+    const [midX, midY] = corner(1.5 * S);
+    expect(midX).toBeCloseTo(10, 3);
+    expect(midY).toBeCloseTo(5, 3);
   });
 
   it("eases into the slice rather than starting from it", () => {

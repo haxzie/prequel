@@ -46,6 +46,7 @@ export type LayoutPreset =
   | "over-full"
   | "over-padded"
   | "beside"
+  | "beside-flush"
   | "stacked"
   | "split"
   | "split-stacked"
@@ -56,13 +57,14 @@ export type LayoutPreset =
   | "custom";
 
 /**
- * `wide` keeps the camera's own proportions and only rounds its corners; every
- * other shape is square. The shape sets the corner radius and nothing else —
+ * `wide` keeps the camera's own proportions and only rounds its corners,
+ * `portrait` stands the same crop on end for a frame that is taller than it is
+ * wide; every other shape is square. The shape sets the corner radius and nothing else —
  * picking one writes `cameraWidth`, and the geometry reads that. Deriving the
  * width from the shape instead would mean a resized bubble snapped back to a
  * square the next time anyone touched the shape control.
  */
-export type CameraShape = "circle" | "squircle" | "rounded" | "wide";
+export type CameraShape = "circle" | "squircle" | "rounded" | "wide" | "portrait";
 export type CameraCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface LayoutSettings {
@@ -175,6 +177,19 @@ export interface LayoutSettings {
    * exchange for a continuous path; 0 draws the samples as they were taken.
    */
   cursorSmoothing: number;
+  /**
+   * How far the pointer smears along its own travel, from 0 to 1.
+   *
+   * A pointer flung across the screen is drawn as crisply as one standing
+   * still, which is the one thing about it that never happens in real footage —
+   * and next to a smoothed path a hard sprite moving fast reads as a sticker
+   * sliding over the picture rather than as something in it.
+   *
+   * A share of a full shutter rather than a length: the streak's length comes
+   * from how fast the pointer is actually going, and what this chooses is how
+   * much of that speed is allowed to show. 0 draws it as sharp as it ever was.
+   */
+  cursorMotionBlur: number;
   /**
    * Which pointer to draw. See `CURSOR_STYLES`.
    *
@@ -584,6 +599,11 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // Enough to take the 30 Hz corners out of an ordinary move without the
   // pointer visibly trailing the hand that made it.
   cursorSmoothing: 0.4,
+  // Enough to soften a fast flick without the pointer smearing while it is
+  // being read. Deliberately below half a shutter: the pointer is the one thing
+  // on screen a viewer is actively following, and a streak long enough to
+  // notice is a streak long enough to lose it in.
+  cursorMotionBlur: 0.4,
   // Only what a *new* project starts with. An existing `project.json` names its
   // own style and keeps it, so nobody's edit changes shape underneath them.
   cursorStyle: "modern-black",
@@ -926,6 +946,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         ...DEFAULT_LAYOUT,
         ...beforeShrinking(stored.defaults?.layout),
         ...beforeSmoothing(stored.defaults?.layout),
+        ...beforeMotionBlur(stored.defaults?.layout),
         ...migrateLayout(stored.defaults?.layout),
       },
       background: { ...DEFAULT_BACKGROUND, ...stored.defaults?.background },
@@ -981,6 +1002,21 @@ function beforeSmoothing(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cursorSmoothing" in stored) return undefined;
   return { cursorSmoothing: 0 };
+}
+
+/**
+ * Leaves the pointer sharp in a project written before motion blur existed.
+ *
+ * `beforeSmoothing`'s rule, and for the third time the same reason: a new
+ * default that changes how an edit already on disk plays back is a project that
+ * came back different from the one its author saved. New recordings get the
+ * blur; an old one is one slider away from it.
+ */
+function beforeMotionBlur(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cursorMotionBlur" in stored) return undefined;
+  return { cursorMotionBlur: 0 };
 }
 
 /**

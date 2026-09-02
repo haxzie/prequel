@@ -38,7 +38,7 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
-import { CLIP_H, TimelineStrip } from "./TimelineStrip";
+import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { useEditorPlayback } from "./useEditorPlayback";
 import { useExport } from "./useExport";
 import { useFilmstrip } from "./useFilmstrip";
@@ -277,7 +277,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const peaks = useWaveforms(session.media, session.manifest.duration);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
-  const filmstrip = useFilmstrip(session.media, session.manifest.duration, CLIP_H);
+  const filmstrip = useFilmstrip(session.media, session.manifest.duration, CLIP_FRAME_H);
 
   // The span the camera actually covers, not just whether one was recorded.
   // It opens a few hundred ms after the screen, so a clip cut from the very
@@ -360,7 +360,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           column beside the inspector made it narrower than the thing it
           measures — the zoom had to work harder for no reason. */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1">
+        {/* The dots and the fill are on the row rather than on the column
+            below, so the surface runs under the inspector as well as under the
+            composition — one board with the panels sitting on it, rather than a
+            patterned area and a plain one meeting at a seam. A child painting
+            its own background would cover the pattern, which is why neither
+            column has one.
+
+            Frosted only slightly: the wallpaper reads as depth behind the
+            board, and any more of it competes with the composition, which is
+            the one thing in this window being looked at. */}
+        <div className="dot-grid flex min-h-0 flex-1 bg-editor-scrim">
           {/* `min-h-0` as well as `min-w-0`: a flex item defaults to
             `min-height: auto`, so this column refuses to shrink below its
             content — and the canvas reports an intrinsic 1920×1080. Without it
@@ -368,7 +378,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             the shell's `overflow-hidden`. */}
           {/* The frame bar and the composition share one surface, so the bar
               reads as part of the canvas rather than as chrome above it. */}
-          <div className="dot-grid flex min-h-0 min-w-0 flex-1 flex-col bg-editor-bg">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <FrameBar
               frame={state.project.frame}
               recorded={screenSource}
@@ -597,10 +607,16 @@ function Shell({
     // `min-h-0 flex-1` rather than `h-full`: this is a flex child of `#root`,
     // and a flex item that cannot shrink below its content pushes the bottom of
     // the window out of view instead of letting the middle give way.
-    <div className="editor-theme relative flex min-h-0 flex-1 flex-col overflow-hidden bg-editor-bg text-editor-fg">
+    <div className="editor-theme relative flex min-h-0 flex-1 flex-col overflow-hidden bg-editor-glass text-editor-fg">
       {/* Dragging the bar moves the window, and the inset traffic lights need
           the room on the left. */}
-      <header className="drag flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line pr-3 pl-20">
+      {/* Nearly solid, like the transport and the timeline at the other end:
+          the window's two bands of controls read as the frame around the work,
+          and the frosted board between them is the work. It is also what lets
+          this bar keep `--editor-muted` for the breadcrumb — that tone was
+          chosen against an opaque surface, and at the shell's own frost it had
+          the wallpaper coming up through it. */}
+      <header className="drag flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line bg-editor-veil pr-3 pl-20">
         {/* `no-drag`, or this moves the window instead of navigating — the one
             mistake this bar makes easy to make. */}
         <button

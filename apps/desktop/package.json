@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "node scripts/sync-backgrounds.mjs && electron-vite dev",
+    "dev": "node scripts/sync-backgrounds.mjs && electron-vite dev --watch",
     "build": "node scripts/sync-backgrounds.mjs && electron-vite build",
     "preview": "electron-vite preview",
     "package": "node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",

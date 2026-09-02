@@ -27,11 +27,14 @@ interface MenuItem {
   label?: string;
   enabled?: boolean;
   type?: string;
+  icon?: { template: boolean; pixels: number; scaleFactor: number };
   click?: () => void;
 }
 type MenuTemplate = MenuItem[];
 /** Flipped by the test that checks an unreadable icon is reported. */
 let iconIsEmpty = false;
+/** Flipped by the test that checks an unresolvable SF Symbol is reported. */
+let symbolIsEmpty = false;
 /**
  * What `getBounds` answers, flipped by the placement tests.
  *
@@ -101,6 +104,29 @@ vi.mock("electron", () => {
         isEmpty: () => iconIsEmpty,
         toString: () => path,
         path,
+      }),
+      // The menu's SF Symbols. The real one answers an *empty image* for a name
+      // that is not a symbol rather than throwing, and hands back something
+      // whose size is not the `pointSize` asked for — both of which the menu
+      // icons depend on, so the fake reproduces both.
+      createFromNamedImage: () => ({
+        isEmpty: () => symbolIsEmpty,
+        // The real one answers 1× at roughly two and a half times the
+        // `pointSize`, which is the whole reason the pixels are re-tagged
+        // through `createFromBuffer` rather than resized in place.
+        getScaleFactors: () => [1],
+        getSize: () => ({ width: 66, height: 62 }),
+        // Only the requested pixel height has to survive into the buffer for
+        // the assertions to have something to read.
+        resize: ({ height }: { height: number }) => ({ toPNG: () => Buffer.from([height]) }),
+      }),
+      createFromBuffer: (buffer: Buffer, { scaleFactor }: { scaleFactor: number }) => ({
+        pixels: buffer[0],
+        scaleFactor,
+        template: false,
+        setTemplateImage(value: boolean) {
+          this.template = value;
+        },
       }),
     },
   };
@@ -300,6 +326,51 @@ describe("the tray icon", () => {
     }
 
     expect(errors.some((args) => String(args[0]).includes("tray icon is empty"))).toBe(false);
+  });
+});
+
+/**
+ * The glyphs on the menu rows.
+ *
+ * Both of these are about what `createFromNamedImage` does *not* do on its own,
+ * and both fail silently: the menu builds either way and merely looks wrong —
+ * a glyph that vanishes into a highlighted row, a row taller than its
+ * neighbours, or a blank gap where a name was mistyped.
+ */
+describe("the menu icons", () => {
+  it("draws every glyph as a template at one height", () => {
+    const iconned = openMenu().filter((item) => item.icon);
+
+    // Or the loop below asserts nothing at all, which is the way this test
+    // would rot if the icons were ever dropped.
+    expect(iconned.length).toBeGreaterThan(0);
+
+    for (const item of iconned) {
+      // Without the flag the glyph keeps its own dark fill when macOS
+      // highlights the row and disappears into the blue.
+      expect(item.icon?.template).toBe(true);
+      // 26 pixels tagged as 2× is a 13-point glyph drawn sharp. Tagged 1× it
+      // would be a 26-point one, which is twice the row's text and the bug this
+      // pins: `createFromNamedImage` hands back 1× whatever it is asked for.
+      expect(item.icon?.scaleFactor).toBe(2);
+      expect(item.icon?.pixels).toBe(26);
+    }
+  });
+
+  it("reports a symbol that does not resolve", () => {
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+
+    symbolIsEmpty = true;
+    try {
+      openMenu();
+    } finally {
+      symbolIsEmpty = false;
+      console.error = original;
+    }
+
+    expect(errors.some((args) => String(args[0]).includes("no SF Symbol named"))).toBe(true);
   });
 });
 

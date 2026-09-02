@@ -193,6 +193,19 @@ pub struct CursorPoint {
     /// False where the pointer had left the visible crop. Marked rather than
     /// omitted, so a gap is not interpolated straight through.
     pub visible: bool,
+    /// How far the pointer smears here, as a vector in output pixels.
+    ///
+    /// The finished streak rather than a speed, for the reason the editor's
+    /// `CursorPoint` gives: a speed would leave this side and the preview each
+    /// picking a direction and a shutter, and two answers to "where is the
+    /// pointer going" is how the two come to disagree.
+    ///
+    /// Defaulted, so a plan written before motion blur existed loads and draws
+    /// a sharp pointer rather than failing to parse.
+    #[serde(default)]
+    pub smear_x: f64,
+    #[serde(default)]
+    pub smear_y: f64,
 }
 
 /// One sampled destination rectangle, in output pixels, at a source time.
@@ -294,16 +307,22 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
     // The corners ride along. Interpolating twelve numbers between two
     // projections is not the same as projecting the interpolated angle, but a
     // thirtieth of a second apart the difference is far below a pixel.
-    let quad = if a.quad.len() == b.quad.len() {
-        a.quad
+    //
+    // A key with no corners is filled in from its own rectangle rather than
+    // treated as having nothing to say. Taking whichever quad existed and
+    // holding it across the span put a hard jump wherever a tilted key sits
+    // next to a flat one — which is exactly what the editor's `framedKey`
+    // produces when a tilted picture grows to cover the frame, and it showed as
+    // a border snapping to the frame mid-zoom. Mirrors `cornersOf` in
+    // `apps/desktop/src/shared/layout.ts`.
+    let quad: Vec<f64> = if a.quad.is_empty() && b.quad.is_empty() {
+        Vec::new()
+    } else {
+        corners_of(a)
             .iter()
-            .zip(&b.quad)
+            .zip(corners_of(b).iter())
             .map(|(from, to)| lerp(*from, *to))
             .collect()
-    } else if b.quad.is_empty() {
-        a.quad.clone()
-    } else {
-        b.quad.clone()
     };
 
     let focus = match (a.focus, b.focus) {
@@ -504,6 +523,24 @@ pub struct CaptionDraw {
     pub dst: Rect,
 }
 
+/// A key's four corners, projected or flat.
+///
+/// The corner order the editor writes and the shaders read: top-left,
+/// top-right, bottom-left, bottom-right, three numbers each. An untilted key's
+/// divisor is 1 at every corner, which makes it the identity projection rather
+/// than a special case.
+fn corners_of(key: &RectKey) -> Vec<f64> {
+    if key.quad.len() == 12 {
+        return key.quad.clone();
+    }
+
+    let right = key.x + key.width;
+    let bottom = key.y + key.height;
+    vec![
+        key.x, key.y, 1.0, right, key.y, 1.0, key.x, bottom, 1.0, right, bottom, 1.0,
+    ]
+}
+
 /// Where the pointer is at a source time, or None if it is not on screen.
 ///
 /// Mirrors `cursorAt` in `apps/desktop/src/shared/layout.ts`. The two are
@@ -521,6 +558,8 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
             x: first.x,
             y: first.y,
             scale: first.scale,
+            smear_x: first.smear_x,
+            smear_y: first.smear_y,
         });
     }
     if at >= last.at {
@@ -528,6 +567,8 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
             x: last.x,
             y: last.y,
             scale: last.scale,
+            smear_x: last.smear_x,
+            smear_y: last.smear_y,
         });
     }
 
@@ -553,6 +594,8 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
         scale: a.scale + (b.scale - a.scale) * t,
+        smear_x: a.smear_x + (b.smear_x - a.smear_x) * t,
+        smear_y: a.smear_y + (b.smear_y - a.smear_y) * t,
     })
 }
 
@@ -562,6 +605,8 @@ pub struct Placed {
     pub x: f64,
     pub y: f64,
     pub scale: f64,
+    pub smear_x: f64,
+    pub smear_y: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -739,6 +784,8 @@ mod tests {
                 y: 0.0,
                 scale: 1.0,
                 visible: true,
+                smear_x: 0.0,
+                smear_y: 0.0,
             },
             CursorPoint {
                 at: 100,
@@ -746,6 +793,8 @@ mod tests {
                 y: 200.0,
                 scale: 1.0,
                 visible: true,
+                smear_x: 4.0,
+                smear_y: 8.0,
             },
             CursorPoint {
                 at: 200,
@@ -753,6 +802,8 @@ mod tests {
                 y: 0.0,
                 scale: 1.0,
                 visible: false,
+                smear_x: 0.0,
+                smear_y: 0.0,
             },
         ]
     }
@@ -762,6 +813,54 @@ mod tests {
         let point = cursor_at(&track(), 50).unwrap();
         assert_eq!(point.x, 50.0);
         assert_eq!(point.y, 100.0);
+    }
+
+    /// The same assertion `cursorAt` makes in `layout.test.ts`, against the
+    /// same numbers: the streak is carried on the point rather than derived
+    /// from the neighbours here, so it has to lerp like the position does.
+    /// The same boundary `layout.test.ts` pins on the editor's side: a tilted
+    /// key next to a flat one must blend rather than hold the tilt and jump.
+    #[test]
+    fn blends_a_tilted_key_into_a_flat_one() {
+        let flat = RectKey {
+            at: 2_000,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 50.0,
+            radius: 0.0,
+            focus: None,
+            vignette: None,
+            quad: Vec::new(),
+        };
+        let tilted = RectKey {
+            at: 1_000,
+            quad: vec![
+                20.0, 10.0, 1.0, 80.0, 10.0, 1.0, 0.0, 50.0, 1.0, 100.0, 50.0, 1.0,
+            ],
+            ..flat.clone()
+        };
+
+        let keys = vec![tilted, flat.clone()];
+        let fallback = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        let half = rect_at(&keys, 1_500, fallback, 0.0);
+
+        // Halfway along, the top-left corner is halfway between the tilt's and
+        // the rectangle's own — not still sitting at the tilt.
+        assert!((half.quad[0] - 10.0).abs() < 1e-6, "x was {}", half.quad[0]);
+        assert!((half.quad[1] - 5.0).abs() < 1e-6, "y was {}", half.quad[1]);
+    }
+
+    #[test]
+    fn interpolates_the_streak_with_the_position() {
+        let point = cursor_at(&track(), 50).unwrap();
+        assert_eq!(point.smear_x, 2.0);
+        assert_eq!(point.smear_y, 4.0);
     }
 
     #[test]
@@ -775,6 +874,8 @@ mod tests {
             y: 9.0,
             scale: 1.0,
             visible: true,
+            smear_x: 0.0,
+            smear_y: 0.0,
         }];
         assert_eq!(cursor_at(&single, 9999).unwrap().x, 7.0);
     }

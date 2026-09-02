@@ -43,6 +43,7 @@ import {
   ImageIcon,
   LayoutIcon,
   PerspectiveIcon,
+  PortraitIcon,
   RoundedIcon,
   ScreenIcon,
   SolidIcon,
@@ -556,7 +557,15 @@ function freshFraming(layout: LayoutSettings, cameraSource: Size | null): Partia
 const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded"]);
 
 /** Arrangements where the camera is a card beside the screen, not a bubble over it. */
-const SLOTTED = new Set<LayoutPreset>(["beside", "stacked", "split", "split-stacked"]);
+/**
+ * Arrangements that decide the camera's size for themselves.
+ *
+ * `stacked` is deliberately not one of them any more. In the others the camera
+ * is the other half of a split and its size falls out of the space left over,
+ * so a Size control would be a slider that visibly does nothing; there the
+ * bubble is a separate object under the picture, and its own controls set it.
+ */
+const SLOTTED = new Set<LayoutPreset>(["beside", "beside-flush", "split", "split-stacked"]);
 
 /** The webcam bubble. Only reachable when the recording has one. */
 function CameraPanel({
@@ -626,6 +635,12 @@ function CameraPanel({
               label: "Wide",
               title: "The camera at its own size, corners rounded",
               icon: <WideIcon />,
+            },
+            {
+              value: "portrait",
+              label: "Portrait",
+              title: "Taller than it is wide, cropped to the middle of the picture",
+              icon: <PortraitIcon />,
             },
           ]}
           onChange={(value) => {
@@ -785,6 +800,21 @@ function CursorPanel({
           // picks a pointer by how far behind their hand it runs.
           format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
           onChange={(value) => set("layout", "cursorSmoothing", value)}
+        />
+      </Field>
+
+      <Field label="Motion blur" {...field("layout", "cursorMotionBlur")}>
+        <Slider
+          value={layout.cursorMotionBlur}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={off}
+          // A share of a full shutter, shown the way Smoothing above is: the
+          // streak's length comes from how fast the pointer is actually going,
+          // and a figure in pixels would be a number nobody can picture.
+          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+          onChange={(value) => set("layout", "cursorMotionBlur", value)}
         />
       </Field>
 

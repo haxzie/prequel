@@ -24,17 +24,39 @@ const RENDERER_HTML = fileURLToPath(new URL("../renderer/index.html", import.met
  * is recording — which would be visible in the recording.
  */
 export function createPanel(options: BrowserWindowConstructorOptions = {}): BrowserWindow {
+  // A vibrant panel is the other way round from a transparent one, on all three
+  // of these.
+  //
+  // Transparency: `createWindow` explains it below and the same applies here —
+  // Electron makes the web contents transparent itself when vibrancy is on, and
+  // asking for both has a long history of painting the window opaque white. An
+  // opaque `backgroundColor` would sit between the material and the contents
+  // and hide it completely, which looks exactly like vibrancy not working.
+  //
+  // Shadow and corners: a CSS pill inside a larger transparent window has to
+  // draw its own, because macOS would shape the window's to the rectangle. A
+  // vibrant window has no such margin — the material fills the window, so the
+  // window *is* the pill, and macOS shaping the corners and the shadow to it is
+  // now the right answer rather than the wrong one. It is also the only answer:
+  // the material sits behind the contents and cannot be clipped from CSS.
+  const vibrant = options.vibrancy != null;
+
   const window = new BrowserWindow({
     show: false,
     frame: false,
-    transparent: true,
-    // The window is a rectangle; the visible control is a pill or a circle
-    // drawn inside it by CSS. macOS shapes both the shadow and the corner mask
-    // to the *window*, so leaving these on draws a second, squarer outline
-    // around the one the content draws. The renderer insets its content by
-    // `PANEL_INSET` and casts its own shadow into that margin instead.
-    hasShadow: false,
-    roundedCorners: false,
+    ...(vibrant
+      ? { hasShadow: true, roundedCorners: true }
+      : {
+          transparent: true,
+          // The window is a rectangle; the visible control is a pill or a circle
+          // drawn inside it by CSS. macOS shapes both the shadow and the corner
+          // mask to the *window*, so leaving these on draws a second, squarer
+          // outline around the one the content draws. The renderer insets its
+          // content by `PANEL_INSET` and casts its own shadow into that margin
+          // instead.
+          hasShadow: false,
+          roundedCorners: false,
+        }),
     resizable: false,
     movable: false,
     minimizable: false,
@@ -44,6 +66,10 @@ export function createPanel(options: BrowserWindowConstructorOptions = {}): Brow
     // macOS-only. Non-activating panel: clickable without taking focus.
     type: "panel",
     ...options,
+    // After `options`, not before, for the reason `createWindow` gives below:
+    // an opaque colour here is composited over the material and the result is
+    // indistinguishable from vibrancy being off.
+    ...(vibrant ? { backgroundColor: "#00000000" } : {}),
     webPreferences: {
       preload: PRELOAD,
       sandbox: false,
@@ -89,6 +115,19 @@ export function createWindow(options: BrowserWindowConstructorOptions = {}): Bro
     // strip.
     titleBarStyle: "hiddenInset",
     ...options,
+    // A vibrant window puts an `NSVisualEffectView` behind the web contents,
+    // and an opaque `backgroundColor` sits between the two: the material is
+    // built, composited under a solid rectangle, and never seen. Forced here
+    // rather than trusted to the caller, because the result looks exactly like
+    // a window with no vibrancy at all — which reads as the option not working
+    // rather than as a background left switched on.
+    //
+    // `transparent: true` is deliberately not set alongside it. Electron makes
+    // the web contents transparent itself when vibrancy is on, and asking for
+    // both has a long history of painting the window opaque white instead.
+    // Nothing may call `setBackgroundColor` on it afterwards either, for the
+    // same reason the constructor value has to go.
+    ...(options.vibrancy ? { backgroundColor: "#00000000" } : {}),
     webPreferences: {
       preload: PRELOAD,
       sandbox: false,

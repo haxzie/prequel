@@ -52,13 +52,44 @@ const RULER_PAD = 12;
 /** Space under the ruler, so its labels do not sit on top of the clips. */
 const TRACK_GAP = 10;
 /**
- * Clip row height, and so the height of a filmstrip cell.
+ * The frame a clip is drawn in, on all four sides.
  *
- * Exported because the strip's frames are extracted at exactly this size — the
- * sheet is drawn unscaled, so the two have to agree or every cell shows part of
- * its neighbour.
+ * One number rather than a Tailwind `border-y-*`, because the row height below
+ * is derived from it. Written as a border width in `style` for the same reason
+ * — a utility class and this constant would be two places to change and one
+ * would be forgotten.
+ *
+ * Thinner than the caps on purpose. The two ends are drag targets and have to
+ * be wide enough to hit; the top and bottom are only closing the frame, and at
+ * the caps' width they took a fifth of the row's height to say so.
  */
-export const CLIP_H = 38;
+const CLIP_EDGE = 2;
+
+/**
+ * The height of a filmstrip cell, and so of a clip's *inner* box.
+ *
+ * The strip's frames are extracted at exactly this size and the sheet is drawn
+ * unscaled, so the two have to agree or every cell shows part of its neighbour.
+ * Kept separate from the row height below: framing the clip has to take its
+ * room from the row rather than from the picture, or every thumbnail is
+ * silently cropped by twice the band.
+ */
+export const CLIP_FRAME_H = 38;
+
+/**
+ * The zoom bar's frame, which is thinner than a clip's.
+ *
+ * Not `CLIP_EDGE`, though it was for a while. A clip's frame is drawn in a
+ * purple close to its own fill and reads as the edge of a picture; a zoom's is
+ * an opaque light blue around a wash of the same colour, and at the same width
+ * that outline is the loudest thing in the row — the bar becomes its border.
+ * The two rows still agree on radius, height and ring; they differ here because
+ * the same number does not buy the same weight on both.
+ */
+const ZOOM_EDGE = 1;
+
+/** Clip row height: the picture, plus the band above and below it. */
+export const CLIP_H = CLIP_FRAME_H + CLIP_EDGE * 2;
 
 /**
  * Zoom range, in pixels per second.
@@ -342,7 +373,7 @@ export function TimelineStrip({
   return (
     // Padded to match the transport above it, now that there is no track
     // column holding the strip off the window edge.
-    <div className="flex flex-none flex-col border-t border-editor-line px-4 pb-4">
+    <div className="flex flex-none flex-col bg-editor-veil px-4 pb-4">
       <div
         ref={attachScroller}
         className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
@@ -725,14 +756,54 @@ function Clip({
     <div
       className={cn(
         "group relative min-w-1 overflow-hidden rounded-lg border",
-        "border-slice-edge bg-slice-fill transition-[opacity,background-color,border-color]",
-        // The whole clip dims rather than only its fill, so its label and edge
-        // recede together — a full-strength border on a faded body reads as a
-        // rendering glitch rather than as "not selected".
-        selected ? "opacity-100" : "opacity-60",
-        !selected && "hover:opacity-80",
+        "transition-[background-color,border-color,outline-color]",
+        // Two solid steps of the same purple, not one pair dimmed — see
+        // `--slice-fill`. This is what says "selected"; the ring below says
+        // "the pointer is talking to this one", and they are different
+        // questions. Hover deliberately does *not* take the active pair: it
+        // already draws the full ring, and brightening the fill as well would
+        // make a hovered clip identical to the selected one.
+        selected
+          ? "border-slice-edge-active bg-slice-fill-active"
+          : "border-slice-edge bg-slice-fill",
+        // `outline` rather than `border` or `ring` because an outline is
+        // painted after the element's children — so it runs across the two
+        // handle bands instead of stopping short of them, and the clip reads
+        // as one ringed shape rather than a body with two bare caps.
+        //
+        // Hover and selection are drawn identically, deliberately. The ring is
+        // the answer to "which clip is this pointer talking to", and a dimmer
+        // version of it for hover made that answer arrive in two strengths for
+        // no difference the user acts on.
+        // `outline-transparent` belongs to the unselected branch, not beside
+        // the width. Both it and `outline-slice-ring` are plain `outline-color`
+        // utilities of equal specificity, so which one wins is decided by the
+        // order Tailwind emits them in its own stylesheet and not by the order
+        // they are written here — and it emitted the transparent one last. The
+        // selected clip lost its ring outright, while hover kept one, because
+        // `hover:` adds a pseudo-class and outranks them both. Nothing about
+        // the class list looked wrong.
+        // The offset is the outline's full width, not half of it.
+        // `outline-offset` moves the *outline edge*, and the ring is painted
+        // outward from there — so at `-1` with a 2px outline a pixel of it
+        // lands outside the box. Between clips that overhang is invisible, it
+        // falls on the neighbour; on the first and last it lands outside the
+        // scroller's content box, where `overflow-x` clips it, and the ring
+        // came out cut off down the two edges of the screen and nowhere else.
+        // At `-2` it ends flush with the box and is wholly inside it.
+        "outline-2 -outline-offset-2",
+        selected ? "outline-slice-ring" : "outline-transparent hover:outline-slice-ring",
       )}
-      style={{ width: `${(slice.duration / Math.max(duration, 1)) * 100}%` }}
+      style={{
+        width: `${(slice.duration / Math.max(duration, 1)) * 100}%`,
+        // All four sides, so the clip reads as a framed picture. It used to be
+        // the top and bottom only, which was invisible while the caps covered
+        // the sides at rest — now that they fade out, a 1px side against a 2px
+        // top reads as a rendering fault. Set here rather than as a border
+        // utility so `CLIP_EDGE` stays the one place the thickness lives: the
+        // row height is derived from it.
+        borderWidth: CLIP_EDGE,
+      }}
       onPointerDown={onPointerDown}
     >
       {/* The recording's frames, as the clip's own backdrop.
@@ -799,8 +870,12 @@ function Clip({
           this app records — so it reads as the anchor the camera icon appears
           beside rather than as news in itself. Tinted off the clip rather than
           off the panel: `--editor-muted` is picked to sit on a near-black
-          surface and all but disappears on purple. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1.5 px-1.5 py-1 text-white/70">
+          surface and all but disappears on purple.
+
+          Padded clear of the edge bands rather than tucked to the box: the
+          bands are opaque, so a smaller inset does not crowd the icon, it
+          buries it. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1.5 px-3.5 py-1 text-white/70">
         <span className="flex flex-none items-center gap-1 [&_svg]:size-3">
           <ScreenIcon />
           {hasCamera && <CameraIcon />}
@@ -810,10 +885,11 @@ function Clip({
         </span>
       </div>
 
-      {/* Shown outright on the selected clip and on hover otherwise — the two
-          bars are what says "these ends can be dragged", and a control that
-          only appears once the pointer is already on it has to be discovered
-          by accident. */}
+      {/* Shown with the pointer, not at rest. The clip is already framed on
+          every side, so a cap is a trim target rather than the edge itself —
+          and one drawn permanently put a heavy block at both ends of every
+          clip in the row, saying "this can be dragged" about all of them at
+          once. They stay grabbable while invisible; see `Handle`. */}
       <>
         <Handle
           edge="start"
@@ -835,11 +911,15 @@ function Clip({
 }
 
 /**
- * A draggable end of a clip.
+ * A draggable end of a clip or a zoom.
  *
- * A white bar on a lightened band of the clip's own colour: light enough to
- * read as a grip against the purple, and tied to the clip rather than being a
- * colour of its own, so a row of them does not look like a separate track.
+ * A grip and a hit area, and no plate behind it. A solid band was here for a
+ * while so that the edge and the handle would be one shape; what it actually
+ * did was put a heavy block at both ends of every bar in the row, competing
+ * with the frame that already says where the bar ends.
+ *
+ * Wide enough to grab, and wider than it looks: the grip is 2px and this is
+ * 12px, because a target the size of its own artwork is one the pointer misses.
  */
 function Handle({
   edge,
@@ -859,18 +939,23 @@ function Handle({
   return (
     <span
       className={cn(
-        "absolute inset-y-0 grid w-3 cursor-ew-resize place-items-center bg-white/20 transition-opacity",
-        // Rounded on the outside only, so the pair reads as caps on the clip
-        // rather than as two pills sitting inside it.
-        edge === "start" ? "left-0 rounded-l-lg" : "right-0 rounded-r-lg",
-        selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        "absolute inset-y-0 grid w-3 cursor-ew-resize place-items-center",
+        edge === "start" ? "left-0" : "right-0",
       )}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onRelease}
       onPointerCancel={onRelease}
     >
-      <span className="h-1/2 w-0.5 rounded-full bg-white" />
+      {/* Faded rather than unmounted, and the hit area around it never fades at
+          all: an edge that only becomes grabbable once it is visible is one the
+          first drag at it always misses. */}
+      <span
+        className={cn(
+          "h-1/2 w-0.5 rounded-full bg-white transition-opacity",
+          selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
+      />
     </span>
   );
 }
@@ -885,7 +970,7 @@ function ZoomGhost({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
   return (
     <div
       ref={ref}
-      className="pointer-events-none absolute inset-y-0 rounded border border-dashed border-selected/70 bg-selected/10 opacity-0 transition-opacity duration-75"
+      className="pointer-events-none absolute inset-y-0 rounded border border-dashed border-zoom-ring/70 bg-zoom-fill/15 opacity-0 transition-opacity duration-75"
     />
   );
 }
@@ -948,12 +1033,29 @@ function Zoom({
   return (
     <div
       className={cn(
-        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-2",
-        "border-selected/60 bg-selected/25 transition-colors",
-        selected && "border-selected bg-selected/40",
+        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-3.5",
+        "transition-[background-color,outline-color]",
+        // A wash inside an outline, filling in solid when it is selected.
+        //
+        // The outline is opaque in both states and the fill is the only thing
+        // that changes, so "which zoom am I editing" is one question answered
+        // once. A clip says it with a step between two solid purples because a
+        // clip is opaque either way — it carries a filmstrip. A zoom has
+        // nothing behind it, so it can say the same thing by being see-through
+        // until it matters, which keeps the row underneath readable.
+        "border-zoom-edge",
+        selected ? "bg-zoom-fill" : "bg-zoom-fill/25",
+        // Split the same way a clip's is, and for the same reason — see the
+        // outline note on `Clip`. This row had the identical bug.
+        "outline-2 -outline-offset-2",
+        selected ? "outline-zoom-ring" : "outline-transparent hover:outline-zoom-ring/40",
         "cursor-grab active:cursor-grabbing",
       )}
-      style={{ left: `${left}%`, width: `${width}%` }}
+      style={{
+        left: `${left}%`,
+        width: `${width}%`,
+        borderWidth: ZOOM_EDGE,
+      }}
       onPointerDown={(event) => {
         // Stops the row underneath adding a second zoom on top of this one.
         event.stopPropagation();
