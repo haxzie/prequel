@@ -69,7 +69,7 @@ export const useCases: UseCase[] = [
     slug: "product-demo-video",
     eyebrow: "Product demos",
     heading: "Record a product demo that looks produced",
-    lede: "Walk through the product once. Prequel pushes in on every click, frames your camera, drops the dead air and exports one MP4 at up to 4K.",
+    lede: "Walk through the product once. Prequel pushes in on every click, frames your camera, sets it on a background and exports one MP4 at up to 4K.",
     title: "Record a product demo video on Mac",
     description:
       "Make a product demo on macOS without opening an editor. Automatic zooms on every click, a framed camera, a background worth shipping, and a 4K MP4 at the end.",
@@ -98,7 +98,7 @@ export const useCases: UseCase[] = [
       {
         question: "Do I need to know how to edit video?",
         answer:
-          "No, and that is the point of the automatic first pass. What usually needs an editor — deciding where to push in, framing the webcam, putting the recording on a background, cutting the dead air — has already happened by the time the window opens. Everything it decided is an ordinary slice you can move, retime or delete.",
+          "No, and that is the point of the automatic first pass. What usually needs an editor — deciding where to push in, framing the webcam, putting the recording on a background, balancing the audio — has already happened by the time the window opens. Everything it decided is an ordinary slice you can move, retime or delete.",
       },
       {
         question: "What do I need to record a product demo on my Mac?",
@@ -682,7 +682,7 @@ export const useCases: UseCase[] = [
     lede: "Thirty seconds of the feature actually working, recorded in the time it takes to write the paragraph about it.",
     title: "Record a changelog video on Mac",
     description:
-      "Record short changelog and feature release clips on macOS. Zooms placed automatically, dead air trimmed, exported as one MP4 at any frame preset.",
+      "Record short changelog and feature release clips on macOS. Zooms placed automatically, your camera framed, exported as one MP4 at any frame preset.",
     navLabel: "Changelog clips",
     faq: [
       {

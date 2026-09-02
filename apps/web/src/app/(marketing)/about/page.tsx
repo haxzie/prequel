@@ -55,10 +55,10 @@ export default function About() {
                 about while nothing happens.
               </p>
               <p>
-                Everyone knows what fixes it. Push in on the work. Cut the dead air. Frame the
-                camera somewhere sensible and put the whole thing on a background. And almost nobody
-                does it, because that is an afternoon in a video editor for a five minute clip — so
-                the flat version gets sent instead.
+                Everyone knows what fixes it. Push in on the work. Frame the camera somewhere
+                sensible and put the whole thing on a background. And almost nobody does it, because
+                that is an afternoon in a video editor for a five minute clip — so the flat version
+                gets sent instead.
               </p>
               <p>
                 Prequel makes that pass for you. It watches where you click and type while it

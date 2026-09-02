@@ -5,7 +5,7 @@ import { env } from "@prequel/env";
 import type { Post } from "@/content/posts";
 import type { FaqEntry } from "@/lib/faq";
 
-import { CONTACT_EMAIL, SITE } from "./site";
+import { AUTHOR, CONTACT_EMAIL, SITE } from "./site";
 
 /** Trailing slash stripped once so sitemap, robots and canonicals agree. */
 export const SITE_URL = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
@@ -143,6 +143,30 @@ export function faqPageJsonLd(entries: FaqEntry[]) {
   };
 }
 
+/**
+ * The index, as a `Blog` with its posts inside it.
+ *
+ * Each entry is a `BlogPosting` stub rather than a bare URL, so a crawler that
+ * only ever fetches the index still learns every post's title, date and
+ * description. The full record is on the post's own page; this is the map.
+ */
+export function blogJsonLd(entries: Post[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "@id": absoluteUrl("/blog"),
+    name: `${SITE.name} blog`,
+    url: absoluteUrl("/blog"),
+    blogPost: entries.map((post) => ({
+      "@type": "BlogPosting",
+      headline: post.title,
+      description: post.excerpt,
+      datePublished: post.date,
+      url: absoluteUrl(`/blog/${post.slug}`),
+    })),
+  };
+}
+
 export function blogPostingJsonLd(post: Post) {
   const url = absoluteUrl(`/blog/${post.slug}`);
 
@@ -152,7 +176,10 @@ export function blogPostingJsonLd(post: Post) {
     headline: post.title,
     description: post.excerpt,
     datePublished: post.date,
-    author: { "@type": "Organization", name: SITE.name },
+    // A `Person`, matching the byline the page renders. It said `Organization`
+    // while the post showed no author at all; now that one is shown, the two
+    // disagreeing is the mismatch that gets a rich result dropped.
+    author: { "@type": "Person", name: AUTHOR.name, url: AUTHOR.url },
     publisher: {
       "@type": "Organization",
       name: SITE.name,

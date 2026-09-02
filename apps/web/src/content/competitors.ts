@@ -298,7 +298,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Loom alternative?",
-    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed, the dead air gone — then gives you a link if you want one, and a file you own either way. $9 a month against Loom's $18, or $29 once and never again.",
+    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed over a background — then gives you a link if you want one, and a file you own either way. $9 a month against Loom's $18, or $29 once and never again.",
     title: "Loom alternative for Mac",
     description:
       "A Loom alternative for macOS that records locally and hands back a cinematic MP4 — automatic zooms, a perspective tilt, a framed camera — with no upload and no account needed to watch it. $9 a month, or $29 once.",
@@ -307,7 +307,7 @@ export const competitors: Competitor[] = [
       {
         question: "What is the best Loom alternative?",
         answer:
-          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background, the dead air trimmed — and still gives you a shareable link, at $9 a month against Loom's $18 — or $29 once, with nothing to renew. What Loom keeps is the analytics and the integrations.",
+          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background — and still gives you a shareable link, at $9 a month against Loom's $18 — or $29 once, with nothing to renew. What Loom keeps is the analytics and the integrations.",
       },
       {
         question: "How much does Loom cost?",

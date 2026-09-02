@@ -49,6 +49,14 @@
   --brand-from-deep: #b04017;
   --brand-to-deep: #731a46;
   --iris-deep: #3e1848;
+
+  /* The one green on the site, for a figure that is good news: our own row in a
+     pricing table. Named `positive` rather than `green` on purpose. Tailwind
+     already owns a `green` namespace, so `--color-green` would generate a bare
+     `text-green` sitting alongside its `text-green-500` and read as a missing
+     shade rather than a token of ours. Picked light enough to clear AA on
+     `--surface`, which the saturated greens that look right on white do not. */
+  --positive: #5ad19a;
 }
 
 /* `inline` substitutes the var() into each utility rather than its value, which
@@ -69,6 +77,7 @@
   --color-brand-from-deep: var(--brand-from-deep);
   --color-brand-to-deep: var(--brand-to-deep);
   --color-iris-deep: var(--iris-deep);
+  --color-positive: var(--positive);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;

@@ -1,0 +1,128 @@
+## What is a screen recorder?
+
+A screen recorder is software that captures what is happening on your display as
+a video file, usually alongside your microphone, your webcam and the sound your
+computer is producing. On a Mac it is how you make a tutorial, a bug report, a
+product demo or a YouTube video without pointing a camera at your monitor.
+
+Every screen recorder does the capture. What separates them is everything
+around it: whether they get your Mac's own audio, whether they can put your face
+on screen, whether they zoom in on what you are doing, and whether the result is
+a file you own or a page somebody else hosts.
+
+Recording your Mac's screen is easy. Recording something worth watching is not,
+and the gap between the two is where most of an afternoon goes.
+
+This is the guide we wish existed when we started building a screen recorder:
+what macOS can and cannot do on its own, the four decisions that actually change
+how a recording turns out, and where to go next depending on which of them you
+are stuck on.
+
+## What macOS gives you, and what it does not
+
+Two things are built in, and both are more limited than people expect.
+
+**QuickTime Player** records a screen or a camera. Not both at once, and not
+into one file.
+**The Cmd+Shift+5 toolbar** is the same engine with a lighter interface.
+
+Neither captures **system audio**, so the sound coming out of your Mac never
+reaches the file. Neither puts your **camera** over your screen. Neither zooms,
+crops, trims beyond the ends, or does anything to make the result easier to
+watch.
+
+That is not a criticism. Half the recordings anybody makes should be exactly
+this: press record, do the thing, send the file. The moment a recording is going
+in front of people who did not ask for it, you need something else.
+
+[How to record your Mac screen with internal audio →](/blog/record-mac-screen-with-internal-audio)
+
+## The four decisions that matter
+
+Almost every question about screen recording on a Mac reduces to one of these.
+
+### 1. Is the sound in it?
+
+System audio is the single most common thing people get wrong, because macOS
+does not expose it through the old recording APIs. Modern recorders built on
+**ScreenCaptureKit** get it directly. Everything else needs a virtual audio
+driver such as BlackHole, and the setup is fiddly enough that most people give
+up and re-record with the volume up in the room.
+
+### 2. Is your face in it?
+
+A recording with a person in it is watched further than one without. macOS
+cannot do it at all, so this is always a third-party app, and the tools differ
+in one important way: whether the camera is composited into the screen while you
+record, or kept as its own file so you can move and resize it afterwards.
+
+[Screen recorders for Mac with a webcam overlay →](/blog/screen-recorder-webcam-overlay-mac)
+
+### 3. Can the viewer see what you are pointing at?
+
+Your screen is 3456 pixels wide and the button you are clicking is forty of
+them. A full-screen recording asks the viewer to hunt while you talk. Zooming
+fixes it, and doing it by hand in a timeline is the single biggest time cost in
+making a screen recording. Several tools now do it automatically by watching
+where you click and type.
+
+[Screen recorders with automatic mouse zoom →](/blog/screen-recorder-mouse-zoom-mac)
+
+### 4. Is the file actually yours?
+
+Some tools give you a file. Others give you a link to a page they host, and the
+distinction only matters on the day you want to re-edit, re-upload, or leave.
+Related: whether anything is stamped on the export.
+
+[Screen recorders for Mac with no watermark →](/blog/screen-recorder-no-watermark-mac)
+
+## Picking a tool
+
+The honest short version, before the detail:
+
+- **Free and unlimited**, and you do not mind setup: OBS Studio.
+- **Free and instant**, for a colleague: QuickTime, or Loom for the link.
+- **Open licence**: OBS, Cap, Screenity, QuickRecorder or Kap.
+- **A video going in front of customers**: Prequel.
+
+[The 12 best screen recorders for Mac →](/blog/best-screen-recorders-for-mac)
+· [The free ones that record your camera too →](/blog/free-screen-recorder-mac-camera)
+· [5 best open source screen recorders →](/blog/open-source-screen-recorders-mac)
+
+## What Prequel does differently
+
+We build one of these, so treat this as the pitch it is.
+
+Prequel records your screen and hands back a video that has already been
+directed. It watches where you click and type while it captures, then opens the
+editor with the whole pass made: zooms that push in on the work, a perspective
+tilt so the frame has direction, focus falling away from whatever the zoom is
+aimed at, and a camera you shape, size and place long after the take is over.
+
+That last part works because of how it records. Screen, camera, microphone and
+system audio are written as **four separate files** rather than composited
+together, so the camera stays full resolution and re-framable instead of being
+baked into a decision you made before you pressed record. System audio and your
+voice stay on separate tracks, so you can duck one under the other.
+
+Everything renders on your own Mac. No upload, no queue, and nothing leaves the
+machine unless you ask for a share link. Export runs to 4K at up to 120 fps,
+with no watermark and no cap on the length of a take, during the trial and
+after it.
+
+$29 once, or $9 a month, with fourteen days free. An Apple Silicon Mac on macOS
+14 or later.
+
+[See what Prequel costs →](/pricing)
+
+## Where to go next
+
+If you are recording a **product demo**, the framing and pacing matter more than
+the capture settings.
+
+[How to record a product demo video →](/blog/product-demo-videos)
+
+If the recording is going on **YouTube**, resolution, frame rate and thumbnails
+change what you should do at capture time.
+
+[Screen recording for YouTube →](/blog/screen-recording-for-youtube)
