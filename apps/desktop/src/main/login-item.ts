@@ -24,12 +24,34 @@ export function opensAtLogin(): boolean {
 /**
  * Whether this launch was macOS starting the app at login, rather than a person.
  *
- * The difference matters: a deliberate launch should put the recording panel on
- * screen, and a login should not — a panel that appears over the desktop every
- * time the Mac boots is something to be dismissed, not something to be used.
+ * Only ever a *positive* answer. Electron reads this off the Apple event
+ * `loginwindow` sends — `kAEOpenApplication` carrying `keyAELaunchedAsLogInItem`
+ * — and a Mac that restarts with "Reopen windows when logging back in" ticked
+ * relaunches Prequel through Launch Services instead, which sends no such
+ * event. So `true` means a login for certain and `false` means nothing at all.
+ * Use `startedByItself` to decide whether to show anything.
  */
 export function wasOpenedAtLogin(): boolean {
   return app.getLoginItemSettings().wasOpenedAtLogin;
+}
+
+/**
+ * Whether this launch is one nobody asked for.
+ *
+ * The difference matters: a deliberate launch should put the recording panel on
+ * screen, and a boot should not — a panel that appears over the desktop every
+ * time the Mac starts is something to be dismissed, not something to be used.
+ *
+ * The flag above is not enough on its own, and trusting it is what put the
+ * panel and a blank camera bubble in front of people after every restart. The
+ * second half is the one that holds: if Prequel starts itself at login then it
+ * is already running by the time anyone wants it, so a cold launch is the
+ * system's doing far more often than a person's — and for the rare time it is
+ * not, the tray icon is one click away. Switch the login item off and a launch
+ * becomes unambiguous again, so the panel comes back with it.
+ */
+export function startedByItself(): boolean {
+  return wasOpenedAtLogin() || opensAtLogin();
 }
 
 /**

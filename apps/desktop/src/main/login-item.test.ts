@@ -10,7 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = { packaged: false, openAtLogin: false };
+const state = { packaged: false, openAtLogin: false, wasOpenedAtLogin: false };
 
 vi.mock("electron", () => ({
   app: {
@@ -19,7 +19,7 @@ vi.mock("electron", () => ({
     },
     getLoginItemSettings: () => ({
       openAtLogin: state.openAtLogin,
-      wasOpenedAtLogin: false,
+      wasOpenedAtLogin: state.wasOpenedAtLogin,
     }),
     setLoginItemSettings: ({ openAtLogin }: { openAtLogin: boolean }) => {
       state.openAtLogin = openAtLogin;
@@ -30,12 +30,15 @@ vi.mock("electron", () => ({
   },
 }));
 
-const { loginItemState, opensAtLogin, setOpensAtLogin } = await import("./login-item.js");
+const { loginItemState, opensAtLogin, setOpensAtLogin, startedByItself } = await import(
+  "./login-item.js",
+);
 
 describe("the login item", () => {
   beforeEach(() => {
     state.packaged = true;
     state.openAtLogin = false;
+    state.wasOpenedAtLogin = false;
   });
 
   it("reads through to macOS rather than to a stored copy", () => {
@@ -70,5 +73,30 @@ describe("the login item", () => {
 
     state.packaged = true;
     expect(opensAtLogin()).toBe(false);
+  });
+
+  /**
+   * The bug this predicate exists for.
+   *
+   * macOS only sets `wasOpenedAtLogin` when `loginwindow` sends the Apple event
+   * that says so. A Mac restarted with "Reopen windows when logging back in"
+   * relaunches Prequel through Launch Services instead, the flag comes back
+   * false, and the old rule read that as a person asking for the app — so the
+   * panel and a blank camera bubble arrived over the desktop after every boot.
+   */
+  it("stays out of the way after a restart that sets no login flag", () => {
+    state.openAtLogin = true;
+    expect(startedByItself()).toBe(true);
+  });
+
+  it("still recognises a plain login", () => {
+    state.wasOpenedAtLogin = true;
+    expect(startedByItself()).toBe(true);
+  });
+
+  it("treats a launch as deliberate once the login item is off", () => {
+    // The half that keeps the panel: nothing starts Prequel on this Mac, so a
+    // running copy is one somebody asked for.
+    expect(startedByItself()).toBe(false);
   });
 });

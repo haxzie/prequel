@@ -17,7 +17,12 @@ import {
   registerIpc,
 } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
-import { loginItemState, seedLoginItem, wasOpenedAtLogin } from "./login-item.js";
+import {
+  loginItemState,
+  seedLoginItem,
+  startedByItself,
+  wasOpenedAtLogin,
+} from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";
@@ -298,11 +303,13 @@ void app.whenReady().then(() => {
       return;
     }
 
-    // At login the app is starting because the Mac did, not because anyone
+    // At startup the app is running because the Mac is, not because anyone
     // asked it to — so it takes its place in the menu bar and stays out of the
-    // way. A panel over the desktop every time the machine boots is something
-    // to be dismissed, which is the opposite of what opening at login is for.
-    if (wasOpenedAtLogin()) log("info", "opened at login: staying in the menu bar");
+    // way, and the tray icon opens the panel when there is something to record.
+    // A panel and a camera bubble over the desktop every time the machine boots
+    // is something to be dismissed, which is the opposite of what opening at
+    // login is for.
+    if (startedByItself()) log("info", "started by the system: staying in the menu bar");
     else flow!.open();
 
     /**
@@ -313,7 +320,7 @@ void app.whenReady().then(() => {
      * attention, and a recorder people open twice a week would otherwise take
      * months to notice.
      *
-     * Not at login, though — the rule above applies to this too, and a window
+     * Not at startup, though — the rule above applies to this too, and a window
      * over the desktop every time the machine boots is something to be
      * dismissed rather than read. The check still runs, so the tray item has
      * the answer; only the window waits for a launch somebody meant.
@@ -322,7 +329,7 @@ void app.whenReady().then(() => {
      * installing a fresh copy and has nothing to update.
      */
     const update = await checkForUpdates();
-    if (update.status === "available" && !wasOpenedAtLogin()) updates.open();
+    if (update.status === "available" && !startedByItself()) updates.open();
   })();
 
   // The tray title and the panel both show elapsed time, so it has to tick even
