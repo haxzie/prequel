@@ -47,7 +47,16 @@ const FILE = "licence.json";
 
 /** What the Worker answers with. Facts only; the verdict is `statusOf`. */
 interface Facts {
-  plan: "free" | "pro";
+  /**
+   * The tier this account is on.
+   *
+   * `lifetime` is a tier the Worker holds but does not currently send — it
+   * answers `pro` for it, because the builds already in the field parse two
+   * values and read a third as "not paid". Accepted here so that mapping can be
+   * dropped once those builds are gone, and because a value this file rejects
+   * is one it silently forgets on the next launch.
+   */
+  plan: "free" | "pro" | "lifetime";
   /** Epoch milliseconds. Sign-up plus the trial length, decided server-side. */
   trialEndsAt: number;
 }
@@ -78,7 +87,7 @@ function read(): Cached | null {
     const stored = JSON.parse(readFileSync(file(), "utf8")) as Partial<Cached>;
 
     cached =
-      (stored.plan === "free" || stored.plan === "pro") &&
+      (stored.plan === "free" || stored.plan === "pro" || stored.plan === "lifetime") &&
       typeof stored.trialEndsAt === "number" &&
       typeof stored.checkedAt === "number"
         ? { plan: stored.plan, trialEndsAt: stored.trialEndsAt, checkedAt: stored.checkedAt }
@@ -112,7 +121,9 @@ function write(value: Cached | null): void {
  * kind of off-by-one that ships.
  */
 export function statusOf(facts: Facts, now = Date.now()): Entitlement {
-  if (facts.plan === "pro") return { status: "paid" };
+  // Any tier but `free` has been paid for. Naming `pro` alone is what would put
+  // a paywall in front of somebody holding the lifetime licence.
+  if (facts.plan !== "free") return { status: "paid" };
 
   const remaining = facts.trialEndsAt - now;
   if (remaining <= 0) return { status: "expired" };

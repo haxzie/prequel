@@ -227,6 +227,44 @@ export const subscription = sqliteTable("subscription", {
 });
 
 /**
+ * A one-time purchase: the lifetime licence.
+ *
+ * Its own table rather than a second `subscription` row, because `teamId` there
+ * is unique and a team may hold both — somebody who bought the lifetime licence
+ * and later subscribed to Pro for the larger allowance. Recording them together
+ * would mean one row claiming two things, and the cancellation path could not
+ * then tell whether to fall back to the lifetime quota or to free.
+ *
+ * Its own table rather than a column on `organization` for the same reason
+ * `subscription` is: `organization` is Better Auth's, and every column added
+ * there has to be repeated in the plugin's `additionalFields`.
+ *
+ * There is no status and no end date. A purchase does not lapse — that is the
+ * whole of what was bought — so the row's existence is the entitlement.
+ */
+export const purchase = sqliteTable("purchase", {
+  id: text("id").primaryKey(),
+  /**
+   * One purchase per team. The lifetime licence can only be bought once, and
+   * the unique constraint is what makes a duplicated webhook delivery a no-op
+   * rather than a second row nothing would ever read.
+   */
+  teamId: text("team_id")
+    .notNull()
+    .unique()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  dodoPaymentId: text("dodo_payment_id").notNull().unique(),
+  /**
+   * The payer at Dodo, kept for the same reason `subscription` keeps one: the
+   * customer portal holds this purchase's receipt and is addressed by this id.
+   */
+  dodoCustomerId: text("dodo_customer_id").notNull(),
+  /** Which product was bought, verbatim. Stored so a future one is separable. */
+  productId: text("product_id").notNull(),
+  createdAt: createdAt(),
+});
+
+/**
  * Webhook ids already acted on.
  *
  * Dodo retries until it gets a 2xx, so the same event arrives more than once.
@@ -252,7 +290,12 @@ export const subscriptionRelations = relations(subscription, ({ one }) => ({
   team: one(organization, { fields: [subscription.teamId], references: [organization.id] }),
 }));
 
+export const purchaseRelations = relations(purchase, ({ one }) => ({
+  team: one(organization, { fields: [purchase.teamId], references: [organization.id] }),
+}));
+
 export type Video = typeof video.$inferSelect;
 export type NewVideo = typeof video.$inferInsert;
 export type DeviceToken = typeof deviceToken.$inferSelect;
 export type Subscription = typeof subscription.$inferSelect;
+export type Purchase = typeof purchase.$inferSelect;

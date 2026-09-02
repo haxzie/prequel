@@ -5,12 +5,12 @@ import { useState } from "react";
 import { formatBytes } from "@/lib/format";
 import { Button } from "@/components/Button";
 import { api, ApiError } from "@/lib/api";
-import { PRICE_MONTHLY } from "@/lib/pricing";
+import { PRICE_LIFETIME, PRICE_MONTHLY, STORAGE_PRO } from "@/lib/pricing";
 import type { Trial } from "@/lib/session";
 
 /** What `GET /v1/billing` answers with. The page reads it; this draws it. */
 export interface Billing {
-  plan: "free" | "pro";
+  plan: "free" | "pro" | "lifetime";
   /** Which of the three states the account is in. `plan` alone cannot say. */
   trial: Trial;
   storageQuotaBytes: number;
@@ -22,7 +22,7 @@ export interface Billing {
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 /**
- * The plan, and the two buttons that change it.
+ * The plan, and the buttons that change it.
  *
  * A client component because both actions end in a redirect to a URL only the
  * API can mint — a checkout session and a portal session are both single-use and
@@ -57,12 +57,15 @@ export function BillingPanel({
    * Left pending on success. The redirect is in flight, and a button that comes
    * back to life invites a second checkout session.
    */
-  const checkout = async () => {
+  const checkout = async (plan: "pro" | "lifetime") => {
     setPending(true);
     setError(null);
 
     try {
-      const { url } = await api<{ url: string }>("/v1/billing/checkout", { method: "POST" });
+      const { url } = await api<{ url: string }>("/v1/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({ plan }),
+      });
       // A full navigation rather than a router push: the destination is Dodo's
       // host, and Next's router only knows about routes in this app.
       window.location.href = url;
@@ -96,6 +99,8 @@ export function BillingPanel({
   }
 
   const pro = billing.plan === "pro";
+  const lifetime = billing.plan === "lifetime";
+  const paid = pro || lifetime;
   const trial = billing.trial;
 
   return (
@@ -106,23 +111,34 @@ export function BillingPanel({
           that cannot tell those apart is the whole reason somebody opens this
           page. */}
       <p className="mt-2 text-lg text-fg">
-        {pro ? "Pro" : trial.status === "trial" ? "Trial" : "Trial ended"}
+        {pro ? "Pro" : lifetime ? "Lifetime" : trial.status === "trial" ? "Trial" : "Trial ended"}
       </p>
 
-      {pro ? (
+      {paid ? (
         <>
           <p className="mt-1 text-sm text-muted">
             {formatBytes(billing.storageQuotaBytes)} of shared recordings.
           </p>
 
-          {billing.graceUntil ? (
+          {/* Only a subscription has a date to say anything about. The lifetime
+              licence has no renewal and nothing that can decline, so the two
+              lines below would both be untrue on it. */}
+          {pro && billing.graceUntil ? (
             <p className="mt-3 text-sm text-brand-from">
               Your last payment didn&apos;t go through. Update your card by{" "}
               {DATE.format(new Date(billing.graceUntil))} to stay on Pro.
             </p>
-          ) : billing.currentPeriodEnd ? (
+          ) : pro && billing.currentPeriodEnd ? (
             <p className="mt-3 text-sm text-muted">
               Renews on {DATE.format(new Date(billing.currentPeriodEnd))}.
+            </p>
+          ) : lifetime ? (
+            // What they own, and the one thing it does not do. Somebody on this
+            // plan who fills it up should not have to find out from a refused
+            // upload that there was a way to keep going.
+            <p className="mt-3 text-sm text-muted">
+              Bought once, with nothing to renew. Subscribe to Pro for {STORAGE_PRO} if you need the
+              room.
             </p>
           ) : null}
         </>
@@ -141,8 +157,8 @@ export function BillingPanel({
               above: the storage is what a licence adds, where the trial is
               about the app. */}
           <p className="mt-1 text-sm text-muted">
-            {formatBytes(billing.storageQuotaBytes)} of recordings. Prequel is {PRICE_MONTHLY} per
-            month.
+            {formatBytes(billing.storageQuotaBytes)} of recordings. Prequel is {PRICE_MONTHLY} a
+            month, or {PRICE_LIFETIME} once.
           </p>
         </>
       )}
@@ -154,16 +170,41 @@ export function BillingPanel({
       ) : null}
 
       {canManage ? (
-        <div className="mt-6">
-          {pro ? (
+        // Three states, not two. A lifetime holder gets both: the portal, which
+        // has their receipt in it, and the subscription that is the only way
+        // past the storage they bought.
+        <div className="mt-6 flex flex-wrap gap-2">
+          {paid ? (
             <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={portal}>
               {pending ? "Opening…" : "Manage billing"}
             </Button>
-          ) : (
-            <Button type="button" size="sm" disabled={pending} onClick={checkout}>
+          ) : null}
+
+          {!pro ? (
+            <Button
+              type="button"
+              variant={lifetime ? "secondary" : "primary"}
+              size="sm"
+              disabled={pending}
+              onClick={() => void checkout("pro")}
+            >
               {pending ? "Opening checkout…" : "Upgrade to Pro"}
             </Button>
-          )}
+          ) : null}
+
+          {/* Offered while there is nothing to lose by taking it. Somebody
+              already subscribed would be buying a smaller allowance. */}
+          {!paid ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={pending}
+              onClick={() => void checkout("lifetime")}
+            >
+              {pending ? "Opening checkout…" : `Buy Lifetime, ${PRICE_LIFETIME}`}
+            </Button>
+          ) : null}
         </div>
       ) : (
         <p className="mt-6 text-sm text-muted">Only an owner or admin can change the plan.</p>

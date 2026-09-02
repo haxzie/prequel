@@ -39,3 +39,16 @@ OPENAI_API_KEY=
 # deliberate — an unsigned POST to it could set any team's plan.
 DODOPAYMENT_API_KEY=
 DODOPAYMENT_WEBHOOK_SECRET=
+
+# The two product ids, overriding the empty defaults in wrangler.jsonc. Set them
+# to the ids from Dodo's **test** dashboard: the mode there is `test`, and a
+# live product id sent to the test host is a 404 that reads as a broken
+# integration. The live ids are in the production block of wrangler.jsonc.
+#
+# The lifetime one is read by the webhook as well as by checkout, and that is
+# the half that matters — `payment.succeeded` fires for subscription renewals
+# too, and this id is what tells the two apart. Leave it empty and the handler
+# throws rather than guessing.
+DODOPAYMENT_BRAND_ID=
+DODOPAYMENT_PRO_PRODUCT_ID=
+DODOPAYMENT_LIFETIME_PRODUCT_ID=

@@ -147,13 +147,20 @@ export const organization = sqliteTable("organization", {
    * quota below is what upload checks against, and a column added later would
    * need every existing team backfilled before the check could be trusted.
    */
-  plan: text("plan", { enum: ["free", "pro"] })
+  plan: text("plan", { enum: ["free", "pro", "lifetime"] })
     .notNull()
     .default("free"),
-  /** Total bytes this team's videos may occupy. */
+  /**
+   * Total bytes this team's videos may occupy.
+   *
+   * Decimal rather than binary, and every quota in `lib/entitlement.ts` with
+   * it. The figure is sold as "5 GB" and printed by a base-1000 formatter, so a
+   * binary constant reaches the dashboard as "5.4 GB" — a number nobody was
+   * quoted, beside a price they were.
+   */
   storageQuotaBytes: integer("storage_quota_bytes")
     .notNull()
-    .default(2 * 1024 * 1024 * 1024),
+    .default(2 * 1000 ** 3),
   /**
    * Who created this team. Not Better Auth's — ours, stamped in
    * `beforeCreateOrganization`.

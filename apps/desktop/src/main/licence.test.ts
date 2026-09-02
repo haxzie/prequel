@@ -64,6 +64,15 @@ describe("statusOf", () => {
       status: "paid",
     });
   });
+
+  it("treats the lifetime licence as paid, the same as a subscription", () => {
+    // The Worker currently answers `pro` for it — see `Facts.plan` — so this
+    // pins the behaviour that lets that mapping be dropped rather than a
+    // behaviour anything relies on today.
+    expect(statusOf({ plan: "lifetime", trialEndsAt: NOW - 400 * DAY }, NOW)).toEqual({
+      status: "paid",
+    });
+  });
 });
 
 /**

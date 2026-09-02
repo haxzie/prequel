@@ -58,26 +58,35 @@ async function call<T>(env: Env, path: string, init: RequestInit = {}): Promise<
 }
 
 export interface CheckoutOptions {
-  /** Travels back on every webhook this subscription ever produces. */
+  /** Travels back on every webhook this purchase ever produces. */
   teamId: string;
+  /**
+   * Which product is being bought.
+   *
+   * Passed in rather than read from the environment here: there are two, and
+   * the route is what knows which one was asked for. Reading one of them from
+   * inside this function is how the lifetime checkout would quietly sell a
+   * subscription.
+   */
+  productId: string;
   email: string;
   name?: string | null;
-  /** A returning payer, so a second subscription lands on the same customer. */
+  /** A returning payer, so a second purchase lands on the same customer. */
   customerId?: string | null;
   returnUrl: string;
 }
 
 /**
- * A hosted checkout for the Pro product.
+ * A hosted checkout for one product.
  *
  * `metadata.teamId` is the only link between the page somebody is about to pay
- * on and the team it belongs to. Dodo echoes it on `subscription.active`, which
- * is where the subscription row is written — without it the webhook arrives
- * describing a payment nothing can attribute.
+ * on and the team it belongs to. Dodo echoes it on `subscription.active` and on
+ * `payment.succeeded`, which is where the row is written — without it the
+ * webhook arrives describing a payment nothing can attribute.
  */
 export async function createCheckout(env: Env, options: CheckoutOptions): Promise<string> {
   const body = {
-    product_cart: [{ product_id: required(env, "DODOPAYMENT_PRO_PRODUCT_ID"), quantity: 1 }],
+    product_cart: [{ product_id: options.productId, quantity: 1 }],
     customer: options.customerId
       ? { customer_id: options.customerId }
       : { email: options.email, ...(options.name ? { name: options.name } : {}) },
@@ -110,6 +119,19 @@ export function getSubscription(env: Env, subscriptionId: string): Promise<DodoS
   return call<DodoSubscription>(env, `/subscriptions/${subscriptionId}`);
 }
 
+/**
+ * One payment, fetched rather than taken from a webhook body.
+ *
+ * Dodo serves two shapes of payment. The one on `GET /payments/{id}` carries
+ * `product_cart`; the summary in the list response does not, and the webhook
+ * body is not documented as being either. That difference decides whether a
+ * lifetime licence is granted, so `redeem` asks for this shape when the
+ * delivery did not bring a cart with it — see the note there.
+ */
+export function getPayment(env: Env, paymentId: string): Promise<DodoPayment> {
+  return call<DodoPayment>(env, `/payments/${paymentId}`);
+}
+
 /** A link to Dodo's own billing portal: card, invoices, cancellation. */
 export async function portalSession(
   env: Env,
@@ -127,12 +149,40 @@ export async function portalSession(
   return session.link;
 }
 
-export interface WebhookEnvelope {
+/**
+ * A one-off charge: the lifetime licence, and also every subscription renewal.
+ *
+ * `subscription_id` is the difference and it is the whole of the difference —
+ * see the guard in `routes/webhooks/dodo.ts`. Dodo sends `payment.succeeded`
+ * for both, and a handler that reads only the cart would grant a lifetime
+ * licence to every subscriber every month.
+ */
+export interface DodoPayment {
+  payment_id: string;
+  status: string;
+  /** Set when this charge belongs to a subscription. Null for a true one-off. */
+  subscription_id: string | null;
+  customer: { customer_id: string; email?: string };
+  product_cart: { product_id: string; quantity: number }[] | null;
+  metadata: Record<string, string>;
+}
+
+/**
+ * A delivery, discriminated on what it is about.
+ *
+ * A union rather than one widened interface: the payment branch must not be
+ * able to read `next_billing_date`, and the subscription branch must not be
+ * able to read `subscription_id` as though it were nullable. Both compile
+ * happily against a merged type and both are wrong at runtime.
+ */
+export type WebhookEnvelope = {
   business_id: string;
   type: string;
   timestamp: string;
-  data: DodoSubscription & { payload_type: string };
-}
+} & (
+  | { data: DodoSubscription & { payload_type: "Subscription" } }
+  | { data: DodoPayment & { payload_type: "Payment" } }
+);
 
 /**
  * Standard Webhooks verification, over the *raw* body.

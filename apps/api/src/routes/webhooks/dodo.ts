@@ -11,8 +11,11 @@
  *   production   https://api.prequel.sh/v1/webhooks/dodo
  *   development  <tunnel>/v1/webhooks/dodo
  *
- * Subscribed to the `subscription.*` events handled below. Payment events carry
- * nothing this needs — the subscription events already say what a payment did.
+ * Subscribed to the `subscription.*` events handled below, **and to
+ * `payment.succeeded`** — which is the only thing Dodo sends for a one-off
+ * product, and so the only way the lifetime licence is ever granted. Without
+ * that subscription in Dodo's dashboard the lifetime product takes money and
+ * this app never hears about it.
  */
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -21,8 +24,14 @@ import { schema } from "@prequel/db";
 
 import { database, type Database } from "../../db.ts";
 import { type Env, required } from "../../env.ts";
-import { type DodoSubscription, verifyWebhook, type WebhookEnvelope } from "../../lib/dodo.ts";
-import { FREE_QUOTA_BYTES, GRACE_MS, PRO_QUOTA_BYTES } from "../../lib/entitlement.ts";
+import {
+  type DodoPayment,
+  type DodoSubscription,
+  getPayment,
+  verifyWebhook,
+  type WebhookEnvelope,
+} from "../../lib/dodo.ts";
+import { applyPlan, GRACE_MS } from "../../lib/entitlement.ts";
 import { id } from "../../lib/ids.ts";
 
 const dodo = new Hono<{ Bindings: Env }>();
@@ -63,7 +72,7 @@ dodo.post("/", async (c) => {
 
   if (first.length === 0) return c.json({ ok: true, duplicate: true });
 
-  await handle(db, event);
+  await handle(db, c.env, event);
 
   // Always 200 once verified, including for an event with no handler. A 4xx on
   // something we simply do not care about makes Dodo retry it until it gives
@@ -71,7 +80,14 @@ dodo.post("/", async (c) => {
   return c.json({ ok: true });
 });
 
-async function handle(db: Database, event: WebhookEnvelope): Promise<void> {
+async function handle(db: Database, env: Env, event: WebhookEnvelope): Promise<void> {
+  // Every branch below but one is about a subscription, and the exception is
+  // handled first so the narrowing holds for the rest.
+  if (event.data.payload_type === "Payment") {
+    if (event.type === "payment.succeeded") await redeem(db, env, event.data);
+    return;
+  }
+
   const subscription = event.data;
   const teamId = subscription.metadata?.teamId;
 
@@ -150,10 +166,87 @@ async function activate(
     .values({ id: id("sub"), ...row })
     .onConflictDoUpdate({ target: schema.subscription.teamId, set: row });
 
+  await applyPlan(db, teamId);
+}
+
+/**
+ * A one-off charge that turns out to be the lifetime licence.
+ *
+ * **Two guards, and both are load-bearing.** Dodo sends `payment.succeeded` for
+ * every charge it makes, which includes the first charge of a new subscription
+ * and every renewal after it. Granting a licence on the event alone would hand
+ * one to every subscriber, every month, and nothing downstream would notice:
+ * the team is already `pro`, the quota is already the larger of the two, and
+ * the only symptom is a purchase row that outlives a cancellation they wanted.
+ *
+ * The row's existence *is* the entitlement, so it is `applyPlan` that decides
+ * what the team ends up on — a lifetime licence bought by somebody already
+ * subscribed leaves them on Pro, and surfaces the moment they cancel.
+ */
+async function redeem(db: Database, env: Env, payment: DodoPayment): Promise<void> {
+  // A renewal, or the opening charge of a subscription. Either way the
+  // `subscription.*` events are what describe it, and this is not a purchase.
+  if (payment.subscription_id) return;
+
+  const lifetime = required(env, "DODOPAYMENT_LIFETIME_PRODUCT_ID");
+
+  /**
+   * The cart, fetched only if the delivery did not bring one.
+   *
+   * A live `payment.succeeded` **does** carry `product_cart`, verified against
+   * Dodo's test mode. The fallback is here because Dodo serves two shapes of a
+   * payment and the other one — the summary in `GET /payments` — omits the
+   * field entirely, so its presence on a webhook is a property of the payload
+   * version rather than of the event.
+   *
+   * Worth one conditional request because of how the absence would fail: an
+   * undefined cart reads as "not the lifetime product", which is indistinguishable
+   * from a genuine no-op. The charge succeeds, the licence is never granted, and
+   * nothing anywhere reports it. Re-deriving the cart is cheaper than being told
+   * about that by the person who paid.
+   *
+   * Only reached for a payment outside a subscription, so no renewal pays for it.
+   */
+  const cart =
+    payment.product_cart ??
+    (await getPayment(env, payment.payment_id)
+      .then((full) => full.product_cart)
+      .catch((error: unknown) => {
+        // Left to Dodo's retry rather than swallowed. This is the one branch
+        // where giving up silently loses a licence somebody paid for.
+        console.error("could not read the cart for", payment.payment_id, error);
+        throw error;
+      }));
+
+  const bought = cart?.some((line) => line.product_id === lifetime);
+
+  // Some other product, or a cart Dodo did not send. Not an error — a business
+  // may sell things this app knows nothing about — so it is a silent no-op
+  // rather than something that makes Dodo retry.
+  if (!bought) return;
+
+  const teamId = payment.metadata?.teamId;
+
+  if (!teamId) {
+    console.error("payment.succeeded for the lifetime product with no teamId", payment.payment_id);
+    return;
+  }
+
+  // `onConflictDoNothing` on the team, matching the upsert in `activate`. The
+  // licence can only be held once, and a retry that violated the constraint
+  // would 500 a delivery that has nothing left to do.
   await db
-    .update(schema.organization)
-    .set({ plan: "pro", storageQuotaBytes: PRO_QUOTA_BYTES })
-    .where(eq(schema.organization.id, teamId));
+    .insert(schema.purchase)
+    .values({
+      id: id("pur"),
+      teamId,
+      dodoPaymentId: payment.payment_id,
+      dodoCustomerId: payment.customer.customer_id,
+      productId: lifetime,
+    })
+    .onConflictDoNothing({ target: schema.purchase.teamId });
+
+  await applyPlan(db, teamId);
 }
 
 /**
@@ -215,10 +308,10 @@ export async function downgrade(db: Database, subscription: DodoSubscription): P
     .set({ status: subscription.status, graceUntil: null, updatedAt: new Date() })
     .where(eq(schema.subscription.id, existing.id));
 
-  await db
-    .update(schema.organization)
-    .set({ plan: "free", storageQuotaBytes: FREE_QUOTA_BYTES })
-    .where(eq(schema.organization.id, existing.teamId));
+  // Recomputed rather than set to `free`. A team that also holds the lifetime
+  // licence falls back to that, not to nothing — they still own what they
+  // bought once, and this is the line that would otherwise take it away.
+  await applyPlan(db, existing.teamId);
 }
 
 export default dodo;

@@ -6,6 +6,22 @@
  *  Change it here and the cards, the included list, the FAQ, the billing page
  *  and every comparison page follow.
  *
+ *  **Two plans, and the app in both is the same app.** Pro is $9 a month, the
+ *  lifetime licence is $29 once, and the only thing that differs is how much
+ *  may be kept on the shareable-link side: 1 TB against 5 GB. Nothing about
+ *  recording, editing or exporting is held back on either — no watermark, no
+ *  length cap, no resolution tier, no feature behind the more expensive one. So
+ *  nothing on this site should describe a feature as "Pro", and any sentence
+ *  that makes the two sound like a good tier and a lesser one is wrong about
+ *  the product.
+ *
+ *  **The storage figures have a second home.** `apps/api/src/lib/entitlement.ts`
+ *  holds the actual byte counts the uploader checks against. The two cannot
+ *  import each other — `apps/web` shares no code with `apps/api` beyond request
+ *  and response types — so changing a number here means changing it there, and
+ *  the quotas are written in decimal on both sides precisely so "5 GB" is the
+ *  same string in the copy and in the dashboard.
+ *
  *  **The rate is introductory.** Every surface that shows it says so, and none
  *  of them says more than that: there is no struck-out regular price, because
  *  there is not one to strike out, and no promise that an early licence keeps
@@ -14,66 +30,98 @@
  *  to invent on the way to a better conversion rate. When the price rises
  *  again, raising it here is the whole change.
  *
- *  One plan, one price, a trial in front of it. There is no free tier and no
- *  second tier, which means nothing on this site should describe a feature as
- *  "paid" or "included" — everything is included, and the only question is
- *  whether the fourteen days have run out.
+ *  **Write the month, and never annualise it.** `$9 a month` is what is
+ *  charged. `$108 a year` is a number nobody is billed, and inventing a cadence
+ *  we do not sell in order to win a comparison is the same sleight of hand this
+ *  site calls out on Screen Studio's own pricing, where `$9` is the yearly rate
+ *  and `$29` the monthly one. The lifetime licence is the one number here that
+ *  is not a cadence at all, and it should never be divided by anything.
  *
- *  **Write the month, and never annualise it.** `$14 a month` is what is
- *  charged and there is no yearly plan, so `$168 a year` is a number nobody is
- *  billed. It exists only as ammunition — a figure to set against a competitor
- *  who bills yearly — and inventing a cadence we do not sell in order to win a
- *  comparison is the same sleight of hand this site calls out on Screen
- *  Studio's own pricing, where `$9` is the yearly rate and `$29` the monthly
- *  one.
- *
- *  **The comparison pages argue on the video, not on the price.** At $14 a
- *  month Prequel is no longer the cheapest thing in its category, and a page
- *  that says otherwise is checkable in one click by exactly the reader it is
- *  aimed at. What it is instead is the one that hands back a cinematic video —
- *  zooms that follow the work, a perspective tilt, focus falling away from the
- *  subject, a framed camera — and that is the claim those pages are built to
- *  make. Where a rival is cheaper, they say so.
+ *  **The comparison pages still argue on the video.** At $9 a month Prequel is
+ *  now at or under most of the category rather than over it, which makes the
+ *  price safe to state — but it is not the claim those pages are built to make,
+ *  and a page that leads with being cheapest invites a reader to re-check that
+ *  every time somebody runs a sale. What Prequel hands back is a cinematic
+ *  video — zooms that follow the work, a perspective tilt, focus falling away
+ *  from the subject, a framed camera — and that is the argument. Where a rival
+ *  is still cheaper, they say so.
  */
 
-export const PRICE_MONTHLY = "$14";
+export const PRICE_MONTHLY = "$9";
+export const PRICE_LIFETIME = "$29";
 export const TRIAL_DAYS = 14;
+
+/** What each plan may keep on the sharing side. Mirrors `entitlement.ts`. */
+export const STORAGE_PRO = "1 TB";
+export const STORAGE_LIFETIME = "5 GB";
 
 export type Plan = {
   name: string;
   price: string;
   cadence: string;
+  /** Under the price. Says how it is billed, not what it includes. */
+  billing: string;
   summary: string;
   features: string[];
   featured?: boolean;
 };
 
-export const PLANS: Plan[] = [
-  {
-    name: "Prequel",
-    price: PRICE_MONTHLY,
-    cadence: "per user, per month",
-    summary: `Everything, for everyone on the licence. ${TRIAL_DAYS} days free to begin with.`,
-    features: [
-      "Automatic zooms from clicks and typing",
-      "Perspective tilt and focus falling away from the subject",
-      "A camera you frame after the take, over a background",
-      "Screen, window and region capture",
-      "Webcam, microphone and system audio",
-      "Cuts on a real timeline, with waveforms",
-      "4K and HEVC export, up to 120 fps",
-      "Every frame preset, including the social sizes",
-      "Transcripts, uploads and shareable links",
-      "No length limit and no watermark",
-    ],
-  },
+/**
+ * The app, in both plans, in the order the cards read.
+ *
+ * One list shared between them rather than two that drifted: every line here is
+ * true of both, and the only difference between the plans is appended below. A
+ * feature that appeared in one array and not the other would read as withheld,
+ * which is the thing this pricing is built not to do.
+ */
+const EVERYTHING = [
+  "Automatic zooms from clicks and typing",
+  "Perspective tilt and focus falling away from the subject",
+  "A camera you frame after the take, over a background",
+  "Screen, window and region capture",
+  "Webcam, microphone and system audio",
+  "Cuts on a real timeline, with waveforms",
+  "4K and HEVC export, up to 120 fps",
+  "Every frame preset, including the social sizes",
+  "Transcripts, uploads and shareable links",
+  "No length limit and no watermark",
 ];
 
+export const PRO_PLAN: Plan = {
+  name: "Pro",
+  price: PRICE_MONTHLY,
+  cadence: "a month",
+  billing: `Billed monthly · ${TRIAL_DAYS} days free`,
+  summary: `The whole app, and room for ${STORAGE_PRO} of shared recordings.`,
+  features: [...EVERYTHING, `${STORAGE_PRO} of shared recordings`],
+  featured: true,
+};
+
+export const LIFETIME_PLAN: Plan = {
+  name: "Lifetime",
+  price: PRICE_LIFETIME,
+  cadence: "once",
+  billing: `One payment · ${TRIAL_DAYS} days free`,
+  summary: `The same app, bought once, with ${STORAGE_LIFETIME} of shared recordings.`,
+  features: [...EVERYTHING, `${STORAGE_LIFETIME} of shared recordings`],
+};
+
 /**
- * What the licence covers.
+ * Pro first, and read by name everywhere but the pricing page itself.
  *
- * A list rather than a table: with one plan there is no second column to
- * compare against, and a tick beside every row in a table of one is noise.
+ * `Comparison.tsx` and the dashboard's upgrade card used to index this array,
+ * so reordering the cards would have silently changed the price quoted on all
+ * six comparison pages. They import `PRO_PLAN` now.
+ */
+export const PLANS: Plan[] = [PRO_PLAN, LIFETIME_PLAN];
+
+/**
+ * What both plans cover.
+ *
+ * A list rather than a table: the two plans differ in one row, and a table of
+ * ticks that are identical everywhere but `Storage` says less than a sentence
+ * would. Storage is the last row for the same reason — it is the only line a
+ * reader has to compare.
  *
  * The look comes first — the zooms, the tilt, the focus, the shadow. They are
  * the reason the export is worth watching, and burying them under the capture
@@ -98,16 +146,25 @@ export const INCLUDED: [string, string][] = [
   ["Transcripts", "Included"],
   ["Sharing", "Uploads and shareable links"],
   ["Rendering", "On your Mac, never uploaded"],
+  ["Storage", `${STORAGE_PRO} on Pro, ${STORAGE_LIFETIME} on Lifetime`],
 ];
 
 export const FAQ: { question: string; answer: string }[] = [
   {
+    question: "What is the difference between the two plans?",
+    answer: `Storage, and nothing else. Both are the whole app — 4K at 120 frames per second, every preset, transcripts, no watermark and no limit on a take — and both export the same file. Pro keeps ${STORAGE_PRO} of shared recordings for ${PRICE_MONTHLY} a month; the lifetime licence keeps ${STORAGE_LIFETIME} and is bought once for ${PRICE_LIFETIME}. Storage only applies to recordings you upload for a shareable link. What you export to your own Mac is not counted and has no limit.`,
+  },
+  {
     question: "Why is it called introductory pricing?",
-    answer: `Because it is going up. ${PRICE_MONTHLY} per user per month is what Prequel costs while it is new, and the rate is set here rather than promised anywhere — there is no struck-out "regular" price to compare it against and no claim that signing up today locks it in forever. When it rises, it rises.`,
+    answer: `Because it is going up. ${PRICE_MONTHLY} a month is what Prequel costs while it is new, and the rate is set here rather than promised anywhere — there is no struck-out "regular" price to compare it against and no claim that signing up today locks it in forever. When it rises, it rises.`,
+  },
+  {
+    question: "Is the lifetime licence really for life?",
+    answer: `It is one payment for the app, with no renewal and nothing to cancel. What it does not do is grow: it comes with ${STORAGE_LIFETIME} of shared recordings and stays there. If you outgrow that you can subscribe to Pro at ${PRICE_MONTHLY} a month for ${STORAGE_PRO}, and stopping that subscription later puts you back on the ${STORAGE_LIFETIME} you already own rather than on nothing.`,
   },
   {
     question: "Is there a free plan?",
-    answer: `No. There is a ${TRIAL_DAYS}-day free trial with the whole app in it, and after that Prequel is ${PRICE_MONTHLY} per user per month. We would rather charge one honest price than run a free tier that quietly withholds the part you actually needed.`,
+    answer: `No. There is a ${TRIAL_DAYS}-day free trial with the whole app in it, and after that Prequel is ${PRICE_MONTHLY} a month or ${PRICE_LIFETIME} once. We would rather charge one honest price than run a free tier that quietly withholds the part you actually needed.`,
   },
   {
     question: "What makes the video cinematic rather than just recorded?",
@@ -117,20 +174,15 @@ export const FAQ: { question: string; answer: string }[] = [
   {
     question: "What is in the trial?",
     answer:
-      "All of it. The trial is the full app rather than a preview of it — 4K at 120 frames per second, every frame preset, transcripts, no length limit and no watermark. A video you export during the trial is yours, and it keeps working afterwards whether or not you subscribe.",
+      "All of it. The trial is the full app rather than a preview of it — 4K at 120 frames per second, every frame preset, transcripts, no length limit and no watermark. A video you export during the trial is yours, and it keeps working afterwards whether or not you pay.",
   },
   {
     question: "Is there a yearly plan?",
-    answer: `Not at the moment. Prequel is billed monthly at ${PRICE_MONTHLY} per user, and rather than advertise a yearly rate we do not sell, the page says the number you are actually charged.`,
-  },
-  {
-    question: "Why only one plan?",
-    answer:
-      "Because tiers make you read a table before you can decide anything, and the feature you want is always one row below the one you were going to buy. One price, everything in it.",
+    answer: `Not as such. Prequel is billed monthly at ${PRICE_MONTHLY}, and the alternative to paying monthly is the ${PRICE_LIFETIME} lifetime licence rather than a discounted year — one payment instead of a cheaper cadence, so there is no renewal date to be surprised by.`,
   },
   {
     question: "Is the export watermarked?",
-    answer: "No, on the trial or on a licence. The file is yours at full quality.",
+    answer: "No, on the trial or on either plan. The file is yours at full quality.",
   },
   {
     question: "What do I need to run it?",
@@ -140,6 +192,6 @@ export const FAQ: { question: string; answer: string }[] = [
   {
     question: "Does anything leave my machine?",
     answer:
-      "Not to make a video. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. Uploading a finished export to get a shareable link is a thing you ask for, on a file you have already made.",
+      "Not to make a video. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. Uploading a finished export to get a shareable link is a thing you ask for, on a file you have already made, and it is the only thing storage counts.",
   },
 ];

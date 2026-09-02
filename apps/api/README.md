@@ -204,34 +204,63 @@ production env is `hello@prequel.sh` and will fail until that domain is verified
 sending Prequel's mail from some other domain would work but costs deliverability,
 which is the slow version of the same failure.
 
-## Billing, and what a seat is
+## Billing, and the three tiers
 
-Dodo Payments, as one subscription per team: a **Pro product** that includes one
-seat, plus a **per-seat add-on** for every member past the first.
+Dodo Payments, as **two products** and one team-wide tier derived from them:
 
-A seat is capacity the team has bought, not a live headcount. That single choice
-decides all four transitions:
+| Product  | Env var                           | Price      | Storage |
+| -------- | --------------------------------- | ---------- | ------- |
+| Pro      | `DODOPAYMENT_PRO_PRODUCT_ID`      | $9 / month | 1 TB    |
+| Lifetime | `DODOPAYMENT_LIFETIME_PRODUCT_ID` | $29 once   | 5 GB    |
 
-|                                  |                                                  |
-| -------------------------------- | ------------------------------------------------ |
-| Somebody joins, every seat taken | Buy a seat, `prorated_immediately`               |
-| Somebody joins, a seat is free   | Nothing. It is already paid for                  |
-| Somebody is removed              | Seat kept, release **scheduled** for the renewal |
-| That seat is filled again        | Scheduled release cancelled. Free                |
+Both are the whole app. **Storage is the only thing that differs** — nothing is
+gated by tier, so no route should ever ask "is this team Pro" to decide whether
+a feature exists.
 
-So a team that churns a member in and out pays once, and a team that shrinks
-stops paying at its renewal rather than getting a mid-term credit.
+A team may hold both, and a lot follows from that. Pro is a subscription and
+lapses; the lifetime licence is a single payment recorded in `purchase` and
+never does. So the tier is _derived_ rather than written by whoever noticed a
+change:
 
-A team with no subscription cannot invite anybody: the organization plugin's
-`beforeCreateInvitation` hook answers **402** with `SUBSCRIPTION_REQUIRED`, and
-the dashboard opens the upgrade modal on that status specifically. Inviting and
-removing are owner-and-admin only, which is Better Auth's own rule; the billing
-routes repeat it server-side through `requireAdmin`.
+```
+active subscription (or one inside its grace window)  ->  pro
+otherwise, a purchase row                             ->  lifetime
+otherwise                                             ->  free      (2 GB)
+```
 
-`lib/seats.ts` holds all of it. `decide` is pure and idempotent — it derives the
-one call to make from current state rather than from the event that prompted it,
-which is what lets a hook, a retried webhook and the hourly cron all run it
-without compounding.
+`lib/entitlement.ts` holds that, and `applyPlan` is **the only thing in the
+Worker that writes `organization.plan` or `storage_quota_bytes`**. Recomputing
+rather than assigning is what makes cancelling a subscription drop a lifetime
+holder back to their 5 GB instead of to free — the bug that version would have
+had is silent, and it takes away something somebody bought.
+
+`POST /v1/billing/checkout` takes `{ plan: "pro" | "lifetime" }` and defaults to
+Pro. It refuses per product rather than per team: buying Pro on top of a
+lifetime licence is a sale, and only a second subscription (`ALREADY_PRO`) or a
+second lifetime licence (`ALREADY_LIFETIME`) is a 409. Both writes are
+owner-or-admin through `requireAdmin`, because both spend money.
+
+### `payment.succeeded` is not evidence of a purchase
+
+Dodo fires it for **every** charge it makes, renewals included. `redeem` in
+`routes/webhooks/dodo.ts` therefore requires two things before granting the
+licence, and both are load-bearing:
+
+- `subscription_id` is null — a renewal carries the subscription it renewed.
+- the cart contains `DODOPAYMENT_LIFETIME_PRODUCT_ID` — the opening charge of a
+  new Pro subscription arrives carrying the same `metadata.teamId`.
+
+Drop either and every subscriber is handed a lifetime licence every month. It
+would not show up anywhere: they are already `pro`, their quota is already the
+larger of the two, and the first symptom is a cancellation that does not take.
+
+### `lifetime` is not sent to the Mac app
+
+`GET /v1/desktop/entitlement` answers `pro` for a lifetime team. Builds already
+in the field parse two plan values and read a third as "not paid", so sending
+the real one puts a paywall in front of somebody who has paid. The app has no
+use for the distinction — it exports either way, and storage is decided by the
+share endpoint. The mapping can go once 0.0.11 is out of the field.
 
 ### The webhook
 
@@ -243,8 +272,10 @@ development  <tunnel>/v1/webhooks/dodo
 ```
 
 Subscribed to `subscription.active`, `.renewed`, `.plan_changed`, `.updated`,
-`.on_hold`, `.paused`, `.failed`, `.cancelled`, `.expired`. Payment events are
-not needed — the subscription events already say what a payment did.
+`.on_hold`, `.paused`, `.failed`, `.cancelled`, `.expired`, **and
+`payment.succeeded`** — which is the only event a one-off product produces, and
+so the only way the lifetime licence is ever granted. Leave it unsubscribed and
+that product takes money in silence.
 
 It is the only thing that writes a plan. Checkout returns a URL and nothing
 else; what this app believes about a subscription came from a signed delivery
@@ -267,8 +298,8 @@ seen, so one forged POST cannot suppress the genuine delivery behind it.
 ### The cron
 
 One hourly trigger, for the two things no webhook announces: a grace window
-closing after a failed renewal, and a seat count that drifted because a hook
-lost its Dodo call. `wrangler dev` does not fire it — `curl
+closing after a failed renewal, and rows left disagreeing when a team was
+created but its membership was not. `wrangler dev` does not fire it — `curl
 <dev-host>/cdn-cgi/local/scheduled`.
 
 ## Deploying
