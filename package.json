@@ -2,6 +2,7 @@
   "name": "prequel",
   "version": "0.0.0",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@11.2.2",
   "engines": {
     "node": ">=22"

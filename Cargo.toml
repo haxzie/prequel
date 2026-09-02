@@ -6,7 +6,9 @@ members = ["crates/*", "packages/recorder"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-license = "UNLICENSED"
+# FSL-1.1-ALv2 is not an SPDX identifier, so the file is named instead.
+# Inherited `license-file` resolves relative to this workspace root.
+license-file = "LICENSE.md"
 publish = false
 
 [workspace.dependencies]

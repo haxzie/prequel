@@ -415,3 +415,18 @@ use British spelling — colour, normalised, behaviour — consistently.
 
 `AGENTS.md` at the root carries the same conventions in the form coding agents
 read.
+
+## Licence
+
+Source-available under the [Functional Source License, Version 1.1, ALv2 Future
+License](LICENSE.md) (`FSL-1.1-ALv2`) — not an OSI-approved open source licence,
+because it restricts one thing.
+
+Read it, fork it, patch it, build it, run it — inside a company or out of one.
+The single restriction is a **Competing Use**: you may not ship it, or anything
+substantially similar to it, as a commercial product or service of your own.
+Every release relicenses itself to Apache-2.0 automatically two years after it
+ships, and that grant is irrevocable.
+
+Say "source-available", not "open source". The distinction is small and people
+care about it a lot.

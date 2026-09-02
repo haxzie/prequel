@@ -2,7 +2,7 @@
   "name": "@prequel/typescript-config",
   "version": "0.0.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE.md",
   "files": [
     "base.json",
     "nextjs.json",
