@@ -62,7 +62,7 @@ const FEATURES = [
   },
   {
     title: "Cuts on a real timeline",
-    body: "Trim the dead air, slice by slice, with a waveform under every clip and a playhead that scrubs. Layout, background and audio can all change mid-take.",
+    body: "Trim the pauses, slice by slice, with a waveform under every clip and a playhead that scrubs. Layout, background and audio can all change mid-take.",
     illustration: <TimelineIllustration />,
   },
   {

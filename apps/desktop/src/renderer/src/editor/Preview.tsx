@@ -1146,7 +1146,6 @@ function detached(preset: LayoutSettings["preset"]): LayoutSettings["preset"] | 
       return null;
     case "split":
     case "camera-full":
-      return "over-full";
     default:
       return "over-padded";
   }

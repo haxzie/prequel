@@ -12,3 +12,7 @@ out/
 release/
 .next/
 target/
+
+# The licence text is reproduced verbatim from fsl.software. Reflowing a legal
+# document is how it stops being the licence you think you granted.
+LICENSE.md

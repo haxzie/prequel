@@ -28,7 +28,7 @@ export default function Home() {
             <HeroPlatform>Mac</HeroPlatform>
           </>
         }
-        lede="Record once. Prequel hands back a finished video: pushed in on the work, the camera framed, the dead air gone. It exports at up to 4K."
+        lede="Record once. Prequel hands back a finished video: pushed in on the work, the camera framed, a background behind it. It exports at up to 4K."
       />
       <LandingBody faq={PRODUCT_FAQ} />
     </>

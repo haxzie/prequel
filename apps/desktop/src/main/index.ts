@@ -17,12 +17,7 @@ import {
   registerIpc,
 } from "./ipc.js";
 import { initLogging, log, logPath } from "./log.js";
-import {
-  loginItemState,
-  seedLoginItem,
-  startedByItself,
-  wasOpenedAtLogin,
-} from "./login-item.js";
+import { loginItemState, seedLoginItem, startedByItself, wasOpenedAtLogin } from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder } from "./recorder.js";

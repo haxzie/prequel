@@ -27,7 +27,11 @@ const vars = Object.fromEntries(
     ]),
 );
 
-const region = vars.SES_REGION ?? "us-east-1";
+// The region is configuration rather than a secret, so it lives in
+// wrangler.jsonc and not in `.dev.vars` — which means this fallback is what
+// actually runs. It has to track the one there or this reports on an empty
+// region and says the domain is unverified.
+const region = vars.SES_REGION ?? "ap-south-1";
 const endpoint = `https://email.${region}.amazonaws.com/v2/email`;
 
 const client = new AwsClient({
@@ -77,10 +81,21 @@ if (identities.length === 0) {
   console.log("no identities — nothing can send. `add <address>` to start one.");
 } else {
   for (const identity of identities) {
+    // `SendingEnabled` and `VerificationStatus`, not `VerifiedForSendingStatus`
+    // — that one comes back from `GetEmailIdentity` on a single identity and is
+    // simply absent from this list, so reading it here marked every identity
+    // pending, including the verified domain everything actually sends from.
+    const note = identity.SendingEnabled
+      ? ""
+      : identity.VerificationStatus === "FAILED"
+        ? "  failed — verification never completed"
+        : identity.IdentityType === "DOMAIN"
+          ? "  pending — the DNS records are not visible yet"
+          : "  pending — click the link AWS emailed";
+
     console.log(
-      `${identity.VerifiedForSendingStatus ? "✓" : "·"} ${identity.IdentityName}` +
-        `  [${identity.IdentityType}]` +
-        (identity.VerifiedForSendingStatus ? "" : "  pending — click the link AWS emailed"),
+      `${identity.SendingEnabled ? "✓" : "·"} ${identity.IdentityName}` +
+        `  [${identity.IdentityType}]${note}`,
     );
   }
 }

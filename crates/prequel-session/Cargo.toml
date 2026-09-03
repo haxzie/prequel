@@ -3,7 +3,7 @@ name = "prequel-session"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license-file.workspace = true
 publish.workspace = true
 
 # Deliberately free of Apple framework dependencies. Everything here is plain

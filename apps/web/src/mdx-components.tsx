@@ -21,12 +21,28 @@ const components = {
     <h3 className="mt-10 mb-3 scroll-mt-24 text-lg font-medium tracking-tight text-fg" {...props} />
   ),
   p: (props) => <p className="my-5 leading-[1.75] text-muted" {...props} />,
-  a: (props) => (
-    <a
-      className="text-fg underline decoration-line underline-offset-4 transition-colors hover:decoration-accent"
-      {...props}
-    />
-  ),
+  /**
+   * Internal links stay put; anything off-site opens in a tab and is disowned.
+   *
+   * Posts cite Reddit threads as evidence for what people report about other
+   * tools, and those are links we point at rather than vouch for, which is
+   * exactly what `rel="noreferrer noopener"` says. Same treatment the author
+   * byline gives its outbound links. Derived from the href rather than set per
+   * link in the MDX, because the one that gets forgotten is the one that
+   * matters.
+   */
+  a: ({ href, ...props }) => {
+    const external = typeof href === "string" && /^https?:\/\//.test(href);
+
+    return (
+      <a
+        href={href}
+        className="text-fg underline decoration-line underline-offset-4 transition-colors hover:decoration-accent"
+        {...(external ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+        {...props}
+      />
+    );
+  },
   ul: (props) => (
     <ul className="my-5 list-disc space-y-2 pl-5 text-muted marker:text-line" {...props} />
   ),
@@ -53,6 +69,27 @@ const components = {
   pre: (props) => (
     <pre
       className="my-7 overflow-x-auto rounded-xl border border-line bg-surface p-4 font-mono text-[0.8125rem] leading-relaxed text-fg/90"
+      {...props}
+    />
+  ),
+  /**
+   * Two shapes of image share this element and they do not share a ratio.
+   *
+   * Landing-page captures are 16:10 by construction; a cropped Reddit thread is
+   * whatever height the post happened to be. Forcing one ratio on both means
+   * either cropping the thread or padding it into a frame it does not fill,
+   * which reads as a small graphic stranded in a large box. So the image keeps
+   * its own proportions and the file is generated at the size it should render.
+   *
+   * The cost is that no box is reserved before the image decodes, so prose
+   * below it shifts once. Every one of these is a local file a few tens of
+   * kilobytes in size, which is the case where that is cheap.
+   */
+  img: (props) => (
+    <img
+      className="my-7 h-auto w-full rounded-xl border border-line bg-surface"
+      loading="lazy"
+      decoding="async"
       {...props}
     />
   ),

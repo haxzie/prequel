@@ -1,0 +1,125 @@
+## What is a screen recorder for YouTube?
+
+A screen recorder for YouTube is one that can export at the resolution and frame
+rate YouTube rewards, keep small text legible through its encoder, and produce a
+file with nothing stamped on it. In practice that means 4K export, at least 60
+frames a second, and no watermark on whichever plan you are on.
+
+Plenty of recorders capture a screen perfectly well and still produce a video
+that looks soft once YouTube has re-encoded it. That is almost always a
+resolution or frame-rate decision made at capture time, not something you can
+fix afterwards.
+
+YouTube is unforgiving about screen recordings in a way that other places are
+not. A clip that looks fine in Slack turns to mush after YouTube's encoder gets
+hold of it, and the reasons are specific and fixable.
+
+This is what to do at capture time so the video survives the upload, and what to
+do afterwards so people watch it.
+
+## Record at 4K even if you publish at 1080p
+
+This is the single highest-value setting on this page.
+
+YouTube gives 4K uploads a better codec and a much higher bitrate than 1080p
+ones, and that advantage is passed through to viewers watching at 1080p. A 4K
+upload that people watch in 1080p genuinely looks better than a 1080p upload of
+the same footage. Screen recordings are the hardest case for a video codec,
+because they are full of hard edges and small text, which is exactly what
+compression smears.
+
+Record at your display's full resolution and export at 4K. If you cannot, export
+at 1440p, which still gets you above the 1080p tier.
+
+## Frame rate matters more than you think
+
+Screen content moves in a specific way: it sits perfectly still, then something
+scrolls or zooms fast. Thirty frames a second handles the still part fine and
+falls apart on the fast part.
+
+If your video has zooms in it, and a good screen recording does, 60 fps is the
+floor. Higher is better for fast push-ins, which is where judder is most
+visible. Many recorders in this category stop at 60; Prequel exports at up to
+120 fps on every plan.
+
+## The three things that lose viewers
+
+### They cannot see what you are pointing at
+
+At 1080p on a phone, a full-screen recording of a 3456-pixel display makes your
+UI unreadable. Zooming in on each action is not a stylistic choice on YouTube,
+it is the difference between a watchable video and one people leave.
+
+[Screen recorders with automatic mouse zoom →](/blog/screen-recorder-mouse-zoom-mac)
+
+### There is nobody in it
+
+A face in the corner measurably increases retention, particularly in the first
+thirty seconds. Ideally it is present when you are talking and small or gone
+when the screen is dense, which needs a recorder that keeps the camera as its
+own layer rather than burning it in.
+
+[Screen recorders for Mac with a webcam overlay →](/blog/screen-recorder-webcam-overlay-mac)
+
+### The audio is only your microphone
+
+If your video is about software that makes sound, and the sound is missing,
+viewers notice immediately. macOS will not record its own audio without help.
+
+[How to record your Mac screen with internal audio →](/blog/record-mac-screen-with-internal-audio)
+
+## A watermark makes it look like a trial
+
+Several popular recorders stamp a logo on exports from their free tier or
+trial. On YouTube that reads as "made with unpaid software" and it is the first
+thing a comment mentions.
+
+Check before you record, not after. Prequel never watermarks anything on any
+plan or during its fourteen-day trial, and OBS and QuickTime never watermark at
+all.
+
+[Screen recorders for Mac with no watermark →](/blog/screen-recorder-no-watermark-mac)
+
+## Practical settings
+
+| Setting    | Use                                                             |
+| ---------- | --------------------------------------------------------------- |
+| Resolution | Record at display resolution, export at 4K (3840×2160)          |
+| Frame rate | 60 fps minimum, higher if the video has fast zooms              |
+| Codec      | H.264 for compatibility, HEVC for a smaller file at 4K          |
+| Aspect     | 16:9 for the main video, 9:16 for a Shorts cut of the same take |
+| Audio      | System audio and microphone on separate tracks                  |
+
+## Shorts from the same recording
+
+A landscape recording cropped to vertical usually loses the thing the video was
+about. Reframing is different: you keep the whole recording and choose what sits
+in the vertical frame, so the zoomed subject stays centred.
+
+If your recorder has frame presets, one take produces both the main video and
+the Shorts cut. If it does not, that is a second recording.
+
+## What to record with
+
+[The 12 best screen recorders for Mac →](/blog/best-screen-recorders-for-mac)
+· [The free ones with camera recording →](/blog/free-screen-recorder-mac-camera)
+· [Open source options →](/blog/open-source-screen-recorders-mac)
+· [Loom alternatives →](/blog/loom-alternatives-mac)
+
+For YouTube specifically, the requirements narrow: 4K, above 60 fps, no
+watermark, camera as a separate layer, system audio on its own track, and no cap
+on the length of a take. Prequel does all six, exports at up to 120 fps, renders
+on your own Mac with no upload step, and costs $29 once or $9 a month with
+fourteen days free. An Apple Silicon Mac on macOS 14 or later.
+
+[See what Prequel costs →](/pricing)
+
+## Where to go next
+
+For the fundamentals of recording on a Mac:
+
+[The complete guide to screen recording on Mac →](/blog/screen-recording-on-mac)
+
+If the video is a demo of your own product:
+
+[How to record a product demo video →](/blog/product-demo-videos)

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { competitors } from "@/content/competitors";
@@ -8,7 +9,12 @@ import { Logo } from "./Logo";
 import { Container } from "./Section";
 import { DownloadCta } from "./DownloadButton";
 
-export function Footer() {
+/**
+ * `badge` is the marketing layout's `@badge` slot, which is filled on the home
+ * page and empty everywhere else. It arrives as a prop because a footer that
+ * decided this for itself would have to know the route, and a layout does not.
+ */
+export function Footer({ badge }: { badge?: ReactNode }) {
   return (
     <footer className="mt-32 border-t border-line">
       <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
@@ -72,8 +78,14 @@ export function Footer() {
             ))}
           </nav>
 
+          {/* The support page before the address: somebody whose export just
+              failed gets further from the permission answers on it than from an
+              empty compose window, and the page carries the address anyway. */}
           <div className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Contact</span>
+            <Link href="/support" className="text-muted hover:text-fg">
+              Support
+            </Link>
             <a href={`mailto:${CONTACT_EMAIL}`} className="text-muted hover:text-fg">
               {CONTACT_EMAIL}
             </a>
@@ -81,8 +93,9 @@ export function Footer() {
         </div>
       </Container>
 
-      <Container className="flex flex-col gap-2 border-t border-line py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
+      <Container className="flex flex-col items-start gap-4 border-t border-line py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <p>© {new Date().getFullYear()} Prequel. Made for macOS.</p>
+        {badge}
         <p className="font-mono tracking-wide">{SITE.platform}</p>
       </Container>
     </footer>

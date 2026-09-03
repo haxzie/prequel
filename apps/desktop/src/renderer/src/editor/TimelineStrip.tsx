@@ -39,6 +39,17 @@ import { wavePath } from "./waveform";
 
 const NS_PER_SECOND = 1_000_000_000;
 
+/**
+ * How far the pointer must travel before a press is drawing a zoom out rather
+ * than clicking to add one.
+ *
+ * Without it a click with a pixel of tremor in it would ask for a zoom a pixel
+ * long, which is below the shortest one worth having — so the press would be
+ * declined and the click would do nothing, on the gesture that has always
+ * worked. Four pixels is under a frame's width at any useful timeline scale.
+ */
+const DRAW_SLOP = 4;
+
 /** Row geometry. */
 const RULER_H = 24;
 /**
@@ -289,7 +300,18 @@ export function TimelineStrip({
   );
 
   /**
-   * Draws the outline of the zoom a click would add, or hides it.
+   * The zoom being drawn out in the empty part of the row, if any.
+   *
+   * A ref rather than state, for the reason `showGhost` gives: what a drag
+   * changes is an outline, and going through state would rebuild every clip,
+   * tick and thumbnail on every `pointermove` to move it. `drawn` is whether
+   * the pointer has travelled far enough to mean a span rather than a click.
+   */
+  const draw = useRef<{ at: MediaTime; x: number; drawn: boolean } | null>(null);
+
+  /**
+   * Draws the outline of the zoom a click would add — or of the one being drawn
+   * out — and hides it.
    *
    * Written straight to the element rather than held in state: `pointermove`
    * fires far more often than a frame, and re-rendering the strip on each one
@@ -304,7 +326,21 @@ export function TimelineStrip({
       const element = ghost.current;
       if (!element) return;
 
-      const span = clientX === null ? null : zoomSpanAt(state.project, sourceAt(timeAt(clientX)));
+      // Anchored to the press while a zoom is being drawn out, and to the
+      // pointer otherwise. Both go through `zoomSpanAt`, so the outline is the
+      // span that will actually be laid down rather than the rectangle the
+      // pointer happens to have swept — a drag that runs back over the zoom
+      // behind it stops where the zoom will.
+      const drawing = draw.current;
+      const pointer = clientX === null ? null : sourceAt(timeAt(clientX));
+      const span =
+        drawing === null
+          ? pointer === null
+            ? null
+            : zoomSpanAt(state.project, pointer)
+          : drawing.drawn && pointer !== null
+            ? zoomSpanAt(state.project, drawing.at, pointer)
+            : zoomSpanAt(state.project, drawing.at);
       const from = span === null ? null : projectAt(span.start);
       const to = span === null ? null : projectAt(span.end);
 
@@ -471,13 +507,57 @@ export function TimelineStrip({
           <div
             className="relative"
             style={{ height: CLIP_H }}
-            onPointerMove={(event) => showGhost(event.clientX)}
-            onPointerLeave={() => showGhost(null)}
+            onPointerMove={(event) => {
+              const drawing = draw.current;
+              if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
+                drawing.drawn = true;
+              }
+              showGhost(event.clientX);
+            }}
+            // Not while a zoom is being drawn out: the pointer is captured, so
+            // the drag continues over the bars and past the ends of the row,
+            // and taking the outline down there would hide the one thing
+            // saying how long the zoom is going to be.
+            onPointerLeave={() => {
+              if (!draw.current) showGhost(null);
+            }}
+            // The press is one edge of the zoom; the release is the other, and
+            // a press that never travels is the click this row has always
+            // taken. Nothing is added until then, so a drag is one thing in the
+            // undo history rather than an add followed by a resize.
+            //
             // Deliberately let through to the strip, which seeks: the playhead
-            // belongs on the zoom that has just been added, and where the gap
-            // is too small to hold one the press has to still do something.
+            // belongs on the zoom being added, and where the gap is too small
+            // to hold one the press has to still do something.
             onPointerDown={(event) => {
-              dispatch({ type: "addZoom", at: sourceAt(timeAt(event.clientX)) });
+              draw.current = {
+                at: sourceAt(timeAt(event.clientX)),
+                x: event.clientX,
+                drawn: false,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerUp={(event) => {
+              const drawing = draw.current;
+              draw.current = null;
+              if (!drawing) return;
+
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              media.onInteract();
+              dispatch({
+                type: "addZoom",
+                at: drawing.at,
+                ...(drawing.drawn ? { to: sourceAt(timeAt(event.clientX)) } : {}),
+              });
+              // The zoom itself is now drawn where the outline was, and the
+              // project this closure can see is the one from before it existed
+              // — so the outline would sit exactly on top of the new bar until
+              // the pointer moved again.
+              showGhost(null);
+            }}
+            onPointerCancel={() => {
+              draw.current = null;
+              showGhost(null);
             }}
           >
             {/* Stuck to the left edge of the scrollport and as wide as it, so
@@ -490,7 +570,7 @@ export function TimelineStrip({
               >
                 <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
                   <ZoomIcon />
-                  Click to add a zoom effect
+                  Click or drag to add a zoom effect
                 </span>
               </div>
             )}

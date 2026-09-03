@@ -20,9 +20,13 @@ export const SITE = {
   tagline: "Cinematic screen recorder for Mac",
   /* Read as the search snippet before anything else, so: the term in the first
      four words, the claim before Google's ~155 character cut, and no clause
-     worth reading left after it. */
+     worth reading left after it.
+
+     Only what the first pass actually does. Cutting is a manual pass on the
+     timeline, so a description that promises trimmed silences promises an
+     automatic feature that does not exist. */
   description:
-    "Prequel is a Mac screen recorder that hands back a finished video: automatic zooms, a framed camera, dead air cut. Records locally, exports at up to 4K.",
+    "Prequel is a Mac screen recorder that does the editing for you: zooms on every click, your camera framed, a background behind it. Exports at up to 4K.",
   platform: "Apple Silicon · macOS 14+",
 } as const;
 
@@ -33,3 +37,35 @@ export const NAV: { href: Route; label: string }[] = [
 ];
 
 export const CONTACT_EMAIL = "hello@prequel.sh";
+
+/**
+ * Where anything that needs an answer goes.
+ *
+ * Separate from `CONTACT_EMAIL` because the two are read by different people in
+ * a different frame of mind: `hello@` is a stranger saying hello, `support@` is
+ * somebody whose export just failed. Both reach us; only one of them is a queue
+ * with a promise attached.
+ */
+export const SUPPORT_EMAIL = "support@prequel.sh";
+
+/**
+ * Who writes the posts.
+ *
+ * One author, so this is a constant rather than a field on `Post` — a per-post
+ * author would be a column that reads the same on every row until there is a
+ * second person, and adding one then is a smaller change than keeping the
+ * column honest until then.
+ *
+ * `avatar` is committed under `public/` rather than pointed at
+ * `github.com/haxzie.png`. A hotlinked avatar is a third party deciding when
+ * the byline goes blank, and it would be fetched on every post view from a host
+ * that is not ours.
+ */
+export const AUTHOR = {
+  name: "Musthaq Ahamad",
+  role: "Building Prequel",
+  avatar: "/authors/haxzie.jpg",
+  url: "https://haxzie.com",
+  x: "https://x.com/haxzie_",
+  linkedin: "https://www.linkedin.com/in/haxzie",
+} as const;

@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/pricing`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/about`, changeFrequency: "yearly", priority: 0.5 },
+    { url: `${base}/support`, changeFrequency: "yearly", priority: 0.5 },
     // No `lastModified`: the registry holds no date, and `new Date()` here
     // would tell crawlers every use-case page changed on every deploy, which is
     // how a site teaches Google to ignore the field. Posts pass `post.date`

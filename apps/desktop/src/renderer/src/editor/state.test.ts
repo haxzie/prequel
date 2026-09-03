@@ -434,6 +434,53 @@ describe("settingsOf", () => {
   });
 });
 
+describe("the frame", () => {
+  const vertical = { width: 1080, height: 1920, presetId: "9:16" };
+  const landscape = { width: 1920, height: 1080, presetId: "16:9" };
+
+  it("moves the standing column out of a frame that cannot hold it", () => {
+    // The column is a portrait camera over a full-bleed screen, and the picker
+    // only offers it in a landscape frame. Switching the frame is the other way
+    // into the pairing: without this the project sits in an arrangement whose
+    // cell is greyed out, and nothing on screen says why.
+    const state = run(
+      start(),
+      // Nothing selected, so the arrangement is the project's own default.
+      { type: "select", sliceId: null },
+      { type: "setSetting", section: "layout", key: "preset", value: "over-column" },
+      { type: "setFrame", frame: vertical },
+    );
+
+    // `over-padded`: the column with the standing camera taken out of it.
+    expect(state.project.defaults.layout.preset).toBe("over-padded");
+  });
+
+  it("moves it out on a slice that overrode it, not only in the defaults", () => {
+    const only = slicesOf(start().project)[0]!;
+    const state = run(
+      start(),
+      { type: "select", sliceId: only.id },
+      { type: "setSetting", section: "layout", key: "preset", value: "over-column" },
+      { type: "setFrame", frame: vertical },
+    );
+
+    expect(slicesOf(state.project)[0]!.overrides.layout?.preset).toBe("over-padded");
+  });
+
+  it("leaves every other arrangement exactly where it was", () => {
+    const state = run(
+      start(),
+      { type: "select", sliceId: null },
+      { type: "setSetting", section: "layout", key: "preset", value: "split" },
+      { type: "setFrame", frame: vertical },
+      { type: "setFrame", frame: landscape },
+    );
+
+    expect(state.project.defaults.layout.preset).toBe("split");
+    expect(state.project.frame).toEqual(landscape);
+  });
+});
+
 describe("revision", () => {
   it("advances on a change worth saving", () => {
     const state = start();
@@ -490,6 +537,53 @@ describe("zooms", () => {
     // Selected on the way in: the point of adding one is to say where it goes.
     expect(state.selectedZoomId).toBe(zoomsOf(state)[0]!.id);
     expect(state.selectedSliceId).toBeNull();
+  });
+
+  it("takes its length from a span drawn out on the row", () => {
+    // Dragging in the empty part of the zoom row draws the zoom's length rather
+    // than accepting the default one, so the press is one edge and the release
+    // is the other.
+    const state = run(start(), { type: "addZoom", at: 2 * S, to: 7 * S });
+    const [zoom] = zoomsOf(state);
+
+    expect(zoom!.source).toEqual({ start: 2 * S, end: 7 * S });
+  });
+
+  it("draws one out backwards just as well", () => {
+    // Which end was pressed first is not something the gesture should care
+    // about — a zoom drawn right to left is the same zoom.
+    const state = run(start(), { type: "addZoom", at: 7 * S, to: 2 * S });
+    const [zoom] = zoomsOf(state);
+
+    expect(zoom!.source).toEqual({ start: 2 * S, end: 7 * S });
+  });
+
+  it("holds a drawn span inside the gap it started in, at both ends", () => {
+    // Clamping the far end was enough while the length was fixed and grew
+    // forwards. A drag can run back over the zoom *behind* the press, and
+    // "no two zooms cover the same moment" has to hold without the strip
+    // knowing anything about it.
+    const state = pair();
+    const [first, second] = zoomsOf(state);
+    const gap = { start: first!.source.end, end: second!.source.start };
+
+    const across = run(state, { type: "addZoom", at: gap.start + 0.5 * S, to: 9 * S });
+    const back = run(state, { type: "addZoom", at: gap.end - 0.5 * S, to: 0 });
+
+    expect(across.project.zooms).toHaveLength(3);
+    expect(back.project.zooms).toHaveLength(3);
+    // Both stop against the neighbour they were dragged into.
+    expect(across.project.zooms[1]!.source.end).toBe(gap.end);
+    expect(back.project.zooms[1]!.source.start).toBe(gap.start);
+  });
+
+  it("declines a span too short to grab afterwards", () => {
+    // The strip has its own few pixels of slop that keep a shaky click a click;
+    // this is the rule underneath, and it is the same one that declines a gap
+    // too small to hold a zoom.
+    const state = run(start(), { type: "addZoom", at: 3 * S, to: 3 * S + 1000 });
+
+    expect(zoomsOf(state)).toHaveLength(0);
   });
 
   it("declines to add one on top of another", () => {
