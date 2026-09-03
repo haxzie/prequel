@@ -18,6 +18,7 @@ import {
   DEFAULT_ZOOM_LENGTH,
   resolveSettings,
   setOverride,
+  type LayoutPreset,
   type Project,
   type SettingsSection,
   type Slice,
@@ -25,6 +26,7 @@ import {
   type ZoomSlice,
 } from "../../../shared/project";
 import type { MediaTime } from "../../../shared/manifest";
+import { presetFitsFrame } from "../../../shared/layout";
 import { place, totalDuration, type PlacedSlice } from "./timeline";
 
 /** Shortest slice a cut may leave behind. Below this it cannot be grabbed. */
@@ -111,7 +113,14 @@ export type EditorAction =
        */
       keys?: string[];
     }
-  | { type: "addZoom"; at: MediaTime }
+  /**
+   * Lays a zoom on the timeline. `to` is where a drag that drew it out ended.
+   *
+   * Two source times rather than a length, because the press and the release
+   * are what the strip actually knows and either may be the earlier of the two
+   * — a zoom drawn leftwards is the same zoom.
+   */
+  | { type: "addZoom"; at: MediaTime; to?: MediaTime }
   | { type: "setZooms"; zooms: ZoomSlice[] }
   | { type: "selectZoom"; zoomId: string | null }
   | { type: "deleteZoom"; zoomId: string }
@@ -276,7 +285,7 @@ function apply(
       return { ...state, selectedZoomId: action.zoomId, selectedSliceId: null };
 
     case "setFrame":
-      return edit(state, (project) => ({ ...project, frame: action.frame }));
+      return edit(state, (project) => framed({ ...project, frame: action.frame }));
 
     // Persisted with the rest of the edit rather than kept in the dialog: a
     // recording exported once as a GIF is nearly always exported as a GIF the
@@ -308,7 +317,7 @@ function apply(
       );
 
     case "addZoom":
-      return addZoom(state, action.at);
+      return addZoom(state, action.at, action.to);
 
     case "setZooms":
       // Replaces the list wholesale, which only the first cut does. It counts
@@ -342,7 +351,7 @@ function apply(
 }
 
 /**
- * Drops a zoom on the timeline at `at`.
+ * Drops a zoom on the timeline at `at`, or across to `to` where it was drawn.
  *
  * Declines where one already is. Two zooms covering the same moment have no
  * defined answer — which of the two is the picture supposed to be? — so
@@ -351,8 +360,8 @@ function apply(
  * Fitted into the gap when there is not room for a full-length one, and
  * declined outright when the gap is too small to grab afterwards.
  */
-function addZoom(state: EditorState, at: MediaTime): EditorState {
-  const span = zoomSpanAt(state.project, at);
+function addZoom(state: EditorState, at: MediaTime, to?: MediaTime): EditorState {
+  const span = zoomSpanAt(state.project, at, to);
   if (!span) return state;
 
   const zoom: ZoomSlice = {
@@ -374,28 +383,46 @@ function addZoom(state: EditorState, at: MediaTime): EditorState {
 }
 
 /**
- * The span a zoom dropped at `at` would occupy, or null if none would be.
+ * The span a zoom pressed at `at` would occupy, or null if none would be.
  *
- * The single rule behind both the action and the ghost the timeline draws under
- * the pointer — the same arrangement `splitPointAt` has, and for the same
- * reason: a preview that promises something the reducer then declines is worse
- * than no preview.
+ * The single rule behind the action, the ghost the timeline draws under the
+ * pointer, and the outline it draws while one is being dragged out — the same
+ * arrangement `splitPointAt` has, and for the same reason: a preview that
+ * promises something the reducer then declines is worse than no preview.
  *
- * Fitted into the gap when there is not room for a full-length zoom, and null
- * where one already is or the gap is too small to grab afterwards.
+ * `to` is where a drag ended. Without it the zoom takes its default length
+ * forwards from the press, which is what a click asks for. With it the span is
+ * whatever was drawn out, in either direction — the press is one edge and the
+ * release is the other, and which of them is the start falls out of the two
+ * rather than out of a rule about dragging rightwards.
+ *
+ * Held inside the gap the press landed in, at both ends. Clamping only the far
+ * end was enough while the length was fixed and grew forwards; a drag can run
+ * back over the zoom behind it, and clamping the near end is what keeps
+ * "no two zooms cover the same moment" true without asking the caller.
+ *
+ * Null where a zoom already is, or where what is left is too small to grab
+ * afterwards.
  */
 export function zoomSpanAt(
   project: Project,
   at: MediaTime,
+  to?: MediaTime,
 ): { start: MediaTime; end: MediaTime } | null {
   const { zooms } = project;
   const duration = sourceEnd(project);
 
-  const start = Math.max(0, Math.min(at, duration));
-  if (zooms.some((zoom) => start >= zoom.source.start && start < zoom.source.end)) return null;
+  const from = Math.max(0, Math.min(at, duration));
+  if (zooms.some((zoom) => from >= zoom.source.start && from < zoom.source.end)) return null;
 
-  const next = zooms.find((zoom) => zoom.source.start > start);
-  const end = Math.min(start + DEFAULT_ZOOM_LENGTH, next?.source.start ?? duration, duration);
+  // The gap the press landed in. `from` is inside it, so these two bound the
+  // whole of what may be drawn without touching a neighbour.
+  const floor = zooms.reduce((edge, zoom) => (zoom.source.end <= from ? zoom.source.end : edge), 0);
+  const ceiling = zooms.find((zoom) => zoom.source.start > from)?.source.start ?? duration;
+
+  const drawn = to === undefined ? from + DEFAULT_ZOOM_LENGTH : Math.max(0, Math.min(to, duration));
+  const start = Math.max(floor, Math.min(from, drawn));
+  const end = Math.min(ceiling, Math.max(from, drawn));
 
   return end - start < MIN_ZOOM_NS ? null : { start, end };
 }
@@ -593,6 +620,56 @@ export function splitPointAt(
 
 function edit(state: EditorState, change: (project: Project) => Project): EditorState {
   return { ...state, project: change(state.project), revision: state.revision + 1 };
+}
+
+/**
+ * The project with any arrangement the frame cannot hold moved out of it.
+ *
+ * Only `over-column` is ever moved, and only into a frame that is not wider
+ * than it is tall. The picker is what stops it being *picked* there; this is
+ * the other way in — a recording arranged in 16:9 and then switched to 9:16
+ * would otherwise sit in an arrangement whose cell is greyed out, which is a
+ * state nothing on screen explains and only picking something else undoes.
+ *
+ * It lands in `over-padded`, which is the column with the standing camera taken
+ * out of it: the recording keeps the size and the padding it already had, and
+ * the camera falls back to the bubble. The same landing `detached` gives it
+ * when the column is picked up in the preview.
+ *
+ * Slice overrides are walked as well as the defaults. A preset overridden on
+ * one clip is exactly as unreachable as one in the defaults, and leaving it
+ * would put a frame's worth of column back on screen at that cut.
+ */
+function framed(project: Project): Project {
+  const fits = (preset: LayoutPreset) => presetFitsFrame(preset, project.frame);
+  // Nothing to walk in a frame every arrangement fits, which is every landscape
+  // one — and so is every frame the editor opens on unless someone changed it.
+  if (fits("over-column")) return project;
+
+  const kept = (preset: LayoutPreset): LayoutPreset => (fits(preset) ? preset : "over-padded");
+
+  return {
+    ...project,
+    defaults: {
+      ...project.defaults,
+      layout: { ...project.defaults.layout, preset: kept(project.defaults.layout.preset) },
+    },
+    tracks: project.tracks.map((track) => ({
+      ...track,
+      slices: track.slices.map((slice) => {
+        const preset = slice.overrides.layout?.preset;
+        if (preset === undefined || fits(preset)) return slice;
+
+        return {
+          ...slice,
+          overrides: {
+            ...slice.overrides,
+            layout: { ...slice.overrides.layout, preset: kept(preset) },
+          },
+        };
+      }),
+    })),
+  };
 }
 
 function withSlices(project: Project, slices: Slice[]): Project {

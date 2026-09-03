@@ -14,6 +14,8 @@ import {
   cropToFrame,
   cursorAt,
   layoutBoxes,
+  placement,
+  presetFitsFrame,
   rectAt,
   shapeAspect,
   SHADOW_SPREAD,
@@ -38,14 +40,18 @@ import type { CursorKind } from "./manifest.js";
 const PRESETS: LayoutPreset[] = [
   "over-full",
   "over-padded",
+  "over-column",
+  "over-column-left",
   "beside",
+  "beside-left",
   "stacked",
   "split",
-  "split-stacked",
   "screen-full",
   "screen-padded",
+  "screen-inset",
   "camera-full",
   "camera-padded",
+  "camera-inset",
   "custom",
 ];
 
@@ -1432,24 +1438,126 @@ describe("the arrangements", () => {
     expect(at(0.3).height).toBeCloseTo(at(0.15).height * 2);
   });
 
-  it("runs the flush pair to the frame's own edges", () => {
-    // The whole point of the arrangement: `beside` inside no padding at all.
-    // A stray gap here would be indistinguishable from `beside` at a small
-    // padding, which is the one thing this preset exists not to be.
-    const { screen, camera } = boxes("beside-flush");
+  it("stands the camera over the right end of a screen pushed left", () => {
+    // The arrangement's whole promise, and every number in it was measured off
+    // an edit made by hand: the recording at the size `over-padded` gives it,
+    // parked against the left padding, and the camera standing over its right
+    // end rather than beside it. A column that cleared the screen would be
+    // `beside` with the recording cropped, which is the one thing this is not.
+    const { screen, camera } = boxes("over-column");
+    const gap = DEFAULT_SETTINGS.background.padding * LANDSCAPE.height;
 
-    // Edge to edge across the frame, and meeting in the middle with no gap.
-    expect(screen!.area.x).toBeCloseTo(0);
-    expect(camera!.area.x).toBeCloseTo(screen!.area.x + screen!.area.width);
-    expect(camera!.area.x + camera!.area.width).toBeCloseTo(LANDSCAPE.width);
-    // Matched in height to each other, and centred rather than stretched to the
-    // frame's full height: the screen box keeps the recording's own aspect, and
-    // forcing it taller would crop the thing being demonstrated.
-    expect(camera!.area.height).toBeCloseTo(screen!.area.height);
+    // The same picture `over-padded` draws, moved rather than resized — the
+    // drawn rectangle, not the slot, because `over-padded` is handed the whole
+    // padded area and fits the recording inside it.
+    const drawn = (preset: LayoutPreset) =>
+      placement(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: CAMERA },
+        "screen",
+      )!.dstRect;
+
+    expect(drawn("over-column").width).toBeCloseTo(drawn("over-padded").width);
+    expect(drawn("over-column").height).toBeCloseTo(drawn("over-padded").height);
+    expect(screen!.area.x).toBeCloseTo(gap);
     expect(screen!.area.y + screen!.area.height / 2).toBeCloseTo(LANDSCAPE.height / 2);
-    // No card, because there is no frame left for a picture to sit on.
-    expect(screen!.card).toBe(false);
-    expect(camera!.card).toBe(false);
+
+    expect(overlap(screen!.area, camera!.area)).toBeGreaterThan(0);
+    // Three quarters of the shorter edge tall, standing in the middle of the
+    // frame's own height, inset from the right by the padding.
+    expect(camera!.area.height).toBeCloseTo(LANDSCAPE.height * 0.75);
+    expect(camera!.area.width / camera!.area.height).toBeCloseTo(5 / 8);
+    expect(camera!.area.x + camera!.area.width).toBeCloseTo(LANDSCAPE.width - gap);
+    expect(camera!.area.y + camera!.area.height / 2).toBeCloseTo(LANDSCAPE.height / 2);
+    // A card: a picture this large takes the frame's own shadow numbers, and a
+    // box the arrangement placed must not shrink towards the bubble controls.
+    expect(camera!.card).toBe(true);
+  });
+
+  it("centres the screen again when there is no camera to stand over it", () => {
+    // A picture parked against one edge with nothing beside it is not an
+    // arrangement, it is a screen that failed to centre.
+    const alone = layoutBoxes(
+      LANDSCAPE,
+      { ...DEFAULT_SETTINGS.layout, preset: "over-column", cameraVisible: false },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+    );
+
+    expect(alone.camera).toBeNull();
+    expect(alone.screen!.area).toEqual(boxes("over-padded").screen!.area);
+  });
+
+  it("never lets the column take more than a third of the frame", () => {
+    // What stops the arrangement drawing nonsense in a frame it is not offered
+    // in. The height is measured off the *shorter* edge, so in a square frame
+    // the column comes out at nearly half the picture — and the answer is a
+    // shorter column, not a narrower one, because `cover` would crop a narrowed
+    // box to a slit of a face.
+    for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
+      const { camera } = boxes("over-column", frame);
+      const where = `${frame.width}x${frame.height}`;
+
+      expect(camera!.area.width, where).toBeLessThanOrEqual(frame.width / 3 + 1e-6);
+      expect(camera!.area.width / camera!.area.height, where).toBeCloseTo(5 / 8);
+      expect(camera!.area.x + camera!.area.width, where).toBeLessThanOrEqual(frame.width + 1e-6);
+      expect(camera!.area.y, where).toBeGreaterThanOrEqual(-1e-6);
+    }
+  });
+
+  it("offers the column only where the frame is wider than it is tall", () => {
+    // The gate is on what the picker offers, not on what the geometry draws —
+    // the two disagreeing is how a thumbnail comes to promise one picture and
+    // the export writes another, so the column above still has an answer for
+    // every frame and this only says which of them it is for.
+    for (const column of ["over-column", "over-column-left"] as const) {
+      expect(presetFitsFrame(column, LANDSCAPE), column).toBe(true);
+      expect(presetFitsFrame(column, VERTICAL), column).toBe(false);
+      expect(presetFitsFrame(column, { width: 1080, height: 1080 }), column).toBe(false);
+    }
+
+    for (const preset of PRESETS) {
+      if (preset === "over-column" || preset === "over-column-left") continue;
+      for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
+        expect(presetFitsFrame(preset, frame), preset).toBe(true);
+      }
+    }
+  });
+
+  it("draws a left-handed arrangement as the exact reflection of its pair", () => {
+    // The property that makes the pair one arrangement with a side to it. Two
+    // implementations — the same rules with the signs changed — is how mirror
+    // images come to differ by a few pixels nobody can account for, and the
+    // difference would only ever show up between two cells in the grid.
+    for (const [right, left] of [
+      ["over-column", "over-column-left"],
+      ["beside", "beside-left"],
+    ] as const) {
+      for (const frame of [LANDSCAPE, { width: 1080, height: 1080 }]) {
+        const there = boxes(right, frame);
+        const back = boxes(left, frame);
+
+        for (const which of ["screen", "camera"] as const) {
+          const a = there[which]!.area;
+          const b = back[which]!.area;
+          const where = `${right}/${left} ${which} in ${frame.width}x${frame.height}`;
+
+          // Same box, same distance from the opposite edge.
+          expect(b.width, where).toBeCloseTo(a.width);
+          expect(b.height, where).toBeCloseTo(a.height);
+          expect(b.y, where).toBeCloseTo(a.y);
+          expect(frame.width - (b.x + b.width), where).toBeCloseTo(a.x);
+        }
+
+        // And the camera has actually changed hands, rather than the pair being
+        // symmetrical enough for the reflection to be a no-op.
+        expect(back.camera!.area.x, `${left} in ${frame.width}`).toBeLessThan(
+          there.camera!.area.x,
+        );
+      }
+    }
   });
 
   it("still leaves the screen the prominent one beside a wide recording", () => {
@@ -1460,14 +1568,46 @@ describe("the arrangements", () => {
     expect(screen!.area.width).toBeGreaterThan(camera!.area.width * 2);
   });
 
-  it("gives each picture exactly half of a split", () => {
-    for (const preset of ["split", "split-stacked"] as const) {
-      const { screen, camera } = boxes(preset);
+  it("stands the inset pair further back than the padded one", () => {
+    // The whole difference between the two cells, and the one that has to
+    // survive the padding control: a margin added to the composition's own
+    // rather than multiplied by it, so the roomy cell is never a copy of the
+    // one beside it — a recording of a whole screen opens with the padding off,
+    // and doubling nothing is still nothing.
+    for (const padding of [0, DEFAULT_SETTINGS.background.padding, 0.2]) {
+      const at = (preset: LayoutPreset) =>
+        layoutBoxes(
+          LANDSCAPE,
+          { ...DEFAULT_SETTINGS.layout, preset },
+          { ...DEFAULT_SETTINGS.background, padding },
+          { screen: SCREEN, camera: CAMERA },
+        );
 
-      expect(screen!.area.width, preset).toBeCloseTo(camera!.area.width);
-      expect(screen!.area.height, preset).toBeCloseTo(camera!.area.height);
-      expect(overlap(screen!.area, camera!.area), preset).toBeCloseTo(0);
+      for (const [padded, inset, which] of [
+        ["screen-padded", "screen-inset", "screen"],
+        ["camera-padded", "camera-inset", "camera"],
+      ] as const) {
+        const near = at(padded)[which]!.area;
+        const far = at(inset)[which]!.area;
+        const where = `${inset} at ${padding}`;
+
+        expect(far.width, where).toBeLessThan(near.width);
+        expect(far.height, where).toBeLessThan(near.height);
+        // Centred, and still whole: the margin is the point, so nothing is
+        // cropped to pay for it.
+        expect(far.x + far.width / 2, where).toBeCloseTo(LANDSCAPE.width / 2);
+        expect(far.y + far.height / 2, where).toBeCloseTo(LANDSCAPE.height / 2);
+        expect(at(inset)[which]!.fit, where).toBe("contain");
+      }
     }
+  });
+
+  it("gives each picture exactly half of a split", () => {
+    const { screen, camera } = boxes("split");
+
+    expect(screen!.area.width).toBeCloseTo(camera!.area.width);
+    expect(screen!.area.height).toBeCloseTo(camera!.area.height);
+    expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
   });
 
   it("leaves out the picture its name leaves out", () => {
@@ -1482,9 +1622,12 @@ describe("the arrangements", () => {
     for (const layout of [on, off]) {
       expect(at(layout, "screen-full").camera).toBeNull();
       expect(at(layout, "screen-padded").camera).toBeNull();
+      expect(at(layout, "screen-inset").camera).toBeNull();
       expect(at(layout, "camera-full").screen).toBeNull();
       expect(at(layout, "camera-padded").screen).toBeNull();
+      expect(at(layout, "camera-inset").screen).toBeNull();
       expect(at(layout, "camera-full").camera).not.toBeNull();
+      expect(at(layout, "camera-inset").camera).not.toBeNull();
     }
   });
 

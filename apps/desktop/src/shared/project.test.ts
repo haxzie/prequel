@@ -241,6 +241,25 @@ describe("sanitiseProject", () => {
     expect(sanitiseProject("{}", RECORDING, S)).toBeNull();
   });
 
+  it("translates an arrangement that has been taken out of the grid", () => {
+    // `layoutBoxes` answers for the arrangements that exist. A project naming
+    // one that does not gets no boxes at all — the editor opens on an empty
+    // frame, which reads as lost footage rather than as a preset that was
+    // removed. So the name is translated on the way in, in the defaults and in
+    // a slice's overrides alike.
+    const project = stored() as {
+      defaults: { layout: { preset: string } };
+      tracks: { slices: { overrides: { layout?: { preset: string } } }[] }[];
+    };
+    project.defaults.layout.preset = "beside-flush";
+    project.tracks[0]!.slices[0]!.overrides.layout = { preset: "split-stacked" };
+
+    const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
+
+    expect(repaired.defaults.layout.preset).toBe("beside");
+    expect(repaired.tracks[0]!.slices[0]!.overrides.layout?.preset).toBe("stacked");
+  });
+
   it("repairs a frame size rather than refusing the file", () => {
     const project = stored() as { frame: { width: unknown; height: unknown } };
     project.frame.width = "wide";

@@ -8,22 +8,26 @@ import type {
 } from "../../../../shared/project";
 import { DEFAULT_LAYOUT } from "../../../../shared/project";
 import { gradientCss } from "../../../../shared/presets";
-import { layoutBoxes, type Size } from "../../../../shared/layout";
+import { layoutBoxes, presetFitsFrame, type Size } from "../../../../shared/layout";
 import { PersonIcon } from "../icons";
 import { cn } from "../../lib/cn";
 
 /**
  * The arrangement, as a grid of the shapes it makes.
  *
- * Eleven small pictures rather than a list of names. "Padded screen with the
+ * Fourteen small pictures rather than a list of names. "Padded screen with the
  * camera beside it, matched to its height" is a sentence nobody reads twice; the
  * same thing as two rectangles is understood before it is finished being looked
  * at, and the grid is scanned rather than read.
  *
  * Grouped by what the arrangement puts in the frame, because that is the order
  * the choice is actually made in: what is in the picture first, how it is
- * arranged second. As eleven unlabelled cells in one block, the two camera-only
- * arrangements read as two more variations on the six above them.
+ * arranged second. As fourteen unlabelled cells in one block, the camera-only
+ * arrangements read as three more variations on the eight above them.
+ *
+ * Each arrangement sits next to its own reflection, so the pair is read as one
+ * choice with a side to it rather than as two arrangements that happen to look
+ * alike.
  *
  * Every thumbnail is drawn by asking `layoutBoxes` where the pictures go and
  * scaling the answer down. Drawing them by hand would be a second
@@ -65,11 +69,12 @@ const GROUPS: {
     presets: [
       { value: "over-full", label: "Full screen, camera over" },
       { value: "over-padded", label: "Padded screen, camera over" },
-      { value: "beside", label: "Screen and camera side by side" },
-      { value: "beside-flush", label: "Screen and camera side by side, no padding" },
+      { value: "over-column", label: "Padded screen, camera standing over its right end" },
+      { value: "over-column-left", label: "Padded screen, camera standing over its left end" },
+      { value: "beside", label: "Screen and camera side by side, camera at the right" },
+      { value: "beside-left", label: "Screen and camera side by side, camera at the left" },
       { value: "stacked", label: "Screen above the camera" },
       { value: "split", label: "Split down the middle" },
-      { value: "split-stacked", label: "Split across the middle" },
     ],
   },
   {
@@ -79,6 +84,7 @@ const GROUPS: {
     presets: [
       { value: "camera-full", label: "Camera only, full frame" },
       { value: "camera-padded", label: "Camera only, padded" },
+      { value: "camera-inset", label: "Camera only, standing further back" },
     ],
   },
   {
@@ -88,6 +94,7 @@ const GROUPS: {
     presets: [
       { value: "screen-full", label: "Screen only, full frame" },
       { value: "screen-padded", label: "Screen only, padded" },
+      { value: "screen-inset", label: "Screen only, standing further back" },
     ],
   },
 ];
@@ -147,9 +154,9 @@ export function LayoutPicker({
   cameraPresent: boolean;
   onChange: (preset: LayoutPreset) => void;
 }) {
-  // Worked out once for all ten cells: it is the same background in each, and
-  // an image URL rebuilt per cell is ten identical requests for the browser to
-  // deduplicate.
+  // Worked out once for all fourteen cells: it is the same background in each,
+  // and an image URL rebuilt per cell is fourteen identical requests for the
+  // browser to deduplicate.
   const paint = backgroundCss(background.background, fileUrl);
 
   return (
@@ -159,23 +166,40 @@ export function LayoutPicker({
           <h3 className="text-[10px] font-medium text-editor-muted">{group.label}</h3>
 
           <div className={GRID}>
-            {group.presets.map((preset) => (
-              <button
-                key={preset.value}
-                type="button"
-                aria-label={preset.label}
-                title={preset.label}
-                aria-pressed={preset.value === value}
-                disabled={group.camera && !cameraPresent}
-                className={cn(
-                  CELL,
-                  preset.value === value && "ring-2 ring-editor-accent ring-inset",
-                )}
-                onClick={() => onChange(preset.value)}
-              >
-                <Plate frame={frame} preset={preset.value} background={background} paint={paint} />
-              </button>
-            ))}
+            {group.presets.map((preset) => {
+              // Disabled for the same reason a camera arrangement is without a
+              // camera: the cell stays where it is, and the label says why it
+              // cannot be picked. An arrangement that disappeared when the
+              // frame was made vertical would take the grid's shape with it,
+              // and leave nothing to explain where it went.
+              const fits = presetFitsFrame(preset.value, frame);
+              const label = fits
+                ? preset.label
+                : `${preset.label} — needs a frame wider than it is tall`;
+
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={preset.value === value}
+                  disabled={(group.camera && !cameraPresent) || !fits}
+                  className={cn(
+                    CELL,
+                    preset.value === value && "ring-2 ring-editor-accent ring-inset",
+                  )}
+                  onClick={() => onChange(preset.value)}
+                >
+                  <Plate
+                    frame={frame}
+                    preset={preset.value}
+                    background={background}
+                    paint={paint}
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}

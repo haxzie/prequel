@@ -38,22 +38,32 @@ export type Ns = MediaTime;
  * each other, stacked, split down the middle — were unreachable, because
  * neither picture was an object with a box of its own.
  *
- * `over-*` own only the screen and leave the camera free, which is the bubble
- * as it has always behaved. Everything else owns both boxes. `custom` owns
+ * `over-full` and `over-padded` own only the screen and leave the camera free,
+ * which is the bubble as it has always behaved. Everything else owns both
+ * boxes, `over-column` included — it stands the camera in a portrait column
+ * over the right end of a padded screen, so it is an `over-*` by what the
+ * camera does to the screen and not by what it leaves free. `custom` owns
  * neither and reads them off the settings; it is where a resize lands.
+ *
+ * A `-left` suffix says which side the *camera* takes, and nothing else: the
+ * pair is one arrangement reflected, drawn by the same arithmetic through
+ * `mirror` rather than by a second set of rules that could come to disagree.
  */
 export type LayoutPreset =
   | "over-full"
   | "over-padded"
+  | "over-column"
+  | "over-column-left"
   | "beside"
-  | "beside-flush"
+  | "beside-left"
   | "stacked"
   | "split"
-  | "split-stacked"
   | "screen-full"
   | "screen-padded"
+  | "screen-inset"
   | "camera-full"
   | "camera-padded"
+  | "camera-inset"
   | "custom";
 
 /**
@@ -1051,6 +1061,18 @@ function migrateLayout(
   // answering yes for a setting no control can reach, and the Screen section
   // would offer a Reset for something invisible.
   delete (migrated as { screenZoom?: unknown }).screenZoom;
+
+  // Arrangements that have been taken out of the grid. Translated rather than
+  // left to sit on disk: `layoutBoxes` answers for the arrangements that exist,
+  // and a project naming one that does not gets no boxes at all — a recording
+  // that opens showing nothing, which reads as lost footage rather than as a
+  // removed preset. Each lands on the survivor it differed from least.
+  const removed: Record<string, LayoutPreset> = {
+    "beside-flush": "beside",
+    "split-stacked": "stacked",
+  };
+  const replacement = removed[legacy.preset as string];
+  if (replacement !== undefined) migrated.preset = replacement;
 
   if (migrated.preset === undefined && legacy.screenFit !== undefined) {
     const full = legacy.screenFit === "cover";

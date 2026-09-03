@@ -10,6 +10,7 @@ import {
   WALLPAPER_FILE_NAME,
   type Background,
   type BackgroundSettings,
+  type CameraShape,
   type LayoutPreset,
   type LayoutSettings,
   type SettingsSection,
@@ -484,6 +485,10 @@ function LayoutPanel({
           cameraPresent={cameraPresent}
           onChange={(preset) => {
             set("layout", "preset", preset);
+            // The arrangement answers the shape, the same way it answers the
+            // camera toggle below. It stays a control afterwards.
+            const shape = cameraShapeFor(preset) ?? layout.cameraShape;
+            if (shape !== layout.cameraShape) set("layout", "cameraShape", shape);
             // The toggle and the arrangement are two ways of asking the same
             // question, so picking a screen-only arrangement has to answer it
             // the same way — otherwise the Camera panel says the camera is on
@@ -492,13 +497,19 @@ function LayoutPanel({
 
             // Picking an arrangement starts it clean.
             //
-            // A crop and a hand-dragged box are answers to "how should this sit
-            // in *that* arrangement", and they do not survive the question
+            // Every crop, box and position is an answer to "how should this sit
+            // in *that* arrangement", and none of them survive the question
             // changing: a zoom that framed a split's left half lands somewhere
-            // arbitrary once the same picture is full-bleed, and a box dragged
-            // in `custom` would otherwise sit in the settings unread until the
-            // next resize snapped the picture back to it.
-            for (const [key, value] of Object.entries(freshFraming(layout, cameraSource))) {
+            // arbitrary once the same picture is full-bleed, a bubble dragged
+            // out of the way of one arrangement is in the way of the next, and
+            // a box dragged in `custom` would otherwise sit in the settings
+            // unread until the next resize snapped the picture back to it.
+            //
+            // So the cell delivers the picture on it, every time, and undo is
+            // what puts a hand-made arrangement back.
+            for (const [key, value] of Object.entries(
+              freshFraming({ ...layout, cameraShape: shape }, cameraSource),
+            )) {
               set("layout", key, value);
             }
           }}
@@ -517,23 +528,40 @@ function LayoutPanel({
 function cameraAgreement(preset: LayoutPreset, visible: boolean): LayoutPreset | null {
   if (visible) {
     if (preset === "screen-full") return "over-full";
-    if (preset === "screen-padded") return "over-padded";
+    // `screen-inset` lands here too. There is no `over-*` standing that far
+    // back, and the nearest arrangement that has a camera in it is the one that
+    // pads the screen — a toggle that quietly did nothing would be worse than
+    // one that gives up the extra margin.
+    if (preset === "screen-padded" || preset === "screen-inset") return "over-padded";
     return null;
   }
 
+  // Each camera-only arrangement hands over to the screen-only one that frames
+  // the picture the same way, so switching the camera off changes what is in
+  // the frame and nothing else about how it sits in it.
+  if (preset === "camera-inset") return "screen-inset";
   if (preset === "camera-full" || SLOTTED.has(preset)) return "screen-padded";
   if (preset === "camera-padded") return "screen-padded";
   return null;
 }
 
 /**
- * The framing keys back at their defaults, for a change of arrangement.
+ * Every framing key back at its default, for a change of arrangement.
  *
- * Position is deliberately not among them. Where the bubble sits is a
- * preference about the recording rather than about the arrangement — someone
- * who moved it off the pointer's half of the screen means that whichever
- * arrangement they are in — and the arrangements that place the camera
- * themselves ignore it anyway.
+ * Picking a cell in the grid means "give me that picture", so it gives that
+ * picture — nothing dragged, resized or nudged in the arrangement before it
+ * survives the switch. Position included, which it was not: a bubble parked
+ * bottom-left came back bottom-left in the next arrangement that left it free,
+ * so the cell that promised a corner bubble delivered someone else's, and the
+ * only way back to the picture on the thumbnail was to drag it there by hand.
+ *
+ * A clean slate is also what makes the grid honest. Every plate is drawn from
+ * `DEFAULT_LAYOUT`, so any key kept across a switch is a key the thumbnail did
+ * not draw.
+ *
+ * The camera's shape and whether it is mirrored are not framing and are not
+ * here: they say what the picture *is*, not where it sits, and the arrangement
+ * that wants a particular one says so where it is picked.
  */
 function freshFraming(layout: LayoutSettings, cameraSource: Size | null): Partial<LayoutSettings> {
   return {
@@ -546,15 +574,65 @@ function freshFraming(layout: LayoutSettings, cameraSource: Size | null): Partia
     cameraZoom: DEFAULT_LAYOUT.cameraZoom,
     cameraOffsetX: DEFAULT_LAYOUT.cameraOffsetX,
     cameraOffsetY: DEFAULT_LAYOUT.cameraOffsetY,
+    cameraX: DEFAULT_LAYOUT.cameraX,
+    cameraY: DEFAULT_LAYOUT.cameraY,
     cameraHeight: DEFAULT_LAYOUT.cameraHeight,
     // Off the shape rather than off the default, or a `wide` bubble would come
     // back square while the shape control still said wide.
     cameraWidth: DEFAULT_LAYOUT.cameraHeight * shapeAspect(layout.cameraShape, cameraSource),
+    // Which dressing the camera takes under `custom`, which is the one
+    // arrangement that reads it. Left behind, a column dragged loose from this
+    // switch would be dressed as whatever the arrangement two switches ago was.
+    cameraCard: DEFAULT_LAYOUT.cameraCard,
   };
 }
 
+/**
+ * The camera's shape for an arrangement, at the moment it is picked.
+ *
+ * Only the corner is being decided here — `radiusFor` reads the shape, and
+ * these two differ in nothing else: both are square, and `squircle` rounds by
+ * half the edge where `rounded` takes a fraction of it.
+ *
+ * A bubble floating over the screen is round, because it is a picture of a
+ * person and nothing else in the frame is that shape. A camera that stands *in*
+ * the frame is a card, and a card is cut the way the screen beside it is cut —
+ * a squircle at three quarters of the frame's height is a blob rather than a
+ * shape, and a circle there is a porthole.
+ *
+ * The camera-only arrangements take the rectangle corner. There the camera is
+ * not a picture of a person sitting in a frame — it *is* the frame's picture,
+ * filling it the way a screen recording does, and a squircle's radius of half
+ * the shorter edge turns a 1920×1080 picture into a lozenge. `wide` is the
+ * rectangle whose aspect is the camera's own, so what it says about the shot is
+ * "all of it", which is what these arrangements show.
+ *
+ * Null only where there is nothing to say: the screen-only cells have no camera
+ * to shape, and `custom` is wherever a drag left things.
+ */
+function cameraShapeFor(preset: LayoutPreset): CameraShape | null {
+  switch (preset) {
+    case "over-full":
+    case "over-padded":
+      return "squircle";
+    case "camera-full":
+    case "camera-padded":
+    case "camera-inset":
+      return "wide";
+    case "over-column":
+    case "over-column-left":
+    case "beside":
+    case "beside-left":
+    case "stacked":
+    case "split":
+      return "rounded";
+    default:
+      return null;
+  }
+}
+
 /** Arrangements with no camera in them. */
-const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded"]);
+const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded", "screen-inset"]);
 
 /** Arrangements where the camera is a card beside the screen, not a bubble over it. */
 /**
@@ -565,7 +643,16 @@ const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded"]);
  * so a Size control would be a slider that visibly does nothing; there the
  * bubble is a separate object under the picture, and its own controls set it.
  */
-const SLOTTED = new Set<LayoutPreset>(["beside", "beside-flush", "split", "split-stacked"]);
+const SLOTTED = new Set<LayoutPreset>([
+  "beside",
+  "beside-left",
+  "split",
+  // The column's height is the frame's and its width follows from that, so
+  // both the Size slider and the Position map would be controls visibly doing
+  // nothing. Dragging it in the preview is how it is let loose.
+  "over-column",
+  "over-column-left",
+]);
 
 /** The webcam bubble. Only reachable when the recording has one. */
 function CameraPanel({

@@ -21,6 +21,7 @@ import type {
   Background,
   BackgroundSettings,
   CameraShape,
+  LayoutPreset,
   LayoutSettings,
   SliceSettings,
   ZoomSlice,
@@ -3245,6 +3246,19 @@ function boxAt(frame: Size, cx: number, cy: number, width: number, height: numbe
   };
 }
 
+/**
+ * The extra gap the `-inset` arrangements take, over the composition's padding.
+ *
+ * Added rather than multiplied, so the cell can never be a copy of the one
+ * beside it: doubling nothing is still nothing, and a recording of a whole
+ * screen opens with the padding off — two cells drawing the same picture, one
+ * of them promising a margin the export does not have.
+ *
+ * A fraction of the shorter edge, like every other distance here, so it means
+ * the same thing in a 16:9 frame and a 9:16 one.
+ */
+const EXTRA_PADDING = 0.08;
+
 /** The frame inset on all four sides. Never negative. */
 function inset(frame: Size, by: number): Rect {
   return {
@@ -3271,6 +3285,59 @@ function inset(frame: Size, by: number): Rect {
  * spends it on a picture too thin to show a face.
  */
 const CAMERA_COLUMN = 2 / 3;
+
+/**
+ * How tall the standing column is, as a fraction of the frame's shorter edge.
+ *
+ * Three quarters, so it stops short of both ends. Run to the full padded height
+ * it is the other half of a split — two pictures of equal weight, and the
+ * recording stops being the thing on screen. Short of the ends it reads as
+ * someone standing in front of the recording, which is the whole arrangement.
+ */
+const COLUMN_HEIGHT = 3 / 4;
+
+/**
+ * How wide that column is per unit of height.
+ *
+ * Wider than the 9:16 `PORTRAIT_ASPECT` a bubble stands in, and deliberately:
+ * that shape is for a corner of the frame, and at three quarters of the frame's
+ * height the same crop closes in on a face until there is nothing either side
+ * of it. Tuned against a real edit rather than derived — the column below is the
+ * shape someone dragged it to when asked what the arrangement should look like.
+ */
+const COLUMN_ASPECT = 5 / 8;
+
+/**
+ * The most of the frame's width the column may take.
+ *
+ * The height above is measured off the *shorter* edge, so in a frame that is
+ * not much wider than it is tall the column comes out at nearly half the
+ * picture — and a camera covering half of the thing it is talking over is not
+ * the arrangement anyone picked from the grid. A third leaves the recording the
+ * frame and the column a presence in it.
+ *
+ * Where the cap bites the column gives up height to keep its shape. Narrowing
+ * it alone would leave the same box drawn over a picture cropped to something
+ * thinner, which is the slit `CAMERA_COLUMN` above exists to avoid.
+ */
+const COLUMN_SHARE = 1 / 3;
+
+/**
+ * Whether an arrangement has any business in a frame of this shape.
+ *
+ * Only `over-column` ever answers false, and only in a frame that is not wider
+ * than it is tall: a portrait column standing in a portrait frame leaves the
+ * recording a strip down one side, which is not the picture the grid promises.
+ *
+ * A gate on what is *offered*, not a second geometry. `layoutBoxes` still has
+ * an answer for the pairing — the column is capped rather than special-cased —
+ * so a project that arrives holding one draws something sane instead of
+ * nothing, and the picker cannot come to disagree with what is drawn.
+ */
+export function presetFitsFrame(preset: LayoutPreset, frame: Size): boolean {
+  if (preset !== "over-column" && preset !== "over-column-left") return true;
+  return frame.width > frame.height;
+}
 
 /**
  * Where both pictures go.
@@ -3360,11 +3427,71 @@ export function layoutBoxes(
         camera: withCamera ? free() : null,
       };
 
+    // The padded screen pushed left, with the camera standing over its right
+    // end.
+    //
+    // The overlap is the point: `beside` puts the same two pictures in one row
+    // and shrinks the recording to make room, where this leaves it at the size
+    // `over-padded` gives it and lets the person talking over it stand on top.
+    // Flush left rather than centred for the same reason — centring it would
+    // spend the room on the left that the column is covering on the right.
+    //
+    // Without a camera there is no column, and what is left is `over-padded`
+    // exactly: a screen alone parked against one edge is not an arrangement,
+    // it is a picture that failed to centre.
+    case "over-column":
+    case "over-column-left": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+
+      // One arrangement and its reflection. Worked out right-handed and then
+      // flipped, rather than written twice with the signs changed: two
+      // implementations of "how far in does the column stand" is how a pair
+      // that should be mirror images comes to differ by a few pixels nobody
+      // can explain.
+      const flip = layout.preset === "over-column-left";
+      const hand = (area: Rect, box: Rect) => (flip ? mirror(area, box) : box);
+
+      return {
+        // `cover` on a box already cut to the recording's own shape, which is
+        // the same picture `contain` would draw — and the fit the rest of the
+        // arrangements use wherever the box came from the source, so a zoom
+        // crops rather than spilling the picture over its neighbour.
+        screen: {
+          area: hand(padded, flushLeft(padded, aspectOf(sources.screen))),
+          fit: "cover",
+          card: true,
+        },
+        // `card: true` for a picture this large: the shadow is measured against
+        // the frame rather than against a bubble's own shorter edge, which at
+        // three quarters of the frame's height is the difference between a
+        // shadow and a smudge. It also settles the shrink question — the
+        // arrangement placed this box, and a camera that shrank towards
+        // `cameraX`/`cameraY` would leave one side of the frame for wherever
+        // those happen to point.
+        //
+        // Mirrored across the whole frame, not the padded area: the column is
+        // inset by the padding on one side and the reflection has to put it the
+        // same distance in on the other.
+        camera: { area: hand(whole, column(frame, unit, gap)), fit: "cover", card: true },
+      };
+    }
+
     case "screen-full":
       return { screen: { area: whole, fit: "cover", card: true }, camera: null };
 
     case "screen-padded":
       return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+
+    // The same picture standing further back. `contain` in a deeper inset, so
+    // nothing is cropped for the room it gives up — the point is the margin
+    // around the recording, not a closer look at it.
+    case "screen-inset":
+      return {
+        screen: { area: inset(frame, gap + EXTRA_PADDING * unit), fit: "contain", card: true },
+        camera: null,
+      };
 
     case "camera-full":
       return { screen: null, camera: { area: whole, fit: "cover", card: true } };
@@ -3372,31 +3499,25 @@ export function layoutBoxes(
     case "camera-padded":
       return { screen: null, camera: { area: padded, fit: "contain", card: true } };
 
-    case "beside": {
+    case "camera-inset":
+      return {
+        screen: null,
+        camera: { area: inset(frame, gap + EXTRA_PADDING * unit), fit: "contain", card: true },
+      };
+
+    case "beside":
+    case "beside-left": {
       if (!withCamera) {
         return { screen: { area: padded, fit: "contain", card: true }, camera: null };
       }
       const [screen, camera] = matched(padded, gap, aspectOf(sources.screen));
-      return {
-        screen: { area: screen, fit: "cover", card: true },
-        camera: { area: camera, fit: "cover", card: true },
-      };
-    }
+      // The same reflection the column gets, across the area the pair fills.
+      const flip = layout.preset === "beside-left";
+      const hand = (box: Rect) => (flip ? mirror(padded, box) : box);
 
-    // Side by side with the frame's edges as the only boundary. `beside` inside
-    // a `padded` area of nothing at all, which is why it shares `matched` — the
-    // arrangement is the same one, and only the area it is given differs.
-    case "beside-flush": {
-      if (!withCamera) {
-        return { screen: { area: whole, fit: "cover", card: false }, camera: null };
-      }
-      const [screen, camera] = matched(whole, 0, aspectOf(sources.screen));
-      // `card: false`, because a rounded corner or a shadow is a picture
-      // sitting *on* the frame — and the point of this arrangement is that
-      // there is no frame left to sit on.
       return {
-        screen: { area: screen, fit: "cover", card: false },
-        camera: { area: camera, fit: "cover", card: false },
+        screen: { area: hand(screen), fit: "cover", card: true },
+        camera: { area: hand(camera), fit: "cover", card: true },
       };
     }
 
@@ -3425,12 +3546,11 @@ export function layoutBoxes(
       };
     }
 
-    case "split":
-    case "split-stacked": {
+    case "split": {
       if (!withCamera) {
         return { screen: { area: padded, fit: "contain", card: true }, camera: null };
       }
-      const [screen, camera] = halves(padded, gap, layout.preset === "split");
+      const [screen, camera] = halves(padded, gap);
       return {
         screen: { area: screen, fit: "cover", card: true },
         camera: { area: camera, fit: "cover", card: true },
@@ -3579,20 +3699,69 @@ function overUnder(
   ];
 }
 
-/** An area cut in two down the middle, or across it, with the gap between. */
-function halves(area: Rect, gap: number, sideBySide: boolean): [Rect, Rect] {
-  if (sideBySide) {
-    const width = Math.max(0, area.width - gap) / 2;
-    return [
-      { x: area.x, y: area.y, width, height: area.height },
-      { x: area.x + width + gap, y: area.y, width, height: area.height },
-    ];
-  }
+/**
+ * A portrait column standing at the right of the frame.
+ *
+ * Inset from the right by the composition's padding, so the one padding control
+ * still means something in the one arrangement where the picture underneath is
+ * not what it is measured against — and centred on the frame's own height, not
+ * on the screen box beside it. The column is a person standing in the frame;
+ * hanging it off whatever shape the recording happens to be would move them
+ * every time a different window was captured.
+ *
+ * Placed against the frame rather than negotiated with the screen, because the
+ * overlap is the arrangement. Nothing here makes room.
+ */
+function column(frame: Size, unit: number, gap: number): Rect {
+  const wanted = unit * COLUMN_HEIGHT * COLUMN_ASPECT;
+  const width = Math.max(1, Math.min(wanted, frame.width * COLUMN_SHARE));
+  // Height back off the width the cap allowed, so the column keeps its shape
+  // whatever the frame's is. `unit * COLUMN_HEIGHT` wherever the cap did not
+  // bite, which is every frame it is offered in.
+  const height = width / COLUMN_ASPECT;
 
-  const height = Math.max(0, area.height - gap) / 2;
+  return {
+    x: Math.max(0, frame.width - gap - width),
+    y: (frame.height - height) / 2,
+    width,
+    height,
+  };
+}
+
+/**
+ * A box reflected across the vertical middle of an area.
+ *
+ * What makes a left-handed arrangement the right-handed one and not a second
+ * set of rules: whatever the original decided about insets, gaps and leftover
+ * room holds exactly, on the other side. Only the horizontal is flipped —
+ * nothing here is asymmetric top to bottom.
+ */
+function mirror(area: Rect, box: Rect): Rect {
+  return { ...box, x: area.x * 2 + area.width - box.x - box.width };
+}
+
+/**
+ * The recording at its padded size, parked against the left of the area.
+ *
+ * `over-padded`'s box without the centring: the same picture, at the same size,
+ * as far from the column as the padding allows. Nothing is cropped — the box is
+ * cut to the recording's own shape, so what moves is where the leftover room
+ * ends up, and that is all this decides.
+ */
+function flushLeft(area: Rect, screenAspect: number): Rect {
+  const height = Math.min(area.height, area.width / screenAspect);
+  const width = height * screenAspect;
+
+  return { x: area.x, y: area.y + (area.height - height) / 2, width, height };
+}
+
+/** An area cut in two down the middle, with the gap between. */
+function halves(area: Rect, gap: number): [Rect, Rect] {
+  const width = Math.max(0, area.width - gap) / 2;
+
   return [
-    { x: area.x, y: area.y, width: area.width, height },
-    { x: area.x, y: area.y + height + gap, width: area.width, height },
+    { x: area.x, y: area.y, width, height: area.height },
+    { x: area.x + width + gap, y: area.y, width, height: area.height },
   ];
 }
 
