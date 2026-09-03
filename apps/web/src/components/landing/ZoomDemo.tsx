@@ -33,7 +33,9 @@
  * The app itself is drawn generically — panels, a canvas, a floating toolbar —
  * rather than reproducing anyone's mark or wordmark.
  */
+import { CameraFootage } from "@/components/landing/CameraFootage";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
+import { ZOOM_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
 
 /**
@@ -103,10 +105,15 @@ export function ZoomDemo() {
             thing under the hero and it sits directly above the section that
             explains the pass, so both of those phrases were being said twice
             within a screen of each other.
+
+            Nor "Zooms that follow the work", which is a feature card a screen
+            further down. The cursor is what this one is about — it is what the
+            picture below actually shows, and naming it is the difference
+            between a claim and a description of what is on screen.
           */}
           <SectionHeading
             eyebrow="The zoom pass"
-            title="The camera goes where the work is"
+            title="The zoom follows your cursor"
             lede="Prequel reads the pointer as it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass, playing — not a picture of it."
           />
 
@@ -120,7 +127,7 @@ export function ZoomDemo() {
           <div
             data-zoom-demo
             role="img"
-            aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar — each time with the rest of the window falling out of focus behind it — while a playhead crosses the four zoom slices on the timeline below."
+            aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar — each time with the rest of the window falling out of focus behind it — while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
           >
             {/* Nothing but a wrapper. The picture and its timeline used to sit
                 in a panel with a border and an inset; the stage already paints
@@ -198,11 +205,8 @@ export function ZoomDemo() {
                     style={{ width: "200%", height: "200%", transform: "scale(0.5)" }}
                   >
                     <div
-                      className="grain animate-demo-screen size-full overflow-hidden"
-                      style={{
-                        backgroundImage:
-                          "radial-gradient(120% 120% at 12% 8%, #b04017 0%, rgb(176 64 23 / 0) 58%), radial-gradient(110% 110% at 88% 92%, #3e1848 0%, rgb(62 24 72 / 0) 60%), linear-gradient(135deg, #731a46, #1b1420)",
-                      }}
+                      className="grain animate-demo-screen size-full overflow-hidden bg-cover bg-center"
+                      style={{ backgroundImage: `url(${ZOOM_STAGE})` }}
                     >
                       {/* `@container` here, so `cqw` resolves against the doubled
                           box: every length inside doubles in layout pixels and
@@ -248,6 +252,8 @@ export function ZoomDemo() {
                     </div>
                   </div>
                 </div>
+
+                <CameraBubble />
               </div>
 
               <ZoomTrack />
@@ -256,6 +262,33 @@ export function ZoomDemo() {
         </div>
       </Container>
     </section>
+  );
+}
+
+/**
+ * The webcam, in the corner of the composition.
+ *
+ * On the crop rather than inside the push, which is the one thing about it that
+ * has to be right: the camera is a second picture composited into the frame,
+ * not part of the recording, so a zoom pushes into the screen and leaves it
+ * where it is. Magnified along with the window it would read as a sticker on
+ * the recording — and at 3.6x most of it would be outside the frame.
+ *
+ * `squircle` — `corner-shape` — over a 50% radius, the same pairing `LayoutDemo`
+ * uses: a square box at 50% is a circle, and the app's default camera shape is
+ * the macOS superellipse. Safari and Firefox have no `corner-shape` yet and
+ * fall back to the circle, which is a shape the app offers too.
+ *
+ * 21% of the width is `cameraHeight`'s default 0.35 of the frame's shorter edge
+ * — the height, on a 16:10 stage — carried across to a square box.
+ */
+function CameraBubble() {
+  return (
+    <div className="squircle absolute right-[3.4%] bottom-[6%] aspect-square w-[21%] overflow-hidden rounded-full bg-[#2a1a2e] shadow-[0_1.5cqw_3cqw_-1cqw_rgb(0_0_0_/_0.65)] ring-1 ring-white/15">
+      {/* Already cut square, so the middle is what it wants — the default
+          position is measured against the wide clip the layouts demo plays. */}
+      <CameraFootage src="/camera-closeup.mp4" position="50% 50%" />
+    </div>
   );
 }
 
