@@ -1553,9 +1553,7 @@ describe("the arrangements", () => {
 
         // And the camera has actually changed hands, rather than the pair being
         // symmetrical enough for the reflection to be a no-op.
-        expect(back.camera!.area.x, `${left} in ${frame.width}`).toBeLessThan(
-          there.camera!.area.x,
-        );
+        expect(back.camera!.area.x, `${left} in ${frame.width}`).toBeLessThan(there.camera!.area.x);
       }
     }
   });

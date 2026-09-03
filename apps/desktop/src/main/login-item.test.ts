@@ -30,9 +30,8 @@ vi.mock("electron", () => ({
   },
 }));
 
-const { loginItemState, opensAtLogin, setOpensAtLogin, startedByItself } = await import(
-  "./login-item.js",
-);
+const { loginItemState, opensAtLogin, setOpensAtLogin, startedByItself } =
+  await import("./login-item.js");
 
 describe("the login item", () => {
   beforeEach(() => {
