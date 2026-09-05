@@ -103,6 +103,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   /** A still of the composition, taken when the export dialog opens. */
   const [poster, setPoster] = useState<string | null>(null);
   const grab = useRef<Grab | null>(null);
+  /**
+   * Whether the preview is in blur-draw mode.
+   *
+   * Kept here rather than inside Preview: Inspector shows its state through the
+   * draw-mode button, and the Inspector and Preview are siblings in the Editor
+   * tree. Lifting it one level is cheaper than a context or a ref callback.
+   */
+  const [blurDrawMode, setBlurDrawMode] = useState(false);
 
   // The manifest's duration, which is the only place the recording's real
   // length is known — the project itself does not carry one, and every trim is
@@ -394,6 +402,47 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               zooms={state.project.zooms}
               cues={captions.byLook}
               grab={grab}
+              blurs={state.project.blurs}
+              onAddBlur={(region) => {
+                // Determine source time
+                const at = Math.round(media.sourceAt() ?? 0);
+                dispatch({ type: "addBlur", at, region });
+                setBlurDrawMode(false);
+              }}
+              selectedBlurId={state.selectedBlurId}
+              onSelectBlur={(id) => dispatch({ type: "selectBlur", blurId: id })}
+              onUpdateBlur={(blur) => {
+                const time = Math.round(media.sourceAt() ?? 0);
+                // Find or add keyframe at current time
+                const keyframes = [...(blur.keyframes || [])];
+                const existingIdx = keyframes.findIndex((k) => Math.abs(k.time - time) < 50_000_000);
+                const kf = {
+                  time,
+                  x: blur.x,
+                  y: blur.y,
+                  width: blur.width,
+                  height: blur.height,
+                  opacity: 1,
+                };
+                if (existingIdx >= 0) {
+                  keyframes[existingIdx] = kf;
+                } else {
+                  keyframes.push(kf);
+                  keyframes.sort((a, b) => a.time - b.time);
+                }
+                
+                dispatch({
+                  type: "setBlur",
+                  blurId: blur.id,
+                  patch: { ...blur, keyframes },
+                });
+              }}
+              onDeleteBlur={(regionId) => {
+                dispatch({
+                  type: "deleteBlur",
+                  blurId: regionId,
+                });
+              }}
               onLayout={(patch) => {
                 // One dispatch per key, because that is what the override
                 // bookkeeping counts in: a gesture that writes five keys has to
@@ -493,6 +542,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                   });
                 }
               }}
+              blurDrawMode={blurDrawMode}
+              onToggleBlurDraw={() => setBlurDrawMode((prev) => !prev)}
+              blurs={state.project.blurs}
+              selectedBlurId={state.selectedBlurId}
+              onSelectBlur={(id) => dispatch({ type: "selectBlur", blurId: id })}
+              onUpdateBlur={(blur) => dispatch({ type: "setBlur", blurId: blur.id, patch: blur })}
+              onDeleteBlur={(id) => dispatch({ type: "deleteBlur", blurId: id })}
             />
           </div>
         </div>

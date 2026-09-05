@@ -15,12 +15,13 @@ import type { MediaTime } from "../../../shared/manifest";
 import type { ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
-import { CameraIcon, CursorIcon, FillIcon, ScreenIcon, TypingIcon, ZoomIcon } from "./icons";
+import { CameraIcon, CursorIcon, FillIcon, ScreenIcon, TypingIcon, ZoomIcon, RedactIcon } from "./icons";
 import { fitZoom, ticks } from "./ruler";
 import {
   placedSlices,
   projectDuration,
   zoomSpanAt,
+  DEFAULT_BLUR_LENGTH,
   type EditorAction,
   type EditorState,
 } from "./state";
@@ -181,6 +182,7 @@ export function TimelineStrip({
 
   const scroller = useRef<HTMLDivElement>(null);
   const ghost = useRef<HTMLDivElement>(null);
+  const blurGhost = useRef<HTMLDivElement>(null);
   /** The hover line. Positioned straight on the element — see `showShadow`. */
   const shadow = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -388,6 +390,29 @@ export function TimelineStrip({
     [media, timeAt, duration, contentWidth],
   );
 
+  const showBlurGhost = useCallback(
+    (clientX: number | null) => {
+      const element = blurGhost.current;
+      if (!element) return;
+
+      const source = clientX === null ? null : sourceAt(timeAt(clientX));
+      const endSource = source === null ? null : Math.min(source + DEFAULT_BLUR_LENGTH, duration);
+      
+      const from = source === null ? null : projectAt(source);
+      const to = endSource === null ? null : projectAt(endSource);
+
+      if (from === null || to === null) {
+        element.style.opacity = "0";
+        return;
+      }
+
+      element.style.left = `${(from / Math.max(duration, 1)) * 100}%`;
+      element.style.width = `${((to - from) / Math.max(duration, 1)) * 100}%`;
+      element.style.opacity = "1";
+    },
+    [sourceAt, projectAt, timeAt, duration],
+  );
+
   // Playback starting has to clear it: the line was put there by a pointer that
   // has not moved since, so nothing else would take it down.
   useEffect(() => {
@@ -582,6 +607,67 @@ export function TimelineStrip({
                     dispatch({
                       type: "trimZoom",
                       zoomId: zoom.id,
+                      edge,
+                      source: sourceAt(timeAt(clientX)),
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
+
+          <div style={{ height: TRACK_GAP }} />
+
+          {/* Blurs */}
+          <div
+            className="relative"
+            style={{ height: CLIP_H }}
+            onPointerMove={(event) => showBlurGhost(event.clientX)}
+            onPointerLeave={() => showBlurGhost(null)}
+            onPointerDown={(event) => {
+              const outputTime = timeAt(event.clientX);
+              dispatch({ type: "addBlur", at: sourceAt(outputTime) });
+              media.playback.seek(outputTime);
+            }}
+          >
+            {state.project.blurs.length === 0 && (
+              <div
+                className="pointer-events-none sticky left-0 flex h-full items-center justify-center"
+                style={{ width }}
+              >
+                <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
+                  <RedactIcon />
+                  Click to add a blur effect
+                </span>
+              </div>
+            )}
+
+            <BlurGhost ref={blurGhost} />
+
+            {state.project.blurs.map((blur) => {
+              const span = spanInProject(placed, blur.source);
+              if (span === null) return null;
+              const { start: from, end: to } = span;
+
+              return (
+                <Blur
+                  key={blur.id}
+                  left={(from / Math.max(duration, 1)) * 100}
+                  width={((to - from) / Math.max(duration, 1)) * 100}
+                  selected={blur.id === state.selectedBlurId}
+                  sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                  start={blur.source.start}
+                  onSelect={() => {
+                    media.onInteract();
+                    dispatch({ type: "selectBlur", blurId: blur.id });
+                    media.playback.seek(from);
+                  }}
+                  onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                  onMove={(start) => dispatch({ type: "moveBlur", blurId: blur.id, start })}
+                  onTrim={(edge, clientX) =>
+                    dispatch({
+                      type: "trimBlur",
+                      blurId: blur.id,
                       edge,
                       source: sourceAt(timeAt(clientX)),
                     })
@@ -1159,6 +1245,103 @@ function Zoom({
         <ZoomIcon />
         {target === "cursor" ? <CursorIcon /> : target === "typing" ? <TypingIcon /> : <FillIcon />}
         <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
+      </span>
+
+      <Handle
+        edge="start"
+        selected={selected}
+        onPointerDown={grabEdge("start")}
+        onPointerMove={moveEdge("start")}
+      />
+      <Handle
+        edge="end"
+        selected={selected}
+        onPointerDown={grabEdge("end")}
+        onPointerMove={moveEdge("end")}
+      />
+    </div>
+  );
+}
+
+/**
+ * The blur a click would add, under the pointer.
+ */
+function BlurGhost({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
+  return (
+    <div
+      ref={ref}
+      className="pointer-events-none absolute inset-y-0 rounded border border-dashed border-red-500/70 bg-red-500/10 opacity-0 transition-opacity duration-75"
+    />
+  );
+}
+
+/**
+ * One blur span.
+ */
+function Blur({
+  left,
+  width,
+  selected,
+  start,
+  sourceAt,
+  onSelect,
+  onMove,
+  onTrim,
+  onBeginEdit,
+}: {
+  left: number;
+  width: number;
+  selected: boolean;
+  /** Where this blur currently starts, in source time. */
+  start: MediaTime;
+  /** Source time under a client x. */
+  sourceAt: (clientX: number) => MediaTime;
+  onSelect: () => void;
+  onMove: (start: MediaTime) => void;
+  onTrim: (edge: "start" | "end", clientX: number) => void;
+  onBeginEdit: () => void;
+}) {
+  const grab = useRef<MediaTime | null>(null);
+
+  const grabEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onBeginEdit();
+  };
+
+  const moveEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    onTrim(edge, event.clientX);
+  };
+
+  return (
+    <div
+      className={cn(
+        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-2",
+        "border-red-500/60 bg-red-500/25 transition-colors",
+        selected && "border-red-500 bg-red-500/40",
+        "cursor-grab active:cursor-grabbing",
+      )}
+      style={{ left: `${left}%`, width: `${width}%` }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onSelect();
+        grab.current = sourceAt(event.clientX) - start;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onBeginEdit();
+      }}
+      onPointerMove={(event) => {
+        if (grab.current === null) return;
+        onMove(sourceAt(event.clientX) - grab.current);
+      }}
+      onPointerUp={() => {
+        grab.current = null;
+      }}
+    >
+      <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
+        <RedactIcon />
+        <span className="truncate tabular-nums">Blur</span>
       </span>
 
       <Handle
