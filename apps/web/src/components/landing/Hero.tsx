@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
+import { StarredBy } from "@/components/StarredBy";
 import { HeroBackdrop } from "@/components/landing/HeroBackdrop";
 import { ShaderWash } from "@/components/landing/ShaderWash";
 import { SITE } from "@/lib/site";
@@ -105,7 +106,11 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
           </p>
 
           <div data-hero-enter className="animate-hero-rise" style={rise()}>
-            <DownloadCta className="mt-9" />
+            {/* On the button's own line, and under it on a narrow screen —
+                `DownloadCta` handles both. The stack is a second glance at the
+                call to action, and at 380px wide the two of them on one line is
+                a fight for a row that fits one. */}
+            <DownloadCta className="mt-9" beside={<StarredBy />} />
           </div>
         </div>
       </Container>

@@ -32,6 +32,7 @@
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
+import { LAYOUT_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
 
 /**
@@ -121,11 +122,8 @@ export function LayoutDemo() {
               */}
               <div className="grain @container relative aspect-[16/9] overflow-hidden rounded-lg">
                 <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "radial-gradient(120% 120% at 12% 8%, #b04017 0%, rgb(176 64 23 / 0) 58%), radial-gradient(110% 110% at 88% 92%, #3e1848 0%, rgb(62 24 72 / 0) 60%), linear-gradient(135deg, #731a46, #1b1420)",
-                  }}
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${LAYOUT_STAGE})` }}
                 />
 
                 {/* Both boxes are absolute and both are always mounted. A

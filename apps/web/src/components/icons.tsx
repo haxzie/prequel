@@ -96,6 +96,32 @@ export function CloseIcon({ className = "" }: { className?: string }) {
 }
 
 /**
+ * A payment card, for the line under the download button.
+ *
+ * Stroked, like the two above and for the same reason: it is an ordinary icon
+ * rather than a logo, so it wants the weight of the small print beside it. The
+ * stripe across it is what makes a rounded rectangle read as a card at eleven
+ * pixels — without it the shape is a window, a photograph or a button.
+ */
+export function CardIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="2" y="5" width="20" height="14" rx="2.5" />
+      <path d="M2 10h20" />
+    </svg>
+  );
+}
+
+/**
  * The X mark and the LinkedIn mark, for an author's links.
  *
  * Fills, for the reason the two above are: both are solid logos and stroking

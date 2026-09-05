@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * The webcam picture in the layouts demo: a short clip, looping, muted.
+ * The webcam picture in the demos: a short clip, looping, muted.
  *
  * A client component for one reason, and it is the same reason the two
  * `prefers-reduced-motion` blocks in `globals.css` exist. Everything else in
@@ -15,7 +15,24 @@ import { useEffect, useRef } from "react";
  * refuses the autoplay outright and the picture sits on its first frame. The
  * file carries no audio track either, so there is nothing to unmute.
  */
-export function CameraFootage() {
+export function CameraFootage({
+  src = "/camera-preview.mp4",
+  /**
+   * Which part of the clip a box narrower than it shows.
+   *
+   * The default clip is a wide studio shot with the subject right of centre, so
+   * a square crop taken from the middle lands on a microphone. 59% is where the
+   * face ends up centred once `cover` has thrown away the 44% of the width a
+   * square box cannot show; in the 16:9 layouts nothing is cropped and the
+   * figure has no effect. A clip already cut square wants the middle, and says
+   * so rather than inheriting a number that was measured against another
+   * picture.
+   */
+  position = "59% 50%",
+}: {
+  src?: string;
+  position?: string;
+} = {}) {
   const video = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -42,7 +59,7 @@ export function CameraFootage() {
   return (
     <video
       ref={video}
-      src="/camera-preview.mp4"
+      src={src}
       // `autoPlay` as well as the effect above: the effect runs after
       // hydration, and without the attribute the picture holds its first frame
       // until this route's JavaScript has arrived.
@@ -50,12 +67,10 @@ export function CameraFootage() {
       loop
       muted
       playsInline
-      // The clip is a wide studio shot with the subject right of centre, so a
-      // square crop taken from the middle lands on a microphone. 59% is where
-      // the face ends up centred once `cover` has thrown away the 44% of the
-      // width a square box cannot show; in the 16:9 layouts nothing is
-      // cropped and the figure has no effect.
-      className="absolute inset-0 size-full object-cover object-[59%_50%]"
+      // Inline rather than an `object-[…]` class: the position is a prop now,
+      // and Tailwind can only generate a class it can see written out.
+      style={{ objectPosition: position }}
+      className="absolute inset-0 size-full object-cover"
     />
   );
 }
