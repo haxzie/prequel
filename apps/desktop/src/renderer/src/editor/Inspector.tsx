@@ -29,9 +29,11 @@ import { Field, Section } from "./controls/Field";
 import { EasingPad } from "./controls/EasingPad";
 import { PerspectivePad } from "./controls/PerspectivePad";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
+import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import {
   AudioIcon,
   BackdropIcon,
+  BackIcon,
   CameraIcon,
   CaptionsIcon,
   CircleIcon,
@@ -43,6 +45,7 @@ import {
   GradientIcon,
   ImageIcon,
   LayoutIcon,
+  PencilIcon,
   PerspectiveIcon,
   PortraitIcon,
   RoundedIcon,
@@ -104,6 +107,14 @@ export interface InspectorProps {
    * with no visible way to change it.
    */
   onClose: () => void;
+  /**
+   * The words, and what the captions editor may do to them.
+   *
+   * Bundled for the reason `captions` is: the words are derived from the
+   * session's transcript and the project together, and every one of the
+   * callbacks reaches the playback clock, which lives outside the reducer.
+   */
+  editing: CaptionEditing;
 }
 
 /**
@@ -136,6 +147,20 @@ export function Inspector(props: InspectorProps) {
   const { state, dispatch } = props;
   const [tab, setTab] = useState<CategoryId>("layout");
   const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
+  /**
+   * Which of the captions category's two views is showing.
+   *
+   * Local, like the tab: it is navigation, not an edit, and it is put back to
+   * the options whenever the panel changes what it is about — another tab, a
+   * zoom taking the panel over, the panel being closed. Coming back to the
+   * captions tab and finding the editor still open, with its selection band
+   * on the timeline, reads as the panel having remembered the wrong thing.
+   */
+  const [captionView, setCaptionView] = useState<"options" | "edit">("options");
+  useEffect(() => {
+    if (state.selectedZoomId !== null) setCaptionView("options");
+  }, [state.selectedZoomId]);
+
   const settings = activeSettings(state);
   const slice = selectedSlice(state);
   const scoped = slice !== undefined;
@@ -237,6 +262,12 @@ export function Inspector(props: InspectorProps) {
   // showing — so the fallback is the one that is always there rather than a
   // blank panel.
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
+  const editingCaptions = active === "captions" && captionView === "edit";
+
+  const close = () => {
+    setCaptionView("options");
+    props.onClose();
+  };
 
   return (
     <div className={SHELL}>
@@ -249,7 +280,10 @@ export function Inspector(props: InspectorProps) {
             aria-label={label}
             title={label}
             className={railButton(id === active)}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              setCaptionView("options");
+            }}
           >
             <Icon />
           </button>
@@ -258,26 +292,52 @@ export function Inspector(props: InspectorProps) {
 
       <aside className={PANEL}>
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <PanelHeader
-            title={scoped ? "Clip" : "All clips"}
-            icon={<ScreenIcon />}
-            // The purple a clip is drawn in on the timeline, and a neutral one
-            // for the defaults, which are not a thing on the timeline at all.
-            tone={
-              scoped
-                ? "border-slice-edge/70 bg-slice-edge/40 text-white"
-                : "border-editor-line bg-white/10 text-white"
-            }
-            // Only a selected clip can be removed. With nothing selected this
-            // panel is the project defaults, which are not a thing to delete.
-            onDelete={
-              scoped && slice
-                ? () => dispatch({ type: "deleteSlice", sliceId: slice.id })
-                : undefined
-            }
-            deleteLabel="Remove clip"
-            onClose={props.onClose}
-          />
+          {editingCaptions ? (
+            // The editor is about the words, not about the selected clip, so
+            // the header says so rather than "Clip" — and offers no delete,
+            // because Backspace in here already means something.
+            <PanelHeader
+              title="Edit captions"
+              icon={<CaptionsIcon />}
+              tone="border-editor-line bg-white/10 text-white"
+              onBack={() => setCaptionView("options")}
+              action={
+                <button
+                  type="button"
+                  className="text-[11px] text-editor-muted hover:text-editor-fg disabled:pointer-events-none disabled:opacity-40"
+                  disabled={!props.editing.edited}
+                  onClick={props.editing.onReset}
+                >
+                  Reset
+                </button>
+              }
+              deleteLabel="Remove clip"
+              onClose={close}
+            />
+          ) : (
+            <PanelHeader
+              title={scoped ? "Clip" : "All clips"}
+              icon={<ScreenIcon />}
+              // The purple a clip is drawn in on the timeline, and a neutral one
+              // for the defaults, which are not a thing on the timeline at all.
+              tone={
+                scoped
+                  ? "border-slice-edge/70 bg-slice-edge/40 text-white"
+                  : "border-editor-line bg-white/10 text-white"
+              }
+              // Only a selected clip can be removed. With nothing selected this
+              // panel is the project defaults, which are not a thing to delete.
+              onDelete={
+                scoped && slice
+                  ? () => dispatch({ type: "deleteSlice", sliceId: slice.id })
+                  : undefined
+              }
+              deleteLabel="Remove clip"
+              onClose={close}
+            />
+          )}
+
+          {editingCaptions && <CaptionEditor {...props.editing} />}
 
           {active === "layout" && (
             <LayoutPanel
@@ -347,13 +407,14 @@ export function Inspector(props: InspectorProps) {
             />
           )}
 
-          {active === "captions" && (
+          {active === "captions" && !editingCaptions && (
             <CaptionsPanel
               settings={settings}
               captions={props.captions}
               field={field}
               reset={sectionReset("captions")}
               set={set}
+              onEdit={() => setCaptionView("edit")}
             />
           )}
         </div>
@@ -950,12 +1011,15 @@ function CaptionsPanel({
   field,
   reset,
   set,
+  onEdit,
 }: {
   settings: SliceSettings;
   captions: CaptionsState;
   field: FieldProps;
   reset?: () => void;
   set: Setter;
+  /** Open the words for correction. */
+  onEdit: () => void;
 }) {
   const values: CaptionSettings = settings.captions;
   // Off when captions are switched off *or* when there is nothing to draw. Both
@@ -966,6 +1030,23 @@ function CaptionsPanel({
   return (
     <Section title="Captions" onReset={reset}>
       <Transcription captions={captions} />
+
+      {/* Above the styling, because a misheard word is the first thing anyone
+          notices about captions and the styling is what they look at second.
+          Dead until there are words, for the reason the toggle is. */}
+      <button
+        type="button"
+        className={cn(
+          "flex w-full items-center justify-center gap-1.5 rounded-lg border border-editor-line bg-white/5 px-2 py-1.5 text-[11px]",
+          "transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5",
+        )}
+        disabled={!captions.ready}
+        title={captions.ready ? undefined : "Generate captions first"}
+        onClick={onEdit}
+      >
+        <PencilIcon />
+        Edit captions
+      </button>
 
       <Field label="Show captions" inline {...field("captions", "captionsOn")}>
         <Toggle
@@ -1474,6 +1555,8 @@ function PanelHeader({
   title,
   icon,
   tone,
+  onBack,
+  action,
   onDelete,
   deleteLabel,
   onClose,
@@ -1482,6 +1565,14 @@ function PanelHeader({
   icon: React.ReactNode;
   /** Border, background and text classes, from the timeline's own palette. */
   tone: string;
+  /**
+   * Present when this is a view pushed over the panel, which puts a way back
+   * at the near end. Leading rather than trailing because that is where every
+   * pushed view on the platform keeps it, and close stays in its corner.
+   */
+  onBack?: () => void;
+  /** A view's own control — a Reset — between the title and the corner. */
+  action?: React.ReactNode;
   /** Absent when there is nothing deletable, which hides the button. */
   onDelete?: () => void;
   deleteLabel: string;
@@ -1489,6 +1580,21 @@ function PanelHeader({
 }) {
   return (
     <header className="flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
+      {onBack && (
+        <button
+          type="button"
+          title="Back"
+          aria-label="Back to caption options"
+          className={cn(
+            "-ml-1 grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+          )}
+          onClick={onBack}
+        >
+          <BackIcon />
+        </button>
+      )}
+
       <span
         className={cn(
           "grid size-6 flex-none place-items-center rounded-md border [&_svg]:size-3.5",
@@ -1500,6 +1606,8 @@ function PanelHeader({
       </span>
 
       <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
+
+      {action}
 
       {/* Delete first, close last. Close is the one that has to be in the same
           place every time — it is on every panel, where delete comes and goes

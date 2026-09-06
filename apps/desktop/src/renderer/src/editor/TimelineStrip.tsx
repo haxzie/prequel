@@ -127,6 +127,7 @@ export function TimelineStrip({
   peaks,
   filmstrip,
   cameraSpan,
+  captionRange,
 }: {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
@@ -137,6 +138,12 @@ export function TimelineStrip({
   filmstrip: Filmstrip | null;
   /** Source time the camera covers, or null if none was recorded. */
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
+  /**
+   * The footage under the words selected in the captions editor, in source
+   * time, or null when none are. Drawn over the clips so the text and the
+   * timeline are visibly the same thing.
+   */
+  captionRange: { start: MediaTime; end: MediaTime } | null;
 }) {
   const placed = placedSlices(state.project);
   const edited = projectDuration(state.project);
@@ -591,6 +598,10 @@ export function TimelineStrip({
             })}
           </div>
 
+          <CaptionBand
+            span={captionRange && spanInProject(placed, captionRange)}
+            duration={duration}
+          />
           <Shadow ref={shadow} />
           <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
         </div>
@@ -672,6 +683,45 @@ function Ruler({
  * than promoting it on the first move, which shows as a stutter right as
  * playback starts.
  */
+/**
+ * The footage under the words selected in the captions editor.
+ *
+ * The full height of the strip rather than the clip row alone, and a sibling
+ * of the playhead for exactly that reason. It marks a stretch of *time*, the
+ * way the playhead marks an instant of it — the ruler above and the zooms
+ * below are on that same clock, so stopping the band at the clips would make
+ * the selection look like a property of one row.
+ *
+ * In the cut colour rather than the zoom's or the clip's: pressing Delete on
+ * the selection is the one thing it enables, and that removes the footage.
+ * Blue would read as a zoom about to be added. Under the playhead, which has
+ * to stay legible across it, and taking no pointer events, so it changes
+ * nothing about what a press on the strip does.
+ *
+ * Square, with an edge down each side and none across. The two sides are the
+ * moments the cut would land on, and a rounded corner pulls the fill away
+ * from them at exactly the point the eye is reading the time off the ruler.
+ */
+function CaptionBand({
+  span,
+  duration,
+}: {
+  span: { start: MediaTime; end: MediaTime } | null;
+  duration: MediaTime;
+}) {
+  if (span === null) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-y-0 z-[5] border-x border-cut/60 bg-cut/20"
+      style={{
+        left: `${String((span.start / Math.max(duration, 1)) * 100)}%`,
+        width: `${String(((span.end - span.start) / Math.max(duration, 1)) * 100)}%`,
+      }}
+    />
+  );
+}
+
 function Playhead({
   ref,
   labelRef,

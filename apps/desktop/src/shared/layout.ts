@@ -15,6 +15,7 @@
  * Pure, and free of any `electron`, Node or DOM import, so the arithmetic is
  * testable on its own.
  */
+import { captionStyle } from "./captions.js";
 import type { CursorShape } from "./contract.js";
 import type { CursorKind } from "./manifest.js";
 import type {
@@ -241,6 +242,19 @@ export type PlanItem =
        * item emitting two draws, so every plan item stays one quad.
        */
       words: CaptionWord[];
+      /**
+       * Two colours to choose between by what is behind the words, or null to
+       * draw the bitmap in the colour it was rasterised.
+       *
+       * The choice is made while the frame is drawn, because that is the only
+       * place it can be: the compositor measures the pixels it has already put
+       * down under `dstRect` and mixes between the two. Nothing about zoom,
+       * scrolling or a cut has to be known here for that to come out right.
+       *
+       * The bitmap is expected to be white where it is opaque — the colour is
+       * multiplied in, so a look with a coloured fill would lose it.
+       */
+      tint: { onDark: string; onLight: string } | null;
     };
 
 /**
@@ -273,9 +287,16 @@ export interface RenderedCue {
   words: CaptionWord[];
 }
 
-/** One word's box within a caption bitmap, and when it is the spoken one. */
+/** One word's box within a caption bitmap, and when it is drawn. */
 export interface CaptionWord {
-  /** Source time this word becomes the active one. */
+  /**
+   * The source time this crop is on screen for.
+   *
+   * For the lit layer that is the word's own moment, because the highlight is
+   * only there while the word is being said. For a look that blurs its words
+   * in it runs to the end of the line: the word arrives when it is spoken and
+   * stays, so the line fills up as it is said.
+   */
   at: number;
   end: number;
   /** The word's box, in bitmap pixels. */
@@ -285,6 +306,16 @@ export interface CaptionWord {
   height: number;
   /** How much larger it is drawn than laid out, about its own centre. */
   scale: number;
+  /**
+   * How far out of focus the word starts, in bitmap pixels. 0 draws it sharp.
+   *
+   * The radius at the word's first instant, not at this one: it clears over
+   * `BLUR_IN_NS`, and `captionAt` is what turns the two into the radius for a
+   * given moment. In the bitmap's own pixels because that is what both
+   * rasterisers blur in — a radius in output pixels would soften the export
+   * more than the preview at the same setting.
+   */
+  blur: number;
 }
 
 export type Paint =
@@ -717,6 +748,10 @@ function captionItems(
 
   const unit = Math.min(frame.width, frame.height);
   const items: PlanItem[] = [];
+  // Resolved rather than passed: the look decides whether its words are
+  // coloured against what is behind them, and only its id reaches here.
+  const look = captionStyle(captions.captionStyle);
+  const tint = look.onLight ? { onDark: look.fill, onLight: look.onLight } : null;
 
   for (const cue of cues) {
     const width = cue.size.width * frame.width;
@@ -745,6 +780,28 @@ function captionItems(
 
     const span = { start: cue.at, end: cue.end };
 
+    // A quad per word, where the words come into focus one at a time.
+    //
+    // A blur belongs to a draw: one quad for the line could only be soft all
+    // over or sharp all over, and what this look needs is a line that is both
+    // at once. The boxes tile — they were measured to meet halfway through the
+    // space between two words — so the line is covered exactly once and no
+    // word is drawn over its neighbour's.
+    if (cue.words.some((word) => word.blur > 0)) {
+      for (const word of cue.words) {
+        items.push({
+          kind: "caption",
+          path: cue.path,
+          bitmap: cue.bitmap,
+          dstRect,
+          span,
+          words: [word],
+          tint,
+        });
+      }
+      continue;
+    }
+
     // Two layers where a look lights one word against the rest of its line: a
     // flat one carrying the whole cue, and a lit one cropped to the word being
     // spoken. One layer where there is no rest of the line — a look that shows
@@ -757,6 +814,7 @@ function captionItems(
       dstRect,
       span,
       words: cue.litPath ? [] : cue.words,
+      tint,
     });
 
     if (cue.litPath && cue.words.length > 0) {
@@ -767,6 +825,7 @@ function captionItems(
         dstRect,
         span,
         words: cue.words,
+        tint,
       });
     }
   }
@@ -3084,7 +3143,7 @@ export function rectAt(
 export function captionAt(
   item: Extract<PlanItem, { kind: "caption" }>,
   at: number,
-): { src: Rect; dst: Rect } | null {
+): { src: Rect; dst: Rect; blur: number } | null {
   const { bitmap, dstRect, span, words } = item;
 
   // Half-open, so a cue ending exactly where the next begins does not draw
@@ -3095,6 +3154,7 @@ export function captionAt(
     return {
       src: { x: 0, y: 0, width: bitmap.width, height: bitmap.height },
       dst: dstRect,
+      blur: 0,
     };
   }
 
@@ -3124,7 +3184,35 @@ export function captionAt(
       width,
       height,
     },
+    blur: blurAt(word, at),
   };
+}
+
+/**
+ * How long a word takes to come into focus.
+ *
+ * Short, because the blur is saying "this is the word being spoken" and the
+ * word is only being spoken for a few hundred milliseconds. A transition much
+ * longer than this is still clearing when the next word starts, so the line
+ * never has a sharp word in it at all.
+ *
+ * Mirrored by `BLUR_IN_NS` in `crates/prequel-render/src/plan.rs`.
+ */
+const BLUR_IN_NS = 160_000_000;
+
+/**
+ * The blur radius for a word at a moment, in bitmap pixels.
+ *
+ * Measured from the word's own first instant, which is also when it appears.
+ * Squared on the way out rather than linear: most of the radius goes in the
+ * first third of the transition, which is what makes it read as a word
+ * arriving rather than as a slow dissolve.
+ */
+function blurAt(word: CaptionWord, at: number): number {
+  if (word.blur <= 0) return 0;
+
+  const left = 1 - Math.min(1, Math.max(0, at - word.at) / BLUR_IN_NS);
+  return word.blur * left * left;
 }
 
 /**

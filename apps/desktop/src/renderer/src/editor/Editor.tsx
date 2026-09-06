@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/contract";
-import type { TrackKind } from "../../../shared/manifest";
+import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import { newProject, outputFrame, type Project, type ZoomSlice } from "../../../shared/project";
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
@@ -17,6 +17,8 @@ import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon, WandIcon } from "./icons";
 import type { Images } from "./webgl";
+import type { CaptionEditing } from "./CaptionEditor";
+import { mergeWords, realignWords, survivingWords, wordsWithin } from "./captionText";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
@@ -39,6 +41,7 @@ import {
   type EditorState,
 } from "./state";
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
+import { place, spanInProject, toProjectTime } from "./timeline";
 import { useEditorPlayback } from "./useEditorPlayback";
 import { useExport } from "./useExport";
 import { useFilmstrip } from "./useFilmstrip";
@@ -204,6 +207,21 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   );
 
   const transcription = useTranscription(session);
+  /**
+   * The words in force: the panel's corrections laid over what was recognised.
+   *
+   * The live transcript, not the session's: a run that finishes while the
+   * editor is open delivers it here, and the session snapshot never changes.
+   * The corrections are the project's, so they are saved with the cuts and
+   * come back with them; the generated words stay on disk untouched for Reset
+   * to go back to.
+   */
+  const transcript = useMemo(() => {
+    const generated = transcription.transcript;
+    const edited = state.project.transcript;
+    return generated && edited ? { ...generated, words: edited.words } : generated;
+  }, [transcription.transcript, state.project.transcript]);
+
   const backgrounds = useBackgrounds();
   /** The background being downloaded, so its swatch can say so. */
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
@@ -212,15 +230,78 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // would re-rasterise every cue on every cut.
   const captions = useCaptions(
     session,
-    // The live transcript, not the session's: a run that finishes while the
-    // editor is open delivers it here, and the session snapshot never changes.
-    transcription.transcript,
+    transcript,
     // The whole project, not one clip's settings: caption looks are per clip,
     // so this has to see every override to know which sets to draw.
     state.project,
     captionFrame,
   );
   useCaptionImages(session, captions.byLook, media, setImages);
+
+  // Keyed on the slices rather than the project, so typing a correction —
+  // which changes the project — does not lay the clips out again and hand the
+  // editor a fresh word list to rebuild from on every keystroke.
+  const placed = useMemo(() => place(slices), [slices]);
+  /**
+   * The words the captions editor shows, and the ones it does not.
+   *
+   * Scoped to the selection, like every other panel: a clip in hand means that
+   * clip's words. `rest` is everything left out — the words in cut-out
+   * footage and the words of the other clips — and it goes back in on every
+   * edit, or correcting one sentence would delete the rest of the recording.
+   */
+  const spoken = useMemo(() => {
+    if (!transcript) return null;
+
+    const { visible, hidden } = survivingWords(transcript.words, placed);
+    const clip = slices.find((slice) => slice.id === state.selectedSliceId);
+    const { shown, rest } = wordsWithin(visible, clip?.source ?? null);
+
+    return { shown, rest: [...hidden, ...rest] };
+  }, [transcript, placed, slices, state.selectedSliceId]);
+  /** The footage under the words selected in the captions editor. */
+  const [captionRange, setCaptionRange] = useState<{ start: MediaTime; end: MediaTime } | null>(
+    null,
+  );
+
+  const editing: CaptionEditing = {
+    words: spoken?.shown ?? [],
+    edited: state.project.transcript !== null,
+    onEdit: (text) => {
+      if (!spoken) return;
+      const next = realignWords(spoken.shown, text);
+      // The same words back means nothing but whitespace changed.
+      if (next === spoken.shown) return;
+      // The editor only ever showed some of the words; the rest go back in, or
+      // an edit here would take the other clips' captions with it.
+      dispatch({ type: "setTranscript", words: mergeWords(spoken.rest, next) });
+    },
+    onBeginEdit: () => dispatch({ type: "beginEdit" }),
+    onReset: () => {
+      // Its own undo step, not the tail of whatever was being typed.
+      dispatch({ type: "beginEdit" });
+      dispatch({ type: "setTranscript", words: null });
+    },
+    onUndo: () => dispatch({ type: "undo" }),
+    onSelect: setCaptionRange,
+    onCut: (range) => {
+      // Worked out before the cut: where the range began is exactly where the
+      // footage after it lands once it is gone, so the playhead goes there.
+      const at = spanInProject(placed, range)?.start;
+      dispatch({ type: "deleteRange", source: range });
+      setCaptionRange(null);
+      if (at === undefined) return;
+      media.onInteract();
+      media.playback.seek(at);
+    },
+    onSeek: (source) => {
+      const at = toProjectTime(placed, source);
+      if (at === null) return;
+      media.onInteract();
+      media.playback.seek(at);
+    },
+    sourceAt: media.sourceAt,
+  };
 
   const exportState = useExport(session, state.project, state.project.output, captions);
 
@@ -426,6 +507,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               present={present}
               hasCursor={session.cursor !== null}
               captions={transcription}
+              editing={editing}
               backgrounds={backgrounds}
               pendingBackground={pendingBackground}
               frame={state.project.frame}
@@ -522,6 +604,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           peaks={peaks}
           filmstrip={filmstrip}
           cameraSpan={cameraSpan}
+          captionRange={captionRange}
         />
       </div>
 

@@ -96,6 +96,11 @@ function Sample({ style, accent }: { style: CaptionStyle; accent: string }) {
               textShadow: `0 ${style.shadow.dy * size}px ${style.shadow.blur * size}px ${style.shadow.color}`,
             }
           : {}),
+        // Part way through, not at the start: a swatch is one moment, and the
+        // moment worth showing is the one that says what the look does. At the
+        // full radius it is an unreadable smear, and at none of it the swatch
+        // is indistinguishable from the sharp looks beside it.
+        ...(style.blurIn ? { filter: `blur(${style.blurIn * size * 0.35}px)` } : {}),
       }}
     >
       Just <span style={style.lit ? { color: accent } : undefined}>so</span>

@@ -55,6 +55,14 @@ struct Uniforms {
     // In place of the tail padding this struct already carried, so every other
     // field keeps the offset it had.
     float vignette;
+    // A flat blur across the whole quad, in the sampled image's own texels.
+    // Unlike `focus` it does not vary across the quad — a caption word arriving
+    // out of focus is uniformly soft. In the last of the tail padding, so no
+    // field above it moves.
+    float soften;
+    // Two colours to choose between by what is behind the quad, and whether to
+    // do it at all. Only an adaptive caption sets `adapt`.
+    float adapt;
 };
 
 struct Vertex {
@@ -149,6 +157,31 @@ static float vignette(constant Uniforms &u, float2 screen) {
     return 1.0 - u.vignette * smoothstep(0.35, 1.0, away);
 }
 
+// The colour these words should be, given what is behind them.
+//
+// Sixteen taps on a fixed grid rather than a mipmap: a mipmap's filtering is
+// the driver's business and this has to come out the same here and in the
+// preview, or a caption is dark on screen and light in the file. Every fragment
+// of the quad computes the same average, which is the point — a line split
+// between two colours would read as a mistake rather than as contrast.
+//
+// Mixed across a band rather than switched at a threshold, for the same reason:
+// on a backdrop near the middle the two rasterisers can measure very slightly
+// differently, and a mix turns that into an imperceptible difference of colour
+// instead of a flip.
+//
+// Mirrors `chosen` in `apps/desktop/src/renderer/src/editor/webgl.ts`.
+static float3 chosen(texture2d<float> backdrop, sampler smp, constant Uniforms &u) {
+    float luma = 0.0;
+    for (int tap = 0; tap < 16; tap++) {
+        float2 at = (float2(float(tap % 4), float(tap / 4)) + 0.5) / 4.0;
+        float3 behind = backdrop.sample(smp, at).rgb;
+        luma += dot(behind, float3(0.2126, 0.7152, 0.0722));
+    }
+
+    return mix(u.colorA.rgb, u.colorB.rgb, smoothstep(0.42, 0.62, luma / 16.0));
+}
+
 // The picture, softened by how far this pixel is from what is in focus.
 //
 // One pass with a per-pixel radius rather than the usual two with a fixed one:
@@ -174,9 +207,13 @@ static float4 sample_focused(texture2d<float> image, sampler smp, constant Unifo
     // sharp radius made it as tight as the sharp area itself, so a small
     // `blurSafe` — the setting that ought to give a *shallower* depth of field —
     // instead gave a hard-edged hole. Half again is enough to read as a lens.
-    float radius = u.focus.w * smoothstep(0.0, max(u.focus.z * 1.5, 1.0), away);
+    // Whichever asks for more. The two never apply to the same draw today —
+    // the depth of field is on the picture, the soften is on a caption — and
+    // taking the larger keeps one tap loop rather than two that could disagree
+    // about what a radius means.
+    float radius = max(u.focus.w * smoothstep(0.0, max(u.focus.z * 1.5, 1.0), away), u.soften);
 
-    if (u.focus.w <= 0.0 || radius <= 0.5) {
+    if (radius <= 0.5) {
         return image.sample(smp, uv);
     }
 
@@ -244,7 +281,12 @@ static inline float4 premultiplied(float3 rgb, float alpha) {
 
 fragment float4 composite_fragment(Vertex in [[stage_in]],
                                    constant Uniforms &u [[buffer(0)]],
-                                   texture2d<float> image [[texture(0)]]) {
+                                   texture2d<float> image [[texture(0)]],
+                                   // A copy of what has already been drawn
+                                   // under this quad. Only an adaptive caption
+                                   // reads it; every other draw binds the same
+                                   // texture as `image` and ignores it.
+                                   texture2d<float> backdrop [[texture(1)]]) {
     // Declared here rather than bound: clamped so a sample a hair outside the
     // crop cannot wrap to the far edge of the frame, which shows as a seam.
     constexpr sampler smp(filter::linear, address::clamp_to_edge);
@@ -316,6 +358,13 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
             // applied first, so it flips the crop rather than moving it.
             uv = u.src.xy + uv * u.src.zw;
             sampled = sample_focused(image, smp, u, uv, in.screen);
+        }
+        // Recoloured against what is behind, for a look whose words stand on
+        // the footage with nothing under them. The bitmap is white where it is
+        // opaque, so the colour is a multiply — and premultiplied, so it
+        // multiplies the coverage the glyph already carries.
+        if (u.adapt > 0.0) {
+            sampled = float4(chosen(backdrop, smp, u) * sampled.a, sampled.a);
         }
         // `sampled` is already premultiplied — `image.rs` decodes through
         // `KCG_IMAGE_ALPHA_PREMULTIPLIED_FIRST` and a camera frame is opaque —

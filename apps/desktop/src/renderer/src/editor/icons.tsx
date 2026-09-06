@@ -500,6 +500,25 @@ export function CaptionsIcon() {
   );
 }
 
+/** Lucide `chevron-left`: the way back from a view pushed over a panel. */
+export function BackIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+/** Lucide `pencil`. */
+export function PencilIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
 /** Lucide `text-cursor-input`. Where text is going, not what it says. */
 export function TypingIcon() {
   return (

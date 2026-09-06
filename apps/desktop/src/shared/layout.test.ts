@@ -3234,7 +3234,18 @@ describe("captions in the plan", () => {
   });
 
   it("emits a lit layer only when there is a bitmap and boxes for one", () => {
-    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1.1 }];
+    const words = [
+      {
+        at: 1_000,
+        end: 2_000,
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        scale: 1.1,
+        blur: 0,
+      },
+    ];
 
     const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
     if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
@@ -3256,7 +3267,18 @@ describe("captions in the plan", () => {
     // to the word. Emitting a flat layer as well is what made this look like
     // two texts: a glyph grown over another does not cover it, because its
     // counters grow too and the strokes underneath show through.
-    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1 }];
+    const words = [
+      {
+        at: 1_000,
+        end: 2_000,
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        scale: 1,
+        blur: 0,
+      },
+    ];
     const items = drawn(LANDSCAPE, {}, [cue({ litPath: null, words })]);
 
     expect(items).toHaveLength(1);
@@ -3271,7 +3293,18 @@ describe("captions in the plan", () => {
   });
 
   it("puts both layers in exactly the same place", () => {
-    const words = [{ at: 1_000, end: 2_000, x: 0, y: 0, width: 100, height: 80, scale: 1 }];
+    const words = [
+      {
+        at: 1_000,
+        end: 2_000,
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        scale: 1,
+        blur: 0,
+      },
+    ];
     const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
     if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
 
@@ -3290,6 +3323,9 @@ describe("captions in the plan", () => {
 });
 
 describe("captionAt", () => {
+  /** Nanoseconds in a millisecond, so a blur test can be read in real time. */
+  const MS = 1_000_000;
+
   /**
    * Deliberately identical to the fixture in
    * `crates/prequel-render/src/plan.rs`.
@@ -3305,12 +3341,31 @@ describe("captionAt", () => {
       dstRect: { x: 100, y: 500, width: 800, height: 200 },
       span: { start: 1_000, end: 4_000 },
       words,
+      tint: null,
     }) satisfies Extract<PlanItem, { kind: "caption" }>;
 
   const spoken: CaptionWord[] = [
-    { at: 1_000, end: 2_000, x: 0, y: 10, width: 100, height: 80, scale: 1 },
+    {
+      at: 1_000,
+      end: 2_000,
+      x: 0,
+      y: 10,
+      width: 100,
+      height: 80,
+      scale: 1,
+      blur: 0,
+    },
     // A gap from 2_000 to 3_000: silence between two words.
-    { at: 3_000, end: 4_000, x: 200, y: 10, width: 100, height: 80, scale: 1 },
+    {
+      at: 3_000,
+      end: 4_000,
+      x: 200,
+      y: 10,
+      width: 100,
+      height: 80,
+      scale: 1,
+      blur: 0,
+    },
   ];
 
   it("draws the whole bitmap across its span when nothing is lit", () => {
@@ -3359,6 +3414,62 @@ describe("captionAt", () => {
     expect(centre(grown.dst)).toEqual(centre(flat.dst));
     expect(grown.dst.width).toBe(flat.dst.width * 1.5);
     expect(grown.dst.height).toBe(flat.dst.height * 1.5);
+  });
+
+  it("draws every word sharp for a look that does not blur them in", () => {
+    expect(captionAt(caption(spoken), 3_500)!.blur).toBe(0);
+    expect(captionAt(caption(), 2_500)!.blur).toBe(0);
+  });
+
+  /**
+   * A cue on a realistic clock: the transition is 160 ms, and the fixture
+   * above is measured in nanoseconds because its job is the geometry.
+   */
+  const blurring = (at: number, blur = 12) =>
+    ({
+      kind: "caption",
+      path: "captions/cue-3.png",
+      bitmap: { width: 400, height: 100 },
+      dstRect: { x: 100, y: 500, width: 800, height: 200 },
+      span: { start: 0, end: 2_000 * MS },
+      // Drawn for the whole cue: the line is on screen throughout, and only
+      // the focus moves along it.
+      // Drawn from the moment it is spoken to the end of the line, which is
+      // what makes the sentence fill up rather than sit there in advance.
+      words: [{ at, end: 2_000 * MS, x: 0, y: 10, width: 100, height: 80, scale: 1, blur }],
+      tint: null,
+    }) satisfies Extract<PlanItem, { kind: "caption" }>;
+
+  it("draws nothing at all before a word is spoken", () => {
+    // The line fills up as it is said. A word sitting there soft in advance
+    // gives away what is coming, and reads as a smudge nobody asked for.
+    const item = blurring(500 * MS);
+
+    expect(captionAt(item, 0)).toBeNull();
+    expect(captionAt(item, 499 * MS)).toBeNull();
+    expect(captionAt(item, 500 * MS)).not.toBeNull();
+  });
+
+  it("clears a word's blur from the moment it arrives, and leaves it sharp", () => {
+    const item = blurring(500 * MS);
+
+    // Arrives at the full radius, clears, and stays for the rest of the line.
+    expect(captionAt(item, 500 * MS)!.blur).toBe(12);
+    expect(captionAt(item, 580 * MS)!.blur).toBeLessThan(12);
+    expect(captionAt(item, 660 * MS)!.blur).toBe(0);
+    expect(captionAt(item, 1_900 * MS)!.blur).toBe(0);
+  });
+
+  it("clears most of the blur early, so a word snaps into focus", () => {
+    // Squared rather than linear. Half way through, a linear ramp would still
+    // be at half the radius; this is at a quarter, which is the difference
+    // between a word arriving and a word dissolving.
+    expect(captionAt(blurring(0, 16), 80 * MS)!.blur).toBeCloseTo(4, 6);
+  });
+
+  it("never blurs a word that carries no radius, however long it is", () => {
+    const long = [{ ...spoken[0]!, at: 1_000, end: 4_000 }];
+    expect(captionAt(caption(long), 1_000)!.blur).toBe(0);
   });
 });
 

@@ -148,7 +148,25 @@ pub enum PlanItem {
         /// one item emitting two draws, so every plan item stays one quad.
         #[serde(default)]
         words: Vec<CaptionWord>,
+        /// Two colours to choose between by what is behind the words, or
+        /// `None` to draw the bitmap in the colour it was rasterised.
+        ///
+        /// Measured while the frame is drawn, because that is the only place
+        /// the answer exists — a recording zooms, scrolls and cuts, so what is
+        /// behind a word is not known when the words are laid out. Defaulted,
+        /// so a plan written before this existed draws as it always did.
+        #[serde(default)]
+        tint: Option<Tint>,
     },
+}
+
+/// The two colours an adaptive caption chooses between.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tint {
+    #[serde(rename = "onDark")]
+    pub on_dark: String,
+    #[serde(rename = "onLight")]
+    pub on_light: String,
 }
 
 /// A half-open range of source time.
@@ -158,10 +176,14 @@ pub struct Span {
     pub end: i64,
 }
 
-/// One word's box within a caption bitmap, and when it is the spoken one.
+/// One word's box within a caption bitmap, and when it is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CaptionWord {
-    /// Source time this word becomes the active one.
+    /// The source time this crop is on screen for.
+    ///
+    /// For the lit layer that is the word's own moment. For a look that blurs
+    /// its words in it runs to the end of the line: the word arrives when it
+    /// is spoken and stays, so the line fills up as it is said.
     pub at: i64,
     pub end: i64,
     /// The word's box, in bitmap pixels.
@@ -173,6 +195,10 @@ pub struct CaptionWord {
     /// no pop.
     #[serde(default = "one")]
     pub scale: f64,
+    /// How far out of focus the word starts, in bitmap pixels. 0 draws it
+    /// sharp, and is what a plan written before this existed carries.
+    #[serde(default)]
+    pub blur: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -464,6 +490,7 @@ pub fn caption_at(
                 height: bitmap.height,
             },
             dst: dst_rect,
+            blur: 0.0,
         });
     }
 
@@ -498,6 +525,7 @@ pub fn caption_at(
         // Grown about its own centre, so a pop swells the word in place rather
         // than pushing it down and to the right.
         dst: grown(dst, word.scale),
+        blur: blur_at(word, at),
     })
 }
 
@@ -521,6 +549,27 @@ pub struct CaptionDraw {
     pub src: Rect,
     /// In output pixels.
     pub dst: Rect,
+    /// How far out of focus to draw it, in bitmap pixels. 0 is sharp.
+    pub blur: f64,
+}
+
+/// How long a word takes to come into focus.
+///
+/// Mirrors `BLUR_IN_NS` in `apps/desktop/src/shared/layout.ts`, where the note
+/// on why it is this short lives.
+const BLUR_IN_NS: i64 = 160_000_000;
+
+/// The blur radius for a word at a moment, in bitmap pixels.
+///
+/// Mirrors `blurAt` in `apps/desktop/src/shared/layout.ts`: measured from the
+/// word's own first instant, squared on the way out.
+fn blur_at(word: &CaptionWord, at: i64) -> f64 {
+    if word.blur <= 0.0 {
+        return 0.0;
+    }
+
+    let left = 1.0 - ((at - word.at).max(0) as f64 / BLUR_IN_NS as f64).min(1.0);
+    word.blur * left * left
 }
 
 /// A key's four corners, projected or flat.
@@ -918,6 +967,7 @@ mod tests {
                 width: 100.0,
                 height: 80.0,
                 scale: 1.0,
+                blur: 0.0,
             },
             // A gap from 2_000 to 3_000: silence between two words.
             CaptionWord {
@@ -928,6 +978,7 @@ mod tests {
                 width: 100.0,
                 height: 80.0,
                 scale: 1.0,
+                blur: 0.0,
             },
         ];
 
@@ -953,6 +1004,78 @@ mod tests {
         // Half-open, so a cue ending where the next begins does not draw both.
         assert!(caption_at(bitmap, dst, span, &[], 4_000).is_none());
         assert!(caption_at(bitmap, dst, span, &words, 4_000).is_none());
+    }
+
+    /// Deliberately the same numbers as the `captionAt` blur tests in
+    /// `apps/desktop/src/shared/layout.test.ts`. The ramp exists on both sides,
+    /// so the numbers are the contract between them.
+    ///
+    /// A cue on a realistic clock: the transition is 160 ms, where the fixture
+    /// above is measured in nanoseconds because its job is the geometry.
+    fn blurring(at: i64, blur: f64) -> (Size, Rect, Span, Vec<CaptionWord>) {
+        const MS: i64 = 1_000_000;
+        let (bitmap, dst, _, _) = caption();
+
+        (
+            bitmap,
+            dst,
+            Span {
+                start: 0,
+                end: 2_000 * MS,
+            },
+            vec![CaptionWord {
+                // Drawn from the moment it is spoken to the end of the line,
+                // which is what makes the sentence fill up rather than sit
+                // there in advance.
+                at,
+                end: 2_000 * MS,
+                x: 0.0,
+                y: 10.0,
+                width: 100.0,
+                height: 80.0,
+                scale: 1.0,
+                blur,
+            }],
+        )
+    }
+
+    #[test]
+    fn a_word_that_carries_no_radius_is_always_drawn_sharp() {
+        let (bitmap, dst, span, words) = caption();
+
+        assert_eq!(
+            caption_at(bitmap, dst, span, &words, 3_500).unwrap().blur,
+            0.0
+        );
+        assert_eq!(caption_at(bitmap, dst, span, &[], 2_500).unwrap().blur, 0.0);
+    }
+
+    #[test]
+    fn a_blurred_word_is_not_drawn_at_all_before_it_is_spoken() {
+        const MS: i64 = 1_000_000;
+        let (bitmap, dst, span, words) = blurring(500 * MS, 12.0);
+        let blur = |at: i64| caption_at(bitmap, dst, span, &words, at).unwrap().blur;
+
+        // The line fills up as it is said. A word sitting there soft in
+        // advance gives away what is coming.
+        assert!(caption_at(bitmap, dst, span, &words, 0).is_none());
+        assert!(caption_at(bitmap, dst, span, &words, 499 * MS).is_none());
+
+        // It arrives at the full radius, clears, and stays for the line.
+        assert_eq!(blur(500 * MS), 12.0);
+        assert!(blur(580 * MS) < 12.0);
+        assert_eq!(blur(660 * MS), 0.0);
+        assert_eq!(blur(1_900 * MS), 0.0);
+    }
+
+    #[test]
+    fn a_blurred_word_clears_most_of_it_early() {
+        const MS: i64 = 1_000_000;
+        let (bitmap, dst, span, words) = blurring(0, 16.0);
+
+        // Squared, not linear: a quarter of the radius half way through.
+        let half = caption_at(bitmap, dst, span, &words, 80 * MS).unwrap().blur;
+        assert!((half - 4.0).abs() < 1e-6, "{half}");
     }
 
     #[test]
@@ -1102,6 +1225,7 @@ mod tests {
                 dst_rect,
                 span,
                 words,
+                tint,
             } => {
                 assert_eq!(path, "captions/cue-3.png");
                 assert_eq!(bitmap.width, 400.0);
@@ -1111,6 +1235,11 @@ mod tests {
                 // Defaulted, like a cursor point's, so the ordinary caption
                 // carries no `scale` at all.
                 assert_eq!(words[0].scale, 1.0);
+                // Same for the word's blur and the colours: a plan written
+                // before either existed draws a sharp caption in its own
+                // colour rather than failing to parse.
+                assert_eq!(words[0].blur, 0.0);
+                assert!(tint.is_none());
             }
             other => panic!("parsed as {other:?}"),
         }

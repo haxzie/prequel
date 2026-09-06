@@ -203,6 +203,168 @@ describe("deleting", () => {
   });
 });
 
+describe("deleting a range", () => {
+  const sources = (state: EditorState) => slicesOf(state.project).map((slice) => slice.source);
+
+  it("cuts a hole out of the middle of a clip", () => {
+    const state = run(start(), { type: "deleteRange", source: { start: 4 * S, end: 6 * S } });
+
+    expect(sources(state)).toEqual([
+      { start: 0, end: 4 * S },
+      { start: 6 * S, end: 10 * S },
+    ]);
+    expect(projectDuration(state.project)).toBe(8 * S);
+    // Project time runs straight across the hole.
+    expect(toSourceTime(placedSlices(state.project), 4 * S)).toBe(6 * S);
+  });
+
+  it("trims both clips when the range crosses a cut that already exists", () => {
+    const state = run(
+      start(),
+      { type: "split", at: 5 * S },
+      { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
+    );
+
+    expect(sources(state)).toEqual([
+      { start: 0, end: 4 * S },
+      { start: 6 * S, end: 10 * S },
+    ]);
+    expect(slicesOf(state.project)).toHaveLength(2);
+  });
+
+  it("removes a clip the range covers entirely", () => {
+    const state = run(
+      start(),
+      { type: "split", at: 3 * S },
+      { type: "split", at: 6 * S },
+      { type: "deleteRange", source: { start: 2 * S, end: 7 * S } },
+    );
+
+    expect(sources(state)).toEqual([
+      { start: 0, end: 2 * S },
+      { start: 7 * S, end: 10 * S },
+    ]);
+  });
+
+  it("refuses to take out the whole recording", () => {
+    const state = start();
+    expect(run(state, { type: "deleteRange", source: { start: 0, end: 10 * S } })).toBe(state);
+    expect(canUndo(run(state, { type: "deleteRange", source: { start: 0, end: 10 * S } }))).toBe(
+      false,
+    );
+  });
+
+  it("takes an ungrabbable remainder with the cut rather than leaving it", () => {
+    const state = run(start(), {
+      type: "deleteRange",
+      source: { start: 4 * S, end: 10 * S - MIN_SLICE_NS / 2 },
+    });
+
+    expect(sources(state)).toEqual([{ start: 0, end: 4 * S }]);
+  });
+
+  it("does nothing for a range that touches no footage", () => {
+    const state = run(
+      start(),
+      { type: "split", at: 5 * S },
+      { type: "trimSlice", sliceId: "take", edge: "end", source: 3 * S },
+    );
+    // The gap is 3 s to 5 s.
+    expect(run(state, { type: "deleteRange", source: { start: 3 * S, end: 5 * S } })).toBe(state);
+    expect(run(state, { type: "deleteRange", source: { start: 6 * S, end: 6 * S } })).toBe(state);
+  });
+
+  it("gives the far half its own overrides", () => {
+    const state = run(
+      start(),
+      { type: "select", sliceId: "take" },
+      { type: "setSetting", section: "audio", key: "gain", value: 0.5 },
+      { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
+    );
+    const [near, far] = slicesOf(state.project);
+
+    expect(far!.overrides).toEqual(near!.overrides);
+    expect(far!.overrides).not.toBe(near!.overrides);
+  });
+
+  it("is one undo step", () => {
+    const before = run(start(), { type: "split", at: 5 * S });
+    const after = run(before, { type: "deleteRange", source: { start: 4 * S, end: 6 * S } });
+
+    expect(sources(run(after, { type: "undo" }))).toEqual(sources(before));
+  });
+
+  it("keeps a selection that survived and moves one that did not", () => {
+    const kept = run(
+      start(),
+      { type: "select", sliceId: "take" },
+      { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
+    );
+    expect(kept.selectedSliceId).toBe("take");
+
+    const moved = run(
+      start(),
+      { type: "split", at: 3 * S },
+      { type: "split", at: 6 * S },
+      { type: "select", sliceId: slicesOf(start().project)[0]!.id },
+    );
+    const middle = slicesOf(moved.project)[1]!;
+    const gone = run(
+      { ...moved, selectedSliceId: middle.id },
+      { type: "deleteRange", source: { start: 2 * S, end: 7 * S } },
+    );
+    expect(gone.selectedSliceId).toBe(slicesOf(gone.project)[1]!.id);
+  });
+
+  it("leaves nothing selected when nothing was", () => {
+    // Selecting a clip here would turn the caption panel's next edit into an
+    // override on it, without anything on screen having changed to say so.
+    const state = run(
+      start(),
+      { type: "select", sliceId: null },
+      { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
+    );
+    expect(state.selectedSliceId).toBeNull();
+  });
+});
+
+describe("the transcript", () => {
+  const word = (text: string, at: number) => ({ at, end: at + S, text, confidence: 1 });
+
+  it("records the corrected words and clears them again", () => {
+    const edited = run(start(), { type: "setTranscript", words: [word("hello", 0)] });
+    expect(edited.project.transcript).toEqual({ words: [word("hello", 0)] });
+    expect(edited.revision).toBeGreaterThan(start().revision);
+
+    const cleared = run(edited, { type: "setTranscript", words: null });
+    expect(cleared.project.transcript).toBeNull();
+  });
+
+  it("does not count clearing what is already clear as an edit", () => {
+    const state = start();
+    expect(run(state, { type: "setTranscript", words: null })).toBe(state);
+  });
+
+  it("folds a burst of typing into one undo step, and a pause into two", () => {
+    const burst = run(
+      start(),
+      { type: "setTranscript", words: [word("h", 0)] },
+      { type: "setTranscript", words: [word("he", 0)] },
+      { type: "setTranscript", words: [word("hel", 0)] },
+    );
+    expect(burst.history).toHaveLength(1);
+    expect(run(burst, { type: "undo" }).project.transcript).toBeNull();
+
+    const paused = run(
+      burst,
+      { type: "beginEdit" },
+      { type: "setTranscript", words: [word("hello", 0)] },
+    );
+    expect(paused.history).toHaveLength(2);
+    expect(run(paused, { type: "undo" }).project.transcript).toEqual({ words: [word("hel", 0)] });
+  });
+});
+
 describe("trimming", () => {
   it("moves an edge", () => {
     const state = run(start(), {

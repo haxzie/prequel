@@ -16,7 +16,7 @@
  * which is also why `RenderedCue.size` is a fraction of the frame rather than a
  * count of pixels.
  */
-import type { CaptionStyle, Cue } from "../../../shared/captions";
+import type { CaptionStyle, Cue, CueWord } from "../../../shared/captions";
 import type { CaptionWord, Size } from "../../../shared/layout";
 
 /**
@@ -106,7 +106,11 @@ export async function rasteriseCue(
   if (style.perWord) {
     return {
       layout: measured.layout,
-      flat: await paint(style, measured, options.accent),
+      // In the accent only where the look lights its words. A per-word look
+      // that does not — the one that blurs them in — has no lit colour to be
+      // drawn in, and painting it in the accent anyway would make the accent
+      // the text colour for that style alone.
+      flat: await paint(style, measured, style.lit ? options.accent : null),
       lit: null,
     };
   }
@@ -147,12 +151,14 @@ function measure(cue: Cue, style: CaptionStyle, options: CueOptions): Measured {
   const longest = Math.max(0, ...widths);
 
   // Room for whatever is drawn outside the glyphs. A stroke reaches half its
-  // width either side; a shadow reaches its blur plus its drop. Both are cut
-  // off by the bitmap's edge otherwise, and a caption with its outline shaved
-  // is the kind of thing only noticed on the export.
+  // width either side; a shadow reaches its blur plus its drop; a word drawn
+  // out of focus spreads by its radius. All are cut off by the bitmap's edge
+  // otherwise, and a caption with its outline shaved is the kind of thing only
+  // noticed on the export.
   const bleed =
     (style.stroke ? (style.stroke.width * fontSize) / 2 : 0) +
-    (style.shadow ? style.shadow.blur * fontSize + Math.abs(style.shadow.dy * fontSize) : 0);
+    (style.shadow ? style.shadow.blur * fontSize + Math.abs(style.shadow.dy * fontSize) : 0) +
+    (style.blurIn ?? 0) * fontSize;
 
   const padX = (style.plate ? style.plate.padX * fontSize : 0) + bleed;
   const padY = (style.plate ? style.plate.padY * fontSize : 0) + bleed;
@@ -175,7 +181,20 @@ function measure(cue: Cue, style: CaptionStyle, options: CueOptions): Measured {
     layout: {
       bitmap: { width, height },
       size: { width: width / options.frame.width, height: height / options.frame.height },
-      words: style.lit ? wordBoxes(cue, ctx, lines, fontSize, tracking, style) : [],
+      // Boxes for any look whose plan item crops to a word — the lit layer of
+      // a line, a look that shows one word at a time, and one that brings each
+      // word into focus. Gating this on `lit` alone was a trap the moment a
+      // look wanted boxes without a lit colour: the plan asked for them, got
+      // none, and drew the whole bitmap for the length of the cue.
+      words:
+        style.lit || style.perWord || style.blurIn !== null
+          ? wordBoxes(cue, ctx, lines, fontSize, tracking, style, {
+              width,
+              height,
+              padY,
+              lineHeight,
+            })
+          : [],
     },
     font,
     fontSize,
@@ -201,14 +220,93 @@ function wordBoxes(
   fontSize: number,
   tracking: number,
   style: CaptionStyle,
+  bitmap: { width: number; height: number; padY: number; lineHeight: number },
 ): CaptionWord[] {
-  if (!style.lit) return [];
+  if (!style.lit && !style.perWord && style.blurIn === null) return [];
 
   const pad = WORD_PAD * fontSize;
   const lineHeight = fontSize * LINE_HEIGHT;
-  const boxes: CaptionWord[] = [];
-  const consumed = new Map<number, string>();
+  const placed = advances(cue, ctx, lines, style);
 
+  // Boxes that meet rather than boxes that fit.
+  //
+  // A blurring look draws every word as its own quad, so two boxes that
+  // overlap would each redraw part of the other's word — a soft copy of a word
+  // that is already sharp, printed over it. Meeting halfway through the space
+  // between two words puts every seam where there is no ink, and reaching the
+  // bitmap's own edges at the ends of the line gives the outermost words the
+  // room their blur spreads into.
+  const blurIn = style.blurIn;
+  if (blurIn !== null) {
+    return placed.map(({ word, line, left, right, index, onLine, lastOnLine }) => {
+      // Halfway to the neighbour on each side, and out to the bitmap's edge
+      // where there is none.
+      const from = onLine === 0 ? 0 : (placed[index - 1]!.right + left) / 2;
+      const to = lastOnLine ? bitmap.width : (right + placed[index + 1]!.left) / 2;
+      // The line's own band, the same way: lines tile too, or a word's box
+      // would reach into the line above and redraw part of it.
+      const top = line.index === 0 ? 0 : bitmap.padY + bitmap.lineHeight * line.index;
+      const bottom = line.last ? bitmap.height : bitmap.padY + bitmap.lineHeight * (line.index + 1);
+
+      return {
+        // From the moment it is said until the end of the line it belongs to.
+        // A word that has not been reached is not on screen at all — it
+        // arrives out of focus and settles, and the line fills up as it is
+        // spoken rather than sitting there in advance, soft, giving away what
+        // is coming.
+        at: word.at,
+        end: cue.end,
+        x: from,
+        y: top,
+        width: to - from,
+        height: bottom - top,
+        scale: 1,
+        blur: blurIn * fontSize,
+      };
+    });
+  }
+
+  return placed.map(({ word, line, left, right }) => ({
+    at: word.at,
+    end: word.end,
+    x: Math.max(0, left - pad),
+    y: Math.max(0, line.y - fontSize - pad),
+    width: right - left + pad * 2,
+    height: lineHeight + pad * 2,
+    scale: style.lit?.pop ?? 1,
+    blur: 0,
+  }));
+}
+
+/**
+ * Where each word starts and ends along its line, in bitmap pixels.
+ *
+ * Measured by advancing along the line the way the drawing does — the width of
+ * everything before a word is where that word starts — rather than by measuring
+ * words in isolation and adding a space. Kerning and letter spacing make those
+ * two different numbers, and the difference is a highlight that drifts further
+ * right with every word on the line.
+ */
+function advances(
+  cue: Cue,
+  ctx: OffscreenCanvasRenderingContext2D,
+  lines: Measured["lines"],
+  style: CaptionStyle,
+): {
+  word: CueWord;
+  line: { y: number; index: number; last: boolean };
+  left: number;
+  right: number;
+  /** Position in the whole cue, and along its own line. */
+  index: number;
+  onLine: number;
+  lastOnLine: boolean;
+}[] {
+  const consumed = new Map<number, string>();
+  const counts = new Map<number, number>();
+  for (const word of cue.words) counts.set(word.line, (counts.get(word.line) ?? 0) + 1);
+
+  const placed: ReturnType<typeof advances> = [];
   for (const word of cue.words) {
     const line = lines[word.line];
     if (!line) continue;
@@ -220,19 +318,20 @@ function wordBoxes(
 
     const start = before === "" ? 0 : ctx.measureText(`${before} `).width;
     const width = ctx.measureText(after).width - start;
+    const onLine = placed.filter((other) => other.word.line === word.line).length;
 
-    boxes.push({
-      at: word.at,
-      end: word.end,
-      x: Math.max(0, line.x + start - pad),
-      y: Math.max(0, line.y - fontSize - pad),
-      width: width + pad * 2,
-      height: lineHeight + pad * 2,
-      scale: style.lit.pop,
+    placed.push({
+      word,
+      line: { y: line.y, index: word.line, last: word.line === lines.length - 1 },
+      left: line.x + start,
+      right: line.x + start + width,
+      index: placed.length,
+      onLine,
+      lastOnLine: onLine === (counts.get(word.line) ?? 1) - 1,
     });
   }
 
-  return boxes;
+  return placed;
 }
 
 /** Draws one pass. `fill` overrides the style's own colour for the lit layer. */

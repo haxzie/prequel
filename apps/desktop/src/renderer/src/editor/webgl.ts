@@ -121,6 +121,11 @@ uniform vec4 u_focus;
 // uv, z how much of the quad on each side is padding the streak may run into,
 // w non-zero to enable it at all.
 uniform vec4 u_smear;
+// A flat blur across the whole quad, in the sampled image's own texels. Unlike
+// \`u_focus\` it does not vary with where the pixel is — a caption word arriving
+// out of focus is uniformly soft, and it is the only thing that uses this. 0
+// softens nothing.
+uniform float u_soften;
 // How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
 uniform float u_vignette;
 // The output frame, declared here as well as in the vertex stage: a uniform
@@ -131,6 +136,13 @@ uniform float u_vignette;
 uniform vec2 u_frame;
 uniform vec2 u_texel;
 uniform sampler2D u_image;
+// A copy of what has already been drawn under this quad, and the two colours to
+// choose between by how light it is. u_tint.w of 0 leaves the bitmap's own
+// colour alone, which is every draw but an adaptive caption.
+uniform sampler2D u_backdrop;
+uniform vec4 u_onDark;
+uniform vec4 u_onLight;
+uniform float u_adapt;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -162,9 +174,14 @@ vec4 sampleFocused(vec2 uv) {
   // radius made it as tight as the sharp area itself, so a small blurSafe — the
   // setting that ought to give a *shallower* depth of field — instead gave a
   // hard-edged hole. Half again is enough to read as a lens.
-  float radius = u_focus.w * smoothstep(0.0, max(u_focus.z * 1.5, 1.0), away);
+  //
+  // Whichever asks for more. The two never apply to the same draw today — the
+  // depth of field is on the picture, the soften is on a caption — and taking
+  // the larger keeps one tap loop rather than two that could disagree about
+  // what a radius means.
+  float radius = max(u_focus.w * smoothstep(0.0, max(u_focus.z * 1.5, 1.0), away), u_soften);
 
-  if (u_focus.w <= 0.0 || radius <= 0.5) return texture(u_image, uv);
+  if (radius <= 0.5) return texture(u_image, uv);
 
   vec4 total = vec4(0.0);
   for (int tap = 0; tap < 16; tap++) {
@@ -174,6 +191,33 @@ vec4 sampleFocused(vec2 uv) {
     total += texture(u_image, uv + offset);
   }
   return total / 16.0;
+}
+
+/**
+ * The colour these words should be, given what is behind them.
+ *
+ * Sixteen taps on a fixed grid rather than a mipmap: a mipmap's filtering is
+ * the driver's business and this has to come out the same here and in the
+ * exporter, or a caption is dark in the preview and light in the file. Every
+ * fragment of the quad computes the same average, which is the point — a line
+ * split between two colours would read as a mistake rather than as contrast.
+ *
+ * Mixed across a band rather than switched at a threshold, for the same
+ * reason: on a backdrop near the middle the two rasterisers can measure very
+ * slightly differently, and a mix turns that into an imperceptible difference
+ * of colour instead of a flip.
+ *
+ * Mirrors chosen() in shaders.metal.
+ */
+vec3 chosen() {
+  float luma = 0.0;
+  for (int tap = 0; tap < 16; tap++) {
+    vec2 at = (vec2(float(tap % 4), float(tap / 4)) + 0.5) / 4.0;
+    vec3 behind = texture(u_backdrop, at).rgb;
+    luma += dot(behind, vec3(0.2126, 0.7152, 0.0722));
+  }
+
+  return mix(u_onDark.rgb, u_onLight.rgb, smoothstep(0.42, 0.62, luma / 16.0));
 }
 
 // Signed distance to a superellipse-cornered rectangle. Negative inside,
@@ -323,6 +367,11 @@ void main() {
       uv = u_src.xy + uv * u_src.zw;
       sampled = sampleFocused(uv);
     }
+    // Recoloured against what is behind, for a look whose words stand on the
+    // footage with nothing under them. The bitmap is white where it is opaque,
+    // so the colour is a multiply — and premultiplied, so it multiplies the
+    // coverage the glyph already carries.
+    if (u_adapt > 0.0) sampled = vec4(chosen() * sampled.a, sampled.a);
     // sampled arrives premultiplied — the upload asks Chromium for it, so it
     // matches what image.rs hands Metal — so only coverage is folded in here.
     // Running it through premultiplied as well would multiply the texture's own
@@ -359,6 +408,11 @@ interface Program {
   quad: WebGLUniformLocation | null;
   focus: WebGLUniformLocation | null;
   smear: WebGLUniformLocation | null;
+  soften: WebGLUniformLocation | null;
+  backdrop: WebGLUniformLocation | null;
+  onDark: WebGLUniformLocation | null;
+  onLight: WebGLUniformLocation | null;
+  adapt: WebGLUniformLocation | null;
   vignette: WebGLUniformLocation | null;
   texel: WebGLUniformLocation | null;
 }
@@ -366,6 +420,8 @@ interface Program {
 export class WebGlCompositor {
   private gl: WebGL2RenderingContext | null = null;
   private program: Program | null = null;
+  /** A copy of the frame under the caption being drawn. See `grabBackdrop`. */
+  private backdrop: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
 
   /** One texture per source, reused: a new one per frame would thrash. */
@@ -600,18 +656,89 @@ export class WebGlCompositor {
         const texture = this.upload(gl, item.path, image, false);
         if (!texture) break;
 
+        const size = sizeOf(image);
+
+        // What is already on the frame under this caption, so the shader can
+        // colour the words against it. Taken from the whole cue's box rather
+        // than the word's own crop — the words of a line have to agree, and
+        // `dstRect` is the same box on every one of its items, so this copies
+        // once per line rather than once per word.
+        if (item.tint) this.grabBackdrop(gl, item.dstRect, frame);
+
         set(gl, p, {
           rect: draw.dst,
           shape: { radius: 0, exponent: 2 },
           mode: MODE_IMAGE,
           // Normalised against the bitmap's real size rather than the plan's,
           // the way the exporter normalises against its texture's.
-          src: normalised(draw.src, sizeOf(image).width, sizeOf(image).height),
+          src: normalised(draw.src, size.width, size.height),
+          // Both, or neither does anything: the radius is in the bitmap's own
+          // texels and the shader has no other way to know how big one is.
+          ...(draw.blur > 0
+            ? {
+                soften: draw.blur,
+                texel: [1 / Math.max(size.width, 1), 1 / Math.max(size.height, 1)] as [
+                  number,
+                  number,
+                ],
+              }
+            : {}),
+          ...(item.tint ? { tint: item.tint } : {}),
         });
         drawQuad(gl);
         break;
       }
     }
+  }
+
+  /**
+   * Copies what has been drawn under a rectangle into the backdrop texture.
+   *
+   * The frame is drawn back to front and captions are last, so by the time one
+   * is reached the colour buffer already holds everything behind it. WebGL
+   * cannot sample the buffer it is drawing into, hence the copy.
+   *
+   * The copy is the size of the box on screen, which at preview scale is a few
+   * hundred pixels — the shader averages sixteen taps across it and never
+   * looks at a single texel, so nothing is lost by it being small.
+   */
+  private grabBackdrop(gl: WebGL2RenderingContext, rect: Rect, frame: Size): void {
+    const p = this.program;
+    if (!p) return;
+
+    const scale = gl.drawingBufferWidth / Math.max(frame.width, 1);
+    // Clamped into the buffer: `copyTexImage2D` reads undefined pixels outside
+    // it, and a caption sitting on the frame's edge would sample them.
+    const x = Math.max(0, Math.round(rect.x * scale));
+    const width = Math.min(gl.drawingBufferWidth - x, Math.max(1, Math.round(rect.width * scale)));
+    const height = Math.min(gl.drawingBufferHeight, Math.max(1, Math.round(rect.height * scale)));
+    // Flipped: the plan measures from the top, the colour buffer from the
+    // bottom. Reading the wrong band is the whole failure here — the words
+    // would be coloured against a stripe of the frame they are nowhere near.
+    const y = Math.max(
+      0,
+      Math.min(
+        gl.drawingBufferHeight - height,
+        Math.round(gl.drawingBufferHeight - (rect.y + rect.height) * scale),
+      ),
+    );
+
+    if (width <= 0 || height <= 0) return;
+
+    this.backdrop ??= gl.createTexture();
+    if (!this.backdrop) return;
+
+    // Unit 1, and left bound: unit 0 is the image every draw samples, and the
+    // sampler uniform below is set once for the life of the program.
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.backdrop);
+    gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, x, y, width, height, 0);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(p.backdrop, 1);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   /** A background fill: flat, a gradient, or an image scaled to cover. */
@@ -781,6 +908,10 @@ interface Draw {
   vignette?: number;
   /** One texel of the sampled image, so a blur is measured in its own pixels. */
   texel?: [number, number];
+  /** A flat blur across the quad, in the sampled image's texels. */
+  soften?: number;
+  /** Two colours to choose between by what has already been drawn under it. */
+  tint?: { onDark: string; onLight: string };
 }
 
 function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
@@ -808,6 +939,13 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   const smear = draw.smear;
   gl.uniform4f(p.smear, smear?.x ?? 0, smear?.y ?? 0, smear?.pad ?? 0, smear ? 1 : 0);
   gl.uniform2f(p.texel, draw.texel?.[0] ?? 0, draw.texel?.[1] ?? 0);
+  gl.uniform1f(p.soften, draw.soften ?? 0);
+
+  const onDark = rgba(draw.tint?.onDark ?? "#00000000");
+  gl.uniform4f(p.onDark, onDark[0], onDark[1], onDark[2], onDark[3]);
+  const onLight = rgba(draw.tint?.onLight ?? "#00000000");
+  gl.uniform4f(p.onLight, onLight[0], onLight[1], onLight[2], onLight[3]);
+  gl.uniform1f(p.adapt, draw.tint ? 1 : 0);
   gl.uniform1f(p.vignette, draw.vignette ?? 0);
 }
 
@@ -936,6 +1074,11 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     quad: at("u_quad"),
     focus: at("u_focus"),
     smear: at("u_smear"),
+    soften: at("u_soften"),
+    backdrop: at("u_backdrop"),
+    onDark: at("u_onDark"),
+    onLight: at("u_onLight"),
+    adapt: at("u_adapt"),
     vignette: at("u_vignette"),
     texel: at("u_texel"),
   };

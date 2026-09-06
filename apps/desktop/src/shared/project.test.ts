@@ -241,6 +241,39 @@ describe("sanitiseProject", () => {
     expect(sanitiseProject("{}", RECORDING, S)).toBeNull();
   });
 
+  it("keeps an edited transcript it can read, in time order", () => {
+    const project = stored() as { transcript: unknown };
+    const late = { at: 2 * S, end: 3 * S, text: "world", confidence: 1 };
+    const early = { at: S, end: 2 * S, text: "hello", confidence: 0.9 };
+    project.transcript = { words: [late, early] };
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.transcript).toEqual({
+      words: [early, late],
+    });
+  });
+
+  it("drops an edited transcript with one malformed word, rather than half of it", () => {
+    // Captions built from the words that survived would silently omit what
+    // was said. Falling back to the generated transcript loses the edit, but
+    // loses nothing that was spoken.
+    const project = stored() as { transcript: unknown };
+    project.transcript = {
+      words: [
+        { at: S, end: 2 * S, text: "hello", confidence: 1 },
+        { at: 2 * S, end: S, text: "backwards", confidence: 1 },
+      ],
+    };
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.transcript).toBeNull();
+  });
+
+  it("reads no edited transcript from a project written before there was one", () => {
+    const project = stored() as { transcript?: unknown };
+    delete project.transcript;
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.transcript).toBeNull();
+  });
+
   it("translates an arrangement that has been taken out of the grid", () => {
     // `layoutBoxes` answers for the arrangements that exist. A project naming
     // one that does not gets no boxes at all — the editor opens on an empty

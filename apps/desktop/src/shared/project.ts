@@ -11,6 +11,7 @@
 import type { ExportFormat } from "./contract.js";
 import type { MediaTime } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
+import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
 
 export const PROJECT_VERSION = 1;
 export const PROJECT_FILE_NAME = "project.json";
@@ -560,6 +561,17 @@ export interface Project {
   /** Zoom spans, in source time. Sorted, and never overlapping. */
   zooms: ZoomSlice[];
   output: OutputSettings;
+  /**
+   * The words as corrected in the captions panel, or null to caption from the
+   * recording's own transcript.
+   *
+   * An overlay here rather than a rewrite of `transcript.json`: that file is
+   * derived and regenerable, so an edit written into it would be lost the
+   * moment the recording was transcribed again, and there would be nothing to
+   * put back when Reset is pressed. Null rather than a copy of the generated
+   * words, so "has this been edited" is one null check.
+   */
+  transcript: { words: TranscriptWord[] } | null;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────────
@@ -815,6 +827,7 @@ export function newProject(recordingId: string, duration: Ns, fullScreen = false
       },
     ],
     output: { fps: 60, format: "h264", shortEdge: null },
+    transcript: null,
   };
 }
 
@@ -973,7 +986,25 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
       },
     ],
     output: outputSettings(stored.output),
+    transcript: sanitiseTranscriptEdit(stored.transcript),
   };
+}
+
+/**
+ * The edited words, or null when they cannot be used as they stand.
+ *
+ * All or nothing, the way `parseTranscript` treats the original: captions
+ * built from the words that survived a filter would silently omit what was
+ * said, which is worse than falling back to the generated transcript.
+ */
+function sanitiseTranscriptEdit(value: unknown): Project["transcript"] {
+  if (typeof value !== "object" || value === null) return null;
+
+  const stored = value as { words?: unknown };
+  if (!Array.isArray(stored.words)) return null;
+  if (!stored.words.every(isTranscriptWord)) return null;
+
+  return { words: [...stored.words].sort((a, b) => a.at - b.at) };
 }
 
 /**

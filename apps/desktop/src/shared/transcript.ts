@@ -102,7 +102,7 @@ export function parseTranscript(text: string, recordingId: string): Transcript |
   if (value.recordingId !== recordingId) return null;
   if (!Array.isArray(value.words)) return null;
 
-  const words = value.words.filter(isWord);
+  const words = value.words.filter(isTranscriptWord);
   // A transcript whose words did not survive the filter is not half-usable:
   // captions built from the remainder would silently omit what was said.
   if (words.length !== value.words.length) return null;
@@ -121,7 +121,14 @@ export function parseTranscript(text: string, recordingId: string): Transcript |
   };
 }
 
-function isWord(value: unknown): value is TranscriptWord {
+/**
+ * Whether a value is a word this build can caption from.
+ *
+ * Exported because the project file carries an edited copy of the words, and
+ * its sanitiser has to apply the same test — a looser one there would let a
+ * malformed word past the reader that is strict about the original.
+ */
+export function isTranscriptWord(value: unknown): value is TranscriptWord {
   if (typeof value !== "object" || value === null) return false;
   const word = value as Partial<TranscriptWord>;
 

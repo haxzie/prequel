@@ -26,6 +26,7 @@ import {
   type ZoomSlice,
 } from "../../../shared/project";
 import type { MediaTime } from "../../../shared/manifest";
+import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
 import { place, totalDuration, type PlacedSlice } from "./timeline";
 
@@ -93,7 +94,18 @@ export type EditorAction =
   | { type: "setOutput"; output: Project["output"] }
   | { type: "split"; at: MediaTime }
   | { type: "deleteSlice"; sliceId: string }
+  /**
+   * Takes a stretch of the recording out of the edit, wherever it lies.
+   *
+   * In source time rather than project time, because it comes from the
+   * captions editor and a word knows only when it was said. The stretch may
+   * cross a cut that already exists, so this is not "split twice and delete
+   * the middle": every clip loses whatever part of it the stretch covers.
+   */
+  | { type: "deleteRange"; source: { start: MediaTime; end: MediaTime } }
   | { type: "trimSlice"; sliceId: string; edge: "start" | "end"; source: MediaTime }
+  /** The words as corrected, or null to go back to the generated transcript. */
+  | { type: "setTranscript"; words: TranscriptWord[] | null }
   | {
       type: "setSetting";
       section: SettingsSection;
@@ -224,10 +236,15 @@ function selectionSurvives(project: Project, sliceId: string | null): boolean {
  * Whether an action is undoable, and what collapses a drag of it into one step.
  *
  * Only what changes the shape of the timeline — cuts, trims, and the zooms laid
- * along it. Appearance settings are deliberately absent: they are the
- * inspector's, they stream from sliders at 60 Hz, and an undo button beside the
- * cut tools that stepped back through colour changes would be a different
- * feature wearing the same icon.
+ * along it — and the words of the captions. Appearance settings are
+ * deliberately absent: they are the inspector's, they stream from sliders at
+ * 60 Hz, and an undo button beside the cut tools that stepped back through
+ * colour changes would be a different feature wearing the same icon.
+ *
+ * The words are the exception because deleting a caption *is* a cut, and the
+ * two interleave: retype a word, delete a sentence, retype another. A separate
+ * undo for the text would step those back in the wrong order, putting words
+ * back into footage that is still cut or the other way round.
  *
  * `coalesce: null` means "always its own step" — one-shot actions, where two in
  * a row are two separate things the user did.
@@ -236,6 +253,7 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
   switch (action.type) {
     case "split":
     case "deleteSlice":
+    case "deleteRange":
     case "addZoom":
     case "deleteZoom":
     case "setZooms":
@@ -249,6 +267,11 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
       return { coalesce: `moveZoom:${action.zoomId}` };
     case "trimZoom":
       return { coalesce: `trimZoom:${action.zoomId}:${action.edge}` };
+    // Typed, which is a stream too: one keystroke per action, and a burst of
+    // them is one thing the user did. The editor sends `beginEdit` when the
+    // typing pauses, so a correction made a while later is its own step.
+    case "setTranscript":
+      return { coalesce: "transcript" };
 
     default:
       return null;
@@ -300,8 +323,20 @@ function apply(
     case "deleteSlice":
       return deleteSlice(state, action.sliceId);
 
+    case "deleteRange":
+      return deleteRange(state, action.source);
+
     case "trimSlice":
       return trimSlice(state, action);
+
+    case "setTranscript":
+      // Clearing what is already clear is not an edit: it would bank an undo
+      // step that steps back to the same thing.
+      if (action.words === null && state.project.transcript === null) return state;
+      return edit(state, (project) => ({
+        ...project,
+        transcript: action.words === null ? null : { words: action.words },
+      }));
 
     case "setSetting":
       return writeSetting(state, action);
@@ -788,6 +823,75 @@ function deleteSlice(state: EditorState, sliceId: string): EditorState {
   const neighbour = remaining[Math.min(index, remaining.length - 1)];
 
   return { ...next, selectedSliceId: neighbour?.id ?? null };
+}
+
+/**
+ * Takes a stretch of source time out of every slice it touches.
+ *
+ * A slice the stretch runs through the middle of is cut in two; one it
+ * overlaps at an end is trimmed; one it covers is removed. What is left of a
+ * slice on either side is kept only if it is at least `MIN_SLICE_NS` — a
+ * shorter remainder cannot be grabbed and could only be fixed by deleting it,
+ * which is what the user was doing, so it goes with the cut.
+ *
+ * Refuses to empty the edit, for the reason `deleteSlice` does, and declines
+ * when nothing changes so no undo step is banked for it.
+ */
+function deleteRange(
+  state: EditorState,
+  source: { start: MediaTime; end: MediaTime },
+): EditorState {
+  if (source.end <= source.start) return state;
+
+  let changed = false;
+  const kept: Slice[] = [];
+
+  for (const slice of slicesOf(state.project)) {
+    const from = Math.max(source.start, slice.source.start);
+    const to = Math.min(source.end, slice.source.end);
+    // No overlap. Touching at a boundary is not an overlap either.
+    if (to <= from) {
+      kept.push(slice);
+      continue;
+    }
+    changed = true;
+
+    const head = from - slice.source.start >= MIN_SLICE_NS;
+    const tail = slice.source.end - to >= MIN_SLICE_NS;
+
+    if (head) kept.push({ ...slice, source: { start: slice.source.start, end: from } });
+    if (tail) {
+      kept.push(
+        head
+          ? {
+              // The same name `split` would give it, and the same reason for
+              // the clone: shared overrides would make editing one half
+              // silently edit the other.
+              id: `${slice.id}-${state.revision + 1}`,
+              source: { start: to, end: slice.source.end },
+              overrides: structuredClone(slice.overrides),
+            }
+          : // A slice that only lost its front is still that slice.
+            { ...slice, source: { start: to, end: slice.source.end } },
+      );
+    }
+  }
+
+  if (!changed || kept.length === 0) return state;
+
+  const next = edit(state, (project) => withSlices(project, kept));
+
+  // A selection that was swallowed moves to what now follows the cut, the
+  // way `deleteSlice` moves to a neighbour. One that survived stays, and none
+  // stays none: this comes from the captions editor with no clip in hand, and
+  // selecting one would quietly turn the panel's edits into overrides.
+  const survives = kept.some((slice) => slice.id === state.selectedSliceId);
+  const selectedSliceId =
+    state.selectedSliceId === null || survives
+      ? state.selectedSliceId
+      : (kept.find((slice) => slice.source.start >= source.end) ?? kept.at(-1))!.id;
+
+  return { ...next, selectedSliceId };
 }
 
 /**

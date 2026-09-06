@@ -28,7 +28,8 @@ import type { RenderedCue, Size } from "../../../shared/layout";
 import { captionLook, resolveSettings, type Project } from "../../../shared/project";
 import type { Transcript } from "../../../shared/transcript";
 import { cueKey, cuePaths, rasteriseCue } from "./captionBitmap";
-import { slicesOf } from "./state";
+import { survivingWords } from "./captionText";
+import { placedSlices, slicesOf } from "./state";
 
 /** How long the settings have to hold still before anything is drawn. */
 const SETTLE_MS = 250;
@@ -90,22 +91,39 @@ export function useCaptions(
     return wanted;
   }, [transcript, project]);
 
+  /**
+   * The words that still play, grouped afresh whenever a cut moves.
+   *
+   * Cues are grouped from these rather than from every word, because a cue is
+   * one bitmap: a sentence with "um, you know" cut out of the middle would
+   * otherwise keep drawing the whole sentence, cut words included, over the
+   * footage either side of the cut. The per-frame lookup only decides *when*
+   * a bitmap shows, never what is in it.
+   */
+  const spoken = useMemo(
+    () => (transcript ? survivingWords(transcript.words, placedSlices(project)).visible : null),
+    [transcript, project],
+  );
+
   // Joined rather than passed as an object: the effect must re-run when a look
-  // changes, and a fresh project object arrives on every unrelated edit.
+  // changes, and a fresh project object arrives on every unrelated edit. The
+  // clip layout is in it because the words above depend on it.
   const signature = [
     session?.dir ?? "",
-    transcript?.words.length ?? 0,
     Math.round(frame.width),
     Math.round(frame.height),
     [...looks.keys()].sort().join(","),
+    slicesOf(project)
+      .map((slice) => `${slice.source.start}-${slice.source.end}`)
+      .join(","),
   ].join("|");
 
-  const latest = useRef({ looks, transcript, frame });
-  latest.current = { looks, transcript, frame };
+  const latest = useRef({ looks, spoken, frame });
+  latest.current = { looks, spoken, frame };
 
   useEffect(() => {
     const dir = session?.dir;
-    if (!dir || latest.current.looks.size === 0 || !latest.current.transcript) {
+    if (!dir || latest.current.looks.size === 0 || !latest.current.spoken) {
       setByLook(NONE);
       setDrawing(false);
       return;
@@ -116,7 +134,7 @@ export function useCaptions(
 
     const timer = setTimeout(() => {
       void (async () => {
-        const { looks: pending, transcript: words, frame: size } = latest.current;
+        const { looks: pending, spoken: words, frame: size } = latest.current;
         if (!words) return;
 
         const drawn = new Map<string, RenderedCue[]>();
@@ -127,7 +145,7 @@ export function useCaptions(
           const options = { frame: size, size: current.captionSize, accent: current.captionAccent };
           // Grouped per look, because the line budget is one of the settings a
           // clip can override and it decides where a cue breaks.
-          const cues: Cue[] = cuesFrom(words.words, {
+          const cues: Cue[] = cuesFrom(words, {
             lines: current.captionLines,
             // A look that swells the word it lights needs one word to a cue, or
             // the swollen one lands on its neighbours.
@@ -166,11 +184,15 @@ export function useCaptions(
                 litPath,
                 bitmap: layout.bitmap,
                 size: layout.size,
-                // Boxes wherever a word is cropped out of the bitmap: from the
-                // lit layer where there is one, and from the single layer of a
-                // look that shows one word at a time. Without them the plan
-                // would draw the whole bitmap across the cue's span.
-                words: litPath || style.perWord ? layout.words : [],
+                // Boxes wherever a word is cropped out of the bitmap: the lit
+                // layer where there is one, the single layer of a look that
+                // shows one word at a time, and every word of a look that
+                // brings them into focus one by one. Without them the plan
+                // draws the whole bitmap across the cue's span — which is
+                // exactly what a blurring look looked like when this listed
+                // only the first two: a line that never came into focus,
+                // because nothing downstream was ever told it had words.
+                words: litPath || style.perWord || style.blurIn !== null ? layout.words : [],
               });
             } catch (cause) {
               // One cue that would not draw is one missing caption. The rest of
@@ -198,7 +220,10 @@ export function useCaptions(
       clearTimeout(timer);
     };
     // `latest` carries the values; the signature is what decides to re-run.
-  }, [signature, session?.dir]);
+    // The transcript is a dependency in its own right rather than part of the
+    // signature: it used to be keyed by its word count, and a word retyped to
+    // one of the same length — "teh" to "the" — never redrew.
+  }, [signature, session?.dir, transcript]);
 
   return { byLook, drawing };
 }

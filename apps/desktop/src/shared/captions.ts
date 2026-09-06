@@ -51,6 +51,36 @@ export interface CaptionStyle {
    * `pop` of 1 lights the word without swelling it.
    */
   lit: { pop: number } | null;
+  /**
+   * How far out of focus a word sits before it is spoken, as a fraction of the
+   * font size, or null for a look that draws every word sharp.
+   *
+   * The whole line is on screen from the moment the cue is; the words that
+   * have not been reached yet are simply soft, and each comes into focus as it
+   * is said. That is why this is applied when the word is drawn rather than
+   * when it is rasterised — it changes over the word's own first moments, and
+   * a bitmap cannot change. `captionAt` turns it into the radius for a given
+   * instant, and both rasterisers soften the quad by exactly that much.
+   *
+   * A look that carries one is drawn a quad per word rather than one for the
+   * line, because a blur belongs to a draw. `captionItems` is where that
+   * happens.
+   */
+  blurIn: number | null;
+  /**
+   * The colour to use where what is behind the words is light, or null to draw
+   * them in `fill` whatever they land on.
+   *
+   * `fill` is then the colour for a dark backdrop, and the two are chosen
+   * between while the frame is drawn — the compositor measures the pixels it
+   * has already put down under the caption. That is the only place the answer
+   * exists: a recording zooms, scrolls and cuts, so what is behind a given
+   * word is not known when the words are laid out.
+   *
+   * Only for a look with nothing behind its glyphs. A plate or an outline
+   * carries its own contrast and has no need of this.
+   */
+  onLight: string | null;
   /** Extra letter spacing, as a fraction of the font size. */
   tracking: number;
   caps: boolean;
@@ -88,6 +118,8 @@ const SUBTITLE: CaptionStyle = {
   shadow: null,
   plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
   lit: null,
+  blurIn: null,
+  onLight: null,
   // A hair tight, which is how SF is set at display sizes.
   tracking: -0.01,
   caps: false,
@@ -115,6 +147,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // Lit but not swollen: on a plate, a word that grows collides with the one
     // beside it, because the plate was measured around the flat layout.
     lit: { pop: 1 },
+    blurIn: null,
+    onLight: null,
     tracking: -0.01,
     caps: false,
     perWord: false,
@@ -140,6 +174,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // wants comes from `scale`, which is applied when the text is rasterised
     // and therefore sharp.
     lit: { pop: 1 },
+    blurIn: null,
+    onLight: null,
     tracking: -0.01,
     caps: true,
     perWord: true,
@@ -154,6 +190,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     shadow: null,
     plate: null,
     lit: null,
+    blurIn: null,
+    onLight: null,
     tracking: 0,
     caps: false,
     perWord: false,
@@ -170,22 +208,43 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // band is a difference of shape rather than of colour.
     plate: { color: "rgba(8,10,14,0.55)", radius: 0, padX: 0.6, padY: 0.42, full: true },
     lit: null,
+    blurIn: null,
+    onLight: null,
     tracking: 0.01,
     caps: false,
     perWord: false,
   },
   {
-    id: "minimal",
-    label: "Minimal",
-    weight: 400,
-    scale: 0.85,
+    id: "blur",
+    label: "Blur in",
+    // Light, and set as it was spoken. The look is the focus moving along the
+    // line; a heavy face and shouted capitals are a second thing competing to
+    // be the point of it.
+    weight: 300,
+    scale: 1.1,
     fill: "#ffffff",
     stroke: null,
-    shadow: { color: "rgba(0,0,0,0.7)", blur: 0.16, dy: 0.02 },
+    // Nothing behind the glyphs at all — no plate, no outline, no shadow. The
+    // words stand on the footage, which is why the colour has to be chosen
+    // against what is behind them rather than assumed.
+    shadow: null,
     plate: null,
+    // Not lit. The whole line is on screen and the blur is what says which
+    // word is being spoken, so a second colour would be saying it twice.
     lit: null,
-    tracking: 0.06,
-    caps: true,
+    blurIn: 0.26,
+    // Near-black where the footage is light. The words have no plate and no
+    // shadow, so white on a white page is white on a white page — this is what
+    // makes the look usable on a screen recording rather than only on footage
+    // that happens to be dark.
+    onLight: "#101418",
+    // Open rather than tight: a light face at caption size closes up, and the
+    // blur clearing off a word reads better with air around the letters.
+    tracking: 0.005,
+    caps: false,
+    // A full line, like every look but `pop`. The words are drawn a quad each
+    // so they can come into focus one at a time, which is not the same thing
+    // as showing them one at a time.
     perWord: false,
   },
 ];
@@ -259,7 +318,7 @@ const CHARS_PER_LINE = 28;
 const FILLER = /^(u+h+|u+m+|e+r+|e+rm+|a+h+|m+h+m+|h+m+|mm+|uh-huh|er+m*)[.,!?]*$/i;
 
 /** Whether a word is a filler sound rather than something that was said. */
-function isFiller(text: string): boolean {
+export function isFiller(text: string): boolean {
   return FILLER.test(text.trim());
 }
 

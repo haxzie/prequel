@@ -72,6 +72,21 @@ struct Uniforms {
     /// In place of the tail padding this struct already carried, so the layout
     /// is byte-for-byte what it was and the MSL side needs no re-alignment.
     vignette: f32,
+    /// A flat blur across the whole quad, in the sampled image's own texels.
+    ///
+    /// Unlike `focus` it does not vary across the quad — a caption word
+    /// arriving out of focus is uniformly soft. In the last four bytes of the
+    /// tail padding, for the reason `vignette` above is: the struct is 16-byte
+    /// aligned and both sides round its size up to the same 224 either way, so
+    /// no field moves.
+    soften: f32,
+    /// Non-zero to colour the quad against what is already drawn under it.
+    ///
+    /// After `soften`, because that is the order `shaders.metal` declares them
+    /// in and the two layouts have to agree field for field. The pair fills the
+    /// eight bytes of tail padding the struct already carried, so nothing above
+    /// moved and both sides are 224 long.
+    adapt: f32,
 }
 
 const MODE_FILL: u32 = 0;
@@ -109,6 +124,8 @@ pub struct Compositor {
     /// counter cannot go backwards over a paused machine.
     caption_use: HashMap<String, u64>,
     caption_clock: u64,
+    /// A copy of the frame under the caption being drawn. See `grab_backdrop`.
+    backdrop: Option<arc::R<mtl::Texture>>,
 }
 
 /// How many caption bitmaps to keep decoded at once.
@@ -182,6 +199,7 @@ impl Compositor {
             images: HashMap::new(),
             caption_use: HashMap::new(),
             caption_clock: 0,
+            backdrop: None,
         })
     }
 
@@ -281,7 +299,7 @@ impl Compositor {
         attachment.set_store_action(mtl::StoreAction::Store);
         attachment.set_clear_color(mtl::ClearColor::clear());
 
-        let cmd = self
+        let mut cmd = self
             .queue
             .new_cmd_buf()
             .ok_or_else(|| Error::Metal("could not create a command buffer".to_owned()))?;
@@ -296,7 +314,42 @@ impl Compositor {
         // it. Dropping one mid-flight leaves the draw sampling freed memory.
         let mut alive: Vec<Held> = Vec::new();
 
+        // The region the backdrop copy currently holds, so a line of words
+        // splits the pass once rather than once per word.
+        let mut copied: Option<Rect> = None;
+
         for item in &plan.items {
+            // A caption coloured against what is behind it needs to *see* what
+            // is behind it, and Metal cannot sample the texture it is drawing
+            // into. So the pass ends here, the region under the caption is
+            // blitted out, and a second pass loads what was already drawn and
+            // carries on. Captions are last in a plan and a line's words all
+            // share one box, so in practice this happens once a frame.
+            if let PlanItem::Caption {
+                dst_rect,
+                tint: Some(_),
+                ..
+            } = item
+                && copied != Some(*dst_rect)
+            {
+                unsafe { encoder.end_encoding() };
+                self.grab_backdrop(&mut cmd, &target.texture, dst_rect, plan.frame)?;
+                copied = Some(*dst_rect);
+
+                let descriptor = mtl::RenderPassDesc::new();
+                let attachments = descriptor.color_attaches();
+                let mut attachment = attachments.get(0);
+                attachment.set_texture(Some(&target.texture));
+                // Load, not clear: everything drawn so far is the frame.
+                attachment.set_load_action(mtl::LoadAction::Load);
+                attachment.set_store_action(mtl::StoreAction::Store);
+
+                encoder = cmd
+                    .new_render_cmd_enc(&descriptor)
+                    .ok_or_else(|| Error::Metal("could not create a render encoder".to_owned()))?;
+                encoder.set_render_ps(&self.pipeline);
+            }
+
             // Sources are resolved by the caller; `None` means the track had no
             // frame for this moment — before the camera opened, say — and the
             // item is skipped rather than drawn from nothing.
@@ -317,6 +370,11 @@ impl Compositor {
             encoder.set_vertex_buf_at(Some(&buffer), 0, 0);
             encoder.set_fragment_buf_at(Some(&buffer), 0, 0);
             encoder.set_fragment_texture_at(texture, 0);
+            // Bound for every draw, not only the ones that read it: a fragment
+            // function declares its textures whatever the uniforms say, and
+            // leaving slot 1 empty is a validation error rather than an unused
+            // binding. Only `adapt` decides whether it is sampled.
+            encoder.set_fragment_texture_at(self.backdrop.as_deref().or(texture), 1);
 
             encoder.draw_primitives(mtl::Primitive::TriangleStrip, 0, 4);
         }
@@ -368,6 +426,11 @@ impl Compositor {
             // No vignette unless the item being drawn asks for one, which only a
             // zoomed picture does.
             vignette: 0.0,
+            // Sharp unless the item asks otherwise, which only a caption does.
+            soften: 0.0,
+            // Drawn in its own colour unless the item asks otherwise, which
+            // only a caption with nothing behind its glyphs does.
+            adapt: 0.0,
         };
 
         Ok(match item {
@@ -597,6 +660,7 @@ impl Compositor {
                 dst_rect,
                 span,
                 words,
+                tint,
             } => {
                 let Some(held) = self.images.get(path) else {
                     // No bitmap loaded. Skipped rather than drawn as a black
@@ -619,12 +683,97 @@ impl Compositor {
                         // instead of sampling past its edge.
                         src: normalised(&draw.src, held.texture.width(), held.texture.height()),
                         mode: MODE_IMAGE,
+                        // The two colours the shader mixes between, in the
+                        // slots the image mode does not otherwise read.
+                        color_a: tint.as_ref().map(|t| rgba(&t.on_dark)).unwrap_or([0.0; 4]),
+                        color_b: tint.as_ref().map(|t| rgba(&t.on_light)).unwrap_or([0.0; 4]),
+                        adapt: if tint.is_some() { 1.0 } else { 0.0 },
+                        soften: draw.blur as f32,
+                        // Against the texture's real size for the same reason
+                        // the crop is. Without it the radius above has no unit
+                        // and every tap lands on the same texel, which draws
+                        // the word sharp on the export and soft in the
+                        // preview.
+                        texel: [
+                            1.0 / held.texture.width().max(1) as f32,
+                            1.0 / held.texture.height().max(1) as f32,
+                        ],
                         ..base
                     },
                     Some(held.texture.as_ref()),
                 ))
             }
         })
+    }
+
+    /// Copies what has been drawn under a rectangle out of the frame.
+    ///
+    /// The blit is the only way to read the target: Metal refuses to sample a
+    /// texture that is attached to the pass drawing into it, so the caller ends
+    /// the pass, calls this, and starts another that loads what was there.
+    ///
+    /// Mirrors `grabBackdrop` in `apps/desktop/src/renderer/src/editor/webgl.ts`
+    /// — the same region, so the sixteen taps the shader takes across it land
+    /// on the same picture in both.
+    fn grab_backdrop(
+        &mut self,
+        cmd: &mut mtl::CmdBuf,
+        target: &mtl::Texture,
+        rect: &Rect,
+        frame: Size,
+    ) -> Result<()> {
+        // Clamped into the frame: a caption at the very edge would otherwise
+        // ask for pixels the texture does not have, which is a blit error
+        // rather than a black stripe.
+        let x = rect.x.max(0.0).round() as usize;
+        let y = rect.y.max(0.0).round() as usize;
+        let width = (rect.width.round() as usize)
+            .min(target.width().saturating_sub(x))
+            .max(1);
+        let height = (rect.height.round() as usize)
+            .min(target.height().saturating_sub(y))
+            .max(1);
+        if x >= target.width() || y >= target.height() {
+            return Ok(());
+        }
+        let _ = frame;
+
+        // Reallocated only when the size changes, which across a recording is
+        // never: the caption box is the same shape for every cue.
+        let stale = self
+            .backdrop
+            .as_ref()
+            .is_none_or(|texture| texture.width() != width || texture.height() != height);
+        if stale {
+            let mut desc =
+                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, width, height, false);
+            desc.set_usage(mtl::TextureUsage::SHADER_READ);
+            self.backdrop = Some(
+                self.device
+                    .new_texture(&desc)
+                    .ok_or_else(|| Error::Metal("could not make a backdrop texture".to_owned()))?,
+            );
+        }
+
+        let Some(backdrop) = self.backdrop.as_mut() else {
+            return Ok(());
+        };
+
+        cmd.blit(|blit| {
+            blit.copy_texture(
+                target,
+                0,
+                0,
+                mtl::Origin { x, y, z: 0 },
+                mtl::Size::_2d(width, height),
+                backdrop,
+                0,
+                0,
+                mtl::Origin::zero(),
+            );
+        });
+
+        Ok(())
     }
 
     /// Wraps a pixel buffer as a Metal texture, without copying it.
@@ -792,9 +941,17 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, mode), 200);
         assert_eq!(offset_of!(Uniforms, weight), 204);
         assert_eq!(offset_of!(Uniforms, mirror), 208);
+        // The tail. Both are plain `float`s on 4-byte boundaries, and both sit
+        // in padding the struct already carried — MSL rounds the whole thing up
+        // to 224 either way, so adding one moved nothing above it.
+        assert_eq!(offset_of!(Uniforms, vignette), 212);
+        assert_eq!(offset_of!(Uniforms, soften), 216);
+        assert_eq!(offset_of!(Uniforms, adapt), 220);
 
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 216);
+        // The eight bytes of tail padding the struct always carried, now spent
+        // on two `float`s. MSL rounds the whole thing to 224 either way.
+        assert_eq!(size_of::<Uniforms>(), 224);
     }
 
     #[test]
