@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { CRTScreen, FlutedGlass, MeshGradient, Shader } from "shaders/react";
 
 /**
- * The hero's background: a WebGPU shader stack, over the three blurred circles
- * `Wash` draws in CSS.
+ * The hero's background: a WebGPU shader stack, and the only thing behind the
+ * headline. `Wash` is switched off wherever a hero renders.
  *
  * Loaded only through `ShaderWash`, which is the lazy boundary — see the note
  * there. Nothing else may import this module directly, or the engine joins the
@@ -23,18 +23,19 @@ import { CRTScreen, FlutedGlass, MeshGradient, Shader } from "shaders/react";
  * orange and crimson, the clip's violet, the page background at the dark end.
  * Swapping one background for the other changes the texture, not the colour.
  *
- * `HeroBackdrop` sits underneath and is never switched off. This canvas cannot
- * paint anything on a browser without WebGPU — the library reports that through
- * `onUnavailable` and writes nothing to the console — so the static layer is
- * both what fills the second before the first frame and what the hero falls back
- * to for good. It is drawn from this stack's own sampled output, which is what
- * makes the cross-fade read as the background sharpening rather than as a
- * different background arriving.
+ * Nothing sits underneath. This canvas cannot paint on a browser without WebGPU
+ * — the library reports that through `onUnavailable` and writes nothing to the
+ * console — and there is no static layer standing in for it, so the hero there
+ * is the page background, the headline and the warm halo the mark casts. That
+ * is the accepted cost of the fade-in below having nothing to disagree with: a
+ * painted stand-in has to match this frame for frame or the swap reads as a
+ * second background arriving late.
  */
 export default function ShaderStack() {
   // Off until the renderer says it has a frame. Compiling the stack takes a
-  // moment, and fading in from the CSS wash below hides the swap; appearing at
-  // full opacity mid-scroll reads as a second background loading late.
+  // moment, and the fade is what turns the first frame into light coming up
+  // rather than a background appearing; at full opacity the swap lands as a
+  // panel dropped in mid-scroll.
   const [state, setState] = useState<"pending" | "ready" | "unavailable">("pending");
 
   // The site already stops the CSS wash outright under `prefers-reduced-motion`
@@ -126,8 +127,8 @@ export default function ShaderStack() {
               // the artwork shows it rather than at the neat token. The note
               // beside them explains why a field this size cannot use the neat
               // one. They are written out because the shader takes plain
-              // colours and never sees a custom property; `Wash` and
-              // `HeroBackdrop` read the same three through `var()`.
+              // colours and never sees a custom property; `Wash` reads the
+              // same three through `var()`.
               //
               // The positions are not evenly spread, and the spacing is doing
               // more work than the hues. Two things push what you see towards

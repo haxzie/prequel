@@ -1,0 +1,155 @@
+import {
+  CaptionsPanelShot,
+  CaptionEditorShot,
+  CaptionCutShot,
+} from "@/components/blog/CaptionShots";
+
+Most people who open your screen recording will watch the first few seconds of
+it with the sound off. On a phone, in an office, in a feed. The video plays,
+nobody hears a word of your narration, and the decision to keep watching is
+made before they ever turn it on.
+
+Subtitles are what you have in those seconds. They are also the difference
+between a demo somebody can follow on a train and one they close.
+
+This is how to add them to a screen recording on a Mac: what macOS gives you on
+its own, the three ways people actually do it, and the way we built into
+[Prequel](/), where the words are transcribed while you record and land in the
+editor as a paragraph you can type into.
+
+## What macOS gives you
+
+Nothing, is the short answer.
+
+QuickTime Player and the Cmd+Shift+5 toolbar record a screen and a microphone.
+Neither transcribes anything, and neither has any way to put a word on the
+frame. Finder shows you subtitles that are already inside a file; it does not
+make them.
+
+So every route below is a third-party one. They differ in where the
+transcription happens, and in what you can do to the words afterwards.
+
+## The three ways people do it
+
+**Type them by hand in a video editor.** Final Cut, Premiere, DaVinci Resolve
+and CapCut can all put text on a frame, and Resolve and Premiere will
+transcribe for you. This is the most control and by far the most work: a
+three-minute demo is a few hundred words, and every one of them has to land on
+the right frame.
+
+**Upload it somewhere.** YouTube captions anything you upload. Descript, Veed
+and Kapwing transcribe on their servers and hand back a styled video. This is
+the least work, and the cost is that your unreleased product goes to a server
+you do not own, in exchange for a round trip you wait on.
+
+**Record with something that transcribes.** The recorder already has the
+microphone track and the timeline, so the words can be made locally the moment
+you stop and dropped straight onto the take. No upload, no waiting, and the
+subtitles are part of the edit rather than a layer bolted on at the end.
+
+That last one is what Prequel does, so the rest of this is how it works.
+
+## How to add subtitles in Prequel
+
+### 1. Record with a microphone
+
+Turn the microphone on before you record. The transcription is made from that
+track, so a take with no microphone has nothing to caption. The Captions
+section does not even appear in the editor for one.
+
+### 2. Stop, and they are already there
+
+The editor opens on the take you just made and starts transcribing it in the
+background. There is no button, because there is nothing to decide: it runs on
+your Mac, it costs nothing, and a button everyone presses every time is a step
+in the way of the thing they came for.
+
+It uses Apple's own on-device speech recognition, in your Mac's language.
+Nothing is uploaded, and it works with the Wi-Fi off.
+
+### 3. Pick a look
+
+Open **Captions** in the inspector down the right-hand side.
+
+<CaptionsPanelShot />
+
+Six looks. Subtitle is a plain pill; Highlight lights the word being spoken;
+Pop shows one large word at a time; Outline drops the plate and rings the
+letters instead; Band runs a bar the full width of the frame; and Blur in
+brings each word into focus on the moment it is said, over a line that fills up
+as you speak.
+
+Under them: how big the words are, where they sit, how far from the edge, how
+many lines a caption may fill, and the colour a lit word takes. Every one of
+these belongs to the clip you have selected, so a caption can be large over an
+introduction and small over a dense middle without splitting the video in two.
+
+### 4. Fix what it misheard
+
+This is the part worth the words. Press **Edit captions** at the top of the
+section and the transcript opens as one paragraph.
+
+<CaptionEditorShot />
+
+Type into it. Correct a product name it spelled wrong, drop a filler word, add
+the word it missed. Every word you do not touch keeps the timing the recogniser
+gave it, so a correction never drags the rest of the sentence out of sync with
+your voice.
+
+Reset puts the original wording back if you go too far. Your corrections live
+with the project, so re-transcribing never overwrites them and reopening the
+recording tomorrow still has them.
+
+### 5. Delete a sentence to cut it
+
+Select a stretch of the transcript and the timeline lights up under it. The
+band across the strip is the footage those words were spoken over.
+
+<CaptionCutShot />
+
+Press delete, and that stretch leaves the video. Not the subtitle, the footage:
+the clip is cut where the sentence started and again where it ended, and
+everything after it closes up.
+
+This is the fastest way we know to tighten a screen recording. Read the
+transcript, delete the false start, delete the sentence where you lost your
+thread, and watch the take get shorter. Cmd+Z puts any of it back.
+
+## Where the subtitles end up
+
+Burned into the exported video. Prequel draws the captions into the frame, the
+same way it draws the zoom and the camera, so the file you hand over has them
+in it and nothing needs to be enabled by whoever watches it.
+
+There is no `.srt` or `.vtt` file alongside. That is the right trade for a demo
+on a landing page or in a launch post, where a sidecar file is one more thing
+to lose and most players will not show it. It is the wrong trade if you need
+captions a viewer can switch off, or text that a search engine can read. For
+that, upload the video somewhere that generates its own.
+
+## Four things that make subtitles read better
+
+**Keep them to one line.** Two lines of caption over a screen recording covers
+the thing you are pointing at. One line, and let it break more often.
+
+**Put them where your interface is not.** The default sits them near the bottom
+edge, which is usually empty in a screen recording. If your app has a toolbar
+down there, move them to the top.
+
+**Do not caption every "um".** Filler sounds are dropped automatically, and if
+one survives, delete the word in the transcript.
+
+**Read it before you export.** On-device recognition is good and it is not
+perfect, and the words it gets wrong are almost always the ones that matter:
+your product's name, the feature you are launching. That is a thirty-second
+read of the transcript and it is the single highest-value thing on this page.
+
+## Is it worth it?
+
+For anything going in front of a customer, yes. A demo watched on mute with
+subtitles is still a demo. Without them it is a silent screen recording of a
+product nobody can hear you explain.
+
+[Prequel](/) records the screen, the camera and system audio on a Mac, then
+opens an editor where the zoom is already placed, the frame is already composed
+and the subtitles are already written. $29 once, or $9 a month.

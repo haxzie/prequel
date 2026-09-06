@@ -4,7 +4,6 @@ import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import { StarredBy } from "@/components/StarredBy";
-import { HeroBackdrop } from "@/components/landing/HeroBackdrop";
 import { ShaderWash } from "@/components/landing/ShaderWash";
 import { SITE } from "@/lib/site";
 
@@ -48,13 +47,18 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
   return (
     // `relative` so the shader behind this block has something to measure its
     // offsets against, and nothing else: `position: relative` with an automatic
-    // z-index creates no stacking context, so the backdrop's `-z-10` still
+    // z-index creates no stacking context, so the shader's `-z-10` still
     // escapes to the body's — which is the layer the CSS wash already sits in.
     // Adding `isolate` here would trap it and paint it behind the page.
-    <section className="relative pt-20 pb-16 sm:pt-28">
-      {/* Order matters: both sit at `-z-10` in the same box, so the shader is
-          painted over the static backdrop only because it comes second. */}
-      <HeroBackdrop />
+    //
+    // `data-hero` is what `globals.css` keys the `Wash` rule on. The site's CSS
+    // wash belongs to the top of every document and this block wants the shader
+    // alone behind it, so the rule hides the wash wherever a hero renders. The
+    // attribute is in the server's HTML, so it resolves on the first paint.
+    <section data-hero className="relative pt-20 pb-16 sm:pt-28">
+      {/* The only thing behind the headline. There is no static layer under it:
+          on a browser with no WebGPU, and in the moment before the first frame,
+          the hero is the page background and the warm halo under the mark. */}
       <ShaderWash />
       <Container>
         {/* Centred, so `mx-auto` on every width-capped child rather than one
@@ -63,9 +67,9 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
             a single `max-w` would flatten that into one column. */}
         <div className="mx-auto max-w-3xl text-center">
           {/* Two shadows: a neutral one for depth and a warm one picking up
-              the icon's own sun gradient. On a flat background that warm
-              halo is the only colour above the fold, so it does the work the
-              section background used to. */}
+              the icon's own sun gradient. With no static field behind the hero,
+              that warm halo is the only colour above the fold until the shader
+              has a frame, and the whole of it on a browser that never will. */}
           <div data-hero-enter className="animate-hero-rise" style={rise()}>
             <Logo
               size={104}

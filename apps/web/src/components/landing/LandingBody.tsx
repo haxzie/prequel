@@ -19,6 +19,7 @@ import {
   TimelineIllustration,
   ZoomIllustration,
 } from "@/components/editor-illustrations";
+import { CaptionsDemo } from "@/components/landing/CaptionsDemo";
 import { LayoutDemo } from "@/components/landing/LayoutDemo";
 import { ZoomDemo } from "@/components/landing/ZoomDemo";
 import { Container, Eyebrow, SectionHeading } from "@/components/Section";
@@ -122,6 +123,13 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           shows the picture itself being re-arranged. Split apart by a section of
           prose they read as two unrelated animations. */}
       <LayoutDemo />
+
+      {/* And a third, on the words rather than the picture. It comes last of
+          the three because it is the only one that needs the other two to have
+          landed first: a visitor who has not yet accepted that the frame is
+          composed after the fact has no reason to care that the sentence under
+          it is editable. */}
+      <CaptionsDemo />
 
       <section className="py-24">
         <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">

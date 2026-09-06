@@ -9,14 +9,20 @@
  * touched, and a track whose slices are a different height or whose playhead is
  * a different red is one the eye reads as a different kind of object.
  *
- * What differs between the two is passed in, and it is only ever three things:
+ * The slices are buttons: clicking one seeks the whole demo to where that slice
+ * begins. That is why this is a client component, and the only reason it is —
+ * everything else here renders once and never changes.
+ *
+ * What differs between the demos is passed in, and it is only ever three things:
  * how many slices there are, what goes in each, and which keyframes drive them.
  * The keyframes cannot be shared, because a duty cycle depends on the count —
  * one slice of four is lit for 25% of the period and one of six for 16.7% — but
  * `demo-playhead` is a plain sweep and both demos do use that one, at their own
  * durations.
  */
-import type { ReactNode } from "react";
+"use client";
+
+import { useRef, type ReactNode } from "react";
 
 export function DemoTimeline({
   slices,
@@ -24,8 +30,8 @@ export function DemoTimeline({
   sliceClass,
   playheadClass,
 }: {
-  /** One entry per slice: what to draw inside it, and a stable key. */
-  slices: { key: string; content: ReactNode }[];
+  /** One entry per slice: what to draw inside it, its name, and a stable key. */
+  slices: { key: string; label: string; content: ReactNode }[];
   /** Seconds per slice, used for the delay that staggers them. */
   step: number;
   /** The keyframe that lights a slice, e.g. `animate-demo-slice`. */
@@ -33,6 +39,38 @@ export function DemoTimeline({
   /** The keyframe that sweeps the head, e.g. `animate-demo-playhead`. */
   playheadClass: string;
 }) {
+  const track = useRef<HTMLDivElement>(null);
+
+  /**
+   * Jumps the whole demo to where a slice begins.
+   *
+   * Every animation in the section shares one period and starts together, so
+   * seeking is one number written to all of them: `currentTime` counts from the
+   * demo's own start, and an element's delay is already inside it. That is why
+   * this can move the picture, the track and the playhead in step without
+   * knowing what any of them animate.
+   *
+   * The section rather than the track, because what is being seeked is the
+   * picture above it. `subtree` is what reaches the elements themselves, since
+   * a CSS animation belongs to the element it is declared on rather than to any
+   * ancestor.
+   *
+   * Nothing happens where nothing is animating, which is the reduced-motion
+   * case: `getAnimations` comes back empty and the click is a no-op rather than
+   * an error.
+   */
+  const seek = (index: number) => {
+    const section = track.current?.closest("section");
+    if (!section) return;
+
+    for (const animation of section.getAnimations({ subtree: true })) {
+      animation.currentTime = index * step * 1000;
+      // Only ever needed for an animation that was never started, which is one
+      // that scrolled into view paused. A running one ignores it.
+      animation.play();
+    }
+  };
+
   return (
     // `overflow-x: clip` because of the playhead below: the rail is the full
     // width of the track and finishes a full width to the right of it, so
@@ -49,22 +87,25 @@ export function DemoTimeline({
     // for its own offset and 1px for the rail's, so the head is still whole at
     // both ends of the sweep. Engines without `overflow-clip-margin` trim those
     // four pixels, which costs the tip of an 8px triangle for one frame.
-    <div className="relative mt-3 overflow-x-clip [overflow-clip-margin:4px] sm:mt-4">
+    <div ref={track} className="relative mt-3 overflow-x-clip [overflow-clip-margin:4px] sm:mt-4">
       <Ruler count={slices.length} />
 
       <div className="mt-1.5 flex gap-1.5 sm:gap-2">
         {slices.map((slice, index) => (
-          <div
+          <button
             key={slice.key}
+            type="button"
             data-demo-slice={index}
-            className={`${sliceClass} flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border sm:h-12 sm:gap-2`}
+            aria-label={`Play from ${slice.label}`}
+            onClick={() => seek(index)}
+            className={`${sliceClass} flex h-11 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border transition-transform active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg sm:h-12 sm:gap-2`}
             // A slice later than the one before it, and nothing else about it
             // differs — which is why there is one keyframe rather than one per
             // slice.
             style={{ animationDelay: `${index * step}s` }}
           >
             {slice.content}
-          </div>
+          </button>
         ))}
       </div>
 

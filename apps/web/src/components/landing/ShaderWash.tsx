@@ -18,8 +18,8 @@ import dynamic from "next/dynamic";
  * an `async` script in their HTML — off the parser's critical path, but fetched
  * on first load rather than after hydration. What is genuinely deferred is the
  * WebGPU device and the shader compile, which wait for mount. `ShaderStack`
- * fades itself in once the renderer has a frame, and the CSS `Wash` underneath
- * carries the hero until it does.
+ * fades itself in once the renderer has a frame; until then, and on a browser
+ * that never gets one, the hero stands on the page background alone.
  *
  * `ssr: false` because there is nothing to render on the server. The component
  * is a canvas and a GPU device; the markup it would emit is an empty element,

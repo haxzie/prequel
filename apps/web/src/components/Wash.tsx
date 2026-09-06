@@ -7,7 +7,7 @@
  * Overlapping blurs keep each hue at full saturation and let them mix only where
  * they meet, which is what reads as light rather than as a fill.
  *
- * The hues are the `-deep` tokens, shared with `HeroBackdrop` and the shader's
+ * The hues are the `-deep` tokens, shared with the hero shader's
  * mesh — see the note beside them in `globals.css` for why a field wants the
  * composited value and not the neat one.
  *

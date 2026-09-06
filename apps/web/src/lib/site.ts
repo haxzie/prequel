@@ -33,6 +33,7 @@ export const SITE = {
 export const NAV: { href: Route; label: string }[] = [
   { href: "/pricing", label: "Pricing" },
   { href: "/blog", label: "Blog" },
+  { href: "/changelog", label: "Changelog" },
   { href: "/about", label: "About" },
 ];
 

@@ -59,6 +59,48 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "add-subtitles-to-screen-recording",
+    title: "How to add subtitles to a screen recording on a Mac",
+    excerpt:
+      "Most people watch the first few seconds of your demo with the sound off. Here is what macOS gives you (nothing), the three ways people actually add subtitles, and how to correct the words as text, where deleting a sentence cuts it out of the video.",
+    date: "2026-09-06",
+    tag: "Guide",
+    readingMinutes: 6,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "How do I add subtitles to a screen recording on a Mac?",
+        answer:
+          "macOS cannot do it on its own. QuickTime Player and the Cmd+Shift+5 toolbar record a screen and a microphone and transcribe nothing. The three routes are typing them by hand in an editor like Final Cut or DaVinci Resolve, uploading the video to a service such as YouTube or Descript, or recording with a tool that transcribes locally. Prequel takes the last route: it transcribes the microphone track on your Mac when you stop, and drops the words onto the take.",
+      },
+      {
+        question: "Can I add subtitles without uploading my video anywhere?",
+        answer:
+          "Yes. Apple ships on-device speech recognition in macOS, so a recorder built on it can transcribe without a network. Prequel uses it, in your Mac's own language, which means an unreleased product never leaves the machine and the transcription still works with the Wi-Fi off.",
+      },
+      {
+        question: "How do I fix a word the transcription got wrong?",
+        answer:
+          "In Prequel, open Captions in the inspector and press Edit captions. The transcript opens as a paragraph you type into. Every word you do not touch keeps the timing the recogniser gave it, so a correction does not drag the rest of the sentence out of sync with your voice, and Reset puts the original wording back.",
+      },
+      {
+        question: "Can deleting a subtitle also cut the video?",
+        answer:
+          "In Prequel, yes. Selecting a stretch of the transcript highlights the footage those words were spoken over, and pressing delete cuts that stretch out of the video rather than just hiding the caption. The clip is split where the sentence started and ended and everything after it closes up. Cmd+Z puts it back.",
+      },
+      {
+        question: "Does Prequel export an SRT file?",
+        answer:
+          "No. Captions are drawn into the exported video, so the file you hand over has them in it and nothing needs to be enabled by whoever watches it. If you need captions a viewer can switch off, or subtitle text a search engine can read, upload the finished video to a platform that generates its own.",
+      },
+      {
+        question: "Where should subtitles sit on a screen recording?",
+        answer:
+          "Near the bottom edge, on one line, unless your app has a toolbar down there, in which case move them to the top. Two lines of caption over a screen recording tend to cover the thing you are pointing at, so it is better to keep them short and let them break more often.",
+      },
+    ],
+  },
+  {
     slug: "screen-recording-on-mac",
     title: "The complete guide to screen recording on Mac",
     excerpt:

@@ -16,11 +16,11 @@
  * Unlike the zoom demo, which animates `transform`, this one animates `inset`,
  * and it pays a layout for every frame it moves rather than none. That is the
  * trade the picture is worth: a layout change is a change of *box*, and a
- * transform can only scale one — a 16:9 screen becoming a split's 8:9 half
- * would squash the window furniture inside it, where a narrower box reflows it,
- * which is what a real layout switch does to a real recording. What it costs is
- * bounded: two small subtrees, laid out again over the ~0.9s a step boundary
- * takes and held still for the three seconds between them.
+ * transform can only scale one. A 16:9 screen becoming a split's 8:9 half would
+ * stretch the capture inside it, where a narrower box crops it, which is what
+ * the app does to a screen track. What it costs is bounded: two small subtrees,
+ * laid out again over the ~0.9s a step boundary takes and held still for the
+ * three seconds between them.
  *
  * The geometry below is worked out in frame units (16 wide by 9 tall) and then
  * written as percentages of each axis, so the same absolute gap is 6% down the
@@ -32,7 +32,8 @@
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
-import { LAYOUT_STAGE } from "@/components/landing/stage";
+import { IdeasWord, LayoutsWord } from "@/components/landing/marks";
+import { LAYOUT_SCREEN, LAYOUT_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
 
 /**
@@ -104,15 +105,11 @@ export function LayoutDemo() {
             boxes standing in for two pictures; read out one at a time they are
             noise, and the sentence below is the whole of what is worth reaching.
           */}
-          <div
-            role="img"
-            aria-label="One recording, re-framed. The screen and the camera move between six layouts in turn: the camera as a bubble over a full-frame screen, then over a padded one, then side by side with it, then below it, then each taking half of a split frame, and finally the camera alone filling the frame."
-          >
-            {/* A wrapper and no more — see the note on the same element in
-                `ZoomDemo`. The two demos sit a screen apart and a card around
-                one but not the other would read as two different kinds of
-                thing. */}
-            <div>
+          <div>
+            <div
+              role="img"
+              aria-label="One recording, re-framed. The screen and the camera move between six layouts in turn: the camera as a bubble over a full-frame screen, then over a padded one, then side by side with it, then below it, then each taking half of a split frame, and finally the camera alone filling the frame."
+            >
               {/*
                 The stage: the wallpaper the composition sits on, and the frame
                 that crops it. `@container` so the radii in the keyframes can be
@@ -133,16 +130,21 @@ export function LayoutDemo() {
                 <ScreenBox />
                 <CameraBox />
               </div>
-
-              <LayoutTrack />
             </div>
+
+            <LayoutTrack />
           </div>
 
           <div>
             <SectionHeading
               eyebrow="Layouts"
-              title="Layouts to communicate your big ideas"
-              lede="The screen and the camera stay two pictures, never one burned into the other, so how a take is framed is decided after it is recorded. Ten layouts, and any of them can change mid-take."
+              title={
+                <>
+                  <LayoutsWord>Layouts</LayoutsWord> to communicate your big{" "}
+                  <IdeasWord>ideas</IdeasWord>
+                </>
+              }
+              lede="Ten ways to frame the same take. Camera in a corner, beside the screen, under it, splitting the frame with it, or gone entirely. Pick one for the whole video, or a different one for every clip."
             />
           </div>
         </div>
@@ -167,6 +169,7 @@ function LayoutTrack() {
       playheadClass="animate-layouts-playhead"
       slices={LAYOUTS.map((layout) => ({
         key: layout.name,
+        label: layout.name,
         content: (
           <>
             <LayoutGlyph layout={layout} />
@@ -250,37 +253,31 @@ function LayoutGlyph({ layout }: { layout: Layout }) {
 }
 
 /**
- * The screen picture: an application window, drawn generically.
+ * The screen picture: a real capture, not a drawing.
  *
- * Everything inside is sized in per cent so it reflows as the box changes shape
- * rather than being stretched with it. That is the difference between this
- * reading as one recording being re-framed and reading as a picture of one
- * being squashed.
+ * A stream with a desk of people on it, which is a take where the camera beside
+ * the screen is the whole argument. It replaced a generic application window
+ * drawn in CSS, and the difference is what the picture claims: a drawn window
+ * says a screen recording would go here, and a capture says this is what the
+ * tool does to your work.
+ *
+ * `object-cover`, which is what the app does to a screen track and what makes
+ * this read as one recording being re-framed. The picture is cropped into
+ * whatever box the layout gives it rather than squashed to fit, so a 16:9
+ * screen becoming a split's 8:9 half shows less of the capture rather than a
+ * narrowed copy of all of it. The drawn window reflowed instead, which no real
+ * recording does.
  */
 function ScreenBox() {
   return (
-    <div className="animate-layouts-screen absolute inset-0 overflow-hidden rounded-none bg-[#1b1d22] shadow-[0_2cqw_5cqw_-2cqw_rgb(0_0_0_/_0.75)] ring-1 ring-white/10">
-      <div className="flex h-[9%] items-center gap-[0.5%] border-b border-black/40 bg-[#2b2d33] px-[2%]">
-        <span className="size-[0.55cqw] rounded-full bg-white/20" />
-        <span className="size-[0.55cqw] rounded-full bg-white/20" />
-        <span className="size-[0.55cqw] rounded-full bg-white/20" />
-      </div>
-
-      <div className="flex h-[91%]">
-        <div className="flex w-[26%] shrink-0 flex-col gap-[4%] border-r border-black/40 bg-[#232529] p-[4%]">
-          <span className="h-[4%] w-[70%] rounded-full bg-white/20" />
-          <span className="h-[4%] w-[52%] rounded-full bg-white/10" />
-          <span className="h-[4%] w-[60%] rounded-full bg-white/10" />
-          <span className="h-[4%] w-[44%] rounded-full bg-white/10" />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-[3%] p-[4%]">
-          <span className="h-[8%] w-[54%] rounded-full bg-white/25" />
-          <span className="h-[5%] w-[86%] rounded-full bg-white/10" />
-          <span className="h-[5%] w-[72%] rounded-full bg-white/10" />
-          <div className="mt-[2%] flex-1 rounded-[0.6cqw] bg-gradient-to-br from-[#4e84f9]/35 to-[#4e84f9]/5 ring-1 ring-white/10" />
-        </div>
-      </div>
+    <div className="animate-layouts-screen absolute inset-0 overflow-hidden rounded-none bg-[#111318] shadow-[0_2cqw_5cqw_-2cqw_rgb(0_0_0_/_0.75)] ring-1 ring-white/10">
+      <img
+        src={LAYOUT_SCREEN}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="size-full object-cover object-center"
+      />
     </div>
   );
 }

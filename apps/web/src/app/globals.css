@@ -45,7 +45,7 @@
      lit lilac panel that takes the frame over — so these are each hue over that
      same body, the composite the mark itself displays. Foreground accents keep
      the tokens above; anything painting a whole field behind content uses
-     these. `HeroBackdrop`, `Wash` and the shader's mesh all sit on them. */
+     these. `Wash` and the shader's mesh both sit on them. */
   --brand-from-deep: #b04017;
   --brand-to-deep: #731a46;
   --iris-deep: #3e1848;
@@ -379,6 +379,29 @@
      track to the other is the same two keyframes at any duration, and the only
      thing this demo needs to differ is the period. */
   --animate-layouts-playhead: demo-playhead 24s linear infinite;
+
+  /*
+    The captions demo below both. Two periods, nested.
+
+    30s decides which of the five beats is on screen, six seconds each, and the
+    lit slice is on the same clock so the track and the picture cannot disagree.
+    6s is one beat's own length, and the words inside it run on that: a word can
+    carry a delay because its period is the beat it lives in, so it enters and
+    leaves inside one and the stagger cannot run past the end of the loop. On
+    the 30s period the same delay would hold each word's last frame through the
+    delay it started late by, and the line would come apart a word at a time
+    after the loop restarted.
+  */
+  --animate-captions-look: captions-look 30s linear infinite;
+  --animate-captions-reveal: captions-reveal 6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  --animate-captions-lit: captions-lit 6s steps(1, end) infinite;
+  --animate-captions-panel: captions-panel 30s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  --animate-captions-select: captions-select 30s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  /* One token, two elements: the words across the frame and the same words in
+     the transcript close up together, because they are the same sentence. */
+  --animate-captions-cut: captions-cut 30s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  --animate-captions-slice: captions-slice 30s linear infinite backwards;
+  --animate-captions-playhead: demo-playhead 30s linear infinite;
 
   /*
     The picture, pushed in. Every keyframe lists the same functions in the same
@@ -1061,6 +1084,174 @@
      `backwards` for the reason `demo-slice` needs it: without it the last slice
      would sit lit for the first twenty seconds of the page's life and only then
      start behaving. */
+  /*
+    Which beat is on screen. One keyframe and a delay per beat: each is up for
+    its own fifth of the period and hidden for the rest, which is the same
+    animation shifted five times. It ends hidden, so the one delayed to the last
+    beat holds nothing over the loop.
+  */
+  @keyframes captions-look {
+    0%,
+    19.2% {
+      opacity: 1;
+    }
+    20%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /*
+    A word coming into focus: the `Blur in` look, which draws a word blurred on
+    the moment it is spoken and clears it over the first fraction of a second.
+    On the beat's own six seconds, so a per-word delay is safe.
+
+    It clears at the very end of its own cycle rather than a little before it.
+    The beat stops being drawn at 96% of the word's period, so anything earlier
+    than that is a word fading out of a line that is still on screen: the front
+    of the sentence went first and it read as words going missing rather than
+    as a cue ending.
+  */
+  @keyframes captions-reveal {
+    0% {
+      opacity: 0;
+      filter: blur(0.55cqw);
+    }
+    8%,
+    96% {
+      opacity: 1;
+      filter: blur(0);
+    }
+    99%,
+    100% {
+      opacity: 0;
+      filter: blur(0.55cqw);
+    }
+  }
+
+  /*
+    The word being spoken, lit: the `Highlight` look. The whole line is on
+    screen throughout, and what travels is the colour, one word at a time, which
+    is what the app does when it lights the spoken word against the rest of its
+    line.
+
+    `steps(1, end)` on the accent, because the app switches the colour on the
+    word's own moment rather than fading it, and a fade would light two words at
+    once for part of every step.
+  */
+  @keyframes captions-lit {
+    0%,
+    3% {
+      color: #ffffff;
+    }
+    4%,
+    9% {
+      color: #ffd60a;
+    }
+    10%,
+    100% {
+      color: #ffffff;
+    }
+  }
+
+  /*
+    The inspector, arriving for the last beat and leaving with it.
+
+    It slides rather than fades, because a panel that appears in place reads as
+    a dialog and this is the side of the window opening. Held off screen for the
+    four beats before it rather than unmounted, so there is something to travel
+    from.
+  */
+  @keyframes captions-panel {
+    0%,
+    78% {
+      transform: translateX(110%);
+      opacity: 0;
+    }
+    83%,
+    97% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(110%);
+      opacity: 0;
+    }
+  }
+
+  /* The selection sweeping across the sentence about to go. It is drawn behind
+     the words and left there for a moment before the cut, which is the beat
+     that says a person did this. */
+  @keyframes captions-select {
+    0%,
+    85% {
+      width: 0;
+      opacity: 1;
+    }
+    88.5%,
+    91% {
+      width: 100%;
+      opacity: 1;
+    }
+    92%,
+    100% {
+      width: 100%;
+      opacity: 0;
+    }
+  }
+
+  /*
+    The cut: the selected sentence closing up and taking its space with it.
+
+    `max-width` in `ch`, not pixels or per cent. `ch` is a fraction of the
+    element's own font size, and the font size is in `cqw`, so the same figure
+    collapses the same sentence at every width the card is drawn at. 22ch is
+    "we shipped last week" and its spaces, which is the width to travel from.
+    Anything much larger and the first half of the animation is the group
+    holding still while an invisible box shrinks towards it.
+  */
+  @keyframes captions-cut {
+    0%,
+    91% {
+      max-width: 22ch;
+      opacity: 1;
+    }
+    95%,
+    99% {
+      max-width: 0;
+      opacity: 0;
+    }
+    /* Restored only once the beat is over and the line is hidden, or the
+       sentence would be seen growing back before the loop restarted. */
+    99.5%,
+    100% {
+      max-width: 22ch;
+      opacity: 1;
+    }
+  }
+
+  /* Five beats rather than the layouts demo's six arrangements, so a slice is
+     lit for a fifth of the period instead of a sixth. */
+  @keyframes captions-slice {
+    0% {
+      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      color: var(--muted);
+    }
+    1%,
+    18.8% {
+      background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
+      color: var(--fg);
+    }
+    20%,
+    100% {
+      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
+      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      color: var(--muted);
+    }
+  }
+
   @keyframes layouts-slice {
     0% {
       background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
@@ -1167,16 +1358,16 @@
   }
 }
 
-/* `HeroBackdrop` owns the top of the document on the pages that render a hero,
-   and it is opaque, so `Wash` behind it is paint nobody sees — except through
-   the bottom of the backdrop's mask, where the two fade out over different
-   distances and the CSS wash's warm tail bleeds back through a field that has
-   no warm tail of its own.
+/* A hero has the shader behind it and nothing else. `Wash` belongs to the top
+   of every document, which is the same band the hero occupies, so on those pages
+   it would sit under the canvas as a second field with its own hues and its own
+   drift — two backgrounds fading out over different distances, which reads as
+   one of them arriving late rather than as light.
 
    `:has()` rather than a prop threaded down from the layout: the layout does not
-   know which of its pages render a hero, and the backdrop is in the server's
+   know which of its pages render a hero, and `data-hero` is in the server's
    HTML, so this resolves on the first paint with no flash of both. */
-body:has([data-hero-backdrop]) [data-wash] {
+body:has([data-hero]) [data-wash] {
   display: none;
 }
 
@@ -1230,6 +1421,46 @@ body:has([data-hero-backdrop]) [data-wash] {
     border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
     color: var(--fg);
   }
+}
+
+/*
+  The captions demo, stopped.
+
+  What is left is the line before anything was done to it: the words visible,
+  the misheard spelling still there, no plate, no caret, no selection. Every one
+  of those is the element's own resting state rather than a keyframe, so
+  `animation: none` leaves a coherent picture and only the first slice has to be
+  lit by hand.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-captions-demo] * {
+    animation: none;
+  }
+
+  /* Every look rests hidden and every word of the blurring look rests hidden
+     with it, because the animation is what brings them up. Stopped, the picture
+     would be a frame with no caption at all — so the first look is shown by
+     hand, which is what a paused demo on its first beat looks like. */
+  [data-captions-demo] [data-captions-beat="0"],
+  [data-captions-demo] .animate-captions-reveal {
+    opacity: 1;
+  }
+
+  [data-captions-demo] [data-demo-slice="0"] {
+    background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
+    border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
+    color: var(--fg);
+  }
+}
+
+/*
+  The captions track is green where the zoom track is blue and the layouts one
+  purple. Three demos in a run need three, or the second and third read as the
+  same control repeated — and this is the one whose subject is words rather than
+  the picture, which is the difference the colour is carrying.
+*/
+[data-captions-demo] {
+  --track-accent: var(--positive);
 }
 
 /*

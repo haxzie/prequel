@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 
 import { env } from "@prequel/env";
 
+import { RELEASES } from "@/content/changelog";
 import { competitors } from "@/content/competitors";
 import { posts } from "@/content/posts";
 import { useCases } from "@/content/use-cases";
@@ -13,6 +14,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/`, changeFrequency: "weekly", priority: 1 },
     { url: `${base}/pricing`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.8 },
+    // The date of the newest release, which is the only thing on the page that
+    // ever moves. It has a real one, so it can say so.
+    {
+      url: `${base}/changelog`,
+      lastModified: RELEASES[0]?.date,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
     { url: `${base}/about`, changeFrequency: "yearly", priority: 0.5 },
     { url: `${base}/support`, changeFrequency: "yearly", priority: 0.5 },
     // No `lastModified`: the registry holds no date, and `new Date()` here

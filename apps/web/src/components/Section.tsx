@@ -31,7 +31,12 @@ export function SectionHeading({
   return (
     <div className={`max-w-2xl ${centred ? "mx-auto text-center" : ""}`}>
       {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-      <h2 className="text-3xl font-medium tracking-tight text-balance text-fg sm:text-4xl">
+      {/* The leading relaxes only where a chipped word is present, which is the
+          same `has-` variant the hero uses and for the same reason: a chip is a
+          box around a word, and at the heading's default line height two
+          chipped lines sit close enough to touch. A heading of plain words is
+          left exactly as it was. */}
+      <h2 className="text-3xl font-medium tracking-tight text-balance text-fg has-[[data-heading-chip]]:leading-[1.35] sm:text-4xl">
         {title}
       </h2>
       {lede ? <p className="mt-4 text-lg leading-relaxed text-pretty text-muted">{lede}</p> : null}

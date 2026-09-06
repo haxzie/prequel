@@ -34,6 +34,7 @@
  * rather than reproducing anyone's mark or wordmark.
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
+import { CursorWord, ZoomWord } from "@/components/landing/marks";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { ZOOM_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
@@ -113,7 +114,11 @@ export function ZoomDemo() {
           */}
           <SectionHeading
             eyebrow="The zoom pass"
-            title="The zoom follows your cursor"
+            title={
+              <>
+                The <ZoomWord>zoom</ZoomWord> follows your <CursorWord>cursor</CursorWord>
+              </>
+            }
             lede="Prequel reads the pointer as it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass, playing — not a picture of it."
           />
 
@@ -124,18 +129,16 @@ export function ZoomDemo() {
             is worth reaching. One sentence describing what the picture shows is
             the whole of what a screen reader needs here.
           */}
-          <div
-            data-zoom-demo
-            role="img"
-            aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar — each time with the rest of the window falling out of focus behind it — while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
-          >
-            {/* Nothing but a wrapper. The picture and its timeline used to sit
-                in a panel with a border and an inset; the stage already paints
-                the composited background edge to edge, so the panel only ever
-                showed in that inset and read as a tray the demo was standing
-                on. Grouping them is the timeline's own margin, not a box drawn
-                around both. */}
-            <div>
+          {/* The hook sits out here rather than on the picture, because the
+              track below is part of this demo too: the reduced-motion rules and
+              the slice a click seeks are both scoped by it, and a picture that
+              owned the attribute would leave the timeline outside its own
+              demo. */}
+          <div data-zoom-demo>
+            <div
+              role="img"
+              aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar — each time with the rest of the window falling out of focus behind it — while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
+            >
               {/*
                 The stage: the wallpaper a recording sits on, and the frame that
                 crops it.
@@ -255,9 +258,9 @@ export function ZoomDemo() {
 
                 <CameraBubble />
               </div>
-
-              <ZoomTrack />
             </div>
+
+            <ZoomTrack />
           </div>
         </div>
       </Container>
@@ -662,6 +665,10 @@ function ZoomTrack() {
       playheadClass="animate-demo-playhead"
       slices={SLICES.map((slice) => ({
         key: slice.did,
+        // What the zoom is *of*, not what it is set to: "Play from Drew a
+        // frame" says where the picture goes, where "Play from 2.3x" is a
+        // number nobody can place on the timeline.
+        label: slice.did,
         content: (
           <>
             <MagnifierIcon />
