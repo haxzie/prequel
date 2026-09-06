@@ -455,8 +455,15 @@ fn frame_at(video: &Path, index: u32) -> Frame {
         .args([
             "-vf",
             &format!("select=eq(n\\,{index})"),
-            "-vsync",
-            "0",
+            // `-fps_mode passthrough`, not the `-vsync 0` this used to say.
+            // They mean the same thing — keep the frame the filter selected
+            // rather than duplicating or dropping to hit a rate — but `-vsync`
+            // was removed in ffmpeg 8, and the runner installs whatever brew
+            // has. The failure is "Unrecognized option 'vsync'" followed by
+            // this helper reporting that the frame could not be decoded, which
+            // reads as the exporter having written a bad file.
+            "-fps_mode",
+            "passthrough",
             "-frames:v",
             "1",
             "-f",
