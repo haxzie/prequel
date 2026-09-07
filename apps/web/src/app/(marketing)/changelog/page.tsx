@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { Container, SectionHeading } from "@/components/Section";
-import { RELEASES } from "@/content/changelog";
+import { published } from "@/content/changelog";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -30,7 +30,9 @@ export const metadata: Metadata = pageMetadata({
  */
 const MEASURE = "mx-auto max-w-2xl";
 
-export default function Changelog() {
+export default async function Changelog() {
+  const shipped = await published();
+
   return (
     <>
       <section className="pt-20 pb-10">
@@ -48,7 +50,7 @@ export default function Changelog() {
       <section className="pb-24">
         <Container>
           <ol className={`${MEASURE} border-l border-line pl-7 sm:pl-9`}>
-            {RELEASES.map((release) => (
+            {shipped.map((release) => (
               <li key={release.version} className="relative pb-12 last:pb-0">
                 {/* The node. `bg-bg` on the ring is what hides the rail behind
                     it, so the line reads as passing through the point rather
@@ -60,6 +62,15 @@ export default function Changelog() {
 
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <h2 className="font-mono text-base font-medium text-fg">v{release.version}</h2>
+                  {/* Only ever on a development build — `published` drops
+                      drafts from a production one — so this is a note to
+                      ourselves that the version above is written and not yet
+                      tagged. */}
+                  {release.draft && (
+                    <span className="rounded-full border border-line px-2 py-0.5 font-mono text-xs text-muted">
+                      draft
+                    </span>
+                  )}
                   <time dateTime={release.date} className="text-sm text-muted">
                     {new Date(release.date).toLocaleDateString("en-GB", {
                       day: "numeric",
@@ -74,14 +85,18 @@ export default function Changelog() {
                     four of them reads as a paragraph that has lost its joins.
                     White, so the markers sit with the text rather than tinting
                     the column: the one coloured thing on the page is the node
-                    on the rail, which is what says where a release begins. */}
-                <ul className="mt-3.5 list-disc space-y-2.5 pl-5 marker:text-white">
-                  {release.items.map((item) => (
-                    <li key={item} className="pl-1 leading-relaxed text-fg/85">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                    on the rail, which is what says where a release begins.
+
+                    Written onto the list the MDX produces rather than onto a
+                    list of our own. `mdx-components.tsx` styles every `ul` on
+                    the site for the blog's prose — dimmer text, a fainter
+                    marker, wider spacing — and a release is a short list under
+                    a date rather than a paragraph's aside. A descendant
+                    selector is what makes these win: both are classes, so
+                    nesting is the only thing between them. */}
+                <div className="[&_ul]:mt-3.5 [&_ul]:mb-0 [&_ul]:space-y-2.5 [&_li]:leading-relaxed [&_li]:text-fg/85 [&_ul]:marker:text-white">
+                  <release.Body />
+                </div>
               </li>
             ))}
           </ol>

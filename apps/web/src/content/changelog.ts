@@ -1,105 +1,115 @@
 /**
  * What shipped, release by release.
  *
+ * The lines themselves live in `content/changelog/<version>.mdx`, one file per
+ * release, written as an ordinary Markdown list. They were an array of strings
+ * in this file, which meant every entry was a TypeScript string literal — a
+ * sentence with a quote in it had to be escaped, nothing could be emphasised or
+ * linked, and a release read as data rather than as the paragraph it is.
+ *
+ * Each of those files carries its own `date` as an export. What stays here is
+ * the order, because a directory cannot give it: sorted as text, `0.0.9` comes
+ * after `0.0.13`, and a changelog that has to be read newest-first is exactly
+ * the case where that goes wrong quietly.
+ *
  * Written by hand rather than generated from the tags. A commit log is a record
  * of work and a changelog is a record of what somebody using the app can now
  * do, and most releases contain a good deal of the first and very little of the
  * second. Anything that changed only for us stays out.
  *
- * Newest first, which is the order the page reads in and the order the file is
- * edited in: a release is added at the top.
+ * Newest first, which is the order the page reads in and the order this file is
+ * edited in: a release is added at the top, with its `.mdx` beside it.
  */
-export type Release = {
+export const RELEASES = [
+  "0.0.14",
+  "0.0.13",
+  "0.0.12",
+  "0.0.11",
+  "0.0.10",
+  "0.0.9",
+  "0.0.8",
+  "0.0.7",
+  "0.0.6",
+  "0.0.5",
+] as const;
+
+export interface Release {
   /** Without the leading `v`, which the page adds. */
   version: string;
   /** ISO, rendered with `toLocaleDateString`. */
   date: string;
-  /** One line each, in the app's own words rather than the commit's. */
-  items: string[];
-};
+  /**
+   * Written but not shipped.
+   *
+   * A release is described while the work is fresh and tagged some days later,
+   * and the alternative to a flag is a file kept out of the directory until the
+   * morning of — which is how a line ships undescribed. `export const draft =
+   * true` in the `.mdx`, deleted when the version is tagged.
+   */
+  draft: boolean;
+  /** The release's lines, already laid out. */
+  Body: () => React.JSX.Element;
+}
 
-export const RELEASES: Release[] = [
-  {
-    version: "0.0.13",
-    date: "2026-09-06",
-    items: [
-      "Captions are editable text. Open Edit captions in the inspector and type into the transcript.",
-      "Deleting a sentence in the transcript cuts that stretch of footage out of the video.",
-      "A new Blur in look brings each word into focus on the moment it is spoken. Minimal has gone.",
-      "Caption colour is chosen against whatever is behind the words, so they stay readable on light and dark footage alike.",
-      "The transcript follows the clip you have selected.",
-    ],
-  },
-  {
-    version: "0.0.12",
-    date: "2026-09-03",
-    items: [
-      "The camera can stand in the frame as a picture of its own rather than only as a bubble in a corner.",
-      "Zooms are drawn out along the timeline rather than dropped in at a point.",
-      "Prequel is source available, under a licence that turns into Apache-2.0.",
-      "Pay once or pay monthly, for the same app.",
-    ],
-  },
-  {
-    version: "0.0.11",
-    date: "2026-09-02",
-    items: [
-      "A frosted dock.",
-      "The pointer blurs as it moves, the way a real one does on camera.",
-      "The timeline says which clip it means.",
-    ],
-  },
-  {
-    version: "0.0.10",
-    date: "2026-09-01",
-    items: [
-      "Backgrounds are hosted rather than shipped inside the app, so the download is smaller and the catalogue can grow without an update.",
-      "The picker groups them.",
-      "The border follows a tilt.",
-      "Reopening a recording keeps the zooms it already had.",
-    ],
-  },
-  {
-    version: "0.0.9",
-    date: "2026-08-31",
-    items: [
-      "Captions, transcribed on your Mac while you record. Nothing is uploaded.",
-      "Caption settings belong to a clip, so a look can change part way through a take.",
-      "Cursor timing matches the picture.",
-    ],
-  },
-  {
-    version: "0.0.8",
-    date: "2026-08-29",
-    items: [
-      "The panel says when there is a newer version.",
-      "The pointer dips when it is clicked.",
-      "Your account sits at the foot of the sidebar instead of behind a pane.",
-    ],
-  },
-  {
-    version: "0.0.7",
-    date: "2026-08-28",
-    items: [
-      "The camera bubble moves out of the way of a zoom.",
-      "Your desktop picture is found on Macs whose wallpaper agent has moved.",
-    ],
-  },
-  {
-    version: "0.0.6",
-    date: "2026-08-28",
-    items: [
-      "A zoom slice is the part that is zoomed in, not the part that is arriving.",
-      "Settings moved into the window with your recordings.",
-      "A modern pointer shape, and new projects start on it.",
-    ],
-  },
-  {
-    version: "0.0.5",
-    date: "2026-08-28",
-    items: [
-      "Local recordings have a home of their own rather than a submenu of names.",
-      "The panel looks for an update when it opens.",
-    ],
-  },
-];
+/**
+ * The newest *published* release's date.
+ *
+ * The sitemap wants only this — see the note there on why the changelog is one
+ * of the few pages that can honestly claim a `lastModified`.
+ *
+ * Walked rather than taken from the top of the list, because the top of the
+ * list may be a draft: a page that does not yet mention 0.0.14 must not tell a
+ * crawler it changed on the day 0.0.14 was written. Stops at the first release
+ * a visitor can actually see, which is one import in the ordinary case.
+ */
+export async function latestDate(): Promise<string | undefined> {
+  for (const version of RELEASES) {
+    const { date, draft = false } = (await import(`./changelog/${version}.mdx`)) as {
+      date: string;
+      draft?: boolean;
+    };
+
+    if (!draft || process.env.NODE_ENV !== "production") return date;
+  }
+
+  return undefined;
+}
+
+/**
+ * Every release, in order, with its body loaded.
+ *
+ * A template literal in the `import` rather than a map of them: the blog does
+ * the same for its posts, and it is what lets a release be added by dropping a
+ * file in beside a version string.
+ */
+export async function releases(): Promise<Release[]> {
+  return Promise.all(
+    RELEASES.map(async (version) => {
+      const {
+        default: Body,
+        date,
+        draft = false,
+      } = (await import(`./changelog/${version}.mdx`)) as {
+        default: () => React.JSX.Element;
+        date: string;
+        draft?: boolean;
+      };
+
+      return { version, date, draft, Body };
+    }),
+  );
+}
+
+/**
+ * The releases a visitor should see.
+ *
+ * Drafts are kept in development so the page can be read as it will look, and
+ * dropped from a production build so an unreleased version cannot be announced
+ * by a deploy. `NODE_ENV` rather than a flag of our own: the site is built once
+ * per deploy, so this is decided at build time and the draft is simply not in
+ * the HTML.
+ */
+export async function published(): Promise<Release[]> {
+  const all = await releases();
+  return process.env.NODE_ENV === "production" ? all.filter((r) => !r.draft) : all;
+}

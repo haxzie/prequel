@@ -2,12 +2,12 @@ import type { MetadataRoute } from "next";
 
 import { env } from "@prequel/env";
 
-import { RELEASES } from "@/content/changelog";
+import { latestDate } from "@/content/changelog";
 import { competitors } from "@/content/competitors";
 import { posts } from "@/content/posts";
 import { useCases } from "@/content/use-cases";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
 
   return [
@@ -18,7 +18,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // ever moves. It has a real one, so it can say so.
     {
       url: `${base}/changelog`,
-      lastModified: RELEASES[0]?.date,
+      lastModified: await latestDate(),
       changeFrequency: "weekly",
       priority: 0.6,
     },
