@@ -577,3 +577,305 @@ export function ControlIcon() {
     </svg>
   );
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Slider icons.
+
+   One per slider in the inspector, standing outside the track. They are read
+   in a column beside a column of words, so each is drawn as the *shape of the
+   quantity* rather than as a picture of the thing it belongs to — an angle is
+   an angle, padding is a box inside a box, a distance is a gap with an edge on
+   one side. A row of pictures of cameras and cursors would say which panel you
+   were in, which the panel already says.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/** Two corners drawn apart: the measure between a thing and its box. */
+export function SizeIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M9 3H5a2 2 0 0 0-2 2v4M15 21h4a2 2 0 0 0 2-2v-4" />
+      <path d="M8 16 16 8" />
+    </svg>
+  );
+}
+
+/** A path easing out of a corner rather than turning it. */
+export function SmoothingIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 18c6 0 3-12 9-12 4 0 6 3 9 3" />
+    </svg>
+  );
+}
+
+/** A shape and the streak it leaves behind it. */
+export function BlurIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="16" cy="12" r="4" />
+      <path d="M9 9h-2M7 12H3M9 15h-2" />
+    </svg>
+  );
+}
+
+/** A clock: the wait before something happens. */
+export function ClockIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+/** Stacked rules: how many lines are allowed. */
+export function LinesIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h10" />
+    </svg>
+  );
+}
+
+/** A gap held between a thing and the edge it is kept off. */
+export function OffsetIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 21h16" />
+      <rect width="10" height="8" x="7" y="4" rx="2" />
+      <path d="M12 12v5" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+/** A box inside a box: the room kept around the picture. */
+export function PaddingIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <rect width="8" height="8" x="8" y="8" rx="1.5" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+/** The outline itself, thick enough to be the subject. */
+export function BorderIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <path d="M3 9h18" strokeOpacity="0.35" />
+    </svg>
+  );
+}
+
+/**
+ * The transparency checker, which is what "opacity" looks like everywhere.
+ *
+ * This was a square with two rules across it, which read as a list rather than
+ * as a see-through thing. Two filled squares on the diagonal is the smallest
+ * checker that still reads as one at sixteen pixels.
+ */
+export function OpacityIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <path d="M8 8h4v4H8zM12 12h4v4h-4z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * A drop, for the fields that pick a colour.
+ *
+ * Those used to borrow the icon of the thing being coloured — `BorderIcon` sat
+ * beside both "Width" and "Colour", so the column had the same glyph twice
+ * saying different things. The group heading already says what is being
+ * coloured; this says that a colour is what is being chosen.
+ */
+export function DropletIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 3c3.5 4 6 7 6 10a6 6 0 0 1-12 0c0-3 2.5-6 6-10z" />
+    </svg>
+  );
+}
+
+/** Points at what opens below it. */
+export function ChevronDownIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** A shape and the one it casts. */
+export function ShadowIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="12" height="12" x="3" y="3" rx="2.5" />
+      <path d="M9 21h9a3 3 0 0 0 3-3V9" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** The same, pushed off its own position. */
+export function ShadowOffsetIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="11" height="11" x="3" y="3" rx="2.5" />
+      <rect width="11" height="11" x="10" y="10" rx="2.5" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** Two arms off a vertex, which is what the number means. */
+export function AngleIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 20h16M4 20 16 5" />
+      <path d="M12 20a8 8 0 0 0-1.6-4.8" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** A loudspeaker, for the two that are volumes. */
+export function SpeakerIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 9v6h4l5 4V5L8 9z" />
+      <path d="M17 9a4 4 0 0 1 0 6" />
+    </svg>
+  );
+}
+
+/** A microphone, so the two volumes are told apart by their source. */
+export function MicIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="6" height="11" x="9" y="2" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v4" />
+    </svg>
+  );
+}
+
+/** A needle swung round a dial. */
+export function SpeedIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 18a9 9 0 1 1 16 0" />
+      <path d="M12 18 16 10" />
+    </svg>
+  );
+}
+
+/** A plate leaning away from the eye: how far in the scene goes. */
+export function DepthIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 6 20 3v18L4 18z" />
+      <path d="M4 6v12" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** A plate tipped about its horizontal axis. */
+export function TiltIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 8h18M5 8l3 11h8l3-11" />
+      <path d="M3 8 12 4l9 4" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** The same about its vertical one. */
+export function YawIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M8 3v18M8 3l11 3v12L8 21" />
+      <path d="M8 3 3 6v12l5 3" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** A frame darkened towards its corners. */
+export function VignetteIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <circle cx="12" cy="12" r="5" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** How hard an effect is applied. */
+export function StrengthIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M5 19V9M12 19V5M19 19v-6" />
+    </svg>
+  );
+}
+
+/** How far a zoom goes in. */
+export function LevelIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <path d="M9 15 15 9M15 9h-4M15 9v4" />
+    </svg>
+  );
+}
+
+/** A shape and its reflection across a vertical axis. */
+export function MirrorIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 3v18" strokeDasharray="2 3" />
+      <path d="M9 6 4 12l5 6z" />
+      <path d="M15 6l5 6-5 6z" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** An eye struck through: the thing is there and not being shown. */
+export function EyeOffIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c5 0 9 6 9 6a15 15 0 0 1-2.4 2.9" />
+      <path d="M6.5 8.1A15.6 15.6 0 0 0 3 12s4 6 9 6a8.7 8.7 0 0 0 3.4-.7" />
+      <path d="M9.9 10.1a3 3 0 0 0 4.1 4.2" />
+    </svg>
+  );
+}
+
+/** An eye: whether the thing is shown at all. */
+export function EyeIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 12s4-6 9-6 9 6 9 6-4 6-9 6-9-6-9-6z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+/** A frame with a mark in it: where in the picture a thing sits. */
+export function PlaceIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <circle cx="16" cy="16" r="2.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** A letterform: which face the words are set in. */
+export function FontIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M5 19 12 5l7 14M8.2 14h7.6" />
+    </svg>
+  );
+}

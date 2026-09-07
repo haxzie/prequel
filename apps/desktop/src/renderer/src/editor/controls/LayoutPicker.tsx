@@ -126,9 +126,13 @@ const THUMB_MIN_PADDING = 0.1;
 
 // Square, so the cell is the same size whatever shape the output frame is and
 // the grid does not reflow when someone switches to a vertical preset.
+// The same hairline the background swatches carry, for the same reason: a card
+// whose own edge is only a slightly lighter fill has no edge at low contrast,
+// and these sit on a panel the same family of grey as they are. The chosen one
+// still says so with the blue ring, which is drawn inside this.
 const CELL =
-  "relative grid aspect-square place-items-center rounded-md bg-white/5 p-0.5 " +
-  "hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
+  "relative grid aspect-square place-items-center rounded-lg border border-white/10 " +
+  "bg-white/5 p-0.5 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
 const GRID = "grid grid-cols-4 gap-1";
 
@@ -185,10 +189,7 @@ export function LayoutPicker({
                   title={label}
                   aria-pressed={preset.value === value}
                   disabled={(group.camera && !cameraPresent) || !fits}
-                  className={cn(
-                    CELL,
-                    preset.value === value && "ring-2 ring-editor-accent ring-inset",
-                  )}
+                  className={cn(CELL, preset.value === value && "ring-2 ring-selected ring-inset")}
                   onClick={() => onChange(preset.value)}
                 >
                   <Plate
@@ -219,7 +220,7 @@ export function LayoutPicker({
               aria-label="Custom"
               title="Custom — dragged by hand"
               aria-pressed
-              className={cn(CELL, "ring-2 ring-editor-accent ring-inset")}
+              className={cn(CELL, "ring-2 ring-selected ring-inset")}
               onClick={() => onChange("custom")}
             >
               <span className="text-[9px] text-editor-muted">Custom</span>
@@ -285,7 +286,7 @@ function Plate({
 
   return (
     <span
-      className="relative block overflow-hidden rounded-[3px] bg-black/40"
+      className="relative block overflow-hidden rounded-[6px] bg-black/40"
       // Whichever edge runs out first, so a 9:16 frame draws as a tall sliver
       // inside a square cell rather than overflowing it.
       //

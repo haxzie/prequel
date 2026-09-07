@@ -75,9 +75,6 @@ importers:
       '@prequel/recorder':
         specifier: workspace:*
         version: link:../../packages/recorder
-      blurhash:
-        specifier: ^2.0.5
-        version: 2.0.5
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -100,6 +97,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.0.5
         version: 6.0.5(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       boring-avatars:
         specifier: ^2.0.4
         version: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

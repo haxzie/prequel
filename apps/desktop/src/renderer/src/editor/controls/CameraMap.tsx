@@ -89,6 +89,8 @@ export function CameraMap({
   const map = useRef<HTMLDivElement>(null);
   /** Offset from the bubble's centre to where it was picked up, in fractions. */
   const grab = useRef<{ x: number; y: number } | null>(null);
+  /** The map's box, held for the length of a gesture. See `onPointerDown`. */
+  const rect = useRef<DOMRect | null>(null);
 
   // As a fraction of each axis rather than of the shorter edge, because the map
   // is not square: a bubble 22% of a 1080-tall frame is 22% of this map's height
@@ -109,7 +111,7 @@ export function CameraMap({
   const at = { x: clamp(x, halfX), y: clamp(y, halfY) };
 
   const pointAt = (event: PointerEvent) => {
-    const box = map.current?.getBoundingClientRect();
+    const box = rect.current;
     if (!box) return null;
     return {
       x: (event.clientX - box.left) / box.width,
@@ -125,7 +127,10 @@ export function CameraMap({
     <div
       ref={map}
       className={cn(
-        "relative w-full overflow-hidden rounded-md border border-white/10 bg-black/30",
+        // The layout cards' surface. It was a well of its own — darker than
+        // anything else in the panel — which read as a hole in the column
+        // rather than as one more card in it.
+        "relative w-full overflow-hidden rounded-md border border-white/10 bg-white/5",
         disabled && "pointer-events-none opacity-40",
       )}
       // The frame's own proportions. Switching the output to vertical reshapes
@@ -133,6 +138,11 @@ export function CameraMap({
       // somewhere it is not.
       style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
       onPointerDown={(event) => {
+        // Read once per gesture rather than per move: `getBoundingClientRect`
+        // inside a pointermove is a layout read on every frame of a drag, and
+        // the map cannot move or resize while a pointer is captured on it.
+        rect.current = event.currentTarget.getBoundingClientRect();
+
         const where = pointAt(event);
         if (!where) return;
 
@@ -156,6 +166,7 @@ export function CameraMap({
       }}
       onPointerUp={() => {
         grab.current = null;
+        rect.current = null;
       }}
     >
       {/* The nine stops. Drawn under the bubble so it passes over them rather
@@ -217,15 +228,17 @@ export function CameraMap({
 
           {/* The target itself. A ring rather than a filled dot: it sits over
               the picture it is aiming at, and something to see through is worth
-              more here than something to see. */}
+              more here than something to see. Blue, because it is the thing
+              being moved — the same blue the rail marks a chosen panel with and
+              a swatch its chosen colour. */}
           <div
-            className="absolute size-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white bg-white/25 shadow-[0_0_0_1px_rgba(0,0,0,0.5)] active:cursor-grabbing"
+            className="absolute size-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-selected bg-selected/25 shadow-[0_0_0_1px_rgba(0,0,0,0.5)] active:cursor-grabbing"
             style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }}
           />
         </>
       ) : (
         <div
-          className="absolute cursor-grab border-2 border-white/80 bg-white/25 active:cursor-grabbing"
+          className="absolute cursor-grab border-2 border-selected bg-selected/25 active:cursor-grabbing"
           style={{
             left: `${(at.x - width / 2) * 100}%`,
             top: `${(at.y - height / 2) * 100}%`,

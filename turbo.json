@@ -7,12 +7,18 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "src/**/*.rs", "Cargo.toml", "build.rs"],
+      // Deliberately no `release/**`. That directory holds the packaged
+      // artefacts — a 100 MB disk image and a 109 MB zip per version, kept
+      // rather than cleaned — so caching it tars every build that came before
+      // it too. It reached 18 GB across 1,824 entries before this was noticed.
+      // Nothing downstream reads a packaged installer, and `pnpm ship` calls
+      // the filter directly rather than going through turbo, so there is
+      // nothing to restore it for.
       "outputs": [
         ".next/**",
         "!.next/cache/**",
         "dist/**",
         "out/**",
-        "release/**",
         "*.node",
         "index.js",
         "index.d.ts"

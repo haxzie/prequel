@@ -260,6 +260,15 @@ export function useEditorPlayback(
         if (nudge !== nudged) {
           nudged = nudge;
           headTime.current.style.transform = `translate3d(calc(-50% + ${nudge}px), 0, 0)`;
+
+          // Square the corners on whichever side the label has come to rest
+          // against. `nudge` is only ever non-zero because the clamp above has
+          // stopped the label at an edge, and its sign says which: pushed
+          // right means its left edge is on the content's left. A capsule
+          // sitting flush against the end of the strip reads as having been cut
+          // off there; squaring the two corners that touch says it has arrived.
+          headTime.current.style.borderRadius =
+            nudge > 0 ? "0 999px 999px 0" : nudge < 0 ? "999px 0 0 999px" : "999px";
         }
       }
 
@@ -337,28 +346,65 @@ export function useEditorPlayback(
   const onInteract = useCallback(() => mixer.resume(), [mixer]);
   const setGain = useCallback((kind: TrackKind, gain: TrackGain) => mixer.set(kind, gain), [mixer]);
 
-  return {
-    playback,
-    playing,
-    duration,
-    register,
-    getElement,
-    sliceId,
-    timecodeRef,
-    headTimeRef,
-    playheadRef,
-    scrollerRef,
-    setTrackMetrics,
-    sourceAt,
-    setHover,
-    onInteract,
-    setGain,
-    visible,
-  };
+  // Memoised for the same reason the ref callbacks above are stable, one level
+  // up: this object is the dependency of every rAF loop in the editor — the
+  // preview's draw loop, the caption panel's, and `TimelineStrip`'s scroller
+  // ref. Returned as a literal it had a fresh identity on every render, so a
+  // preview drag — which dispatches once per `pointermove` — cancelled and
+  // re-scheduled all of them on every pointer event, throwing away each loop's
+  // local "what did I last write" cache and repainting from nothing.
+  //
+  // Everything here but the four state values is already stable, so in practice
+  // this changes identity only when playback actually starts, stops, crosses a
+  // cut, or a track appears.
+  return useMemo(
+    () => ({
+      playback,
+      playing,
+      duration,
+      register,
+      getElement,
+      sliceId,
+      timecodeRef,
+      headTimeRef,
+      playheadRef,
+      scrollerRef,
+      setTrackMetrics,
+      sourceAt,
+      setHover,
+      onInteract,
+      setGain,
+      visible,
+    }),
+    [
+      playback,
+      playing,
+      duration,
+      register,
+      getElement,
+      sliceId,
+      timecodeRef,
+      headTimeRef,
+      playheadRef,
+      scrollerRef,
+      setTrackMetrics,
+      sourceAt,
+      setHover,
+      onInteract,
+      setGain,
+      visible,
+    ],
+  );
 }
 
-/** `m:ss.cc`, rebuilt on every frame so it stays cheap. */
-function format(ns: MediaTime): string {
+/**
+ * `m:ss.cc`, rebuilt on every frame so it stays cheap.
+ *
+ * Exported so the hover line's label reads the same as the playhead's. Two
+ * timecodes a pixel apart in different formats is the sort of thing that looks
+ * like one of them is wrong.
+ */
+export function format(ns: MediaTime): string {
   const total = Math.max(0, ns) / 1_000_000_000;
   const minutes = Math.floor(total / 60);
   const seconds = Math.floor(total % 60);

@@ -240,7 +240,17 @@ impl Compositor {
                 continue;
             }
 
-            self.caption_use.insert(path.clone(), now);
+            // Touched in place where the entry already exists. `insert` with an
+            // owned key allocates a `String` per caption per frame, and a cue
+            // that is on screen for three seconds is on screen for a hundred and
+            // eighty frames — the allocation was for the first of them and
+            // wasted on the rest.
+            if let Some(seen) = self.caption_use.get_mut(path) {
+                *seen = now;
+            } else {
+                self.caption_use.insert(path.clone(), now);
+            }
+
             if self.images.contains_key(path) {
                 continue;
             }
@@ -383,10 +393,18 @@ impl Compositor {
         // is dropped immediately below.
         unsafe { encoder.end_encoding() };
         cmd.commit();
-        // Waited on rather than pipelined: the next step hands this buffer
-        // straight to the encoder, and an export is throughput-bound on the
-        // decoder rather than on GPU latency. It is also what makes holding the
+        // Waited on rather than pipelined, which is what makes holding the
         // textures until here sufficient.
+        //
+        // This used to say an export is "throughput-bound on the decoder". It
+        // is not: measured over 300 frames of 1080p from a real session, decode
+        // is 6-9% of the wall clock, this render is 27-35%, and the encode that
+        // follows it is 52-63%. Decode, Metal and VideoToolbox are three
+        // independent engines and the loop drives them one at a time, so
+        // overlapping render and encode is worth roughly 1.5×. It is not done
+        // here because a frame in flight has to keep its textures alive past
+        // this point — see `alive` below — and that is a real change rather
+        // than a smaller wait.
         cmd.wait_until_completed();
         drop(alive);
         drop(target);

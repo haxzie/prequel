@@ -7,56 +7,96 @@ import type { TrackKind } from "../../../shared/manifest";
 import {
   DEFAULT_LAYOUT,
   overriddenKeys,
-  WALLPAPER_FILE_NAME,
   type Background,
   type BackgroundSettings,
   type CameraShape,
+  type CaptionPlace,
+  type CaptionSettings,
   type LayoutPreset,
   type LayoutSettings,
   type SettingsSection,
-  type CaptionPlace,
-  type CaptionSettings,
   type SliceSettings,
   type ZoomSlice,
+  WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
-import { cn } from "../lib/cn";
 import type { Backgrounds } from "./useBackgrounds";
 import { CameraMap } from "./controls/CameraMap";
+import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
+import { cn } from "../lib/cn";
 import { CursorPicker } from "./controls/CursorPicker";
-import { LayoutPicker } from "./controls/LayoutPicker";
-import { Field, Section } from "./controls/Field";
 import { EasingPad } from "./controls/EasingPad";
+import { FontPicker } from "./controls/FontPicker";
+import { ScrollFade } from "./controls/ScrollFade";
+import { Field, Section } from "./controls/Field";
+import { LayoutPicker } from "./controls/LayoutPicker";
 import { PerspectivePad } from "./controls/PerspectivePad";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
-import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import {
+  AngleIcon,
   AudioIcon,
   BackdropIcon,
   BackIcon,
+  BlurIcon,
+  BorderIcon,
   CameraIcon,
   CaptionsIcon,
   CircleIcon,
-  CursorIcon,
+  ClockIcon,
   CloseIcon,
+  CursorIcon,
+  DepthIcon,
+  DropletIcon,
+  EyeIcon,
+  EyeOffIcon,
   FillIcon,
   FocusIcon,
+  FontIcon,
   FrameIcon,
-  GradientIcon,
-  ImageIcon,
   LayoutIcon,
+  LevelIcon,
+  LinesIcon,
+  MicIcon,
+  MirrorIcon,
+  OffsetIcon,
+  OpacityIcon,
+  PaddingIcon,
   PencilIcon,
   PerspectiveIcon,
+  PlaceIcon,
   PortraitIcon,
+  ResetIcon,
   RoundedIcon,
   ScreenIcon,
-  SolidIcon,
+  ShadowIcon,
+  ShadowOffsetIcon,
+  SizeIcon,
+  SmoothingIcon,
+  SpeakerIcon,
+  SpeedIcon,
   SquircleIcon,
+  StrengthIcon,
+  TiltIcon,
+  TypingIcon,
   TrashIcon,
+  VignetteIcon,
   WideIcon,
+  YawIcon,
   ZoomIcon,
+  ZoomOutIcon,
+  ZoomInIcon,
 } from "./icons";
-import { ColorField, percent, Segmented, Slider, Tabs, Toggle } from "./controls/inputs";
+import {
+  ColorField,
+  percent,
+  Segmented,
+  Slider,
+  SLIDE_MS,
+  Tabs,
+  Toggle,
+  ToggleField,
+  useTravelling,
+} from "./controls/inputs";
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
 import { activeSettings, selectedSlice, type EditorAction, type EditorState } from "./state";
 
@@ -196,43 +236,31 @@ export function Inspector(props: InspectorProps) {
       props.onPreviewZoom();
     };
     const panel = { zoom, frame: props.frame, hasCursor: props.hasCursor, onChange: change };
+    // Non-null because `zoomTab` only ever holds an id from this list.
+    const showingZoomTab = ZOOM_TABS.find((entry) => entry.id === zoomTab) ?? ZOOM_TABS[0]!;
 
     return (
       <div className={SHELL}>
-        <nav className={RAIL}>
-          {ZOOM_TABS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={id === zoomTab}
-              // The label the icon replaced, kept where it is still needed: as
-              // the accessible name, and as the tooltip that is now the only
-              // way to find out what a glyph means.
-              aria-label={label}
-              title={label}
-              className={railButton(id === zoomTab)}
-              onClick={() => setZoomTab(id)}
-            >
-              <Icon />
-            </button>
-          ))}
-        </nav>
+        <Rail items={ZOOM_TABS} value={zoomTab} onChange={setZoomTab} />
 
         <aside className={PANEL}>
-          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-w-0 flex-1 flex-col">
             <PanelHeader
-              title="Zoom"
-              icon={<ZoomIcon />}
-              // The blue a zoom is drawn in on the timeline. The panel and the
-              // chip it belongs to say the same thing about what is selected.
-              tone="border-selected/60 bg-selected/35 text-white"
+              // The tab that is showing, not the word "Zoom": the header names
+              // the section the panel is displaying, which is what the rail's
+              // glyphs cannot say for themselves.
+              title={showingZoomTab.label}
+              icon={<showingZoomTab.Icon />}
               onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
               deleteLabel="Remove zoom"
               onClose={props.onClose}
             />
-            {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
-            {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
-            {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+            <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+              <ScrollFade className="sticky top-0 z-10" />
+              {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
+              {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
+              {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+            </div>
           </div>
         </aside>
       </div>
@@ -258,10 +286,30 @@ export function Inspector(props: InspectorProps) {
       : []),
   ];
 
+  // What each category's Reset puts back.
+  //
+  // Here rather than inside the panels because the button is in the header now,
+  // and the header does not know which panel is under it beyond its id. The
+  // pairs that are not one-to-one are the reason this is a table: Background
+  // and Frame are two panels over the one `background` section and must reset
+  // only their own half of it, and three of them are views onto `layout`.
+  const RESETS: Record<CategoryId, (of: typeof sectionReset) => (() => void) | undefined> = {
+    layout: (of) => of("layout"),
+    background: (of) => of("background", PAINT_KEYS),
+    frame: (of) => of("background", FRAME_KEYS),
+    camera: (of) => of("layout"),
+    audio: (of) => of("audio"),
+    cursor: (of) => of("layout"),
+    captions: (of) => of("captions"),
+  };
+
   // A category can disappear — open a recording with no camera while Camera is
   // showing — so the fallback is the one that is always there rather than a
   // blank panel.
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
+  // `active` is resolved against this same list above, so the fallback is
+  // unreachable — it exists to keep this total rather than to be taken.
+  const showing = categories.find((category) => category.id === active) ?? categories[0]!;
   const editingCaptions = active === "captions" && captionView === "edit";
 
   const close = () => {
@@ -271,27 +319,23 @@ export function Inspector(props: InspectorProps) {
 
   return (
     <div className={SHELL}>
-      <nav className={RAIL}>
-        {categories.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            aria-current={id === active}
-            aria-label={label}
-            title={label}
-            className={railButton(id === active)}
-            onClick={() => {
-              setTab(id);
-              setCaptionView("options");
-            }}
-          >
-            <Icon />
-          </button>
-        ))}
-      </nav>
+      <Rail
+        items={categories}
+        value={active}
+        onChange={(id) => {
+          setTab(id);
+          setCaptionView("options");
+        }}
+      />
 
       <aside className={PANEL}>
-        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        {/* The header sits outside the scroller rather than sticking to the top
+            of it. Sticky would hold it in place too, but the tab row inside
+            wants to pin *under* the header — and a second `sticky top-0` lands
+            on top of the first unless the header's height is written in as a
+            number. Out here the header is simply not scrollable, and the tabs
+            pin at `top-0` of whatever is left. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           {editingCaptions ? (
             // The editor is about the words, not about the selected clip, so
             // the header says so rather than "Clip" — and offers no delete,
@@ -299,32 +343,23 @@ export function Inspector(props: InspectorProps) {
             <PanelHeader
               title="Edit captions"
               icon={<CaptionsIcon />}
-              tone="border-editor-line bg-white/10 text-white"
               onBack={() => setCaptionView("options")}
-              action={
-                <button
-                  type="button"
-                  className="text-[11px] text-editor-muted hover:text-editor-fg disabled:pointer-events-none disabled:opacity-40"
-                  disabled={!props.editing.edited}
-                  onClick={props.editing.onReset}
-                >
-                  Reset
-                </button>
-              }
+              // The same button in the same place as every other panel's, and
+              // absent for the same reason: nothing edited is nothing to put
+              // back. It was a word here while the panels had words of their
+              // own, and a lone word among icons once they stopped.
+              onReset={props.editing.edited ? props.editing.onReset : undefined}
               deleteLabel="Remove clip"
               onClose={close}
             />
           ) : (
             <PanelHeader
-              title={scoped ? "Clip" : "All clips"}
-              icon={<ScreenIcon />}
-              // The purple a clip is drawn in on the timeline, and a neutral one
-              // for the defaults, which are not a thing on the timeline at all.
-              tone={
-                scoped
-                  ? "border-slice-edge/70 bg-slice-edge/40 text-white"
-                  : "border-editor-line bg-white/10 text-white"
-              }
+              // The category that is showing. The rail is a column of glyphs
+              // with no labels — a tooltip is the only way to find out what one
+              // means — so the panel it opens says the word.
+              title={showing.label}
+              icon={<showing.Icon />}
+              onReset={RESETS[showing.id](sectionReset)}
               // Only a selected clip can be removed. With nothing selected this
               // panel is the project defaults, which are not a thing to delete.
               onDelete={
@@ -337,86 +372,66 @@ export function Inspector(props: InspectorProps) {
             />
           )}
 
-          {editingCaptions && <CaptionEditor {...props.editing} />}
+          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+            <ScrollFade className="sticky top-0 z-10" />
+            {editingCaptions && <CaptionEditor {...props.editing} />}
 
-          {active === "layout" && (
-            <LayoutPanel
-              settings={settings}
-              frame={props.frame}
-              cameraSource={props.cameraSource}
-              cameraPresent={props.present.has("camera")}
-              fileUrl={props.fileUrl}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
-            />
-          )}
+            {active === "layout" && (
+              <LayoutPanel
+                settings={settings}
+                frame={props.frame}
+                cameraSource={props.cameraSource}
+                cameraPresent={props.present.has("camera")}
+                fileUrl={props.fileUrl}
+                field={field}
+                set={set}
+              />
+            )}
 
-          {active === "background" && (
-            <BackgroundPanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("background", PAINT_KEYS)}
-              set={set}
-              onPickWallpaper={props.onPickWallpaper}
-              onPickImage={props.onPickImage}
-              onPickPreset={props.onPickPreset}
-              backgrounds={props.backgrounds}
-              pendingBackground={props.pendingBackground}
-              wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
-            />
-          )}
+            {active === "background" && (
+              <BackgroundPanel
+                settings={settings}
+                field={field}
+                set={set}
+                onPickWallpaper={props.onPickWallpaper}
+                onPickImage={props.onPickImage}
+                onPickPreset={props.onPickPreset}
+                backgrounds={props.backgrounds}
+                pendingBackground={props.pendingBackground}
+                wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
+              />
+            )}
 
-          {active === "frame" && (
-            <FramePanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("background", FRAME_KEYS)}
-              set={set}
-            />
-          )}
+            {active === "frame" && <FramePanel settings={settings} field={field} set={set} />}
 
-          {active === "camera" && (
-            <CameraPanel
-              settings={settings}
-              frame={props.frame}
-              cameraSource={props.cameraSource}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
-            />
-          )}
+            {active === "camera" && (
+              <CameraPanel
+                settings={settings}
+                frame={props.frame}
+                cameraSource={props.cameraSource}
+                field={field}
+                set={set}
+              />
+            )}
 
-          {active === "audio" && (
-            <AudioPanel
-              settings={settings}
-              present={props.present}
-              field={field}
-              reset={sectionReset("audio")}
-              set={set}
-            />
-          )}
+            {active === "audio" && (
+              <AudioPanel settings={settings} present={props.present} field={field} set={set} />
+            )}
 
-          {active === "cursor" && (
-            <CursorPanel
-              settings={settings}
-              field={field}
-              reset={sectionReset("layout")}
-              set={set}
-              cursorUrl={props.fileUrl}
-            />
-          )}
+            {active === "cursor" && (
+              <CursorPanel settings={settings} field={field} set={set} cursorUrl={props.fileUrl} />
+            )}
 
-          {active === "captions" && !editingCaptions && (
-            <CaptionsPanel
-              settings={settings}
-              captions={props.captions}
-              field={field}
-              reset={sectionReset("captions")}
-              set={set}
-              onEdit={() => setCaptionView("edit")}
-            />
-          )}
+            {active === "captions" && !editingCaptions && (
+              <CaptionsPanel
+                settings={settings}
+                captions={props.captions}
+                field={field}
+                set={set}
+                onEdit={() => setCaptionView("edit")}
+              />
+            )}
+          </div>
         </div>
       </aside>
     </div>
@@ -424,17 +439,18 @@ export function Inspector(props: InspectorProps) {
 }
 
 /**
- * The pair, floated off the window's edge.
+ * The pair, run to the window's edges.
  *
- * A margin and rounded corners rather than full-height columns with rules down
- * their sides: the dotted surface runs behind and under both, which says they
- * are *over* the composition rather than further regions of the window
- * competing with it.
+ * No margin, so the panel is a full-height column meeting the timeline below it
+ * rather than a card floating on the board. The spacing that used to be here
+ * moved onto the rail, which still needs room around its icons — putting it on
+ * the shell would push the panel off the edge again, which is the thing being
+ * removed.
  *
  * `justify-end` anchors the controls to the window edge, so the panel does not
  * slide sideways when the rail is absent — which it is for a selected zoom.
  */
-const SHELL = "m-2 ml-0 flex flex-1 justify-end gap-2";
+const SHELL = "flex flex-1 justify-end";
 
 /**
  * The rail: icons over the editor's own background, with nothing behind them.
@@ -445,30 +461,113 @@ const SHELL = "m-2 ml-0 flex flex-1 justify-end gap-2";
  * an ordinary flex item it would stretch to match the panel beside it and hold
  * a column of hover targets over nothing.
  */
-const RAIL = "flex flex-none flex-col gap-1 self-start";
+/**
+ * The rail: icons over the editor's own background, with nothing behind them.
+ *
+ * It used to be a panel in its own right, which made two surfaces where the eye
+ * only has one thing to find — and the smaller of the two was introducing the
+ * larger. `self-start` is what keeps it the height of its own buttons: as an
+ * ordinary flex item it would stretch to match the panel beside it and hold a
+ * column of hover targets over nothing.
+ *
+ * Marked the same way the background's tabs are, and for the same reason: two
+ * pills behind the icons, one following the choice and one following the
+ * pointer, moved by a transform so the mark reads as travelling to the icon
+ * that was pressed rather than as one square going dark while another lights
+ * up. Blue here where the tabs are grey — the rail chooses which of the clip's
+ * settings you are editing, which is the app's own "this is the one".
+ */
+function Rail<T extends string>({
+  items,
+  value,
+  onChange,
+}: {
+  items: readonly { id: T; label: string; Icon: () => React.ReactElement }[];
+  value: T;
+  onChange: (id: T) => void;
+}) {
+  const at = Math.max(
+    0,
+    items.findIndex((item) => item.id === value),
+  );
+  const [hovered, setHovered] = useState<number | null>(null);
+  // Keeps the pointer's pill up until the blue one reaches it — see the hook.
+  const travelling = useTravelling(at);
+
+  // One step down the rail: a button (`size-10`) and the gap under it
+  // (`gap-1`). The pills are positioned from the rail's own `p-2`, so a whole
+  // number of steps lands one exactly on a button.
+  const step = (index: number) => ({ transform: `translateY(calc(${String(index)} * 2.75rem))` });
+  const pill =
+    "pointer-events-none absolute top-2 left-2 size-10 rounded-lg " +
+    "transition-[transform,opacity] ease-out motion-reduce:transition-none";
+  const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
+
+  return (
+    <nav
+      className="relative flex flex-none flex-col gap-1 self-start p-2"
+      onPointerLeave={() => setHovered(null)}
+    >
+      {/* Parked under the choice while nothing is hovered, so it fades in where
+          the pointer is rather than travelling the length of the rail to it. */}
+      <span
+        aria-hidden
+        className={cn(pill, "bg-white/10")}
+        style={{
+          ...step(hovered ?? at),
+          ...slide,
+          opacity: hovered === null || (hovered === at && !travelling) ? 0 : 1,
+        }}
+      />
+      <span aria-hidden className={cn(pill, "bg-selected")} style={{ ...step(at), ...slide }} />
+
+      {items.map(({ id, label, Icon }, index) => (
+        <button
+          key={id}
+          type="button"
+          aria-current={id === value}
+          // The label the icon replaced, kept where it is still needed: as the
+          // accessible name, and as the tooltip that is now the only way to
+          // find out what a glyph means.
+          aria-label={label}
+          title={label}
+          // Above the pills, which are painted behind the whole column. White
+          // whether or not it is the one showing: with no surface behind the
+          // rail there is nothing for a muted colour to read against, and a
+          // dimmed icon on the editor's own background looks disabled rather
+          // than merely unselected — so the fill behind the chosen one carries
+          // that on its own. Tried at 45% with a lift on hover, and it still
+          // read as a column of unavailable things.
+          className="relative z-10 grid size-10 place-items-center rounded-lg text-white [&_svg]:size-5"
+          onPointerEnter={() => setHovered(index)}
+          onClick={() => onChange(id)}
+        >
+          <Icon />
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 /**
- * One destination on the rail.
+ * The panel itself: a full-height column against the window edge.
  *
- * White whether or not it is the one showing. With no surface behind the rail
- * there is nothing for a muted colour to read against, and a dimmed icon on the
- * editor's own background looks disabled rather than merely unselected — so the
- * fill behind the chosen one carries that on its own. The same blue the dock
- * marks a chosen screen with and the timeline its held tool: one colour across
- * the app for "this is the one".
+ * `bg-editor-veil`, the timeline's surface rather than `--editor-panel`, so the
+ * two meet as one continuous chrome down the right and along the bottom instead
+ * of as two panels of slightly different greys.
+ *
+ * A left border and no shadow: square and flush, the only edge that exists is
+ * the one facing the composition, and a drop shadow with nothing to float over
+ * reads as a seam rather than as depth. `overflow-hidden` still earns its place
+ * — it keeps the scrolling content off the border.
  */
-const railButton = (active: boolean) =>
-  cn(
-    "grid size-10 place-items-center rounded-lg text-white [&_svg]:size-5",
-    active ? "bg-selected" : "hover:bg-white/10",
-  );
+const PANEL = "flex w-80 flex-none overflow-hidden border-l border-editor-line bg-editor-veil";
 
-/** `overflow-hidden` so the scrolling content stays inside the corners. */
-const PANEL =
-  "flex w-80 flex-none overflow-hidden rounded-xl border border-editor-line " +
-  "bg-editor-panel shadow-[0_8px_30px_rgba(0,0,0,0.35)]";
-
-/** What the pair occupies when open: rail, gap, panel, and the margin beside. */
+/**
+ * What the pair occupies when open: the padded rail (3.5rem) and the panel
+ * (20rem), with the half-rem left over falling to the left of the rail — the
+ * shell is `justify-end`, so slack here never moves the panel off the edge.
+ */
 export const PANEL_WIDTH = "24rem";
 
 /** The inspector's destinations. */
@@ -518,7 +617,6 @@ function LayoutPanel({
   cameraPresent,
   fileUrl,
   field,
-  reset,
   set,
 }: {
   settings: SliceSettings;
@@ -527,14 +625,18 @@ function LayoutPanel({
   cameraPresent: boolean;
   fileUrl: (file: string) => string;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
 }) {
   const { layout } = settings;
 
   return (
-    <Section title="Screen" onReset={reset}>
-      <Field label="Layout" {...field("layout", "preset")}>
+    <Section>
+      {/* No label over it, for the reason the background's tabs have none: the
+          panel header already says Layout, and a grid of arrangements is a
+          control that shows what it is. The override this field marked is still
+          reachable — the header carries Reset whenever anything here is set for
+          the clip. */}
+      <Field {...field("layout", "preset")}>
         <LayoutPicker
           frame={frame}
           // The composition's own background and padding, so a padded
@@ -721,7 +823,6 @@ function CameraPanel({
   frame,
   cameraSource,
   field,
-  reset,
   set,
 }: {
   settings: SliceSettings;
@@ -729,7 +830,6 @@ function CameraPanel({
   /** The camera's own dimensions, for the `wide` shape's proportions. */
   cameraSource: Size | null;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
 }) {
   const { layout } = settings;
@@ -753,9 +853,12 @@ function CameraPanel({
   const aspect = layout.cameraWidth / Math.max(layout.cameraHeight, 0.0001);
 
   return (
-    <Section title="Camera" onReset={reset}>
-      <Field label="Camera" inline {...field("layout", "cameraVisible")}>
-        <Toggle
+    <>
+      <Section>
+        <ToggleField
+          icon={<CameraIcon />}
+          label="Camera"
+          {...field("layout", "cameraVisible")}
           value={layout.cameraVisible}
           onChange={(value) => {
             set("layout", "cameraVisible", value);
@@ -767,43 +870,44 @@ function CameraPanel({
             if (answer) set("layout", "preset", answer);
           }}
         />
-      </Field>
 
-      <Field label="Shape" {...field("layout", "cameraShape")}>
-        <Segmented
-          value={layout.cameraShape}
-          disabled={off}
-          iconsOnly
-          options={[
-            { value: "circle", label: "Circle", icon: <CircleIcon /> },
-            { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
-            { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
-            {
-              value: "wide",
-              label: "Wide",
-              title: "The camera at its own size, corners rounded",
-              icon: <WideIcon />,
-            },
-            {
-              value: "portrait",
-              label: "Portrait",
-              title: "Taller than it is wide, cropped to the middle of the picture",
-              icon: <PortraitIcon />,
-            },
-          ]}
-          onChange={(value) => {
-            set("layout", "cameraShape", value);
-            // The shape decides the proportions once, here, rather than on
-            // every frame. Derived during layout instead, a bubble someone had
-            // dragged to a shape of their own would snap back to a square the
-            // next time this control was touched.
-            set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
-          }}
-        />
-      </Field>
+        <Field icon={<SquircleIcon />} {...field("layout", "cameraShape")}>
+          <Segmented
+            value={layout.cameraShape}
+            disabled={off}
+            iconsOnly
+            options={[
+              { value: "circle", label: "Circle", icon: <CircleIcon /> },
+              { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
+              { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
+              {
+                value: "wide",
+                label: "Wide",
+                title: "The camera at its own size, corners rounded",
+                icon: <WideIcon />,
+              },
+              {
+                value: "portrait",
+                label: "Portrait",
+                title: "Taller than it is wide, cropped to the middle of the picture",
+                icon: <PortraitIcon />,
+              },
+            ]}
+            onChange={(value) => {
+              set("layout", "cameraShape", value);
+              // The shape decides the proportions once, here, rather than on
+              // every frame. Derived during layout instead, a bubble someone had
+              // dragged to a shape of their own would snap back to a square the
+              // next time this control was touched.
+              set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
+            }}
+          />
+        </Field>
 
-      <Field label="Size" {...field("layout", "cameraHeight")}>
         <Slider
+          icon={<SizeIcon />}
+          label="Size"
+          {...field("layout", "cameraHeight")}
           value={layout.cameraHeight}
           min={0.05}
           max={0.6}
@@ -816,10 +920,11 @@ function CameraPanel({
             set("layout", "cameraWidth", value * aspect);
           }}
         />
-      </Field>
 
-      <Field label="Zoom" {...field("layout", "cameraZoom")}>
         <Slider
+          icon={<ZoomIcon />}
+          label="Zoom"
+          {...field("layout", "cameraZoom")}
           value={layout.cameraZoom}
           min={1}
           max={3}
@@ -828,45 +933,52 @@ function CameraPanel({
           disabled={off}
           onChange={(value) => set("layout", "cameraZoom", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Position" {...field("layout", "cameraX")}>
-        <CameraMap
-          frame={frame}
-          shape={layout.cameraShape}
-          size={layout.cameraHeight}
-          aspect={aspect}
-          x={layout.cameraX}
-          y={layout.cameraY}
-          disabled={off || slotted}
-          onChange={(x, y) => {
-            set("layout", "cameraX", x);
-            set("layout", "cameraY", y);
-          }}
-        />
-      </Field>
+      <Section title="Position">
+        <Field icon={<PlaceIcon />} {...field("layout", "cameraX")}>
+          <CameraMap
+            frame={frame}
+            shape={layout.cameraShape}
+            size={layout.cameraHeight}
+            aspect={aspect}
+            x={layout.cameraX}
+            y={layout.cameraY}
+            disabled={off || slotted}
+            onChange={(x, y) => {
+              set("layout", "cameraX", x);
+              set("layout", "cameraY", y);
+            }}
+          />
+        </Field>
 
-      <Field label="Mirror" inline {...field("layout", "cameraMirror")}>
-        <Toggle
+        <ToggleField
+          icon={<MirrorIcon />}
+          label="Mirror"
+          {...field("layout", "cameraMirror")}
           value={layout.cameraMirror}
           disabled={off}
           // On by default because the bubble the user watched while recording
           // was mirrored; off reads as flipped against it.
           onChange={(value) => set("layout", "cameraMirror", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Shrink on zoom" inline {...field("layout", "cameraShrinkOnZoom")}>
-        <Toggle
+      <Section title="When zoomed">
+        <ToggleField
+          icon={<ZoomOutIcon />}
+          label="Shrink on zoom"
+          {...field("layout", "cameraShrinkOnZoom")}
           value={layout.cameraShrinkOnZoom}
           disabled={off || !floats}
           title={floats ? undefined : "Only a camera floating over the screen can shrink"}
           onChange={(value) => set("layout", "cameraShrinkOnZoom", value)}
         />
-      </Field>
 
-      <Field label="Size while zoomed" {...field("layout", "cameraShrinkTo")}>
         <Slider
+          icon={<ZoomInIcon />}
+          label="Size while zoomed"
+          {...field("layout", "cameraShrinkTo")}
           value={layout.cameraShrinkTo}
           min={0.2}
           max={1}
@@ -874,8 +986,8 @@ function CameraPanel({
           disabled={off || !floats || !layout.cameraShrinkOnZoom}
           onChange={(value) => set("layout", "cameraShrinkTo", value)}
         />
-      </Field>
-    </Section>
+      </Section>
+    </>
   );
 }
 
@@ -888,13 +1000,11 @@ function CameraPanel({
 function CursorPanel({
   settings,
   field,
-  reset,
   set,
   cursorUrl,
 }: {
   settings: SliceSettings;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
   cursorUrl: (file: string) => string;
 }) {
@@ -902,28 +1012,32 @@ function CursorPanel({
   const off = !layout.cursorVisible;
 
   return (
-    <Section title="Cursor" onReset={reset}>
-      <Field label="Pointer" inline {...field("layout", "cursorVisible")}>
-        <Toggle
+    <>
+      <Section>
+        <ToggleField
+          icon={<EyeIcon />}
+          label="Pointer"
+          {...field("layout", "cursorVisible")}
           value={layout.cursorVisible}
           onChange={(value) => set("layout", "cursorVisible", value)}
         />
-      </Field>
 
-      <Field label="Style" {...field("layout", "cursorStyle")}>
-        <CursorPicker
-          // Resolved rather than passed straight through, so a project naming a
-          // style this build no longer ships shows the one actually being drawn
-          // instead of no selection at all.
-          value={cursorStyle(layout.cursorStyle).id}
-          imageUrl={cursorUrl}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorStyle", value)}
-        />
-      </Field>
+        <Field icon={<CursorIcon />} label="Style" {...field("layout", "cursorStyle")}>
+          <CursorPicker
+            // Resolved rather than passed straight through, so a project naming a
+            // style this build no longer ships shows the one actually being drawn
+            // instead of no selection at all.
+            value={cursorStyle(layout.cursorStyle).id}
+            imageUrl={cursorUrl}
+            disabled={off}
+            onChange={(value) => set("layout", "cursorStyle", value)}
+          />
+        </Field>
 
-      <Field label="Size" {...field("layout", "cursorSize")}>
         <Slider
+          icon={<SizeIcon />}
+          label="Size"
+          {...field("layout", "cursorSize")}
           value={layout.cursorSize}
           min={0.015}
           max={0.12}
@@ -934,10 +1048,13 @@ function CursorPanel({
           format={(value) => `${(value / 0.035).toFixed(1)}×`}
           onChange={(value) => set("layout", "cursorSize", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Smoothing" {...field("layout", "cursorSmoothing")}>
+      <Section title="Motion">
         <Slider
+          icon={<SmoothingIcon />}
+          label="Smoothing"
+          {...field("layout", "cursorSmoothing")}
           value={layout.cursorSmoothing}
           min={0}
           max={1}
@@ -949,10 +1066,11 @@ function CursorPanel({
           format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
           onChange={(value) => set("layout", "cursorSmoothing", value)}
         />
-      </Field>
 
-      <Field label="Motion blur" {...field("layout", "cursorMotionBlur")}>
         <Slider
+          icon={<BlurIcon />}
+          label="Motion blur"
+          {...field("layout", "cursorMotionBlur")}
           value={layout.cursorMotionBlur}
           min={0}
           max={1}
@@ -964,26 +1082,31 @@ function CursorPanel({
           format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
           onChange={(value) => set("layout", "cursorMotionBlur", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Hide while typing" inline {...field("layout", "cursorHideWhileTyping")}>
-        <Toggle
+      <Section title="Hiding">
+        <ToggleField
+          icon={<TypingIcon />}
+          label="Hide while typing"
+          {...field("layout", "cursorHideWhileTyping")}
           value={layout.cursorHideWhileTyping}
           disabled={off}
           onChange={(value) => set("layout", "cursorHideWhileTyping", value)}
         />
-      </Field>
 
-      <Field label="Hide when still" inline {...field("layout", "cursorAutoHide")}>
-        <Toggle
+        <ToggleField
+          icon={<EyeOffIcon />}
+          label="Hide when still"
+          {...field("layout", "cursorAutoHide")}
           value={layout.cursorAutoHide}
           disabled={off}
           onChange={(value) => set("layout", "cursorAutoHide", value)}
         />
-      </Field>
 
-      <Field label="After" {...field("layout", "cursorHideAfter")}>
         <Slider
+          icon={<ClockIcon />}
+          label="After"
+          {...field("layout", "cursorHideAfter")}
           value={layout.cursorHideAfter}
           min={0.5}
           max={10}
@@ -992,8 +1115,8 @@ function CursorPanel({
           format={(value) => `${value}s`}
           onChange={(value) => set("layout", "cursorHideAfter", value)}
         />
-      </Field>
-    </Section>
+      </Section>
+    </>
   );
 }
 
@@ -1009,14 +1132,12 @@ function CaptionsPanel({
   settings,
   captions,
   field,
-  reset,
   set,
   onEdit,
 }: {
   settings: SliceSettings;
   captions: CaptionsState;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
   /** Open the words for correction. */
   onEdit: () => void;
@@ -1028,49 +1149,63 @@ function CaptionsPanel({
   const off = !values.captionsOn || !captions.ready;
 
   return (
-    <Section title="Captions" onReset={reset}>
-      <Transcription captions={captions} />
+    <>
+      <Section>
+        <Transcription captions={captions} />
 
-      {/* Above the styling, because a misheard word is the first thing anyone
+        {/* Above the styling, because a misheard word is the first thing anyone
           notices about captions and the styling is what they look at second.
           Dead until there are words, for the reason the toggle is. */}
-      <button
-        type="button"
-        className={cn(
-          "flex w-full items-center justify-center gap-1.5 rounded-lg border border-editor-line bg-white/5 px-2 py-1.5 text-[11px]",
-          "transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5",
-        )}
-        disabled={!captions.ready}
-        title={captions.ready ? undefined : "Generate captions first"}
-        onClick={onEdit}
-      >
-        <PencilIcon />
-        Edit captions
-      </button>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-center justify-center gap-1.5 rounded-lg border border-editor-line bg-white/5 px-2 py-1.5 text-[11px]",
+            "transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5",
+          )}
+          disabled={!captions.ready}
+          title={captions.ready ? undefined : "Generate captions first"}
+          onClick={onEdit}
+        >
+          <PencilIcon />
+          Edit captions
+        </button>
 
-      <Field label="Show captions" inline {...field("captions", "captionsOn")}>
-        <Toggle
+        <ToggleField
+          icon={<EyeIcon />}
+          label="Show captions"
+          {...field("captions", "captionsOn")}
           value={values.captionsOn}
           disabled={!captions.ready}
           title={captions.ready ? undefined : "Generate captions first"}
           onChange={(value) => set("captions", "captionsOn", value)}
         />
-      </Field>
 
-      <Field label="Style" {...field("captions", "captionStyle")}>
-        <CaptionStylePicker
-          // Resolved rather than passed through, so a project naming a look this
-          // build no longer ships shows the one actually being drawn instead of
-          // no selection at all.
-          value={captionStyle(values.captionStyle).id}
-          accent={values.captionAccent}
-          disabled={off}
-          onChange={(value) => set("captions", "captionStyle", value)}
-        />
-      </Field>
+        <Field icon={<CaptionsIcon />} {...field("captions", "captionStyle")}>
+          <CaptionStylePicker
+            // Resolved rather than passed through, so a project naming a look this
+            // build no longer ships shows the one actually being drawn instead of
+            // no selection at all.
+            value={captionStyle(values.captionStyle).id}
+            accent={values.captionAccent}
+            disabled={off}
+            onChange={(value) => set("captions", "captionStyle", value)}
+          />
+        </Field>
+      </Section>
 
-      <Field label="Size" {...field("captions", "captionSize")}>
+      <Section title="Text">
+        <Field icon={<FontIcon />} {...field("captions", "captionFont")}>
+          <FontPicker
+            value={values.captionFont}
+            disabled={!values.captionsOn}
+            onChange={(id) => set("captions", "captionFont", id)}
+          />
+        </Field>
+
         <Slider
+          icon={<SizeIcon />}
+          label="Size"
+          {...field("captions", "captionSize")}
           value={values.captionSize}
           min={0.025}
           max={0.11}
@@ -1081,23 +1216,26 @@ function CaptionsPanel({
           format={(value) => `${(value / 0.05).toFixed(1)}×`}
           onChange={(value) => set("captions", "captionSize", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Position" {...field("captions", "captionPlace")}>
-        <Segmented<CaptionPlace>
-          value={values.captionPlace}
-          options={[
-            { value: "top", label: "Top" },
-            { value: "middle", label: "Middle" },
-            { value: "bottom", label: "Bottom" },
-          ]}
-          disabled={off}
-          onChange={(value) => set("captions", "captionPlace", value)}
-        />
-      </Field>
+      <Section title="Placement">
+        <Field icon={<PlaceIcon />} {...field("captions", "captionPlace")}>
+          <Segmented<CaptionPlace>
+            value={values.captionPlace}
+            options={[
+              { value: "top", label: "Top" },
+              { value: "middle", label: "Middle" },
+              { value: "bottom", label: "Bottom" },
+            ]}
+            disabled={off}
+            onChange={(value) => set("captions", "captionPlace", value)}
+          />
+        </Field>
 
-      <Field label="Distance from edge" {...field("captions", "captionOffset")}>
         <Slider
+          icon={<OffsetIcon />}
+          label="Distance from edge"
+          {...field("captions", "captionOffset")}
           value={values.captionOffset}
           min={0}
           max={0.25}
@@ -1108,10 +1246,11 @@ function CaptionsPanel({
           format={percent}
           onChange={(value) => set("captions", "captionOffset", value)}
         />
-      </Field>
 
-      <Field label="Lines" {...field("captions", "captionLines")}>
         <Slider
+          icon={<LinesIcon />}
+          label="Lines"
+          {...field("captions", "captionLines")}
           value={values.captionLines}
           min={1}
           max={3}
@@ -1123,15 +1262,16 @@ function CaptionsPanel({
           format={(value) => (value === 1 ? "1 line" : `${value} lines`)}
           onChange={(value) => set("captions", "captionLines", value)}
         />
-      </Field>
 
-      <Field label="Spoken word" {...field("captions", "captionAccent")}>
         <ColorField
+          icon={<DropletIcon />}
+          label="Spoken word"
+          {...field("captions", "captionAccent")}
           value={values.captionAccent}
           onChange={(value) => set("captions", "captionAccent", value)}
         />
-      </Field>
-    </Section>
+      </Section>
+    </>
   );
 }
 
@@ -1185,7 +1325,6 @@ function Transcription({ captions }: { captions: CaptionsState }) {
 function BackgroundPanel({
   settings,
   field,
-  reset,
   set,
   onPickWallpaper,
   onPickImage,
@@ -1196,7 +1335,6 @@ function BackgroundPanel({
 }: {
   settings: SliceSettings;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
   onPickWallpaper: () => void;
   onPickImage: () => void;
@@ -1227,18 +1365,22 @@ function BackgroundPanel({
   useEffect(() => setStyle(paint.kind), [paint.kind]);
 
   return (
-    <Section title="Background" onReset={reset}>
+    <Section>
       {/* No label over it. "Style" restated what three tabs reading Image,
           Solid and Gradient already say, and a tab row is the one control in
           this panel that names itself. The override this field would have
-          marked is still reachable: the section header carries Reset whenever
-          anything in it is set for the clip. */}
+          marked is still reachable: the panel header carries Reset whenever
+          anything in this section is set for the clip.
+
+          No icons either. Three words that short are read as words, and a glyph
+          beside each one was a second thing to look at saying nothing the word
+          did not. */}
       <Tabs
         value={style}
         options={[
-          { value: "image", label: "Image", icon: <ImageIcon /> },
-          { value: "solid", label: "Solid", icon: <SolidIcon /> },
-          { value: "gradient", label: "Gradient", icon: <GradientIcon /> },
+          { value: "image", label: "Image" },
+          { value: "solid", label: "Solid" },
+          { value: "gradient", label: "Gradient" },
         ]}
         onChange={setStyle}
       />
@@ -1265,22 +1407,24 @@ function BackgroundPanel({
           {/* Only once one is applied. An angle slider for a gradient that is
               not on screen has nothing to turn. */}
           {paint.kind === "gradient" && (
-            <Field label="Angle">
-              <Slider
-                value={paint.angle}
-                min={0}
-                max={360}
-                step={1}
-                format={(value) => `${Math.round(value)}°`}
-                onChange={(angle) => setPaint({ ...paint, angle })}
-              />
-            </Field>
+            <Slider
+              icon={<AngleIcon />}
+              label="Angle"
+              value={paint.angle}
+              min={0}
+              max={360}
+              step={1}
+              format={(value) => `${Math.round(value)}°`}
+              onChange={(angle) => setPaint({ ...paint, angle })}
+            />
           )}
         </>
       )}
 
       {style === "image" && (
-        <Field label="Image">
+        // No label: the tab above already says Image, and what follows is
+        // pictures.
+        <Field>
           <div className="flex flex-col gap-1.5">
             <ImageSwatches
               path={paint.kind === "image" ? paint.path : null}
@@ -1329,113 +1473,132 @@ function BackgroundPanel({
 function FramePanel({
   settings,
   field,
-  reset,
   set,
 }: {
   settings: SliceSettings;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
 }) {
   const { background } = settings;
 
   return (
-    <Section title="Frame" onReset={reset}>
-      <Field label="Padding" {...field("background", "padding")}>
+    // Three groups rather than one column of eight. The panel is the frame
+    // around the picture, and half of what is in here belongs to the border or
+    // the shadow rather than to the frame itself — read as a flat list, "Blur"
+    // sitting under "Border opacity" is anyone's guess as to what it blurs.
+    //
+    // Headings earn their place here for the reason they do not on the panels
+    // with one group: these name something the panel header does not.
+    <>
+      <Section>
         <Slider
+          icon={<PaddingIcon />}
+          label="Padding"
+          {...field("background", "padding")}
           value={background.padding}
           min={0}
           max={0.25}
           format={percent}
           onChange={(value) => set("background", "padding", value)}
         />
-      </Field>
 
-      <Field label="Corner radius" {...field("background", "cornerRadius")}>
         <Slider
+          icon={<RoundedIcon />}
+          label="Corner radius"
+          {...field("background", "cornerRadius")}
           value={background.cornerRadius}
           min={0}
           max={0.1}
           format={percent}
           onChange={(value) => set("background", "cornerRadius", value)}
         />
-      </Field>
+      </Section>
 
-      <Field label="Border" {...field("background", "borderWidth")}>
+      <Section title="Border">
         <Slider
+          icon={<BorderIcon />}
+          label="Width"
+          {...field("background", "borderWidth")}
           value={background.borderWidth}
           min={0}
           max={0.02}
           format={percent}
           onChange={(value) => set("background", "borderWidth", value)}
         />
-      </Field>
 
-      {/* Only once there is a border to dress. A swatch and an opacity slider
+        {/* Only once there is a border to dress. A swatch and an opacity slider
           attached to a zero-width edge change nothing on screen, which reads as
           broken. */}
-      {background.borderWidth > 0 && (
-        <>
-          <Field label="Border colour" {...field("background", "borderColor")}>
+        {background.borderWidth > 0 && (
+          <>
             <ColorField
+              icon={<DropletIcon />}
+              label="Colour"
+              {...field("background", "borderColor")}
               value={background.borderColor}
               onChange={(value) => set("background", "borderColor", value)}
             />
-          </Field>
 
-          {/* Opacity rather than transparency, because that is the number the
+            {/* Opacity rather than transparency, because that is the number the
               slider holds: 100% is the solid edge, and a control that read
               "0%" for an opaque border would be the wrong way round. */}
-          <Field label="Border opacity" {...field("background", "borderOpacity")}>
             <Slider
+              icon={<OpacityIcon />}
+              label="Opacity"
+              {...field("background", "borderOpacity")}
               value={background.borderOpacity}
               min={0}
               max={1}
               format={percent}
               onChange={(value) => set("background", "borderOpacity", value)}
             />
-          </Field>
-        </>
-      )}
+          </>
+        )}
+      </Section>
 
-      <Field label="Shadow" {...field("background", "shadowOpacity")}>
+      <Section title="Shadow">
         <Slider
+          icon={<ShadowIcon />}
+          label="Opacity"
+          {...field("background", "shadowOpacity")}
           value={background.shadowOpacity}
           min={0}
           max={1}
           format={percent}
           onChange={(value) => set("background", "shadowOpacity", value)}
         />
-      </Field>
 
-      {/* The two that shape the shadow, kept behind it having one to shape:
+        {/* The two that shape the shadow, kept behind it having one to shape:
           a blur and an offset on an invisible shadow are two sliders that do
           nothing. `shadowBlur` and `shadowY` had no controls at all while these
           fields lived under Background, for want of column. */}
-      {background.shadowOpacity > 0 && (
-        <>
-          <Field label="Shadow blur" {...field("background", "shadowBlur")}>
+        {background.shadowOpacity > 0 && (
+          <>
             <Slider
+              icon={<BlurIcon />}
+              label="Blur"
+              {...field("background", "shadowBlur")}
               value={background.shadowBlur}
               min={0}
               max={0.15}
               format={percent}
               onChange={(value) => set("background", "shadowBlur", value)}
             />
-          </Field>
 
-          <Field label="Shadow offset" {...field("background", "shadowY")}>
             <Slider
+              icon={<ShadowOffsetIcon />}
+              label="Offset"
+              {...field("background", "shadowY")}
               value={background.shadowY}
               min={0}
               max={0.08}
               format={percent}
               onChange={(value) => set("background", "shadowY", value)}
             />
-          </Field>
-        </>
-      )}
-    </Section>
+          </>
+        )}
+      </Section>
+    </>
   );
 }
 
@@ -1463,13 +1626,11 @@ function AudioPanel({
   settings,
   present,
   field,
-  reset,
   set,
 }: {
   settings: SliceSettings;
   present: Set<TrackKind>;
   field: FieldProps;
-  reset?: () => void;
   set: Setter;
 }) {
   const { audio } = settings;
@@ -1478,56 +1639,65 @@ function AudioPanel({
   // honest answer to "was the mic on?" — and a fader for it would be a lie.
   if (!present.has("microphone") && !present.has("system_audio")) {
     return (
-      <Section title="Audio">
+      <Section>
         <p className="text-[11px] text-editor-muted">This recording has no audio tracks.</p>
       </Section>
     );
   }
 
+  // A group per source. The two used to be one list of four, where each row had
+  // to name its own track — "Microphone volume" under a switch called
+  // "Microphone" — and the mic glyph appeared twice in four rows saying two
+  // different things. The heading carries the track now, so the rows say only
+  // what they are and the icons can go back to meaning one thing each.
   return (
-    <Section title="Audio" onReset={reset}>
+    <>
       {present.has("microphone") && (
-        <>
-          <Field label="Microphone" inline {...field("audio", "micMuted")}>
-            <Toggle
-              value={!audio.micMuted}
-              onChange={(value) => set("audio", "micMuted", !value)}
-            />
-          </Field>
-          <Field label="Microphone volume" {...field("audio", "micVolume")}>
-            <Slider
-              value={audio.micVolume}
-              min={0}
-              max={2}
-              format={percent}
-              disabled={audio.micMuted}
-              onChange={(value) => set("audio", "micVolume", value)}
-            />
-          </Field>
-        </>
+        <Section title="Microphone">
+          <ToggleField
+            icon={<MicIcon />}
+            label="Include"
+            {...field("audio", "micMuted")}
+            value={!audio.micMuted}
+            onChange={(value) => set("audio", "micMuted", !value)}
+          />
+          <Slider
+            icon={<SpeakerIcon />}
+            label="Volume"
+            {...field("audio", "micVolume")}
+            value={audio.micVolume}
+            min={0}
+            max={2}
+            format={percent}
+            disabled={audio.micMuted}
+            onChange={(value) => set("audio", "micVolume", value)}
+          />
+        </Section>
       )}
 
       {present.has("system_audio") && (
-        <>
-          <Field label="System audio" inline {...field("audio", "systemMuted")}>
-            <Toggle
-              value={!audio.systemMuted}
-              onChange={(value) => set("audio", "systemMuted", !value)}
-            />
-          </Field>
-          <Field label="System volume" {...field("audio", "systemVolume")}>
-            <Slider
-              disabled={audio.systemMuted}
-              value={audio.systemVolume}
-              min={0}
-              max={2}
-              format={percent}
-              onChange={(value) => set("audio", "systemVolume", value)}
-            />
-          </Field>
-        </>
+        <Section title="System audio">
+          <ToggleField
+            icon={<ScreenIcon />}
+            label="Include"
+            {...field("audio", "systemMuted")}
+            value={!audio.systemMuted}
+            onChange={(value) => set("audio", "systemMuted", !value)}
+          />
+          <Slider
+            icon={<SpeakerIcon />}
+            label="Volume"
+            {...field("audio", "systemVolume")}
+            disabled={audio.systemMuted}
+            value={audio.systemVolume}
+            min={0}
+            max={2}
+            format={percent}
+            onChange={(value) => set("audio", "systemVolume", value)}
+          />
+        </Section>
       )}
-    </Section>
+    </>
   );
 }
 
@@ -1554,32 +1724,41 @@ function AudioPanel({
 function PanelHeader({
   title,
   icon,
-  tone,
   onBack,
   action,
+  onReset,
   onDelete,
   deleteLabel,
   onClose,
 }: {
   title: string;
   icon: React.ReactNode;
-  /** Border, background and text classes, from the timeline's own palette. */
-  tone: string;
   /**
    * Present when this is a view pushed over the panel, which puts a way back
    * at the near end. Leading rather than trailing because that is where every
    * pushed view on the platform keeps it, and close stays in its corner.
    */
   onBack?: () => void;
-  /** A view's own control — a Reset — between the title and the corner. */
+  /** A view's own control, between the title and the corner. */
   action?: React.ReactNode;
+  /**
+   * Puts this panel's section back to the project defaults.
+   *
+   * Absent when nothing in it is overridden, which hides the button — so its
+   * presence is also the answer to "has this clip been changed here?".
+   */
+  onReset?: () => void;
   /** Absent when there is nothing deletable, which hides the button. */
   onDelete?: () => void;
   deleteLabel: string;
   onClose: () => void;
 }) {
   return (
-    <header className="flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
+    // No rule under it. The header is already told apart from the panel by
+    // being the row with the controls in it, and on a tabbed panel the tabs
+    // bring their own — two rules a few pixels apart read as a boxed-in strip
+    // rather than as a heading over its content.
+    <header className="flex flex-none items-center gap-2.5 px-3 py-2.5">
       {onBack && (
         <button
           type="button"
@@ -1595,19 +1774,39 @@ function PanelHeader({
         </button>
       )}
 
-      <span
-        className={cn(
-          "grid size-6 flex-none place-items-center rounded-md border [&_svg]:size-3.5",
-          tone,
-        )}
-        aria-hidden
-      >
+      {/* Bare, at the text's own colour. It used to be a chip tinted from the
+          timeline's palette — purple for a clip, blue for a zoom — which made
+          the header a second place the selection was colour-coded, competing
+          with the timeline itself. Naming the section beside it says more than
+          the tint did, and an icon that is simply part of the label needs no
+          surface to sit on. */}
+      <span className="flex-none [&_svg]:size-4" aria-hidden>
         {icon}
       </span>
 
       <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
 
       {action}
+
+      {/* Before delete, which is before close: the three run from the least
+          destructive to the most reversible-by-habit. Reset used to be a word
+          inside the panel, on a row of its own beneath a heading that repeated
+          the title — moving it up here took that row out and put every control
+          that acts on the panel in one place. */}
+      {onReset && (
+        <button
+          type="button"
+          title="Reset to the project defaults"
+          aria-label="Reset to the project defaults"
+          className={cn(
+            "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+          )}
+          onClick={onReset}
+        >
+          <ResetIcon />
+        </button>
+      )}
 
       {/* Delete first, close last. Close is the one that has to be in the same
           place every time — it is on every panel, where delete comes and goes
@@ -1757,13 +1956,13 @@ function ZoomMotionPanel({
   onChange: (patch: Partial<ZoomSlice>) => void;
 }) {
   return (
-    <Section title="Zoom">
+    <Section>
       {/* No `typing` option. It needs the Accessibility grant to have anything
           to aim at and is absent without it, so most of the time it was a third
           choice that silently behaved as the first. The automatic pass still
           produces `typing` zooms where the track exists, and they keep working
           — this only stops it being offered as something to pick by hand. */}
-      <Field label="Follow">
+      <Field icon={<CursorIcon />} label="Follow">
         <Segmented
           value={zoom.target}
           options={[
@@ -1786,7 +1985,7 @@ function ZoomMotionPanel({
           question that is not being asked — it used to sit there greyed out,
           which reads as something broken rather than something irrelevant. */}
       {zoom.target === "region" && (
-        <Field label="Area">
+        <Field icon={<PlaceIcon />} label="Area">
           <CameraMap
             frame={frame}
             shape="rounded"
@@ -1806,36 +2005,36 @@ function ZoomMotionPanel({
         </Field>
       )}
 
-      <Field label="Level">
-        <Slider
-          value={zoom.level}
-          min={1.2}
-          max={4}
-          step={0.1}
-          format={(value) => `${value.toFixed(1)}×`}
-          onChange={(level) => onChange({ level })}
-        />
-      </Field>
+      <Slider
+        icon={<LevelIcon />}
+        label="Level"
+        value={zoom.level}
+        min={1.2}
+        max={4}
+        step={0.1}
+        format={(value) => `${value.toFixed(1)}×`}
+        onChange={(level) => onChange({ level })}
+      />
 
-      <Field label="Speed">
-        <Slider
-          value={zoom.speed}
-          min={0}
-          max={2}
-          step={0.05}
-          // Seconds, not a rate: "how long does it take" is the question
-          // anyone actually has about a camera move.
-          format={(value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`)}
-          onChange={(speed) => onChange({ speed })}
-        />
-      </Field>
+      <Slider
+        icon={<SpeedIcon />}
+        label="Speed"
+        value={zoom.speed}
+        min={0}
+        max={2}
+        step={0.05}
+        // Seconds, not a rate: "how long does it take" is the question
+        // anyone actually has about a camera move.
+        format={(value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`)}
+        onChange={(speed) => onChange({ speed })}
+      />
 
       {/* Directly under Speed, because the two answer halves of one question:
           that one is how long the move takes, this one is what it feels like
           over that time. Presets first — most people want "ease out" rather
           than a particular pair of control points, and the curve then shows
           what they picked and can be nudged from there. */}
-      <Field label="Ease">
+      <Field icon={<SmoothingIcon />} label="Ease">
         <div className="flex flex-col gap-2">
           <Segmented
             value={easingName(zoom)}
@@ -1873,11 +2072,11 @@ function ZoomPerspectivePanel({
   onChange: (patch: Partial<ZoomSlice>) => void;
 }) {
   return (
-    <Section title="Perspective">
+    <Section>
       {/* Drag the picture, not the numbers. The sliders below stay for
           precision and for saying what the angle currently is — the pad is how
           anyone arrives at one. */}
-      <Field label="Perspective">
+      <Field icon={<PerspectiveIcon />} label="Perspective">
         <PerspectivePad
           rotateX={zoom.rotateX}
           rotateY={zoom.rotateY}
@@ -1892,7 +2091,7 @@ function ZoomPerspectivePanel({
           them is the same picture the pad draws, so the row can be read instead
           of memorised. The name stays underneath — it is what the two of you
           call the setting once it is chosen. */}
-      <Field label="Angles">
+      <Field icon={<AngleIcon />} label="Angles">
         <div className="grid grid-cols-3 gap-1">
           {TILTS.map((preset) => {
             const here =
@@ -1944,40 +2143,40 @@ function ZoomPerspectivePanel({
           same 12° is a product shot at one end and a caricature at the other.
           Every 3D tool separates the two — it is Rotato's "Perspective" and a
           camera's field of view. */}
-      <Field label="Depth">
-        <Slider
-          value={zoom.perspective}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value < 0.02 ? "Flat" : percent(value))}
-          onChange={(perspective) => onChange({ perspective })}
-        />
-      </Field>
+      <Slider
+        icon={<DepthIcon />}
+        label="Depth"
+        value={zoom.perspective}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
+        onChange={(perspective) => onChange({ perspective })}
+      />
 
-      <Field label="Tilt">
-        <Slider
-          value={zoom.rotateX}
-          min={-TILT_LIMIT}
-          max={TILT_LIMIT}
-          step={1}
-          // Degrees, and signed: the sign is the whole difference between
-          // leaning towards the viewer and away from them.
-          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(rotateX) => onChange({ rotateX })}
-        />
-      </Field>
+      <Slider
+        icon={<TiltIcon />}
+        label="Tilt"
+        value={zoom.rotateX}
+        min={-TILT_LIMIT}
+        max={TILT_LIMIT}
+        step={1}
+        // Degrees, and signed: the sign is the whole difference between
+        // leaning towards the viewer and away from them.
+        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+        onChange={(rotateX) => onChange({ rotateX })}
+      />
 
-      <Field label="Yaw">
-        <Slider
-          value={zoom.rotateY}
-          min={-TILT_LIMIT}
-          max={TILT_LIMIT}
-          step={1}
-          format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-          onChange={(rotateY) => onChange({ rotateY })}
-        />
-      </Field>
+      <Slider
+        icon={<YawIcon />}
+        label="Yaw"
+        value={zoom.rotateY}
+        min={-TILT_LIMIT}
+        max={TILT_LIMIT}
+        step={1}
+        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+        onChange={(rotateY) => onChange({ rotateY })}
+      />
     </Section>
   );
 }
@@ -2003,51 +2202,54 @@ function ZoomFocusPanel({
   onChange: (patch: Partial<ZoomSlice>) => void;
 }) {
   return (
-    <Section title="Focus">
-      <Field label="Blur around" inline>
-        <Toggle value={zoom.blur} onChange={(blur) => onChange({ blur })} />
-      </Field>
+    <Section>
+      <ToggleField
+        icon={<BlurIcon />}
+        label="Blur around"
+        value={zoom.blur}
+        onChange={(blur) => onChange({ blur })}
+      />
 
-      <Field label="Sharp area">
-        <Slider
-          value={zoom.blurSafe}
-          min={0.05}
-          max={0.9}
-          step={0.01}
-          disabled={!zoom.blur}
-          format={percent}
-          onChange={(blurSafe) => onChange({ blurSafe })}
-        />
-      </Field>
+      <Slider
+        icon={<FocusIcon />}
+        label="Sharp area"
+        value={zoom.blurSafe}
+        min={0.05}
+        max={0.9}
+        step={0.01}
+        disabled={!zoom.blur}
+        format={percent}
+        onChange={(blurSafe) => onChange({ blurSafe })}
+      />
 
-      <Field label="Strength">
-        <Slider
-          value={zoom.blurStrength}
-          min={0}
-          max={0.04}
-          step={0.001}
-          disabled={!zoom.blur}
-          // Against the default rather than as a fraction of the shorter edge,
-          // which is not a number anyone has an opinion about.
-          format={(value) => `${(value / 0.012).toFixed(1)}×`}
-          onChange={(blurStrength) => onChange({ blurStrength })}
-        />
-      </Field>
+      <Slider
+        icon={<StrengthIcon />}
+        label="Strength"
+        value={zoom.blurStrength}
+        min={0}
+        max={0.04}
+        step={0.001}
+        disabled={!zoom.blur}
+        // Against the default rather than as a fraction of the shorter edge,
+        // which is not a number anyone has an opinion about.
+        format={(value) => `${(value / 0.012).toFixed(1)}×`}
+        onChange={(blurStrength) => onChange({ blurStrength })}
+      />
 
       {/* Beside the blur because the two are the same kind of thing — what the
           shot does to everything that is not the subject — but on its own
           switch-free row: a vignette of zero is already off, so a toggle in
           front of it would be a second way to say the same thing. */}
-      <Field label="Vignette">
-        <Slider
-          value={zoom.vignette}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value === 0 ? "Off" : percent(value))}
-          onChange={(vignette) => onChange({ vignette })}
-        />
-      </Field>
+      <Slider
+        icon={<VignetteIcon />}
+        label="Vignette"
+        value={zoom.vignette}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value === 0 ? "Off" : percent(value))}
+        onChange={(vignette) => onChange({ vignette })}
+      />
     </Section>
   );
 }

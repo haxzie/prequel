@@ -2016,11 +2016,11 @@ describe("zooming", () => {
   });
 
   it("blends a tilted key into a flat one instead of snapping", () => {
-    // The bug: a border on a perspective zoom would hold the last tilt for a
-    // whole span and then jump to the frame's rectangle in a single frame.
-    // `framedKey` drops the quad once a tilted picture covers the frame, so a
-    // track legitimately has a tilted key next to a flat one — and taking
-    // whichever quad existed and holding it made that boundary a cliff.
+    // The bug: a perspective zoom would hold the last tilt for a whole span and
+    // then jump upright in a single frame. Every such zoom rests flat and only
+    // leans while it is in, so a track legitimately has a tilted key next to a
+    // flat one — and taking whichever quad existed and holding it made that
+    // boundary a cliff.
     //
     // A rectangle is a quad whose corners are its own, so the two blend.
     const flat = { at: 2 * S, x: 0, y: 0, width: 100, height: 50, radius: 0 };
@@ -2921,28 +2921,37 @@ describe("the border through a zoom", () => {
     { ...DEFAULT_ZOOM, id: "z", source: { start: 0, end: 4_000_000_000 }, ...over } as ZoomSlice,
   ];
 
-  it("keeps the border on screen for every moment of a zoom", () => {
-    // The bug: a zoom scales the picture past every edge — at the default level
-    // a 1920-wide frame holds a 3379-wide picture at x=-730 — and the border,
-    // which sits further out again, went with it. A zoomed moment had no frame
-    // round the video at all.
-    const stroke = strokeOf(
-      buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, zoomed()),
+  it("keeps the border one width outside the picture at every moment", () => {
+    // The bug: the ring was cut to the frame, so a zoom that pushed the picture
+    // past every edge left a hairline drawn along the player's own border —
+    // reading as a frame painted on the video player rather than round the
+    // recording. A frame goes where the picture goes, off the edge included.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      bordered(),
+      null,
+      zoomed(),
     );
+    const stroke = strokeOf(plan);
+    const picture = image(plan, "screen")!;
 
     expect(stroke.motion?.length).toBeGreaterThan(0);
-    for (const key of stroke.motion ?? []) {
-      expect(key.x).toBeGreaterThanOrEqual(-1e-6);
-      expect(key.y).toBeGreaterThanOrEqual(-1e-6);
-      expect(key.x + key.width).toBeLessThanOrEqual(LANDSCAPE.width + 1e-6);
-      expect(key.y + key.height).toBeLessThanOrEqual(LANDSCAPE.height + 1e-6);
-      // Still a border, not a sliver collapsed against an edge.
-      expect(key.width).toBeGreaterThan(LANDSCAPE.width / 2);
-      expect(key.height).toBeGreaterThan(LANDSCAPE.height / 2);
+    for (const ring of stroke.motion ?? []) {
+      const key = (picture.motion ?? []).find((candidate) => candidate.at === ring.at)!;
+      expect(key).toBeDefined();
+      expect(ring.x).toBeCloseTo(key.x - stroke.width);
+      expect(ring.y).toBeCloseTo(key.y - stroke.width);
+      expect(ring.width).toBeCloseTo(key.width + stroke.width * 2);
+      expect(ring.height).toBeCloseTo(key.height + stroke.width * 2);
     }
+
+    // And the zoom does push it off screen, so the assertion above is about the
+    // case that used to be clamped rather than a track that never left.
+    expect((stroke.motion ?? []).some((ring) => ring.x < -1)).toBe(true);
   });
 
-  it("follows the tilt while the picture still has an edge on screen", () => {
+  it("leans exactly when the picture leans, for the whole zoom", () => {
     // The bug: the border was clamped on its *rectangle*, which a perspective
     // zoom pushes past the frame long before the tilted picture does. A key
     // carrying a quad is positioned by those four corners and its rectangle is
@@ -2960,17 +2969,13 @@ describe("the border through a zoom", () => {
     const stroke = strokeOf(plan);
     const picture = image(plan, "screen")!;
 
-    const showing = (picture.motion ?? []).filter((key) => {
-      // An edge of the picture is inside the frame at this moment, so there is
-      // something for the ring to trace.
-      const xs = (key.quad ?? []).filter((_, index) => index % 3 === 0);
-      return xs.some((x) => x > 1 && x < LANDSCAPE.width - 1);
-    });
-
-    expect(showing.length).toBeGreaterThan(0);
-    for (const key of showing) {
+    expect((picture.motion ?? []).some((key) => key.quad)).toBe(true);
+    for (const key of picture.motion ?? []) {
       const ring = (stroke.motion ?? []).find((candidate) => candidate.at === key.at)!;
-      expect(ring.quad).toBeDefined();
+      expect(ring).toBeDefined();
+      // Not "has a quad somewhere in the track" — the same moments, so the ring
+      // can never be flat over a leaning picture.
+      expect(Boolean(ring.quad)).toBe(Boolean(key.quad));
     }
   });
 
@@ -3011,11 +3016,11 @@ describe("the border through a zoom", () => {
     }
   });
 
-  it("falls back to the frame's edge once the tilted picture covers it", () => {
-    // A clipped projective quad is a polygon, which is not something a plan item
-    // can hold. So the tilt does come off eventually — but only when the picture
-    // covers the frame outright, which is the one moment the swap is invisible:
-    // there is no picture edge on screen for the ring to have been tracing.
+  it("keeps the tilt through the held middle of a zoom", () => {
+    // This used to drop the quad and hand back the frame's own rectangle once
+    // the tilted picture covered the frame, on the reasoning that the swap was
+    // invisible. It was not: the ring appeared as a straight hairline on the
+    // player's edge, and there was nothing on screen it could have been framing.
     const tilted = zoomed({ rotateX: 12, rotateY: 8, perspective: 0.6 });
     const stroke = strokeOf(
       buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, tilted),
@@ -3024,11 +3029,9 @@ describe("the border through a zoom", () => {
     const keys = stroke.motion ?? [];
     // The middle of the take, which is the zoom held fully in.
     const held = keys[Math.floor(keys.length / 2)]!;
-    expect(held.quad).toBeUndefined();
-    expect(held.x).toBeCloseTo(0);
-    expect(held.y).toBeCloseTo(0);
-    expect(held.width).toBeCloseTo(LANDSCAPE.width);
-    expect(held.height).toBeCloseTo(LANDSCAPE.height);
+    expect(held.quad).toBeDefined();
+    expect(held.x).not.toBeCloseTo(0);
+    expect(held.width).toBeGreaterThan(LANDSCAPE.width);
   });
 
   it("leaves an unzoomed border exactly where the picture is", () => {
@@ -3044,23 +3047,27 @@ describe("the border through a zoom", () => {
     expect(stroke.rect.height).toBeCloseTo(picture.dstRect.height + stroke.width * 2);
   });
 
-  it("draws a border on a full-bleed layout, which used to have none", () => {
-    // No padding puts the picture on the frame's own edge, so the ring outside
-    // it was off screen and the border slider did nothing at all.
-    const stroke = strokeOf(
-      buildRenderPlan(
-        LANDSCAPE,
-        { screen: SCREEN, camera: null },
-        settings({
-          layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" },
-          background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01, padding: 0 },
-        }),
-      ),
+  it("leaves a full-bleed layout unframed, because there is nowhere to draw", () => {
+    // Full bleed and a frame are two different pictures, and the padding slider
+    // is what chooses between them. No padding puts the picture on the frame's
+    // own edge, so the ring outside it is off screen — pulling it back inside
+    // painted a hairline on the player rather than round the recording.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" },
+        background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01, padding: 0 },
+      }),
     );
+    const stroke = strokeOf(plan);
+    const picture = image(plan, "screen")!;
 
-    expect(stroke.rect.x).toBeGreaterThanOrEqual(-1e-6);
-    expect(stroke.rect.x + stroke.rect.width).toBeLessThanOrEqual(LANDSCAPE.width + 1e-6);
-    expect(stroke.rect.width).toBeCloseTo(LANDSCAPE.width);
+    expect(stroke.rect.x).toBeCloseTo(picture.dstRect.x - stroke.width);
+    expect(stroke.rect.y).toBeCloseTo(picture.dstRect.y - stroke.width);
+    // Outside the frame on every side, so nothing of it lands on screen.
+    expect(stroke.rect.x).toBeLessThan(0);
+    expect(stroke.rect.x + stroke.rect.width).toBeGreaterThan(LANDSCAPE.width);
   });
 
   it("keeps the corners round through a zoom", () => {

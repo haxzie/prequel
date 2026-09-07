@@ -161,7 +161,14 @@ function configure(): void {
   });
 
   autoUpdater.on("download-progress", (progress: { percent: number }) => {
-    set({ status: "downloading", percent: Math.round(progress.percent) });
+    // Only when the whole number moves. electron-updater emits this per chunk
+    // of a hundred-megabyte download — thousands of times — and every one of
+    // them fanned a state object out to every open window over IPC to redraw a
+    // percentage that has a hundred distinct values.
+    const percent = Math.round(progress.percent);
+    if (state.status === "downloading" && state.percent === percent) return;
+
+    set({ status: "downloading", percent });
   });
 
   autoUpdater.on("update-downloaded", (info: { version: string }) => {

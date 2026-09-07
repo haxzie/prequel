@@ -285,6 +285,14 @@ export interface CaptionSettings {
    * because `captionStyle()` falls back rather than throwing.
    */
   captionStyle: string;
+  /**
+   * Which face to set them in. See `CAPTION_FONTS`.
+   *
+   * A string for the same reason `captionStyle` is one, and with the same
+   * guard: `captionFont()` falls back rather than throwing, so a project
+   * written against a longer list still opens against a shorter one.
+   */
+  captionFont: string;
   /** Cap height, as a fraction of the frame's shorter edge. */
   captionSize: number;
   captionPlace: CaptionPlace;
@@ -312,6 +320,10 @@ export interface CaptionSettings {
 export function captionLook(captions: CaptionSettings): string {
   return [
     captions.captionStyle,
+    // In the signature because the bitmaps are drawn with it: leave it out and
+    // changing the face repaints nothing, the cues already on disk being taken
+    // as still good.
+    captions.captionFont,
     captions.captionSize.toFixed(4),
     captions.captionAccent,
     captions.captionLines,
@@ -694,7 +706,10 @@ export const DEFAULT_CAPTIONS: CaptionSettings = {
   // Only new projects. One saved before this keeps whatever it had, which is
   // what stops a build changing how somebody's finished edit looks.
   captionsOn: true,
-  captionStyle: "highlight",
+  captionStyle: "blur",
+  // SF, which is what captions were set in before the face was a choice — so
+  // this changes nothing about a project that never touches it.
+  captionFont: "system",
   // Broadcast subtitle proportions: about a twenty-fifth of the shorter edge.
   // Large enough to read on a phone, small enough that two lines do not take a
   // quarter of the frame. Only new projects get this — one saved before the

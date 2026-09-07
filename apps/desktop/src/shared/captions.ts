@@ -127,12 +127,50 @@ const SUBTITLE: CaptionStyle = {
 };
 
 /**
- * The looks on offer.
+ * The looks on offer, in the order the picker shows them.
  *
- * Ordered so the first is the safe one: `captionStyle` falls back to it, and a
- * project written by a build with looks this one does not have still opens.
+ * "Blur in" leads because it is what a new project is set to — see
+ * `DEFAULT_SETTINGS` — and a picker whose default sits fifth reads as though
+ * something else were chosen for you.
+ *
+ * The order carries nothing else. The fallback is `SUBTITLE` by name rather
+ * than whatever happens to be first, which is what lets this list be reordered
+ * freely: see the note on that constant.
  */
 export const CAPTION_STYLES: CaptionStyle[] = [
+  {
+    id: "blur",
+    label: "Blur in",
+    // Light, and set as it was spoken. The look is the focus moving along the
+    // line; a heavy face and shouted capitals are a second thing competing to
+    // be the point of it.
+    weight: 300,
+    scale: 1.1,
+    fill: "#ffffff",
+    stroke: null,
+    // Nothing behind the glyphs at all — no plate, no outline, no shadow. The
+    // words stand on the footage, which is why the colour has to be chosen
+    // against what is behind them rather than assumed.
+    shadow: null,
+    plate: null,
+    // Not lit. The whole line is on screen and the blur is what says which
+    // word is being spoken, so a second colour would be saying it twice.
+    lit: null,
+    blurIn: 0.26,
+    // Near-black where the footage is light. The words have no plate and no
+    // shadow, so white on a white page is white on a white page — this is what
+    // makes the look usable on a screen recording rather than only on footage
+    // that happens to be dark.
+    onLight: "#101418",
+    // Open rather than tight: a light face at caption size closes up, and the
+    // blur clearing off a word reads better with air around the letters.
+    tracking: 0.005,
+    caps: false,
+    // A full line, like every look but `pop`. The words are drawn a quad each
+    // so they can come into focus one at a time, which is not the same thing
+    // as showing them one at a time.
+    perWord: false,
+  },
   SUBTITLE,
   {
     id: "highlight",
@@ -212,39 +250,6 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     onLight: null,
     tracking: 0.01,
     caps: false,
-    perWord: false,
-  },
-  {
-    id: "blur",
-    label: "Blur in",
-    // Light, and set as it was spoken. The look is the focus moving along the
-    // line; a heavy face and shouted capitals are a second thing competing to
-    // be the point of it.
-    weight: 300,
-    scale: 1.1,
-    fill: "#ffffff",
-    stroke: null,
-    // Nothing behind the glyphs at all — no plate, no outline, no shadow. The
-    // words stand on the footage, which is why the colour has to be chosen
-    // against what is behind them rather than assumed.
-    shadow: null,
-    plate: null,
-    // Not lit. The whole line is on screen and the blur is what says which
-    // word is being spoken, so a second colour would be saying it twice.
-    lit: null,
-    blurIn: 0.26,
-    // Near-black where the footage is light. The words have no plate and no
-    // shadow, so white on a white page is white on a white page — this is what
-    // makes the look usable on a screen recording rather than only on footage
-    // that happens to be dark.
-    onLight: "#101418",
-    // Open rather than tight: a light face at caption size closes up, and the
-    // blur clearing off a word reads better with air around the letters.
-    tracking: 0.005,
-    caps: false,
-    // A full line, like every look but `pop`. The words are drawn a quad each
-    // so they can come into focus one at a time, which is not the same thing
-    // as showing them one at a time.
     perWord: false,
   },
 ];

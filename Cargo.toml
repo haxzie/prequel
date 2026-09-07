@@ -35,4 +35,10 @@ tracing = "0.1"
 [profile.release]
 lto = "thin"
 codegen-units = 1
-strip = "debuginfo"
+# `symbols`, not `debuginfo`: the addon exports exactly one dynamic symbol,
+# `napi_register_module_v1`, and `debuginfo` keeps the other 4,772 local Rust
+# symbols — 450 KB, a quarter of the file — purely so a panic can print a
+# readable backtrace. The panics that matter cross into JavaScript as errors
+# with their own message, and the ones that do not are read from a core file
+# with the build's artefacts to hand. Worth 450 KB of every download.
+strip = "symbols"

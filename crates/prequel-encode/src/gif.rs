@@ -148,8 +148,10 @@ impl GifWriter {
             });
         }
 
+        // Sized once and written through, rather than grown by `push`. See the
+        // row loop below.
         self.rgba.clear();
-        self.rgba.reserve(width * height * 4);
+        self.rgba.resize(width * height * 4, 0);
 
         // Cloned to get a mutable handle: locking is a mutation as far as cidre
         // is concerned, and the clone is a retain on the same buffer rather
@@ -165,18 +167,23 @@ impl GifWriter {
             let stride = locked.bytes_per_row();
             let base = locked.base_address().cast::<u8>();
 
+            // A row at a time, over slices rather than raw pointers. The
+            // previous form pushed four bytes per pixel onto a growing `Vec` —
+            // 8.3 million bounds-checked pushes and their capacity checks for a
+            // single 1080p frame, before the quantiser has seen any of it.
             for y in 0..height {
-                let row = base.add(y * stride);
-                for x in 0..width {
-                    let at = row.add(x * 4);
-                    self.rgba.push(*at.add(2));
-                    self.rgba.push(*at.add(1));
-                    self.rgba.push(*at);
+                let row = std::slice::from_raw_parts(base.add(y * stride), width * 4);
+                let out = &mut self.rgba[y * width * 4..(y + 1) * width * 4];
+
+                for (bgra, rgba) in row.chunks_exact(4).zip(out.chunks_exact_mut(4)) {
+                    rgba[0] = bgra[2];
+                    rgba[1] = bgra[1];
+                    rgba[2] = bgra[0];
                     // Opaque regardless of what the compositor left in the
                     // alpha channel: GIF transparency is a single palette
                     // index, and a partially transparent frame quantises to
                     // hard-edged holes rather than to a blend.
-                    self.rgba.push(255);
+                    rgba[3] = 255;
                 }
             }
 

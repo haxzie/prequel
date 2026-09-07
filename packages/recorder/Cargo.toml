@@ -21,7 +21,11 @@ napi-derive = "3"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi"] }
+# No `ansi`: the only subscriber this crate builds writes to `main.log` and
+# already calls `with_ansi(false)` — see `logging.rs`. Enabling the feature
+# compiled `nu-ansi-term` in so that it could be switched off at runtime, and
+# escape codes in a log file a user is asked to send in are noise either way.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
 
 [build-dependencies]
 napi-build = "2"

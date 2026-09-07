@@ -37,6 +37,50 @@ const AUDIO_LEAD: MediaTime = 1_000_000_000;
 /// that fast.
 const PROGRESS_EVERY: u64 = 6;
 
+/// Where an export's wall clock actually goes.
+///
+/// The loop below runs decode, composite and encode strictly one after another,
+/// and the wait in `Compositor::render` is justified by a comment saying an
+/// export is "throughput-bound on the decoder". That has never been measured,
+/// and it decides whether pipelining the three stages — they run on three
+/// independent engines — is worth the texture-lifetime work it would take.
+///
+/// Summed rather than sampled: the per-frame cost is tens of microseconds and a
+/// timer around each stage would be a large fraction of what it measures if it
+/// were reported per frame. Logged once, at the end, at `info` so it reaches
+/// `main.log` in a packaged build without a rebuild.
+#[derive(Default)]
+struct StageTimes {
+    decode: std::time::Duration,
+    render: std::time::Duration,
+    encode: std::time::Duration,
+}
+
+impl StageTimes {
+    fn report(&self, frames: u64, total: std::time::Duration) {
+        let ms = |d: std::time::Duration| d.as_secs_f64() * 1e3;
+        let share = |d: std::time::Duration| {
+            if total.is_zero() {
+                0.0
+            } else {
+                d.as_secs_f64() / total.as_secs_f64() * 100.0
+            }
+        };
+
+        tracing::info!(
+            "export of {frames} frames took {:.0}ms — decode {:.0}ms ({:.0}%), \
+             render {:.0}ms ({:.0}%), encode {:.0}ms ({:.0}%)",
+            ms(total),
+            ms(self.decode),
+            share(self.decode),
+            ms(self.render),
+            share(self.render),
+            ms(self.encode),
+            share(self.encode),
+        );
+    }
+}
+
 /// What the export is written as.
 ///
 /// A format rather than a codec, because GIF is not one: it carries no audio,
@@ -205,6 +249,9 @@ fn run(
     // How much of the mix has reached the writer, as an index into it.
     let mut sent = 0usize;
 
+    let mut times = StageTimes::default();
+    let began = std::time::Instant::now();
+
     for index in 0..total {
         if cancel.is_cancelled() {
             writer.cancel();
@@ -225,6 +272,8 @@ fn run(
             camera = open_reader(&camera_path, slice, request.camera_offset);
         }
 
+        let decoding = std::time::Instant::now();
+
         let screen_frame = screen
             .as_mut()
             .zip(file_time(source, request.screen_offset))
@@ -242,9 +291,17 @@ fn run(
         // `load_captions`. Caption bitmaps are decoded on demand rather than
         // preloaded, because there is one per cue rather than one per session.
         compositor.load_captions(&request.session_dir, &slice.plan, source);
+        times.decode += decoding.elapsed();
 
+        let rendering = std::time::Instant::now();
         let composited = compositor.render(&slice.plan, screen_frame, camera_frame, source)?;
-        if !writer.append(&composited, index * frame_duration)? {
+        times.render += rendering.elapsed();
+
+        let encoding = std::time::Instant::now();
+        let took = writer.append(&composited, index * frame_duration)?;
+        times.encode += encoding.elapsed();
+
+        if !took {
             return Err(Error::Write {
                 path: request.output.display().to_string(),
                 reason: format!(
@@ -280,6 +337,8 @@ fn run(
             });
         }
     }
+
+    times.report(written, began.elapsed());
 
     on_progress(Progress {
         stage: Stage::Finalising,

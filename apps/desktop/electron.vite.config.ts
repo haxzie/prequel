@@ -34,10 +34,27 @@ function publicEnv(mode: string): Record<string, string> {
   );
 }
 
+/**
+ * Minification, which electron-vite does not do on its own.
+ *
+ * Vite minifies a production build by default; electron-vite overrides that to
+ * `false` for all three bundles, on the reasoning that a desktop app is not
+ * downloading its own JavaScript. But it is *reading* it: a shipped renderer
+ * came to 1.1 MB across 29,654 lines with comments and original identifiers
+ * intact, and every window pays to parse that at launch. Minified it is 502 KB,
+ * and main goes from 353 KB to 141 KB.
+ *
+ * Set here rather than left to the default so that nothing in the bundle is
+ * name-dependent — IPC channels, protocol schemes and `nativeImage` paths are
+ * all strings, and nothing reads `Function.prototype.name`.
+ */
+const minify = { build: { minify: true } } as const;
+
 // Entry points follow electron-vite conventions: src/main/index.ts,
 // src/preload/index.ts and src/renderer/index.html.
 export default defineConfig(({ mode }) => ({
   main: {
+    ...minify,
     envDir,
     define: publicEnv(mode),
     // @prequel/env ships raw TypeScript, so it must be bundled rather than
@@ -45,10 +62,12 @@ export default defineConfig(({ mode }) => ({
     plugins: [externalizeDepsPlugin({ exclude: ["@prequel/env"] })],
   },
   preload: {
+    ...minify,
     envDir,
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
+    ...minify,
     envDir,
     envPrefix,
     resolve: {

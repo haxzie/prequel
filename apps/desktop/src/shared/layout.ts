@@ -479,27 +479,30 @@ export function buildRenderPlan(
     }
 
     if (border > 0) {
-      // Cut to the frame, so a zoom that pushes the picture past every edge
-      // still leaves a border drawn round what is on screen.
-      const framed = withinFrame(outer, outerShape.radius, frame);
-
+      // The ring is a frame around the picture, so it goes where the picture
+      // goes — off the edge included. Cutting it to the frame instead drew a
+      // hairline along the player's own border the moment a zoom pushed the
+      // picture past every edge, and snapped a tilted ring to a straight
+      // rectangle while the picture under it was still visibly leaning.
+      //
+      // So a zoom held far enough in has no border, for the same reason it has
+      // no menu bar: that part of the picture is not on screen. It is also why
+      // zero padding draws none — the picture is already on the frame's edge
+      // and the ring stands outside it.
       items.push({
         kind: "stroke",
         // The outer silhouette. Both rasterisers draw a stroke *inside* the
         // shape they are given — the only band a fragment shader can reach,
         // since it cannot paint outside its own quad — so the ring between the
         // picture and this is where the border lands.
-        rect: framed.rect,
-        shape: { radius: framed.radius, exponent: outerShape.exponent },
+        rect: outer,
+        shape: outerShape,
         width: border,
         color: rgba(background.borderColor, background.borderOpacity),
-        // The ring's own track, cut to the same frame the picture is cut to, so
-        // it traces the rounded corners the picture ends up drawing rather than
-        // a rectangle it never had. The border is a fixed width, so a zoom
-        // moves and resizes the ring without thickening it.
-        ...(borderMotion.length > 0
-          ? { motion: borderMotion.map((key) => framedKey(key, frame)) }
-          : {}),
+        // The ring's own track: the picture's rectangle grown by the border and
+        // put through the same tilt — see `keyFor`. The border is a fixed
+        // width, so a zoom moves and resizes the ring without thickening it.
+        ...(borderMotion.length > 0 ? { motion: borderMotion } : {}),
       });
     }
   }
@@ -3091,11 +3094,10 @@ export function rectAt(
   // A key with no quad is filled in from its own rectangle rather than being
   // treated as having nothing to say. This used to take whichever quad existed
   // and hold it for the whole span, which put a hard jump wherever a track has
-  // a tilted key next to a flat one — exactly the boundary `framedKey` creates
-  // when a tilted picture grows to cover the frame. The ring stayed frozen at
-  // the last tilt and then snapped to the frame's rectangle in a single frame.
-  // A rectangle is a quad whose corners are its own, so blending into it is
-  // continuous, which is what that boundary always claimed to be.
+  // a tilted key next to a flat one — which every perspective zoom has, since
+  // it rests flat and only leans while it is in. The picture stayed frozen at
+  // the last tilt and then snapped upright in a single frame. A rectangle is a
+  // quad whose corners are its own, so blending into it is continuous.
   const quad =
     a.quad || b.quad
       ? cornersOf(a).map((value, index) => lerp(value, cornersOf(b)[index]!, t))
@@ -4061,127 +4063,6 @@ export function cropToFrame(
       height: ((bottom - y) / rect.height) * src.height,
     },
   };
-}
-
-/**
- * A rounded rectangle cut down to the frame it is drawn in.
- *
- * A zoom scales the picture past every edge — at the default level a 1920-wide
- * frame holds a 3379-wide picture at x=-730 — so the border around it, which
- * sits further out again, lands entirely off screen and the video loses its
- * frame for the length of the zoom. Cutting the border to the frame keeps one
- * drawn round the whole picture instead.
- *
- * A no-op whenever the picture is fully on screen, which is every moment that
- * is not zoomed in. It also fixes a quieter case: a full-bleed layout has no
- * padding, so its border was always just off the edge and never drawn at all.
- */
-function withinFrame(rect: Rect, radius: number, frame: Size): { rect: Rect; radius: number } {
-  const x = Math.max(rect.x, 0);
-  const y = Math.max(rect.y, 0);
-  const right = Math.min(rect.x + rect.width, frame.width);
-  const bottom = Math.min(rect.y + rect.height, frame.height);
-
-  const pulled = Math.max(
-    x - rect.x,
-    y - rect.y,
-    rect.x + rect.width - right,
-    rect.y + rect.height - bottom,
-  );
-
-  // Untouched, and returned as it came so the common case cannot drift by a
-  // rounding error.
-  if (pulled <= 0) return { rect, radius };
-
-  return {
-    rect: { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) },
-    // The radius survives the cut. The picture this traces is cut to the same
-    // frame and keeps its own rounding — see `cropToFrame` — so a border that
-    // squared itself off here would draw a rectangle round a rounded picture.
-    radius,
-  };
-}
-
-/**
- * One key of the border's track, cut to the frame.
- *
- * A tilted key is positioned by its four projected corners and its rectangle is
- * ignored, so clamping the rectangle would change nothing on screen — and a
- * clipped projective quad is a polygon, which is not something a plan item can
- * hold. The question a tilted key has to answer is therefore not "does it
- * overflow" but **"is any edge of the picture still showing"**: while one is,
- * the ring belongs on that edge, tilt and all, and nothing is clamped.
- *
- * Only once the tilted picture covers the frame outright does the ring fall
- * back to the frame's own edge — and that swap is invisible, because at that
- * moment the picture has no edge on screen for the old ring to have been
- * tracing. Deciding on the rectangle instead is what made the border snap to a
- * straight frame the instant a perspective zoom began, while the picture it was
- * supposed to be framing was still visibly tilted underneath it.
- */
-function framedKey(key: RectKey, frame: Size): RectKey {
-  const flat = key.quad ? (({ quad: _dropped, ...rest }) => rest)(key) : key;
-  if (key.quad && !coversFrame(key.quad, frame)) return key;
-
-  const framed = withinFrame(
-    { x: key.x, y: key.y, width: key.width, height: key.height },
-    key.radius,
-    frame,
-  );
-
-  const clamped =
-    framed.rect.x !== key.x ||
-    framed.rect.y !== key.y ||
-    framed.rect.width !== key.width ||
-    framed.rect.height !== key.height;
-
-  if (!clamped) return flat;
-
-  return { ...flat, ...framed.rect, radius: framed.radius };
-}
-
-/**
- * Whether a tilted picture leaves no part of the frame uncovered.
- *
- * All four frame corners inside the quad, which for a convex polygon is every
- * corner on the same side of every edge. The projection is convex within the
- * tilt range the app offers — `rotatedQuad` clamps a corner rather than letting
- * it pass behind the eye, which is the one thing that could fold it.
- */
-function coversFrame(quad: readonly number[], frame: Size): boolean {
-  if (quad.length < 12) return false;
-
-  // The stored order is top-left, top-right, bottom-left, bottom-right — the
-  // order a triangle strip walks, which is not the order the outline runs in.
-  const outline = [0, 1, 3, 2];
-  const corners = [
-    [0, 0],
-    [frame.width, 0],
-    [frame.width, frame.height],
-    [0, frame.height],
-  ] as const;
-
-  let side = 0;
-
-  for (let edge = 0; edge < 4; edge += 1) {
-    const from = outline[edge]! * 3;
-    const to = outline[(edge + 1) % 4]! * 3;
-    const dx = quad[to]! - quad[from]!;
-    const dy = quad[to + 1]! - quad[from + 1]!;
-
-    for (const [x, y] of corners) {
-      const cross = dx * (y - quad[from + 1]!) - dy * (x - quad[from]!);
-      // Exactly on the edge, which counts as covered and says nothing about
-      // which way round the outline runs.
-      if (Math.abs(cross) < 1e-9) continue;
-
-      const at = cross > 0 ? 1 : -1;
-      if (side === 0) side = at;
-      else if (side !== at) return false;
-    }
-  }
-
-  return true;
 }
 
 /** `#rrggbb` plus an alpha, as an `rgba()` both rasterisers can read. */

@@ -15,6 +15,7 @@ import {
   type PlanSource,
   type Rect,
   type RenderedCue,
+  type RenderPlan,
   type Size,
   type SourceSizes,
 } from "../../../shared/layout";
@@ -117,6 +118,8 @@ export function Preview({
   const compositor = useRef(new WebGlCompositor());
   /** What is being dragged, and from where. Null between gestures. */
   const grab = useRef<Grip | null>(null);
+  /** The canvas's box, held while the pointer is on it. See `framePoint`. */
+  const canvasBox = useRef<DOMRect | null>(null);
   /** The selection ring. Positioned from the draw loop, never by React. */
   const outline = useRef<HTMLDivElement>(null);
   /** Waiting to be handed the next drawn frame, or null when nobody asked. */
@@ -133,8 +136,32 @@ export function Preview({
 
   // Read through refs so changing a setting does not restart the loop — the
   // next frame simply picks the new values up.
-  const latest = useRef({ frame, settings, enter, images, fitted, selected });
-  latest.current = { frame, settings, enter, images, fitted, selected };
+  /**
+   * The last plan built, and the inputs it was built from.
+   *
+   * `buildRenderPlan` was called on every frame, and none of what it reads
+   * changes between frames: the plan is the whole composition in output pixels,
+   * and *when* to sample it is `at`, which the compositor applies afterwards.
+   * So sixty times a second it re-smoothed the entire pointer track — the
+   * spring is resampled across every sample in the recording — and rebuilt the
+   * same seven items from it. Linear in the length of the take, which is the
+   * wrong shape for a per-frame cost even where it is small.
+   *
+   * Cached here rather than in a `useMemo` because two of its inputs are read
+   * off the video elements inside the loop, not from a render.
+   */
+  const cached = useRef<{ key: readonly unknown[]; plan: RenderPlan } | null>(null);
+
+  // `cursor`, `zooms` and `cues` are in here for the same reason as the rest,
+  // and it took a regression to notice they were not. The loop's effect depends
+  // on `media`, which used to be a fresh object on every render — so the closure
+  // was rebuilt constantly and read those three straight from props without ever
+  // going stale. Memoising `media` made the closure live as long as the
+  // component, and a tilt dragged on a zoom stopped reaching the preview: the
+  // plan was still being rebuilt, from the `zooms` the closure had captured on
+  // the render it was created. Anything the loop reads goes through here.
+  const latest = useRef({ frame, settings, enter, images, fitted, selected, cursor, zooms, cues });
+  latest.current = { frame, settings, enter, images, fitted, selected, cursor, zooms, cues };
 
   // Fits the frame's aspect ratio into whatever space the window is giving
   // this pane, at any output size. `contentRect` is the padded box, so the
@@ -180,6 +207,9 @@ export function Preview({
         images: loaded,
         fitted: box,
         selected: ringed,
+        cursor: pointer,
+        zooms: shots,
+        cues: drawn,
       } = latest.current;
       const screen = media.getElement("screen");
       const camera = media.getElement("camera");
@@ -209,26 +239,50 @@ export function Preview({
         camera: sources.camera ? { width: camera!.videoWidth, height: camera!.videoHeight } : null,
       };
 
-      const plan = buildRenderPlan(
+      // Every one of these is stable between frames — the settings and the
+      // tracks are memoised upstream, and the two sizes only change when a
+      // source loads or the camera is switched off. Compared by identity, so a
+      // real edit misses and lands a new plan on the very next frame.
+      const shown = drawn.get(captionLook(current.captions));
+      const key = [
         size,
-        sizes,
+        sizes.screen?.width,
+        sizes.screen?.height,
+        sizes.camera?.width,
+        sizes.camera?.height,
         current,
-        cursor && {
-          ...cursor,
-          ...cursorImages(current.layout.cursorStyle),
-          size: current.layout.cursorSize,
-          hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
-          // Resolved here rather than in the plan, like `hideAfter`: a track
-          // with no spans and one the user asked to keep the pointer through
-          // are the same thing to draw.
-          keys: current.layout.cursorHideWhileTyping ? cursor.keys : [],
-        },
-        zooms,
+        pointer,
+        shots,
         arriving,
-        // The set drawn for *this* clip's look. A clip whose captions are off
-        // has no look and gets nothing, which draws nothing.
-        cues.get(captionLook(current.captions)),
-      );
+        shown,
+      ] as const;
+
+      const previous = cached.current;
+      const plan =
+        previous && previous.key.length === key.length && previous.key.every((v, i) => v === key[i])
+          ? previous.plan
+          : buildRenderPlan(
+              size,
+              sizes,
+              current,
+              pointer && {
+                ...pointer,
+                ...cursorImages(current.layout.cursorStyle),
+                size: current.layout.cursorSize,
+                hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
+                // Resolved here rather than in the plan, like `hideAfter`: a
+                // track with no spans and one the user asked to keep the
+                // pointer through are the same thing to draw.
+                keys: current.layout.cursorHideWhileTyping ? pointer.keys : [],
+              },
+              shots,
+              arriving,
+              // The set drawn for *this* clip's look. A clip whose captions are
+              // off has no look and gets nothing, which draws nothing.
+              shown,
+            );
+
+      if (plan !== previous?.plan) cached.current = { key, plan };
 
       // Source time, because that is what the pointer track is indexed by —
       // the same clock the media elements are seeked on.
@@ -239,7 +293,7 @@ export function Preview({
       // render, for the reason the picture itself is drawn here: the box moves
       // with the sources' own dimensions and with a drag in flight, and React
       // is told about neither on the frame it happens.
-      ring(outline.current, ringed, size, current, sizes, box, zooms, at);
+      ring(outline.current, ringed, size, current, sizes, box, shots, at);
 
       // Read here and nowhere else. The context is created without
       // `preserveDrawingBuffer`, so the drawing buffer is cleared as soon as
@@ -270,10 +324,12 @@ export function Preview({
     };
   }, [grabRef]);
 
-  // Released on unmount and *only* on unmount. The loop above re-runs on every
-  // render — `useEditorPlayback` hands back a new object each time — so
-  // disposing there tore the compositor down constantly, and it came back
-  // without a shader. A blank preview, from a cleanup that read as tidy.
+  // Released on unmount and *only* on unmount. Disposing inside the draw loop's
+  // effect tore the compositor down and rebuilt it without a shader — a blank
+  // preview, from a cleanup that read as tidy. `media` is memoised now, so the
+  // loop re-runs far less often than it did, but "far less often" is still not
+  // "on unmount": the compositor outlives every restart of the loop that uses
+  // it.
   useEffect(() => {
     const painter = compositor.current;
     return () => painter.dispose();
@@ -306,7 +362,13 @@ export function Preview({
    * agree, but only one of them is what the user actually clicked on.
    */
   const framePoint = (event: PointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
+    // Measured on entry and on press rather than here. This runs on every
+    // `pointermove` across the picture — not only during a drag, because a
+    // hover has to decide which cursor to show — and on top of the rectangle it
+    // resolves the layout twice through `find`. The canvas cannot move under a
+    // pointer that is already on it: it is sized in an effect, and the window
+    // behind it does not scroll.
+    const rect = canvasBox.current ?? event.currentTarget.getBoundingClientRect();
     return {
       x: ((event.clientX - rect.left) / rect.width) * frame.width,
       y: ((event.clientY - rect.top) / rect.height) * frame.height,
@@ -537,7 +599,15 @@ export function Preview({
           // Explicit pixels rather than a percentage: see the note above on why
           // `max-h-full` cannot be relied on here.
           style={{ width: fitted.width, height: fitted.height }}
+          onPointerEnter={(event) => {
+            canvasBox.current = event.currentTarget.getBoundingClientRect();
+          }}
           onPointerDown={(event) => {
+            // Re-read on press: a drag can start after the picture has been
+            // resized by the inspector opening, with the pointer never having
+            // left the canvas.
+            canvasBox.current = event.currentTarget.getBoundingClientRect();
+
             const point = framePoint(event);
             const found = find(point);
             // Empty background drops the selection, the same click that would
@@ -595,7 +665,9 @@ export function Preview({
             event.currentTarget.style.cursor = "";
           }}
           onPointerLeave={(event) => {
-            if (!grab.current) event.currentTarget.style.cursor = "";
+            if (grab.current) return;
+            event.currentTarget.style.cursor = "";
+            canvasBox.current = null;
           }}
         />
 

@@ -337,16 +337,16 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
     // A key with no corners is filled in from its own rectangle rather than
     // treated as having nothing to say. Taking whichever quad existed and
     // holding it across the span put a hard jump wherever a tilted key sits
-    // next to a flat one — which is exactly what the editor's `framedKey`
-    // produces when a tilted picture grows to cover the frame, and it showed as
-    // a border snapping to the frame mid-zoom. Mirrors `cornersOf` in
+    // next to a flat one — which every perspective zoom has, since it rests
+    // flat and only leans while it is in, and it showed as the picture snapping
+    // upright mid-zoom. Mirrors `cornersOf` in
     // `apps/desktop/src/shared/layout.ts`.
     let quad: Vec<f64> = if a.quad.is_empty() && b.quad.is_empty() {
         Vec::new()
     } else {
-        corners_of(a)
-            .iter()
-            .zip(corners_of(b).iter())
+        let (from, to) = (corners_of(a), corners_of(b));
+        from.iter()
+            .zip(to.iter())
             .map(|(from, to)| lerp(*from, *to))
             .collect()
     };
@@ -578,14 +578,18 @@ fn blur_at(word: &CaptionWord, at: i64) -> f64 {
 /// top-right, bottom-left, bottom-right, three numbers each. An untilted key's
 /// divisor is 1 at every corner, which makes it the identity projection rather
 /// than a special case.
-fn corners_of(key: &RectKey) -> Vec<f64> {
-    if key.quad.len() == 12 {
-        return key.quad.clone();
+fn corners_of(key: &RectKey) -> [f64; 12] {
+    // A fixed array rather than a `Vec`: a quad is twelve numbers by definition
+    // — four corners, each with a w — and this runs for every tilted item on
+    // every frame. Returning an owned `Vec` meant three heap allocations per
+    // interpolated quad, two here and one for the result.
+    if let Ok(quad) = <[f64; 12]>::try_from(key.quad.as_slice()) {
+        return quad;
     }
 
     let right = key.x + key.width;
     let bottom = key.y + key.height;
-    vec![
+    [
         key.x, key.y, 1.0, right, key.y, 1.0, key.x, bottom, 1.0, right, bottom, 1.0,
     ]
 }
@@ -707,33 +711,54 @@ impl Rgba {
     }
 
     fn from_hex(hex: &str) -> Option<Self> {
-        let expanded: String = match hex.len() {
-            // `#abc` is three doubled nibbles.
-            3 => hex.chars().flat_map(|c| [c, c]).collect(),
-            6 => hex.to_owned(),
+        // Nibble by nibble rather than through an expanded `String`. Every fill,
+        // shadow, stroke and tinted caption in a plan is parsed on every frame
+        // of an export, and `#abc` — the shortest form and the one the editor
+        // writes most — was the only one that allocated to do it.
+        let digits = hex.as_bytes();
+        let value = |index: usize| -> Option<u32> { char::from(*digits.get(index)?).to_digit(16) };
+
+        let (r, g, b) = match hex.len() {
+            // `#abc` is three doubled nibbles, and doubling a nibble is × 17.
+            3 => (value(0)? * 17, value(1)? * 17, value(2)? * 17),
+            6 => (
+                value(0)? * 16 + value(1)?,
+                value(2)? * 16 + value(3)?,
+                value(4)? * 16 + value(5)?,
+            ),
             _ => return None,
         };
 
-        let value = u32::from_str_radix(&expanded, 16).ok()?;
         Some(Self {
-            r: ((value >> 16) & 0xff) as f32 / 255.0,
-            g: ((value >> 8) & 0xff) as f32 / 255.0,
-            b: (value & 0xff) as f32 / 255.0,
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
             a: 1.0,
         })
     }
 
     fn from_rgba(body: &str) -> Option<Self> {
-        let parts: Vec<f32> = body
-            .split(',')
-            .map(|part| part.trim().parse::<f32>().ok())
-            .collect::<Option<Vec<_>>>()?;
+        // Into a fixed array rather than a `Vec`, for the reason `from_hex`
+        // parses nibbles: this is per colour, per item, per frame. Four is the
+        // most a colour has, and a fifth component makes it malformed.
+        let mut parts = [0.0f32; 4];
+        let mut seen = 0usize;
+        for part in body.split(',') {
+            if seen == parts.len() {
+                return None;
+            }
+            parts[seen] = part.trim().parse::<f32>().ok()?;
+            seen += 1;
+        }
+        if seen < 3 {
+            return None;
+        }
 
         Some(Self {
-            r: parts.first().copied()? / 255.0,
-            g: parts.get(1).copied()? / 255.0,
-            b: parts.get(2).copied()? / 255.0,
-            a: parts.get(3).copied().unwrap_or(1.0),
+            r: parts[0] / 255.0,
+            g: parts[1] / 255.0,
+            b: parts[2] / 255.0,
+            a: if seen > 3 { parts[3] } else { 1.0 },
         })
     }
 }

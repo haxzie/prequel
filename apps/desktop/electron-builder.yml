@@ -39,6 +39,19 @@ files:
   # package at runtime, but electron-builder collects production dependencies
   # transitively and would ship 4 MB of it, source tree and tests included.
   - "!node_modules/zod/**"
+  # The same problem, for the workspace packages. A linked workspace dependency
+  # is collected whole: electron-builder does not read the `files` field the
+  # package declares for itself, so `@prequel/recorder` shipped its Rust source,
+  # `build.rs`, `Cargo.toml` and its turbo logs, and `@prequel/env` shipped its
+  # raw TypeScript. Only `index.js`, the type declarations and the `.node` are
+  # ever loaded. Nothing here is large; it is first-party source sitting inside
+  # a signed, notarised bundle for no reason.
+  - "!node_modules/@prequel/*/src/**"
+  - "!node_modules/@prequel/*/.turbo/**"
+  - "!node_modules/@prequel/*/{build.rs,Cargo.toml,vitest.config.ts,turbo.json,tsconfig*.json}"
+  # Source maps for dependencies that are never debugged in a shipped build.
+  # `js-yaml` and `electron-updater` alone carry 1.1 MB of them.
+  - "!node_modules/**/*.map"
 
 # The native addon is a `.node` binary: it cannot be `dlopen`'d from inside an
 # asar archive, so it has to sit on the real filesystem.

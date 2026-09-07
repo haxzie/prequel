@@ -157,23 +157,32 @@ function WindowSelection({
   setup: SelectionSetup;
   onStart: (pending: Pending) => void;
 }) {
-  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState<PickerWindow | null>(null);
 
   // Windows arrive front-to-back — the capture layer sorts them into the window
   // server's own stacking order — so the first match under the cursor is the
   // one actually visible there.
-  const hovered = useMemo((): PickerWindow | null => {
-    if (!pointer) return null;
-    return (
-      setup.windows.find(
-        ({ rect }) =>
-          pointer.x >= rect.x &&
-          pointer.x <= rect.x + rect.width &&
-          pointer.y >= rect.y &&
-          pointer.y <= rect.y + rect.height,
-      ) ?? null
-    );
-  }, [setup.windows, pointer]);
+  const windowAt = (x: number, y: number): PickerWindow | null =>
+    setup.windows.find(
+      ({ rect }) =>
+        x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height,
+    ) ?? null;
+
+  /**
+   * The hovered window, and only that, in state.
+   *
+   * Holding the pointer instead re-rendered this whole overlay on every
+   * `mousemove` — 120 times a second on a trackpad, each one re-rendering the
+   * highlight, the card and its screenshot, to move a highlight that is in the
+   * same place for the entire time the pointer is over one window. What the
+   * user sees changes when they cross from one window to the next, so that is
+   * what the state says. This is the surface the app puts up at the start of
+   * every recording; it has to feel immediate.
+   */
+  const onMove = (event: { clientX: number; clientY: number }) => {
+    const next = windowAt(event.clientX, event.clientY);
+    setHovered((previous) => (previous?.target === next?.target ? previous : next));
+  };
 
   const start = () => {
     if (!hovered) return;
@@ -191,8 +200,8 @@ function WindowSelection({
   return (
     <div
       className={OVERLAY}
-      onMouseMove={(event) => setPointer({ x: event.clientX, y: event.clientY })}
-      onMouseLeave={() => setPointer(null)}
+      onMouseMove={onMove}
+      onMouseLeave={() => setHovered(null)}
       // Deliberately not clickable. The overlay covers the whole display, so a
       // click anywhere on it used to choose — including a click meant for a
       // button on top of it, and including one meant for nothing at all. The
@@ -291,6 +300,12 @@ function AreaSelection({
   const [settled, setSettled] = useState(false);
   const originRef = useRef<Point | null>(null);
   const currentRef = useRef<Point | null>(null);
+  /** A pending flush of `currentRef` into state. See the mousemove handler. */
+  const frame = useRef(0);
+
+  // Nothing to flush once the component is gone, and a `setState` after unmount
+  // is a warning in the console of an overlay nobody can open again.
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const region = useMemo(() => regionOf(origin, current), [origin, current]);
 
@@ -351,9 +366,19 @@ function AreaSelection({
       }}
       onMouseMove={(event) => {
         if (settled || !originRef.current) return;
-        const point = { x: event.clientX, y: event.clientY };
-        currentRef.current = point;
-        setCurrent(point);
+        currentRef.current = { x: event.clientX, y: event.clientY };
+
+        // Coalesced to a frame. A trackpad delivers moves at twice the refresh
+        // rate, and each one re-rendered the overlay and the card to redraw a
+        // rectangle that is only painted sixty times a second anyway. The ref
+        // above still takes every event, so the region `commit` reads is the
+        // one the pointer actually finished on rather than the last one that
+        // happened to be painted.
+        if (frame.current) return;
+        frame.current = requestAnimationFrame(() => {
+          frame.current = 0;
+          setCurrent(currentRef.current);
+        });
       }}
       onMouseUp={() => {
         if (!settled) commit();

@@ -40,15 +40,18 @@ export function CaptionStylePicker({
             "flex flex-col gap-1 rounded-md p-1 text-center text-[10px]",
             "disabled:pointer-events-none disabled:opacity-30",
             style.id === value
-              ? "bg-white/10 text-editor-fg ring-2 ring-editor-accent ring-inset"
+              ? "bg-white/10 text-editor-fg ring-2 ring-selected ring-inset"
               : "text-editor-muted hover:bg-white/5",
           )}
           onClick={() => onChange(style.id)}
         >
-          {/* A mid grey rather than the panel's own dark, for the reason the
-              cursor swatches carry one: every look is white text with a dark
-              treatment, and on the panel's black they would all read the same. */}
-          <span className="grid aspect-video place-items-center overflow-hidden rounded-[5px] bg-editor-fg/30">
+          {/* No plate behind the sample. It carried a mid grey so that looks
+              which are white text on a dark treatment had something to be dark
+              against — a translucent plate over the panel's own near-black is
+              close to invisible, so those samples now read as plain white text
+              and are told apart by weight, tracking and case rather than by
+              what sits behind them. */}
+          <span className="grid aspect-video place-items-center overflow-hidden rounded-[5px]">
             <Sample style={style} accent={accent} />
           </span>
           {style.label}

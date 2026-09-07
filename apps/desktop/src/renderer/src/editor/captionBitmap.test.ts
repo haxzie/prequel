@@ -18,7 +18,12 @@ const CUE: Cue = {
   words: [{ text: "hello", at: 0, end: 500_000_000, line: 0 }],
 };
 
-const OPTIONS = { frame: { width: 1920, height: 1080 }, size: 0.04, accent: "#ffd60a" };
+const OPTIONS = {
+  frame: { width: 1920, height: 1080 },
+  size: 0.04,
+  accent: "#ffd60a",
+  family: "system-ui, sans-serif",
+};
 
 /** The same look with one leaf changed. */
 const tweak = (over: Partial<CaptionStyle>): CaptionStyle => ({

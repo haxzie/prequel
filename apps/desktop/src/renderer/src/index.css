@@ -75,6 +75,7 @@
   --color-editor-glass: var(--editor-glass);
   --color-editor-scrim: var(--editor-scrim);
   --color-editor-veil: var(--editor-veil);
+  --color-editor-veil-solid: var(--editor-veil-solid);
   --color-editor-panel: var(--editor-panel);
   --color-editor-line: var(--editor-line);
   --color-editor-fg: var(--editor-fg);
@@ -93,7 +94,9 @@
   --color-zoom-ring: var(--zoom-ring);
   --color-wave: var(--wave);
   --color-indicator: var(--indicator);
+  --color-indicator-deep: var(--indicator-deep);
   --color-cut: var(--cut);
+  --color-cut-deep: var(--cut-deep);
   --color-export: var(--export);
   --color-toggle: var(--toggle);
   --color-play: var(--play);
@@ -300,6 +303,12 @@ body {
      against a long strip, and a wallpaper showing through the gaps between
      clips is texture competing with the thing being edited. */
   --editor-veil: rgba(22, 23, 26, 0.93);
+  /* The same colour at full opacity, for chrome with the panel's own scrolling
+     content behind it rather than the board. The 7% that lets a wallpaper read
+     through the timeline is a ghost of a swatch grid sliding under a sticky tab
+     row, so that surface takes this instead. Kept beside the veil because the
+     two have to stay the same colour: `rgba(22, 23, 26, …)` is `#16171a`. */
+  --editor-veil-solid: #16171a;
   --editor-panel: #1c1e22;
   --editor-line: #2a2d33;
   --editor-fg: #eceef1;
@@ -371,8 +380,20 @@ body {
      crosses stays findable in a way a brighter shade of the same colour does
      not. */
   --indicator: #3b9dff;
-  /* A zoom: a translucent blue wash inside an opaque outline, filling in solid
+  /* The same blue, dark enough to carry white text. The head's label used to be
+     near-black on `--indicator`, which is the readable pairing for a colour
+     this light — white over it is 2.9:1, the ratio the palette already warns
+     about for `--export`. Taking the label a few steps down instead keeps the
+     text white and reaches 5.4:1, and the line itself stays bright because a
+     marker has to be findable before it has to be legible. */
+  --indicator-deep: #1668c9;
+  /* A zoom: a translucent amber wash inside an opaque outline, filling in solid
      when it is the thing being edited.
+
+     Amber rather than the blue this was, because the playhead is blue and
+     crosses every zoom on the row — a blue marker travelling over a blue bar
+     had to be found by its shape. Purple clips above, amber zooms below, a blue
+     playhead through both: three hues, none of them each other's neighbour.
 
      One fill and one edge, where this briefly carried four tokens for a
      gradient and a pair of end caps. Both are gone — the caps because a handle
@@ -384,15 +405,19 @@ body {
      under the clips, and a solid block the length of one pulls the eye off the
      filmstrip above it. Filled means "this is the one you are editing", which
      is the only time it should win that contest. */
-  --zoom-fill: #3f86dc;
+  --zoom-fill: #dcb43c;
   /* Opaque at both states, and light enough to hold its own against a wash of
      the same colour behind it. It was a dark navy while the fill was a bright
-     gradient it had to sit under; against 25% of that blue it disappeared. */
-  --zoom-edge: #6ea9f0;
-  --zoom-ring: #a9d3ff;
+     gradient it had to sit under; against 25% of that fill it disappeared. */
+  --zoom-edge: #f0d06f;
+  --zoom-ring: #ffe9a8;
   /* Where a cut would land. Red because it is destructive and because it must
      never be mistaken for the playhead sitting next to it. */
   --cut: #ff4d5e;
+  /* The same red, dark enough to carry white text — the hover line's bubble,
+     for the reason `--indicator-deep` exists. White on `--cut` is 3.2:1 and on
+     this 5.4:1, which is where the playhead's own label sits. */
+  --cut-deep: #cc2340;
   /* Export. Dark enough to carry white text — the system green is tuned for
      black-on-green, and white over it is the pairing that fails to read. */
   --export: #30a46c;

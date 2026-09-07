@@ -48,6 +48,17 @@ export interface Backing {
   height: number;
 }
 
+/**
+ * How many textures the compositor keeps before it starts dropping the least
+ * recently drawn — see `retire`.
+ *
+ * Comfortably above what any one frame needs: the screen, the camera, the
+ * backdrop, a background picture, a pointer shape and however many caption cues
+ * are on screen at once. `useCaptionImages` keeps twelve bitmaps, so the cap
+ * only ever bites on the textures whose images that hook has already let go.
+ */
+const TEXTURE_CAP = 24;
+
 const MODE_FILL = 0;
 const MODE_GRADIENT = 1;
 const MODE_IMAGE = 2;
@@ -426,6 +437,12 @@ export class WebGlCompositor {
 
   /** One texture per source, reused: a new one per frame would thrash. */
   private readonly textures = new Map<string, WebGLTexture>();
+  /**
+   * The frame each texture was last drawn on, and the frame counter it is
+   * measured against. Only used to decide what to evict — see `retire`.
+   */
+  private readonly touched = new Map<string, number>();
+  private frame = 0;
   /** Which images have been uploaded, so a still one is not re-sent. */
   private readonly uploaded = new WeakSet<CanvasImageSource>();
   /** Sources that would not upload, so the log says so once rather than at
@@ -465,6 +482,37 @@ export class WebGlCompositor {
     }
 
     gl.bindVertexArray(null);
+    this.retire(gl);
+    this.frame += 1;
+  }
+
+  /**
+   * Drops textures nothing has drawn for a while.
+   *
+   * The caller's image cache already evicts — `useCaptionImages` keeps twelve
+   * bitmaps — but that only frees the `HTMLImageElement`. The texture uploaded
+   * from it lived in `textures` until the compositor itself was disposed, which
+   * for the editor means until the window closes. A half-hour recording with
+   * captions is hundreds of cue bitmaps at export resolution, so the cache that
+   * was there to stop thrashing became the thing holding the memory.
+   *
+   * Keyed on the frame each texture was last asked for rather than on what the
+   * plan contains: the screen and camera are drawn every frame and never age
+   * out, and a caption stops being asked for as soon as its cue ends.
+   */
+  private retire(gl: WebGL2RenderingContext): void {
+    if (this.textures.size <= TEXTURE_CAP) return;
+
+    for (const [key, last] of this.touched) {
+      if (this.textures.size <= TEXTURE_CAP) break;
+      // Never the ones drawn this frame, however far over the cap we are. More
+      // on screen at once than the cap holds is not a reason to thrash.
+      if (last === this.frame) continue;
+      const texture = this.textures.get(key);
+      if (texture) gl.deleteTexture(texture);
+      this.textures.delete(key);
+      this.touched.delete(key);
+    }
   }
 
   /** Releases everything the GPU is holding. */
@@ -474,6 +522,7 @@ export class WebGlCompositor {
 
     for (const texture of this.textures.values()) gl.deleteTexture(texture);
     this.textures.clear();
+    this.touched.clear();
     if (this.program) gl.deleteProgram(this.program.program);
     if (this.vao) gl.deleteVertexArray(this.vao);
     this.program = null;
@@ -802,6 +851,12 @@ export class WebGlCompositor {
     image: CanvasImageSource,
     live: boolean,
   ): WebGLTexture | null {
+    // Deleted before it is set so the key moves to the end: `Map.set` on a key
+    // that is already there keeps its original position, which would make the
+    // iteration in `retire` oldest-created rather than least-recently-used.
+    this.touched.delete(key);
+    this.touched.set(key, this.frame);
+
     let texture = this.textures.get(key) ?? null;
     const fresh = texture === null;
 
@@ -821,7 +876,13 @@ export class WebGlCompositor {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     }
 
-    if (live || !this.uploaded.has(image)) {
+    // `fresh` as well as the `uploaded` check, and it is load-bearing: that set
+    // records that an *image* has had its pixels sent, which was the same thing
+    // as "its texture holds them" only while textures were never let go. Now
+    // that `retire` drops them, a still image whose texture was evicted comes
+    // back here with a new, empty texture and an image the set has already
+    // seen — so the upload was skipped and the picture drew as nothing.
+    if (live || fresh || !this.uploaded.has(image)) {
       const size = sizeOf(image);
       if (size.width <= 0 || size.height <= 0) return null;
 

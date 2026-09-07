@@ -242,6 +242,26 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // which changes the project — does not lay the clips out again and hand the
   // editor a fresh word list to rebuild from on every keystroke.
   const placed = useMemo(() => place(slices), [slices]);
+
+  /**
+   * The clip under the playhead is the clip being edited.
+   *
+   * `media.sliceId` already tracks which one that is, and it follows a seek and
+   * playback alike — so both "click the timeline" and "let it play into the
+   * next clip" fall out of watching it, rather than each seek site having to
+   * remember to select as well.
+   *
+   * Not while a zoom is selected. `select` clears the zoom — the inspector
+   * shows one thing at a time — so without this guard, previewing a zoom would
+   * close the panel you were previewing it from the moment the head crossed a
+   * cut. The head moving is not a request to stop editing the zoom.
+   */
+  useEffect(() => {
+    if (!media.sliceId || media.sliceId === state.selectedSliceId) return;
+    if (state.selectedZoomId) return;
+
+    dispatch({ type: "select", sliceId: media.sliceId });
+  }, [media.sliceId, state.selectedSliceId, state.selectedZoomId]);
   /**
    * The words the captions editor shows, and the ones it does not.
    *

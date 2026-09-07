@@ -243,17 +243,56 @@ function contentType(path: string): string {
   return "image/jpeg";
 }
 
+/**
+ * How long a file's size is trusted without asking the filesystem again.
+ *
+ * Chromium issues a range request per seek and per buffer refill, across four
+ * media elements at once — scrubbing the timeline is a burst of them, and every
+ * one used to `stat` on the main process's event loop, which is also the thread
+ * driving the tray, the windows and every IPC reply.
+ *
+ * A second rather than forever: a size that is wrong is a `Content-Length` that
+ * is wrong, and a video whose length does not match its bytes fails to play
+ * with nothing in it to say why. Session tracks never change after a recording
+ * ends, but caption bitmaps are redrawn in place when a look changes, so the
+ * cache has to let go of them on its own. A window this short absorbs a scrub
+ * and still corrects itself before the next one.
+ */
+const SIZE_TTL_MS = 1000;
+
+const sizes = new Map<string, { size: number; read: number }>();
+
+function sizeOf(path: string): number | null {
+  const now = Date.now();
+  const cached = sizes.get(path);
+  if (cached && now - cached.read < SIZE_TTL_MS) return cached.size;
+
+  try {
+    const { size } = statSync(path);
+    // Swept rather than left to grow. A session with captions names hundreds of
+    // bitmaps, and every entry here is already stale by the time it is worth
+    // dropping — so the sweep costs nothing and the map cannot become the leak
+    // it exists to avoid.
+    if (sizes.size > 64) {
+      for (const [key, entry] of sizes) {
+        if (now - entry.read >= SIZE_TTL_MS) sizes.delete(key);
+      }
+    }
+    sizes.set(path, { size, read: now });
+    return size;
+  } catch {
+    sizes.delete(path);
+    return null;
+  }
+}
+
 /** Serves one request. Exported so the routing can be tested without Electron. */
 export function serveMedia(url: string, rangeHeader: string | null, root?: string): Response {
   const path = resolveMediaPath(url, root);
   if (!path) return new Response("Not found", { status: 404 });
 
-  let size: number;
-  try {
-    size = statSync(path).size;
-  } catch {
-    return new Response("Not found", { status: 404 });
-  }
+  const size = sizeOf(path);
+  if (size === null) return new Response("Not found", { status: 404 });
 
   const headers: Record<string, string> = {
     ...CORS,

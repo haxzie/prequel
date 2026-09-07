@@ -28,6 +28,7 @@ import type { RenderedCue, Size } from "../../../shared/layout";
 import { captionLook, resolveSettings, type Project } from "../../../shared/project";
 import type { Transcript } from "../../../shared/transcript";
 import { cueKey, cuePaths, rasteriseCue } from "./captionBitmap";
+import { captionFont } from "./controls/fonts";
 import { survivingWords } from "./captionText";
 import { placedSlices, slicesOf } from "./state";
 
@@ -100,9 +101,29 @@ export function useCaptions(
    * footage either side of the cut. The per-frame lookup only decides *when*
    * a bitmap shows, never what is in it.
    */
+  /**
+   * The cuts, as a string.
+   *
+   * Every dispatch hands this hook a fresh project object — dragging a slider
+   * in the inspector produces one per `pointermove` — but the only thing
+   * `survivingWords` reads from it is where the clips start and end. Keyed on
+   * the project, a layout drag rescanned the whole transcript on every pointer
+   * event; keyed on this, it rescans when a cut actually moves.
+   *
+   * The same reasoning `Editor` gives for keying its own word list on the
+   * slices rather than the project.
+   */
+  const cuts = slicesOf(project)
+    .map((slice) => `${slice.source.start}-${slice.source.end}`)
+    .join(",");
+
   const spoken = useMemo(
     () => (transcript ? survivingWords(transcript.words, placedSlices(project)).visible : null),
-    [transcript, project],
+    // `project` is read inside but deliberately not depended on: `cuts` is
+    // derived from it and covers everything this reads, so a project that
+    // produces the same cuts produces the same words.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transcript, cuts],
   );
 
   // Joined rather than passed as an object: the effect must re-run when a look
@@ -113,9 +134,7 @@ export function useCaptions(
     Math.round(frame.width),
     Math.round(frame.height),
     [...looks.keys()].sort().join(","),
-    slicesOf(project)
-      .map((slice) => `${slice.source.start}-${slice.source.end}`)
-      .join(","),
+    cuts,
   ].join("|");
 
   const latest = useRef({ looks, spoken, frame });
@@ -142,7 +161,12 @@ export function useCaptions(
 
         for (const [look, current] of pending) {
           const style = captionStyle(current.captionStyle);
-          const options = { frame: size, size: current.captionSize, accent: current.captionAccent };
+          const options = {
+            frame: size,
+            size: current.captionSize,
+            accent: current.captionAccent,
+            family: captionFont(current.captionFont).stack,
+          };
           // Grouped per look, because the line budget is one of the settings a
           // clip can override and it decides where a cue breaks.
           const cues: Cue[] = cuesFrom(words, {

@@ -29,20 +29,24 @@ import { ImageIcon } from "../icons";
  * swatches that come after it in the DOM paint over the enlarged edge.
  */
 const CELL =
-  "relative aspect-square rounded bg-clip-padding transition-transform " +
+  "relative aspect-square rounded-lg bg-clip-padding transition-transform " +
   "hover:z-10 hover:scale-110 focus-visible:z-10 focus-visible:outline-2 " +
   "focus-visible:outline-editor-accent focus-visible:outline-offset-1";
 
 /**
  * Resting and chosen edges.
  *
- * The chosen one is thicker rather than merely brighter — `editor-accent` is a
- * pale grey, and one pixel of it against `white/10` is not a difference you can
- * find by scanning. Nothing moves: the box is border-box, so a second pixel of
- * border comes out of the swatch rather than out of the grid.
+ * The chosen one is the blue every other "this is the one" in the app uses —
+ * the dock's selected screen, the inspector's rail, the timeline's held tool.
+ * It was `editor-accent`, a pale grey that against `white/10` was a difference
+ * you had to hunt for on a grid of photographs.
+ *
+ * Still thicker as well as coloured: a single pixel of anything disappears
+ * against a busy image. Nothing moves either way — the box is border-box, so
+ * the second pixel comes out of the swatch rather than out of the grid.
  */
 const EDGE = "border border-white/10";
-const EDGE_CHOSEN = "border-2 border-editor-accent";
+const EDGE_CHOSEN = "border-2 border-selected";
 
 const GRID = "grid grid-cols-5 gap-1";
 

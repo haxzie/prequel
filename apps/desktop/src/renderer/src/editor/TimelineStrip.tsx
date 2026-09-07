@@ -31,7 +31,7 @@ import {
   type PlacedSlice,
   type TrimGrab,
 } from "./timeline";
-import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
+import { format, HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
@@ -187,9 +187,21 @@ export function TimelineStrip({
   const slack = duration - edited;
 
   const scroller = useRef<HTMLDivElement>(null);
+  /**
+   * The scrollport's left edge in viewport coordinates.
+   *
+   * Held rather than measured in `timeAt`, which runs on every `pointermove`
+   * across the strip and on every frame of a drag. The edge only moves when the
+   * strip is laid out again, and the `ResizeObserver` below already knows when
+   * that happens; `scrollLeft` still has to be read live, because scrolling is
+   * exactly what it is there to track.
+   */
+  const edge = useRef(0);
   const ghost = useRef<HTMLDivElement>(null);
   /** The hover line. Positioned straight on the element — see `showShadow`. */
   const shadow = useRef<HTMLDivElement>(null);
+  /** The hover line's own timecode. Written by `showShadow`. */
+  const shadowTime = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState(0);
   /** Null means "fit the whole edit", which is what an editor should open on. */
   const [zoom, setZoom] = useState<number | null>(null);
@@ -201,7 +213,14 @@ export function TimelineStrip({
     const element = scroller.current;
     if (!element) return;
 
-    const measure = () => setWidth(element.clientWidth);
+    const measure = () => {
+      setWidth(element.clientWidth);
+      // Cached here as well as on pointer entry, because this fires for the
+      // changes that actually move the strip sideways — the inspector opening,
+      // the window resizing — and those can happen with the pointer already
+      // inside it.
+      edge.current = element.getBoundingClientRect().left;
+    };
     measure();
 
     const observer = new ResizeObserver(measure);
@@ -225,7 +244,10 @@ export function TimelineStrip({
   useEffect(() => setTrackMetrics(contentWidth, width), [setTrackMetrics, contentWidth, width]);
 
   // One stable callback rather than an inline arrow: a fresh identity each
-  // render makes React tear the ref down and set it up again every time.
+  // render makes React tear the ref down and set it up again every time, and a
+  // detached ref is a frame where the playback loop has no scroller to follow
+  // the head with. Stable only because `media` is memoised — this depends on
+  // it, so it was a fresh identity every render until it was.
   const attachScroller = useCallback(
     (element: HTMLDivElement | null) => {
       scroller.current = element;
@@ -240,8 +262,7 @@ export function TimelineStrip({
       const element = scroller.current;
       if (!element || contentWidth <= 0) return 0;
 
-      const { left } = element.getBoundingClientRect();
-      const into = clientX - left + element.scrollLeft;
+      const into = clientX - edge.current + element.scrollLeft;
       return Math.min(Math.max(0, into / contentWidth), 1) * duration;
     },
     [contentWidth, duration],
@@ -390,6 +411,23 @@ export function TimelineStrip({
 
       element.style.transform = `translate3d(${String(x)}px, 0, 0)`;
       element.style.opacity = "1";
+
+      // The label, clamped to the content the way the playhead's is: centred on
+      // the line, except at the ends of the strip where half of it would be cut
+      // off by the scroller. The two corners it comes to rest against are
+      // squared, so a bubble stopped at the edge reads as having arrived rather
+      // than as having been sliced.
+      const label = shadowTime.current;
+      if (label) {
+        const half = HEAD_LABEL_W / 2;
+        const nudge = Math.min(Math.max(x, half), Math.max(contentWidth - half, half)) - x;
+
+        label.style.transform = `translate3d(calc(-50% + ${String(nudge)}px), 0, 0)`;
+        label.style.borderRadius =
+          nudge > 0 ? "0 999px 999px 0" : nudge < 0 ? "999px 0 0 999px" : "999px";
+        label.textContent = format(at);
+      }
+
       media.setHover(at);
     },
     [media, timeAt, duration, contentWidth],
@@ -405,12 +443,23 @@ export function TimelineStrip({
     event.stopPropagation();
     media.onInteract();
 
+    // Picking a clip up and scrubbing inside one are two different asks, and
+    // which one this is depends on whether the clip was already the one being
+    // edited.
+    //
+    // A clip that was not: to its start. Editing a clip means watching it from
+    // the beginning — landing wherever the pointer happened to be means judging
+    // a change against an arbitrary frame, and it costs the start of the clip,
+    // which is where most changes are actually visible.
+    //
+    // The clip already held: to where it was pressed. Once it is the one being
+    // edited, every press on it is a request to look at that moment of it, and
+    // snapping back to the start makes the clip the one part of the timeline
+    // that cannot be scrubbed by clicking.
+    const held = slice.id === state.selectedSliceId;
+
     dispatch({ type: "select", sliceId: slice.id });
-    // To the clip's start, not to where it was clicked. Editing a clip means
-    // watching it from the beginning — landing wherever the pointer happened to
-    // be means judging a change against an arbitrary frame, and it costs the
-    // start of the clip, which is where most changes are actually visible.
-    media.playback.seek(slice.timelineStart);
+    media.playback.seek(held ? timeAt(event.clientX) : slice.timelineStart);
   };
 
   return (
@@ -420,6 +469,10 @@ export function TimelineStrip({
       <div
         ref={attachScroller}
         className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
+        // Once per hover rather than per move — see `edge`.
+        onPointerEnter={(event) => {
+          edge.current = event.currentTarget.getBoundingClientRect().left;
+        }}
         onPointerMove={(event) => showShadow(event.clientX)}
         // `pointerleave` rather than `pointerout`, which also fires on the way
         // into a child and would blink the line off over every clip.
@@ -602,7 +655,7 @@ export function TimelineStrip({
             span={captionRange && spanInProject(placed, captionRange)}
             duration={duration}
           />
-          <Shadow ref={shadow} />
+          <Shadow ref={shadow} labelRef={shadowTime} />
           <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
         </div>
       </div>
@@ -649,7 +702,10 @@ function Ruler({
             style={{ left: `${(mark.at / Math.max(duration, 1)) * 100}%` }}
           >
             {/* Hung from the top edge, so every tick starts on the same line
-                and the ruler reads as a scale rather than a row of stubs. */}
+                and the ruler reads as a scale rather than a row of stubs. The
+                minors were dots for a while — the same rhythm without the comb
+                — but a dot has no top to hang from, so the two kinds sat on
+                different lines and the row lost the scale it is there to be. */}
             <div
               className={cn(
                 "absolute top-0 w-px",
@@ -732,7 +788,10 @@ function Playhead({
   return (
     <div
       ref={ref}
-      className="pointer-events-none absolute inset-y-0 left-0 z-10 -ml-px w-0.5 bg-indicator"
+      // The label's own blue rather than the brighter one, so the head reads as
+      // a single object — a line in one blue with a bubble in another on top of
+      // it is two marks that happen to touch.
+      className="pointer-events-none absolute inset-y-0 left-0 z-10 -ml-px w-0.5 bg-indicator-deep"
       style={{ willChange: "transform" }}
     >
       {/* The time, rather than the triangle that used to sit here. The head is
@@ -748,18 +807,39 @@ function Playhead({
           — a label that resized as the digits changed would shimmy around the
           line it is meant to mark.
 
-          `text-editor-bg` rather than white: `--indicator` is a light blue, and
-          white over it is the pairing the palette already warns about for
-          `--export` — 2.9:1 against 6.6:1 for the panel's own near-black. */}
+          White on `--indicator-deep` rather than near-black on `--indicator`:
+          white over the bright blue is 2.9:1, the pairing the palette warns
+          about for `--export`, so the label takes the blue a few steps down and
+          reaches 5.4:1. The line keeps the bright one — a marker has to be
+          found before it has to be read. */}
       <span
         ref={labelRef}
-        className="absolute top-0 left-1/2 h-3.5 rounded-full bg-indicator text-center text-[10px] leading-[0.875rem] font-medium tabular-nums text-editor-bg"
+        className="absolute top-0 left-1/2 h-5 rounded-full bg-indicator-deep text-center text-[11px] leading-5 font-medium tabular-nums text-white"
         style={{
           width: HEAD_LABEL_W,
           transform: "translate3d(-50%, 0, 0)",
           willChange: "transform",
         }}
       />
+
+      {/* The tail, hanging off the label onto the line.
+          
+          A sibling of the label rather than a child of it: the loop writes the
+          time with `textContent`, which would take any child of that span with
+          it on the first frame. So it is centred on the *line* instead, which
+          is where a tail should point anyway — and the label is only ever
+          nudged sideways by half its own width, so the line never leaves it.
+
+          Curved rather than a triangle: the sides ease out of the label's own
+          rounded edge, where a straight taper reads as a second shape stuck
+          underneath it. */}
+      <svg
+        aria-hidden
+        viewBox="0 0 12 7"
+        className="pointer-events-none absolute top-5 left-1/2 h-[7px] w-3 -translate-x-1/2 text-indicator-deep"
+      >
+        <path d="M0 0C3.2 0 4.4 7 6 7C7.6 7 8.8 0 12 0Z" fill="currentColor" />
+      </svg>
     </div>
   );
 }
@@ -767,20 +847,59 @@ function Playhead({
 /**
  * The hover line: where the preview is looking, without having gone there.
  *
- * Deliberately not the playhead's own shape. It is thinner, dimmer and has no
- * handle at the top, because the difference that matters is "this is a look, not
- * a position" — two identical lines would leave the user hunting for which one
- * the edit will act on. Drawn under the playhead so the real one wins when they
- * meet.
+ * Deliberately not the playhead's own shape. It is thinner, has no handle at the
+ * top, and now a hue of its own — the difference that matters is "this is a
+ * look, not a position", and two lines a shade apart left the user hunting for
+ * which one the edit would act on. Red separates them at a glance where dimming
+ * only made this one look like a faded playhead.
+ *
+ * The same red as a cut, which is the one thing to watch here: that colour
+ * means destructive elsewhere in this row. It reads as a pointer rather than a
+ * mark because it is one pixel wide, follows the cursor and vanishes with it.
+ * Drawn under the playhead so the real one wins when they meet.
+ *
+ * Line and label share `--cut-deep` so the two are one object, the way the
+ * playhead's are — a line in one red under a bubble in another is two marks
+ * that happen to touch.
  */
-function Shadow({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
+function Shadow({
+  ref,
+  labelRef,
+}: {
+  ref: RefObject<HTMLDivElement | null>;
+  labelRef: RefObject<HTMLSpanElement | null>;
+}) {
   return (
     <div
       ref={ref}
-      className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-indicator/40 opacity-0"
+      className="pointer-events-none absolute inset-y-0 left-0 z-0 w-px bg-cut-deep opacity-0"
       style={{ willChange: "transform, opacity" }}
       aria-hidden="true"
-    />
+    >
+      {/* The playhead's label in the other colour, and for the same reason: the
+          eye is already at the line, and the number it wants is otherwise at
+          the far end of the transport. Where the head's says where you *are*,
+          this says where you would be — so it has to be legible at a glance and
+          unmistakable for the head sitting beside it.
+
+          Written by `showShadow` rather than from a render: it changes on every
+          `pointermove` across the strip. */}
+      <span
+        ref={labelRef}
+        className="absolute top-0 left-1/2 h-5 rounded-full bg-cut-deep text-center text-[11px] leading-5 font-medium tabular-nums text-white"
+        style={{ width: HEAD_LABEL_W, transform: "translate3d(-50%, 0, 0)" }}
+      />
+
+      {/* Centred on the line rather than hung off the label, for the reason the
+          playhead's is: the label is nudged sideways at the ends of the strip
+          and the line is not, and a tail should point at the line. */}
+      <svg
+        viewBox="0 0 12 7"
+        className="absolute top-5 left-1/2 h-[7px] w-3 -translate-x-1/2 text-cut-deep"
+      >
+        <path d="M0 0C3.2 0 4.4 7 6 7C7.6 7 8.8 0 12 0Z" fill="currentColor" />
+      </svg>
+    </div>
   );
 }
 
@@ -1023,6 +1142,7 @@ function Clip({
       <>
         <Handle
           edge="start"
+          grip="bg-slice-edge-active"
           selected={selected}
           onPointerDown={grab("start")}
           onPointerMove={move("start")}
@@ -1030,6 +1150,7 @@ function Clip({
         />
         <Handle
           edge="end"
+          grip="bg-slice-edge-active"
           selected={selected}
           onPointerDown={grab("end")}
           onPointerMove={move("end")}
@@ -1053,12 +1174,27 @@ function Clip({
  */
 function Handle({
   edge,
+  grip,
   selected,
   onPointerDown,
   onPointerMove,
   onRelease,
 }: {
   edge: "start" | "end";
+  /**
+   * The bar's own edge colour, as a background class.
+   *
+   * White for both used to be the same white on a purple clip and an amber
+   * zoom, so the grip read as a third thing laid over the bar rather than as
+   * the end of it. Matching the outline it interrupts makes it part of the
+   * frame that already says where the bar stops.
+   *
+   * The *active* edge in both states, not the one the bar happens to be
+   * wearing: a grip only shows when the bar is selected or under the pointer,
+   * and drawing it in the resting colour at exactly the moments the bar is not
+   * resting made it the faintest thing on the bar it had just been summoned to.
+   */
+  grip: string;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLSpanElement>) => void;
   onPointerMove: (event: PointerEvent<HTMLSpanElement>) => void;
@@ -1082,7 +1218,8 @@ function Handle({
           first drag at it always misses. */}
       <span
         className={cn(
-          "h-1/2 w-0.5 rounded-full bg-white transition-opacity",
+          "h-1/2 w-0.5 rounded-full transition-opacity",
+          grip,
           selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
       />
@@ -1171,10 +1308,16 @@ function Zoom({
         // that changes, so "which zoom am I editing" is one question answered
         // once. A clip says it with a step between two solid purples because a
         // clip is opaque either way — it carries a filmstrip. A zoom has
-        // nothing behind it, so it can say the same thing by being see-through
-        // until it matters, which keeps the row underneath readable.
+        // nothing behind it, so it says the same thing with a step in how
+        // see-through it is.
+        //
+        // A step, not a fill. Selected used to be the solid colour, which made
+        // the chosen zoom the heaviest thing in the row — a bar the length of a
+        // shot, in full amber, under the clips it is supposed to be annotating.
+        // The outline already says which one is held; the fill only has to say
+        // it a little louder.
         "border-zoom-edge",
-        selected ? "bg-zoom-fill" : "bg-zoom-fill/25",
+        selected ? "bg-zoom-fill/45" : "bg-zoom-fill/25",
         // Split the same way a clip's is, and for the same reason — see the
         // outline note on `Clip`. This row had the identical bug.
         "outline-2 -outline-offset-2",
@@ -1213,12 +1356,14 @@ function Zoom({
 
       <Handle
         edge="start"
+        grip="bg-zoom-edge"
         selected={selected}
         onPointerDown={grabEdge("start")}
         onPointerMove={moveEdge("start")}
       />
       <Handle
         edge="end"
+        grip="bg-zoom-edge"
         selected={selected}
         onPointerDown={grabEdge("end")}
         onPointerMove={moveEdge("end")}

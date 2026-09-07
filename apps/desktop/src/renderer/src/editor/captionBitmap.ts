@@ -20,7 +20,11 @@ import type { CaptionStyle, Cue, CueWord } from "../../../shared/captions";
 import type { CaptionWord, Size } from "../../../shared/layout";
 
 /**
- * The face captions are set in: SF, the system's own.
+ * What the face was before it was a choice, kept as the note it carries.
+ *
+ * The list now lives in `controls/fonts.ts` and the stack arrives through
+ * `CueOptions.family`; this is left here because the measurements below are the
+ * reason that list leads with `system-ui` and offers no `"SF Pro Display"`.
  *
  * `system-ui` first, and this order matters. Canvas 2D does *not* resolve
  * `-apple-system` or `BlinkMacSystemFont` — both measure identically to a font
@@ -35,7 +39,7 @@ import type { CaptionWord, Size } from "../../../shared/layout";
  * the dot-prefixed internal `.SF NS` family, so the public name resolves to
  * nothing. `system-ui` is the only handle on it.
  */
-const FAMILY = 'system-ui, "Helvetica Neue", Arial, sans-serif';
+export const SYSTEM_FAMILY = 'system-ui, "Helvetica Neue", Arial, sans-serif';
 
 /** Baseline to baseline, as a multiple of the font size. */
 const LINE_HEIGHT = 1.25;
@@ -83,6 +87,8 @@ export interface CueOptions {
   /** `captionSize`: cap height as a fraction of the frame's shorter edge. */
   size: number;
   accent: string;
+  /** The whole stack, fallbacks and all — see `CAPTION_FONTS`. */
+  family: string;
 }
 
 /**
@@ -139,7 +145,7 @@ interface Measured {
 function measure(cue: Cue, style: CaptionStyle, options: CueOptions): Measured {
   const unit = Math.min(options.frame.width, options.frame.height);
   const fontSize = Math.max(1, options.size * style.scale * unit);
-  const font = `${style.weight} ${fontSize}px ${FAMILY}`;
+  const font = `${style.weight} ${fontSize}px ${options.family}`;
   const tracking = style.tracking * fontSize;
 
   const ctx = context(1, 1);
@@ -439,6 +445,11 @@ export function cueKey(cue: Cue, style: CaptionStyle, options: CueOptions): stri
   const parts = [
     RASTERISER,
     JSON.stringify(style),
+    // The face is part of what was drawn, so it has to be part of what names
+    // it. Left out, two fonts would agree on a key and the second would be
+    // handed the first one's bitmap off disk — a font that changes the picker
+    // and nothing on screen.
+    options.family,
     options.size.toFixed(4),
     Math.round(options.frame.width),
     style.lit ? options.accent : "",
