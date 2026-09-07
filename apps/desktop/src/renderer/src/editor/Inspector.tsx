@@ -52,7 +52,6 @@ import {
   FillIcon,
   FocusIcon,
   FontIcon,
-  FrameIcon,
   LayoutIcon,
   LevelIcon,
   LinesIcon,
@@ -275,7 +274,11 @@ export function Inspector(props: InspectorProps) {
   const categories: Category[] = [
     { id: "layout", label: "Layout", Icon: LayoutIcon },
     { id: "background", label: "Background", Icon: BackdropIcon },
-    { id: "frame", label: "Frame", Icon: FrameIcon },
+    // "Recording", not "Frame". Everything in it — the padding, the corner, the
+    // border, the shadow — is how the recording is presented, and `frame` is
+    // already the output's own dimensions two lines above `FrameBar`. One word
+    // meaning two things in one editor is one too many.
+    { id: "recording", label: "Recording", Icon: ScreenIcon },
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
@@ -301,7 +304,7 @@ export function Inspector(props: InspectorProps) {
   const RESETS: Record<CategoryId, (of: typeof sectionReset) => (() => void) | undefined> = {
     layout: (of) => of("layout"),
     background: (of) => of("background", PAINT_KEYS),
-    frame: (of) => of("background", FRAME_KEYS),
+    recording: (of) => of("background", FRAME_KEYS),
     camera: (of) => of("layout"),
     audio: (of) => of("audio"),
     cursor: (of) => of("layout"),
@@ -424,7 +427,9 @@ export function Inspector(props: InspectorProps) {
                 />
               )}
 
-              {active === "frame" && <FramePanel settings={settings} field={field} set={set} />}
+              {active === "recording" && (
+                <RecordingPanel settings={settings} field={field} set={set} />
+              )}
 
               {active === "camera" && (
                 <CameraPanel
@@ -544,19 +549,15 @@ function Rail<T extends string>({
         // buttons, which is what makes it read as an object placed on the
         // composition rather than as a column the window happens to have.
         //
-        // The panel's own colour, so the two read as one piece of chrome with a
-        // gap in it rather than as a dark object in front of a lighter one.
-        //
-        // The *solid* veil, not the translucent one the panel wears. They are
-        // the same colour — `rgba(22, 23, 26, …)` is `#16171a` — but the panel
-        // has the window behind it where this has the dot grid, and at 93% the
-        // pattern comes through the dock as a faint texture on a surface that
-        // is meant to be sitting on top of it.
+        // `editor-panel` is the app's own floating-surface colour — the export
+        // dialog and the account menu are already on it — so this is opaque and
+        // a shade lighter than the inspector beside it. That is the difference:
+        // the panel is part of the window, the dock sits on top of it.
         // 10px around 4px buttons with 6px of padding between them: concentric,
         // 10 − 6 = 4. A shadow just deep enough to lift it off the board — the
         // dock is a surface the composition sits under, not a dialog over it,
         // and a heavy one made the board look like a hole.
-        "rounded-[10px] border border-editor-line bg-editor-veil-solid shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
+        "rounded-[10px] border border-editor-line bg-editor-panel shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
         // Margin outside, padding in. Without the margin the dock's own corners
         // meet the panel's edge and the top of the row, which is the one thing
         // a floating object must not do.
@@ -630,7 +631,8 @@ const PANEL = "flex w-80 flex-none overflow-hidden border-l border-editor-line b
 export const PANEL_WIDTH = "24rem";
 
 /** The inspector's destinations. */
-type CategoryId = "layout" | "background" | "frame" | "camera" | "audio" | "cursor" | "captions";
+type CategoryId =
+  "layout" | "background" | "recording" | "camera" | "audio" | "cursor" | "captions";
 
 /**
  * A selected zoom's destinations.
@@ -1529,7 +1531,7 @@ function BackgroundPanel({
  * Every value here is a fraction of the frame's shorter edge, so a look
  * survives 16:9 becoming 9:16.
  */
-function FramePanel({
+function RecordingPanel({
   settings,
   field,
   set,
