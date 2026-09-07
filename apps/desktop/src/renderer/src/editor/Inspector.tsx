@@ -257,9 +257,14 @@ export function Inspector(props: InspectorProps) {
             />
             <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
               <ScrollFade className="sticky top-0 z-10" />
-              {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
-              {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
-              {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+              {/* Keyed on the tab, so React replaces the view rather than
+                  reconciling one panel's controls into another's and the
+                  animation has something to run on. */}
+              <div key={zoomTab} className="flex min-w-0 flex-1 flex-col animate-view-in">
+                {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
+                {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
+                {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+              </div>
             </div>
           </div>
         </aside>
@@ -374,63 +379,86 @@ export function Inspector(props: InspectorProps) {
 
           <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
             <ScrollFade className="sticky top-0 z-10" />
-            {editingCaptions && <CaptionEditor {...props.editing} />}
 
-            {active === "layout" && (
-              <LayoutPanel
-                settings={settings}
-                frame={props.frame}
-                cameraSource={props.cameraSource}
-                cameraPresent={props.present.has("camera")}
-                fileUrl={props.fileUrl}
-                field={field}
-                set={set}
-              />
-            )}
+            {/* The panel's content, faded in on the way to a new one.
+                `animate-view-in` is the dock's own swap, reused: opacity and
+                nothing else, which matters more here than it does there. A
+                keyframe that moved the content would make this wrapper a
+                containing block for the length of it, and the background
+                panel's tab row is `sticky` — it would come unpinned for
+                200ms every time you opened it.
 
-            {active === "background" && (
-              <BackgroundPanel
-                settings={settings}
-                field={field}
-                set={set}
-                onPickWallpaper={props.onPickWallpaper}
-                onPickImage={props.onPickImage}
-                onPickPreset={props.onPickPreset}
-                backgrounds={props.backgrounds}
-                pendingBackground={props.pendingBackground}
-                wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
-              />
-            )}
+                Fading in and not out. An outgoing panel would have to stay
+                mounted and float over the incoming one, and these are a
+                scrolling column of very different heights: the two would have
+                to agree on a size neither has. */}
+            <div
+              key={editingCaptions ? "captions-editor" : active}
+              className="flex min-w-0 flex-1 flex-col animate-view-in"
+            >
+              {editingCaptions && <CaptionEditor {...props.editing} />}
 
-            {active === "frame" && <FramePanel settings={settings} field={field} set={set} />}
+              {active === "layout" && (
+                <LayoutPanel
+                  settings={settings}
+                  frame={props.frame}
+                  cameraSource={props.cameraSource}
+                  cameraPresent={props.present.has("camera")}
+                  fileUrl={props.fileUrl}
+                  field={field}
+                  set={set}
+                />
+              )}
 
-            {active === "camera" && (
-              <CameraPanel
-                settings={settings}
-                frame={props.frame}
-                cameraSource={props.cameraSource}
-                field={field}
-                set={set}
-              />
-            )}
+              {active === "background" && (
+                <BackgroundPanel
+                  settings={settings}
+                  field={field}
+                  set={set}
+                  onPickWallpaper={props.onPickWallpaper}
+                  onPickImage={props.onPickImage}
+                  onPickPreset={props.onPickPreset}
+                  backgrounds={props.backgrounds}
+                  pendingBackground={props.pendingBackground}
+                  wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
+                />
+              )}
 
-            {active === "audio" && (
-              <AudioPanel settings={settings} present={props.present} field={field} set={set} />
-            )}
+              {active === "frame" && <FramePanel settings={settings} field={field} set={set} />}
 
-            {active === "cursor" && (
-              <CursorPanel settings={settings} field={field} set={set} cursorUrl={props.fileUrl} />
-            )}
+              {active === "camera" && (
+                <CameraPanel
+                  settings={settings}
+                  frame={props.frame}
+                  cameraSource={props.cameraSource}
+                  field={field}
+                  set={set}
+                />
+              )}
 
-            {active === "captions" && !editingCaptions && (
-              <CaptionsPanel
-                settings={settings}
-                captions={props.captions}
-                field={field}
-                set={set}
-                onEdit={() => setCaptionView("edit")}
-              />
-            )}
+              {active === "audio" && (
+                <AudioPanel settings={settings} present={props.present} field={field} set={set} />
+              )}
+
+              {active === "cursor" && (
+                <CursorPanel
+                  settings={settings}
+                  field={field}
+                  set={set}
+                  cursorUrl={props.fileUrl}
+                />
+              )}
+
+              {active === "captions" && !editingCaptions && (
+                <CaptionsPanel
+                  settings={settings}
+                  captions={props.captions}
+                  field={field}
+                  set={set}
+                  onEdit={() => setCaptionView("edit")}
+                />
+              )}
+            </div>
           </div>
         </div>
       </aside>
@@ -464,11 +492,15 @@ const SHELL = "flex flex-1 justify-end";
 /**
  * The rail: icons over the editor's own background, with nothing behind them.
  *
- * It used to be a panel in its own right, which made two surfaces where the eye
- * only has one thing to find — and the smaller of the two was introducing the
- * larger. `self-start` is what keeps it the height of its own buttons: as an
- * ordinary flex item it would stretch to match the panel beside it and hold a
- * column of hover targets over nothing.
+ * It is a surface again. It was one, then was not — two surfaces made the eye
+ * hunt, and the smaller of them was only introducing the larger — but that was
+ * while the inspector was a floating card too. The panel is a full-height column
+ * against the window edge now, so there is one thing here that floats rather
+ * than two, and the dock is it.
+ *
+ * `self-start` is what keeps it the height of its own buttons: as an ordinary
+ * flex item it would stretch to match the panel beside it and hold a column of
+ * hover targets over nothing.
  *
  * Marked the same way the background's tabs are, and for the same reason: two
  * pills behind the icons, one following the choice and one following the
@@ -494,18 +526,42 @@ function Rail<T extends string>({
   // Keeps the pointer's pill up until the blue one reaches it — see the hook.
   const travelling = useTravelling(at);
 
-  // One step down the rail: a button (`size-10`) and the gap under it
-  // (`gap-1`). The pills are positioned from the rail's own `p-2`, so a whole
-  // number of steps lands one exactly on a button.
-  const step = (index: number) => ({ transform: `translateY(calc(${String(index)} * 2.75rem))` });
+  // One step down the rail: a button (`size-9`) and the gap under it (`gap-1`).
+  // The pills are positioned from the rail's own padding, so a whole number of
+  // steps lands one exactly on a button.
+  const step = (index: number) => ({ transform: `translateY(calc(${String(index)} * 2.5rem))` });
   const pill =
-    "pointer-events-none absolute top-2 left-2 size-10 rounded-lg " +
+    "pointer-events-none absolute top-1.5 left-1.5 size-9 rounded " +
     "transition-[transform,opacity] ease-out motion-reduce:transition-none";
   const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
 
   return (
     <nav
-      className="relative flex flex-none flex-col gap-1 self-start p-2"
+      className={cn(
+        "relative flex flex-none flex-col gap-1 self-start",
+        // A dock: a raised surface floating over the board rather than icons
+        // lying directly on it. `self-start` keeps it the height of its own
+        // buttons, which is what makes it read as an object placed on the
+        // composition rather than as a column the window happens to have.
+        //
+        // The panel's own colour, so the two read as one piece of chrome with a
+        // gap in it rather than as a dark object in front of a lighter one.
+        //
+        // The *solid* veil, not the translucent one the panel wears. They are
+        // the same colour — `rgba(22, 23, 26, …)` is `#16171a` — but the panel
+        // has the window behind it where this has the dot grid, and at 93% the
+        // pattern comes through the dock as a faint texture on a surface that
+        // is meant to be sitting on top of it.
+        // 10px around 4px buttons with 6px of padding between them: concentric,
+        // 10 − 6 = 4. A shadow just deep enough to lift it off the board — the
+        // dock is a surface the composition sits under, not a dialog over it,
+        // and a heavy one made the board look like a hole.
+        "rounded-[10px] border border-editor-line bg-editor-veil-solid shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
+        // Margin outside, padding in. Without the margin the dock's own corners
+        // meet the panel's edge and the top of the row, which is the one thing
+        // a floating object must not do.
+        "my-2 mr-2 p-1.5",
+      )}
       onPointerLeave={() => setHovered(null)}
     >
       {/* Parked under the choice while nothing is hovered, so it fades in where
@@ -538,7 +594,7 @@ function Rail<T extends string>({
           // than merely unselected — so the fill behind the chosen one carries
           // that on its own. Tried at 45% with a lift on hover, and it still
           // read as a column of unavailable things.
-          className="relative z-10 grid size-10 place-items-center rounded-lg text-white [&_svg]:size-5"
+          className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
           onPointerEnter={() => setHovered(index)}
           onClick={() => onChange(id)}
         >
@@ -564,9 +620,12 @@ function Rail<T extends string>({
 const PANEL = "flex w-80 flex-none overflow-hidden border-l border-editor-line bg-editor-veil";
 
 /**
- * What the pair occupies when open: the padded rail (3.5rem) and the panel
- * (20rem), with the half-rem left over falling to the left of the rail — the
- * shell is `justify-end`, so slack here never moves the panel off the edge.
+ * What the pair occupies when open.
+ *
+ * The dock is 2.25rem of button, 0.75rem of padding, 0.125rem of border and
+ * 0.5rem of margin beside the panel — 3.625rem — and the panel is 20rem. The
+ * rest falls to the left of the dock, the shell being `justify-end`, so slack
+ * here never moves the panel off the window edge.
  */
 export const PANEL_WIDTH = "24rem";
 
