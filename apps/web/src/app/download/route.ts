@@ -18,13 +18,40 @@ import { capture, identify } from "@/lib/posthog-server";
  */
 
 /**
- * How long a resolved download is reused for.
+ * Where the release workflow mirrors each disk image.
+ *
+ * `latest.json` is written by `release-mirror.yml` the moment a release is
+ * published, and names the version *and* the URL of the file for that exact
+ * version — both halves of the answer, from the job that uploaded it.
+ *
+ * First because it is ours. Reading it costs nobody a GitHub request, so it can
+ * be revalidated in seconds rather than minutes, and the bytes then come off
+ * Cloudflare rather than GitHub's release CDN, which on a 100 MB image is the
+ * difference between a few seconds and a few minutes.
+ */
+const MIRROR_URL = "https://assets.prequel.sh/desktop";
+
+/**
+ * How long the mirror's manifest is reused for.
+ *
+ * Sixty seconds, matching the `cache-control` the mirror job puts on
+ * `latest.json` itself: that object is the one thing in this chain that
+ * changes, and it says how long it is good for. Anything longer here would
+ * ignore it.
+ */
+const MIRROR_REVALIDATE = 60;
+
+/**
+ * How long a resolved download is reused for, on the GitHub fallback.
  *
  * Unauthenticated GitHub allows 60 requests an hour *per IP* — and the IP here
  * is the serverless region's, shared by every visitor. Without caching, one
  * good day on Hacker News exhausts the budget and the button starts sending
  * people to the releases page instead. Ten minutes is well inside the limit and
  * well under how often a release actually happens.
+ *
+ * Only reached when the mirror is unreachable or has nothing for this release,
+ * so the ten minutes is now a fallback's staleness rather than the site's.
  */
 const REVALIDATE = 600;
 
@@ -39,9 +66,10 @@ interface Release {
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const url = (await current()) ?? RELEASES_PAGE;
+  const build = (await fromMirror()) ?? (await fromGitHub());
+  const url = build?.url ?? RELEASES_PAGE;
 
-  track(request, url);
+  track(request, url, build?.version ?? null);
 
   // 302, not 301. A permanent redirect is cached by the browser for as long as
   // it likes, which would pin someone to whichever version they first clicked.
@@ -63,7 +91,7 @@ export async function GET(request: NextRequest): Promise<Response> {
  * PostHog to answer before their download starts would be a worse site in
  * exchange for a chart.
  */
-function track(request: NextRequest, url: string): void {
+function track(request: NextRequest, url: string, version: string | null): void {
   // Crawlers, uptime checks and every chat app that unfurls a link all hit this
   // URL, and none of them installed anything. Counted as downloads they would
   // not just inflate the number — they would move it whenever somebody shared
@@ -78,9 +106,13 @@ function track(request: NextRequest, url: string): void {
       distinctId: identify(request),
       properties: {
         // Which build people are actually installing, and whether they got one
-        // at all: `RELEASES_PAGE` means GitHub was unreachable or had nothing
-        // with a `.dmg` attached, and a rise in that is a broken button.
-        version: versionOf(url),
+        // at all: `RELEASES_PAGE` means neither source had anything with a
+        // `.dmg` attached, and a rise in that is a broken button.
+        version,
+        // Which of the two answered. A fall in this is the mirror failing
+        // quietly, which costs every visitor a slow download and is otherwise
+        // invisible — the button still works.
+        source: url.startsWith(MIRROR_URL) ? "mirror" : "github",
         resolved: url !== RELEASES_PAGE,
         // Where the click came from, so the funnel can tell the nav button from
         // the pricing page from a link in someone else's thread.
@@ -90,9 +122,49 @@ function track(request: NextRequest, url: string): void {
   );
 }
 
+/** What to send somebody to, and which version it is. */
+interface Build {
+  url: string;
+  /**
+   * Null only on the GitHub path, for an asset URL this cannot read a tag out
+   * of. The download still works — it is the property on the event that is
+   * missing, and a redirect withheld because a regex did not match would be a
+   * broken button in exchange for a tidier chart.
+   */
+  version: string | null;
+}
+
+/** The mirror's manifest, or null if it is not there or not readable. */
+async function fromMirror(): Promise<Build | null> {
+  try {
+    const response = await fetch(`${MIRROR_URL}/latest.json`, {
+      next: { revalidate: MIRROR_REVALIDATE },
+    });
+    if (!response.ok) return null;
+
+    const body = (await response.json()) as { version?: unknown; url?: unknown };
+    if (typeof body.version !== "string" || typeof body.url !== "string") return null;
+    // A manifest that names a file somewhere else is a manifest to ignore: this
+    // route hands the URL straight to a browser as a redirect.
+    if (!body.url.startsWith(`${MIRROR_URL}/`)) return null;
+
+    return { url: body.url, version: body.version };
+  } catch {
+    // Not fatal, and not logged: the fallback below is the answer, and a mirror
+    // that is briefly unreachable is not something anybody needs telling about.
+    return null;
+  }
+}
+
 /** The tag out of a release asset URL, or null when it is not one. */
 function versionOf(url: string): string | null {
   return /\/download\/([^/]+)\//.exec(url)?.[1] ?? null;
+}
+
+/** The newest stable release carrying a `.dmg`, from GitHub. */
+async function fromGitHub(): Promise<Build | null> {
+  const url = await current();
+  return url ? { url, version: versionOf(url) } : null;
 }
 
 /** The newest stable release carrying a `.dmg`, or null. */

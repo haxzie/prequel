@@ -197,3 +197,18 @@ jobs:
             --title "Prequel $GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag
+
+  # The CDN copy, and the manifest the site reads to find it.
+  #
+  # Invoked rather than left to `release: published`: a release created by the
+  # step above is authored by this workflow's own `GITHUB_TOKEN`, and GitHub
+  # deliberately raises no event for those — the recursion guard — so nothing
+  # would ever run. `secrets: inherit` because the mirror needs the R2 keys and
+  # the account id, none of which this job touches.
+  mirror:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release-mirror.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

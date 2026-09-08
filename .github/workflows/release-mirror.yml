@@ -1,0 +1,207 @@
+name: Mirror release to R2
+
+# A second copy of the disk image on assets.prequel.sh, and a latest.json that
+# says where it is.
+#
+# The GitHub release stays the source of truth and is untouched: `latest-mac.yml`
+# lives there, `/v1/updates` in the Worker points the updater at it, and every
+# installed copy checks there. What this adds is a *download* that arrives at
+# line speed — Cloudflare against GitHub's release CDN is the difference between
+# a few seconds and a few minutes on a 100 MB image.
+#
+# It also takes the site off GitHub's API for the one answer it needs most.
+# `/download` had to cache the releases list for ten minutes, because
+# unauthenticated GitHub allows 60 requests an hour per IP and the IP is the
+# serverless region's, shared by every visitor. `latest.json` is ours, so the
+# cache can be sixty seconds and a release is downloadable the moment it exists.
+#
+# Called by `build.yml` once the release is published, rather than left to the
+# `release: published` event: a release created by that workflow's own
+# `GITHUB_TOKEN` deliberately does not raise one — GitHub's recursion guard —
+# so nothing would ever run. The event trigger is kept for a release published
+# by hand, where a human's token does raise it.
+#
+# Repository secrets:
+#   R2_ACCOUNT_ID          Cloudflare dashboard → R2 → Account details
+#   R2_ACCESS_KEY_ID       R2 → Manage API tokens, object read+write on `prequel`
+#   R2_SECRET_ACCESS_KEY
+#
+# The same three names `apps/api/.dev.vars` uses, so there is one set of R2
+# credentials in this project rather than one per place that writes to it. The
+# endpoint is built from the account id the way `upload-backgrounds.ts` builds
+# it — R2 serves every bucket off one account hostname.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to mirror, e.g. v0.0.16"
+        required: true
+        type: string
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to mirror, e.g. v0.0.16"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One bucket and one latest.json, so two runs must never overlap. Not cancelled
+# either: a run stopped between the upload and the manifest leaves a disk image
+# in the bucket that nothing points at, which is the one state this cannot tidy
+# up after itself.
+concurrency:
+  group: release-mirror
+  cancel-in-progress: false
+
+env:
+  BUCKET: prequel
+  # Beside `backgrounds/`, which is already served from this domain.
+  PREFIX: desktop
+  PUBLIC_URL: https://assets.prequel.sh
+  # The AWS CLI sends integrity headers R2 rejects unless they are asked for
+  # only where the protocol requires them.
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+  AWS_DEFAULT_REGION: auto
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -eu
+          case "$TAG" in
+            v*) ;;
+            *) echo "::error::$TAG is not a release tag."; exit 1 ;;
+          esac
+          version="${TAG#v}"
+
+          # The disk image only. The zip and `latest-mac.yml` exist for the
+          # updater, which reads them from GitHub and should go on doing so.
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.dmg' --dir dist
+          count=$(ls dist/*.dmg 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one .dmg in $TAG, found $count."
+            exit 1
+          fi
+          file=$(basename "$(ls dist/*.dmg)")
+
+          # Read from the release rather than from the event payload, so a
+          # manual re-run carries the timestamp the automatic one would have.
+          published_at=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json publishedAt --jq .publishedAt)
+
+          {
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "file=$file"
+            echo "size=$(stat -c%s "dist/$file")"
+            echo "sha256=$(sha256sum "dist/$file" | cut -d' ' -f1)"
+            echo "published_at=$published_at"
+          } >> "$GITHUB_OUTPUT"
+
+      # Guards a manual re-mirror of an older tag: pointing latest.json at a
+      # build that predates the current one would downgrade every download on
+      # the site, silently and for everybody.
+      - name: Refuse to go backwards
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -eu
+          current=$(curl -fsSL "$PUBLIC_URL/$PREFIX/latest.json" 2>/dev/null |
+            sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n 1) || current=""
+          if [ -z "$current" ]; then
+            echo "no latest.json yet — $VERSION will be the first."
+            exit 0
+          fi
+          newest=$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)
+          if [ "$newest" != "$VERSION" ] && [ "$current" != "$VERSION" ]; then
+            echo "::error::latest.json already points at $current, which is newer than $VERSION."
+            exit 1
+          fi
+
+      - name: Upload the disk image
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          VERSION: ${{ steps.release.outputs.version }}
+          FILE: ${{ steps.release.outputs.file }}
+        run: |
+          set -eu
+          # Version-pinned key, so the object never changes and can be cached
+          # for as long as anyone cares to keep it.
+          aws s3 cp "dist/$FILE" "s3://$BUCKET/$PREFIX/$VERSION/$FILE" \
+            --endpoint-url "https://$ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --content-type application/x-apple-diskimage \
+            --cache-control "public, max-age=31536000, immutable" \
+            --only-show-errors
+
+      - name: Update latest.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          FILE: ${{ steps.release.outputs.file }}
+          SIZE: ${{ steps.release.outputs.size }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+          PUBLISHED_AT: ${{ steps.release.outputs.published_at }}
+        run: |
+          set -eu
+          jq -n \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --arg publishedAt "$PUBLISHED_AT" \
+            --arg filename "$FILE" \
+            --arg url "$PUBLIC_URL/$PREFIX/$VERSION/$FILE" \
+            --arg sha256 "$SHA256" \
+            --argjson size "$SIZE" \
+            '{
+              version: $version,
+              tag: $tag,
+              publishedAt: $publishedAt,
+              platform: "darwin-arm64",
+              filename: $filename,
+              url: $url,
+              size: $size,
+              sha256: $sha256
+            }' > latest.json
+          cat latest.json
+
+          # Short TTL: this is the one object that changes, and a release nobody
+          # can see for an hour is a release that did not happen. The site's own
+          # revalidate matches this number rather than guessing at one.
+          aws s3 cp latest.json "s3://$BUCKET/$PREFIX/latest.json" \
+            --endpoint-url "https://$ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --content-type application/json \
+            --cache-control "public, max-age=60" \
+            --only-show-errors
+
+      # Through the public domain rather than the bucket, because that is the
+      # path the site and every visitor take — a bucket write that succeeds
+      # behind a custom domain that is not serving it is the failure this
+      # catches.
+      - name: Check it is actually there
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          FILE: ${{ steps.release.outputs.file }}
+        run: |
+          set -eu
+          curl -fsSL "$PUBLIC_URL/$PREFIX/latest.json" | tee /dev/stderr | grep -q "\"version\": \"$VERSION\""
+          code=$(curl -sIL -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$PREFIX/$VERSION/$FILE")
+          [ "$code" = "200" ] || { echo "::error::$PUBLIC_URL/$PREFIX/$VERSION/$FILE returned $code"; exit 1; }
