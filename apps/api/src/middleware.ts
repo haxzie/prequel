@@ -128,9 +128,45 @@ async function fromSession(c: App): Promise<Identity | null> {
     userId: session.user.id,
     // The plugin keeps the active team on the session, so a user in two teams
     // with two tabs open gets the right library in each.
-    teamId: session.session.activeOrganizationId ?? (await firstTeam(c.get("db"), session.user.id)),
+    teamId: await activeTeam(c.get("db"), session.user.id, session.session.activeOrganizationId),
     via: "session",
   };
+}
+
+/**
+ * The team a session says it is on — if that is still true.
+ *
+ * This used to be `activeOrganizationId ?? firstTeam(…)`, which trusts the
+ * column. Nothing clears it when the team it names goes away: `member` cascades
+ * from the organization, a session does not, so deleting a team leaves every
+ * live session of its members pointing at an id that is no longer there. `??`
+ * does not catch that, because the value is not null — it is simply wrong.
+ *
+ * What follows is the worst shape a bug can take here. The id reaches
+ * `identity.teamId` and every write keyed to a team fails inside D1 on a foreign
+ * key, so the sign-in handshake 500s at `desktop/authorize` with "Something went
+ * wrong" — an error floor away from anything naming a team, on an account that
+ * is signed in perfectly well and whose own team is sitting there intact.
+ *
+ * Asking for the membership answers "is this team still mine" and "does it still
+ * exist" in the same indexed read, because deleting the team takes the row with
+ * it. It costs one lookup on `member_org_user_idx` for a request that names an
+ * active team — the branch that used to cost nothing — which is the price of the
+ * column being unenforced.
+ */
+export async function activeTeam(
+  db: Database,
+  userId: string,
+  // `undefined` as well as `null`: the plugin leaves the field off a session that
+  // has never chosen a team, and the `??` this replaced absorbed both.
+  active: string | null | undefined,
+): Promise<string | null> {
+  if (!active) return firstTeam(db, userId);
+
+  // Both failures land on the same answer as a session that never chose a team,
+  // which is the team the account has always shared into. Returning null instead
+  // would read as "no team" and send somebody who has one to `NO_TEAM`.
+  return (await membership(db, userId, active)) ? active : firstTeam(db, userId);
 }
 
 async function fromDeviceToken(c: App, db: Database, token: string): Promise<Identity | null> {
