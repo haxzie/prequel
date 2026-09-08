@@ -5,12 +5,10 @@ import { PANEL_INSET } from "../../shared/contract";
 import { Root } from "./Root";
 import "./index.css";
 
-// The camera bubble's window is sized in main with the same constant, so
-// publishing it as a custom property keeps the CSS inset and the window
-// geometry from drifting apart — a mismatch would clip the shadow it is there
-// to hold or leave a dead band around it. The dock no longer needs one: its
-// window is vibrant, which means the window is the panel and macOS draws the
-// shadow.
+// The camera bubble's and the dock's windows are sized in main with the same
+// constant, so publishing it as a custom property keeps the CSS inset and the
+// window geometry from drifting apart — a mismatch would clip the shadow it is
+// there to hold or leave a dead band around it.
 document.documentElement.style.setProperty("--panel-inset", `${PANEL_INSET}px`);
 
 // Hover any element and press ⌘C to copy it, with its component stack and

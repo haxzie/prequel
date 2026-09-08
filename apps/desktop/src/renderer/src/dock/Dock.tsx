@@ -45,21 +45,25 @@ export function Dock() {
       ref={panel}
       data-view={state.view}
       className={
-        // The panel *is* the window now, so it fills it: the window is vibrant,
-        // and a frosted material fills the window's rectangle, so any part of
-        // the window the panel did not cover would be frosted desktop hanging
-        // in mid-air.
+        // The pill is drawn here, inside a transparent window an inset larger
+        // all round — the same arrangement as the camera bubble, and for the
+        // same reason: macOS shapes a window's shadow to its rectangle, so a
+        // shadow cast by a square window around a rounded panel would be
+        // square. The margin is what it is cast into.
         //
-        // No radius, no border, no shadow, and no margin to cast one into.
-        // macOS draws the corners and the shadow around a vibrant window
-        // itself, and a CSS pill inside it would be a second, inset outline
-        // around the frosted one. `--dock-bg` is a scrim over the material
-        // rather than a fill — see `dock-theme`.
+        // It went the other way for a while, with the window vibrant and macOS
+        // drawing the corners. That gave a frosted panel and took the radius
+        // with it: Electron's `roundedCorners` is a boolean, and on a 44pt bar
+        // the system radius reads as a full pill. Drawing it here is what makes
+        // the roundness ours to pick. `--dock-bg` is a fill now rather than a
+        // scrim over a material — see `dock-theme`.
         //
-        // Filling the window is also what lets the window animate its width and
-        // take the panel smoothly with it; the natural width lives on the setup
-        // row, which is what gets measured and reported to main.
-        "dock-theme size-full bg-dock-bg text-dock-fg"
+        // `flex-1` rather than a height: `#root` is a flex column, so the panel
+        // takes what the margins leave, which is exactly `PANEL_HEIGHT`. The
+        // natural width lives on the setup row, which is what gets measured and
+        // reported to main.
+        "dock-theme m-(--panel-inset) flex-1 rounded-[10px] border border-white/12 " +
+        "bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}

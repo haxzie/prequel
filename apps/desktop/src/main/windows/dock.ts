@@ -8,12 +8,12 @@
  */
 import { screen, type BrowserWindow, type Rectangle } from "electron";
 
-import { PANEL_HEIGHT, type DockMenu, type DockView } from "../../shared/contract.js";
+import { PANEL_HEIGHT, PANEL_INSET, type DockMenu, type DockView } from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
 import { DockMenuWindow } from "./dock-menu.js";
 
 /**
- * The size of the visible panel, which is now also the window's own — see
+ * The size of the visible panel. The window adds `PANEL_INSET` all round — see
  * `windowSize`.
  *
  * Setup's width is only a starting point: the panel's real width depends on
@@ -73,11 +73,19 @@ export class DockWindow {
   prepare(): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) return this.window;
 
-    // The same material as the editor's chrome. The window is exactly the pill
-    // now — no transparent margin, no headroom — because the material fills the
-    // window's rectangle and anything the window is bigger than the panel by
-    // would be frosted too. See `DockMenuWindow` for where the drop-ups went.
-    const window = createPanel({ ...this.windowSize(), movable: true, vibrancy: "hud" });
+    // Transparent rather than vibrant, and the pill is drawn in CSS.
+    //
+    // The material was the whole reason macOS shaped this window: it sits
+    // behind the web contents and cannot be clipped from CSS, so the window had
+    // to *be* the pill and take the system's corner radius with it. Electron
+    // exposes `roundedCorners` as a boolean and nothing else, so on a 44pt bar
+    // that radius was not a choice — it read as a full pill.
+    //
+    // Drawing it here costs the frost and buys the radius. It also brings back
+    // the transparent margin `PANEL_INSET` is for: macOS shapes a window's
+    // shadow to its rectangle, so a shadow on a square window around a rounded
+    // panel would be a square. `CameraWindow` has always worked this way.
+    const window = createPanel({ ...this.windowSize(), movable: true });
     // One layer above the selection overlays, which sit at `screen-saver` so
     // they can cover full-screen apps. Without the extra level the panel
     // disappears behind its own picker, and the camera and microphone cannot be
@@ -93,8 +101,7 @@ export class DockWindow {
     // click having missed.
     window.on("move", () => {
       if (!this.menu.isOpen) return;
-      const { x, y } = window.getBounds();
-      this.menu.follow({ x, y });
+      this.menu.follow(this.panelOrigin(window));
     });
 
     this.window = window;
@@ -171,8 +178,27 @@ export class DockWindow {
   setMenu(menu: DockMenu | null): void {
     const window = this.browserWindow();
     if (!window) return;
+    this.menu.open(menu, this.panelOrigin(window));
+  }
+
+  /**
+   * Where the visible panel's top-left sits on screen.
+   *
+   * The two axes do not agree, which is the whole reason this is a function.
+   *
+   * `y` is the panel's top edge rather than the window's, because a drop-up is
+   * placed above the panel and the window now stands `PANEL_INSET` taller than
+   * it. Passing the window's would float every menu an inset too high, over a
+   * transparent margin, with the gap looking wrong and nothing to point at.
+   *
+   * `x` stays the *window's* left. `anchorX` is measured by the renderer with
+   * `getBoundingClientRect`, so it is already relative to the window and
+   * already carries the inset; adding it again here would push every menu one
+   * inset to the right of the control that opened it.
+   */
+  private panelOrigin(window: BrowserWindow): { x: number; y: number } {
     const { x, y } = window.getBounds();
-    this.menu.open(menu, { x, y });
+    return { x, y: y + PANEL_INSET };
   }
 
   browserWindow(): BrowserWindow | null {
@@ -229,15 +255,18 @@ export class DockWindow {
    * The window is exactly the panel.
    *
    * It used to be the panel plus a transparent margin for its CSS drop shadow
-   * and headroom for an open drop-up. A vibrant window can afford neither: the
-   * material fills the window's rectangle, so any part of the window the panel
-   * does not cover is frosted desktop hanging in mid-air. macOS draws the
-   * corners and the shadow now, and the drop-ups moved to their own window.
+   * and headroom for an open drop-up. A vibrant window could afford neither:
+   * the material fills the window's rectangle, so any part of the window the
+   * panel did not cover was frosted desktop hanging in mid-air.
+   *
+   * The margin is back, because the panel is drawn in CSS again — but only the
+   * margin. The drop-ups stayed in their own window, so there is no headroom
+   * here and the inset is even on all four sides.
    */
   private windowSize(): { width: number; height: number } {
     const { width, height } = SIZES[this.view];
     const panel = this.view === "setup" ? (this.contentWidth ?? width) : width;
-    return { width: panel, height };
+    return { width: panel + PANEL_INSET * 2, height: height + PANEL_INSET * 2 };
   }
 
   private reposition(options: { animate?: boolean; duration?: number } = {}): void {
@@ -284,7 +313,10 @@ export class DockWindow {
     const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     window.setBounds({
       x: Math.round(workArea.x + (workArea.width - size.width) / 2),
-      y: Math.round(workArea.y + workArea.height - size.height - BOTTOM_MARGIN),
+      // `+ PANEL_INSET` because `BOTTOM_MARGIN` is measured to the bottom of the
+      // *panel*, and the window now extends that much further down. Without it
+      // the dock would sit an inset closer to the edge than it used to.
+      y: Math.round(workArea.y + workArea.height - size.height - BOTTOM_MARGIN + PANEL_INSET),
       ...size,
     });
   }

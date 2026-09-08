@@ -151,8 +151,10 @@ body,
   height: 100%;
 }
 
-/* The dock's window is taller than the panel — headroom for an open drop-up —
-   and the panel sits at the bottom of it. Overlays position themselves. */
+/* A column, so the dock's panel can take the height its margins leave rather
+   than being given one. Its window is an inset larger than the panel all round,
+   which is the margin the panel's shadow is cast into. Overlays position
+   themselves. */
 #root {
   display: flex;
   flex-direction: column;
@@ -489,13 +491,19 @@ body {
 }
 
 @utility dock-theme {
-  --dock-bg: rgba(40, 47, 56, 0.55);
+  /* A fill, not a scrim. This was 0.55 alpha over a frosted material, which the
+     dock's window no longer has — see `Dock.tsx`. At that alpha over bare
+     desktop the panel reads as a smear rather than an object, and every control
+     in it competes with whatever is behind. Kept a little short of opaque so it
+     still sits *over* the screen rather than punching a hole in it. */
+  --dock-bg: rgba(28, 33, 40, 0.96);
   /* A step darker than the panel. The two are separate windows over the same
      material, and a menu that matched the panel exactly would read as a piece
      of it that had come loose rather than as something laid over it. */
   --dock-menu: rgba(32, 38, 46, 0.66);
-  /* Dividers, and only dividers: both windows are shaped and outlined by macOS
-     now, so nothing here is a border any more.
+  /* Dividers, and only dividers. The menu's window is shaped and outlined by
+     macOS, and the panel draws its own hairline in `Dock.tsx`, so nothing here
+     is a border.
 
      Translucent white rather than the dark tone this was, for the same reason
      `--dock-hover` below is: the surface under it is frosted desktop, not a
