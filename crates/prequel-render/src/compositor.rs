@@ -87,6 +87,17 @@ struct Uniforms {
     /// eight bytes of tail padding the struct already carried, so nothing above
     /// moved and both sides are 224 long.
     adapt: f32,
+    /// How opaque a still image is drawn, 0 to 1. Everything else passes 1.
+    ///
+    /// The first field to need the struct to *grow*: the eight bytes `vignette`
+    /// and `soften` were fitted into are spent, and `adapt` took the last four.
+    /// MSL rounds a struct up to its largest member's alignment, so one more
+    /// `float` takes both sides from 224 to 240 — and Rust aligns `[f32; 4]` to
+    /// 4 rather than 16, so it will not add that itself. Hence the padding
+    /// below, written out for the reason `_align` above is.
+    alpha: f32,
+    /// Padding to 240, which is where MSL puts the end of this struct.
+    _tail: [f32; 3],
 }
 
 const MODE_FILL: u32 = 0;
@@ -432,6 +443,10 @@ impl Compositor {
             // Off. Only the pointer ever turns it on.
             smear: [0.0; 4],
             texel: [0.0; 2],
+            // Opaque unless a watermark says otherwise — the one item that
+            // draws a picture at less than its own alpha.
+            alpha: 1.0,
+            _tail: [0.0; 3],
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -477,7 +492,7 @@ impl Compositor {
                         None,
                     ))
                 }
-                Paint::Image { path } => {
+                Paint::Image { path, blur } => {
                     let Some(held) = self.images.get(path) else {
                         // Not loaded, or missing. Skipped rather than filled
                         // with black, which would look like a rendering fault.
@@ -493,8 +508,30 @@ impl Compositor {
                             // wallpaper to fill a vertical frame, and the
                             // preview and the export then disagree about the
                             // one thing behind everything else.
+                            //
                             src: cover(rect, held.texture.width(), held.texture.height()),
                             mode: MODE_IMAGE,
+                            // Without this the blur does nothing at all: `base`
+                            // leaves `texel` at zero, every tap offset
+                            // multiplies out to zero, and all sixteen land on
+                            // the same point. The captions carry the same note.
+                            texel: [
+                                1.0 / held.texture.width().max(1) as f32,
+                                1.0 / held.texture.height().max(1) as f32,
+                            ],
+                            // The same tap loop the captions use — and, like it,
+                            // measured in the *sampled image's* texels rather
+                            // than in output pixels. A wallpaper is drawn well
+                            // under its own resolution, so the setting's radius
+                            // has to be converted or it reaches barely a pixel
+                            // of a 3200-wide picture.
+                            soften: (*blur
+                                * source_per_output(
+                                    cover(rect, held.texture.width(), held.texture.height()),
+                                    rect,
+                                    held.texture.width(),
+                                ))
+                                as f32,
                             ..base
                         },
                         // Already held by `self.images`, so it needs no entry
@@ -612,6 +649,40 @@ impl Compositor {
                         ..base
                     },
                     None,
+                ))
+            }
+
+            PlanItem::Watermark {
+                path,
+                dst_rect,
+                opacity,
+            } => {
+                let Some(held) = self.images.get(path) else {
+                    // Not loaded, or missing. Skipped rather than filled with
+                    // anything, for the reason a missing background is: a solid
+                    // rectangle where a logo should be looks like a fault, and
+                    // no logo looks like no logo.
+                    return Ok(None);
+                };
+                Some((
+                    Uniforms {
+                        rect: rect_of(dst_rect),
+                        // The whole picture, undistorted. A watermark is placed
+                        // at a size somebody chose rather than fitted to a box,
+                        // so there is no crop to take — `cover` here would
+                        // silently trim a wide logo to a square.
+                        src: [0.0, 0.0, 1.0, 1.0],
+                        // Square: a logo carries its own shape in its alpha, and
+                        // rounding the quad would cut the corners off one drawn
+                        // to the edges of its file.
+                        shape: [0.0, 2.0],
+                        mode: MODE_IMAGE,
+                        alpha: *opacity as f32,
+                        ..base
+                    },
+                    // Already held by `self.images`, so it needs no entry in
+                    // this frame's keep-alive list.
+                    Some(held.texture.as_ref()),
                 ))
             }
 
@@ -902,6 +973,20 @@ fn cover(rect: &Rect, width: usize, height: usize) -> [f32; 4] {
     ]
 }
 
+/// How many of the sampled image's own pixels one output pixel covers.
+///
+/// The twin of `sourcePerOutput` in `webgl.ts`. What turns a blur measured
+/// against the frame into one the sampler can use: a wallpaper is drawn well
+/// under its own resolution — 3200 pixels of picture across 1920 of frame — so
+/// a radius handed straight to `soften` would reach a fraction of what the
+/// setting asked for.
+fn source_per_output(src: [f32; 4], rect: &Rect, width: usize) -> f64 {
+    if rect.width <= 0.0 {
+        return 0.0;
+    }
+    src[2] as f64 * width as f64 / rect.width
+}
+
 fn normalised(rect: &Rect, width: usize, height: usize) -> [f32; 4] {
     if width == 0 || height == 0 {
         return [0.0, 0.0, 1.0, 1.0];
@@ -966,10 +1051,12 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, soften), 216);
         assert_eq!(offset_of!(Uniforms, adapt), 220);
 
+        // The first field that made the struct grow rather than filling padding
+        // it already carried. MSL rounds to the next 16, so both sides are 240
+        // and the tail is written out here because Rust would not add it.
+        assert_eq!(offset_of!(Uniforms, alpha), 224);
         assert_eq!(align_of::<Uniforms>(), 4);
-        // The eight bytes of tail padding the struct always carried, now spent
-        // on two `float`s. MSL rounds the whole thing to 224 either way.
-        assert_eq!(size_of::<Uniforms>(), 224);
+        assert_eq!(size_of::<Uniforms>(), 240);
     }
 
     #[test]

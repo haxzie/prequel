@@ -21,7 +21,9 @@
  * for dynamic and video wallpapers, where there is no still file to find.
  */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +39,28 @@ import { getRecorder } from "./recorder.js";
 const run = promisify(execFile);
 
 import { WALLPAPER_FILE_NAME as WALLPAPER_FILE } from "../shared/project.js";
+
+/**
+ * What the file picker offers, for a background and for a logo alike.
+ *
+ * SVG is in the list because `convert` below rasterises it correctly: `sips`
+ * goes through CoreGraphics, which draws vectors properly and honours `-Z`, so
+ * a logo arrives at `MAX_EDGE` and is sharp at whatever size the frame is
+ * exported at. It has to be converted rather than copied, though — see
+ * `RASTER_ONLY`.
+ */
+const IMAGE_KINDS = ["png", "jpg", "jpeg", "heic", "heif", "svg"] as const;
+
+/**
+ * Sources that are meaningless once copied rather than converted.
+ *
+ * The fallback below copies the file when `sips` will not convert it, which is
+ * right for a picture in a format the app can still draw. An SVG copied under a
+ * `.png` name is not that: the media protocol would serve it as an image, the
+ * canvas would refuse it, and the Rust decoder would fail on the first byte —
+ * so a logo that looked chosen would simply never appear.
+ */
+const RASTER_ONLY = /\.svg$/i;
 
 /** Longest edge of a copied background. A 6K wallpaper is not worth keeping. */
 const MAX_EDGE = 2560;
@@ -104,24 +128,51 @@ async function capture(dir: string, options: { reuse: boolean }): Promise<Backgr
 /**
  * Lets the user choose their own background image.
  *
- * Copied in under a stable name so the project can reference it relatively.
+ * Copied in under a name taken from the picture's own bytes, so the project can
+ * reference it relatively and two different pictures are two different files.
+ *
+ * That last part is not tidiness. This wrote `background-custom.png` for every
+ * upload, and choosing a second picture then changed nothing on screen: the
+ * project's stored path was the string it already held, so the renderer's image
+ * effect — keyed on the set of paths it has to load — never re-ran, and the
+ * first photograph stayed in the map and stayed on the canvas. Chromium's cache
+ * would have served the old bytes for that URL besides. A content-addressed
+ * name changes the path, which is what makes both of those notice.
+ *
+ * It also makes the file honest about what is in it: `background-custom.png`
+ * meant a different photograph in every recording, which is why a saved scene
+ * preset may not carry one — see `presetBackground` in `shared/scene-presets.ts`.
+ *
+ * Re-choosing the same picture lands on the same name and costs nothing.
  */
 export async function pickBackgroundImage(dir: string): Promise<BackgroundImage | null> {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: "Choose a background",
     properties: ["openFile"],
-    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "heic", "heif"] }],
+    filters: [{ name: "Images", extensions: [...IMAGE_KINDS] }],
   });
 
   const source = filePaths[0];
   if (canceled || !source) return null;
 
-  const name = "background-custom.png";
+  const name = `background-${await fingerprint(source)}.png`;
   const destination = join(dir, name);
+
+  // The same picture chosen twice is already here, and re-encoding a
+  // 48-megapixel photo to prove it is not worth the wait.
+  if (existsSync(destination)) return described(dir, name);
 
   // Converted rather than copied: a HEIC or a 48-megapixel photo would either
   // fail to draw or make every preview frame expensive.
   if (await convert(source, destination)) return described(dir, name);
+
+  // Nothing to fall back to for a vector: copied under a `.png` name it would
+  // be a file every decoder refuses, and a logo that looked chosen would simply
+  // never appear.
+  if (RASTER_ONLY.test(source)) {
+    console.warn(`[wallpaper] could not rasterise ${source}`);
+    return null;
+  }
 
   try {
     copyFileSync(source, destination);
@@ -129,6 +180,79 @@ export async function pickBackgroundImage(dir: string): Promise<BackgroundImage 
   } catch (cause) {
     console.warn("[wallpaper] could not copy the chosen image:", cause);
     return null;
+  }
+}
+
+/**
+ * Lets the user choose a logo to lay over the composition.
+ *
+ * `pickBackgroundImage`'s twin, and deliberately so: same dialog, same
+ * conversion, same content-addressed name. What differs is only the prefix, so
+ * a mark and a backdrop chosen from the same file are two files in the
+ * recording — one of them is drawn full-bleed behind everything and the other
+ * at a tenth of the size on top, and a shared name would mean deleting one took
+ * the other with it.
+ *
+ * PNG throughout, because a logo is the one picture here that is expected to
+ * have a hole in it: `sips` writing JPEG would fill every transparent pixel
+ * with white and put a card behind the mark.
+ */
+export async function pickWatermarkImage(dir: string): Promise<BackgroundImage | null> {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: "Choose a logo",
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: [...IMAGE_KINDS] }],
+  });
+
+  const source = filePaths[0];
+  if (canceled || !source) return null;
+
+  const name = `watermark-${await fingerprint(source)}.png`;
+  const destination = join(dir, name);
+
+  // Already here: the same picture chosen twice costs nothing.
+  if (existsSync(destination)) return described(dir, name);
+
+  if (await convert(source, destination)) return described(dir, name);
+
+  // Nothing to fall back to for a vector: copied under a `.png` name it would
+  // be a file every decoder refuses, and a logo that looked chosen would simply
+  // never appear.
+  if (RASTER_ONLY.test(source)) {
+    console.warn(`[wallpaper] could not rasterise ${source}`);
+    return null;
+  }
+
+  try {
+    copyFileSync(source, destination);
+    return described(dir, name);
+  } catch (cause) {
+    console.warn("[wallpaper] could not copy the chosen logo:", cause);
+    return null;
+  }
+}
+
+/**
+ * A short, stable name for the picture a path points at.
+ *
+ * The source bytes rather than the converted output, so the name is known
+ * before the work is done and choosing the same file twice can skip it
+ * entirely. MD5 because this is a file name, not a defence — the backgrounds
+ * catalogue hashes with it for the same reason.
+ *
+ * Falls back to the clock if the file cannot be read. A name that is merely
+ * unique is still enough to fix the reload; only the skip-if-present shortcut
+ * is lost, and the conversion below would fail on that file anyway.
+ */
+export async function fingerprint(source: string): Promise<string> {
+  try {
+    const hash = createHash("md5")
+      .update(await readFile(source))
+      .digest("hex");
+    return hash.slice(0, 16);
+  } catch (cause) {
+    console.warn(`[wallpaper] could not read ${source} to name it:`, cause);
+    return Date.now().toString(36);
   }
 }
 

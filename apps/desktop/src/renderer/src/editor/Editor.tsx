@@ -12,6 +12,11 @@ import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/con
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import { newProject, outputFrame, type Project, type ZoomSlice } from "../../../shared/project";
+import {
+  presetCarriesImage,
+  presetNeedsBackground,
+  type ScenePreset,
+} from "../../../shared/scene-presets";
 import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
@@ -23,9 +28,11 @@ import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
-import { Inspector, PANEL_WIDTH } from "./Inspector";
+import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
-import { Preview, type Grab } from "./Preview";
+import { Preview, type Grab, type Picked } from "./Preview";
+import { asCard } from "./poster";
+import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
@@ -86,6 +93,41 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
   const [panelOpen, setPanelOpen] = useState(true);
+  /**
+   * Which inspector panel is showing.
+   *
+   * Here rather than inside `Inspector` so that clicking a picture in the
+   * preview can open the panel that dresses it — see `showPanelFor`.
+   */
+  const [panelTab, setPanelTab] = useState<CategoryId>("layout");
+
+  /**
+   * Opens the panel for a picture that has just been clicked.
+   *
+   * The ring says *what* is selected and the corner handles say it can be
+   * resized, but everything else about the thing — a bubble's shape, a
+   * recording's padding and border — was still a hunt through the rail. Clicking
+   * it now answers both questions at once.
+   *
+   * The camera and the captions each have a panel named after them. The
+   * screen's is `recording`, which is the one holding the padding, the corner,
+   * the border and the shadow — the frame *around* the recording. Not `layout`:
+   * that is where the two pictures are arranged relative to each other, which is
+   * a statement about the pair rather than about the one that was clicked.
+   *
+   * Opens the panel as well as switching it, and drops any selected zoom. Both
+   * for the same reason: a selected zoom takes the inspector over entirely, and
+   * a closed panel shows nothing — so without either, clicking something would
+   * set a tab nobody could see and look like it had done nothing at all.
+   */
+  const showPanelFor = useCallback(
+    (target: Picked) => {
+      setPanelTab(PANEL_FOR[target]);
+      setPanelOpen(true);
+      dispatch({ type: "selectZoom", zoomId: null });
+    },
+    [dispatch],
+  );
   /**
    * What the panel is showing, and so what brings it back.
    *
@@ -225,6 +267,185 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const backgrounds = useBackgrounds();
   /** The background being downloaded, so its swatch can say so. */
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
+
+  const scenePresets = useScenePresets();
+  const { setMine: setSavedPresets } = scenePresets;
+
+  /**
+   * Applies a look, having first made sure its picture is on disk.
+   *
+   * All or nothing. `onPickPreset` below carries the same rule for the same
+   * reason: applied before the download finishes, the composition goes dark for
+   * as long as it takes. What is different here is that a look is a *bundle* —
+   * applying everything except the background would leave the user unable to
+   * tell which half had landed, which is worse than nothing happening.
+   */
+  const applyPreset = useCallback(
+    async (preset: ScenePreset) => {
+      const token = (applyToken.current += 1);
+      const stale = () => token !== applyToken.current;
+      let ready = preset;
+
+      const wallpaper = presetNeedsBackground(preset);
+      if (wallpaper) {
+        setApplyingPreset(preset.id);
+        const result = await window.prequel.editor.backgrounds.ensure(session.dir, wallpaper);
+        if (stale()) return;
+        setApplyingPreset(null);
+
+        if (!result.ok || !result.value) {
+          // A picture that has been withdrawn from the catalogue, or no network.
+          // Nothing is applied; the look that is working is left alone.
+          console.warn(`[editor] could not fetch ${wallpaper} for ${preset.id}`);
+          return;
+        }
+      } else if (presetCarriesImage(preset)) {
+        setApplyingPreset(preset.id);
+        const result = await window.prequel.editor.scenePresets.applyImage(preset.id, session.dir);
+        if (stale()) return;
+        setApplyingPreset(null);
+
+        if (!result.ok || !result.value) {
+          console.warn(`[editor] could not copy ${preset.id}'s own picture in`);
+          return;
+        }
+
+        // Named for the preset once it is inside the recording, so two looks
+        // applied to one recording cannot land on the same file.
+        ready = {
+          ...preset,
+          background: {
+            ...preset.background,
+            background: { kind: "image", source: "file", path: result.value },
+          },
+        };
+      }
+
+      // The logo, copied in under the name it already carries. Done after the
+      // background rather than instead of it: a look can carry both, and they
+      // are two files.
+      const logo = ready.watermark.watermark;
+      if (logo) {
+        const copied = await window.prequel.editor.scenePresets.applyWatermark(
+          preset.id,
+          session.dir,
+          logo,
+        );
+        if (stale()) return;
+
+        if (!copied.ok || !copied.value) {
+          // Applied without it rather than not at all: everything else about
+          // the look is still what was asked for, and a mark that will not copy
+          // is one missing picture rather than a broken preset.
+          console.warn(`[editor] could not copy ${preset.id}'s logo in`);
+          ready = {
+            ...ready,
+            watermark: { ...ready.watermark, watermark: null },
+          };
+        }
+      }
+
+      if (stale()) return;
+      dispatch({ type: "applyPreset", preset: ready });
+    },
+    [session.dir],
+  );
+
+  /**
+   * Renames a saved look, and forgets one.
+   *
+   * Both answer with the whole list rather than patching the one that changed,
+   * which is what main hands back — the disk is what decides, and a renderer
+   * that edited its own copy could come to disagree with it.
+   */
+  const renamePreset = useCallback(
+    async (id: string, name: string) => {
+      const result = await window.prequel.editor.scenePresets.rename(id, name);
+      if (result.ok) setSavedPresets(result.value);
+    },
+    [setSavedPresets],
+  );
+
+  const deletePreset = useCallback(
+    async (id: string) => {
+      const result = await window.prequel.editor.scenePresets.remove(id);
+      if (result.ok) setSavedPresets(result.value);
+    },
+    [setSavedPresets],
+  );
+
+  /**
+   * Saves what is on screen as a look.
+   *
+   * The card is the preview's own frame, grabbed through `Grab` — which resolves
+   * from inside the draw loop, because the WebGL context has no
+   * `preserveDrawingBuffer` and a read from here would come back transparent.
+   * It answers null rather than throwing when the loop is not running, and a
+   * look with no card is a cell that never draws, so that is declined.
+   */
+  const savePreset = useCallback(
+    async (name: string) => {
+      const still = await grab.current?.();
+      const card = still && (await asCard(still));
+      if (!card) {
+        console.warn("[editor] the preview had no frame to save as a card");
+        return;
+      }
+
+      const { captionsOn: _on, ...captions } = previewSettings.captions;
+      const { background } = previewSettings.background;
+      // A picture chosen in this recording travels as bytes, not as a name:
+      // `background-custom.png` means a different photograph in every folder.
+      const carried =
+        background.kind === "image" && background.source === "file" ? background.path : null;
+
+      const result = await window.prequel.editor.scenePresets.save(
+        {
+          id: `look-${Date.now().toString(36)}`,
+          name,
+          savedAt: Date.now(),
+          frame: {
+            width: state.project.frame.width,
+            height: state.project.frame.height,
+            // Resolved to the size it actually is. `auto` is not a size, and a
+            // preset carrying it has its frame written straight back over.
+            presetId:
+              state.project.frame.presetId === AUTO_PRESET_ID ? null : state.project.frame.presetId,
+          },
+          layout: previewSettings.layout,
+          background: previewSettings.background,
+          captions,
+          watermark: previewSettings.watermark,
+          zoom: state.project.zoomDefaults,
+        },
+        card,
+        // The session is needed whenever *either* picture has to be carried.
+        carried || previewSettings.watermark.watermark ? session.dir : null,
+        carried,
+        previewSettings.watermark.watermark,
+      );
+
+      if (result.ok) setSavedPresets(result.value);
+    },
+    [
+      previewSettings,
+      session.dir,
+      setSavedPresets,
+      state.project.frame,
+      state.project.zoomDefaults,
+    ],
+  );
+  /** The look whose wallpaper is being fetched, so its card can say so. */
+  const [applyingPreset, setApplyingPreset] = useState<string | null>(null);
+  /**
+   * Which apply is the current one.
+   *
+   * Two looks clicked in quick succession are two downloads in flight, and
+   * without this both land — the slower one last, so the winner is whichever
+   * finished rather than whichever was asked for. Bumped on every apply and
+   * checked before anything is dispatched.
+   */
+  const applyToken = useRef(0);
   // The project defaults rather than the playhead's settings: captions are
   // project-wide, and reading them off whichever clip the playhead is under
   // would re-rasterise every cue on every cut.
@@ -495,13 +716,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               zooms={state.project.zooms}
               cues={captions.byLook}
               grab={grab}
-              onLayout={(patch) => {
+              onPick={showPanelFor}
+              onDrag={(section, patch) => {
                 // One dispatch per key, because that is what the override
                 // bookkeeping counts in: a gesture that writes five keys has to
                 // mark five keys as set for this clip, or resetting one of them
                 // would take its neighbours with it.
                 for (const [key, value] of Object.entries(patch)) {
-                  dispatch({ type: "setSetting", section: "layout", key, value });
+                  dispatch({ type: "setSetting", section, key, value });
                 }
               }}
             />
@@ -532,6 +754,20 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               pendingBackground={pendingBackground}
               frame={state.project.frame}
               cameraSource={cameraSource}
+              tab={panelTab}
+              onTab={setPanelTab}
+              presets={{
+                ours: scenePresets.ours,
+                mine: scenePresets.mine,
+                applying: applyingPreset,
+                // Nothing under the playhead is nothing drawn, and a look is
+                // saved from what is on screen.
+                canSave: media.sliceId !== null,
+                onApply: applyPreset,
+                onSave: savePreset,
+                onRename: renamePreset,
+                onDelete: deletePreset,
+              }}
               onPreviewZoom={previewZoom}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing
@@ -583,6 +819,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                   key: "background",
                   value: { kind: "image", source: "preset", path: file },
                 });
+              }}
+              onPickWatermark={async () => {
+                const result = await window.prequel.editor.pickWatermark(session.dir);
+                if (result.ok && result.value) {
+                  dispatch({
+                    type: "setSetting",
+                    section: "watermark",
+                    key: "watermark",
+                    value: result.value.path,
+                  });
+                }
               }}
               onPickImage={async () => {
                 const result = await window.prequel.editor.pickImage(session.dir);
@@ -1033,8 +1280,32 @@ function imagePaths(project: ReturnType<typeof newProject>, cursors: readonly st
     for (const slice of track.slices) add(slice.overrides.background?.background);
   }
 
+  // The watermark, from the defaults and from every clip that sets its own. A
+  // path collected here is a path `useEditorImages` loads — one left out is a
+  // logo the preview simply never draws, with nothing to say why.
+  const mark = (file: string | null | undefined) => {
+    if (file) paths.add(file);
+  };
+  mark(project.defaults.watermark.watermark);
+  for (const track of project.tracks) {
+    for (const slice of track.slices) mark(slice.overrides.watermark?.watermark);
+  }
+
   return [...paths];
 }
+
+/**
+ * The panel behind each thing the preview can be clicked on.
+ *
+ * A table rather than a conditional, so adding something to the composition
+ * that can be clicked is a line here and a compile error until it is.
+ */
+const PANEL_FOR: Record<Picked, CategoryId> = {
+  camera: "camera",
+  screen: "recording",
+  watermark: "watermark",
+  captions: "captions",
+};
 
 /** The shortcuts worth having before there is a menu bar. */
 function useShortcuts(

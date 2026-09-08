@@ -25,9 +25,10 @@ import { cn } from "../../lib/cn";
  * arranged second. As fourteen unlabelled cells in one block, the camera-only
  * arrangements read as three more variations on the eight above them.
  *
- * Each arrangement sits next to its own reflection, so the pair is read as one
+ * Each arrangement is listed next to its own reflection, so a pair reads as one
  * choice with a side to it rather than as two arrangements that happen to look
- * alike.
+ * alike — which holds wherever the row does not break between them. See the
+ * note on `GROUPS`.
  *
  * Every thumbnail is drawn by asking `layoutBoxes` where the pictures go and
  * scaling the answer down. Drawing them by hand would be a second
@@ -44,7 +45,13 @@ import { cn } from "../../lib/cn";
  */
 
 /**
- * The arrangements, in the order they appear. Four to a row.
+ * The arrangements, in the order they appear. Three to a row.
+ *
+ * Three does not divide the pairs. `beside` and `beside-left` land beside each
+ * other, but `over-column` ends a row and `over-column-left` begins the next —
+ * so that one pair is read as two choices rather than as one with a side to it.
+ * An even number of columns keeps every reflection adjacent; this is the cost
+ * of the wider cell.
  *
  * `camera` sits on the group rather than on each arrangement: it is the same
  * question the heading already answers, and two places to state it is one place
@@ -134,7 +141,10 @@ const CELL =
   "relative grid aspect-square place-items-center rounded-lg border border-white/10 " +
   "bg-white/5 p-0.5 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
-const GRID = "grid grid-cols-4 gap-1";
+// Three across. The cells are square — see `CELL` — so this is also what sets
+// how tall they are: wide enough that a thumbnail can be told apart at a
+// glance, without the column of them running off the panel.
+const GRID = "grid grid-cols-3 gap-1";
 
 export function LayoutPicker({
   frame,
@@ -301,7 +311,24 @@ function Plate({
       }}
     >
       {boxes.screen && (
-        <span className="absolute rounded-[2px] bg-layout-screen" style={at(boxes.screen.area)} />
+        <span
+          className="absolute overflow-hidden rounded-[2px] bg-layout-screen"
+          style={at(boxes.screen.area)}
+        >
+          {/* A sketch of something being recorded, rather than a blank block.
+              Four shapes and no more: this is drawn a few dozen pixels across
+              and, in `beside`, as a column narrower than it is tall — past about
+              this much detail the parts stop being separable and the whole
+              thing reads as noise on the plate.
+
+              Proportions rather than pixels, so the sketch squashes with the
+              block instead of overflowing it. `overflow-hidden` on the parent
+              is what keeps the bands inside the rounded corner. */}
+          <span className="absolute inset-x-0 top-0 h-[20%] bg-layout-ui" />
+          <span className="absolute top-[20%] bottom-0 left-0 w-[26%] bg-layout-ui/60" />
+          <span className="absolute top-[36%] right-[10%] left-[34%] h-[14%] bg-layout-ui-alt" />
+          <span className="absolute top-[62%] right-[28%] left-[34%] h-[14%] bg-layout-ui" />
+        </span>
       )}
       {boxes.camera && (
         <span

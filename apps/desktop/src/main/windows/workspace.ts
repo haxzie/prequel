@@ -208,7 +208,7 @@ export class WorkspaceWindow {
    * Throws for a directory that is not an openable recording, so the caller can
    * report it rather than the window going blank.
    */
-  showProject(dir: string): void {
+  showProject(dir: string, announce = true): void {
     const verified = verifyRecording(dir);
     if (this.current === verified) return;
 
@@ -217,7 +217,7 @@ export class WorkspaceWindow {
     this.flush();
     this.current = verified;
     this.window?.setTitle(basename(verified));
-    this.push();
+    this.push(announce);
   }
 
   /**
@@ -245,8 +245,22 @@ export class WorkspaceWindow {
     if (this.window && !this.window.isDestroyed()) this.window.close();
   }
 
-  /** Sends the open recording to the renderer, and the pane behind it. */
-  private push(): void {
+  /**
+   * Sends the open recording to the renderer, and the pane behind it.
+   *
+   * `announce` says whether to tell the renderer a recording is *coming*, ahead
+   * of it arriving. Loading one probes its media and, on a take that has never
+   * been opened, copies its background in — hundreds of milliseconds during
+   * which this window is already on screen with no session to draw. It showed
+   * the library for that gap, so stopping a recording flashed the grid before
+   * the editor appeared, which reads as having opened the wrong thing.
+   *
+   * False from the grid, where the library is not a fallback but the screen the
+   * user is standing on: a card there marks itself as opening and the list stays
+   * put underneath, which is the better answer when the list is what you are
+   * looking at.
+   */
+  private push(announce = true): void {
     const window = this.window;
     if (!window) return;
 
@@ -256,6 +270,8 @@ export class WorkspaceWindow {
 
     const dir = this.current;
     if (!dir) return;
+
+    if (announce) window.webContents.send(IPC_CHANNELS.editorOpening, dir);
 
     void readEditorSession(dir)
       .then((session) => {

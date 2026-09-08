@@ -6,7 +6,7 @@
  * correct range handling a `<video>` cannot seek — playback works until the
  * buffer runs out and then simply stops, with nothing to say why.
  */
-import { assetUrl, permissionIconUrl } from "../shared/media-url.js";
+import { assetUrl, permissionIconUrl, scenePresetUrl } from "../shared/media-url.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -35,6 +35,28 @@ writeFileSync(join(ROOT, TAKE, "screen.mp4"), BODY);
 // A file outside the recordings directory, for the traversal cases to aim at.
 writeFileSync(join(ROOT, "..", "prequel-media-secret.mp4"), "secret");
 afterAll(() => rmSync(join(ROOT, "..", "prequel-media-secret.mp4"), { force: true }));
+
+describe("a scene preset's card", () => {
+  it("refuses an id that is not a bare name", () => {
+    // An id *is* a file name here — the card is served by it — which is the
+    // whole reason ids are generated rather than taken from what the user
+    // typed.
+    expect(resolveMediaPath(scenePresetUrl("mine", "../../evil"), ROOT)).toBeNull();
+    expect(resolveMediaPath(scenePresetUrl("ours", "../../evil.jpg"), ROOT)).toBeNull();
+    expect(resolveMediaPath(scenePresetUrl("ours", "not-a-jpeg.png"), ROOT)).toBeNull();
+  });
+
+  it("refuses a kind it does not serve", () => {
+    expect(resolveMediaPath("prequel-media://scene-preset/elsewhere/kinetic", ROOT)).toBeNull();
+    // One segment is not enough to say which of the two stores it means.
+    expect(resolveMediaPath("prequel-media://scene-preset/kinetic", ROOT)).toBeNull();
+  });
+
+  it("resolves a bare one to each store", () => {
+    expect(resolveMediaPath(scenePresetUrl("mine", "kinetic"), ROOT)).toContain("kinetic");
+    expect(resolveMediaPath(scenePresetUrl("ours", "kinetic.jpg"), ROOT)).toContain("kinetic.jpg");
+  });
+});
 
 describe("resolveMediaPath", () => {
   it("resolves a file inside a recording", () => {

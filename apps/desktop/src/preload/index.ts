@@ -29,6 +29,7 @@ import type {
   WorkspaceSection,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
+import type { ScenePreset } from "../shared/scene-presets.js";
 import type { Project } from "../shared/project.js";
 
 export type {
@@ -201,6 +202,18 @@ const api = {
       return () => ipcRenderer.off(IPC_CHANNELS.editorOpen, handler);
     },
 
+    /**
+     * A recording is coming, ahead of it being ready.
+     *
+     * Loading one probes its media, so there is a gap between the window being
+     * on screen and there being anything to draw in it. This is what fills it.
+     */
+    onOpening: (listener: (dir: string) => void): (() => void) => {
+      const handler = (_event: unknown, dir: string) => listener(dir);
+      ipcRenderer.on(IPC_CHANNELS.editorOpening, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.editorOpening, handler);
+    },
+
     /** Persists the edit. Debounced by the renderer, which owns it. */
     saveProject: (dir: string, project: Project): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorSaveProject, dir, project),
@@ -212,6 +225,10 @@ const api = {
     /** Opens a file picker and copies the chosen image into the recording. */
     pickImage: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPickImage, dir),
+
+    /** Copies a logo into the recording, to be laid over the composition. */
+    pickWatermark: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorPickWatermark, dir),
 
     /** Copies one of the shipped wallpapers into the recording. */
     presetImage: (dir: string, presetId: string): Promise<IpcResult<BackgroundImage | null>> =>
@@ -318,6 +335,58 @@ const api = {
       /** Puts the full picture inside the recording, so it can be drawn. */
       ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
         ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
+    },
+
+    scenePresets: {
+      /** The looks saved on this machine, newest first. */
+      list: (): Promise<IpcResult<ScenePreset[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsList),
+
+      /** The ones we publish. An empty list on a machine with no network. */
+      catalogue: (): Promise<IpcResult<ScenePreset[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsCatalogue),
+
+      /** Caches one of our cards. Answers whether it can be drawn now. */
+      thumbnail: (file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsThumbnail, file),
+
+      /**
+       * Saves a look, its card and any picture it carries, and answers with the
+       * whole list — one call, because a preset whose card never arrived is a
+       * cell that will not draw and nothing to say why.
+       */
+      save: (
+        preset: ScenePreset,
+        card: string,
+        sessionDir: string | null,
+        sourceFile: string | null,
+        watermarkFile: string | null,
+      ): Promise<IpcResult<ScenePreset[]>> =>
+        ipcRenderer.invoke(
+          IPC_CHANNELS.scenePresetsSave,
+          preset,
+          card,
+          sessionDir,
+          sourceFile,
+          watermarkFile,
+        ),
+
+      rename: (id: string, name: string): Promise<IpcResult<ScenePreset[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsRename, id, name),
+
+      remove: (id: string): Promise<IpcResult<ScenePreset[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsDelete, id),
+
+      /**
+       * Copies a look's own picture into the recording, answering with the name
+       * it landed under — which is what the background setting then holds.
+       */
+      applyImage: (id: string, dir: string): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsApplyImage, id, dir),
+
+      /** Copies a look's logo in, under the name it already carries. */
+      applyWatermark: (id: string, dir: string, file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsApplyWatermark, id, dir, file),
     },
 
     captions: {

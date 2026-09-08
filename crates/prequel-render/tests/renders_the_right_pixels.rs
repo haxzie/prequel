@@ -335,6 +335,7 @@ fn draws_an_image_background() {
                 },
                 paint: Paint::Image {
                     path: "background.png".to_owned(),
+                    blur: 0.0,
                 },
             },
             PlanItem::Image {

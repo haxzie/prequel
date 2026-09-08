@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch } from "react";
+import { useEffect, useRef, useState, type Dispatch } from "react";
 
 import { captionStyle } from "../../../shared/captions";
 import { cursorStyle } from "../../../shared/contract";
@@ -6,6 +6,7 @@ import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
   DEFAULT_LAYOUT,
+  SHAPE_RADIUS,
   overriddenKeys,
   type Background,
   type BackgroundSettings,
@@ -64,7 +65,13 @@ import {
   PerspectiveIcon,
   PlaceIcon,
   PortraitIcon,
+  AddPresetIcon,
+  ApplyAllIcon,
+  CornerRadiusIcon,
+  PresetsIcon,
   ResetIcon,
+  ReturnIcon,
+  WatermarkIcon,
   RoundedIcon,
   ScreenIcon,
   ShadowIcon,
@@ -87,6 +94,7 @@ import {
 } from "./icons";
 import {
   ColorField,
+  CONTROL_H,
   percent,
   Segmented,
   Slider,
@@ -97,7 +105,16 @@ import {
   useTravelling,
 } from "./controls/inputs";
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
-import { activeSettings, selectedSlice, type EditorAction, type EditorState } from "./state";
+import { DEFAULT_GRADIENT_ANGLE } from "../../../shared/presets";
+import { ScenePresetCard } from "./controls/ScenePresetCard";
+import type { ScenePreset } from "../../../shared/scene-presets";
+import {
+  activeSettings,
+  selectedSlice,
+  slicesOf,
+  type EditorAction,
+  type EditorState,
+} from "./state";
 
 export interface InspectorProps {
   state: EditorState;
@@ -126,6 +143,8 @@ export interface InspectorProps {
   onPreviewZoom: () => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
+  /** Opens the file picker for a logo, and copies it into the recording. */
+  onPickWatermark: () => void;
   onPickPreset: (file: string) => void;
   /**
    * A file inside the recording, as something the renderer can load.
@@ -147,6 +166,30 @@ export interface InspectorProps {
    */
   onClose: () => void;
   /**
+   * Which panel is showing.
+   *
+   * Held by the editor rather than here, and for the same reason `panelOpen` is:
+   * clicking the camera in the preview has to be able to open the Camera panel,
+   * and a tab that lived in this component could only ever be set by this
+   * component. Kept as one value with the rail rather than a "go here" request
+   * alongside local state, because two sources for one answer is how a rail
+   * comes to disagree with the panel under it.
+   *
+   * A tab naming a category this recording does not have is tolerated — see
+   * `active` — so nothing outside has to know which categories exist.
+   */
+  tab: CategoryId;
+  onTab: (tab: CategoryId) => void;
+  /**
+   * The saved looks, and what may be done with them.
+   *
+   * Bundled for the reason `captions` and `editing` are: every one of these
+   * reaches something outside the reducer — the catalogue over IPC, the
+   * preview's frame grab, the recording directory a wallpaper is fetched into —
+   * and threading six props for one panel would put that knowledge here.
+   */
+  presets: PresetsState;
+  /**
    * The words, and what the captions editor may do to them.
    *
    * Bundled for the reason `captions` is: the words are derived from the
@@ -154,6 +197,23 @@ export interface InspectorProps {
    * callbacks reaches the playback clock, which lives outside the reducer.
    */
   editing: CaptionEditing;
+}
+
+/** What the presets panel shows, and what pressing a card does. */
+export interface PresetsState {
+  /** The ones we publish. Empty on a machine that has never reached the API. */
+  ours: ScenePreset[];
+  /** The ones saved on this machine, newest first. */
+  mine: ScenePreset[];
+  /** The id of the look whose wallpaper is being fetched, if any. */
+  applying: string | null;
+  /** False while there is nothing on screen to take a card from. */
+  canSave: boolean;
+  onApply: (preset: ScenePreset) => void;
+  onSave: (name: string) => void;
+  /** Both only ever reach a look saved on this machine — see `own` on a card. */
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
 }
 
 /**
@@ -183,8 +243,7 @@ export interface CaptionsState {
  * a value is currently coming from.
  */
 export function Inspector(props: InspectorProps) {
-  const { state, dispatch } = props;
-  const [tab, setTab] = useState<CategoryId>("layout");
+  const { state, dispatch, tab, onTab } = props;
   const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
   /**
    * Which of the captions category's two views is showing.
@@ -250,8 +309,7 @@ export function Inspector(props: InspectorProps) {
               // glyphs cannot say for themselves.
               title={showingZoomTab.label}
               icon={<showingZoomTab.Icon />}
-              onDelete={() => dispatch({ type: "deleteZoom", zoomId: zoom.id })}
-              deleteLabel="Remove zoom"
+              clips={slicesOf(state.project).length}
               onClose={props.onClose}
             />
             <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
@@ -272,6 +330,10 @@ export function Inspector(props: InspectorProps) {
   }
 
   const categories: Category[] = [
+    // First, and above the sections. A preset is not one of them — it is where
+    // a whole set of them comes from, so it reads as the thing you reach for
+    // before you start rather than as another group of controls.
+    { id: "presets", label: "Presets", Icon: PresetsIcon },
     { id: "layout", label: "Layout", Icon: LayoutIcon },
     { id: "background", label: "Background", Icon: BackdropIcon },
     // "Recording", not "Frame". Everything in it — the padding, the corner, the
@@ -292,6 +354,11 @@ export function Inspector(props: InspectorProps) {
     ...(props.present.has("microphone")
       ? [{ id: "captions" as const, label: "Captions", Icon: CaptionsIcon }]
       : []),
+    // Last, and past the conditional ones. Everything above is something the
+    // recording already has and is being dressed; a logo is a thing added to
+    // it, so it reads as the end of the list rather than as another property of
+    // the picture.
+    { id: "watermark", label: "Logo", Icon: WatermarkIcon },
   ];
 
   // What each category's Reset puts back.
@@ -301,20 +368,35 @@ export function Inspector(props: InspectorProps) {
   // pairs that are not one-to-one are the reason this is a table: Background
   // and Frame are two panels over the one `background` section and must reset
   // only their own half of it, and three of them are views onto `layout`.
-  const RESETS: Record<CategoryId, (of: typeof sectionReset) => (() => void) | undefined> = {
-    layout: (of) => of("layout"),
-    background: (of) => of("background", PAINT_KEYS),
-    recording: (of) => of("background", FRAME_KEYS),
-    camera: (of) => of("layout"),
-    audio: (of) => of("audio"),
-    cursor: (of) => of("layout"),
-    captions: (of) => of("captions"),
+  // What each panel is a view onto.
+  //
+  // One table behind both the Reset and the apply-to-all, so the two can never
+  // disagree about what a panel owns. The pairs that are not one-to-one are the
+  // reason it is a table: Background and Recording are two panels over the one
+  // `background` section and must each act on only their own half, and three of
+  // them are views onto `layout`.
+  //
+  // Null for Presets, which owns no section — it applies them wholesale, and
+  // undo is what takes one off.
+  const OWNS: Record<CategoryId, { section: SettingsSection; keys?: string[] } | null> = {
+    presets: null,
+    layout: { section: "layout" },
+    background: { section: "background", keys: PAINT_KEYS },
+    recording: { section: "background", keys: FRAME_KEYS },
+    watermark: { section: "watermark" },
+    camera: { section: "layout" },
+    audio: { section: "audio" },
+    cursor: { section: "layout" },
+    captions: { section: "captions" },
   };
 
   // A category can disappear — open a recording with no camera while Camera is
   // showing — so the fallback is the one that is always there rather than a
   // blank panel.
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
+  // Whether the presets panel is asking what to call the look being saved.
+  // Local, like `captionView`: it is navigation, not an edit.
+  const [naming, setNaming] = useState(false);
   // `active` is resolved against this same list above, so the fallback is
   // unreachable — it exists to keep this total rather than to be taken.
   const showing = categories.find((category) => category.id === active) ?? categories[0]!;
@@ -331,8 +413,11 @@ export function Inspector(props: InspectorProps) {
         items={categories}
         value={active}
         onChange={(id) => {
-          setTab(id);
+          onTab(id);
           setCaptionView("options");
+          // Both views put back when the panel changes what it is about, so
+          // coming back to a category never finds it mid-something.
+          setNaming(false);
         }}
       />
 
@@ -357,7 +442,7 @@ export function Inspector(props: InspectorProps) {
               // back. It was a word here while the panels had words of their
               // own, and a lone word among icons once they stopped.
               onReset={props.editing.edited ? props.editing.onReset : undefined}
-              deleteLabel="Remove clip"
+              clips={slicesOf(state.project).length}
               onClose={close}
             />
           ) : (
@@ -367,15 +452,54 @@ export function Inspector(props: InspectorProps) {
               // means — so the panel it opens says the word.
               title={showing.label}
               icon={<showing.Icon />}
-              onReset={RESETS[showing.id](sectionReset)}
-              // Only a selected clip can be removed. With nothing selected this
-              // panel is the project defaults, which are not a thing to delete.
-              onDelete={
-                scoped && slice
-                  ? () => dispatch({ type: "deleteSlice", sliceId: slice.id })
+              // The one view with a control of its own. Saving is not a setting,
+              // so it belongs beside the title rather than among the cards it
+              // would otherwise be mistaken for.
+              action={
+                active === "presets" ? (
+                  <button
+                    type="button"
+                    title={naming ? "Cancel" : "Save this look…"}
+                    aria-label={naming ? "Cancel saving" : "Save this look…"}
+                    aria-expanded={naming}
+                    disabled={!props.presets.canSave}
+                    className={cn(
+                      "grid size-6 place-items-center rounded-md text-editor-muted [&_svg]:size-3.5",
+                      props.presets.canSave
+                        ? "hover:bg-white/10 hover:text-editor-fg"
+                        : "cursor-default opacity-40",
+                      // A cross is a plus turned an eighth of a turn, so the one
+                      // glyph can be both — and turning rather than swapping
+                      // says the second state is the first one undone, which is
+                      // exactly what cancelling is.
+                      "transition-transform duration-150 motion-reduce:transition-none",
+                      naming && "rotate-45",
+                    )}
+                    onClick={() => setNaming(!naming)}
+                  >
+                    <AddPresetIcon />
+                  </button>
+                ) : undefined
+              }
+              onReset={
+                OWNS[showing.id]
+                  ? sectionReset(OWNS[showing.id]!.section, OWNS[showing.id]!.keys)
                   : undefined
               }
-              deleteLabel="Remove clip"
+              // Only from a selected clip, and only onto others: with nothing
+              // selected the panel is already editing what every clip follows,
+              // and with one clip there is nowhere for it to go.
+              onApplyToAll={
+                scoped && OWNS[showing.id] && slicesOf(state.project).length > 1
+                  ? () =>
+                      dispatch({
+                        type: "applyToAll",
+                        section: OWNS[showing.id]!.section,
+                        keys: OWNS[showing.id]!.keys,
+                      })
+                  : undefined
+              }
+              clips={slicesOf(state.project).length}
               onClose={close}
             />
           )}
@@ -400,6 +524,10 @@ export function Inspector(props: InspectorProps) {
               className="flex min-w-0 flex-1 flex-col animate-view-in"
             >
               {editingCaptions && <CaptionEditor {...props.editing} />}
+
+              {active === "presets" && (
+                <PresetsPanel presets={props.presets} naming={naming} onNaming={setNaming} />
+              )}
 
               {active === "layout" && (
                 <LayoutPanel
@@ -429,6 +557,16 @@ export function Inspector(props: InspectorProps) {
 
               {active === "recording" && (
                 <RecordingPanel settings={settings} field={field} set={set} />
+              )}
+
+              {active === "watermark" && (
+                <WatermarkPanel
+                  settings={settings}
+                  field={field}
+                  set={set}
+                  fileUrl={props.fileUrl}
+                  onPick={props.onPickWatermark}
+                />
               )}
 
               {active === "camera" && (
@@ -631,8 +769,16 @@ const PANEL = "flex w-80 flex-none overflow-hidden border-l border-editor-line b
 export const PANEL_WIDTH = "24rem";
 
 /** The inspector's destinations. */
-type CategoryId =
-  "layout" | "background" | "recording" | "camera" | "audio" | "cursor" | "captions";
+export type CategoryId =
+  | "presets"
+  | "layout"
+  | "background"
+  | "recording"
+  | "camera"
+  | "audio"
+  | "cursor"
+  | "captions"
+  | "watermark";
 
 /**
  * A selected zoom's destinations.
@@ -712,7 +858,17 @@ function LayoutPanel({
             // The arrangement answers the shape, the same way it answers the
             // camera toggle below. It stays a control afterwards.
             const shape = cameraShapeFor(preset) ?? layout.cameraShape;
-            if (shape !== layout.cameraShape) set("layout", "cameraShape", shape);
+            if (shape !== layout.cameraShape) {
+              set("layout", "cameraShape", shape);
+              // The roundness goes with it, for the reason the shape control
+              // writes it: the geometry reads `cameraCornerRadius` and nothing
+              // else, so an arrangement that moved the shape and left the radius
+              // behind would show a card wearing the bubble's corners.
+              //
+              // Only when the shape actually moves, so a radius dialled in by
+              // hand survives picking an arrangement it is already the shape of.
+              set("layout", "cameraCornerRadius", SHAPE_RADIUS[shape]);
+            }
             // The toggle and the arrangement are two ways of asking the same
             // question, so picking a screen-only arrangement has to answer it
             // the same way — otherwise the Camera panel says the camera is on
@@ -956,14 +1112,32 @@ function CameraPanel({
             ]}
             onChange={(value) => {
               set("layout", "cameraShape", value);
-              // The shape decides the proportions once, here, rather than on
-              // every frame. Derived during layout instead, a bubble someone had
-              // dragged to a shape of their own would snap back to a square the
-              // next time this control was touched.
+              // The shape decides the proportions and the roundness once, here,
+              // rather than on every frame. Derived during layout instead, a
+              // bubble someone had dragged to a shape of their own would snap
+              // back to a square the next time this control was touched — and
+              // the same was true of a radius someone had dialled in by hand.
               set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
+              set("layout", "cameraCornerRadius", SHAPE_RADIUS[value]);
             }}
           />
         </Field>
+
+        {/* The shape control writes this; the slider is how it is taken off the
+          five it offers. A circle is the top of the range rather than a case of
+          its own — half the shorter edge is a rounded rectangle with nothing
+          straight left in it. */}
+        <Slider
+          icon={<CornerRadiusIcon />}
+          label="Roundness"
+          {...field("layout", "cameraCornerRadius")}
+          value={layout.cameraCornerRadius}
+          min={0}
+          max={0.5}
+          format={(value) => `${Math.round((value / 0.5) * 100)}%`}
+          disabled={off}
+          onChange={(value) => set("layout", "cameraCornerRadius", value)}
+        />
 
         <Slider
           icon={<SizeIcon />}
@@ -1025,6 +1199,56 @@ function CameraPanel({
         />
       </Section>
 
+      {/* The camera's own, deliberately not the Frame panel's.
+        
+        The border there belongs to the screen recording, and it used to be the
+        only one there was — so the camera wore none at all rather than have
+        somebody framing a screenshot also draw a ring round a face. Its own
+        leaves, in its own panel, are what make the ring askable-for without
+        making it a side effect of dressing the screen. */}
+      <Section title="Border">
+        <Slider
+          icon={<BorderIcon />}
+          label="Width"
+          {...field("layout", "cameraBorderWidth")}
+          value={layout.cameraBorderWidth}
+          min={0}
+          max={0.02}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("layout", "cameraBorderWidth", value)}
+        />
+
+        {/* Greyed at zero width rather than taken away.
+          
+          Both do say the same thing — there is nothing to dress — but only one
+          of them says it *in place*. Hidden, the two rows collapse and the
+          section silently changes height as the width slider crosses zero, which
+          reads as the panel glitching; and with them gone there is nothing left
+          to tell anyone the edge has a colour at all. Disabled, the answer to
+          "what else could this do?" stays on screen. */}
+        <ColorField
+          icon={<DropletIcon />}
+          label="Colour"
+          {...field("layout", "cameraBorderColor")}
+          value={layout.cameraBorderColor}
+          disabled={off || layout.cameraBorderWidth === 0}
+          onChange={(value) => set("layout", "cameraBorderColor", value)}
+        />
+
+        <Slider
+          icon={<OpacityIcon />}
+          label="Opacity"
+          {...field("layout", "cameraBorderOpacity")}
+          value={layout.cameraBorderOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={off || layout.cameraBorderWidth === 0}
+          onChange={(value) => set("layout", "cameraBorderOpacity", value)}
+        />
+      </Section>
+
       <Section title="When zoomed">
         <ToggleField
           icon={<ZoomOutIcon />}
@@ -1046,6 +1270,293 @@ function CameraPanel({
           format={percent}
           disabled={off || !floats || !layout.cameraShrinkOnZoom}
           onChange={(value) => set("layout", "cameraShrinkTo", value)}
+        />
+      </Section>
+    </>
+  );
+}
+
+/**
+ * The saved looks.
+ *
+ * Ours first, then the user's own. Never interleaved and never sorted by
+ * recency across the boundary: which of the two a look came from is the most
+ * useful thing about it before you have applied one.
+ *
+ * The panel every other one in this rail is not — it applies whole sets of
+ * settings rather than editing one, which is why it has no Reset and why
+ * saving sits in the header rather than among the cards.
+ */
+function PresetsPanel({
+  presets,
+  naming,
+  onNaming,
+}: {
+  presets: PresetsState;
+  naming: boolean;
+  onNaming: (naming: boolean) => void;
+}) {
+  const [name, setName] = useState("");
+  const field = useRef<HTMLInputElement | null>(null);
+
+  // Opened fresh every time, and focused. Cleared here rather than on the way
+  // out because there are now two ways out — Escape, and the header's own
+  // control — and only one of them can reach this component's state.
+  useEffect(() => {
+    if (!naming) return;
+    setName("");
+    field.current?.focus();
+  }, [naming]);
+
+  const stop = () => {
+    onNaming(false);
+    setName("");
+  };
+
+  const save = () => {
+    const trimmed = name.trim();
+    // Declined rather than saved under a placeholder: a list of looks all
+    // called "Untitled" is a list nobody can read.
+    if (trimmed === "") return;
+    presets.onSave(trimmed);
+    stop();
+  };
+
+  return (
+    <>
+      {naming && (
+        // Inline rather than a dialog. Electron has no `prompt()` — it is
+        // disabled in Chromium — and a modal for one short string would be a
+        // window to dismiss over a panel that is already open.
+        //
+        // Titled, because a bare field appearing above a grid of looks does not
+        // say what typing in it will do. The line under it says what is being
+        // saved, which is the part that is not obvious: a look is everything
+        // dressing the picture right now, not the recording.
+        <Section title="Save this look">
+          <p className="-mt-1 text-[11px] text-editor-muted">
+            Save the current video styles as a preset.
+          </p>
+
+          <div className="relative">
+            <input
+              ref={field}
+              value={name}
+              placeholder="Name this look"
+              maxLength={40}
+              className={cn(
+                // Room on the right for the return key sitting in the field.
+                "w-full rounded-md bg-white/5 pr-8 pl-2 text-xs outline-none",
+                CONTROL_H,
+                "placeholder:text-editor-muted focus:bg-white/10",
+              )}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") save();
+                // Backs out of naming without closing the panel — the cards are
+                // still what the user came for. The header's own control does
+                // the same thing, so there are two ways out and no way to lose
+                // what was typed by clicking elsewhere.
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  stop();
+                }
+              }}
+            />
+
+            {/* Inside the field rather than beside it: it is not a second
+                control, it is the key that already works, drawn where the
+                typing is. Greyed until there is a name, because that is when
+                pressing it would do nothing. */}
+            <button
+              type="button"
+              title="Save"
+              aria-label="Save this look"
+              disabled={name.trim() === ""}
+              className={cn(
+                "absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center",
+                "rounded text-editor-muted [&_svg]:size-3",
+                name.trim() === "" ? "opacity-30" : "hover:bg-white/10 hover:text-editor-fg",
+              )}
+              onClick={save}
+            >
+              <ReturnIcon />
+            </button>
+          </div>
+        </Section>
+      )}
+
+      {/* Ours first, and headings rather than a word on every card: with the
+          name under the picture there is no room for a second line, and a group
+          says it once for everything under it. Never interleaved and never
+          sorted by recency across the boundary — which of the two a look came
+          from is the most useful thing about it before you have applied one. */}
+      {presets.ours.length > 0 && (
+        <Section title="Community">
+          <PresetGrid presets={presets.ours} own={false} state={presets} />
+        </Section>
+      )}
+
+      {/* Kept even when it is empty, which is the opposite of the rule the
+          background picker follows about headings with nothing under them.
+          There, an empty group means a category that failed to arrive; here the
+          empty state *is* the invitation, and a panel that simply did not
+          mention saving would not teach anybody it was possible. */}
+      <Section title="Yours">
+        {presets.mine.length === 0 ? (
+          <p className="text-[11px] text-editor-muted">
+            Nothing saved yet. Dress a recording the way you like it, then save the look.
+          </p>
+        ) : (
+          <PresetGrid presets={presets.mine} own state={presets} />
+        )}
+      </Section>
+    </>
+  );
+}
+
+/** One group's looks, two across. */
+function PresetGrid({
+  presets,
+  own,
+  state,
+}: {
+  presets: ScenePreset[];
+  /** Whether this group is the user's own, which is what carries the menu. */
+  own: boolean;
+  state: PresetsState;
+}) {
+  return (
+    <ul className="grid grid-cols-2 gap-2">
+      {presets.map((preset) => (
+        <li key={preset.id}>
+          <ScenePresetCard
+            preset={preset}
+            own={own}
+            busy={state.applying === preset.id}
+            onApply={() => state.onApply(preset)}
+            onRename={(name) => state.onRename(preset.id, name)}
+            onDelete={() => state.onDelete(preset.id)}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A logo laid over the composition.
+ *
+ * Its own panel because it is its own object: not a property of either picture,
+ * and not part of the frame around one. Everything here is off when there is no
+ * file — a position and a size for a mark that does not exist are three sliders
+ * describing nothing.
+ */
+function WatermarkPanel({
+  settings,
+  field,
+  set,
+  fileUrl,
+  onPick,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+  fileUrl: (file: string) => string;
+  onPick: () => void;
+}) {
+  const mark = settings.watermark;
+  const off = mark.watermark === null;
+
+  return (
+    <>
+      {/* No heading over it. The panel header already says Logo, and a section
+          repeating the word the rail just opened is a label read by nobody —
+          the same reason the background's first group carries none. */}
+      <Section>
+        <Field icon={<WatermarkIcon />} {...field("watermark", "watermark")}>
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              className={cn(
+                "relative grid h-24 w-full place-items-center overflow-hidden rounded-lg",
+                "border border-dashed border-white/20 bg-white/5 hover:border-white/35",
+              )}
+              onClick={onPick}
+            >
+              {mark.watermark ? (
+                // Contained, and on a chequer of nothing: a logo is usually
+                // transparent, and a preview that filled the plate would hide
+                // exactly the part that matters.
+                <span
+                  aria-hidden
+                  className="absolute inset-2 bg-contain bg-center bg-no-repeat"
+                  style={{ backgroundImage: `url("${fileUrl(mark.watermark)}")` }}
+                />
+              ) : (
+                <span className="text-[11px] text-editor-muted">Choose an image…</span>
+              )}
+            </button>
+
+            {mark.watermark && (
+              <button
+                type="button"
+                className="self-start rounded px-1 text-[11px] text-editor-muted hover:text-editor-fg"
+                onClick={() => set("watermark", "watermark", null)}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </Field>
+      </Section>
+
+      <Section title="Placement">
+        <Field icon={<PlaceIcon />} {...field("watermark", "watermarkX")}>
+          <CameraMap
+            frame={{ width: 16, height: 9 }}
+            shape="rounded"
+            size={mark.watermarkWidth}
+            aspect={mark.watermarkWidth / Math.max(mark.watermarkHeight, 0.001)}
+            x={mark.watermarkX}
+            y={mark.watermarkY}
+            disabled={off}
+            onChange={(x, y) => {
+              set("watermark", "watermarkX", x);
+              set("watermark", "watermarkY", y);
+            }}
+          />
+        </Field>
+
+        <Slider
+          icon={<SizeIcon />}
+          label="Size"
+          {...field("watermark", "watermarkWidth")}
+          value={mark.watermarkWidth}
+          min={0.02}
+          max={0.5}
+          format={percent}
+          disabled={off}
+          onChange={(value) => {
+            // Both edges together, so resizing keeps the proportions the mark
+            // was placed with rather than squaring it off — the same rule the
+            // camera's Size slider follows.
+            const aspect = mark.watermarkWidth / Math.max(mark.watermarkHeight, 0.001);
+            set("watermark", "watermarkWidth", value);
+            set("watermark", "watermarkHeight", value / aspect);
+          }}
+        />
+
+        <Slider
+          icon={<OpacityIcon />}
+          label="Opacity"
+          {...field("watermark", "watermarkOpacity")}
+          value={mark.watermarkOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("watermark", "watermarkOpacity", value)}
         />
       </Section>
     </>
@@ -1443,6 +1954,30 @@ function BackgroundPanel({
           { value: "solid", label: "Solid" },
           { value: "gradient", label: "Gradient" },
         ]}
+        // Pinned with the tabs rather than laid under the swatches, because it
+        // is the one control here you want while *looking* at the pictures:
+        // below a grid four categories long it would sit off the bottom of the
+        // panel, found by scrolling past everything it acts on.
+        //
+        // Shown only under Image. A solid has nothing to soften and a gradient
+        // is already a smooth ramp, so on those two the control is not disabled
+        // so much as absent — the tab is a mode, and blur is not one of the
+        // things this mode has.
+        below={
+          style !== "image" ? undefined : (
+            <Slider
+              icon={<BlurIcon />}
+              label="Blur"
+              {...field("background", "backgroundBlur")}
+              value={background.backgroundBlur}
+              min={0}
+              max={0.08}
+              format={percent}
+              disabled={paint.kind !== "image"}
+              onChange={(value) => set("background", "backgroundBlur", value)}
+            />
+          )
+        }
         onChange={setStyle}
       />
 
@@ -1465,20 +2000,26 @@ function BackgroundPanel({
             value={paint.kind === "gradient" ? paint : null}
             onChange={(preset) => setPaint({ kind: "gradient", ...preset })}
           />
-          {/* Only once one is applied. An angle slider for a gradient that is
-              not on screen has nothing to turn. */}
-          {paint.kind === "gradient" && (
-            <Slider
-              icon={<AngleIcon />}
-              label="Angle"
-              value={paint.angle}
-              min={0}
-              max={360}
-              step={1}
-              format={(value) => `${Math.round(value)}°`}
-              onChange={(angle) => setPaint({ ...paint, angle })}
-            />
-          )}
+          {/* Greyed until one is applied, rather than absent. An angle slider
+              for a gradient that is not on screen has nothing to turn — but a
+              row that appears the moment you pick a swatch is a panel that
+              changes height under the hand that is still choosing, and the
+              rest of this inspector greys its dependent controls rather than
+              removing them. The reading falls back to the angle every preset
+              here carries, so the disabled slider is not sitting at zero. */}
+          <Slider
+            icon={<AngleIcon />}
+            label="Angle"
+            value={paint.kind === "gradient" ? paint.angle : DEFAULT_GRADIENT_ANGLE}
+            min={0}
+            max={360}
+            step={1}
+            format={(value) => `${Math.round(value)}°`}
+            disabled={paint.kind !== "gradient"}
+            onChange={(angle) => {
+              if (paint.kind === "gradient") setPaint({ ...paint, angle });
+            }}
+          />
         </>
       )}
 
@@ -1564,7 +2105,7 @@ function RecordingPanel({
         />
 
         <Slider
-          icon={<RoundedIcon />}
+          icon={<CornerRadiusIcon />}
           label="Corner radius"
           {...field("background", "cornerRadius")}
           value={background.cornerRadius}
@@ -1587,34 +2128,38 @@ function RecordingPanel({
           onChange={(value) => set("background", "borderWidth", value)}
         />
 
-        {/* Only once there is a border to dress. A swatch and an opacity slider
-          attached to a zero-width edge change nothing on screen, which reads as
-          broken. */}
-        {background.borderWidth > 0 && (
-          <>
-            <ColorField
-              icon={<DropletIcon />}
-              label="Colour"
-              {...field("background", "borderColor")}
-              value={background.borderColor}
-              onChange={(value) => set("background", "borderColor", value)}
-            />
+        {/* Greyed at zero width rather than taken away.
+        
+          Both say the same thing — there is nothing to dress — but only one of
+          them says it in place. Hidden, the section changes height as the width
+          slider crosses zero, which reads as the panel glitching; and with them
+          gone there is nothing left to tell anyone the edge has a colour at
+          all. It is also what every other dependent control in this inspector
+          does: the pointer's hide-after, the camera's shrink, a zoom's focus
+          are all greyed by their switch, not removed by it. */}
+        <ColorField
+          icon={<DropletIcon />}
+          label="Colour"
+          {...field("background", "borderColor")}
+          value={background.borderColor}
+          disabled={background.borderWidth === 0}
+          onChange={(value) => set("background", "borderColor", value)}
+        />
 
-            {/* Opacity rather than transparency, because that is the number the
-              slider holds: 100% is the solid edge, and a control that read
-              "0%" for an opaque border would be the wrong way round. */}
-            <Slider
-              icon={<OpacityIcon />}
-              label="Opacity"
-              {...field("background", "borderOpacity")}
-              value={background.borderOpacity}
-              min={0}
-              max={1}
-              format={percent}
-              onChange={(value) => set("background", "borderOpacity", value)}
-            />
-          </>
-        )}
+        {/* Opacity rather than transparency, because that is the number the
+          slider holds: 100% is the solid edge, and a control that read
+          "0%" for an opaque border would be the wrong way round. */}
+        <Slider
+          icon={<OpacityIcon />}
+          label="Opacity"
+          {...field("background", "borderOpacity")}
+          value={background.borderOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={background.borderWidth === 0}
+          onChange={(value) => set("background", "borderOpacity", value)}
+        />
       </Section>
 
       <Section title="Shadow">
@@ -1629,35 +2174,34 @@ function RecordingPanel({
           onChange={(value) => set("background", "shadowOpacity", value)}
         />
 
-        {/* The two that shape the shadow, kept behind it having one to shape:
-          a blur and an offset on an invisible shadow are two sliders that do
-          nothing. `shadowBlur` and `shadowY` had no controls at all while these
-          fields lived under Background, for want of column. */}
-        {background.shadowOpacity > 0 && (
-          <>
-            <Slider
-              icon={<BlurIcon />}
-              label="Blur"
-              {...field("background", "shadowBlur")}
-              value={background.shadowBlur}
-              min={0}
-              max={0.15}
-              format={percent}
-              onChange={(value) => set("background", "shadowBlur", value)}
-            />
+        {/* The two that shape the shadow, greyed while there is none to shape.
+          `shadowBlur` and `shadowY` had no controls at all while these fields
+          lived under Background, for want of column — which is the other way to
+          lose a setting, and the reason to keep these on screen now they have
+          one. */}
+        <Slider
+          icon={<BlurIcon />}
+          label="Blur"
+          {...field("background", "shadowBlur")}
+          value={background.shadowBlur}
+          min={0}
+          max={0.15}
+          format={percent}
+          disabled={background.shadowOpacity === 0}
+          onChange={(value) => set("background", "shadowBlur", value)}
+        />
 
-            <Slider
-              icon={<ShadowOffsetIcon />}
-              label="Offset"
-              {...field("background", "shadowY")}
-              value={background.shadowY}
-              min={0}
-              max={0.08}
-              format={percent}
-              onChange={(value) => set("background", "shadowY", value)}
-            />
-          </>
-        )}
+        <Slider
+          icon={<ShadowOffsetIcon />}
+          label="Offset"
+          {...field("background", "shadowY")}
+          value={background.shadowY}
+          min={0}
+          max={0.08}
+          format={percent}
+          disabled={background.shadowOpacity === 0}
+          onChange={(value) => set("background", "shadowY", value)}
+        />
       </Section>
     </>
   );
@@ -1670,7 +2214,7 @@ function RecordingPanel({
  * added to `BackgroundSettings` and left out of both would sit in a clip's
  * overrides with no Reset that clears it.
  */
-const PAINT_KEYS: (keyof BackgroundSettings)[] = ["background"];
+const PAINT_KEYS: (keyof BackgroundSettings)[] = ["background", "backgroundBlur"];
 
 const FRAME_KEYS: (keyof BackgroundSettings)[] = [
   "padding",
@@ -1788,8 +2332,8 @@ function PanelHeader({
   onBack,
   action,
   onReset,
-  onDelete,
-  deleteLabel,
+  onApplyToAll,
+  clips,
   onClose,
 }: {
   title: string;
@@ -1809,17 +2353,34 @@ function PanelHeader({
    * presence is also the answer to "has this clip been changed here?".
    */
   onReset?: () => void;
-  /** Absent when there is nothing deletable, which hides the button. */
-  onDelete?: () => void;
-  deleteLabel: string;
+  /**
+   * Gives every clip this panel's settings, taken from the selected one.
+   *
+   * Absent when there is nothing to copy *from* — with no clip selected the
+   * panel is already editing what every clip follows — or nothing to copy *to*,
+   * which is a recording that has never been cut.
+   */
+  onApplyToAll?: () => void;
+  /** How many clips there are, so the confirmation can say what it will touch. */
+  clips: number;
   onClose: () => void;
 }) {
+  /**
+   * Whether the confirmation is showing.
+   *
+   * Asked rather than done, because this is the one control here that changes
+   * clips the user is not looking at — Reset acts on the panel in front of
+   * them, and every other button acts on nothing at all. An undo covers it, but
+   * only if they notice, and the whole failure is not noticing.
+   */
+  const [confirming, setConfirming] = useState(false);
   return (
     // No rule under it. The header is already told apart from the panel by
     // being the row with the controls in it, and on a tabbed panel the tabs
     // bring their own — two rules a few pixels apart read as a boxed-in strip
     // rather than as a heading over its content.
-    <header className="flex flex-none items-center gap-2.5 px-3 py-2.5">
+    // `relative`, because the confirmation hangs off the button below.
+    <header className="relative flex flex-none items-center gap-2.5 px-3 py-2.5">
       {onBack && (
         <button
           type="button"
@@ -1869,29 +2430,63 @@ function PanelHeader({
         </button>
       )}
 
-      {/* Delete first, close last. Close is the one that has to be in the same
-          place every time — it is on every panel, where delete comes and goes
-          with what is selected — and the corner is the place a pointer arrives
-          at to dismiss something. Putting the destructive button there instead,
-          and only sometimes, is how a clip gets removed by someone reaching to
-          put the panel away.
-
-          Red on hover where close stays neutral — the pair have to be
-          distinguishable at a glance, and at this size the colour is quicker to
-          read than the glyph. */}
-      {onDelete && (
+      {/* Where the delete button used to be, and deliberately not another
+          destructive control in the corner: removing a clip is a timeline
+          gesture now, on the clip itself, rather than a button in a panel that
+          is otherwise entirely about how one looks. */}
+      {onApplyToAll && (
         <button
           type="button"
-          title={deleteLabel}
-          aria-label={deleteLabel}
+          title="Apply these settings to every clip"
+          aria-label="Apply these settings to every clip"
+          aria-expanded={confirming}
           className={cn(
-            "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
-            "transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-3.5",
+            "grid size-6 flex-none place-items-center rounded-md",
+            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+            confirming ? "bg-white/10 text-editor-fg" : "text-editor-muted",
           )}
-          onClick={onDelete}
+          onClick={() => setConfirming((was) => !was)}
         >
-          <TrashIcon />
+          <ApplyAllIcon />
         </button>
+      )}
+
+      {confirming && onApplyToAll && (
+        <>
+          {/* Click-away, the same shape the frame bar's menu uses. */}
+          <div className="fixed inset-0 z-10" onClick={() => setConfirming(false)} />
+          <div
+            className={
+              "absolute top-full right-2 z-20 w-56 rounded-lg border border-editor-line " +
+              "bg-editor-panel p-2.5 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+            }
+          >
+            <p className="text-[11px] text-editor-muted">
+              Give all {clips} clips these {title.toLowerCase()} settings? This replaces whatever
+              they are set to now.
+            </p>
+
+            <div className="mt-2 flex justify-end gap-1.5">
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-xs text-editor-muted hover:bg-white/10"
+                onClick={() => setConfirming(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-white/12 px-2 py-1 text-xs hover:bg-white/20"
+                onClick={() => {
+                  onApplyToAll();
+                  setConfirming(false);
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       <button

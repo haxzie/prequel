@@ -118,6 +118,41 @@ export function CopyIcon() {
   );
 }
 
+/**
+ * Lucide `check-check`. Two ticks: this one, and then all of them.
+ *
+ * The doubling is the whole message — a single tick says "done", and what this
+ * button does is say it again for every clip that is not in front of you.
+ */
+export function ApplyAllIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M18 6 7 17l-5-5" />
+      <path d="m22 10-7.5 7.5L13 16" />
+    </svg>
+  );
+}
+
+/**
+ * Tabler `radius-top-right`, by Paweł Kuna (MIT). How round a corner is.
+ *
+ * Tabler rather than Lucide, which has no corner-radius glyph — and it lands on
+ * the same 24px grid at the same 2px stroke, so it needs no adjusting to sit
+ * beside the rest.
+ *
+ * Distinct from `RoundedIcon`, which is a *shape*: that one is one of the five
+ * swatches in the camera's shape picker and has to read as a rounded square
+ * next to a circle and a squircle. This is the quantity — a single corner with
+ * its arc — and it belongs on the sliders that set one.
+ */
+export function CornerRadiusIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M5 5h6a8 8 0 0 1 8 8v6" />
+    </svg>
+  );
+}
+
 /** Lucide `check`. */
 export function CheckIcon() {
   return (
@@ -318,6 +353,77 @@ export function ShiftIcon() {
 }
 
 /** Lucide `layout-template`. The frame and what sits in it. */
+/**
+ * Lucide `corner-down-left`. The return key, drawn inside the field it submits.
+ *
+ * The glyph on the key rather than the word "Save": it sits in a box the width
+ * of a name, and what it is telling you is which key already does this.
+ */
+export function ReturnIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M9 10 4 15l5 5" />
+      <path d="M20 4v7a4 4 0 0 1-4 4H4" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `stamp`. The logo laid over a composition.
+ *
+ * A stamp rather than a picture-in-a-frame, which is what this was: that glyph
+ * said "an image", and the background's picker says that already. A stamp says
+ * *pressed onto* something, which is the part that distinguishes a watermark
+ * from every other image setting in the editor.
+ */
+export function WatermarkIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M5 22h14" />
+      <path d="M19.27 13.73A2.5 2.5 0 0 0 17.5 13h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1.5c0-.66-.26-1.3-.73-1.77Z" />
+      <path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 2 1 2 1 3.5V13" />
+    </svg>
+  );
+}
+
+/** Three dots: the card's own menu, for the things that are not applying it. */
+export function EllipsisIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.75" />
+      <circle cx="12" cy="12" r="1.75" />
+      <circle cx="19" cy="12" r="1.75" />
+    </svg>
+  );
+}
+
+/**
+ * Saved looks. Material Design Icons' `palette-swatch-outline`, by
+ * Pictogrammers (Apache 2.0).
+ *
+ * Filled rather than stroked, so it does not take `STROKE` — MDI draws on the
+ * same 24px grid as Lucide but as solid geometry, and the path is inlined
+ * verbatim for the reason the file header gives about the Lucide ones: redrawing
+ * a familiar icon by hand is how you end up with something that reads as
+ * almost-right.
+ */
+export function PresetsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="m2.5 19.6l1.3.6v-9L1.4 17c-.4 1.1.1 2.2 1.1 2.6M15.2 4.8l5 12l-7.3 3l-5-11.9v-.1zm.1-2c-.3 0-.5 0-.8.1L7.1 6c-.7.3-1.2 1-1.2 1.8c0 .2 0 .5.1.8l5 11.9c.3.8 1 1.2 1.8 1.2c.3 0 .5 0 .8-.1l7.4-3.1c1-.4 1.5-1.6 1.1-2.6L17.1 4c-.3-.8-1.1-1.2-1.8-1.2m-4.8 7.1c-.6 0-1-.4-1-1s.4-1 1-1s1 .5 1 1s-.4 1-1 1m-4.6 9.9c0 1.1.9 2 2 2h1.4l-3.4-8.3z" />
+    </svg>
+  );
+}
+
+/** Saves what is on screen as a look. */
+export function AddPresetIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
 export function LayoutIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">

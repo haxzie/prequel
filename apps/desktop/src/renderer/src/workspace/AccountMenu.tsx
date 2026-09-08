@@ -51,8 +51,9 @@ function upgradeable(entitlement: Entitlement): boolean {
  * The nudge, above the account.
  *
  * States what is true rather than what is wanted from the reader — how long is
- * left, or that nothing is — because the trial is generous and a card that
- * only says "Upgrade" reads as an advert in an app somebody is working in.
+ * left, or that nothing is — because the countdown is the fact somebody wants,
+ * and a card that only says "Upgrade" reads as an advert in an app somebody is
+ * working in.
  */
 function UpgradeCard({ entitlement }: { entitlement: Entitlement }) {
   const ending = entitlement.status === "expired";

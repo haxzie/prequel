@@ -137,6 +137,8 @@ uniform vec4 u_smear;
 // out of focus is uniformly soft, and it is the only thing that uses this. 0
 // softens nothing.
 uniform float u_soften;
+// How opaque a still image is drawn, 0 to 1. Everything else passes 1.
+uniform float u_alpha;
 // How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
 uniform float u_vignette;
 // The output frame, declared here as well as in the vertex stage: a uniform
@@ -194,14 +196,28 @@ vec4 sampleFocused(vec2 uv) {
 
   if (radius <= 0.5) return texture(u_image, uv);
 
+  // The tap count follows the radius rather than being fixed at sixteen.
+  //
+  // These are point samples on a spiral, not a kernel — sixteen of them are
+  // dense enough to read as a blur across a caption's few pixels, and spread
+  // across a background's fifty they leave gaps between them. The eye reads
+  // those gaps as grain, which is exactly what a soft backdrop must not have.
+  //
+  // Capped, because the background fill covers every pixel of the frame and
+  // this loop runs for all of them. \`span\` is the square root of the count, so
+  // the outermost tap still lands on the edge of the disc whatever the count
+  // is — it was hard-coded as 4 for sixteen taps.
+  int taps = int(clamp(radius, 16.0, 48.0));
+  float span = sqrt(float(taps));
+
   vec4 total = vec4(0.0);
-  for (int tap = 0; tap < 16; tap++) {
+  for (int tap = 0; tap < taps; tap++) {
     float turn = float(tap) * 2.399963;
-    float reach = sqrt(float(tap) + 0.5) / 4.0;
+    float reach = sqrt(float(tap) + 0.5) / span;
     vec2 offset = vec2(cos(turn), sin(turn)) * reach * radius * u_texel;
     total += texture(u_image, uv + offset);
   }
-  return total / 16.0;
+  return total / float(taps);
 }
 
 /**
@@ -387,7 +403,11 @@ void main() {
     // matches what image.rs hands Metal — so only coverage is folded in here.
     // Running it through premultiplied as well would multiply the texture's own
     // alpha twice.
-    fragColor = vec4(sampled.rgb * vignette(v_screen) * coverage, sampled.a * coverage);
+    // \`u_alpha\` rides along with coverage: premultiplied colour has to be
+    // scaled with its own alpha, or a fading picture turns bright before it
+    // disappears.
+    float shown = coverage * u_alpha;
+    fragColor = vec4(sampled.rgb * vignette(v_screen) * shown, sampled.a * shown);
     return;
   }
 
@@ -426,6 +446,7 @@ interface Program {
   adapt: WebGLUniformLocation | null;
   vignette: WebGLUniformLocation | null;
   texel: WebGLUniformLocation | null;
+  alpha: WebGLUniformLocation | null;
 }
 
 export class WebGlCompositor {
@@ -654,6 +675,29 @@ export class WebGlCompositor {
         break;
       }
 
+      case "watermark": {
+        const image = images.get(item.path);
+        // Not loaded yet, or missing. Nothing drawn, for the reason a missing
+        // background draws no rectangle: a placeholder where a logo should be
+        // looks like a fault, and no logo looks like no logo.
+        if (!image) break;
+        if (!this.upload(gl, item.path, image, false)) break;
+
+        set(gl, p, {
+          rect: item.dstRect,
+          // Square, and the whole picture. A logo carries its own shape in its
+          // alpha, so rounding the quad would cut the corners off one drawn to
+          // the edges of its file — and cropping would trim a wide mark to fit
+          // a box nobody asked it to fill.
+          shape: { radius: 0, exponent: 2 },
+          src: [0, 0, 1, 1],
+          mode: MODE_IMAGE,
+          alpha: item.opacity,
+        });
+        drawQuad(gl);
+        break;
+      }
+
       case "cursor": {
         const image = images.get(item.path);
         const point = image ? cursorAt(item.points, at) : null;
@@ -831,7 +875,25 @@ export class WebGlCompositor {
         const texture = this.upload(gl, paint.path, image, false);
         if (!texture) return;
 
-        set(gl, p, { rect, shape: square, mode: MODE_IMAGE, src: cover(rect, sizeOf(image)) });
+        const size = sizeOf(image);
+        const src = cover(rect, size);
+
+        set(gl, p, {
+          rect,
+          shape: square,
+          mode: MODE_IMAGE,
+          src,
+          // Without this the blur does nothing at all: `u_texel` defaults to
+          // zero, every tap offset multiplies out to zero, and all sixteen taps
+          // land on the same point. The captions carry the same note.
+          texel: [1 / Math.max(size.width, 1), 1 / Math.max(size.height, 1)],
+          // The same 16-tap loop the captions use — see `u_soften` — and, like
+          // it, measured in the *sampled image's* texels rather than in output
+          // pixels. A wallpaper is drawn well under its own resolution, so the
+          // setting's radius has to be converted or a 20-pixel blur reaches
+          // barely a pixel of a 3200-wide picture.
+          soften: paint.blur * sourcePerOutput(src, rect, size),
+        });
         drawQuad(gl);
         return;
       }
@@ -969,6 +1031,8 @@ interface Draw {
   vignette?: number;
   /** One texel of the sampled image, so a blur is measured in its own pixels. */
   texel?: [number, number];
+  /** How opaque a still image is drawn, 0 to 1. Left out means opaque. */
+  alpha?: number;
   /** A flat blur across the quad, in the sampled image's texels. */
   soften?: number;
   /** Two colours to choose between by what has already been drawn under it. */
@@ -1000,6 +1064,9 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   const smear = draw.smear;
   gl.uniform4f(p.smear, smear?.x ?? 0, smear?.y ?? 0, smear?.pad ?? 0, smear ? 1 : 0);
   gl.uniform2f(p.texel, draw.texel?.[0] ?? 0, draw.texel?.[1] ?? 0);
+  // Opaque unless asked otherwise, so every draw that predates the watermark
+  // keeps drawing exactly as it did.
+  gl.uniform1f(p.alpha, draw.alpha ?? 1);
   gl.uniform1f(p.soften, draw.soften ?? 0);
 
   const onDark = rgba(draw.tint?.onDark ?? "#00000000");
@@ -1018,6 +1085,26 @@ function drawQuad(gl: WebGL2RenderingContext): void {
 function normalised(rect: Rect, width: number, height: number): [number, number, number, number] {
   if (width <= 0 || height <= 0) return [0, 0, 1, 1];
   return [rect.x / width, rect.y / height, rect.width / width, rect.height / height];
+}
+
+/**
+ * How many of the sampled image's own pixels one output pixel covers.
+ *
+ * What turns a blur measured against the frame into one the sampler can use.
+ * A wallpaper is drawn well under its own resolution — 3200 pixels of picture
+ * across 1920 of frame — so a radius handed straight to `u_soften` would reach
+ * a fraction of what the setting asked for.
+ *
+ * The crop is normalised, so its width times the texture's is the number of
+ * source pixels actually spanning `rect`.
+ */
+function sourcePerOutput(
+  src: [number, number, number, number],
+  rect: Rect,
+  size: { width: number; height: number },
+): number {
+  if (rect.width <= 0) return 0;
+  return (src[2] * size.width) / rect.width;
 }
 
 /**
@@ -1142,6 +1229,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     adapt: at("u_adapt"),
     vignette: at("u_vignette"),
     texel: at("u_texel"),
+    alpha: at("u_alpha"),
   };
 }
 

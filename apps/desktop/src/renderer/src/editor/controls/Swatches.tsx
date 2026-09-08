@@ -47,6 +47,15 @@ const CELL =
  */
 const EDGE = "border border-white/10";
 const EDGE_CHOSEN = "border-2 border-selected";
+/**
+ * The edge on the cell that opens the file picker.
+ *
+ * Dashed, and the only dashed thing in the grid. It stands among photographs
+ * now rather than under a heading of its own, and a solid-edged cell holding a
+ * faint glyph is what a swatch whose picture failed to load looks like — the
+ * dashes are what say this one is a slot rather than a broken picture.
+ */
+const EDGE_ADD = "border border-dashed border-white/20";
 
 const GRID = "grid grid-cols-5 gap-1";
 
@@ -181,12 +190,47 @@ export function ImageSwatches({
     path !== WALLPAPER_FILE_NAME &&
     !known.some((listing) => listing.file === path);
 
+  /**
+   * The cell that opens the file picker.
+   *
+   * First in the wallpapers, ahead of the desktop picture and the ones we
+   * offer. It used to sit under a *Custom* heading of its own, on the reasoning
+   * that what it offers is not one of ours and a glyph among the samples reads
+   * as a swatch that failed to load — which was a fair objection and is why it
+   * is drawn on a dashed edge rather than a solid one. What it cost was
+   * discovery: a picker that opens on rows of pictures buried the one row that
+   * takes yours, at the bottom, past every group.
+   *
+   * Written once and placed twice, because it has to be reachable while the
+   * catalogue is still arriving — that is exactly when somebody with a picture
+   * of their own is least served by waiting.
+   */
+  const upload = (
+    <button
+      type="button"
+      title="Choose an image…"
+      aria-label="Choose an image…"
+      // Stays chosen once a file is picked, so the grid still answers "which of
+      // these is applied" when the answer is not one of ours.
+      aria-pressed={own}
+      className={cn(
+        CELL,
+        "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
+        own ? EDGE_CHOSEN : EDGE_ADD,
+      )}
+      onClick={onPickImage}
+    >
+      <ImageIcon />
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-2">
       {backgrounds.loading && (
         <div className="flex flex-col gap-1">
           <span className="h-2.5 w-16 animate-pulse rounded bg-white/10" />
           <div className={GRID}>
+            {upload}
             {/* Ten, which is about what a group holds. A count that changes as
                 the real one arrives would reflow the panel twice. */}
             {Array.from({ length: 10 }, (_, index) => (
@@ -201,9 +245,12 @@ export function ImageSwatches({
           <h3 className="text-[10px] font-medium text-editor-muted">{group.label}</h3>
 
           <div className={GRID}>
-            {/* The desktop picture leads the first group. It is a wallpaper —
-                the user's own — so it belongs with them rather than in a row of
-                its own above the headings. */}
+            {/* Yours lead the first group — the picture you choose, then the
+                desktop you are sitting on — and ours follow. Both are wallpapers
+                of the user's own, so they belong with them rather than in rows
+                of their own above or below the headings. */}
+            {index === 0 && upload}
+
             {index === 0 && (
               <button
                 type="button"
@@ -239,32 +286,6 @@ export function ImageSwatches({
           </div>
         </div>
       ))}
-
-      {/* Its own section rather than a cell tacked onto the last group: what it
-          offers is not one of ours, and a glyph sitting among the samples read
-          as a swatch that had failed to load. */}
-      <div className="flex flex-col gap-1">
-        <h3 className="text-[10px] font-medium text-editor-muted">Custom</h3>
-
-        <div className={GRID}>
-          <button
-            type="button"
-            title="Choose an image…"
-            aria-label="Choose an image…"
-            // Stays chosen once a file is picked, so the grid still answers
-            // "which of these is applied" when the answer is not one of ours.
-            aria-pressed={own}
-            className={cn(
-              CELL,
-              "grid place-items-center bg-white/5 text-editor-muted hover:text-editor-fg [&_svg]:size-4",
-              own ? EDGE_CHOSEN : EDGE,
-            )}
-            onClick={onPickImage}
-          >
-            <ImageIcon />
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

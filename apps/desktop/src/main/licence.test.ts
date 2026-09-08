@@ -2,7 +2,7 @@
  * The trial's edges.
  *
  * Every one of these is a boundary nobody exercises by hand: the last hour of
- * the fourteenth day, the hour after it, and a paid account whose trial ended
+ * the seventh day, the hour after it, and a paid account whose trial ended
  * months ago. Getting any of them wrong produces an app that works perfectly in
  * every manual test and locks somebody out — or lets everybody in — on a date
  * nobody thought to set the clock to.
@@ -34,7 +34,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 26, 12, 0, 0);
 
 describe("statusOf", () => {
-  it("is a trial while the fourteen days are running", () => {
+  it("is a trial while the seven days are running", () => {
     expect(statusOf({ plan: "free", trialEndsAt: NOW + 6 * DAY }, NOW)).toEqual({
       status: "trial",
       daysLeft: 6,

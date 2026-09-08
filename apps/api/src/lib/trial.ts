@@ -3,9 +3,9 @@
  * today.
  *
  * The length is decided here rather than by either client — a number the app or
- * the site could edit is not a trial length, it is a default. Fourteen days from
+ * the site could edit is not a trial length, it is a default. Seven days from
  * `user.createdAt`, a row neither of them can write, so a reinstall or a cleared
- * browser buys nobody another fortnight.
+ * browser buys nobody another week.
  *
  * **The two clients are served differently, on purpose.**
  *
@@ -26,7 +26,7 @@
 
 import type { Plan } from "./entitlement.ts";
 
-export const TRIAL_DAYS = 14;
+export const TRIAL_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

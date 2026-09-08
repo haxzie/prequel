@@ -10,6 +10,7 @@ import {
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import {
   buildRenderPlan,
+  captionAt,
   type EnterTransition,
   placement,
   type PlanSource,
@@ -22,6 +23,7 @@ import {
 import {
   captionLook,
   type LayoutSettings,
+  type WatermarkSettings,
   type SliceSettings,
   type ZoomSlice,
 } from "../../../shared/project";
@@ -60,6 +62,24 @@ import type { EditorPlayback } from "./useEditorPlayback";
  */
 export type Grab = () => Promise<string | null>;
 
+/**
+ * What a click in the preview landed on.
+ *
+ * `PlanSource` and one more. A caption is not a picture — it has no box to drag
+ * and no corners to pull — but it is a thing on screen with a panel behind it,
+ * which is the only sense in which this list is about all three.
+ */
+export type Picked = Grabbable | "captions";
+
+/**
+ * What a drag in the preview can take hold of.
+ *
+ * `PlanSource` and the logo. Deliberately wider than `PlanSource`, which names
+ * the two *video* textures — a watermark is a still file, and the only thing it
+ * shares with them is that it has a box somebody can move.
+ */
+export type Grabbable = PlanSource | "watermark";
+
 export function Preview({
   frame,
   settings,
@@ -70,7 +90,8 @@ export function Preview({
   zooms,
   cues,
   grab: grabRef,
-  onLayout,
+  onPick,
+  onDrag,
 }: {
   frame: Size;
   settings: SliceSettings;
@@ -105,13 +126,31 @@ export function Preview({
    */
   grab?: RefObject<Grab | null>;
   /**
-   * Whatever a drag in the preview worked out, as layout keys.
+   * A picture was clicked, so the inspector can show the panel that dresses it.
+   *
+   * Only ever called with one — deliberately not on a deselect. Clicking the
+   * background is how a ring is taken off, and changing which panel is showing
+   * on that click would mean losing your place every time you dismissed a
+   * selection.
+   *
+   * A callback rather than lifting `selected` out. Nothing else in the editor
+   * acts on which picture is ringed, and a selection held outside would have to
+   * be cleared from every place that can change the arrangement out from under
+   * it — the note on `selected` says so, and it is still true.
+   */
+  onPick?: (target: Picked) => void;
+  /**
+   * Whatever a drag in the preview worked out, and which section it belongs to.
    *
    * A patch rather than one callback per gesture: a resize writes five keys and
    * a detach writes six, and threading each of them out as its own prop would
    * put the knowledge of *which* keys a gesture touches in two places.
+   *
+   * The section travels with it because a drag can now move the logo, whose
+   * settings are their own section — and the caller writes one key at a time,
+   * so it has to be told where each one goes.
    */
-  onLayout: (patch: Partial<LayoutSettings>) => void;
+  onDrag: (section: "layout" | "watermark", patch: Record<string, unknown>) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -122,6 +161,15 @@ export function Preview({
   const canvasBox = useRef<DOMRect | null>(null);
   /** The selection ring. Positioned from the draw loop, never by React. */
   const outline = useRef<HTMLDivElement>(null);
+  /**
+   * The alignment guides, shown only while a drag is on one.
+   *
+   * Written straight to the DOM like the ring above, and for the same reason:
+   * this changes on every pointer move, and routing it through state would
+   * rebuild the editor to move a one-pixel line.
+   */
+  const guideX = useRef<HTMLDivElement>(null);
+  const guideY = useRef<HTMLDivElement>(null);
   /** Waiting to be handed the next drawn frame, or null when nobody asked. */
   const wanted = useRef<((shot: string | null) => void) | null>(null);
   const [fitted, setFitted] = useState({ width: 0, height: 0 });
@@ -132,7 +180,7 @@ export function Preview({
    * selection held in the project would have to be cleared from every place
    * that can change the arrangement out from under it.
    */
-  const [selected, setSelected] = useState<PlanSource | null>(null);
+  const [selected, setSelected] = useState<Grabbable | null>(null);
 
   // Read through refs so changing a setting does not restart the loop — the
   // next frame simply picks the new values up.
@@ -310,6 +358,33 @@ export function Preview({
     return () => cancelAnimationFrame(handle);
   }, [media]);
 
+  /**
+   * A click anywhere else takes the ring off.
+   *
+   * The dotted surround already deselects, but it is only the box around the
+   * composition — clicking the inspector, the timeline or the frame bar left a
+   * picture ringed and handled while the panel beside it had moved on to
+   * something else. A selection is a statement about what the *next* gesture
+   * acts on, so anything that is plainly a different gesture should end it.
+   *
+   * On `pointerdown` rather than `click`, so it lands in the same phase the
+   * canvas selects in and a press that starts a drag elsewhere does not leave
+   * the ring up for the length of it. Anything inside the preview box is left
+   * alone: the canvas has its own hit testing, and this must not race it.
+   */
+  useEffect(() => {
+    // `Event`, not `PointerEvent`: React's own `PointerEvent` type is in scope
+    // here and is not the DOM one, and only the target is read either way.
+    const away = (event: Event) => {
+      const within = box.current;
+      if (!within || within.contains(event.target as Node)) return;
+      setSelected(null);
+    };
+
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, []);
+
   useEffect(() => {
     if (!grabRef) return;
 
@@ -404,15 +479,90 @@ export function Preview({
     };
   };
 
+  /**
+   * The logo's box, or null when there is none.
+   *
+   * Worked out here rather than read off the plan, and it is the same
+   * arithmetic `buildRenderPlan` does — which is a duplication worth naming.
+   * The plan is built inside the draw loop from a ref, so it is a frame behind
+   * whatever the pointer is doing; hit testing against it would grab the box
+   * the logo was in rather than the one it is in. The two boxes are two lines
+   * of the same multiplication, and `layout.test.ts` pins the plan's.
+   */
+  const watermarkBox = (): Rect | null => watermarkRect(frame, settings.watermark);
+
   /** How many output pixels a point on screen is worth, for hit tolerances. */
   const grain = () => (fitted.width > 0 ? frame.width / fitted.width : 1);
+
+  /**
+   * Whether a caption is under the pointer.
+   *
+   * Its own test rather than a case in `find` below, because what comes back
+   * from that is a *grip* — something to drag — and a caption is neither
+   * dragged nor resized. All this answers is whether one was clicked.
+   *
+   * Off the plan that was last drawn, at the time it was drawn for: a cue is
+   * only there for its own span, and `captionAt` is the one place that decides
+   * whether it is on screen — the same function the compositor asks. Hit
+   * testing against the item's box alone would catch every cue in the
+   * recording, everywhere its text happens to sit.
+   */
+  const captionUnder = (point: Point): boolean => {
+    const plan = cached.current?.plan;
+    if (!plan) return false;
+
+    const at = media.sourceAt() ?? 0;
+
+    return plan.items.some(
+      (item) => item.kind === "caption" && inside(captionAt(item, at)?.dst ?? EMPTY, point),
+    );
+  };
+
+  /**
+   * Puts the caught guides on screen, in the preview's own pixels.
+   *
+   * Output pixels divided by `grain()`, which is what one screen pixel is worth
+   * — the same conversion the hit tolerances use, in the other direction.
+   */
+  const showGuides = (): void => {
+    const scale = grain();
+
+    const place = (element: HTMLDivElement | null, at: number | null, axis: "left" | "top") => {
+      if (!element) return;
+      if (at === null) {
+        element.style.display = "none";
+        return;
+      }
+      element.style.display = "block";
+      element.style[axis] = `${String(at / scale)}px`;
+    };
+
+    place(guideX.current, caught.current.x, "left");
+    place(guideY.current, caught.current.y, "top");
+  };
+
+  const hideGuides = (): void => {
+    caught.current = { x: null, y: null };
+    if (guideX.current) guideX.current.style.display = "none";
+    if (guideY.current) guideY.current.style.display = "none";
+  };
 
   /** What is under the pointer: a corner to pull, a picture to drag, or nothing. */
   const find = (point: Point): Grip | null => {
     const near = HANDLE * grain();
     const { screen, camera } = pictures();
 
-    // The camera first, because in every arrangement that stacks them it is the
+    // The logo first: it is drawn over both pictures, so a mark sitting on the
+    // bubble would otherwise be unreachable wherever the two overlap — the same
+    // reason the camera comes before the screen below.
+    const mark = watermarkBox();
+    if (mark) {
+      const corner = selected === "watermark" ? cornerAt(mark, point, near) : null;
+      if (corner) return { kind: "resize", target: "watermark", corner, box: mark, from: point };
+      if (inside(mark, point)) return { kind: "move", target: "watermark", box: mark, from: point };
+    }
+
+    // The camera next, because in every arrangement that stacks them it is the
     // one on top — and a bubble sitting over the screen would otherwise be
     // unreachable wherever the two overlap.
     for (const target of ["camera", "screen"] as const) {
@@ -471,14 +621,94 @@ export function Preview({
   };
 
   /** The keys one gesture writes, worked out from where the pointer has got to. */
-  const patchFor = (grip: Grip, point: Point, aspect: boolean): Partial<LayoutSettings> => {
+  /**
+   * The lines a dragged picture lines up against, in output pixels.
+   *
+   * The frame's middle for both pictures, because centring is the one
+   * arrangement you can be sure somebody meant. The camera also gets the four
+   * inset lines, which together read as the corner grid — a bubble is parked in
+   * a corner far more often than it is put anywhere in particular, and finding
+   * the same corner twice by eye is what this saves.
+   *
+   * The screen deliberately has no inset lines. Its edges are what `padding`
+   * already sets, and a drag that snapped to them would fight the slider.
+   */
+  const guides = (target: Grabbable): { xs: number[]; ys: number[] } => {
+    const unit = Math.min(frame.width, frame.height);
+    const middle = { xs: [frame.width / 2], ys: [frame.height / 2] };
+    if (target === "screen") return middle;
+
+    const inset = Math.max(settings.background.padding, GUIDE_INSET) * unit;
+    return {
+      xs: [inset, ...middle.xs, frame.width - inset],
+      ys: [inset, ...middle.ys, frame.height - inset],
+    };
+  };
+
+  /**
+   * The box, pulled onto whichever guides it came close to.
+   *
+   * Each axis is tried against the box's near edge, its middle and its far edge,
+   * and the smallest pull within reach wins — so a bubble snaps by whichever of
+   * its own edges is nearest a line, which is what makes a corner catch on both
+   * axes at once.
+   *
+   * Answers with the lines it caught as well as the box, because the same
+   * gesture has to draw them.
+   */
+  const pullToGuides = (
+    box: Rect,
+    target: Grabbable,
+  ): { box: Rect; hitX: number | null; hitY: number | null } => {
+    const near = SNAP * grain();
+    const { xs, ys } = guides(target);
+
+    const pull = (start: number, length: number, lines: number[]) => {
+      let best: { delta: number; line: number } | null = null;
+
+      for (const at of [start, start + length / 2, start + length]) {
+        for (const line of lines) {
+          const delta = line - at;
+          if (Math.abs(delta) > near) continue;
+          if (!best || Math.abs(delta) < Math.abs(best.delta)) best = { delta, line };
+        }
+      }
+
+      return best;
+    };
+
+    const x = pull(box.x, box.width, xs);
+    const y = pull(box.y, box.height, ys);
+
+    return {
+      box: { ...box, x: box.x + (x?.delta ?? 0), y: box.y + (y?.delta ?? 0) },
+      hitX: x?.line ?? null,
+      hitY: y?.line ?? null,
+    };
+  };
+
+  /**
+   * The lines the last move caught, for the pointer handler to draw.
+   *
+   * A ref rather than a return value because `patchFor` answers with a settings
+   * patch and nothing else — and rather than state because this is read on the
+   * same tick it is written, inside one synchronous handler, where a render
+   * would be a round trip for something already known.
+   */
+  const caught = useRef<{ x: number | null; y: number | null }>({ x: null, y: null });
+
+  const patchFor = (
+    grip: Grip,
+    point: Point,
+    aspect: boolean,
+  ): { section: "layout" | "watermark"; patch: Record<string, unknown> } => {
     const unit = Math.min(frame.width, frame.height);
     const { layout } = settings;
 
     if (grip.kind === "pan") {
       const found = grip.target === "screen" ? pictures().screen : pictures().camera;
       const source = sourceSizes()[grip.target];
-      if (!found || !source) return {};
+      if (!found || !source) return { section: "layout", patch: {} };
 
       // Under `cover` the picture travels with the pointer, so the crop window
       // travels against it — by as much of the source as the pointer covered of
@@ -502,24 +732,54 @@ export function Preview({
               (point.y - grip.from.y) / Math.max(found.area.height, 1),
             ];
 
-      return grip.target === "screen"
-        ? { screenOffsetX: grip.offsetX + dx, screenOffsetY: grip.offsetY + dy }
-        : { cameraOffsetX: grip.offsetX + dx, cameraOffsetY: grip.offsetY + dy };
+      return {
+        section: "layout",
+        patch:
+          grip.target === "screen"
+            ? { screenOffsetX: grip.offsetX + dx, screenOffsetY: grip.offsetY + dy }
+            : { cameraOffsetX: grip.offsetX + dx, cameraOffsetY: grip.offsetY + dy },
+      };
     }
 
-    const box =
+    // Only a move is snapped. A resize is a statement about size, and pulling
+    // a corner onto a line would change the *other* edge to get there — the
+    // picture would grow as you tried to place it.
+    const dragged =
       grip.kind === "resize"
-        ? pulled(grip.box, grip.corner, point, aspect)
-        : {
-            ...grip.box,
-            x: grip.box.x + (point.x - grip.from.x),
-            y: grip.box.y + (point.y - grip.from.y),
-          };
+        ? { box: pulled(grip.box, grip.corner, point, aspect), hitX: null, hitY: null }
+        : pullToGuides(
+            {
+              ...grip.box,
+              x: grip.box.x + (point.x - grip.from.x),
+              y: grip.box.y + (point.y - grip.from.y),
+            },
+            grip.target,
+          );
+
+    caught.current = { x: dragged.hitX, y: dragged.hitY };
+    const box = dragged.box;
 
     const centre = {
       x: (box.x + box.width / 2) / frame.width,
       y: (box.y + box.height / 2) / frame.height,
     };
+
+    if (grip.target === "watermark") {
+      // Nothing to seed and no arrangement to fall out of: the logo is placed
+      // by its own four numbers in every composition, so a drag writes them and
+      // there is nothing else to keep in step.
+      const patch: Partial<WatermarkSettings> = {
+        watermarkX: centre.x,
+        watermarkY: centre.y,
+      };
+
+      if (grip.kind === "resize") {
+        patch.watermarkWidth = box.width / unit;
+        patch.watermarkHeight = box.height / unit;
+      }
+
+      return { section: "watermark", patch };
+    }
 
     if (grip.target === "camera") {
       // The `over-*` arrangements and `custom` already leave the camera's box
@@ -555,19 +815,22 @@ export function Preview({
         patch.cameraVisible = true;
       }
 
-      return patch;
+      return { section: "layout", patch };
     }
 
     // The screen has no free-standing arrangement to fall back on: every
     // arrangement that placed it owns its box, so moving or resizing it is
     // `custom` by definition.
     return {
-      ...(layout.preset === "custom" ? {} : seeded()),
-      preset: "custom",
-      screenX: centre.x,
-      screenY: centre.y,
-      screenWidth: box.width / unit,
-      screenHeight: box.height / unit,
+      section: "layout",
+      patch: {
+        ...(layout.preset === "custom" ? {} : seeded()),
+        preset: "custom",
+        screenX: centre.x,
+        screenY: centre.y,
+        screenWidth: box.width / unit,
+        screenHeight: box.height / unit,
+      },
     };
   };
 
@@ -609,17 +872,31 @@ export function Preview({
             canvasBox.current = event.currentTarget.getBoundingClientRect();
 
             const point = framePoint(event);
+
+            // Captions first, because they are drawn over everything else — a
+            // cue sitting on the recording would otherwise be unreachable, and
+            // clicking the words you can see would select what is behind them.
+            //
+            // No ring and no drag: the selection is cleared because something
+            // else was clicked, and there the gesture ends.
+            if (captionUnder(point)) {
+              setSelected(null);
+              onPick?.("captions");
+              return;
+            }
+
             const found = find(point);
             // Empty background drops the selection, the same click that would
             // drop it on a canvas anywhere else.
             setSelected(found?.target ?? null);
             if (!found) return;
+            onPick?.(found.target);
 
             // Alt turns a drag on a picture into a pan of what it is showing. The
             // corners keep resizing either way — there is nothing else a corner
             // could sensibly mean.
             grab.current =
-              event.altKey && found.kind === "move"
+              event.altKey && found.kind === "move" && found.target !== "watermark"
                 ? {
                     kind: "pan",
                     target: found.target,
@@ -658,16 +935,22 @@ export function Preview({
             }
 
             if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
-            onLayout(patchFor(grab.current, point, event.shiftKey));
+            // Before the guides are drawn: `patchFor` is what works out which
+            // lines were caught, and it leaves them in `caught`.
+            const { section, patch } = patchFor(grab.current, point, event.shiftKey);
+            onDrag(section, patch);
+            showGuides();
           }}
           onPointerUp={(event) => {
             grab.current = null;
             event.currentTarget.style.cursor = "";
+            hideGuides();
           }}
           onPointerLeave={(event) => {
             if (grab.current) return;
             event.currentTarget.style.cursor = "";
             canvasBox.current = null;
+            hideGuides();
           }}
         />
 
@@ -700,9 +983,54 @@ export function Preview({
             />
           ))}
         </div>
+
+        {/* The alignment guides, over the picture and under nothing. Drawn here
+            rather than into the canvas for the reason the ring is: this is a
+            note about the composition, not part of it, and it must not reach
+            the export or the frame a saved preset takes its card from.
+
+            Full span rather than a segment between the two pictures: what the
+            line says is "this edge is on the frame's middle", and a stub would
+            leave the eye to finish it. */}
+        <div
+          ref={guideX}
+          aria-hidden
+          className="pointer-events-none absolute top-0 bottom-0 w-px bg-guide"
+          style={{ display: "none" }}
+        />
+        <div
+          ref={guideY}
+          aria-hidden
+          className="pointer-events-none absolute right-0 left-0 h-px bg-guide"
+          style={{ display: "none" }}
+        />
       </div>
     </div>
   );
+}
+
+/**
+ * The logo's box in output pixels, or null when there is no logo.
+ *
+ * The same arithmetic `buildRenderPlan` does for its `watermark` item. Repeated
+ * rather than read off the plan because the ring and the hit testing both need
+ * it *now* — the plan in the draw loop is built from a ref and is a frame
+ * behind a drag in flight. Four numbers and one multiplication; the plan's copy
+ * is what `layout.test.ts` pins.
+ */
+export function watermarkRect(frame: Size, mark: SliceSettings["watermark"]): Rect | null {
+  if (!mark.watermark) return null;
+
+  const unit = Math.min(frame.width, frame.height);
+  const width = mark.watermarkWidth * unit;
+  const height = mark.watermarkHeight * unit;
+
+  return {
+    x: frame.width * mark.watermarkX - width / 2,
+    y: frame.height * mark.watermarkY - height / 2,
+    width,
+    height,
+  };
 }
 
 /**
@@ -714,7 +1042,7 @@ export function Preview({
  */
 function ring(
   element: HTMLDivElement | null,
-  selected: PlanSource | null,
+  selected: Grabbable | null,
   frame: Size,
   settings: SliceSettings,
   sources: SourceSizes,
@@ -724,9 +1052,16 @@ function ring(
 ): void {
   if (!element) return;
 
-  const found = selected
-    ? placement(frame, settings.layout, settings.background, sources, selected)
-    : null;
+  // The logo's box comes from its own settings rather than from `placement`,
+  // which answers for the two pictures the arrangement places. A watermark is
+  // placed by nothing but the four numbers below it.
+  const box =
+    selected === "watermark"
+      ? watermarkRect(frame, settings.watermark)
+      : selected
+        ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
+          null)
+        : null;
 
   // A zoom moves the screen on its own track, leaving the box a drag reads and
   // writes exactly where it was. Following the zoom would put handles on a
@@ -736,13 +1071,13 @@ function ring(
   const moving =
     selected === "screen" && zooms.some((zoom) => at >= zoom.source.start && at <= zoom.source.end);
 
-  if (!found || moving || fitted.width <= 0) {
+  if (!box || moving || fitted.width <= 0) {
     element.style.display = "none";
     return;
   }
 
   const scale = fitted.width / frame.width;
-  const { x, y, width, height } = found.dstRect;
+  const { x, y, width, height } = box;
 
   element.style.display = "block";
   // Transform rather than `left`/`top`: this runs every frame, and through a
@@ -779,12 +1114,37 @@ type Corner = "nw" | "ne" | "sw" | "se";
  * drag, which reads as drift nobody can point at the cause of.
  */
 type Grip =
-  | { kind: "move"; target: PlanSource; box: Rect; from: Point }
-  | { kind: "resize"; target: PlanSource; corner: Corner; box: Rect; from: Point }
+  | { kind: "move"; target: Grabbable; box: Rect; from: Point }
+  | { kind: "resize"; target: Grabbable; corner: Corner; box: Rect; from: Point }
+  // Panning is the two video sources only: it slides a crop window over
+  // footage, and a watermark has no crop — the whole file is the picture.
   | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number };
 
 /** How close to a corner counts as grabbing it, in points on screen. */
 const HANDLE = 12;
+
+/**
+ * How close a dragged edge has to come before it snaps, in *screen* pixels.
+ *
+ * Screen rather than output pixels, so the pull feels the same whatever size
+ * the preview is drawn at — the same reason `grain()` exists for the corner
+ * targets. In output pixels it would be a hair on a 4K frame in a small window
+ * and half the bubble on a 720p one.
+ */
+const SNAP = 7;
+
+/**
+ * How far in from the frame's edge the corner guides sit, as a fraction of the
+ * shorter edge.
+ *
+ * The floor, not the answer: the composition's own padding is used where it is
+ * larger, so a bubble tucked into a corner lines up with the edge of the
+ * recording beside it rather than with a number of its own. This is what is
+ * left when the screen is full-bleed and there is no padding to line up with —
+ * near enough the inset `DEFAULT_LAYOUT` parks the camera at, which is where
+ * the eye already expects a corner to be.
+ */
+const GUIDE_INSET = 0.05;
 
 const CORNER_CURSOR: Record<Corner, string> = {
   nw: "nwse-resize",
@@ -792,6 +1152,9 @@ const CORNER_CURSOR: Record<Corner, string> = {
   ne: "nesw-resize",
   sw: "nesw-resize",
 };
+
+/** Stands in for a cue that is not on screen, so nothing can be inside it. */
+const EMPTY: Rect = { x: 0, y: 0, width: -1, height: -1 };
 
 function inside(rect: Rect, point: Point): boolean {
   return (

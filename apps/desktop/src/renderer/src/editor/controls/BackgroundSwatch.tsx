@@ -14,53 +14,12 @@
  * The thumbnail fades in over the hash rather than replacing it, so a slow
  * network is a picture sharpening rather than a swatch changing.
  */
-import { decode } from "blurhash";
 import { useEffect, useState } from "react";
 
 import type { BackgroundListing } from "../../../../shared/contract";
 import { assetUrl, backgroundUrl } from "../../../../shared/media-url";
 import { cn } from "../../lib/cn";
-
-/** What the hash is decoded at. It is four by three components; this is plenty. */
-const HASH_SIZE = 32;
-
-/**
- * A BlurHash as a data URL, or null.
- *
- * Decoded once per hash and kept, because the picker re-renders on every
- * unrelated edit and decoding thirty of these per keystroke is a frozen panel.
- */
-const decoded = new Map<string, string | null>();
-
-function hashUrl(hash: string): string | null {
-  if (!hash) return null;
-
-  const cached = decoded.get(hash);
-  if (cached !== undefined) return cached;
-
-  let url: string | null = null;
-  try {
-    const pixels = decode(hash, HASH_SIZE, HASH_SIZE);
-    const canvas = document.createElement("canvas");
-    canvas.width = HASH_SIZE;
-    canvas.height = HASH_SIZE;
-
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      const image = ctx.createImageData(HASH_SIZE, HASH_SIZE);
-      image.data.set(pixels);
-      ctx.putImageData(image, 0, 0);
-      url = canvas.toDataURL();
-    }
-  } catch {
-    // A hash the decoder will not take is one swatch without a placeholder,
-    // not a picker that fails to draw.
-    url = null;
-  }
-
-  decoded.set(hash, url);
-  return url;
-}
+import { hashUrl } from "./blurhash";
 
 export function BackgroundSwatch({
   listing,
@@ -140,8 +99,13 @@ export function BackgroundSwatch({
 
 const CELL_BASE = "relative overflow-hidden";
 
-/** A ring that turns. Inline rather than a component, because it is four lines. */
-function Spinner() {
+/**
+ * A ring that turns.
+ *
+ * Exported because the scene preset cards show the same thing for the same
+ * reason — a look whose wallpaper is being fetched.
+ */
+export function Spinner() {
   return (
     <svg viewBox="0 0 24 24" className="size-4 animate-spin text-white" aria-hidden="true">
       <circle

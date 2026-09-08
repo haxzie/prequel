@@ -63,6 +63,13 @@ pub enum Paint {
     /// recording stays self-contained.
     Image {
         path: String,
+        /// Blur radius in output pixels, already resolved from the setting's
+        /// fraction by `buildRenderPlan`.
+        ///
+        /// Defaulted, so a plan written before the background could be blurred
+        /// still parses — and parses as sharp, which is what it drew.
+        #[serde(default)]
+        blur: f64,
     },
 }
 
@@ -104,6 +111,19 @@ pub enum PlanItem {
         color: String,
         #[serde(default)]
         motion: Vec<RectKey>,
+    },
+    /// A still picture laid over the composition — a logo or a channel mark.
+    ///
+    /// Its own variant rather than a `Fill` or an `Image`: `Fill` covers its
+    /// rect and crops to do it, and `Image` names one of the two video sources.
+    /// This is a file, drawn once, at the size and opacity it was given.
+    Watermark {
+        /// Relative to the session directory — the picture is copied in, so a
+        /// recording stays self-contained.
+        path: String,
+        #[serde(rename = "dstRect")]
+        dst_rect: Rect,
+        opacity: f64,
     },
     /// The pointer, composited from positions sampled during capture.
     ///

@@ -8,7 +8,17 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { newProject, overriddenKeys, resolveSettings } from "../../../shared/project";
+import {
+  DEFAULT_BACKGROUND,
+  DEFAULT_CAPTIONS,
+  DEFAULT_LAYOUT,
+  DEFAULT_WATERMARK,
+  DEFAULT_ZOOM_LOOK,
+  newProject,
+  overriddenKeys,
+  resolveSettings,
+} from "../../../shared/project";
+import type { ScenePreset } from "../../../shared/scene-presets";
 import {
   activeSettings,
   canUndo,
@@ -1011,3 +1021,249 @@ describe("opening a recording that already has zooms", () => {
     expect(state.revision).toBe(0);
   });
 });
+
+describe("giving every clip one clip's settings", () => {
+  it("copies what the clip resolves to, not what it overrides", () => {
+    // The failure this catches looks like the button doing nothing: a clip that
+    // inherits a setting still *looks* a particular way, and copying its
+    // overrides would leave every other clip on the defaults it was already on.
+    const started = run(start(), { type: "split", at: 5 * S });
+    const [first, second] = slicesOf(started.project);
+
+    const applied = run(
+      started,
+      { type: "select", sliceId: second!.id },
+      { type: "setSetting", section: "background", key: "padding", value: 0.3 },
+      { type: "applyToAll", section: "background", keys: ["padding"] },
+    );
+
+    expect(settingsOf(applied.project, first!.id).background.padding).toBeCloseTo(0.3);
+    expect(settingsOf(applied.project, second!.id).background.padding).toBeCloseTo(0.3);
+  });
+
+  it("touches only the keys it was given", () => {
+    // `background` is shown across two panels, so a button in one of them must
+    // not carry the other's half.
+    const started = run(start(), { type: "split", at: 5 * S });
+    const [first, second] = slicesOf(started.project);
+
+    const applied = run(
+      started,
+      { type: "select", sliceId: second!.id },
+      { type: "setSetting", section: "background", key: "padding", value: 0.3 },
+      { type: "setSetting", section: "background", key: "cornerRadius", value: 0.09 },
+      { type: "applyToAll", section: "background", keys: ["padding"] },
+    );
+
+    expect(overriddenKeys(slicesOf(applied.project)[0]!.overrides, "background")).toEqual(
+      new Set(["padding"]),
+    );
+  });
+
+  it("does nothing with no clip selected", () => {
+    // There is no "this one" to copy from, and the panel is already editing the
+    // defaults every clip follows.
+    const started = run(start(), { type: "split", at: 5 * S }, { type: "select", sliceId: null });
+    const applied = run(started, { type: "applyToAll", section: "background" });
+
+    expect(applied.project).toEqual(started.project);
+  });
+});
+
+describe("duplicating a zoom", () => {
+  it("puts the copy after the original rather than on top of it", () => {
+    // Two zooms may never overlap — `sanitiseZooms` drops the second of any
+    // pair that does, so a copy laid over its source would vanish the next time
+    // the project was read back.
+    const one = run(start(), { type: "addZoom", at: 2 * S });
+    const original = one.project.zooms[0]!;
+
+    const two = run(one, { type: "duplicateZoom", zoomId: original.id });
+    const copy = two.project.zooms.find((zoom) => zoom.id !== original.id)!;
+
+    expect(two.project.zooms).toHaveLength(2);
+    expect(copy.source.start).toBeGreaterThanOrEqual(original.source.end);
+    expect(copy.level).toBeCloseTo(original.level);
+    expect(two.selectedZoomId).toBe(copy.id);
+  });
+
+  it("declines when there is no room for one", () => {
+    // A zoom too short to grab is worse than no zoom, which is the rule
+    // `zoomSpanAt` already enforces for one drawn by hand.
+    // Long enough to exist, and hard against the end of the recording so there
+    // is no gap after it for a copy to go in.
+    const one = run(start(), { type: "addZoom", at: 8 * S });
+    const only = one.project.zooms[0]!;
+    expect(only.source.end).toBe(10 * S);
+
+    const after = run(one, { type: "duplicateZoom", zoomId: only.id });
+    expect(after.project.zooms).toHaveLength(1);
+  });
+});
+
+describe("applying a saved look", () => {
+  /** A preset that differs from the defaults in every section it carries. */
+  function look(over: Partial<ScenePreset> = {}): ScenePreset {
+    return {
+      id: "kinetic",
+      name: "Kinetic",
+      savedAt: 1,
+      frame: { width: 1920, height: 1080, presetId: "16:9" },
+      layout: { ...DEFAULT_LAYOUT, cameraShape: "circle", cameraBorderWidth: 0.01 },
+      background: { ...DEFAULT_BACKGROUND, padding: 0.2, cornerRadius: 0.05 },
+      captions: { ...captionLook(), captionAccent: "#ff0000" },
+      watermark: { ...DEFAULT_WATERMARK },
+      zoom: { ...DEFAULT_ZOOM_LOOK, speed: 1.2 },
+      ...over,
+    };
+  }
+
+  it("puts the look on the selected clip and nowhere else", () => {
+    const started = run(start(), { type: "split", at: 5 * S });
+    const [first, second] = slicesOf(started.project);
+
+    const applied = run(
+      started,
+      { type: "select", sliceId: first!.id },
+      { type: "applyPreset", preset: look() },
+    );
+
+    expect(settingsOf(applied.project, first!.id).background.padding).toBeCloseTo(0.2);
+    // The neighbour and the project's own defaults are untouched: a preset is
+    // applied to a clip, not to everything that looks like it.
+    expect(settingsOf(applied.project, second!.id).background.padding).toBeCloseTo(
+      DEFAULT_BACKGROUND.padding,
+    );
+    expect(applied.project.defaults.background.padding).toBeCloseTo(DEFAULT_BACKGROUND.padding);
+  });
+
+  it("edits the project defaults when nothing is selected", () => {
+    // The same rule every slider follows. With no clip selected the inspector
+    // *is* the defaults, so there is nowhere else for a look to go.
+    const applied = run(
+      start(),
+      { type: "select", sliceId: null },
+      { type: "applyPreset", preset: look() },
+    );
+
+    expect(applied.project.defaults.background.padding).toBeCloseTo(0.2);
+    expect(slicesOf(applied.project)[0]!.overrides).toEqual({});
+  });
+
+  it("records one override per leaf, so a per-control reset stays honest", () => {
+    // The failure this pins compiles, draws correctly, and breaks every Reset
+    // on the clip: assigning `overrides.layout` whole still lights all the dots,
+    // but clearing one key then takes its neighbours with it.
+    const started = run(start(), { type: "split", at: 5 * S });
+    const first = slicesOf(started.project)[0]!;
+    const preset = look();
+
+    const applied = run(
+      started,
+      { type: "select", sliceId: first!.id },
+      { type: "applyPreset", preset },
+    );
+    const overrides = slicesOf(applied.project)[0]!.overrides;
+
+    expect(overriddenKeys(overrides, "layout").size).toBe(Object.keys(preset.layout).length);
+    expect(overriddenKeys(overrides, "background").size).toBe(
+      Object.keys(preset.background).length,
+    );
+    // Carrying a section is only half of it: a look that travels and is not
+    // written lands as nothing at all.
+    expect(overriddenKeys(overrides, "watermark").size).toBe(Object.keys(preset.watermark).length);
+
+    // And clearing one really does clear only one.
+    const reset = run(applied, {
+      type: "resetSection",
+      section: "layout",
+      keys: ["cameraShape"],
+    });
+    const after = slicesOf(reset.project)[0]!.overrides;
+
+    expect(overriddenKeys(after, "layout").has("cameraShape")).toBe(false);
+    expect(overriddenKeys(after, "layout").has("cameraBorderWidth")).toBe(true);
+  });
+
+  it("never turns captions on for a recording that has none", () => {
+    // Whether to caption is a fact about the take, not about the look. Switched
+    // on by a preset it opens a panel whose every control is dead — and on a
+    // clip it would sit there as an override with no control to clear it.
+    const off = initialState({ ...newProject(RECORDING, 10 * S), defaults: captionsOff() }, 10 * S);
+    const applied = run(off, { type: "applyPreset", preset: look() });
+    const slice = slicesOf(applied.project)[0]!;
+
+    expect(overriddenKeys(slice.overrides, "captions").has("captionsOn")).toBe(false);
+    expect(settingsOf(applied.project, slice.id).captions.captionsOn).toBe(false);
+    // But the look itself did land.
+    expect(settingsOf(applied.project, slice.id).captions.captionAccent).toBe("#ff0000");
+  });
+
+  it("moves an arrangement the preset's own frame cannot hold", () => {
+    // A look authored in 16:9 standing the camera in a column, applied with the
+    // portrait frame it carries. `presetFitsFrame` refuses the column there, and
+    // without the sweep the clip sits in an arrangement whose picker cell is
+    // greyed out — nothing on screen says why, and only picking another undoes
+    // it. It self-heals whenever the preset brings a landscape frame, which is
+    // exactly what makes it worth pinning.
+    const applied = run(start(), {
+      type: "applyPreset",
+      preset: look({
+        frame: { width: 1080, height: 1920, presetId: "9:16" },
+        layout: { ...DEFAULT_LAYOUT, preset: "over-column" },
+      }),
+    });
+
+    expect(applied.project.frame.height).toBe(1920);
+    expect(applied.project.defaults.layout.preset).not.toBe("over-column");
+  });
+
+  it("is one step, and undo puts the frame back with the rest", () => {
+    const before = start();
+    const applied = run(before, {
+      type: "applyPreset",
+      preset: look({ frame: { width: 1080, height: 1920, presetId: "9:16" } }),
+    });
+
+    expect(canUndo(applied)).toBe(true);
+    expect(applied.project.frame.width).toBe(1080);
+
+    const undone = run(applied, { type: "undo" });
+
+    // The whole thing, in one press — a look is one decision however many keys
+    // it moved.
+    expect(undone.project.frame).toEqual(before.project.frame);
+    expect(undone.project.defaults).toEqual(before.project.defaults);
+    expect(undone.project.zoomDefaults).toEqual(before.project.zoomDefaults);
+  });
+
+  it("gives a zoom dropped afterwards the look's own feel, and moves none already there", () => {
+    const withZoom = run(start(), { type: "addZoom", at: 2 * S });
+    const existing = withZoom.project.zooms[0]!;
+
+    const applied = run(withZoom, { type: "applyPreset", preset: look() });
+    const dropped = run(applied, { type: "addZoom", at: 6 * S });
+    const added = dropped.project.zooms.find((zoom) => zoom.id !== existing.id)!;
+
+    expect(added.speed).toBeCloseTo(1.2);
+    // The spans on the timeline are the edit, not the look. A preset that
+    // restyled them would reach back into decisions already made.
+    expect(dropped.project.zooms.find((zoom) => zoom.id === existing.id)!.speed).toBeCloseTo(
+      existing.speed,
+    );
+    expect(dropped.project.zooms.find((zoom) => zoom.id === existing.id)!.source).toEqual(
+      existing.source,
+    );
+  });
+});
+
+/** The caption keys a preset carries — everything but `captionsOn`. */
+function captionLook() {
+  const { captionsOn: _dropped, ...look } = DEFAULT_CAPTIONS;
+  return look;
+}
+
+function captionsOff() {
+  const fresh = newProject(RECORDING, 10 * S).defaults;
+  return { ...fresh, captions: { ...fresh.captions, captionsOn: false } };
+}

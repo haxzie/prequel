@@ -170,10 +170,10 @@ desktop.post("/token", async (c) => {
  * one place. Computing the verdict here as well would put the same rule on both
  * sides of the wire, and the two would disagree the first time either changed.
  *
- * **The trial runs from the account, not from the install.** Fourteen days from
+ * **The trial runs from the account, not from the install.** Seven days from
  * `user.createdAt`, which is a row this app cannot write — anchoring it to
  * anything on the Mac would restart it with a deleted file, and reinstalling to
- * get another fortnight is not a trial.
+ * get another week is not a trial.
  *
  * `authenticate` without `requireTeam`: somebody who has signed in and not yet
  * finished onboarding has no team, and that is `free` on a running trial, not
@@ -192,7 +192,7 @@ desktop.get("/entitlement", authenticate, async (c) => {
 
   // A valid session for a user who is not there — `/v1/me` documents how that
   // happens. There is no sign-up date to answer with, and inventing `now` would
-  // hand out a fresh fortnight to exactly the sessions that should not have one.
+  // hand out a fresh week to exactly the sessions that should not have one.
   if (!account) return c.json({ message: "Sign in to continue." }, 401);
 
   const [team] = teamId

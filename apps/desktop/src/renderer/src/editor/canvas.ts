@@ -124,12 +124,31 @@ function drawItem(
   at: number,
 ): void {
   switch (item.kind) {
-    case "fill":
+    case "fill": {
+      const blur = item.paint.kind === "image" ? item.paint.blur : 0;
+
       context.save();
       context.fillStyle = paintStyle(context, item.paint, item.rect, images);
-      context.fillRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+
+      if (blur > 0) {
+        // `filter` softens the fill's own edge as well as its content, so the
+        // rectangle is painted larger than the frame and the soft border falls
+        // outside it. Three radii is where a gaussian has nothing left to give.
+        context.filter = `blur(${String(blur)}px)`;
+        const room = blur * 3;
+        context.fillRect(
+          item.rect.x - room,
+          item.rect.y - room,
+          item.rect.width + room * 2,
+          item.rect.height + room * 2,
+        );
+      } else {
+        context.fillRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+      }
+
       context.restore();
       break;
+    }
 
     case "shadow": {
       // Drawn as a filled shape behind the real one rather than with the
@@ -202,6 +221,28 @@ function drawItem(
       // traces rather than straddling its edge.
       path(context, inset(moved.rect, item.width / 2), moved.shape, 0, item.width / 2);
       context.stroke();
+      context.restore();
+      break;
+    }
+
+    case "watermark": {
+      const image = images.get(item.path);
+      // Nothing drawn when it is not loaded, for the reason a missing
+      // background draws no rectangle: a placeholder where a logo should be
+      // looks like a fault, and no logo looks like no logo.
+      if (!image) break;
+
+      context.save();
+      context.globalAlpha = item.opacity;
+      // The whole picture into the box it was given, undistorted by anything
+      // here — the box already carries the proportions the resize left it with.
+      context.drawImage(
+        image,
+        item.dstRect.x,
+        item.dstRect.y,
+        item.dstRect.width,
+        item.dstRect.height,
+      );
       context.restore();
       break;
     }

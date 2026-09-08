@@ -1,8 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 
 import type { EditorSession, WorkspaceSection } from "../../../shared/contract";
-import { Editor } from "../editor/Editor";
+import { recordingName } from "../../../shared/media-url";
 import { Library } from "./Library";
+
+/**
+ * Loaded when a recording is opened, not when the window is.
+ *
+ * `Root` already splits a chunk per view so a window parses only what it draws.
+ * This window draws two things, and the editor is almost all of the weight —
+ * the compositor, the geometry, the inspector and the timeline — so the library
+ * was paying for it on every open and showing an empty shell while it parsed.
+ * Splitting again here is the same rule applied one level down.
+ *
+ * Its fallback is the same line an arriving recording shows, so a cold open and
+ * a warm one look identical: there is one "a recording is on its way" state,
+ * whether what is missing is the chunk or the probe.
+ */
+const Editor = lazy(() => import("../editor/Editor").then((m) => ({ default: m.Editor })));
 
 /**
  * The app window: the library, and the editor for one recording.
@@ -34,6 +49,17 @@ export function Workspace() {
    * onto Settings.
    */
   const [section, setSection] = useState<WorkspaceSection>("projects");
+  /**
+   * A recording main says is on its way, until it arrives.
+   *
+   * Distinct from `opening` above, which belongs to the grid: that one marks a
+   * card and leaves the list underneath it, because the list is what the user
+   * is looking at. This one means the window is here for a recording and the
+   * library is not what it should be showing meanwhile — stopping a take used
+   * to flash the grid for as long as probing its media took, which reads as
+   * having opened the wrong thing.
+   */
+  const [arriving, setArriving] = useState<string | null>(null);
 
   useEffect(() => window.prequel.workspace.onSection(setSection), []);
 
@@ -42,9 +68,12 @@ export function Workspace() {
       window.prequel.editor.onOpen((opened) => {
         setSession(opened);
         setOpening(null);
+        setArriving(null);
       }),
     [],
   );
+
+  useEffect(() => window.prequel.editor.onOpening(setArriving), []);
 
   // The other direction, and the reason this screen is never chosen here: the
   // tray can ask for the grid over an open editor, and deleting the recording
@@ -54,6 +83,10 @@ export function Workspace() {
       window.prequel.projects.onShowing(() => {
         setSession(null);
         setOpening(null);
+        // Asked for the library on purpose, so it is no longer waiting on
+        // whatever was arriving — a push that lands afterwards is stale and
+        // `push` drops it for the same reason.
+        setArriving(null);
       }),
     [],
   );
@@ -74,9 +107,31 @@ export function Workspace() {
 
   // Keyed on the directory, so opening a second recording gets a fresh editor
   // rather than one carrying the first's selection, history and playhead.
-  return session ? (
-    <Editor key={session.dir} session={session} onBack={back} />
-  ) : (
-    <Library section={section} onSection={setSection} opening={opening} onOpen={open} />
+  if (session) {
+    return (
+      <Suspense fallback={<Opening dir={session.dir} />}>
+        <Editor key={session.dir} session={session} onBack={back} />
+      </Suspense>
+    );
+  }
+
+  if (arriving) return <Opening dir={arriving} />;
+
+  return <Library section={section} onSection={setSection} opening={opening} onOpen={open} />;
+}
+
+/**
+ * A recording on its way, whether what is missing is its media or its chunk.
+ *
+ * Deliberately almost nothing: it is on screen for a few hundred milliseconds
+ * and only ever on the way to an editor. A skeleton of the editor would be a
+ * second layout to keep in step with the real one, and a spinner in an empty
+ * window says less than the name of what is opening.
+ */
+function Opening({ dir }: { dir: string }) {
+  return (
+    <div className="grid h-full place-items-center text-xs text-editor-muted">
+      <p className="animate-pulse">Opening {recordingName(dir)}…</p>
+    </div>
   );
 }

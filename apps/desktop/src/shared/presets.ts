@@ -99,6 +99,15 @@ export const SOLID_PRESETS: string[] = [
   "#ec4899",
 ];
 
+/**
+ * The angle every gradient here is cut at.
+ *
+ * Named because the picker reads it too: the angle slider stands greyed at this
+ * until a gradient is applied, and a control resting at a number nothing uses
+ * would be a worse placeholder than one resting at the number they all share.
+ */
+export const DEFAULT_GRADIENT_ANGLE = 135;
+
 export interface GradientPreset {
   name: string;
   from: string;

@@ -125,6 +125,44 @@ export async function captureFilmstrip(url: string, count: number): Promise<stri
   }
 }
 
+/**
+ * Re-encodes a still the preview handed back as a JPEG.
+ *
+ * The preview's `Grab` answers with a **PNG** data URL, because that is what
+ * `toDataURL` defaults to. A 2560×1440 PNG of a screen recording is several
+ * megabytes, and this one crosses to main inside an IPC message — the same
+ * arithmetic `QUALITY` above was chosen for. Same size cap, same quality, one
+ * encoder.
+ *
+ * Null on anything that will not decode, which the caller has to be able to
+ * carry on without.
+ */
+export async function asCard(dataUrl: string): Promise<string | null> {
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      const timer = window.setTimeout(
+        () => reject(new Error("the still would not decode")),
+        TIMEOUT_MS,
+      );
+      element.onload = () => {
+        window.clearTimeout(timer);
+        resolve(element);
+      };
+      element.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error("the still would not decode"));
+      };
+      element.src = dataUrl;
+    });
+
+    return draw(image, image.naturalWidth, image.naturalHeight);
+  } catch (cause) {
+    console.warn("[poster] could not re-encode the still:", cause);
+    return null;
+  }
+}
+
 interface Frame {
   source: CanvasImageSource;
   width: number;

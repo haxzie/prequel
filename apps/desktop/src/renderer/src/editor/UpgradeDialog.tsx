@@ -85,8 +85,8 @@ export function UpgradeDialog({
 
           <p className="mt-2 text-[0.8125rem] leading-relaxed text-editor-muted">
             {signedOut
-              ? "Exporting needs an account — the free trial runs for fourteen days from the day you sign up. Everything you have already exported stays on your Mac."
-              : "The fourteen days are up. Upgrade to go on exporting at 4K and 120 fps, with no watermark and no limit on a take. Everything you have already exported stays on your Mac."}
+              ? "Exporting needs an account — the free trial runs for seven days from the day you sign up. Everything you have already exported stays on your Mac."
+              : "The seven days are up. Upgrade to go on exporting at 4K and 120 fps, with no watermark and no limit on a take. Everything you have already exported stays on your Mac."}
           </p>
 
           <ul className="mt-5 flex w-full flex-col gap-2.5 text-left text-[0.8125rem] text-editor-muted">

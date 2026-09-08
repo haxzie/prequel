@@ -334,6 +334,7 @@ export const IPC_CHANNELS = {
   editorSaveProject: "editor:saveProject",
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
+  editorPickWatermark: "editor:pickWatermark",
   editorPresetImage: "editor:presetImage",
   /**
    * Caption bitmaps, drawn in the renderer and written by main.
@@ -350,6 +351,21 @@ export const IPC_CHANNELS = {
   backgroundsCatalogue: "backgrounds:catalogue",
   backgroundsThumbnail: "backgrounds:thumbnail",
   backgroundsEnsure: "backgrounds:ensure",
+  /**
+   * A recording is on its way to the editor.
+   *
+   * Sent before its media is probed, so the window has something to show for
+   * the second that takes rather than falling back to the library.
+   */
+  editorOpening: "editor:opening",
+  scenePresetsList: "scenePresets:list",
+  scenePresetsCatalogue: "scenePresets:catalogue",
+  scenePresetsThumbnail: "scenePresets:thumbnail",
+  scenePresetsSave: "scenePresets:save",
+  scenePresetsRename: "scenePresets:rename",
+  scenePresetsDelete: "scenePresets:delete",
+  scenePresetsApplyImage: "scenePresets:applyImage",
+  scenePresetsApplyWatermark: "scenePresets:applyWatermark",
   editorWriteCaption: "editor:writeCaption",
   editorSweepCaptions: "editor:sweepCaptions",
   /**
@@ -897,6 +913,93 @@ export const CURSOR_STYLES = [
     // become — an I-beam version of a dot is just a dot.
     shapes: {
       arrow: { file: "cursor-circle.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+
+  // ── The emoji set ─────────────────────────────────────────────────────────
+  //
+  // Finished artwork rather than drawn shapes, so these come from SVG through
+  // `scripts/make-emoji-cursors.swift` instead of `make-cursor.mjs`.
+  //
+  // One image each, for the circle's reason above: an emoji is a marker for
+  // where the pointer is, and there is no I-beam version of a frog. Everything
+  // else follows for free — `cursorImages` draws the arrow for every kind the
+  // style does not ship, and `pressScale` gives every pointer the same dip on a
+  // click without any of them asking for it.
+  //
+  // Centred hotspots except where the artwork points at something. A picture of
+  // a fish has no tip, and the middle is the only place a reader would guess.
+  {
+    id: "point",
+    label: "Point",
+    // The one with somewhere to point from. Measured off the artwork: the
+    // fingertip is at the very top of the square and a fifth of the way across,
+    // where the centre every other emoji uses would put the hotspot in the fist.
+    shapes: {
+      arrow: { file: "cursor-point.png", hotspot: { x: 0.2227, y: 0.0156 } },
+    },
+  },
+  {
+    id: "hammer",
+    label: "Hammer",
+    shapes: {
+      arrow: { file: "cursor-hammer.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "wrench",
+    label: "Wrench",
+    shapes: {
+      arrow: { file: "cursor-wrench.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "cooking",
+    label: "Cooking",
+    shapes: {
+      arrow: { file: "cursor-cooking.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "bottle",
+    label: "Baby bottle",
+    shapes: {
+      arrow: { file: "cursor-bottle.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "corn",
+    label: "Corn",
+    shapes: {
+      arrow: { file: "cursor-corn.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "fish",
+    label: "Fish",
+    shapes: {
+      arrow: { file: "cursor-fish.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "frog",
+    label: "Frog",
+    shapes: {
+      arrow: { file: "cursor-frog.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "hamster",
+    label: "Hamster",
+    shapes: {
+      arrow: { file: "cursor-hamster.png", hotspot: { x: 0.5, y: 0.5 } },
+    },
+  },
+  {
+    id: "football",
+    label: "Football",
+    shapes: {
+      arrow: { file: "cursor-football.png", hotspot: { x: 0.5, y: 0.5 } },
     },
   },
 ] as const;

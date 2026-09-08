@@ -84,6 +84,8 @@
   --color-editor-danger: var(--editor-danger);
   --color-layout-screen: var(--layout-screen);
   --color-layout-camera: var(--layout-camera);
+  --color-layout-ui: var(--layout-ui);
+  --color-layout-ui-alt: var(--layout-ui-alt);
   --color-slice-fill: var(--slice-fill);
   --color-slice-fill-active: var(--slice-fill-active);
   --color-slice-edge: var(--slice-edge);
@@ -95,6 +97,7 @@
   --color-wave: var(--wave);
   --color-indicator: var(--indicator);
   --color-indicator-deep: var(--indicator-deep);
+  --color-guide: var(--guide);
   --color-cut: var(--cut);
   --color-cut-deep: var(--cut-deep);
   --color-export: var(--export);
@@ -337,6 +340,22 @@ body {
   --layout-screen: #d5d9de;
   --layout-camera: #9aa1a9;
 
+  /* The skeleton drawn on the screen block: a title bar, a sidebar and two
+     bands of content.
+
+     Blue and green rather than two more greys. The block underneath is already
+     grey, and a skeleton in the same family reads as texture — a smudge on the
+     plate rather than a picture of something being recorded. Two hues rather
+     than one because the bands have to be told apart from the chrome at a size
+     where neither is more than a couple of pixels tall.
+
+     Light, and opaque like the blocks they sit on. They are drawn over
+     `--layout-screen` rather than over the composition's own background, so
+     these could carry alpha safely — but keeping the whole set opaque means one
+     rule for the picker rather than an exception to remember. */
+  --layout-ui: #b9d0e8;
+  --layout-ui-alt: #b9dfc6;
+
   /* The timeline's own colours.
      Clips are purple so the strip reads as a distinct surface from the panels
      around it, and both tones are deliberately dark: a clip is a large block of
@@ -411,6 +430,15 @@ body {
      gradient it had to sit under; against 25% of that fill it disappeared. */
   --zoom-edge: #f0d06f;
   --zoom-ring: #ffe9a8;
+  /* An alignment guide in the preview, and the snap it stands for.
+
+     Its own token rather than `--cut` below, which happens to be the same
+     family: one means "this is where a cut lands" and the other "this edge is
+     lined up", and a palette where the two share a variable is one where
+     changing the timeline's red silently restyles the canvas. Lighter than
+     `--cut` besides — a guide is drawn over a composition somebody is looking
+     at, not over chrome. */
+  --guide: #ff5a6e;
   /* Where a cut would land. Red because it is destructive and because it must
      never be mistaken for the playhead sitting next to it. */
   --cut: #ff4d5e;

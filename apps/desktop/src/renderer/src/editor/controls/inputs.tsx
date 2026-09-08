@@ -311,10 +311,21 @@ export function useTravelling(at: number, ms = SLIDE_MS): boolean {
 export function Tabs<T extends string>({
   value,
   options,
+  below,
   onChange,
 }: {
   value: T;
   options: { value: T; label: string; title?: string }[];
+  /**
+   * A control that rides in the pinned band with the row.
+   *
+   * For the one thing that must stay reachable while a long grid scrolls past
+   * underneath — the same reason the row itself is sticky. Inside this wrapper
+   * rather than pinned separately: a second `sticky top-0` lands on top of the
+   * first unless the row's height is written in as a number, which is the trap
+   * the panel header already records.
+   */
+  below?: ReactNode;
   onChange: (value: T) => void;
 }) {
   const at = Math.max(
@@ -409,6 +420,13 @@ export function Tabs<T extends string>({
           </button>
         ))}
       </div>
+
+      {/* Inside the pinned band, under the pills. `px-4` matches the row's own
+          inset so the control lines up with the tabs above it, and the vertical
+          padding gives the band a floor for the fade to hang off — enough of it
+          that the control reads as its own row rather than as part of the tab
+          it happens to sit under. */}
+      {below && <div className="px-4 pt-2 pb-3">{below}</div>}
     </div>
   );
 }
@@ -551,6 +569,7 @@ export function ColorField({
   icon,
   label,
   overridden,
+  disabled,
   value,
   onChange,
 }: {
@@ -564,6 +583,14 @@ export function ColorField({
   label: string;
   /** True when the selected slice sets this itself rather than inheriting. */
   overridden?: boolean;
+  /**
+   * Shown but not reachable — the same greying every other control here uses.
+   *
+   * Kept on screen rather than removed, because a control that vanishes takes
+   * the answer to "what else could this do?" with it: the row below shifts up,
+   * and there is nothing left saying the colour is a thing this edge has.
+   */
+  disabled?: boolean;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -573,7 +600,7 @@ export function ColorField({
   return (
     // A column: the row, and the picker that drops out of it.
     <div className="flex flex-col">
-      <div className="flex items-center gap-2">
+      <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
         <span className="flex-none text-editor-muted [&_svg]:size-4" aria-hidden>
           {icon}
         </span>
@@ -591,7 +618,11 @@ export function ColorField({
             type="button"
             aria-label={`${label}, as a colour`}
             aria-expanded={open}
-            className="flex flex-none cursor-pointer items-center gap-1 pr-1.5 pl-2"
+            disabled={disabled}
+            className={cn(
+              "flex flex-none items-center gap-1 pr-1.5 pl-2",
+              disabled ? "cursor-default" : "cursor-pointer",
+            )}
             onClick={() => setOpen((was) => !was)}
           >
             <span className="size-4 rounded-[3px]" style={{ backgroundColor: value }} aria-hidden />
@@ -620,6 +651,7 @@ export function ColorField({
               belongs to. */}
           <input
             aria-label={`${label}, as hex`}
+            disabled={disabled}
             // Overridden shows in the value's weight, the way it does in a
             // slider's label. Not a ring or a border: this well is a swatch, a
             // divider and a reading, and an outline round the lot reads as the
@@ -644,7 +676,10 @@ export function ColorField({
         </div>
       </div>
 
-      {open && (
+      {/* Never while it is disabled: a picker left standing open under a greyed
+          field is a panel of live swatches attached to a control that is not
+          taking any. */}
+      {open && !disabled && (
         // Lined up with the well rather than the row, so it reads as belonging
         // to the field rather than as one of its own. `ml-6` is the icon and
         // the gap beside it.

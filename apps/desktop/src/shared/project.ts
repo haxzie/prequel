@@ -76,6 +76,30 @@ export type LayoutPreset =
  * square the next time anyone touched the shape control.
  */
 export type CameraShape = "circle" | "squircle" | "rounded" | "wide" | "portrait";
+
+/**
+ * The corner radius each shape stands for, as a fraction of the bubble's
+ * shorter edge.
+ *
+ * Only ever *written* — by the shape control, and by the migration that fills
+ * `cameraCornerRadius` in for a project saved before it existed. Nothing reads
+ * it to draw with: the geometry reads `cameraCornerRadius` and only that, or
+ * the shape would be a second answer to how round the bubble is and a
+ * hand-dragged radius would snap back to its shape's whenever the two were
+ * asked at once.
+ *
+ * A half is the degenerate rounded rect that is a circle, so `circle` needs no
+ * special case. `wide` and `portrait` are modest because the point of both is
+ * the whole picture — a heavy round starts eating the corners of what the shape
+ * was chosen to show.
+ */
+export const SHAPE_RADIUS: Record<CameraShape, number> = {
+  circle: 0.5,
+  squircle: 0.5,
+  rounded: 0.18,
+  wide: 0.12,
+  portrait: 0.12,
+};
 export type CameraCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface LayoutSettings {
@@ -168,6 +192,37 @@ export interface LayoutSettings {
    */
   cameraMirror: boolean;
   /**
+   * The bubble's corner radius, as a fraction of *its own* shorter edge.
+   *
+   * Its own rather than the frame's, because that is the edge the corners are
+   * on: measured off the frame, the same number would round a small bubble
+   * nearly to a circle and leave a large one nearly square, so the look would
+   * not survive resizing the camera.
+   *
+   * Written by the shape control rather than derived from it, exactly as
+   * `cameraWidth` is — see `cameraShape`. Deriving it instead is what made a
+   * hand-set radius snap back the moment anyone touched the shape again.
+   */
+  cameraCornerRadius: number;
+  /**
+   * A border round the bubble, as a fraction of the frame's shorter edge.
+   *
+   * Its own setting rather than the screen's, which is the only reason it can
+   * exist at all: the frame's border belongs to the screen recording, and a
+   * ring drawn round somebody's face is a different decision from framing a
+   * picture. Sharing the screen's slider would have meant framing a screenshot
+   * also drew on a face.
+   *
+   * Outside the picture like the screen's, for the same reason — a frame goes
+   * around a picture, not over it. So an arrangement that fills the frame with
+   * the camera has nowhere to put it, exactly as full bleed has nowhere for the
+   * screen's.
+   */
+  cameraBorderWidth: number;
+  cameraBorderColor: string;
+  /** How opaque that border is, 0 to 1. A tinted edge rather than a solid one. */
+  cameraBorderOpacity: number;
+  /**
    * Draw the pointer over the screen recording.
    *
    * Only possible when the recording was captured with the system cursor
@@ -247,6 +302,22 @@ export interface BackgroundSettings {
   /** The one setting that is not a flat leaf: a discriminated union only makes
       sense as a whole, so it is treated as a single key. */
   background: Background;
+  /**
+   * How far the background picture is thrown out of focus, as a fraction of the
+   * frame's shorter edge.
+   *
+   * A fraction like every other distance here, so a look survives a change of
+   * frame — and so the same number means the same softness whatever the picture
+   * behind it happens to be.
+   *
+   * Only an image is blurred. A solid has nothing to soften, and a gradient is
+   * already a smooth ramp: blurring either moves a slider and changes no pixels.
+   *
+   * Zero by default, which is also what every project saved before this existed
+   * reads back as — `sanitiseProject` spreads what is on disk over the defaults,
+   * so an absent key lands here rather than needing a `before*` guard of its own.
+   */
+  backgroundBlur: number;
   padding: number;
   cornerRadius: number;
   borderWidth: number;
@@ -330,9 +401,49 @@ export function captionLook(captions: CaptionSettings): string {
   ].join("|");
 }
 
+/**
+ * A picture laid over the composition — a logo, a handle, a channel mark.
+ *
+ * Its own section rather than more `layout` leaves. `layout` arranges the two
+ * pictures a recording *is*, and every rule in it is about how those two share
+ * a frame; a watermark is a third thing standing on top of both, owned by
+ * nobody and arranged with neither. A section also gives it a panel, a Reset
+ * and a line in a preset for free.
+ *
+ * `watermark` is the file name inside the recording, or null for none — the
+ * same shape `Background`'s `path` has, and for the same reason: the picture is
+ * copied in so a recording stays self-contained and exports the same video next
+ * year.
+ */
+export interface WatermarkSettings {
+  watermark: string | null;
+  /**
+   * Where its *centre* sits, as a fraction of the frame.
+   *
+   * The centre rather than a corner, for the reason the camera's position is
+   * one: resizing grows it from the middle, so a corner would drift every time
+   * the size changed.
+   */
+  watermarkX: number;
+  watermarkY: number;
+  /**
+   * Its size, both edges as fractions of the frame's shorter edge.
+   *
+   * Both stored rather than one plus the picture's aspect, exactly as
+   * `cameraWidth`/`cameraHeight` are: the plan is built without the image's own
+   * dimensions to hand, and a height derived at draw time would snap a
+   * hand-resized mark back the first time anything else was touched.
+   */
+  watermarkWidth: number;
+  watermarkHeight: number;
+  /** How opaque it is, 0 to 1. A watermark is usually not a solid thing. */
+  watermarkOpacity: number;
+}
+
 export interface SliceSettings {
   layout: LayoutSettings;
   background: BackgroundSettings;
+  watermark: WatermarkSettings;
   audio: AudioSettings;
   captions: CaptionSettings;
 }
@@ -467,6 +578,20 @@ export interface ZoomSlice {
   blurStrength: number;
 }
 
+/**
+ * The part of a zoom that is a look rather than a shot.
+ *
+ * How the move feels, and nothing about where it goes. `target`, `x` and `y`
+ * are left out together and deliberately: a region on one recording's screen is
+ * nothing on another's, and carrying `target: "region"` without coordinates
+ * would point every new zoom at dead centre — a wrong shot rather than a wrong
+ * look. `level` is in, because "punchy" is how far as well as how fast.
+ *
+ * This is what a project's `zoomDefaults` holds and what a scene preset
+ * carries.
+ */
+export type ZoomDefaults = Omit<ZoomSlice, "id" | "source" | "target" | "x" | "y">;
+
 export const DEFAULT_ZOOM = {
   target: "cursor",
   x: 0.5,
@@ -493,6 +618,17 @@ export const DEFAULT_ZOOM = {
   blurStrength: 0.012,
   vignette: 0,
 } as const;
+
+const { target: _target, x: _x, y: _y, ...ZOOM_LOOK } = DEFAULT_ZOOM;
+
+/**
+ * The half of `DEFAULT_ZOOM` a project is allowed to disagree with.
+ *
+ * Destructured rather than written out a second time, so the two cannot drift —
+ * `DEFAULT_ZOOM` stays the one place a zoom's opening values are decided, and
+ * the three keys a look does not carry are dropped in exactly one place.
+ */
+export const DEFAULT_ZOOM_LOOK: ZoomDefaults = ZOOM_LOOK;
 
 /** How long a zoom is when it is first dropped on the timeline. */
 export const DEFAULT_ZOOM_LENGTH: Ns = 2_000_000_000;
@@ -572,6 +708,18 @@ export interface Project {
   tracks: ProjectTrack[];
   /** Zoom spans, in source time. Sorted, and never overlapping. */
   zooms: ZoomSlice[];
+  /**
+   * What a zoom dropped on this project starts as.
+   *
+   * `DEFAULT_ZOOM` is still the floor underneath it — this only says where a
+   * project disagrees, which is what lets a scene preset carry a zoom feel.
+   *
+   * Deliberately without a `before*` guard, unlike every other field added to a
+   * project since: a zoom already on the timeline carries its own values and is
+   * never read through this, so a default here cannot change how anything
+   * already saved plays back. There is nothing to protect.
+   */
+  zoomDefaults: ZoomDefaults;
   output: OutputSettings;
   /**
    * The words as corrected in the captions panel, or null to caption from the
@@ -626,6 +774,21 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // enough that whoever is on camera is still legible rather than a thumbnail.
   cameraShrinkTo: 0.7,
   cameraMirror: true,
+  // In step with `cameraShape: "squircle"` above, because the shape control is
+  // what writes this. The two have to open agreeing or the first touch of the
+  // shape control would visibly re-round a bubble nobody had asked it to.
+  cameraCornerRadius: 0.5,
+  // Off, unlike the screen's border.
+  //
+  // The screen's earns its default by lifting a flat screenshot off a dark
+  // wallpaper by catching its edge. A bubble is already an object with a
+  // silhouette and a shadow, and a ring round a face that nobody asked for is
+  // the first thing anybody turns back off. Off also means every project made
+  // before this existed reads back unchanged with no migration: `sanitiseProject`
+  // spreads what is on disk over these defaults, and zero is what it drew.
+  cameraBorderWidth: 0,
+  cameraBorderColor: "#ffffff",
+  cameraBorderOpacity: 0.6,
   cursorVisible: true,
   // About the size the pointer appears on screen in a 1080p frame, so an export
   // looks like the recording rather than like a diagram of it.
@@ -673,6 +836,9 @@ export const DEFAULT_BACKGROUND: BackgroundSettings = {
   // thing anyone sees is a blank frame. This is still there under `My
   // wallpaper` for anyone who wants it.
   background: { kind: "image", source: "preset", path: "monterey.jpg" },
+  // Sharp. The wallpaper is chosen to be looked at, and a recording that opened
+  // on a blurred one would look like a picture that had failed to load.
+  backgroundBlur: 0,
   padding: 0.06,
   cornerRadius: 0.02,
   // A hairline of white at low opacity, which is what a border is for here: it
@@ -689,6 +855,23 @@ export const DEFAULT_BACKGROUND: BackgroundSettings = {
   shadowOpacity: 0.45,
   shadowBlur: 0.05,
   shadowY: 0.015,
+};
+
+export const DEFAULT_WATERMARK: WatermarkSettings = {
+  // None. A recording that opened with a mark on it would be putting somebody
+  // else's logo on somebody's video.
+  watermark: null,
+  // Bottom right, standing off both edges — where a channel mark goes, and the
+  // corner the pointer spends least time in. Read against the size below: the
+  // position is the mark's *centre*, so the margin is whatever is left after
+  // half of it.
+  watermarkX: 0.88,
+  watermarkY: 0.86,
+  watermarkWidth: 0.12,
+  watermarkHeight: 0.12,
+  // Present but not shouting, which is what a watermark is for. Solid enough to
+  // read on a busy frame, faint enough not to compete with the recording.
+  watermarkOpacity: 0.75,
 };
 
 export const DEFAULT_AUDIO: AudioSettings = {
@@ -724,6 +907,7 @@ export const DEFAULT_CAPTIONS: CaptionSettings = {
 export const DEFAULT_SETTINGS: SliceSettings = {
   layout: DEFAULT_LAYOUT,
   background: DEFAULT_BACKGROUND,
+  watermark: DEFAULT_WATERMARK,
   audio: DEFAULT_AUDIO,
   captions: DEFAULT_CAPTIONS,
 };
@@ -740,6 +924,65 @@ function zoomTarget(stored: unknown): ZoomSlice["target"] {
   return stored === "region" || stored === "typing" ? stored : "cursor";
 }
 
+/**
+ * Repairs the part of a zoom that is a *look* rather than a shot.
+ *
+ * Its own function because two things read it: a zoom off `project.json`, and
+ * the project's `zoomDefaults` — which is what a scene preset carries. One
+ * clamp table rather than two, or a preset could come to hold a level no
+ * control can produce and no zoom could ever have been dragged to.
+ *
+ * `fallback` is what an absent or unusable value lands on: `DEFAULT_ZOOM` for a
+ * stored zoom, and the project's own defaults for one being dropped now.
+ */
+export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomDefaults {
+  const zoom = (stored ?? {}) as Record<string, unknown>;
+
+  return {
+    level: clamp(number(zoom["level"], fallback.level), 1, 8),
+    speed: clamp(number(zoom["speed"], fallback.speed), 0, 5),
+    // Both to the unit square. x because a bézier whose control points run
+    // backwards is not a timing function — it doubles back, and a zoom that
+    // briefly un-zooms mid-move is not something the control should be able to
+    // ask for.
+    //
+    // y for two reasons that agree. A value past the ends is overshoot, which
+    // would take the picture beyond the level the zoom says it reaches; and it
+    // would put the handle outside the pad that sets it, so the control could
+    // be dragged into a state it cannot then show. Anticipation and bounce are
+    // a real look, but they need a taller pad and a level that means "peak"
+    // rather than "arrival" — a bigger change than this one.
+    easeInX: clamp(number(zoom["easeInX"], fallback.easeInX), 0, 1),
+    easeInY: clamp(number(zoom["easeInY"], fallback.easeInY), 0, 1),
+    easeOutX: clamp(number(zoom["easeOutX"], fallback.easeOutX), 0, 1),
+    easeOutY: clamp(number(zoom["easeOutY"], fallback.easeOutY), 0, 1),
+    // Past about thirty degrees the far edge is short enough that the
+    // picture is more foreshortening than content.
+    //
+    // `tilt`, `yaw` and `depth` are what these three were called until they
+    // were renamed for the axes they actually turn about. Read as a fallback
+    // rather than migrated in place: a project is rewritten only when
+    // something in it is edited, so a rename with no fallback would leave
+    // every recording made before it silently flat — the values are still
+    // there in the file, and nothing would be reading them.
+    rotateX: clamp(number(zoom["rotateX"] ?? zoom["tilt"], fallback.rotateX), -30, 30),
+    rotateY: clamp(number(zoom["rotateY"] ?? zoom["yaw"], fallback.rotateY), -30, 30),
+    // Absent in every project written before this existed, which is what the
+    // fallback is for: they read back at the distance they were drawn at.
+    perspective: clamp(number(zoom["perspective"] ?? zoom["depth"], fallback.perspective), 0, 1),
+    // Absent in every project written before this existed, and the default is
+    // no vignette — so those all read back looking exactly as they did.
+    vignette: clamp(number(zoom["vignette"], fallback.vignette), 0, 1),
+    // Only `true` is on, so a missing key is off whatever the fallback says —
+    // which is the one place a look deliberately does not inherit. A preset that
+    // turned the depth-of-field on for every zoom afterwards would be a strong
+    // effect arriving without being asked for, and it hides content.
+    blur: zoom["blur"] === true,
+    blurSafe: clamp(number(zoom["blurSafe"], fallback.blurSafe), 0.05, 0.9),
+    blurStrength: clamp(number(zoom["blurStrength"], fallback.blurStrength), 0, 0.04),
+  };
+}
+
 function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
   if (!Array.isArray(stored)) return [];
 
@@ -753,47 +996,7 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
       target: zoomTarget(zoom?.["target"]),
       x: clamp(number(zoom?.["x"], DEFAULT_ZOOM.x), 0, 1),
       y: clamp(number(zoom?.["y"], DEFAULT_ZOOM.y), 0, 1),
-      level: clamp(number(zoom?.["level"], DEFAULT_ZOOM.level), 1, 8),
-      speed: clamp(number(zoom?.["speed"], DEFAULT_ZOOM.speed), 0, 5),
-      // Both to the unit square. x because a bézier whose control points run
-      // backwards is not a timing function — it doubles back, and a zoom that
-      // briefly un-zooms mid-move is not something the control should be able to
-      // ask for.
-      //
-      // y for two reasons that agree. A value past the ends is overshoot, which
-      // would take the picture beyond the level the zoom says it reaches; and it
-      // would put the handle outside the pad that sets it, so the control could
-      // be dragged into a state it cannot then show. Anticipation and bounce are
-      // a real look, but they need a taller pad and a level that means "peak"
-      // rather than "arrival" — a bigger change than this one.
-      easeInX: clamp(number(zoom?.["easeInX"], DEFAULT_ZOOM.easeInX), 0, 1),
-      easeInY: clamp(number(zoom?.["easeInY"], DEFAULT_ZOOM.easeInY), 0, 1),
-      easeOutX: clamp(number(zoom?.["easeOutX"], DEFAULT_ZOOM.easeOutX), 0, 1),
-      easeOutY: clamp(number(zoom?.["easeOutY"], DEFAULT_ZOOM.easeOutY), 0, 1),
-      // Past about thirty degrees the far edge is short enough that the
-      // picture is more foreshortening than content.
-      //
-      // `tilt`, `yaw` and `depth` are what these three were called until they
-      // were renamed for the axes they actually turn about. Read as a fallback
-      // rather than migrated in place: a project is rewritten only when
-      // something in it is edited, so a rename with no fallback would leave
-      // every recording made before it silently flat — the values are still
-      // there in the file, and nothing would be reading them.
-      rotateX: clamp(number(zoom?.["rotateX"] ?? zoom?.["tilt"], DEFAULT_ZOOM.rotateX), -30, 30),
-      rotateY: clamp(number(zoom?.["rotateY"] ?? zoom?.["yaw"], DEFAULT_ZOOM.rotateY), -30, 30),
-      // Absent in every project written before this existed, which is what the
-      // default is for: they read back at the distance they were drawn at.
-      perspective: clamp(
-        number(zoom?.["perspective"] ?? zoom?.["depth"], DEFAULT_ZOOM.perspective),
-        0,
-        1,
-      ),
-      // Absent in every project written before this existed, and the default is
-      // no vignette — so those all read back looking exactly as they did.
-      vignette: clamp(number(zoom?.["vignette"], DEFAULT_ZOOM.vignette), 0, 1),
-      blur: zoom?.["blur"] === true,
-      blurSafe: clamp(number(zoom?.["blurSafe"], DEFAULT_ZOOM.blurSafe), 0.05, 0.9),
-      blurStrength: clamp(number(zoom?.["blurStrength"], DEFAULT_ZOOM.blurStrength), 0, 0.04),
+      ...sanitiseZoomLook(zoom, DEFAULT_ZOOM),
     }))
     .filter((zoom) => zoom.source.end > zoom.source.start)
     .sort((a, b) => a.source.start - b.source.start);
@@ -834,6 +1037,7 @@ export function newProject(recordingId: string, duration: Ns, fullScreen = false
     frame: { width: 1920, height: 1080, presetId: DEFAULT_PRESET_ID },
     defaults,
     zooms: [],
+    zoomDefaults: { ...DEFAULT_ZOOM_LOOK },
     tracks: [
       {
         id: "composite",
@@ -861,6 +1065,7 @@ export function resolveSettings(
   return {
     layout: { ...defaults.layout, ...overrides?.layout },
     background: { ...defaults.background, ...overrides?.background },
+    watermark: { ...defaults.watermark, ...overrides?.watermark },
     audio: { ...defaults.audio, ...overrides?.audio },
     captions: { ...defaults.captions, ...overrides?.captions },
   };
@@ -979,15 +1184,20 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
       : {}),
     frame: { width, height, presetId: stored.frame?.presetId ?? null },
     zooms: sanitiseZooms(stored.zooms, duration),
+    zoomDefaults: sanitiseZoomLook(stored.zoomDefaults, DEFAULT_ZOOM),
     defaults: {
       layout: {
         ...DEFAULT_LAYOUT,
         ...beforeShrinking(stored.defaults?.layout),
         ...beforeSmoothing(stored.defaults?.layout),
         ...beforeMotionBlur(stored.defaults?.layout),
+        ...beforeCameraRadius(stored.defaults?.layout),
         ...migrateLayout(stored.defaults?.layout),
       },
       background: { ...DEFAULT_BACKGROUND, ...stored.defaults?.background },
+      // No `before*` guard: the default is no mark at all, which is exactly
+      // what every project saved before this existed drew.
+      watermark: { ...DEFAULT_WATERMARK, ...stored.defaults?.watermark },
       audio: { ...DEFAULT_AUDIO, ...stored.defaults?.audio },
       captions: { ...DEFAULT_CAPTIONS, ...stored.defaults?.captions },
     },
@@ -1073,6 +1283,37 @@ function beforeMotionBlur(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cursorMotionBlur" in stored) return undefined;
   return { cursorMotionBlur: 0 };
+}
+
+/**
+ * Gives the bubble the radius its shape used to imply.
+ *
+ * `beforeShrinking`'s rule again, and the one case where it is not about a
+ * default being wrong: the radius used to be *computed* from `cameraShape` on
+ * every frame, so a project on disk has no radius of its own at all. Spreading
+ * `DEFAULT_LAYOUT` over it would hand a `rounded` bubble the squircle's half,
+ * which is a camera that comes back visibly a different shape from the one its
+ * author saved.
+ *
+ * `SHAPE_RADIUS` is the same table the old computation used, so every existing
+ * project reads back drawing exactly as it did.
+ *
+ * Deliberately not part of `migrateLayout`, which is also run over a slice's
+ * overrides — writing the key there would make `key in overrides.layout` answer
+ * yes for every slice, and the panel would show a radius overridden on clips
+ * that override nothing.
+ */
+function beforeCameraRadius(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cameraCornerRadius" in stored) return undefined;
+  const shape = stored.cameraShape;
+  return {
+    cameraCornerRadius:
+      shape !== undefined && shape in SHAPE_RADIUS
+        ? SHAPE_RADIUS[shape]
+        : DEFAULT_LAYOUT.cameraCornerRadius,
+  };
 }
 
 /**

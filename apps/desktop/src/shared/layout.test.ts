@@ -29,6 +29,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   DEFAULT_ZOOM,
+  SHAPE_RADIUS,
   type LayoutPreset,
   type LayoutSettings,
   type SliceSettings,
@@ -65,6 +66,7 @@ function settings(overrides: Partial<SliceSettings> = {}): SliceSettings {
   return {
     layout: { ...base.layout, ...overrides.layout },
     background: { ...base.background, ...overrides.background },
+    watermark: { ...base.watermark, ...overrides.watermark },
     audio: { ...base.audio, ...overrides.audio },
     captions: { ...base.captions, ...overrides.captions },
   };
@@ -259,10 +261,12 @@ describe("the camera", () => {
         layout: {
           ...DEFAULT_SETTINGS.layout,
           cameraShape: "wide",
-          // The proportions the shape picker writes for `wide`. The shape sets
-          // the radius; the box is what the geometry reads.
+          // The proportions and the roundness the shape picker writes for
+          // `wide`. Both are settings the geometry reads; the shape itself only
+          // says which numbers the picker put there.
           cameraWidth: 0.22 * shapeAspect("wide", CAMERA),
           cameraHeight: 0.22,
+          cameraCornerRadius: SHAPE_RADIUS.wide,
         },
       }),
     );
@@ -281,15 +285,25 @@ describe("the camera", () => {
 
   it("rounds a wide bubble's corners off its shorter edge", () => {
     // Off the width, the corners would grow with it and start eating the
-    // picture the shape was chosen to show whole.
+    // picture the shape was chosen to show whole — and a bubble would be
+    // rounded harder for being wider, which is not what the number says.
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: CAMERA },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, cameraShape: "wide" } }),
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cameraShape: "wide",
+          cameraWidth: 0.22 * shapeAspect("wide", CAMERA),
+          cameraHeight: 0.22,
+          cameraCornerRadius: SHAPE_RADIUS.wide,
+        },
+      }),
     );
     const { shape, dstRect } = image(plan, "camera")!;
 
-    expect(shape.radius).toBeLessThan(dstRect.height / 2);
+    expect(dstRect.width).toBeGreaterThan(dstRect.height);
+    expect(shape.radius).toBeCloseTo(SHAPE_RADIUS.wide * dstRect.height, 5);
   });
 
   it("centre-crops to a square so a face stays centred", () => {
@@ -326,7 +340,9 @@ describe("the camera", () => {
     // A circle is the rounded rectangle taken to its limit rather than a case
     // of its own: the radius is half the bubble, and the exponent is the plain
     // ellipse. Nothing here special-cases it.
-    expect(shaped("circle")).toEqual({ radius: 237.6 / 2, exponent: 2 });
+    // Half the bubble is what `SHAPE_RADIUS.circle` is, and it reaches the plan
+    // as a plain multiplication — nothing here special-cases a circle.
+    expect(shaped("circle")).toEqual({ radius: SHAPE_RADIUS.circle * 237.6, exponent: 2 });
     expect(shaped("squircle").exponent).toBe(4);
   });
 
@@ -492,6 +508,176 @@ describe("decoration", () => {
       (item): item is Extract<PlanItem, { kind: "shadow" }> => item.kind === "shadow",
     )!;
     expect(shadow.shape.radius).toBeCloseTo(stroke.shape.radius);
+  });
+
+  it("draws no logo until there is one", () => {
+    // The default, and what every project saved before the watermark existed
+    // reads back as.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
+    expect(plan.items.some((item) => item.kind === "watermark")).toBe(false);
+  });
+
+  it("places the logo by its centre, in output pixels", () => {
+    // The centre rather than a corner, so resizing grows it from the middle —
+    // and the preview's own hit box repeats this arithmetic, so it is worth
+    // pinning here where both can be read against it.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: {
+          watermark: "watermark-abc.png",
+          watermarkX: 0.5,
+          watermarkY: 0.25,
+          watermarkWidth: 0.2,
+          watermarkHeight: 0.1,
+          watermarkOpacity: 0.5,
+        },
+      }),
+    );
+
+    const mark = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "watermark" }> => item.kind === "watermark",
+    )!;
+    const unit = Math.min(LANDSCAPE.width, LANDSCAPE.height);
+
+    expect(mark.dstRect.width).toBeCloseTo(0.2 * unit);
+    expect(mark.dstRect.height).toBeCloseTo(0.1 * unit);
+    expect(mark.dstRect.x + mark.dstRect.width / 2).toBeCloseTo(LANDSCAPE.width * 0.5);
+    expect(mark.dstRect.y + mark.dstRect.height / 2).toBeCloseTo(LANDSCAPE.height * 0.25);
+    expect(mark.opacity).toBeCloseTo(0.5);
+  });
+
+  it("puts the logo over both pictures and under the captions", () => {
+    // Over the camera, or it is a mark somebody's head moves in front of. Under
+    // the words, because captions are the only thing on screen being read.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: { ...DEFAULT_SETTINGS.watermark, watermark: "watermark-abc.png" },
+      }),
+    );
+
+    const mark = plan.items.findIndex((item) => item.kind === "watermark");
+    const camera = plan.items.findIndex(
+      (item) => item.kind === "image" && item.source === "camera",
+    );
+
+    expect(camera).toBeGreaterThanOrEqual(0);
+    expect(mark).toBeGreaterThan(camera);
+  });
+
+  it("carries the background's blur in output pixels, not as a fraction", () => {
+    // The rasterisers are handed numbers to draw with. A fraction reaching one
+    // of them would be a blur of half a pixel that looks like no blur at all.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        background: {
+          ...DEFAULT_SETTINGS.background,
+          background: { kind: "image", source: "preset", path: "monterey.jpg" },
+          backgroundBlur: 0.02,
+        },
+      }),
+    );
+
+    const fill = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "fill" }> => item.kind === "fill",
+    )!;
+
+    expect(fill.paint.kind).toBe("image");
+    expect((fill.paint as { blur: number }).blur).toBeCloseTo(
+      0.02 * Math.min(LANDSCAPE.width, LANDSCAPE.height),
+    );
+  });
+
+  it("draws the background sharp unless it is asked not to", () => {
+    // Zero by default, which is also what every project saved before the blur
+    // existed reads back as.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
+    const fill = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "fill" }> => item.kind === "fill",
+    )!;
+
+    expect((fill.paint as { blur?: number }).blur).toBe(0);
+  });
+
+  it("strokes the camera's border round the outside of the bubble", () => {
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        // The screen's own border off, so the single stroke in this plan is the
+        // camera's. These are two separate settings, which is the whole point of
+        // the camera having any.
+        background: { ...DEFAULT_SETTINGS.background, borderWidth: 0 },
+        layout: { ...DEFAULT_SETTINGS.layout, cameraBorderWidth: 0.01 },
+      }),
+    );
+
+    const stroke = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "stroke" }> => item.kind === "stroke",
+    )!;
+    const camera = image(plan, "camera")!;
+    // A fraction of the *frame's* shorter edge, like the screen's — so the same
+    // number is the same thickness on both, which is what lets the two read as
+    // one material rather than as two pictures with unrelated edges.
+    const width = 0.01 * Math.min(LANDSCAPE.width, LANDSCAPE.height);
+
+    expect(stroke.width).toBeCloseTo(width);
+    expect(stroke.rect.x).toBeCloseTo(camera.dstRect.x - width);
+    expect(stroke.rect.y).toBeCloseTo(camera.dstRect.y - width);
+    expect(stroke.rect.width).toBeCloseTo(camera.dstRect.width + width * 2);
+    expect(stroke.rect.height).toBeCloseTo(camera.dstRect.height + width * 2);
+    // Radius grown with the box, or the ring changes width at the corners.
+    expect(stroke.shape.radius).toBeCloseTo(camera.shape.radius + width);
+    expect(stroke.shape.exponent).toBe(camera.shape.exponent);
+
+    // And the bubble's shadow is cast by the two of them together, or the ring
+    // reads as a circle painted on the wallpaper behind it. The camera's is the
+    // last shadow in the plan — the screen's is laid down first.
+    const shadows = plan.items.filter(
+      (item): item is Extract<PlanItem, { kind: "shadow" }> => item.kind === "shadow",
+    );
+    expect(shadows[shadows.length - 1]!.shape.radius).toBeCloseTo(stroke.shape.radius);
+  });
+
+  it("draws no ring round the camera unless it is asked for one", () => {
+    // Off by default, unlike the screen's. A bubble is already an object with a
+    // silhouette and a shadow; a ring round somebody's face that nobody asked
+    // for is the first thing anyone turns back off — and it is what every
+    // project saved before these settings existed has to read back as.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({ background: { ...DEFAULT_SETTINGS.background, borderWidth: 0 } }),
+    );
+    expect(plan.items.some((item) => item.kind === "stroke")).toBe(false);
+  });
+
+  it("does not let the frame's border reach the camera", () => {
+    // The invariant the camera drew no border at all to protect: the border in
+    // the Frame panel belongs to the screen recording, and dragging it must not
+    // put a ring round a face. What changed is that the camera has its own
+    // setting now — not that the screen's got a longer reach.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01 },
+        layout: { ...DEFAULT_SETTINGS.layout, cameraBorderWidth: 0 },
+      }),
+    );
+
+    const strokes = plan.items.filter(
+      (item): item is Extract<PlanItem, { kind: "stroke" }> => item.kind === "stroke",
+    );
+    const camera = image(plan, "camera")!;
+
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0]!.rect.width).toBeGreaterThan(camera.dstRect.width * 2);
   });
 
   it("takes the border's opacity into its colour", () => {
@@ -2181,6 +2367,49 @@ describe("zooming", () => {
       }
     });
 
+    it("keeps the ring on the bubble the whole way down", () => {
+      // Only visible in motion, which is why it needs a test rather than an
+      // eye: the picture's keys and the ring's are two separate tracks, so a
+      // ring given none of its own sits at full size while the bubble shrinks
+      // out from underneath it.
+      const plan = buildRenderPlan(
+        FRAME,
+        { screen: SCREEN, camera: CAMERA },
+        settings({
+          background: { ...DEFAULT_SETTINGS.background, borderWidth: 0 },
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            preset: "over-padded",
+            cameraBorderWidth: 0.01,
+          },
+        }),
+        null,
+        [region()],
+      );
+
+      const picture = plan.items.find(
+        (item): item is Extract<PlanItem, { kind: "image" }> =>
+          item.kind === "image" && item.source === "camera",
+      )!;
+      const ring = plan.items.find(
+        (item): item is Extract<PlanItem, { kind: "stroke" }> => item.kind === "stroke",
+      )!;
+      const width = 0.01 * Math.min(FRAME.width, FRAME.height);
+
+      const held = rectAt(picture.motion!, 4 * S, picture.dstRect, picture.shape.radius);
+      const ringed = rectAt(ring.motion!, 4 * S, ring.rect, ring.shape.radius);
+
+      // Still outside the picture, still concentric with it, and standing off it
+      // by as much of the border as the shrunk bubble is of the full one — the
+      // rule the shadow beside it follows, so a receding camera recedes whole.
+      const shrunk = held.width / picture.dstRect.width;
+      expect(shrunk).toBeLessThan(1);
+      expect(ringed.x).toBeCloseTo(held.x - width * shrunk, 3);
+      expect(ringed.y).toBeCloseTo(held.y - width * shrunk, 3);
+      expect(ringed.width).toBeCloseTo(held.width + width * shrunk * 2, 3);
+      expect(ringed.height).toBeCloseTo(held.height + width * shrunk * 2, 3);
+    });
+
     it("shrinks into the corner it is parked in", () => {
       // The bug this pins: it shrank about its own centre, so a bubble tucked
       // into a corner walked away from that corner as it got smaller — less in
@@ -3577,6 +3806,45 @@ describe("arriving from the slice before", () => {
     // The shadow is grown around the picture, so a track that only shrank the
     // picture would leave a blur behind after the camera had gone — a soft grey
     // lozenge sitting on the frame for the rest of the clip.
+    expect(keys[keys.length - 1]!.width).toBe(0);
+    expect(keys[keys.length - 1]!.height).toBe(0);
+  });
+
+  it("takes the ring with it, and lets it go", () => {
+    // The shadow's rule, for the same reason. The ring is drawn round the
+    // bubble, so a track that only shrank the picture would leave a circle of
+    // border sitting on the frame for the rest of the clip, around nothing.
+    //
+    // The width comes from the slice being *left*: this arrangement has no
+    // camera at all, so its own border setting says nothing about the bubble on
+    // its way out of the frame.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      BOTH,
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "screen-full" } }),
+      null,
+      [],
+      {
+        from: settings({
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            preset: "over-full",
+            cameraBorderWidth: 0.01,
+          },
+        }),
+        source: SPAN,
+      },
+    );
+
+    // The one with a track is the departing camera's; the screen's own border
+    // stands still.
+    const ring = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "stroke" }> =>
+        item.kind === "stroke" && item.motion !== undefined,
+    )!;
+    const keys = ring.motion!;
+
+    expect(keys[0]!.width).toBeGreaterThan(0);
     expect(keys[keys.length - 1]!.width).toBe(0);
     expect(keys[keys.length - 1]!.height).toBe(0);
   });

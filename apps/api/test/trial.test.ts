@@ -3,14 +3,14 @@
  *
  * `main/licence.test.ts` pins the same boundaries on the desktop side. Both
  * exist because every one of them is a case nobody exercises by hand — the last
- * hour of the fourteenth day, the hour after it, a paying team whose trial ended
+ * hour of the seventh day, the hour after it, a paying team whose trial ended
  * months ago — and getting one wrong produces a dashboard that looks right in
  * every manual check and tells somebody their trial has run out on a date nobody
  * thought to set the clock to.
  *
  * The endpoint tests are here for a different reason: `plan` alone cannot tell a
  * running trial from a lapsed one, and for a while the dashboard showed both of
- * them the same card offering fourteen free days.
+ * them the same card offering seven free days.
  */
 import {
   applyD1Migrations,
@@ -28,7 +28,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 26, 12, 0, 0);
 
 describe("trialStatus", () => {
-  it("is a trial while the fourteen days are running", () => {
+  it("is a trial while the seven days are running", () => {
     expect(trialStatus("free", NOW + 6 * DAY, NOW)).toEqual({
       status: "trial",
       daysLeft: 6,
@@ -118,7 +118,7 @@ interface Trial {
 
 describe("the trial in the dashboard's payloads", () => {
   it("counts down on /v1/me while the trial is running", async () => {
-    await signedUpDaysAgo(10);
+    await signedUpDaysAgo(3);
 
     const { trial } = (await (await get("/v1/me")).json()) as { trial: Trial };
 
@@ -132,7 +132,7 @@ describe("the trial in the dashboard's payloads", () => {
     const { trial } = (await (await get("/v1/me")).json()) as { trial: Trial };
 
     // The distinction the sidebar could not make: both of these are `plan:
-    // "free"`, and one of them was being offered a fortnight it had already had.
+    // "free"`, and one of them was being offered a week it had already had.
     expect(trial.status).toBe("expired");
     expect(trial.daysLeft).toBe(0);
   });
@@ -152,7 +152,7 @@ describe("the trial in the dashboard's payloads", () => {
   });
 
   it("answers the same verdict on /v1/billing as on /v1/me", async () => {
-    await signedUpDaysAgo(13);
+    await signedUpDaysAgo(6);
 
     const me = (await (await get("/v1/me")).json()) as { trial: Trial };
     const billing = (await (await get("/v1/billing")).json()) as { trial: Trial };

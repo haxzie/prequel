@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent,
   type RefObject,
 } from "react";
@@ -439,6 +440,20 @@ export function TimelineStrip({
     if (media.playing) showShadow(null);
   }, [media.playing, showShadow]);
 
+  /**
+   * The right-click menu, and what it was opened on.
+   *
+   * Held here rather than on each bar so only one can ever be open — two menus
+   * over one timeline is a click that lands on whichever was rendered last.
+   * Positioned in client coordinates because it is `fixed`: the strip scrolls,
+   * and a menu anchored inside it would travel with the content under it.
+   */
+  const [menu, setMenu] = useState<
+    | { x: number; y: number; kind: "clip"; sliceId: string; at: MediaTime }
+    | { x: number; y: number; kind: "zoom"; zoomId: string }
+    | null
+  >(null);
+
   const onClipPointerDown = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
     media.onInteract();
@@ -521,6 +536,18 @@ export function TimelineStrip({
                   cameraSpan={cameraSpan}
                   selected={slice.id === state.selectedSliceId}
                   onPointerDown={(event) => onClipPointerDown(slice, event)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    // The source time under the pointer, so Split here means
+                    // *here* — the same conversion a click on the ruler makes.
+                    setMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      kind: "clip",
+                      sliceId: slice.id,
+                      at: sourceAt(timeAt(event.clientX)) ?? 0,
+                    });
+                  }}
                   onBeginEdit={(edge) => {
                     dispatch({ type: "beginEdit" });
                     setTrim({ sliceId: slice.id, edge, span: edited });
@@ -636,6 +663,10 @@ export function TimelineStrip({
                     media.onInteract();
                     dispatch({ type: "selectZoom", zoomId: zoom.id });
                   }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu({ x: event.clientX, y: event.clientY, kind: "zoom", zoomId: zoom.id });
+                  }}
                   onBeginEdit={() => dispatch({ type: "beginEdit" })}
                   onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
                   onTrim={(edge, clientX) =>
@@ -659,7 +690,103 @@ export function TimelineStrip({
           <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
         </div>
       </div>
+
+      {menu && (
+        <>
+          {/* Click-away, over everything — the same shape the frame bar's menu
+              uses. `contextMenu` closes it too, so a second right-click
+              somewhere else does not leave two open. */}
+          <div
+            className="fixed inset-0 z-40"
+            onPointerDown={() => setMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <ul
+            role="menu"
+            className={
+              "fixed z-50 w-40 rounded-lg border border-editor-line bg-editor-panel p-1 " +
+              "shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+            }
+            // Client coordinates, because this is `fixed`: the strip scrolls
+            // under it and an anchored menu would ride away with the content.
+            style={{ left: menu.x, top: menu.y }}
+          >
+            {menu.kind === "clip" ? (
+              <>
+                <MenuItem
+                  label="Split here"
+                  onClick={() => {
+                    dispatch({ type: "split", at: menu.at });
+                    setMenu(null);
+                  }}
+                />
+                <MenuItem
+                  danger
+                  label="Delete clip"
+                  onClick={() => {
+                    dispatch({ type: "deleteSlice", sliceId: menu.sliceId });
+                    setMenu(null);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  label="Duplicate"
+                  onClick={() => {
+                    dispatch({ type: "duplicateZoom", zoomId: menu.zoomId });
+                    setMenu(null);
+                  }}
+                />
+                <MenuItem
+                  danger
+                  label="Delete zoom"
+                  onClick={() => {
+                    dispatch({ type: "deleteZoom", zoomId: menu.zoomId });
+                    setMenu(null);
+                  }}
+                />
+              </>
+            )}
+          </ul>
+        </>
+      )}
     </div>
+  );
+}
+
+/**
+ * One row of a right-click menu.
+ *
+ * `danger` is muted until reached for, the way the inspector's delete is: a red
+ * row sitting in an open menu shouts before anybody has decided anything.
+ */
+function MenuItem({
+  label,
+  danger,
+  onClick,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        role="menuitem"
+        className={cn(
+          "w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+          danger ? "hover:bg-cut/20 hover:text-cut" : "hover:bg-white/10",
+        )}
+        onClick={onClick}
+      >
+        {label}
+      </button>
+    </li>
   );
 }
 
@@ -912,6 +1039,7 @@ function Clip({
   cameraSpan,
   selected,
   onPointerDown,
+  onContextMenu,
   onTrim,
   onBeginEdit,
   onEndEdit,
@@ -925,6 +1053,8 @@ function Clip({
   cameraSpan: { start: MediaTime; end: MediaTime } | null;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  /** Right-clicked, with the pointer's position so a menu can open under it. */
+  onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
   /** An edge has been dragged to a source time. Clamping is the reducer's job. */
   onTrim: (edge: "start" | "end", source: MediaTime) => void;
   /** A drag is beginning, so its stream of trims is one step to undo. */
@@ -1054,6 +1184,7 @@ function Clip({
         borderWidth: CLIP_EDGE,
       }}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
     >
       {/* The recording's frames, as the clip's own backdrop.
 
@@ -1258,6 +1389,7 @@ function Zoom({
   start,
   sourceAt,
   onSelect,
+  onContextMenu,
   onMove,
   onTrim,
   onBeginEdit,
@@ -1277,6 +1409,8 @@ function Zoom({
       own units rather than in pixels that mean different things at each zoom. */
   sourceAt: (clientX: number) => MediaTime;
   onSelect: () => void;
+  /** Right-clicked, with the pointer's position so a menu can open under it. */
+  onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
   onMove: (start: MediaTime) => void;
   onTrim: (edge: "start" | "end", clientX: number) => void;
   /** A drag is beginning, so its stream of moves or trims is one step to undo. */
@@ -1329,6 +1463,7 @@ function Zoom({
         width: `${width}%`,
         borderWidth: ZOOM_EDGE,
       }}
+      onContextMenu={onContextMenu}
       onPointerDown={(event) => {
         // Stops the row underneath adding a second zoom on top of this one.
         event.stopPropagation();

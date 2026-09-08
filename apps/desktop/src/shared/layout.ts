@@ -210,6 +210,24 @@ export type PlanItem =
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
+      /**
+       * A still picture laid over the composition — a logo or a channel mark.
+       *
+       * Its own kind rather than a `fill` or an `image`. `fill` covers its rect
+       * and crops to do it, which is right for a wallpaper and wrong for a
+       * logo; `image` names one of the two video sources and is drawn from a
+       * texture that changes every frame. This is a file, drawn once, at the
+       * size and opacity it was given.
+       */
+      kind: "watermark";
+      /** Image to draw, relative to the session directory. */
+      path: string;
+      /** Where it lands in the output frame, in output pixels. */
+      dstRect: Rect;
+      /** 0 to 1, multiplied into whatever the picture's own alpha already is. */
+      opacity: number;
+    }
+  | {
       kind: "cursor";
       /** Image to draw, relative to the session directory. */
       path: string;
@@ -321,7 +339,12 @@ export interface CaptionWord {
 export type Paint =
   | { kind: "solid"; color: string }
   | { kind: "gradient"; from: string; to: string; angle: number }
-  | { kind: "image"; path: string };
+  /**
+   * `blur` is a radius in output pixels, already resolved from the setting's
+   * fraction. Zero draws the picture sharp, which is what every other paint
+   * does and what a plan written before this existed carries.
+   */
+  | { kind: "image"; path: string; blur: number };
 
 export interface RenderPlan {
   frame: Size;
@@ -365,7 +388,13 @@ export function buildRenderPlan(
   const unit = Math.min(frame.width, frame.height);
   const full: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
 
-  items.push({ kind: "fill", rect: full, paint: toPaint(background.background) });
+  // Resolved to output pixels here, like every other distance in a plan: the
+  // rasterisers are handed numbers to draw with, never fractions to work out.
+  items.push({
+    kind: "fill",
+    rect: full,
+    paint: toPaint(background.background, background.backgroundBlur * unit),
+  });
 
   // Where each picture goes, worked out once for both of them. Everything below
   // only fits a source into the box it was given and decides how to dress it.
@@ -582,7 +611,7 @@ export function buildRenderPlan(
     // measured off the shorter edge, or a wide camera's corners would grow with
     // its width and swallow the picture.
     const shape: Shape = {
-      radius: radiusFor(layout.cameraShape, Math.min(dstRect.width, dstRect.height)),
+      radius: radiusFor(layout, Math.min(dstRect.width, dstRect.height)),
       exponent: SHAPE_EXPONENT[layout.cameraShape],
     };
 
@@ -597,6 +626,23 @@ export function buildRenderPlan(
     const blur = background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
+    /**
+     * The camera's own ring, outside its own picture.
+     *
+     * Measured against the frame rather than against the bubble, unlike the
+     * shadow just above — a shadow is a property of how big an object is, but a
+     * border is a drawn line, and this is the only way the same number means the
+     * same thickness on the screen and on the camera. Which is what lets the two
+     * read as one material rather than as two pictures with unrelated edges.
+     *
+     * That is the width at rest. How far it stands off a bubble that is shrinking
+     * out of a zoom's way is `cameraKeys`' business, and it is not this number —
+     * see the note on the ring's own track.
+     */
+    const border = layout.cameraBorderWidth * unit;
+    const outer = grow(dstRect, border);
+    const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
+
     // Arriving from wherever the previous slice had it — or from nothing, when
     // that arrangement had no camera at all. Growing out of the middle of where
     // it is going is the one entrance that needs no opacity: a plan item has no
@@ -608,17 +654,22 @@ export function buildRenderPlan(
     // leaving a hole where it was.
     const presence = zooms && !slot.card && layout.cameraShrinkOnZoom ? zoomPresence(zooms) : [];
 
-    const { keys: motion, shadow: shadowMotion } = cameraKeys(
+    const {
+      keys: motion,
+      border: borderMotion,
+      shadow: shadowMotion,
+    } = cameraKeys(
       (amount) => {
         const rect = shrunk(amount);
         return {
           rect,
           // Measured off the box it is on, not off the resting one: a bubble
           // whose corners stayed put as it shrank would change shape on the way.
-          radius: radiusFor(layout.cameraShape, Math.min(rect.width, rect.height)),
+          radius: radiusFor(layout, Math.min(rect.width, rect.height)),
         };
       },
       spread,
+      border,
       presence,
       enter
         ? {
@@ -635,13 +686,14 @@ export function buildRenderPlan(
     if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
-        rect: {
-          x: dstRect.x - spread,
-          y: dstRect.y - spread,
-          width: dstRect.width + spread * 2,
-          height: dstRect.height + spread * 2,
-        },
-        shape,
+        // Cast by the bubble *and* its ring, the same rule the screen follows:
+        // a shadow that stopped at the picture would leave the ring reading as
+        // a circle painted on the wallpaper rather than as an edge of the thing
+        // standing off it.
+        rect: grow(outer, spread),
+        // The silhouette's own radius, not the grown rectangle's — the bleed is
+        // only somewhere for the blur to fall off in.
+        shape: outerShape,
         blur,
         dy: background.shadowY * against,
         color: rgba("#000000", background.shadowOpacity * (slot.card ? 1 : CAMERA_SHADOW)),
@@ -659,10 +711,29 @@ export function buildRenderPlan(
       ...moving,
     });
 
-    // No border, in any arrangement. The border belongs to the frame around the
-    // screen recording; a stroke around the camera is a ring drawn round
-    // somebody's face, which is a different decision from framing a picture and
-    // one nobody asked for by dragging the border slider.
+    if (border > 0) {
+      // The camera's own ring, from the camera's own settings.
+      //
+      // It used to draw none at all, and the reason was sound: the border in
+      // the Frame panel belongs to the screen recording, and putting a stroke
+      // round somebody's face is a different decision from framing a picture —
+      // not one anybody was asking for by dragging *that* slider. What answers
+      // that is not the ring but where it is set from. These are the camera's
+      // own leaves, reached from the Camera panel, and nothing in the Frame
+      // panel touches them — so rounding a screenshot's corners still cannot
+      // draw on a face.
+      items.push({
+        kind: "stroke",
+        // The outer silhouette. Both rasterisers stroke *inside* the shape they
+        // are handed — the only band a fragment shader can reach — so the ring
+        // lands between the picture and this.
+        rect: outer,
+        shape: outerShape,
+        width: border,
+        color: rgba(layout.cameraBorderColor, layout.cameraBorderOpacity),
+        ...(borderMotion.length > 0 ? { motion: borderMotion } : {}),
+      });
+    }
   } else if (leaving && enter && sources.camera) {
     // This arrangement has no camera and the one before it did. Without this the
     // bubble is simply gone on the cut, which reads as the camera failing rather
@@ -679,19 +750,23 @@ export function buildRenderPlan(
     const blur = enter.from.background.shadowBlur * against;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
+    // The ring the departing camera was wearing, from the settings it was drawn
+    // under — `enter.from`, not this slice's. This arrangement has no camera at
+    // all, so its own border width says nothing about the bubble on its way out.
+    const border = enter.from.layout.cameraBorderWidth * unit;
+
     // Nothing to shrink under a zoom here: this camera is on its way out, and
     // where it is going is nowhere.
-    const { keys: motion, shadow: shadowMotion } = cameraKeys(
-      () => ({ rect: gone, radius: 0 }),
-      spread,
-      [],
-      {
-        from: leaving.dstRect,
-        radius,
-        start: enter.source.start,
-        duration: moveWindow(enter),
-      },
-    );
+    const {
+      keys: motion,
+      border: borderMotion,
+      shadow: shadowMotion,
+    } = cameraKeys(() => ({ rect: gone, radius: 0 }), spread, border, [], {
+      from: leaving.dstRect,
+      radius,
+      start: enter.source.start,
+      duration: moveWindow(enter),
+    });
 
     if (motion.length > 0) {
       const shape: Shape = {
@@ -723,7 +798,49 @@ export function buildRenderPlan(
         mirror: enter.from.layout.cameraMirror,
         motion,
       });
+
+      if (border > 0) {
+        // The ring goes with it. Left out, the bubble shrinks away and its
+        // border stays behind — a circle drawn on the wallpaper around nothing,
+        // for the rest of the clip.
+        items.push({
+          kind: "stroke",
+          rect: gone,
+          shape: { radius: radius + border, exponent: shape.exponent },
+          width: border,
+          color: rgba(enter.from.layout.cameraBorderColor, enter.from.layout.cameraBorderOpacity),
+          motion: borderMotion,
+        });
+      }
     }
+  }
+
+  // Over both pictures, and under the captions.
+  //
+  // A mark behind the camera would be a logo somebody's head moves in front of,
+  // which is the one thing a watermark exists not to do. Still below the words:
+  // captions are the only thing on screen being *read*, and a logo over them
+  // costs a sentence to save a corner.
+  //
+  // Placed straight from its own settings — there is no `place` and no `fit`
+  // here, because a watermark has no source to crop and nothing to share the
+  // frame with. Its box is what the box says.
+  const mark = settings.watermark;
+  if (mark.watermark && mark.watermarkOpacity > 0) {
+    const width = mark.watermarkWidth * unit;
+    const height = mark.watermarkHeight * unit;
+
+    items.push({
+      kind: "watermark",
+      path: mark.watermark,
+      dstRect: {
+        x: frame.width * mark.watermarkX - width / 2,
+        y: frame.height * mark.watermarkY - height / 2,
+        width,
+        height,
+      },
+      opacity: mark.watermarkOpacity,
+    });
   }
 
   // Last, so captions sit over everything. A caption behind the camera bubble
@@ -844,7 +961,7 @@ function captionItems(
  * and the shape it is leaving is the previous slice's, not this one's.
  */
 function cameraRadius(rect: Rect, settings: SliceSettings): number {
-  return radiusFor(settings.layout.cameraShape, Math.min(rect.width, rect.height));
+  return radiusFor(settings.layout, Math.min(rect.width, rect.height));
 }
 
 /** How often a zoom is sampled. Fine enough that a straight line between two
@@ -1701,11 +1818,13 @@ function cameraKeys(
   resting: (amount: number) => { rect: Rect; radius: number },
   /** Room the shadow needs around the picture at rest, in output pixels. */
   spread: number,
+  /** How far the ring stands outside the picture, in output pixels. */
+  border: number,
   /** How far a zoom has pushed in over time. Empty when nothing shrinks. */
   presence: { at: number; amount: number }[],
   /** The cut this slice opens on, if the camera has somewhere to arrive from. */
   enter: { from: Rect; radius: number; start: number; duration: number } | null,
-): { keys: RectKey[]; shadow: RectKey[] } {
+): { keys: RectKey[]; border: RectKey[]; shadow: RectKey[] } {
   const settled = resting(0);
 
   // Nothing to say when nothing moves. Two arrangements that leave the camera
@@ -1720,11 +1839,11 @@ function cameraKeys(
       enter.from.height === settled.rect.height &&
       enter.radius === settled.radius);
 
-  if (still && presence.length === 0) return { keys: [], shadow: [] };
+  if (still && presence.length === 0) return { keys: [], border: [], shadow: [] };
 
-  // Both tracks in one list of times, because a plan item carries one `motion`
-  // and the two would otherwise be writing over each other. Sampled where each
-  // has something to say: the arrival on its own short window, the shrink
+  // All three tracks off one list of times, because a plan item carries one
+  // `motion` and they would otherwise be writing over each other. Sampled where
+  // each has something to say: the arrival on its own short window, the shrink
   // wherever a zoom is moving.
   const times: number[] = [];
   if (!still && enter) {
@@ -1737,6 +1856,7 @@ function cameraKeys(
   times.sort((a, b) => a - b);
 
   const keys: RectKey[] = [];
+  const ring: RectKey[] = [];
   const shadow: RectKey[] = [];
   // What the full spread belongs to, so a picture that is half its final size
   // casts half the shadow. A small object casts a small tight shadow — the same
@@ -1769,18 +1889,43 @@ function cameraKeys(
 
     keys.push({ at, ...rect, radius });
 
-    const grown = full > 0 ? spread * (Math.min(rect.width, rect.height) / full) : 0;
+    const scale = full > 0 ? Math.min(rect.width, rect.height) / full : 0;
+    const grown = spread * scale;
+    // How far the ring stands out, scaled by how big the picture currently is —
+    // the same rule as the shadow's spread on the line above, and adopted for
+    // the same failure. A fixed outset does not reach zero when the picture
+    // does: a camera shrinking away on a cut ended at a box of no size wearing a
+    // ring two border widths across, which the stroke shader draws as a small
+    // filled dot left sitting on the frame for the rest of the clip.
+    //
+    // It also keeps the bubble one object. The shadow beside it already scales,
+    // so a ring that did not would be the one part of a receding camera that
+    // stayed the size it started.
+    const ringed = border * scale;
+    ring.push({
+      at,
+      x: rect.x - ringed,
+      y: rect.y - ringed,
+      width: rect.width + ringed * 2,
+      height: rect.height + ringed * 2,
+      radius: radius + ringed,
+    });
+
+    // Cast by the picture and its ring together, the same rule the screen's
+    // shadow follows: a shadow that stopped at the picture would leave the ring
+    // reading as something painted on the wallpaper behind it.
+    const out = grown + ringed;
     shadow.push({
       at,
-      x: rect.x - grown,
-      y: rect.y - grown,
-      width: rect.width + grown * 2,
-      height: rect.height + grown * 2,
-      radius,
+      x: rect.x - out,
+      y: rect.y - out,
+      width: rect.width + out * 2,
+      height: rect.height + out * 2,
+      radius: radius + ringed,
     });
   }
 
-  return { keys, shadow };
+  return { keys, border: ring, shadow };
 }
 
 /**
@@ -3959,19 +4104,25 @@ function place(
   };
 }
 
-/** Corner radius per shape, off the bubble's shorter edge. */
-function radiusFor(shape: CameraShape, edge: number): number {
-  if (shape === "rounded") return edge * 0.18;
-  // Modest, because the point of `wide` is the whole picture — a heavy round
-  // starts eating the corners of what it was chosen to show. `portrait` is the
-  // same picture stood on end and takes the same restraint; measured off the
-  // shorter edge, as every radius here is, so a tall bubble is not rounded
-  // proportionally harder than a wide one.
-  if (shape === "wide" || shape === "portrait") return edge * 0.12;
-  return edge / 2;
+/**
+ * The bubble's corner radius in output pixels.
+ *
+ * Off the bubble's own shorter edge, so a tall bubble is not rounded
+ * proportionally harder than a wide one, and so the corners keep their
+ * proportions as it shrinks under a zoom.
+ *
+ * Read from the setting rather than worked out from `cameraShape` — which is
+ * what this used to do. The shape *writes* `cameraCornerRadius` and the
+ * geometry reads it, exactly as `cameraShape` and `cameraWidth` already work.
+ * Computing it from the shape here as well would be a second answer to how
+ * round the bubble is, and the one that lost was always the radius somebody had
+ * dragged: it snapped back the next time the shape control was touched.
+ */
+function radiusFor(layout: LayoutSettings, edge: number): number {
+  return layout.cameraCornerRadius * edge;
 }
 
-function toPaint(background: Background): Paint {
+function toPaint(background: Background, blur: number): Paint {
   switch (background.kind) {
     case "solid":
       return { kind: "solid", color: background.color };
@@ -3983,7 +4134,7 @@ function toPaint(background: Background): Paint {
         angle: background.angle,
       };
     case "image":
-      return { kind: "image", path: background.path };
+      return { kind: "image", path: background.path, blur };
   }
 }
 

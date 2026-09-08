@@ -63,6 +63,8 @@ struct Uniforms {
     // Two colours to choose between by what is behind the quad, and whether to
     // do it at all. Only an adaptive caption sets `adapt`.
     float adapt;
+    // How opaque a still image is drawn, 0 to 1. Everything else passes 1.
+    float alpha;
 };
 
 struct Vertex {
@@ -217,14 +219,28 @@ static float4 sample_focused(texture2d<float> image, sampler smp, constant Unifo
         return image.sample(smp, uv);
     }
 
+    // The tap count follows the radius rather than being fixed at sixteen.
+    //
+    // These are point samples on a spiral, not a kernel — sixteen of them are
+    // dense enough to read as a blur across a caption's few pixels, and spread
+    // across a background's fifty they leave gaps between them. The eye reads
+    // those gaps as grain, which is exactly what a soft backdrop must not have.
+    //
+    // Capped, because the background fill covers every pixel of the frame and
+    // this loop runs for all of them. `span` is the square root of the count so
+    // the outermost tap still lands on the edge of the disc whatever the count
+    // is — it was hard-coded as 4 for sixteen taps.
+    int taps = int(clamp(radius, 16.0, 48.0));
+    float span = sqrt(float(taps));
+
     float4 total = float4(0.0);
-    for (int tap = 0; tap < 16; tap++) {
+    for (int tap = 0; tap < taps; tap++) {
         float turn = float(tap) * 2.399963;
-        float reach = sqrt(float(tap) + 0.5) / 4.0;
+        float reach = sqrt(float(tap) + 0.5) / span;
         float2 offset = float2(cos(turn), sin(turn)) * reach * radius * u.texel;
         total += image.sample(smp, uv + offset);
     }
-    return total / 16.0;
+    return total / float(taps);
 }
 
 // The pointer, smeared along the direction it is travelling.
@@ -370,7 +386,12 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // `KCG_IMAGE_ALPHA_PREMULTIPLIED_FIRST` and a camera frame is opaque —
         // so only `coverage` is folded in here. Running it through
         // `premultiplied` as well would multiply the texture's own alpha twice.
-        return float4(sampled.rgb * vignette(u, in.screen) * coverage, sampled.a * coverage);
+        //
+        // `alpha` rides along with coverage for the same reason: premultiplied
+        // colour has to be scaled with its own alpha or a fading picture turns
+        // bright before it disappears.
+        float shown = coverage * u.alpha;
+        return float4(sampled.rgb * vignette(u, in.screen) * shown, sampled.a * shown);
     }
 
     if (u.mode == 1) {

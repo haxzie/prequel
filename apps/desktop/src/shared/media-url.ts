@@ -48,6 +48,19 @@ export function backgroundUrl(fileName: string): string {
 }
 
 /**
+ * A URL for a scene preset's card.
+ *
+ * Two segments, because the two kinds live in different places: `mine` is a
+ * card grabbed from this machine's own preview, `ours` one downloaded from the
+ * catalogue. Spelled out here rather than assembled at each call site for the
+ * reason the whole file exists — the two sides have to agree exactly, and a URL
+ * built by hand in the renderer is a 404 that reads as a missing picture.
+ */
+export function scenePresetUrl(kind: "mine" | "ours", name: string): string {
+  return `${MEDIA_SCHEME}://scene-preset/${kind}/${encodeURIComponent(name)}`;
+}
+
+/**
  * A URL for one of the app's own shipped images.
  *
  * A second host rather than a second scheme: the privileges, the CSP entry and

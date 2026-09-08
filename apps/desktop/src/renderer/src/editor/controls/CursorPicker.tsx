@@ -9,10 +9,11 @@ import { cn } from "../../lib/cn";
  * it is already on disk — the same PNG the preview and the exporter composite,
  * so a swatch cannot come to show a pointer the recording will not get.
  *
- * One row of five, and no captions: five is all there are, so a grid that wraps
- * spent two rows saying what one says, and a name under a picture of the thing
- * it names is read by nobody. The name survives on `title` and `aria-label` —
- * the label is the accessible name once there is no text, not a nicety.
+ * Five across and no captions. It wraps now that the emoji set has joined the
+ * five it was written for, which is the right way round: a name under a picture
+ * of the thing it names is read by nobody, and a picture is the only useful
+ * caption a pointer has. The name survives on `title` and `aria-label` — the
+ * label is the accessible name once there is no text, not a nicety.
  *
  * A dark plate, which is a real trade. Every style carries an outline of the
  * opposite tone, so a black pointer on dark is legible as its white outline

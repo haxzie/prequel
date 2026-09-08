@@ -494,10 +494,13 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
         for item in &slice.plan.items {
             match item {
                 crate::plan::PlanItem::Fill {
-                    paint: crate::plan::Paint::Image { path },
+                    paint: crate::plan::Paint::Image { path, .. },
                     ..
                 } => push(path, &mut paths),
                 crate::plan::PlanItem::Cursor { path, .. } => push(path, &mut paths),
+                // One per session like the background, not one per cue like a
+                // caption — so it is preloaded rather than fetched on demand.
+                crate::plan::PlanItem::Watermark { path, .. } => push(path, &mut paths),
                 // Captions are deliberately not here. They are decoded on
                 // demand by `Compositor::load_captions`, because there is one
                 // per cue rather than one per session and preloading a long
@@ -664,6 +667,7 @@ mod tests {
                 },
                 paint: Paint::Image {
                     path: "background.png".to_owned(),
+                    blur: 0.0,
                 },
             },
             PlanItem::Cursor {

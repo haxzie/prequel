@@ -273,7 +273,7 @@ describe("GET /v1/me", () => {
  *
  * The trial is anchored to the account's sign-up date precisely so it cannot be
  * restarted from the Mac, and that anchoring is invisible from the app — it
- * would look identical for a fortnight if this returned `now` instead.
+ * would look identical for a week if this returned `now` instead.
  */
 describe("GET /v1/desktop/entitlement", () => {
   const DAY = 24 * 60 * 60 * 1000;
@@ -290,10 +290,10 @@ describe("GET /v1/desktop/entitlement", () => {
   }
 
   it("dates the trial from the sign-up, not from the request", async () => {
-    // Ten days old, so four are left. A trial anchored to anything on the Mac
-    // would answer fourteen here, and would look right until somebody
+    // Three days old, so four are left. A trial anchored to anything on the
+    // Mac would answer seven here, and would look right until somebody
     // reinstalled.
-    const signedUp = Math.floor((Date.now() - 10 * DAY) / 1000);
+    const signedUp = Math.floor((Date.now() - 3 * DAY) / 1000);
     await env.DB.prepare("UPDATE \"user\" SET created_at = ? WHERE id = 'u1'").bind(signedUp).run();
 
     const response = await get("/v1/desktop/entitlement", {
@@ -303,7 +303,7 @@ describe("GET /v1/desktop/entitlement", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { plan: string; trialEndsAt: number };
     expect(body.plan).toBe("free");
-    expect(body.trialEndsAt).toBe(signedUp * 1000 + 14 * DAY);
+    expect(body.trialEndsAt).toBe(signedUp * 1000 + 7 * DAY);
   });
 
   it("reports a paid team as paid", async () => {

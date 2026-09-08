@@ -44,8 +44,24 @@ import { describeRecorderError, getRecorder } from "./recorder.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
+import {
+  applyImage as applyPresetImage,
+  applyWatermark as applyPresetWatermark,
+  catalogue as presetCatalogue,
+  ensureThumbnail as ensurePresetThumbnail,
+  mine,
+  remove as removePreset,
+  renamePreset,
+  save as savePreset,
+} from "./scene-presets.js";
+import type { ScenePreset } from "../shared/scene-presets.js";
 import { sweepCaptions, writeCaption } from "./captions.js";
-import { captureWallpaper, copyPresetBackground, pickBackgroundImage } from "./wallpaper.js";
+import {
+  captureWallpaper,
+  copyPresetBackground,
+  pickBackgroundImage,
+  pickWatermarkImage,
+} from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
@@ -205,6 +221,10 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
     attempt(() => captureWallpaper(dir)),
   );
 
+  ipcMain.handle(IPC_CHANNELS.editorPickWatermark, (_event, dir: string) =>
+    attempt(() => pickWatermarkImage(dir)),
+  );
+
   ipcMain.handle(IPC_CHANNELS.editorPickImage, (_event, dir: string) =>
     attempt(() => pickBackgroundImage(dir)),
   );
@@ -225,6 +245,51 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, dir: string, file: string) =>
     attempt(() => ensureBackground(dir, file)),
+  );
+
+  // ── scene presets ────────────────────────────────────────────────────────
+  //
+  // Saved looks: the user's own on this disk, and the ones we publish. Here for
+  // the same reason the backgrounds are — a window cannot fetch a catalogue and
+  // cannot read a file.
+  ipcMain.handle(IPC_CHANNELS.scenePresetsList, () => attempt(() => mine()));
+
+  ipcMain.handle(IPC_CHANNELS.scenePresetsCatalogue, () => attempt(() => presetCatalogue()));
+
+  ipcMain.handle(IPC_CHANNELS.scenePresetsThumbnail, (_event, file: string) =>
+    attempt(() => ensurePresetThumbnail(file)),
+  );
+
+  // The card crosses as a data URL, as the library's posters do — see
+  // `poster.ts` on why it is a JPEG by the time it gets here.
+  ipcMain.handle(
+    IPC_CHANNELS.scenePresetsSave,
+    (
+      _event,
+      preset: ScenePreset,
+      card: string,
+      sessionDir: string | null,
+      sourceFile: string | null,
+      watermarkFile: string | null,
+    ) => attempt(() => savePreset(preset, card, sessionDir, sourceFile, watermarkFile)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.scenePresetsRename, (_event, id: string, name: string) =>
+    attempt(() => renamePreset(id, name)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.scenePresetsDelete, (_event, id: string) =>
+    attempt(() => removePreset(id)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.scenePresetsApplyImage, (_event, id: string, dir: string) =>
+    attempt(() => applyPresetImage(id, dir)),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.scenePresetsApplyWatermark,
+    (_event, id: string, dir: string, file: string) =>
+      attempt(() => applyPresetWatermark(id, dir, file)),
   );
 
   ipcMain.handle(
@@ -251,7 +316,9 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
     // Answered by a push on `editor:open` rather than by this promise: opening
     // a recording probes its media, and the window has to be drawing while that
     // happens rather than waiting on it.
-    attempt(() => workspace.showProject(dir)),
+    // Not announced: the library *is* the screen here, and the card that was
+    // clicked marks itself while the list stays put under it.
+    attempt(() => workspace.showProject(dir, false)),
   );
 
   ipcMain.handle(IPC_CHANNELS.projectsShow, () => attempt(() => workspace.showProjects()));

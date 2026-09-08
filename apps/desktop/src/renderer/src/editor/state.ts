@@ -25,6 +25,7 @@ import {
   type SliceSettings,
   type ZoomSlice,
 } from "../../../shared/project";
+import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
@@ -112,6 +113,23 @@ export type EditorAction =
       key: string;
       value: unknown;
     }
+  /**
+   * Applies a saved look.
+   *
+   * One action rather than a burst of `setSetting`s, because a burst would be
+   * three revisions, three debounced saves and — worse — a window in which the
+   * frame is the preset's and the layout is still the old one. A partial look
+   * is a state nobody asked for and cannot name.
+   */
+  | { type: "applyPreset"; preset: ScenePreset }
+  /**
+   * Gives every clip the selected one's settings for a section.
+   *
+   * `keys` narrows it the way `resetSection`'s does, and for the same reason:
+   * `background` is shown across two panels, and a button in one of them must
+   * not carry the other's half.
+   */
+  | { type: "applyToAll"; section: SettingsSection; keys?: string[] }
   | {
       type: "resetSection";
       section: SettingsSection;
@@ -136,6 +154,8 @@ export type EditorAction =
   | { type: "setZooms"; zooms: ZoomSlice[] }
   | { type: "selectZoom"; zoomId: string | null }
   | { type: "deleteZoom"; zoomId: string }
+  /** Copies a zoom's look onto a fresh span, in the first gap after it. */
+  | { type: "duplicateZoom"; zoomId: string }
   | { type: "setZoom"; zoomId: string; patch: Partial<ZoomSlice> }
   | { type: "moveZoom"; zoomId: string; start: MediaTime }
   | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime }
@@ -256,7 +276,24 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "deleteRange":
     case "addZoom":
     case "deleteZoom":
+    case "duplicateZoom":
     case "setZooms":
+      return { coalesce: null };
+
+    // The two appearance changes that are undoable, which is a deliberate
+    // widening of the rule above rather than an oversight.
+    //
+    // What that rule is about is *streams*: a slider dragged at 60 Hz would bury
+    // the history under a hundred steps nobody made. Neither of these is a
+    // stream. Applying a preset is one click that rewrites three sections, the
+    // frame and the zoom defaults at once, and it is the largest single change
+    // the editor can make — exactly the thing somebody wants back. And once
+    // undoing a preset restores a frame, a frame changed by hand that could not
+    // be undone would be an inconsistency people trip over; `framed()` is lossy
+    // as well, so an arrangement it drops has nothing else to put it back.
+    case "applyPreset":
+    case "applyToAll":
+    case "setFrame":
       return { coalesce: null };
 
     // Dragged, so every one of these arrives as a stream keyed by what is being
@@ -341,6 +378,15 @@ function apply(
     case "setSetting":
       return writeSetting(state, action);
 
+    case "applyPreset":
+      return applyPreset(state, action.preset);
+
+    case "applyToAll":
+      return applyToAll(state, action.section, action.keys);
+
+    case "duplicateZoom":
+      return duplicateZoom(state, action.zoomId);
+
     case "resetSection":
       return editSelected(state, (overrides) =>
         action.keys
@@ -402,7 +448,12 @@ function addZoom(state: EditorState, at: MediaTime, to?: MediaTime): EditorState
   const zoom: ZoomSlice = {
     id: `zoom-${String(state.revision)}-${String(state.project.zooms.length)}`,
     source: span,
+    // `DEFAULT_ZOOM` under the project's own, in that order, so the constant
+    // stays the floor: it carries `target`, `x` and `y`, which `zoomDefaults`
+    // deliberately does not, and a key missing from the project's cannot arrive
+    // here as undefined.
     ...DEFAULT_ZOOM,
+    ...state.project.zoomDefaults,
   };
 
   return {
@@ -711,6 +762,190 @@ function withSlices(project: Project, slices: Slice[]): Project {
   const [track] = project.tracks;
   if (!track) return project;
   return { ...project, tracks: [{ ...track, slices }] };
+}
+
+/**
+ * Lays a saved look over the project.
+ *
+ * Honestly described: **a project-level action that also writes slice-level
+ * settings**. The three sections go where a slider's value would go — on the
+ * selected clip, or on the project defaults when nothing is selected, which is
+ * `writeSetting`'s rule unchanged so "where did it go?" has one answer for
+ * every control in the editor. The frame and the zoom defaults have nowhere
+ * else to live and go on the project either way. A reader who believes the
+ * shorter version of that sentence will eventually "fix" the frame write.
+ *
+ * Every key of every section is written, including the ones that already equal
+ * what is there. That is `setOverride`'s doctrine — "always records it, even
+ * when the value equals the default" — and it matters twice as much here: a
+ * preset is a decision about the whole look, and a later change to the project
+ * defaults must not move a clip somebody has already decided about.
+ *
+ * One key at a time rather than one section at a time, which is the detail that
+ * compiles and draws correctly either way. `key in overrides[section]` is how
+ * the panel answers "is this overridden?", so a section assigned whole would
+ * still light every dot — but the per-control Reset beside each one would clear
+ * its neighbours too. The drag that writes five layout keys carries the same
+ * note in `Editor.tsx`.
+ *
+ * `framed()` last, and not optional: `presetFitsFrame` refuses `over-column` in
+ * a frame that is not wider than it is tall, so a look authored in 16:9 and
+ * applied into a portrait frame would otherwise leave the clip in an
+ * arrangement whose picker cell is greyed out — a state nothing on screen
+ * explains. It mostly self-heals, because a preset usually brings its own
+ * landscape frame; that is what makes leaving it out dangerous rather than
+ * obvious.
+ */
+function applyPreset(state: EditorState, preset: ScenePreset): EditorState {
+  const sections = {
+    layout: preset.layout,
+    background: preset.background,
+    watermark: preset.watermark,
+    captions: preset.captions,
+  } as const;
+
+  return edit(state, (project) => {
+    const withFrame: Project = {
+      ...project,
+      frame: preset.frame,
+      zoomDefaults: preset.zoom,
+    };
+
+    if (!state.selectedSliceId) {
+      return framed({
+        ...withFrame,
+        defaults: {
+          ...project.defaults,
+          layout: { ...preset.layout },
+          background: { ...preset.background },
+          watermark: { ...preset.watermark },
+          // `captionsOn` is the recording's answer, not the preset's, so it is
+          // taken from what is already there rather than carried.
+          captions: { ...preset.captions, captionsOn: project.defaults.captions.captionsOn },
+        },
+      });
+    }
+
+    return framed(
+      withSlices(
+        withFrame,
+        slicesOf(withFrame).map((slice) =>
+          slice.id === state.selectedSliceId
+            ? { ...slice, overrides: withPreset(slice.overrides, sections) }
+            : slice,
+        ),
+      ),
+    );
+  });
+}
+
+/**
+ * Copies a zoom, span and all, into the first gap that will hold it.
+ *
+ * Placed after the original rather than on top of it, because two zooms may
+ * never overlap — `sanitiseZooms` drops the second of any pair that does, so a
+ * copy laid over its source would vanish the next time the project was read
+ * back. `zoomSpanAt` is what knows where a span may legally go, and it is the
+ * same function the timeline asks when a zoom is drawn by hand.
+ *
+ * The copy keeps the original's length where there is room and takes whatever
+ * the gap allows where there is not. Declined outright when the gap is too
+ * small to grab afterwards — `zoomSpanAt` answers null — because a zoom nobody
+ * can select is worse than no zoom.
+ */
+function duplicateZoom(state: EditorState, zoomId: string): EditorState {
+  const source = state.project.zooms.find((zoom) => zoom.id === zoomId);
+  if (!source) return state;
+
+  const length = source.source.end - source.source.start;
+  const span = zoomSpanAt(state.project, source.source.end, source.source.end + length);
+  if (!span) return state;
+
+  const copy: ZoomSlice = {
+    ...source,
+    id: `zoom-${String(state.revision)}-${String(state.project.zooms.length)}`,
+    source: span,
+  };
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      zooms: [...project.zooms, copy].sort((a, b) => a.source.start - b.source.start),
+    })),
+    // Selected on the way in, the way a freshly dropped one is: the point of
+    // copying it is to put the copy somewhere.
+    selectedZoomId: copy.id,
+    selectedSliceId: null,
+  };
+}
+
+/**
+ * Spreads the selected clip's look across every clip.
+ *
+ * The *resolved* values, not the overrides: a clip that inherits a setting from
+ * the project defaults still looks a particular way, and "make the others match
+ * this one" is a statement about what is on screen rather than about which keys
+ * happen to be set. Copying the overrides would leave every other clip on the
+ * defaults and appear to do nothing.
+ *
+ * Written onto every clip including the one it came from — which is a no-op
+ * there, and cheaper than a branch that has to stay right.
+ *
+ * One key at a time, for the reason `withPreset` above does it: `key in
+ * overrides[section]` is how the panel answers "is this overridden?", so a
+ * section assigned whole would light every dot and then have its per-control
+ * Reset clear the neighbours.
+ *
+ * Does nothing with no clip selected. There is no "this one" to copy, and the
+ * panel is editing the defaults every clip already follows.
+ */
+function applyToAll(state: EditorState, section: SettingsSection, keys?: string[]): EditorState {
+  if (!state.selectedSliceId) return state;
+
+  const source = selectedSlice(state);
+  if (!source) return state;
+
+  const settings = resolveSettings(state.project.defaults, source.overrides)[section];
+  const wanted = keys ?? Object.keys(settings);
+
+  return edit(state, (project) =>
+    withSlices(
+      project,
+      slicesOf(project).map((slice) => {
+        let overrides = slice.overrides;
+        for (const key of wanted) {
+          overrides = setOverride(
+            overrides,
+            section,
+            key as never,
+            (settings as unknown as Record<string, unknown>)[key] as never,
+          );
+        }
+        return { ...slice, overrides };
+      }),
+    ),
+  );
+}
+
+/** Every leaf of every section the preset carries, recorded one key at a time. */
+function withPreset(
+  overrides: Slice["overrides"],
+  sections: {
+    layout: ScenePreset["layout"];
+    background: ScenePreset["background"];
+    watermark: ScenePreset["watermark"];
+    captions: ScenePreset["captions"];
+  },
+): Slice["overrides"] {
+  let next = overrides;
+
+  for (const [section, values] of Object.entries(sections)) {
+    for (const [key, value] of Object.entries(values)) {
+      next = setOverride(next, section as SettingsSection, key as never, value as never);
+    }
+  }
+
+  return next;
 }
 
 /**

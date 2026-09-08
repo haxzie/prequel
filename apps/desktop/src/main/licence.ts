@@ -11,7 +11,7 @@
  * Splitting it the other way, with the Worker returning "expired", would put
  * the same rule on both sides of the wire for the two to disagree about.
  *
- * **The trial is anchored to the account, not to this install.** Fourteen days
+ * **The trial is anchored to the account, not to this install.** Seven days
  * from the sign-up date, which lives in a row the app cannot write. A local
  * anchor — a timestamp in `userData`, the install id's file date — restarts the
  * trial for anyone who deletes a file, and a trial that a reinstall renews is
