@@ -323,7 +323,7 @@ export function Inspector(props: InspectorProps) {
               clips={slicesOf(state.project).length}
               onClose={props.onClose}
             />
-            <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+            <div className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto">
               <ScrollFade className="sticky top-0 z-10" />
               {/* Keyed on the tab, so React replaces the view rather than
                   reconciling one panel's controls into another's and the
@@ -512,7 +512,7 @@ export function Inspector(props: InspectorProps) {
             />
           )}
 
-          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <div className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto">
             <ScrollFade className="sticky top-0 z-10" />
 
             {/* The panel's content, faded in on the way to a new one.

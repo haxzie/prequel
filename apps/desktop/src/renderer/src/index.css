@@ -251,6 +251,35 @@ body {
   }
 }
 
+/* Scrolls, and shows a bar only while the pointer is on it.
+   For the inspector, which is a tall column of controls that nearly always
+   overflows — so `no-scrollbar` above would take away the one hint that there
+   is more below, and a bar left permanently visible is a light stripe down the
+   edge of every panel.
+
+   Transparent rather than absent, so the gutter is reserved either way: a bar
+   that appeared on hover and took its width from the content would reflow every
+   control in the panel under the pointer.
+
+   Only the standard properties here, unlike `no-scrollbar`. Chromium ignores
+   `::-webkit-scrollbar` entirely once `scrollbar-width` is set, so a webkit
+   block would not be a fallback — it would be dead. There is nothing to fall
+   back *to* in any case: an engine that does not understand these draws its
+   ordinary bar, which is what this replaces rather than something it needs.
+
+   `focus-within` as well as hover, or tabbing through a long panel scrolls it
+   with nothing on screen saying so. */
+@utility sleek-scrollbar {
+  scrollbar-width: thin;
+  /* Thumb, then track. */
+  scrollbar-color: transparent transparent;
+
+  &:hover,
+  &:focus-within {
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+}
+
 /* The panel's own palette, fixed rather than following the theme.
    It floats over arbitrary content, so it has to read as one solid object no
    matter what is behind it — a translucent, theme-following panel reads as part
