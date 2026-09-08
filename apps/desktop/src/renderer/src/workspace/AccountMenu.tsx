@@ -85,14 +85,17 @@ function UpgradeCard({ entitlement }: { entitlement: Entitlement }) {
 
 function SignIn({ waiting }: { waiting: boolean }) {
   return (
+    // Live even while waiting. `beginSignIn` cancels whatever was under way
+    // before starting again, so a second press is the retry — and a tab closed
+    // without finishing is exactly when somebody reaches for it. Disabled, this
+    // was the only control that could fix the state, greyed out for six minutes.
     <button
       type="button"
-      disabled={waiting}
       onClick={() => void window.prequel.auth.signIn()}
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
         "[&_svg]:size-4 [&_svg]:shrink-0",
-        waiting ? "text-editor-fg/50" : "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
+        "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
       )}
     >
       <AccountIcon />

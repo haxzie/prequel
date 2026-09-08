@@ -5,9 +5,15 @@
  * overlay at all. One window per display, so it works the same on a laptop and
  * on a multi-monitor desk.
  */
-import { BrowserWindow, screen, type Display } from "electron";
+import { BrowserWindow, screen, type Display, type WebContents } from "electron";
 
-import type { PickerWindow, ScreenMode, SelectionResult, Target } from "../../shared/contract.js";
+import type {
+  PickerWindow,
+  ScreenMode,
+  SelectionResult,
+  SelectionSetup,
+  Target,
+} from "../../shared/contract.js";
 import { IPC_CHANNELS } from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
 
@@ -22,6 +28,15 @@ export class SelectionOverlay {
   private pending: ((result: SelectionResult | null) => void) | null = null;
   /** The mode currently on screen, so a refresh can re-describe it. */
   private mode: ScreenMode = "screen";
+  /**
+   * The list the overlays were last given.
+   *
+   * Held so an overlay that asks can be answered from the same state a push
+   * would have carried, rather than with an empty list it would then have to be
+   * corrected out of.
+   */
+  private targets: Target[] = [];
+  private icons: Map<number, string> = new Map();
 
   get isOpen(): boolean {
     return this.panes.length > 0;
@@ -45,6 +60,8 @@ export class SelectionOverlay {
     this.settle(null);
 
     this.mode = mode;
+    this.targets = targets;
+    this.icons = icons;
 
     return new Promise((resolve) => {
       this.pending = resolve;
@@ -67,6 +84,9 @@ export class SelectionOverlay {
    * is actually on screen.
    */
   update(targets: Target[], icons: Map<number, string> = new Map()): void {
+    this.targets = targets;
+    this.icons = icons;
+
     for (const { window, display } of this.panes) {
       if (window.isDestroyed()) continue;
       window.webContents.send(
@@ -74,6 +94,25 @@ export class SelectionOverlay {
         describe(display, this.mode, targets, icons),
       );
     }
+  }
+
+  /**
+   * What one overlay should be showing, asked for rather than pushed.
+   *
+   * The push in `createFor` races the renderer: it goes out when the page has
+   * loaded, and the view is a `lazy()` chunk fetched after that, so there is
+   * nothing listening yet and the message is dropped. Window mode recovered on
+   * its next refresh; screen and area never sent a second one, which is how an
+   * overlay came to be a sheet of dimming with nothing on it.
+   *
+   * Answered per `WebContents` because each display has its own overlay and
+   * each is describing its own geometry.
+   */
+  setupFor(contents: WebContents): SelectionSetup | null {
+    const pane = this.panes.find(
+      ({ window }) => !window.isDestroyed() && window.webContents === contents,
+    );
+    return pane ? describe(pane.display, this.mode, this.targets, this.icons) : null;
   }
 
   choose(result: SelectionResult): void {

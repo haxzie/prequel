@@ -308,8 +308,19 @@ export const IPC_CHANNELS = {
    * now it only ever said anything when it finished.
    */
   selectionCountdown: "selection:countdown",
-  /** Main → selection renderer, once per overlay. */
+  /** Main → selection renderer, once per overlay, and again on every refresh. */
   selectionSetup: "selection:setup",
+  /**
+   * Selection renderer → main: what should I be showing?
+   *
+   * The push above is sent when the page finishes loading, and the view behind
+   * it is a `lazy()` chunk that has not been fetched by then — so it arrives
+   * before anything is listening and `ipcRenderer` does not keep it. Window
+   * mode hid that, because its refresh interval sends another a second later;
+   * screen and area send exactly one, and losing it left a dimmed overlay with
+   * no region to drag and no button to press.
+   */
+  selectionAskSetup: "selection:askSetup",
   chooseMode: "dock:chooseMode",
   startRecording: "dock:startRecording",
   preferences: "prefs:get",

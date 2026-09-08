@@ -474,10 +474,12 @@ function Actions({
           </button>
         </div>
       ) : (
+        // Not disabled while waiting: pressing it again falls through to
+        // `signIn` below, which starts a fresh handshake. See `SignIn` in
+        // `workspace/AccountMenu.tsx`.
         <Big
           tone="share"
           fraction={share.fraction}
-          disabled={auth.status === "waiting"}
           label={shareLabel(auth.status, share, pendingShare)}
           onClick={() => {
             if (share.uploading) {
@@ -523,7 +525,10 @@ function shareLabel(status: AuthState["status"], share: ShareState, pendingShare
       : `Uploading ${Math.round(share.fraction * 100)}%`;
   }
 
-  if (status === "waiting") return "Waiting for your browser…";
+  // Says it is still waiting and that the button is worth pressing anyway.
+  // Reached only in the moment before the app notices it has focus again — once
+  // it does, the status is `signed-out` and this reads "Sign in to share".
+  if (status === "waiting") return "Waiting for your browser… · Try again";
   if (status === "signed-out")
     return pendingShare ? "Waiting for your browser…" : "Sign in to share";
 
@@ -541,26 +546,22 @@ function Big({
   tone,
   label,
   fraction,
-  disabled,
   onClick,
 }: {
   /** Green shares, blue finishes. Both already exist as tokens. */
   tone: "share" | "done";
   label: string;
   fraction?: number | null;
-  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={disabled}
       onClick={onClick}
       className={cn(
         "relative isolate overflow-hidden rounded-lg py-2 text-center text-[12px] font-medium text-white transition-[filter]",
-        "disabled:cursor-default disabled:opacity-70",
+        "hover:brightness-110",
         tone === "share" ? "bg-export" : "bg-selected",
-        !disabled && "hover:brightness-110",
       )}
     >
       {fraction !== null && fraction !== undefined && (

@@ -184,3 +184,82 @@ describe("auth.json", () => {
     expect(() => readFileSync(join(userData, "auth.json"))).toThrow();
   });
 });
+
+/**
+ * Getting out of a sign-in that went nowhere.
+ *
+ * The reported bug: the browser tab is closed without finishing, `pending` stays
+ * set for its full six minutes, and every Sign in button in the app is disabled
+ * for as long — including in a modal closed and reopened, because the state
+ * lives here rather than in the window.
+ *
+ * Both halves of the fix are pinned. Pressing again has to start a fresh
+ * handshake, and coming back to the app has to stop the wait being announced —
+ * without cancelling it, which is the trap: a link arriving after that has to go
+ * on working, and a `completeSignIn` that silently ignores one is the same class
+ * of dead end this replaces.
+ */
+describe("a sign-in the user walked away from", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("replaces the handshake when the button is pressed again", async () => {
+    auth.beginSignIn();
+    const abandoned = openedState();
+
+    auth.beginSignIn();
+    const retried = openedState();
+
+    expect(retried).not.toBe(abandoned);
+
+    exchangeResult = ACCOUNT;
+
+    // The first tab is dead: its state no longer matches, so a link from it is
+    // ignored the way any other stranger's would be.
+    await auth.completeSignIn("code-1", abandoned);
+    expect(exchanges).toHaveLength(0);
+
+    await auth.completeSignIn("code-2", retried);
+    expect(auth.authState().status).toBe("signed-in");
+  });
+
+  it("stops announcing the wait once the app is back with no link", () => {
+    auth.beginSignIn();
+    expect(auth.authState().status).toBe("waiting");
+
+    auth.noteAppBlurred();
+    auth.noteAppFocused();
+    vi.advanceTimersByTime(2000);
+
+    expect(auth.authState().status).toBe("signed-out");
+  });
+
+  it("does not count the focus the app already had when the button was pressed", () => {
+    auth.beginSignIn();
+
+    // No blur, so the browser never had the screen. Treating this as a return
+    // would clear the wait in the moment before `openExternal` even lands.
+    auth.noteAppFocused();
+    vi.advanceTimersByTime(2000);
+
+    expect(auth.authState().status).toBe("waiting");
+  });
+
+  it("still signs in on a link that arrives after the wait went quiet", async () => {
+    auth.beginSignIn();
+    const state = openedState();
+
+    auth.noteAppBlurred();
+    auth.noteAppFocused();
+    vi.advanceTimersByTime(2000);
+    expect(auth.authState().status).toBe("signed-out");
+
+    // The code is good at the server for five minutes. Somebody who came back to
+    // the app to check something and then finished in the tab is signed in, and
+    // cancelling on focus would have made this a link nothing acts on.
+    exchangeResult = ACCOUNT;
+    await auth.completeSignIn("code-1", state);
+
+    expect(auth.authState().status).toBe("signed-in");
+  });
+});

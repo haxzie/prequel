@@ -182,6 +182,14 @@ const api = {
       ipcRenderer.on(IPC_CHANNELS.selectionSetup, handler);
       return () => ipcRenderer.off(IPC_CHANNELS.selectionSetup, handler);
     },
+    /**
+     * What this overlay should be showing.
+     *
+     * Paired with `onSetup` through `follow`: the push arrives before the
+     * lazily-loaded view is listening, so subscribing alone leaves the overlay
+     * blank for ever in the two modes that never push again.
+     */
+    setup: (): Promise<SelectionSetup | null> => ipcRenderer.invoke(IPC_CHANNELS.selectionAskSetup),
     choose: (result: SelectionResult): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.selectionChoose, result),
     cancel: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.selectionCancel),

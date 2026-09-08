@@ -63,6 +63,7 @@ import {
   pickWatermarkImage,
 } from "./wallpaper.js";
 import { deleteRecording } from "./editor-session.js";
+import type { SelectionOverlay } from "./windows/selection.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
   checkForUpdates,
@@ -83,6 +84,8 @@ async function attempt<T>(operation: () => Promise<T> | T): Promise<IpcResult<T>
 
 export interface IpcDeps {
   flow: CaptureFlow;
+  /** The overlays, so one can ask what it should be showing. See `setupFor`. */
+  selection: SelectionOverlay;
   /**
    * The app window, for the handlers that move it between its two screens.
    *
@@ -93,7 +96,7 @@ export interface IpcDeps {
   workspace: WorkspaceWindow;
 }
 
-export function registerIpc({ flow, workspace }: IpcDeps): void {
+export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     name: env.NEXT_PUBLIC_APP_NAME,
     url: env.NEXT_PUBLIC_APP_URL,
@@ -177,6 +180,7 @@ export function registerIpc({ flow, workspace }: IpcDeps): void {
     flow.chooseSelection(result),
   );
   ipcMain.handle(IPC_CHANNELS.selectionCancel, () => flow.cancelSelection());
+  ipcMain.handle(IPC_CHANNELS.selectionAskSetup, (event) => selection.setupFor(event.sender));
   ipcMain.handle(IPC_CHANNELS.selectionCountdown, () => flow.warmCamera());
 
   /**

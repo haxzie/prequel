@@ -361,11 +361,13 @@ function SignInStep() {
         </div>
       ) : (
         <div className="mt-2 flex flex-col items-start gap-2">
+          {/* Never disabled — see `SignIn` in `workspace/AccountMenu.tsx`. A
+              second press starts a fresh handshake, which is the only way out
+              of a browser tab that was closed without finishing. */}
           <button
             type="button"
-            disabled={auth.status === "waiting"}
             onClick={() => void window.prequel.auth.signIn()}
-            className="rounded-lg bg-selected px-4 py-2 text-xs font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-70"
+            className="rounded-lg bg-selected px-4 py-2 text-xs font-medium text-white hover:brightness-110"
           >
             {auth.status === "waiting" ? "Waiting for your browser…" : "Sign in"}
           </button>
@@ -374,7 +376,7 @@ function SignInStep() {
               is alarming if it was not expected. */}
           <p className="text-xs text-editor-muted">
             {auth.status === "waiting"
-              ? "Finish in the browser and come back — this updates by itself."
+              ? "Finish in the browser and come back — this updates by itself. Press again to start over."
               : "Opens your browser. There's no separate signup."}
           </p>
         </div>

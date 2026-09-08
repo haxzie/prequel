@@ -3,7 +3,7 @@ import { app, nativeTheme, protocol } from "electron";
 import { validateEnv } from "@prequel/env";
 
 import { flush, track } from "./analytics.js";
-import { authState, onAuthChanged } from "./auth.js";
+import { authState, noteAppBlurred, noteAppFocused, onAuthChanged } from "./auth.js";
 import { clearEntitlement, onEntitlementChanged, refreshEntitlement } from "./licence.js";
 import { CaptureFlow } from "./capture-flow.js";
 import { migrateLibrary } from "./library-migrate.js";
@@ -189,12 +189,19 @@ void app.whenReady().then(() => {
     checkForUpdates: checkForUpdatesIfDue,
   });
 
-  registerIpc({ flow, workspace });
+  registerIpc({ flow, selection, workspace });
   tray = new AppTray(session, flow);
 
   // Several surfaces show the account, so they hear about it rather than each
   // polling for it.
   onAuthChanged(broadcastAuthState);
+
+  // A sign-in that has gone quiet is one the user walked away from. Both halves
+  // are needed: the blur is what proves the browser ever had the screen, so the
+  // focus the app already holds when the button is pressed does not count as
+  // coming back from it.
+  app.on("browser-window-blur", () => noteAppBlurred());
+  app.on("browser-window-focus", () => noteAppFocused());
   onEntitlementChanged(broadcastEntitlement);
 
   // The licence follows the account. Signing out drops what was known about the

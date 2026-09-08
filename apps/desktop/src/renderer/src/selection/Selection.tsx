@@ -9,6 +9,7 @@ import type {
   Target,
 } from "../../../shared/contract";
 import { AreaIcon, ScreenIcon } from "../dock/icons";
+import { follow } from "../lib/live";
 
 /** Ignore a drag this small — it is a click that wobbled, not a region. */
 const MIN_AREA_EDGE = 8;
@@ -51,7 +52,18 @@ export function Selection() {
   const [setup, setSetup] = useState<SelectionSetup | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
 
-  useEffect(() => window.prequel.selection.onSetup(setSetup), []);
+  // Asked for as well as subscribed to, which for this window is the whole
+  // difference between working and not. Every view is a `lazy()` chunk, so this
+  // component mounts after the page has loaded — and after main has already
+  // pushed the setup at it. Window mode survived that on its next refresh;
+  // screen and area push once and never again, so the dropped message left an
+  // overlay with nothing on it. `follow` primes and then follows, newest
+  // winning, which is what every other window already does.
+  useEffect(
+    () =>
+      follow(() => window.prequel.selection.setup(), window.prequel.selection.onSetup, setSetup),
+    [],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

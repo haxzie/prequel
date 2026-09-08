@@ -35,6 +35,17 @@ const FILE = "auth.json";
  */
 const WAIT_MS = 6 * 60 * 1000;
 
+/**
+ * How long after the app is back in front a sign-in keeps saying so.
+ *
+ * Handling a `prequel://` link activates the app, so the window is focused a
+ * moment *before* `completeSignIn` runs. Going quiet on focus alone would flash
+ * "Sign in" in the gap between the browser handing over and the token landing.
+ * Long enough to cover that hop, short enough that somebody who closed the tab
+ * is not left reading about a browser they have already shut.
+ */
+const SETTLE_MS = 1500;
+
 interface Stored {
   token: string;
   account: AuthAccount;
@@ -51,6 +62,24 @@ interface Pending {
   verifier: string;
   state: string;
   timer: NodeJS.Timeout;
+  /**
+   * Whether the app has lost focus since this began.
+   *
+   * The browser taking over is the only evidence the user ever got there, and
+   * without it the focus the app already holds when the button is pressed would
+   * count as them coming back from a browser they had not yet seen.
+   */
+  left: boolean;
+  /**
+   * Whether the wait has stopped being announced.
+   *
+   * Separate from cancelling, and the distinction is the whole point: the
+   * handshake stays alive and a link that arrives minutes later still signs the
+   * user in. All this says is that nothing should go on describing a browser
+   * they have come back from.
+   */
+  quiet: boolean;
+  settle: NodeJS.Timeout | null;
 }
 
 let cached: Stored | null | undefined;
@@ -112,7 +141,7 @@ export function authToken(): string | null {
 }
 
 export function authState(): AuthState {
-  if (pending) return { status: "waiting" };
+  if (pending && !pending.quiet) return { status: "waiting" };
   const stored = read();
   return stored ? { status: "signed-in", account: stored.account } : { status: "signed-out" };
 }
@@ -150,6 +179,9 @@ export function beginSignIn(): void {
   pending = {
     verifier,
     state,
+    left: false,
+    quiet: false,
+    settle: null,
     // Cleared rather than left forever. A `waiting` state with nothing coming is
     // a Sign in button that never comes back, and the user has no way to tell
     // that from a slow network.
@@ -173,7 +205,45 @@ export function beginSignIn(): void {
 export function cancelSignIn(): void {
   if (!pending) return;
   clearTimeout(pending.timer);
+  if (pending.settle) clearTimeout(pending.settle);
   pending = null;
+}
+
+/**
+ * The app lost focus while a sign-in was under way.
+ *
+ * Which is what pressing Sign in is supposed to cause — `shell.openExternal`
+ * hands the screen to the browser. Recorded rather than acted on, because it is
+ * only half of the signal `noteAppFocused` below needs.
+ */
+export function noteAppBlurred(): void {
+  if (pending) pending.left = true;
+}
+
+/**
+ * The app is back in front, and no deep link came with it.
+ *
+ * Somebody looking at the app again is somebody who is no longer in the browser,
+ * and a Sign in button reading "Waiting for your browser…" at that point is
+ * describing a window they have closed — while being the one control that would
+ * start another attempt. So the wait stops being announced and the button reads
+ * `signed-out` again.
+ *
+ * What this deliberately does not do is cancel. The code is good at the server
+ * for five minutes, and somebody who came back to check something and returned
+ * to the tab still gets signed in. Cancelling here would turn that into a link
+ * `completeSignIn` ignores, which is silent — the worse half of the bug this
+ * fixes rather than a fix for it.
+ */
+export function noteAppFocused(): void {
+  if (!pending || pending.quiet || !pending.left || pending.settle) return;
+
+  pending.settle = setTimeout(() => {
+    if (!pending) return;
+    pending.quiet = true;
+    pending.settle = null;
+    emit();
+  }, SETTLE_MS);
 }
 
 /**
