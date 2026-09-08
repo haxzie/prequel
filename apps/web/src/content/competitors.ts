@@ -103,7 +103,7 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   iosCapture: false,
   maxExport: "4K, 120 fps",
   platforms: "macOS 14+, Apple Silicon",
-  licence: "$9/month or $29 once, 14-day trial",
+  licence: "$9/month or $29 once, 7-day trial",
 };
 
 export type Competitor = {
@@ -217,7 +217,7 @@ export const competitors: Competitor[] = [
       { label: "screen.studio pricing", url: "https://screen.studio/#pricing" },
     ],
     heading: "Looking for a Screen Studio alternative?",
-    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $29 once, which is the lifetime licence they stopped selling in 2025. Fourteen days free to judge the output before you pay.",
+    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $29 once, which is the lifetime licence they stopped selling in 2025. Seven days free to judge the output before you pay.",
     title: "Screen Studio alternative for Mac",
     description:
       "A Screen Studio alternative for macOS at $9 a month, or $29 once for a lifetime licence: the same automatic zooms, a perspective tilt and framed camera on top, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
@@ -241,7 +241,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a free Screen Studio alternative?",
         answer:
-          "Not Prequel — it is $9 a month, or $29 once, after a fourteen-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
+          "Not Prequel — it is $9 a month, or $29 once, after a seven-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
       },
       {
         question: "Is Prequel a good Screen Studio alternative?",
@@ -545,7 +545,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Descript watermark free exports?",
         answer:
-          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $9 a month, or $29 once, after a fourteen-day trial, and either is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
+          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $9 a month, or $29 once, after a seven-day trial, and either is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
       },
       {
         question: "Does Descript store my recordings in the cloud?",
@@ -612,7 +612,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Tella have a free plan?",
         answer:
-          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, with a fourteen-day trial rather than seven, and two ways to pay at the end of it — $9 a month or $29 once — neither of which decides what your export is allowed to be.",
+          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, on the same seven days, and two ways to pay at the end of it — $9 a month or $29 once — neither of which decides what your export is allowed to be.",
       },
       {
         question: "How much does Tella cost?",

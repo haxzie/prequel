@@ -34,7 +34,7 @@ export interface Team {
 }
 
 /**
- * Where the account stands on its fourteen days.
+ * Where the account stands on its seven days.
  *
  * Derived by the Worker — `apps/api/src/lib/trial.ts` says why the dashboard is
  * handed a verdict where the desktop app is handed facts. Nothing here rounds a

@@ -106,7 +106,7 @@ export function BillingPanel({
   return (
     <div className="lit mt-8 rounded-2xl border border-line bg-elevated p-6">
       <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">Current plan</p>
-      {/* Never the raw `plan`. It reads `free` for a fortnight that has every
+      {/* Never the raw `plan`. It reads `free` for a week that has every
           feature in it and again for one that ran out in March, and a heading
           that cannot tell those apart is the whole reason somebody opens this
           page. */}

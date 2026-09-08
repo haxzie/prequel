@@ -50,7 +50,7 @@
 
 export const PRICE_MONTHLY = "$9";
 export const PRICE_LIFETIME = "$29";
-export const TRIAL_DAYS = 14;
+export const TRIAL_DAYS = 7;
 
 /**
  * What each plan may keep on the sharing side. Mirrors `entitlement.ts`.

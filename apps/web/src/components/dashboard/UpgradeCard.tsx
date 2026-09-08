@@ -10,11 +10,11 @@ import type { Trial } from "@/lib/session";
  * being true rather than sitting there as furniture.
  *
  * **It says which of the three states the account is in.** This card used to
- * offer "Try 14 days free" to everybody on the free plan, which is the same
+ * offer "Try 7 days free" to everybody on the free plan, which is the same
  * label to somebody on day three of their trial, somebody whose trial ran out in
  * March, and somebody who signed up an hour ago. The first two are worse than
  * useless: one is being sold something they already have, and the other is being
- * offered a second fortnight that does not exist. The plan alone cannot tell
+ * offered a second week that does not exist. The plan alone cannot tell
  * them apart — `plan` stays `free` right through a trial — which is why the
  * verdict comes from the API.
  *

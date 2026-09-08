@@ -199,7 +199,7 @@ const ENTRIES: Post[] = [
       {
         question: "Do free screen recorders watermark YouTube videos?",
         answer:
-          "Some do. Descript's free tier watermarks exports and caps them at 720p, Camtasia's cheapest tier watermarks, and FocuSee's trial watermarks. OBS Studio and QuickTime never watermark, and Prequel does not watermark on any plan or during its fourteen-day trial.",
+          "Some do. Descript's free tier watermarks exports and caps them at 720p, Camtasia's cheapest tier watermarks, and FocuSee's trial watermarks. OBS Studio and QuickTime never watermark, and Prequel does not watermark on any plan or during its seven-day trial.",
       },
       {
         question: "Can I make a YouTube Short from the same screen recording?",
@@ -220,7 +220,7 @@ const ENTRIES: Post[] = [
       {
         question: "Which Mac screen recorders have no watermark?",
         answer:
-          "Prequel, OBS Studio, QuickTime Player and Cap never watermark exports. Prequel does not watermark on any plan or during its fourteen-day trial and costs $29 once. OBS Studio and QuickTime are free with no watermark and no time limit. Cap does not watermark but caps free recordings at five minutes.",
+          "Prequel, OBS Studio, QuickTime Player and Cap never watermark exports. Prequel does not watermark on any plan or during its seven-day trial and costs $29 once. OBS Studio and QuickTime are free with no watermark and no time limit. Cap does not watermark but caps free recordings at five minutes.",
       },
       {
         question: "Does Camtasia put a watermark on videos?",
@@ -240,7 +240,7 @@ const ENTRIES: Post[] = [
       {
         question: "Does a free trial usually watermark exports?",
         answer:
-          "It varies, and it is worth checking before you record anything real. FocuSee's trial watermarks its exports. Prequel's fourteen-day trial does not: it is the whole app at 4K up to 120 fps with no watermark, and a video exported during the trial stays yours whether or not you buy.",
+          "It varies, and it is worth checking before you record anything real. FocuSee's trial watermarks its exports. Prequel's seven-day trial does not: it is the whole app at 4K up to 120 fps with no watermark, and a video exported during the trial stays yours whether or not you buy.",
       },
     ],
     pillar: "screen-recording-for-youtube",
@@ -299,7 +299,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best screen recorder with a facecam for Mac?",
         answer:
-          "Prequel, if the video is going in front of people. It records the camera as a separate file at full resolution, so its position, size and shape are decided after the take rather than before it, and it applies zooms, a perspective tilt and depth of field automatically. It is $29 once or $9 a month with fourteen days free.",
+          "Prequel, if the video is going in front of people. It records the camera as a separate file at full resolution, so its position, size and shape are decided after the take rather than before it, and it applies zooms, a perspective tilt and depth of field automatically. It is $29 once or $9 a month with seven days free.",
       },
       {
         question: "Can I move the webcam overlay after recording?",
@@ -383,7 +383,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is Prequel open source?",
         answer:
-          "No. Prequel is proprietary, priced at $29 once or $9 a month with a fourteen-day free trial. It is included in this comparison because it produces a finished, directed video rather than raw footage, which none of the open-source options do, but if an auditable licence is a hard requirement then OBS Studio, Cap, Screenity, QuickRecorder and Kap are the genuine options.",
+          "No. Prequel is proprietary, priced at $29 once or $9 a month with a seven-day free trial. It is included in this comparison because it produces a finished, directed video rather than raw footage, which none of the open-source options do, but if an auditable licence is a hard requirement then OBS Studio, Cap, Screenity, QuickRecorder and Kap are the genuine options.",
       },
       {
         question: "Can open source screen recorders export in 4K?",
@@ -405,7 +405,7 @@ const ENTRIES: Post[] = [
       {
         question: "Which Mac screen recorder has automatic mouse zoom?",
         answer:
-          "Prequel, Screen Studio, FocuSee, Cap and Tella all zoom automatically or semi-automatically on a Mac. Prequel is the only one that zooms on typing as well as clicks, and the only one that adds a perspective tilt and depth of field to the push-in. It is $29 once or $9 a month with fourteen days free.",
+          "Prequel, Screen Studio, FocuSee, Cap and Tella all zoom automatically or semi-automatically on a Mac. Prequel is the only one that zooms on typing as well as clicks, and the only one that adds a perspective tilt and depth of field to the push-in. It is $29 once or $9 a month with seven days free.",
       },
       {
         question: "How does automatic zoom in a screen recording work?",
@@ -425,7 +425,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is there a free screen recorder with auto zoom?",
         answer:
-          "Cap is the only genuinely free one, and its free tier caps recordings at five minutes. FocuSee has a trial that watermarks exports. Prequel gives you fourteen days with the whole app and no watermark, then costs $29 once.",
+          "Cap is the only genuinely free one, and its free tier caps recordings at five minutes. FocuSee has a trial that watermarks exports. Prequel gives you seven days with the whole app and no watermark, then costs $29 once.",
       },
     ],
     pillar: "product-demo-videos",
@@ -504,7 +504,7 @@ const ENTRIES: Post[] = [
       {
         question: "Can I record a screen recording without a watermark?",
         answer:
-          "Yes, but not on every tool. Prequel never watermarks anything on either plan or during the fourteen-day trial. Camtasia's cheapest tier watermarks exports until you move up, Descript's free tier watermarks and caps at 720p, and FocuSee's trial watermarks what it exports. OBS and QuickTime are free and never watermark.",
+          "Yes, but not on every tool. Prequel never watermarks anything on either plan or during the seven-day trial. Camtasia's cheapest tier watermarks exports until you move up, Descript's free tier watermarks and caps at 720p, and FocuSee's trial watermarks what it exports. OBS and QuickTime are free and never watermark.",
       },
     ],
     pillar: "screen-recording-on-mac",
