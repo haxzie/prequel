@@ -42,7 +42,6 @@ import {
   type BackgroundEntry,
   type BackgroundsConfig,
 } from "../src/lib/backgrounds.ts";
-import { SCENE_PRESETS_CONFIG_KEY, scenePresetsConfig } from "../src/lib/scene-presets.ts";
 
 /** Longest edge of a swatch. The picker draws them about 80 points across. */
 const THUMBNAIL_EDGE = 640;
@@ -251,37 +250,6 @@ async function put(key: string, body: Buffer, type: string): Promise<void> {
   });
 }
 
-/**
- * The wallpapers the published scene presets name.
- *
- * Read from the bucket rather than from the repo, because what matters is what
- * an app out there will try to download today.
- *
- * Empty when there is no preset catalogue yet, or one this cannot read — a
- * missing cross-check is better than refusing to publish a background because
- * an unrelated file is malformed.
- */
-async function neededByPresets(): Promise<Set<string>> {
-  const response = await withRetries("reading the scene presets", () =>
-    client.fetch(objectUrl(SCENE_PRESETS_CONFIG_KEY)),
-  );
-  if (!response.ok) return new Set();
-
-  const parsed = scenePresetsConfig.safeParse(await response.json());
-  if (!parsed.success) {
-    console.warn("the scene preset catalogue did not parse; not cross-checking");
-    return new Set();
-  }
-
-  const needed = new Set<string>();
-  for (const preset of parsed.data.presets) {
-    const paint = preset.background["background"] as
-      { kind?: string; source?: string; path?: string } | undefined;
-    if (paint?.kind === "image" && paint.source === "preset" && paint.path) needed.add(paint.path);
-  }
-  return needed;
-}
-
 async function main(): Promise<void> {
   if (!existsSync(root)) throw new Error(`no pictures at ${root}`);
 
@@ -347,19 +315,6 @@ async function main(): Promise<void> {
 
   // Nothing a published look still needs may be withdrawn.
   //
-  // The direction nothing else catches. Deleting a picture from `backgrounds/`
-  // and re-running this is a perfectly ordinary thing to do, and it silently
-  // breaks every scene preset that names it — long after the run that caused
-  // it, in an editor, as a composition that will not draw.
-  const needed = await neededByPresets();
-  const missing = [...needed].filter((file) => !backgrounds.some((entry) => entry.file === file));
-  if (missing.length > 0) {
-    throw new Error(
-      `these pictures are still named by published scene presets: ${missing.join(", ")} — ` +
-        `put them back in backgrounds/, or republish the presets without them first`,
-    );
-  }
-
   const config: BackgroundsConfig = {
     version: BACKGROUNDS_VERSION,
     updated: new Date().toISOString(),

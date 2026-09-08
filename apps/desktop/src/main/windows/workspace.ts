@@ -20,8 +20,8 @@
  *
  * The screen on show is pushed, never encoded in the route. The hash has to
  * survive a reload and an HMR round trip and a serialised manifest in it would
- * not — so the window always loads `/workspace`, and `did-finish-load` re-sends
- * whichever recording was open.
+ * not — so the window always loads `/workspace`, and the renderer asks for
+ * whichever recording was open as soon as it is mounted.
  */
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -75,7 +75,7 @@ export class WorkspaceWindow {
    *
    * Kept here rather than left to the renderer because the tray can ask for
    * Settings, and because it has to survive a reload the same way `current`
-   * does — it is re-sent on every `did-finish-load`.
+   * does — the renderer asks for both again on every mount.
    */
   private section: WorkspaceSection = "projects";
   private fromCapture = false;
@@ -151,11 +151,6 @@ export class WorkspaceWindow {
     // otherwise go nowhere at all.
     mirrorConsole(window.webContents);
 
-    // Re-sent on every load, which is what restores the editor and the pane
-    // behind it after a reload or an HMR round trip. The grid still asks for
-    // its own list — only where the window was is pushed.
-    window.webContents.on("did-finish-load", () => this.push());
-
     window.on("focus", () => this.options.onFocus?.());
 
     // `ready-to-show` rather than showing immediately, so the window appears
@@ -210,7 +205,16 @@ export class WorkspaceWindow {
    */
   showProject(dir: string, announce = true): void {
     const verified = verifyRecording(dir);
-    if (this.current === verified) return;
+
+    // Already the open one as far as main is concerned — but that is not the
+    // same as the renderer showing it, and a window that missed the push is
+    // exactly the window whose user clicks the recording again. Said again
+    // rather than returned into silence, which left a card reading "Opening…"
+    // for ever. No flush and no retitle: nothing is being left behind.
+    if (this.current === verified) {
+      this.push(announce);
+      return;
+    }
 
     // The edit being left behind, before the next one loads. Two projects held
     // at once is exactly the state the single window exists to prevent.
@@ -237,6 +241,19 @@ export class WorkspaceWindow {
     // screen takes the window off it.
     this.window?.webContents.send(IPC_CHANNELS.projectsShowing);
     this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+  }
+
+  /**
+   * Sends the window what it should be showing, at its own request.
+   *
+   * The renderer calls this once its view has mounted, which is the only moment
+   * anything here can know a listener exists. Main used to push on
+   * `did-finish-load` instead — that fires when the *page* has loaded, and every
+   * view is a `lazy()` chunk fetched after that, so the section and the arriving
+   * recording both went out to nobody and the window sat on the library.
+   */
+  ready(): void {
+    this.push();
   }
 
   close(): void {

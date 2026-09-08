@@ -27,7 +27,7 @@ import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
 import { thumbnailPath } from "./backgrounds.js";
-import { cardPath, thumbnailPath as presetThumbnailPath } from "./scene-presets.js";
+import { cardPath } from "./scene-presets.js";
 import { SESSIONS_DIR } from "./session.js";
 
 export { MEDIA_SCHEME } from "../shared/media-url.js";
@@ -126,16 +126,14 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
     return thumbnailPath(parts[0]!);
   }
 
-  // A scene preset's card: one the user saved, or one of ours that has been
-  // downloaded. Two segments rather than one, because the two live in different
-  // places and neither name may be a path — `cardPath` and
-  // `presetThumbnailPath` each answer null for anything that is not a bare name.
+  // A scene preset's card. Still two segments, though every preset is now the
+  // user's own: the `mine` kind is in URLs written into saved projects, and
+  // dropping it would stop those cards resolving. `cardPath` answers null for
+  // anything that is not a bare name.
   if (parsed.host === "scene-preset") {
     if (parts.length !== 2) return null;
     const [kind, name] = parts as [string, string];
-    if (kind === "mine") return cardPath(name);
-    if (kind === "ours") return presetThumbnailPath(name);
-    return null;
+    return kind === "mine" ? cardPath(name) : null;
   }
 
   // A finished export, by name. Exact match against what main registered —

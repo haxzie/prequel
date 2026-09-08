@@ -1,17 +1,18 @@
 /**
- * Saved looks: the user's own on this disk, and the ones we publish.
+ * Saved looks, all of them the user's own and all of them on this disk.
  *
- * Both halves live in main for the reason the backgrounds do — the renderer's
- * CSP is `connect-src 'self' prequel-media:`, so a window cannot fetch a
- * catalogue and cannot read a file. The renderer asks over IPC and reads cards
- * back through `prequel-media://scene-preset/`.
+ * This lives in main because the renderer cannot read a file — its CSP is
+ * `connect-src 'self' prequel-media:`. The renderer asks over IPC and reads
+ * cards back through `prequel-media://scene-preset/`.
+ *
+ * There was a published catalogue alongside this once, fetched and cached. It
+ * is gone: a look is something you make, and one downloaded from us was a
+ * second source of truth for every field `sanitiseScenePreset` repairs.
  *
  * The layout under `userData`:
  *
  *     scene-presets/
- *       presets.json           the user's own list
- *       catalogue.json         ours, cached with a timestamp
- *       thumbnails/<file>.jpg  our cards, fetched on demand
+ *       presets.json           the list
  *       <id>/card.jpg          a saved card
  *       <id>/background.png    a picture a saved look carries
  *
@@ -33,12 +34,7 @@ import {
   type ScenePreset,
   type ScenePresetsFile,
 } from "../shared/scene-presets.js";
-import { apiUrl } from "./api.js";
 import { log } from "./log.js";
-import { BARE_JPEG, fetchInto, TIMEOUT_MS } from "./media-cache.js";
-
-/** How long a stored catalogue is served without re-checking. */
-const FRESH_MS = 6 * 60 * 60 * 1000;
 
 /** What a saved look's own card is called. */
 const CARD_FILE = "card.jpg";
@@ -69,11 +65,6 @@ function presetDir(id: string): string | null {
 export function cardPath(id: string): string | null {
   const dir = presetDir(id);
   return dir && join(dir, CARD_FILE);
-}
-
-/** Where one of our downloaded cards lives. Bare names only. */
-export function thumbnailPath(file: string): string | null {
-  return BARE_JPEG.test(file) ? join(root(), "thumbnails", file) : null;
 }
 
 // ── The user's own ──────────────────────────────────────────────────────────
@@ -282,96 +273,4 @@ export async function applyImage(id: string, dir: string): Promise<string | null
     console.warn(`[scene-presets] could not copy ${id}'s picture into ${dir}:`, cause);
     return null;
   }
-}
-
-// ── Ours ────────────────────────────────────────────────────────────────────
-
-interface Stored {
-  fetched: number;
-  presets: ScenePreset[];
-}
-
-let memory: Stored | null = null;
-let inFlight: Promise<ScenePreset[]> | null = null;
-
-function cataloguePath(): string {
-  return join(root(), "catalogue.json");
-}
-
-async function readCatalogue(): Promise<Stored | null> {
-  if (memory) return memory;
-
-  try {
-    const stored = JSON.parse(await readFile(cataloguePath(), "utf8")) as Stored;
-    // Shape-checked rather than trusted: this file is on the user's disk and a
-    // half-written one would otherwise reach the picker as an empty list.
-    if (!Array.isArray(stored?.presets) || stored.presets.length === 0) return null;
-    memory = stored;
-    return stored;
-  } catch {
-    return null;
-  }
-}
-
-async function download(): Promise<ScenePreset[]> {
-  try {
-    const response = await fetch(new URL("/v1/scene-presets", apiUrl()), {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error(`the catalogue answered ${String(response.status)}`);
-
-    const presets = sanitiseScenePresets(await response.json());
-    if (presets.length === 0) throw new Error("the catalogue was empty");
-
-    memory = { fetched: Date.now(), presets };
-    try {
-      await mkdir(root(), { recursive: true });
-      const temporary = `${cataloguePath()}.tmp`;
-      await writeFile(temporary, JSON.stringify(memory), "utf8");
-      await rename(temporary, cataloguePath());
-    } catch (cause) {
-      // Not fatal. It is in memory, and the next launch fetches again.
-      console.warn("[scene-presets] could not store the catalogue:", cause);
-    }
-
-    log("info", `scene-presets: ${String(presets.length)} in the catalogue`);
-    return presets;
-  } catch (cause) {
-    console.warn("[scene-presets] could not fetch the catalogue:", cause);
-    return [];
-  }
-}
-
-/**
- * The looks we publish.
- *
- * Stale-while-revalidate, like the backgrounds: a stored list is returned at
- * once and a refresh started behind it, so the picker draws immediately and
- * picks up new looks on the next open. An empty list is a picker with only the
- * user's own in it, which is the right answer on a train.
- */
-export async function catalogue(): Promise<ScenePreset[]> {
-  const stored = await readCatalogue();
-
-  if (stored) {
-    if (Date.now() - stored.fetched > FRESH_MS && !inFlight) {
-      // Deliberately not awaited. The point is that it does not block.
-      inFlight = download().finally(() => {
-        inFlight = null;
-      });
-    }
-    return stored.presets;
-  }
-
-  inFlight ??= download().finally(() => {
-    inFlight = null;
-  });
-  return inFlight;
-}
-
-/** Downloads one of our cards into the cache. Answers whether it is there now. */
-export async function ensureThumbnail(file: string): Promise<boolean> {
-  const destination = thumbnailPath(file);
-  if (!destination) return false;
-  return fetchInto(`/v1/scene-presets/thumbnail/${file}`, destination);
 }

@@ -350,14 +350,6 @@ const api = {
       list: (): Promise<IpcResult<ScenePreset[]>> =>
         ipcRenderer.invoke(IPC_CHANNELS.scenePresetsList),
 
-      /** The ones we publish. An empty list on a machine with no network. */
-      catalogue: (): Promise<IpcResult<ScenePreset[]>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsCatalogue),
-
-      /** Caches one of our cards. Answers whether it can be drawn now. */
-      thumbnail: (file: string): Promise<IpcResult<boolean>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.scenePresetsThumbnail, file),
-
       /**
        * Saves a look, its card and any picture it carries, and answers with the
        * whole list — one call, because a preset whose card never arrived is a
@@ -486,6 +478,14 @@ const api = {
       ipcRenderer.on(IPC_CHANNELS.workspaceSection, handler);
       return () => ipcRenderer.off(IPC_CHANNELS.workspaceSection, handler);
     },
+
+    /**
+     * Says the view is mounted, so main can send what it should be showing.
+     *
+     * Called after the subscriptions above are in place and never before: this
+     * exists precisely because a push that arrives first is a push nobody hears.
+     */
+    ready: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.workspaceReady),
   },
 
   /**

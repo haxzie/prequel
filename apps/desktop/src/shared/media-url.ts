@@ -56,8 +56,11 @@ export function backgroundUrl(fileName: string): string {
  * reason the whole file exists — the two sides have to agree exactly, and a URL
  * built by hand in the renderer is a 404 that reads as a missing picture.
  */
-export function scenePresetUrl(kind: "mine" | "ours", name: string): string {
-  return `${MEDIA_SCHEME}://scene-preset/${kind}/${encodeURIComponent(name)}`;
+export function scenePresetUrl(name: string): string {
+  // The `mine` segment stays although there is no longer a second kind: it is
+  // written into URLs held by saved projects, and dropping it would stop their
+  // cards resolving.
+  return `${MEDIA_SCHEME}://scene-preset/mine/${encodeURIComponent(name)}`;
 }
 
 /**

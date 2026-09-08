@@ -28,7 +28,7 @@ afterAll(() => rmSync(USER_DATA, { recursive: true, force: true }));
 vi.mock("electron", () => ({ app: { getPath: () => USER_DATA } }));
 vi.mock("./log.js", () => ({ log: () => undefined }));
 
-const { applyImage, cardPath, mine, remove, renamePreset, save, thumbnailPath } =
+const { applyImage, cardPath, mine, remove, renamePreset, save } =
   await import("./scene-presets.js");
 
 /** A one-pixel JPEG, as the preview would hand one over. */
@@ -132,7 +132,5 @@ describe("the list", () => {
 
   it("serves a card only for a bare name", async () => {
     expect(cardPath("../../evil")).toBeNull();
-    expect(thumbnailPath("../../evil.jpg")).toBeNull();
-    expect(thumbnailPath("kinetic.png")).toBeNull();
   });
 });

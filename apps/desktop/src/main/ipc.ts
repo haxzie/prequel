@@ -47,8 +47,6 @@ import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
 import {
   applyImage as applyPresetImage,
   applyWatermark as applyPresetWatermark,
-  catalogue as presetCatalogue,
-  ensureThumbnail as ensurePresetThumbnail,
   mine,
   remove as removePreset,
   renamePreset,
@@ -253,16 +251,13 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
 
   // ── scene presets ────────────────────────────────────────────────────────
   //
-  // Saved looks: the user's own on this disk, and the ones we publish. Here for
-  // the same reason the backgrounds are — a window cannot fetch a catalogue and
-  // cannot read a file.
+  // Saved looks, all of them the user's own. Here rather than in the renderer
+  // because a window cannot read a file.
+  // The window says when it is mounted; main answers with the screen it should
+  // be on. See `ready` on `WorkspaceWindow` for why this is not a push.
+  ipcMain.handle(IPC_CHANNELS.workspaceReady, () => workspace.ready());
+
   ipcMain.handle(IPC_CHANNELS.scenePresetsList, () => attempt(() => mine()));
-
-  ipcMain.handle(IPC_CHANNELS.scenePresetsCatalogue, () => attempt(() => presetCatalogue()));
-
-  ipcMain.handle(IPC_CHANNELS.scenePresetsThumbnail, (_event, file: string) =>
-    attempt(() => ensurePresetThumbnail(file)),
-  );
 
   // The card crosses as a data URL, as the library's posters do — see
   // `poster.ts` on why it is a JPEG by the time it gets here.

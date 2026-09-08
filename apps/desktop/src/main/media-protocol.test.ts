@@ -41,9 +41,7 @@ describe("a scene preset's card", () => {
     // An id *is* a file name here — the card is served by it — which is the
     // whole reason ids are generated rather than taken from what the user
     // typed.
-    expect(resolveMediaPath(scenePresetUrl("mine", "../../evil"), ROOT)).toBeNull();
-    expect(resolveMediaPath(scenePresetUrl("ours", "../../evil.jpg"), ROOT)).toBeNull();
-    expect(resolveMediaPath(scenePresetUrl("ours", "not-a-jpeg.png"), ROOT)).toBeNull();
+    expect(resolveMediaPath(scenePresetUrl("../../evil"), ROOT)).toBeNull();
   });
 
   it("refuses a kind it does not serve", () => {
@@ -53,8 +51,7 @@ describe("a scene preset's card", () => {
   });
 
   it("resolves a bare one to each store", () => {
-    expect(resolveMediaPath(scenePresetUrl("mine", "kinetic"), ROOT)).toContain("kinetic");
-    expect(resolveMediaPath(scenePresetUrl("ours", "kinetic.jpg"), ROOT)).toContain("kinetic.jpg");
+    expect(resolveMediaPath(scenePresetUrl("kinetic"), ROOT)).toContain("kinetic");
   });
 });
 

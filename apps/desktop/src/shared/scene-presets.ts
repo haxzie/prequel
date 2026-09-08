@@ -96,20 +96,9 @@ export interface ScenePreset {
    */
   watermark: WatermarkSettings;
   zoom: ZoomDefaults;
-  /**
-   * A BlurHash for the card, on the ones we publish. Absent on a saved one,
-   * whose card is already on this disk and needs nothing to stand in for it.
-   */
-  blurhash?: string;
-  /**
-   * Where to fetch the card from, on the ones we publish. Absent or empty means
-   * it is local — the same discriminator `useBackgrounds`' shipped fallback
-   * already uses, rather than a second field saying which kind this is.
-   */
-  thumbnail?: string;
 }
 
-/** The list as it is stored on disk and served from the catalogue. */
+/** The list as it is stored on disk. */
 export interface ScenePresetsFile {
   version: number;
   presets: ScenePreset[];
@@ -182,12 +171,6 @@ export function sanitiseScenePreset(value: unknown): ScenePreset | null {
     captions,
     watermark: presetWatermark(stored.watermark),
     zoom: sanitiseZoomLook(stored.zoom, DEFAULT_ZOOM),
-    ...(typeof stored.blurhash === "string" && stored.blurhash.length >= 6
-      ? { blurhash: stored.blurhash }
-      : {}),
-    ...(typeof stored.thumbnail === "string" && stored.thumbnail !== ""
-      ? { thumbnail: stored.thumbnail }
-      : {}),
   };
 }
 

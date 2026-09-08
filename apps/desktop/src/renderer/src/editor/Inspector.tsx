@@ -201,8 +201,6 @@ export interface InspectorProps {
 
 /** What the presets panel shows, and what pressing a card does. */
 export interface PresetsState {
-  /** The ones we publish. Empty on a machine that has never reached the API. */
-  ours: ScenePreset[];
   /** The ones saved on this machine, newest first. */
   mine: ScenePreset[];
   /** The id of the look whose wallpaper is being fetched, if any. */
@@ -211,7 +209,6 @@ export interface PresetsState {
   canSave: boolean;
   onApply: (preset: ScenePreset) => void;
   onSave: (name: string) => void;
-  /** Both only ever reach a look saved on this machine — see `own` on a card. */
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
 }
@@ -1394,17 +1391,6 @@ function PresetsPanel({
         </Section>
       )}
 
-      {/* Ours first, and headings rather than a word on every card: with the
-          name under the picture there is no room for a second line, and a group
-          says it once for everything under it. Never interleaved and never
-          sorted by recency across the boundary — which of the two a look came
-          from is the most useful thing about it before you have applied one. */}
-      {presets.ours.length > 0 && (
-        <Section title="Community">
-          <PresetGrid presets={presets.ours} own={false} state={presets} />
-        </Section>
-      )}
-
       {/* Kept even when it is empty, which is the opposite of the rule the
           background picker follows about headings with nothing under them.
           There, an empty group means a category that failed to arrive; here the
@@ -1416,7 +1402,7 @@ function PresetsPanel({
             Nothing saved yet. Dress a recording the way you like it, then save the look.
           </p>
         ) : (
-          <PresetGrid presets={presets.mine} own state={presets} />
+          <PresetGrid presets={presets.mine} state={presets} />
         )}
       </Section>
     </>
@@ -1424,23 +1410,13 @@ function PresetsPanel({
 }
 
 /** One group's looks, two across. */
-function PresetGrid({
-  presets,
-  own,
-  state,
-}: {
-  presets: ScenePreset[];
-  /** Whether this group is the user's own, which is what carries the menu. */
-  own: boolean;
-  state: PresetsState;
-}) {
+function PresetGrid({ presets, state }: { presets: ScenePreset[]; state: PresetsState }) {
   return (
     <ul className="grid grid-cols-2 gap-2">
       {presets.map((preset) => (
         <li key={preset.id}>
           <ScenePresetCard
             preset={preset}
-            own={own}
             busy={state.applying === preset.id}
             onApply={() => state.onApply(preset)}
             onRename={(name) => state.onRename(preset.id, name)}

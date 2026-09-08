@@ -1,26 +1,25 @@
 /**
- * The looks the picker offers: ours, and the ones saved on this machine.
+ * The looks the picker offers: the ones saved on this machine.
  *
- * Both come over IPC because the renderer can reach neither the network nor the
- * disk. Ours arrive from a cache first and a refresh behind it, so the menu
- * draws at once — a picker that waits on the network to show anything is a
- * picker that is empty on a train.
+ * Over IPC because the renderer can reach neither the network nor the disk.
  *
- * Failures are swallowed on purpose, as `useBackgrounds` swallows them: what a
- * failed catalogue means here is a shorter list, and there is nothing the user
- * could do about it if they were told.
+ * There was a published catalogue here too, fetched from a cache and refreshed
+ * behind it. It has gone with the rest of the hosted half — a look is something
+ * you make, and the list this returns is now only ever your own.
+ *
+ * A failure is swallowed on purpose, as `useBackgrounds` swallows one: what it
+ * means here is a shorter list, and there is nothing the user could do about it
+ * if they were told.
  */
 import { useCallback, useEffect, useState } from "react";
 
 import type { ScenePreset } from "../../../shared/scene-presets";
 
 export function useScenePresets(): {
-  ours: ScenePreset[];
   mine: ScenePreset[];
   /** Replaces the saved list wholesale — every write answers with all of it. */
   setMine: (presets: ScenePreset[]) => void;
 } {
-  const [ours, setOurs] = useState<ScenePreset[]>([]);
   const [mine, setMine] = useState<ScenePreset[]>([]);
 
   useEffect(() => {
@@ -30,14 +29,10 @@ export function useScenePresets(): {
       if (!cancelled && result.ok) setMine(result.value);
     });
 
-    void window.prequel.editor.scenePresets.catalogue().then((result) => {
-      if (!cancelled && result.ok) setOurs(result.value);
-    });
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return { ours, mine, setMine: useCallback((presets: ScenePreset[]) => setMine(presets), []) };
+  return { mine, setMine: useCallback((presets: ScenePreset[]) => setMine(presets), []) };
 }

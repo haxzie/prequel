@@ -91,6 +91,16 @@ export function Workspace() {
     [],
   );
 
+  // Last, and deliberately so: every subscription above is registered by the
+  // time this runs, which is the whole point of asking rather than being told.
+  // This view is a `lazy()` chunk, so the window's page had finished loading
+  // well before any of them existed — main pushing then sent the section and
+  // the arriving recording to nobody, and the window stayed on the library
+  // after a take.
+  useEffect(() => {
+    void window.prequel.workspace.ready();
+  }, []);
+
   const open = useCallback(async (dir: string) => {
     setOpening(dir);
     const result = await window.prequel.projects.open(dir);

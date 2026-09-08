@@ -757,7 +757,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               tab={panelTab}
               onTab={setPanelTab}
               presets={{
-                ours: scenePresets.ours,
                 mine: scenePresets.mine,
                 applying: applyingPreset,
                 // Nothing under the playhead is nothing drawn, and a look is

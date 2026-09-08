@@ -369,9 +369,17 @@ export const IPC_CHANNELS = {
    * the second that takes rather than falling back to the library.
    */
   editorOpening: "editor:opening",
+  /**
+   * Workspace renderer → main: I am mounted, send me what I should show.
+   *
+   * Rather than main pushing on `did-finish-load`. Every view is a `lazy()`
+   * chunk, so the page finishes loading a tick or two before the component that
+   * listens exists — and `ipcRenderer` keeps nothing for a listener that is not
+   * there yet. That lost the section, the arriving recording and its session all
+   * at once, which is a window that opens on the library after a take.
+   */
+  workspaceReady: "workspace:ready",
   scenePresetsList: "scenePresets:list",
-  scenePresetsCatalogue: "scenePresets:catalogue",
-  scenePresetsThumbnail: "scenePresets:thumbnail",
   scenePresetsSave: "scenePresets:save",
   scenePresetsRename: "scenePresets:rename",
   scenePresetsDelete: "scenePresets:delete",

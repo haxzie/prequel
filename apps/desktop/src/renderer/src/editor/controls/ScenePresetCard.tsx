@@ -31,38 +31,24 @@ import { picturesIn, type ScenePreset } from "../../../../shared/scene-presets";
 import { CameraIcon, EllipsisIcon, PencilIcon, ScreenIcon, TrashIcon } from "../icons";
 import { cn } from "../../lib/cn";
 import { Spinner } from "./BackgroundSwatch";
-import { hashUrl } from "./blurhash";
 
 export function ScenePresetCard({
   preset,
-  own,
   busy,
   onApply,
   onRename,
   onDelete,
 }: {
   preset: ScenePreset;
-  /**
-   * Saved on this machine, rather than published.
-   *
-   * The menu is the user's own looks only. Renaming or deleting one of ours
-   * would edit a list this app does not own — the catalogue is refetched, and
-   * the change would come back on the next launch having appeared to work.
-   */
-  own: boolean;
   /** This look's wallpaper is being fetched right now. */
   busy: boolean;
   onApply: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
-  // The published ones carry a path to fetch a preview from; a saved one's is
-  // already on this disk. The same discriminator the background picker uses for
-  // what the app ships, rather than a second field saying which kind this is.
-  const hosted = Boolean(preset.thumbnail);
-  const [preview, setPreview] = useState<string | null>(
-    hosted ? null : scenePresetUrl("mine", preset.id),
-  );
+  // Always on this disk: every look is one the user saved. Nothing to fetch and
+  // nothing to stand in for it while it arrives.
+  const preview = scenePresetUrl(preset.id);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(preset.name);
@@ -72,21 +58,6 @@ export function ScenePresetCard({
     if (renaming) field.current?.select();
   }, [renaming]);
 
-  useEffect(() => {
-    if (!hosted) return;
-    let cancelled = false;
-
-    void window.prequel.editor.scenePresets.thumbnail(`${preset.id}.jpg`).then((result) => {
-      if (cancelled || !result.ok || !result.value) return;
-      setPreview(scenePresetUrl("ours", `${preset.id}.jpg`));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hosted, preset.id]);
-
-  const placeholder = hashUrl(preset.blurhash);
   const shows = picturesIn(preset);
 
   const commit = () => {
@@ -108,26 +79,11 @@ export function ScenePresetCard({
         onClick={onApply}
       >
         <span className="relative block aspect-video w-full overflow-hidden rounded-md border border-editor-line bg-black/25 group-hover:border-white/25">
-          {placeholder && (
-            <span
-              aria-hidden
-              // Filling rather than contained, unlike the picture over it: the
-              // hash is a wash of the look's own colour, and letterboxing a blur
-              // leaves bars beside it for no reason.
-              className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url("${placeholder}")` }}
-            />
-          )}
-
-          {preview && (
-            <span
-              aria-hidden
-              // Fades in over the hash rather than replacing it, so the card
-              // sharpens instead of changing.
-              className="absolute inset-0 bg-contain bg-center bg-no-repeat transition-opacity duration-200"
-              style={{ backgroundImage: `url("${preview}")` }}
-            />
-          )}
+          <span
+            aria-hidden
+            className="absolute inset-0 bg-contain bg-center bg-no-repeat"
+            style={{ backgroundImage: `url("${preview}")` }}
+          />
 
           {busy && (
             <span aria-hidden className="absolute inset-0 grid place-items-center bg-black/45">
@@ -179,77 +135,73 @@ export function ScenePresetCard({
         </span>
       </button>
 
-      {own && (
-        <>
-          {/* Inside the thumbnail's top corner, and only once the pointer is on
-              the card — a row of these each showing a button would be a grid of
-              controls rather than a grid of pictures. Kept up while its own menu
-              is open, or pressing it would take away the thing just pressed, and
-              on keyboard focus, or it could not be reached without a mouse. */}
-          <button
-            type="button"
-            title="More…"
-            aria-label={`More options for ${preset.name}`}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            className={cn(
-              "absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full",
-              "bg-black/55 text-white/90 backdrop-blur-sm transition-opacity hover:bg-black/75",
-              "focus-visible:opacity-100 [&_svg]:size-3.5",
-              open ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            )}
-            onClick={() => setOpen((was) => !was)}
-          >
-            <EllipsisIcon />
-          </button>
+      {/* Inside the thumbnail's top corner, and only once the pointer is on
+            the card — a row of these each showing a button would be a grid of
+            controls rather than a grid of pictures. Kept up while its own menu
+            is open, or pressing it would take away the thing just pressed, and
+            on keyboard focus, or it could not be reached without a mouse. */}
+      <button
+        type="button"
+        title="More…"
+        aria-label={`More options for ${preset.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={cn(
+          "absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full",
+          "bg-black/55 text-white/90 backdrop-blur-sm transition-opacity hover:bg-black/75",
+          "focus-visible:opacity-100 [&_svg]:size-3.5",
+          open ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <EllipsisIcon />
+      </button>
 
-          {open && (
-            <>
-              {/* Click-away, behind the menu and over everything else — the
-                  same shape the frame bar's menu uses. */}
-              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <ul
-                role="menu"
-                className={
-                  "absolute top-8 right-1.5 z-20 w-32 rounded-lg border border-editor-line " +
-                  "bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
-                }
+      {open && (
+        <>
+          {/* Click-away, behind the menu and over everything else — the
+                same shape the frame bar's menu uses. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <ul
+            role="menu"
+            className={
+              "absolute top-8 right-1.5 z-20 w-32 rounded-lg border border-editor-line " +
+              "bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+            }
+          >
+            <li>
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10 [&_svg]:size-3.5"
+                onClick={() => {
+                  setOpen(false);
+                  setName(preset.name);
+                  setRenaming(true);
+                }}
               >
-                <li>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10 [&_svg]:size-3.5"
-                    onClick={() => {
-                      setOpen(false);
-                      setName(preset.name);
-                      setRenaming(true);
-                    }}
-                  >
-                    <PencilIcon />
-                    Rename
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    // Muted until reached for, then red — the same treatment
-                    // the panel header's delete gets, rather than a row that
-                    // sits shouting in an open menu.
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-3.5"
-                    onClick={() => {
-                      setOpen(false);
-                      onDelete();
-                    }}
-                  >
-                    <TrashIcon />
-                    Delete
-                  </button>
-                </li>
-              </ul>
-            </>
-          )}
+                <PencilIcon />
+                Rename
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                role="menuitem"
+                // Muted until reached for, then red — the same treatment
+                // the panel header's delete gets, rather than a row that
+                // sits shouting in an open menu.
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-3.5"
+                onClick={() => {
+                  setOpen(false);
+                  onDelete();
+                }}
+              >
+                <TrashIcon />
+                Delete
+              </button>
+            </li>
+          </ul>
         </>
       )}
     </div>
