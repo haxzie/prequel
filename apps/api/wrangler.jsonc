@@ -9,6 +9,14 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
+  // Pinned, because `wrangler dev` otherwise walks to the next free port while
+  // `API_URL` below keeps saying 8787 — and `API_URL` is what Better Auth builds
+  // the Google `redirect_uri` from. Google then sends the browser back to
+  // whatever else holds 8787, whose own Better Auth has no state for the code
+  // and answers `?error=state_mismatch` from an origin that has nothing to do
+  // with this app. Failing to start is the honest outcome.
+  "dev": { "port": 8787 },
+
   "d1_databases": [
     {
       "binding": "DB",
