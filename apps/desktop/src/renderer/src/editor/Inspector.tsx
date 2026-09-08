@@ -255,6 +255,17 @@ export function Inspector(props: InspectorProps) {
    * on the timeline, reads as the panel having remembered the wrong thing.
    */
   const [captionView, setCaptionView] = useState<"options" | "edit">("options");
+  /**
+   * Whether the presets panel is asking what to call the look being saved.
+   *
+   * Local, like `captionView`: it is navigation, not an edit.
+   *
+   * Up here with the other hooks, and *above* the selected-zoom branch below,
+   * which returns early. A hook after that return is only reached on some
+   * renders — selecting a zoom then leaves React with fewer hooks than it had,
+   * which is not a warning but a throw that takes the whole panel down.
+   */
+  const [naming, setNaming] = useState(false);
   useEffect(() => {
     if (state.selectedZoomId !== null) setCaptionView("options");
   }, [state.selectedZoomId]);
@@ -394,9 +405,6 @@ export function Inspector(props: InspectorProps) {
   // showing — so the fallback is the one that is always there rather than a
   // blank panel.
   const active = categories.some((category) => category.id === tab) ? tab : "layout";
-  // Whether the presets panel is asking what to call the look being saved.
-  // Local, like `captionView`: it is navigation, not an edit.
-  const [naming, setNaming] = useState(false);
   // `active` is resolved against this same list above, so the fallback is
   // unreachable — it exists to keep this total rather than to be taken.
   const showing = categories.find((category) => category.id === active) ?? categories[0]!;
