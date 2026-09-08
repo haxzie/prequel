@@ -36,7 +36,12 @@ export function middleware(request: NextRequest) {
   // Carried through so the user lands where they were going rather than on a
   // generic dashboard, which matters most for a share link opened by someone
   // who happens to be signed out.
-  login.searchParams.set("next", request.nextUrl.pathname);
+  //
+  // The query goes with it. `/desktop/auth` is nothing without its `challenge`
+  // and `state` — carrying the path alone sends somebody through a whole sign-in
+  // and lands them on "Something is missing", with the app still waiting on a
+  // deep link that is never coming.
+  login.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
   return NextResponse.redirect(login);
 }
 

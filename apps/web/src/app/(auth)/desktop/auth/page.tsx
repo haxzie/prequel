@@ -24,8 +24,18 @@ export default async function DesktopAuthPage({
 }: {
   searchParams: Promise<{ challenge?: string; state?: string }>;
 }) {
-  const { me, team } = await requireTeam("/desktop/auth");
   const { challenge, state } = await searchParams;
+
+  // Read the query first, so signing in comes back to *this* handshake rather
+  // than to a bare `/desktop/auth`. A literal path here loses the challenge and
+  // the state, and the page it returns to is the "Something is missing" one
+  // below — a dead end reached by doing everything right. `middleware.ts` drops
+  // the request here before this ever runs, so both halves have to carry it.
+  const back = new URLSearchParams();
+  if (challenge) back.set("challenge", challenge);
+  if (state) back.set("state", state);
+
+  const { me, team } = await requireTeam(`/desktop/auth?${back.toString()}`);
 
   if (!challenge || !state) {
     return (
