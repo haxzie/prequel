@@ -1,3 +1,4 @@
+import type { Viewport } from "next";
 import type { ReactNode } from "react";
 
 import { Analytics } from "@/components/Analytics";
@@ -15,7 +16,13 @@ import { requireTeam } from "@/lib/session";
  * under it, which is what a list you page through wants — and the account, the
  * team and the plan all need somewhere permanent to live that a single row of
  * links could not give them.
+ *
+ * `data-theme="dark"` because the public site is paper and this is not part of
+ * it: what the dashboard lists is recordings of a dark editor, played back in a
+ * dark player.
  */
+export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" };
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   // The same guard the pages run. `getMe` is `cache()`d, so this is one request
   // to the Worker for the whole render rather than one per component.
@@ -26,7 +33,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     // scrolling: the sidebar has to stay put, and `position: fixed` on it would
     // take it out of flow and leave the main column to be padded around a width
     // defined somewhere else.
-    <div className="flex h-dvh overflow-hidden bg-bg">
+    <div data-theme="dark" className="flex h-dvh overflow-hidden bg-bg">
       <Analytics userId={me.user.id} email={me.user.email} name={me.user.name} teamId={team.id} />
       <Sidebar user={me.user} teams={me.teams} activeTeamId={team.id} trial={me.trial} />
       <main className="flex-1 overflow-y-auto">

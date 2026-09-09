@@ -69,7 +69,12 @@ export const metadata: Metadata = {
 
 // `themeColor` and `colorScheme` inside `metadata` are deprecated — they belong
 // to this export.
-export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" };
+//
+// The public site's values, because that is what most of the tree is. The two
+// dark groups export their own from their own layouts, and the deepest one on a
+// route wins — without that, the browser chrome above a dark dashboard would be
+// the colour of paper.
+export const viewport: Viewport = { themeColor: "#ffffff", colorScheme: "light" };
 
 // A deployed origin is https, a developer's is not. The same test `posthog`'s
 // bootstrap uses to stamp its `environment` property.

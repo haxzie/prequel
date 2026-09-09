@@ -83,9 +83,10 @@ export default async function Changelog() {
                 {/* Discs rather than bare lines. Without a marker the entries
                     read as loose sentences under a date, and a release with
                     four of them reads as a paragraph that has lost its joins.
-                    White, so the markers sit with the text rather than tinting
-                    the column: the one coloured thing on the page is the node
-                    on the rail, which is what says where a release begins.
+                    The text's own colour, so the markers sit with it rather
+                    than tinting the column: the one coloured thing on the page
+                    is the node on the rail, which is what says where a release
+                    begins.
 
                     Written onto the list the MDX produces rather than onto a
                     list of our own. `mdx-components.tsx` styles every `ul` on
@@ -94,7 +95,7 @@ export default async function Changelog() {
                     a date rather than a paragraph's aside. A descendant
                     selector is what makes these win: both are classes, so
                     nesting is the only thing between them. */}
-                <div className="[&_ul]:mt-3.5 [&_ul]:mb-0 [&_ul]:space-y-2.5 [&_li]:leading-relaxed [&_li]:text-fg/85 [&_ul]:marker:text-white">
+                <div className="[&_ul]:mt-3.5 [&_ul]:mb-0 [&_ul]:space-y-2.5 [&_li]:leading-relaxed [&_li]:text-fg/85 [&_ul]:marker:text-fg">
                   <release.Body />
                 </div>
               </li>

@@ -60,7 +60,7 @@ export function NavMenu({ stars }: { stars: ReactNode }) {
         aria-expanded={open}
         aria-controls="nav-menu"
         aria-label={open ? "Close menu" : "Open menu"}
-        className="grid size-9 cursor-pointer place-items-center rounded-full text-fg transition-colors hover:bg-white/8"
+        className="grid size-9 cursor-pointer place-items-center rounded-full text-fg transition-colors hover:bg-fg/8"
         onClick={() => setOpen(!open)}
       >
         {open ? <CloseIcon className="size-5" /> : <MenuIcon className="size-5" />}
@@ -94,7 +94,7 @@ export function NavMenu({ stars }: { stars: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-xl px-3 py-2.5 text-sm text-fg transition-colors hover:bg-white/8"
+                  className="rounded-xl px-3 py-2.5 text-sm text-fg transition-colors hover:bg-fg/8"
                 >
                   {item.label}
                 </Link>

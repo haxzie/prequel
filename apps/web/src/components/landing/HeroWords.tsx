@@ -28,11 +28,17 @@
 import { AppleIcon } from "@/components/icons";
 
 /**
- * The white title card.
+ * The title card.
  *
- * Inverted rather than tinted: it is the only white field above the fold, and
- * the one word the sentence is really about. `items-baseline` so the emoji sits
- * on the same line as the word instead of centring itself against a taller box.
+ * The accent, solid, with the word knocked out of it in white — the one filled
+ * field above the fold and the one word the sentence is really about. Solid
+ * rather than a tint of it: a chip carrying white text has to hold the contrast
+ * on its own, and on paper a 25% wash of anything cannot. `--accent` is the
+ * playhead in the icon and in the editor, so the loudest thing in the headline
+ * is the same blue as the thing that moves.
+ *
+ * `items-baseline` so the emoji sits on the same line as the word instead of
+ * centring itself against a taller box.
  *
  * A pill, where the clip beside it is squared off to a small radius — the two
  * are quoting different things and should not read as one component in two
@@ -44,7 +50,7 @@ export function HeroCard({ children }: { children: string }) {
   return (
     <span
       data-hero-chip
-      className="inline-flex -rotate-2 items-baseline gap-[0.16em] rounded-full bg-white px-[0.4em] py-[0.09em] leading-[1] whitespace-nowrap text-bg"
+      className="inline-flex -rotate-2 items-baseline gap-[0.16em] rounded-full bg-accent px-[0.4em] py-[0.09em] leading-[1] whitespace-nowrap text-white"
     >
       {/* Aria-hidden so the heading is still read as its sentence. The glyph is
           drawn by the platform's own emoji font, which has no weight to match,
@@ -60,21 +66,26 @@ export function HeroCard({ children }: { children: string }) {
 /**
  * A clip on the timeline, with the two grips that say its ends can be dragged.
  *
- * Iris and lilac, which are the icon's own clip stroke and clip handles, and
- * the same pairing the editor's timeline uses. The demo timeline further down
- * the page is deliberately not this colour — its slices are the accent, because
- * there they are lit by a playhead crossing them and the accent is what the
- * playhead is.
+ * `--lilac`, which on the light site is a rich purple rather than the pale
+ * handle colour it is in the artwork — it has to be, because it also sets inline
+ * `code` in the prose. Filled, for the reason the card beside it is: the word
+ * inside is white, and a tint of iris on paper leaves it at about two to one.
+ * White on this holds 7:1. The demo timeline further down the page is
+ * deliberately not this colour — its slices are the accent, because there they
+ * are lit by a playhead crossing them and the accent is what the playhead is.
  *
- * The grips are absolute rather than flex children so the word stays centred in
- * the clip: laid out in flow they would push it right by their own width. The
+ * The grips are white rather than the icon's lilac, which is now the field
+ * itself: the same colour twice over is a clip with no visible ends.
+ *
+ * They are absolute rather than flex children so the word stays centred in the
+ * clip: laid out in flow they would push it right by their own width. The
  * horizontal padding is what keeps the text off them.
  */
 export function HeroClip({ children }: { children: string }) {
   return (
     <span
       data-hero-chip
-      className="relative inline-flex rotate-[1.5deg] items-baseline rounded-[0.2em] border border-iris/80 bg-iris/25 px-[0.58em] pt-[0.07em] pb-[0.13em] leading-[1] whitespace-nowrap"
+      className="relative inline-flex rotate-[1.5deg] items-baseline rounded-[0.2em] border border-lilac bg-lilac px-[0.58em] pt-[0.07em] pb-[0.13em] leading-[1] whitespace-nowrap text-white"
     >
       <Grip edge="start" />
       {children}
@@ -89,11 +100,11 @@ function Grip({ edge }: { edge: "start" | "end" }) {
   return (
     <span
       aria-hidden="true"
-      className={`absolute inset-y-0 grid w-[0.34em] place-items-center bg-lilac/25 ${
+      className={`absolute inset-y-0 grid w-[0.34em] place-items-center bg-white/25 ${
         edge === "start" ? "left-0 rounded-l-[0.2em]" : "right-0 rounded-r-[0.2em]"
       }`}
     >
-      <span className="h-1/2 w-[0.06em] rounded-full bg-lilac" />
+      <span className="h-1/2 w-[0.06em] rounded-full bg-white" />
     </span>
   );
 }

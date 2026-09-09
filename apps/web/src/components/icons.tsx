@@ -79,6 +79,34 @@ export function MenuIcon({ className = "" }: { className?: string }) {
   );
 }
 
+/**
+ * A right arrow, for the call to action at the end of a section.
+ *
+ * Stroked at the same weight as the two above, so it carries the weight of the
+ * label beside it rather than sitting on the button as a second, heavier mark.
+ *
+ * The shaft stops a little short of the head instead of running into its
+ * vertex. At the size these are drawn — fourteen pixels — a shaft meeting the
+ * chevron dead centre puts three round caps within a pixel of each other and the
+ * join thickens into a blob.
+ */
+export function ArrowRightIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M5 12h12.5M13 6.5l6 5.5-6 5.5" />
+    </svg>
+  );
+}
+
 export function CloseIcon({ className = "" }: { className?: string }) {
   return (
     <svg

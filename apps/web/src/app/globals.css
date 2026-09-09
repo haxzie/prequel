@@ -10,31 +10,59 @@
   sun over a ruler, a blue playhead, a purple clip with lilac handles. Marketing
   and product therefore agree on colour without sharing a stylesheet.
 
-  Dark only, on purpose. The site commits to one look, so `color-scheme` is
-  fixed rather than `light dark` and there is no `prefers-color-scheme` block to
-  keep in sync.
+  Two themes, and the split is by surface rather than by preference. The public
+  site is paper, and light is what `:root` carries so that `html`, `body`, the
+  scrollbars and the form controls all inherit it. The signed-in app and the
+  sign-in page are the exception, scoped under `[data-theme="dark"]` — they are
+  the same product as a dark editor and a dark player, and they are the minority
+  of the tree. Scoping the *light* values onto the public pages instead would
+  leave the document background dark behind every page shorter than the
+  viewport, which reads as a band under the footer.
+
+  There is still no `prefers-color-scheme` block. Which theme a page gets is a
+  property of the page and not of the reader's setting, so there is nothing here
+  to keep in sync with a media query.
 */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --bg: #0b0d11; /* the icon's #0F1218, a shade deeper so surfaces read against it */
-  --surface: #14161b;
-  --elevated: #1a1d23;
+  --bg: #ffffff;
+  /* Below the page rather than above it, which is the one thing that inverts
+     structurally between the themes: on dark a card is lighter than its ground,
+     and here the ground is already as light as it goes, so a raised surface has
+     to step down instead. Every `bg-surface` and `bg-elevated` call site follows
+     the token and needed no edit.
+
+     Neutral, and deliberately so: equal channels, no temperature at all. These
+     were warmed a shade to begin with, and a warm grey beside the sun gradient
+     reads as a cream that has gone slightly dirty — the orange is what should
+     carry the warmth on this page, and a panel competing for the same job is
+     what makes both look muddy. */
+  --surface: #f5f5f5;
+  --elevated: #ebebeb;
   /* One line weight for everything now. There used to be a second, brighter
      token for the dashed frame the page was written inside — the vertical rails,
      the section bands, the footer rules — because a 1px dashed border inks under
      half its length and needed the extra contrast to read as a rule rather than
      a smudge. The frame is gone and every border left is drawn continuously, so
      the brighter value has nothing to correct for. */
-  --line: #22262e;
-  --fg: #eceef1;
-  --muted: #8b9198;
+  --line: #e3e3e3;
+  --fg: #141518;
+  /* 5:1 on white. This is as light as the secondary text can go and still clear
+     AA, and most of the body copy on the site is set in it — the prose in
+     `mdx-components` puts every paragraph here. */
+  --muted: #6b6f76;
 
   --brand-from: #e14b15; /* sun gradient start */
   --brand-to: #ac1860; /* sun gradient end */
   --accent: #4e84f9; /* the playhead */
   --iris: #c000f0; /* the clip stroke */
-  --lilac: #eeacff; /* the clip handles */
+  /* The clip handles in the icon, and inline `<code>` in the prose. On paper it
+     is the second job that fixes the value: `#eeacff` is a handle against
+     `#1e1e1e` and 1.3:1 against white, so the code spans in every MDX file were
+     unreadable. Deepened until it clears AA on `--surface`. The dark scope keeps
+     the artwork's own value. */
+  --lilac: #7b2cbf;
 
   /* The same three hues at the value the icon actually shows them, which is
      what a background field wants and the tokens above are not.
@@ -45,7 +73,8 @@
      lit lilac panel that takes the frame over — so these are each hue over that
      same body, the composite the mark itself displays. Foreground accents keep
      the tokens above; anything painting a whole field behind content uses
-     these. `Wash` and the shader's mesh both sit on them. */
+     these. `Wash` is the only thing left that does, and it renders on the
+     sign-in page alone — the public site is paper and carries no field at all. */
   --brand-from-deep: #b04017;
   --brand-to-deep: #731a46;
   --iris-deep: #3e1848;
@@ -55,8 +84,46 @@
      already owns a `green` namespace, so `--color-green` would generate a bare
      `text-green` sitting alongside its `text-green-500` and read as a missing
      shade rather than a token of ours. Picked light enough to clear AA on
-     `--surface`, which the saturated greens that look right on white do not. */
+     `--surface`. The note here used to say the opposite — that the saturated
+     greens which look right on white were too dark for this token — and paper is
+     where that trade reverses: `#5ad19a` is 1.4:1 on `--bg` and the price spans
+     in the listicles disappeared. */
+  --positive: #137a54;
+
+  /* The inset highlight `lit` paints. A white line is what lifts a dark card;
+     on paper there is nothing brighter than the surface, so the same job is done
+     by a dark lip along the top edge. A token rather than two utilities, so the
+     ten or so call sites do not each have to know which theme they are in. */
+  --lit: rgb(0 0 0 / 0.05);
+}
+
+/*
+  The signed-in app, the sign-in page and the desktop handoff.
+
+  The thirteen values the site shipped with, unchanged. Dark is not a preference
+  on these pages: the editor being recorded is dark, the player is dark, and the
+  dashboard is the same product as both. The attribute is set in each group's
+  layout — `(auth)/layout.tsx` and `app/app/layout.tsx` — and never on `html`,
+  which is what keeps the public pages out of it.
+
+  `@theme inline` above is what makes this work at all: it substitutes the
+  `var()` into every utility rather than the value, so `bg-surface` inside this
+  subtree resolves to the value declared here.
+*/
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0d11; /* the icon's #0F1218, a shade deeper so surfaces read against it */
+  --surface: #14161b;
+  --elevated: #1a1d23;
+  --line: #22262e;
+  --fg: #eceef1;
+  --muted: #8b9198;
+
+  --lilac: #eeacff;
   --positive: #5ad19a;
+
+  --lit: rgb(255 255 255 / 0.06);
 }
 
 /* `inline` substitutes the var() into each utility rather than its value, which
@@ -78,6 +145,31 @@
   --color-brand-to-deep: var(--brand-to-deep);
   --color-iris-deep: var(--iris-deep);
   --color-positive: var(--positive);
+
+  /* The editor picture's palette. Declared here so the utilities exist, and
+     given values only inside `editor-theme` — outside that subtree they resolve
+     to nothing, which is correct: no page-level element should be using them. */
+  --color-editor-bg: var(--editor-bg);
+  --color-editor-glass: var(--editor-glass);
+  --color-editor-scrim: var(--editor-scrim);
+  --color-editor-veil: var(--editor-veil);
+  --color-editor-panel: var(--editor-panel);
+  --color-editor-line: var(--editor-line);
+  --color-editor-fg: var(--editor-fg);
+  --color-editor-muted: var(--editor-muted);
+  --color-slice-fill: var(--slice-fill);
+  --color-slice-fill-active: var(--slice-fill-active);
+  --color-slice-edge: var(--slice-edge);
+  --color-slice-edge-active: var(--slice-edge-active);
+  --color-slice-ring: var(--slice-ring);
+  --color-wave: var(--wave);
+  --color-zoom-fill: var(--zoom-fill);
+  --color-zoom-edge: var(--zoom-edge);
+  --color-zoom-ring: var(--zoom-ring);
+  --color-indicator-deep: var(--indicator-deep);
+  --color-play: var(--play);
+  --color-selected: var(--selected);
+  --color-toggle: var(--toggle);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
@@ -929,26 +1021,37 @@
     }
   }
 
-  /* One keyframe for all four slices, each started a slice later with
+  /* A slice rests as a plain grey chip and carries the track's colour only while
+     it is the one being shown. It used to rest on a 16% wash of that colour,
+     which read as light on the dark site and on white put four coloured chips in
+     a row for the lit one to compete with — the track said "all of these are
+     active" and left the playhead arguing otherwise. Grey at rest, so the lit
+     slice is the only thing on the track with a colour in it. Filled solid with
+     the word knocked out in white, and the border a lighter step off the fill
+     rather than the same colour — a solid chip with a border its own value has no
+     border, and the lift is what stops the lit slice reading as a flat block
+     dropped into the row.
+
+     One keyframe for all four slices, each started a slice later with
      `animation-delay`. `backwards` is what makes the delay readable: without it
      slice four would sit lit for the first twelve seconds of the page's life
      and then start behaving. */
   @keyframes demo-slice {
     0% {
-      background-color: color-mix(in oklab, var(--accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
     1%,
     24% {
-      background-color: color-mix(in oklab, var(--accent) 62%, transparent);
-      border-color: color-mix(in oklab, var(--accent) 92%, transparent);
-      color: var(--fg);
+      background-color: var(--track-accent, var(--accent));
+      border-color: color-mix(in oklab, var(--track-accent, var(--accent)) 58%, #fff);
+      color: #fff;
     }
     25%,
     100% {
-      background-color: color-mix(in oklab, var(--accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
   }
@@ -1234,40 +1337,40 @@
      lit for a fifth of the period instead of a sixth. */
   @keyframes captions-slice {
     0% {
-      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
     1%,
     18.8% {
-      background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
-      color: var(--fg);
+      background-color: var(--track-accent);
+      border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+      color: #fff;
     }
     20%,
     100% {
-      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
   }
 
   @keyframes layouts-slice {
     0% {
-      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
     1%,
     15.6% {
-      background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
-      color: var(--fg);
+      background-color: var(--track-accent);
+      border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+      color: #fff;
     }
     16.7%,
     100% {
-      background-color: color-mix(in oklab, var(--track-accent) 16%, transparent);
-      border-color: color-mix(in oklab, var(--track-accent) 32%, transparent);
+      background-color: var(--elevated);
+      border-color: var(--line);
       color: var(--muted);
     }
   }
@@ -1283,13 +1386,6 @@
 */
 @utility squircle {
   corner-shape: squircle;
-}
-
-/* Faint ruler ticks, the icon's other half. Used as a section backdrop. */
-@utility ruled {
-  background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 88px 100%;
-  mask-image: linear-gradient(180deg, transparent, #000 30%, #000 70%, transparent);
 }
 
 /*
@@ -1358,19 +1454,6 @@
   }
 }
 
-/* A hero has the shader behind it and nothing else. `Wash` belongs to the top
-   of every document, which is the same band the hero occupies, so on those pages
-   it would sit under the canvas as a second field with its own hues and its own
-   drift — two backgrounds fading out over different distances, which reads as
-   one of them arriving late rather than as light.
-
-   `:has()` rather than a prop threaded down from the layout: the layout does not
-   know which of its pages render a hero, and `data-hero` is in the server's
-   HTML, so this resolves on the first paint with no flash of both. */
-body:has([data-hero]) [data-wash] {
-  display: none;
-}
-
 /* The hero's entrance, likewise — and `animation: none` is the whole fix here
    rather than a starting point. `hero-rise` ends exactly where an untouched
    element already sits, so dropping it leaves the finished hero rather than a
@@ -1398,9 +1481,9 @@ body:has([data-hero]) [data-wash] {
   }
 
   [data-zoom-demo] [data-demo-slice="0"] {
-    background-color: color-mix(in oklab, var(--accent) 62%, transparent);
-    border-color: color-mix(in oklab, var(--accent) 92%, transparent);
-    color: var(--fg);
+    background-color: var(--track-accent, var(--accent));
+    border-color: color-mix(in oklab, var(--track-accent, var(--accent)) 58%, #fff);
+    color: #fff;
   }
 }
 
@@ -1417,9 +1500,9 @@ body:has([data-hero]) [data-wash] {
   }
 
   [data-layout-demo] [data-demo-slice="0"] {
-    background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
-    border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
-    color: var(--fg);
+    background-color: var(--track-accent);
+    border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+    color: #fff;
   }
 }
 
@@ -1447,9 +1530,9 @@ body:has([data-hero]) [data-wash] {
   }
 
   [data-captions-demo] [data-demo-slice="0"] {
-    background-color: color-mix(in oklab, var(--track-accent) 62%, transparent);
-    border-color: color-mix(in oklab, var(--track-accent) 92%, transparent);
-    color: var(--fg);
+    background-color: var(--track-accent);
+    border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+    color: #fff;
   }
 }
 
@@ -1468,24 +1551,102 @@ body:has([data-hero]) [data-wash] {
 
   One custom property rather than a second set of keyframes and a second ruler:
   `DemoTimeline` draws both, so the colour is the only thing that differs and it
-  is inherited rather than passed. `--iris` is the icon's clip stroke, and that
-  is the point — the zoom demo's slices are the blue of the playhead, and these
-  are the purple of the clips the playhead runs over. Nothing sets
+  is inherited rather than passed. The purple is the point — the zoom demo's
+  slices are the blue of the playhead, and these are the colour of the clips the
+  playhead runs over. `--lilac` rather than the neat `--iris` the clip stroke is
+  actually drawn in, matching the section's heading chip: filled at this size on
+  a white page, #c000f0 is the loudest thing on the screen and pulls the eye off
+  the picture the track belongs to. Nothing sets
   `--track-accent` above this, so the zoom track keeps the `var(--accent)`
   fallback written at each use site.
 */
 [data-layout-demo] {
-  --track-accent: var(--iris);
+  --track-accent: var(--lilac);
+}
+
+/*
+  The zoom track's blue, which is `--accent` taken a step towards the ink.
+
+  Not the neat token, and this is the one place the track's colour and the
+  playhead's differ. A lit slice is filled solid with its label in white, and
+  white on `#4e84f9` is 3.5:1 — under AA for type this size, which the labels are
+  at 11px. Deepened until it clears, which costs nothing visible: the fill is
+  still plainly the playhead's blue, and the border above it is mixed towards
+  white from this same value so the chip keeps its lift.
+
+  The playhead itself is untouched — it is a 2px rail with no text on it, and
+  `--brand-from` anyway.
+*/
+[data-zoom-demo] {
+  --track-accent: color-mix(in oklab, var(--accent) 82%, var(--fg));
+}
+
+/*
+  The editor's own palette, copied from `apps/desktop/src/renderer/src/index.css`.
+
+  Copied and not imported: `apps/web` shares no code with `apps/desktop`, and the
+  point of that rule is that nothing in the product gains a marketing consumer.
+  The cost is that this is a second copy free to drift, so it is scoped to the one
+  component that uses it — `AppPreview`, the picture of the editor under the hero
+  — and the values are here verbatim rather than reinterpreted. If the app's
+  timeline is ever recoloured, this is the file that has to be told.
+
+  Scoped as a utility rather than added to `:root`, for the same reason it is in
+  the app: it is a theme for one subtree, not for the document. The public site is
+  paper and the editor inside this panel is dark, which is what the app looks
+  like.
+*/
+@utility editor-theme {
+  --editor-bg: #16171a;
+  --editor-glass: rgba(22, 23, 26, 0.75);
+  --editor-scrim: rgba(22, 23, 26, 0.82);
+  --editor-veil: rgba(22, 23, 26, 0.93);
+  --editor-panel: #1c1e22;
+  --editor-line: #2a2d33;
+  --editor-fg: #eceef1;
+  --editor-muted: #8b9198;
+
+  /* A clip: two solid steps of the same purple, one for at rest and one for
+     selected, with a light ring that has to stand off the edge as well as the
+     fill because the outline runs across the handles. */
+  --slice-fill: #2b2247;
+  --slice-fill-active: #3a2d5e;
+  --slice-edge: #4c3795;
+  --slice-edge-active: #6d4fd0;
+  --slice-ring: #c0a8ff;
+  --wave: #c9b4f7;
+
+  /* A zoom, which is a wash inside an opaque outline rather than a fill. */
+  --zoom-fill: #dcb43c;
+  --zoom-edge: #f0d06f;
+  --zoom-ring: #ffe9a8;
+
+  /* The playhead, and the transport's one coloured button. */
+  --indicator-deep: #1668c9;
+  --play: #30a46c;
+
+  /* The rail's mark, and the slider grip under the pointer. */
+  --selected: #4296fc;
+  --toggle: #30a46c;
+}
+
+/* The board the panels sit on. Verbatim from the app. */
+@utility dot-grid {
+  background-image: radial-gradient(var(--editor-line) 1px, transparent 1px);
+  background-size: 16px 16px;
+  /* Half a cell, so the pattern is not clipped flush against the edges. */
+  background-position: 8px 8px;
 }
 
 @utility brand-gradient {
   background-image: linear-gradient(115deg, var(--brand-from), var(--brand-to));
 }
 
-/* A one-pixel top highlight, the thing that makes a dark card look lit rather
-   than flat. Cheap version of a two-layer border. */
+/* A one-pixel top highlight, the thing that keeps a card from reading as flat.
+   Cheap version of a two-layer border. The colour is a token because the
+   direction reverses between the themes — see the note beside `--lit`. */
 @utility lit {
-  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 1px 0 0 var(--lit);
 }
 
 @layer base {
@@ -1532,12 +1693,14 @@ body:has([data-hero]) [data-wash] {
     outline-offset: 2px;
   }
 
-  /* The site is dark-only, so tell the form controls that too — otherwise the
-     autofill background lands as white-on-white in Chrome. */
+  /* Inherited rather than fixed, so a control follows the theme of the page it
+     is on: `dark` inside the app and the sign-in form, `light` everywhere
+     public. The reason to say anything at all is Chrome's autofill, which lands
+     white-on-white on a control it thinks is light inside a dark form. */
   input,
   button,
   textarea {
     font: inherit;
-    color-scheme: dark;
+    color-scheme: inherit;
   }
 }

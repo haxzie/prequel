@@ -26,7 +26,7 @@ export async function GitHubStars() {
       rel="noopener noreferrer"
       className={
         "flex items-center gap-2 rounded-full px-3 py-2 text-sm text-fg transition-colors " +
-        "hover:bg-white/8"
+        "hover:bg-fg/8"
       }
       // The count is decoration a screen reader would read as a bare number
       // hanging off a link, so the whole control gets one name instead.

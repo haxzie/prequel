@@ -2,7 +2,6 @@ import { ButtonLink } from "@/components/Button";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { Container } from "@/components/Section";
-import { Wash } from "@/components/Wash";
 
 /**
  * The 404, which has to dress itself.
@@ -19,7 +18,6 @@ import { Wash } from "@/components/Wash";
 export default function NotFound() {
   return (
     <div className="relative flex min-h-dvh flex-col">
-      <Wash />
       <Nav />
       <main className="flex-1">
         <Container className="py-32 text-center">

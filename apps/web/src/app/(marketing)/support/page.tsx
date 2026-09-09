@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { ButtonLink } from "@/components/Button";
 import { Container, SectionHeading } from "@/components/Section";
@@ -53,12 +52,7 @@ export default function Support() {
             align="centre"
           />
           <div className="mt-10 flex flex-wrap justify-center gap-3">
-            <a
-              href={`mailto:${SUPPORT_EMAIL}`}
-              className="inline-flex h-11 items-center rounded-full bg-white px-6 text-sm font-medium text-bg transition-colors hover:bg-white/90"
-            >
-              {SUPPORT_EMAIL}
-            </a>
+            <ButtonLink href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</ButtonLink>
             <ButtonLink href="/download" variant="secondary">
               Download for Mac
             </ButtonLink>
@@ -104,12 +98,9 @@ export default function Support() {
               with the answers written out rather than linked to a help centre.
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <Link
-                href="/#faq"
-                className="inline-flex h-11 items-center rounded-full border border-line bg-elevated px-6 text-sm font-medium text-fg transition-colors hover:border-muted/40 hover:bg-surface"
-              >
+              <ButtonLink href="/#faq" variant="secondary">
                 Product FAQ
-              </Link>
+              </ButtonLink>
               <ButtonLink href="/pricing" variant="secondary">
                 Pricing and licences
               </ButtonLink>

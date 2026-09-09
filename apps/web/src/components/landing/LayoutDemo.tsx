@@ -145,6 +145,7 @@ export function LayoutDemo() {
                 </>
               }
               lede="Ten ways to frame the same take. Camera in a corner, beside the screen, under it, splitting the frame with it, or gone entirely. Pick one for the whole video, or a different one for every clip."
+              cta="Try it free"
             />
           </div>
         </div>

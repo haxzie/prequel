@@ -35,7 +35,7 @@ const MORE = "+1k";
 const TOOLTIP = "Liked by 1000s of creators";
 
 /** One disc, so the tally cannot drift from the faces it stands in line with. */
-const DISC = "size-7 shrink-0 rounded-full ring-2 ring-white";
+const DISC = "size-7 shrink-0 rounded-full ring-2 ring-bg";
 
 export function StarredBy({ className = "" }: { className?: string }) {
   return (
@@ -52,25 +52,25 @@ export function StarredBy({ className = "" }: { className?: string }) {
           alt=""
           width={28}
           height={28}
-          // White rings, the button's own colour beside it — the stack reads as
-          // one object with the call to action rather than as pictures that
-          // happen to sit next to it. They also separate the discs from each
-          // other, which a ring in the page's background does only while the
-          // backdrop behind them stays dark.
+          // The page's own colour, which is what separates the discs from each
+          // other where they overlap: the ring knocks each face out of the one
+          // behind it. It was a literal white when the page was near-black —
+          // which read as a rim rather than a gap, and vanished the moment the
+          // page turned to paper. Same idiom as the changelog's rail nodes.
           className={`${DISC} object-cover`}
         />
       ))}
 
       {/* Last, so the row reads left to right as faces and then the rest of
-          them. White, matching the button it stands beside, with the count in
-          grey on it.
+          them. The ink colour, matching the button it stands beside, with the
+          count knocked out of it.
 
           `text-bg/60` rather than the site's `--muted`: that grey is tuned for
-          type on the near-black page and comes out around 3:1 on white, which
-          at ten pixels is a smudge. This is the page's own ink, let down until
+          type on the page itself and comes out near 3:1 against this disc, which
+          at ten pixels is a smudge. This is the page's own ground, let down until
           it reads as grey rather than as a second label. */}
       <span
-        className={`${DISC} grid place-items-center bg-white text-[10px] leading-none font-medium tracking-tight text-bg/60`}
+        className={`${DISC} grid place-items-center bg-fg text-[10px] leading-none font-medium tracking-tight text-bg/60`}
       >
         {MORE}
       </span>
@@ -86,7 +86,7 @@ export function StarredBy({ className = "" }: { className?: string }) {
         role="tooltip"
         className={
           "lit pointer-events-none absolute bottom-full left-1/2 mb-2.5 -translate-x-1/2 " +
-          "rounded-lg border border-white/8 bg-elevated px-2.5 py-1.5 text-xs whitespace-nowrap " +
+          "rounded-lg border border-fg/8 bg-elevated px-2.5 py-1.5 text-xs whitespace-nowrap " +
           "text-fg opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
         }
       >

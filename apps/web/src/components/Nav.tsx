@@ -49,11 +49,11 @@ export function Nav() {
               <Link
                 key={item.href}
                 href={item.href}
-                // White rather than muted, so the row reads as navigation rather
-                // than as small print. The hover moves to a background instead of a
-                // colour: there is nowhere brighter than `--fg` for the text to go,
-                // and a link with no hover state at all reads as inert.
-                className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-white/8"
+                // Full `--fg` rather than muted, so the row reads as navigation
+                // rather than as small print. The hover moves to a background
+                // instead of a colour: the text is already at the end of its
+                // range, and a link with no hover state at all reads as inert.
+                className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-fg/8"
               >
                 {item.label}
               </Link>
@@ -73,7 +73,7 @@ export function Nav() {
               way back in. */}
           <Link
             href="/login"
-            className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-white/8"
+            className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-fg/8"
           >
             Sign in
           </Link>

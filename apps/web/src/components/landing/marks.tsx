@@ -10,11 +10,18 @@
  * across the breakpoints and the chips hold their proportions the whole way. A
  * chip with 6px of padding is a lozenge at one size and a hairline at the other.
  *
- * The field carries the colour and the mark stays white. Tinting both left the
- * mark competing with its own background at the size these are drawn, where a
- * white glyph on a tinted field reads at a glance. Each section takes the
- * colour its own timeline uses, which is the one thing tying a heading to the
- * picture beside it.
+ * The field is solid and the word and mark are both knocked out of it in white.
+ * A quarter-strength wash of the hue was what these carried on the dark site,
+ * where the page did the work of making a tint read; on white a tint is nearly
+ * the page itself, and neither white type nor a white glyph has anything to sit
+ * against. Filled, all three clear AA at the size a heading sets them.
+ *
+ * `rounded-full` with the padding opened up to match. A full round eats into the
+ * ends of a word — the same note is on the hero's title card, which is the shape
+ * these now echo.
+ *
+ * Each section takes the colour its own timeline uses, which is the one thing
+ * tying a heading to the picture beside it.
  *
  * Every chip carries `data-heading-chip`, which `SectionHeading` looks for to
  * relax its leading. Two chipped lines at the heading's default line height sit
@@ -47,12 +54,12 @@ function Chip({ tone, mark, children }: { tone: string; mark: ReactNode; childre
   return (
     <span
       data-heading-chip
-      className={`inline-flex items-baseline gap-[0.2em] rounded-[0.22em] border px-[0.3em] pt-[0.04em] pb-[0.12em] leading-[1] whitespace-nowrap ${tone}`}
+      className={`inline-flex items-baseline gap-[0.2em] rounded-full px-[0.45em] pt-[0.04em] pb-[0.12em] leading-[1] whitespace-nowrap text-white ${tone}`}
     >
       {children}
       <span
         aria-hidden
-        className="inline-flex size-[0.68em] translate-y-[0.06em] items-center justify-center text-white [&_svg]:size-full"
+        className="inline-flex size-[0.68em] translate-y-[0.06em] items-center justify-center [&_svg]:size-full"
       >
         {mark}
       </span>
@@ -61,11 +68,14 @@ function Chip({ tone, mark, children }: { tone: string; mark: ReactNode; childre
 }
 
 /** The zooms are the accent, which is what their playhead is drawn in. */
-const ZOOM_TONE = "border-accent/70 bg-accent/25";
-/** The layouts are iris, the clip stroke the editor's timeline uses. */
-const LAYOUT_TONE = "border-iris/70 bg-iris/25";
+const ZOOM_TONE = "bg-accent";
+/** The layouts are the clip's purple. `--lilac` and not `--iris`: the neat clip
+    stroke is #c000f0, and filled at that size on a white page it is the loudest
+    thing in the section by a distance — it pulls the eye off the picture the
+    heading is naming. `--lilac` is the same family two steps back. */
+const LAYOUT_TONE = "bg-lilac";
 /** The subtitles are green, which is what their own track is lit in. */
-const CAPTION_TONE = "border-positive/60 bg-positive/20";
+const CAPTION_TONE = "bg-positive";
 
 /** A magnifier with a plus in it: zoom, rather than search. */
 export function ZoomWord({ children }: { children: string }) {

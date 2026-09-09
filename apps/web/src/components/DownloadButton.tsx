@@ -21,15 +21,28 @@ export function DownloadCta({
    * it shares the button's line, and the small print stays under both.
    */
   beside,
+  /**
+   * The button as one item in a column of copy rather than as the page's call to
+   * action: no frame, and aligned to the start of the column.
+   *
+   * The footer, and only the footer. The frame exists to gather a centred pair
+   * into one object in the middle of a page; in a left-aligned column there is
+   * nothing to gather and a panel around a single button reads as a second,
+   * quieter call to action competing with the real one further up. One prop
+   * rather than two because the two always travel together — a framed button
+   * aligned left is a box with a ragged edge against the paragraph above it.
+   */
+  bare = false,
 }: {
   className?: string;
   beside?: React.ReactNode;
+  bare?: boolean;
 }): React.ReactNode {
   return (
     // Wide enough for the pair on one line when there is something beside the
     // button, and the original width when there is not — every other caller
     // passes nothing and must not reflow.
-    <div className={`mx-auto ${beside ? "max-w-2xl" : "max-w-lg"} ${className}`}>
+    <div className={`${bare ? "" : "mx-auto"} ${beside ? "max-w-2xl" : "max-w-lg"} ${className}`}>
       {/* The frame around the pair.
           
           `w-fit mx-auto` so it hugs its contents: stretched to the column it
@@ -38,15 +51,19 @@ export function DownloadCta({
           button's own — a rounded rectangle around a pill leaves four crescents
           of glass at the corners, which is the shape you notice.
           
-          `backdrop-blur` over a flat panel colour, because what is behind it
-          here is the hero's gradient and the wash moving under it; a solid
-          would cut a hole in both. The border follows the site's hairline
-          idiom, and `lit` is the one-pixel inner highlight every raised surface
-          on this page carries. */}
+          A flat grey panel, one step off the page. It used to be a pane of
+          glass — a white film over a `backdrop-blur` — because what sat behind it
+          was the hero's shader and the wash drifting under it, and a solid would
+          have cut a hole in both. There is nothing behind it now, and a blur with
+          nothing to blur is a composited layer for no reason. The border follows
+          the site's hairline idiom, and `lit` is the one-pixel inner highlight
+          every raised surface on this page carries. */}
       <div
         className={
-          "lit mx-auto flex w-fit flex-col items-center justify-center gap-4 rounded-full " +
-          "border border-white/8 bg-white/5 p-1.5 backdrop-blur-md sm:flex-row"
+          "flex w-fit flex-col gap-4 rounded-full sm:flex-row " +
+          (bare
+            ? "items-start justify-start"
+            : "lit mx-auto items-center justify-center border border-line bg-elevated p-1.5")
         }
       >
         <ButtonLink href="/download">
@@ -68,7 +85,12 @@ export function DownloadCta({
           the page: the footer says which Macs the build runs on, and the
           pricing section a screen down says how long the trial is. Neither is
           the thing a hand hovering over a download button is worried about. */}
-      <p className="mt-3.5 flex items-center justify-center gap-1.5 font-mono text-[11px] tracking-wide text-muted">
+      <p
+        className={
+          "mt-3.5 flex items-center gap-1.5 font-mono text-[11px] tracking-wide text-muted " +
+          (bare ? "justify-start" : "justify-center")
+        }
+      >
         <CardIcon className="size-3.5" />
         No credit card required
       </p>

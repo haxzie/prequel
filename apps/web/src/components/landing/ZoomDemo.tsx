@@ -120,6 +120,7 @@ export function ZoomDemo() {
               </>
             }
             lede="Prequel reads the pointer as it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass, playing — not a picture of it."
+            cta="Record your first take"
           />
 
           {/*

@@ -1,3 +1,4 @@
+import type { Viewport } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -13,13 +14,23 @@ import { CONTACT_EMAIL, SITE } from "@/lib/site";
  * for somebody who has already decided, and a "Download" button beside a
  * sign-in form is an invitation to abandon the thing they came to finish.
  *
- * The wash stays. It is the one piece of the site's identity that costs nothing
- * to keep — no links, no decisions — and without it these pages read as a
- * different product than the one that sent you here.
+ * Dark, while the pages that link here are paper. The reasoning is the same one
+ * that removed the nav: this is the front door of the app, not the last page of
+ * the site, and the app it opens is dark. `data-theme` is set here rather than on
+ * the document so the public routes never see it.
+ *
+ * The wash stays, and this is now the only place it renders. It is the one piece
+ * of the site's identity that costs nothing to keep — no links, no decisions —
+ * and its three hues are the icon's, so it reads as the same product either way.
  */
+export const viewport: Viewport = { themeColor: "#0b0d11", colorScheme: "dark" };
+
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex min-h-dvh flex-col">
+    // `bg-bg` explicitly rather than inheriting the document's: the body is
+    // paper now, and `min-h-dvh` on a tall form leaves the rest of the scroll
+    // showing through.
+    <div data-theme="dark" className="relative flex min-h-dvh flex-col bg-bg">
       <Wash />
 
       <header className="flex items-center justify-center px-5 pt-10 sm:pt-14">

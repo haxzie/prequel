@@ -14,6 +14,12 @@ GIF.
 
 **Apple Silicon, macOS 14+.**
 
+<p align="center">
+  <a href="https://prequel.sh/download">
+    <img src="https://img.shields.io/badge/Download%20for%20Mac-e14b15?style=for-the-badge&logo=apple&logoColor=white" alt="Download Prequel for Mac">
+  </a>
+</p>
+
 ```
 apps/
   desktop/    @prequel/desktop — Electron 43 + Vite 8 + React 19

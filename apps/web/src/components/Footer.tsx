@@ -24,7 +24,7 @@ export function Footer({ badge }: { badge?: ReactNode }) {
             <span className="text-base font-medium tracking-tight text-fg">Prequel</span>
           </Link>
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted">{SITE.description}</p>
-          <DownloadCta className="mt-6 max-w-md" />
+          <DownloadCta className="mt-6 max-w-md" bare />
         </div>
 
         {/* Three groups rather than a flex row: the middle one carries sixteen

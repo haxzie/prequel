@@ -1,5 +1,9 @@
 /**
- * The colour at the top of the page.
+ * The colour at the top of the sign-in page.
+ *
+ * The only caller is `(auth)/layout.tsx`, and the only dark surface with a top
+ * edge to light. The public site used to open on this too and is paper now; the
+ * dashboard has a sidebar where this would go.
  *
  * Three blurred circles rather than a linear gradient doing the whole job: a ramp
  * between two hues passes through the dead grey between them, and the icon these
@@ -7,9 +11,9 @@
  * Overlapping blurs keep each hue at full saturation and let them mix only where
  * they meet, which is what reads as light rather than as a fill.
  *
- * The hues are the `-deep` tokens, shared with the hero shader's
- * mesh — see the note beside them in `globals.css` for why a field wants the
- * composited value and not the neat one.
+ * The hues are the `-deep` tokens — see the note beside them in `globals.css`
+ * for why a field wants the composited value and not the neat one. The hero
+ * shader that shared them is gone.
  *
  * `absolute`, not `fixed`: this belongs to the top of the *document* and should
  * scroll away with the hero. Body establishes no containing block, so `top-0`
@@ -43,10 +47,9 @@ export function Wash() {
       {/* Pulled above the top edge so only the lower, widest part of each circle
           is on the page — a circle wholly inside reads as a dot.
 
-          The `-deep` tokens rather than the plain ones, so the pages without a
-          hero are lit by the same three colours as the pages with one. Neat
-          `--iris` here was a bright lilac wash across the top of `/pricing`
-          while `/` had a dark field, and the two read as different sites.
+          The `-deep` tokens rather than the plain ones. Neat `--iris` at this
+          size stops reading as light and becomes a lit lilac panel that takes
+          the page over.
 
           The opacities look high for something meant to be subtle and are not:
           the blur spreads each circle over a hundred pixels in every direction

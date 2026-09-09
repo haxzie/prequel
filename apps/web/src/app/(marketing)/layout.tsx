@@ -3,11 +3,15 @@ import type { ReactNode } from "react";
 import { Footer } from "@/components/Footer";
 import { JsonLd } from "@/components/JsonLd";
 import { Nav } from "@/components/Nav";
-import { Wash } from "@/components/Wash";
 import { organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 
 /**
- * The public site's chrome: the wash, the nav and the footer.
+ * The public site's chrome: the nav and the footer.
+ *
+ * There was a background wash here too — three blurred circles of the icon's
+ * sunrise at the top of every page. It was tuned against a near-black ground and
+ * the light site does without it entirely: paper, and the colour comes from the
+ * illustrations and the mark. `Wash` still exists for the sign-in page.
  *
  * This is what the root layout used to be. It moved down here when the app grew
  * pages that are not marketing — a dashboard has its own header, and a sign-in
@@ -29,7 +33,6 @@ export default function MarketingLayout({
   return (
     <>
       <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
-      <Wash />
       <Nav />
       <main>{children}</main>
       <Footer badge={badge} />

@@ -4,7 +4,6 @@ import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import { StarredBy } from "@/components/StarredBy";
-import { ShaderWash } from "@/components/landing/ShaderWash";
 import { SITE } from "@/lib/site";
 
 type HeroProps = {
@@ -24,6 +23,98 @@ type HeroProps = {
  * ease reads as four separate entrances; this reads as one wave.
  */
 const STAGGER_MS = 110;
+
+/** The mark's own size and corner, shared with the shapes beside it. */
+const MARK_SIZE = 104;
+const MARK_RADIUS = 0.42;
+
+/** The clear space between one shape and the next. */
+const ECHO_GAP = 22;
+
+/**
+ * How present each shape is, outwards from the mark.
+ *
+ * Written out rather than compounded from a single ratio. The three are not a
+ * curve — the last one is meant to be nearly gone, which is a smaller step than
+ * a constant falloff from the first two would give, and the sequence is short
+ * enough that three numbers are clearer than the formula that would produce
+ * them.
+ *
+ * Three a side rather than more. A fourth at this rate is under 5%, which on
+ * white is a shape you cannot see and the browser still paints — and on a wide
+ * monitor it is the one that survives the clip and reads as a smudge near the
+ * edge of the screen.
+ */
+const ECHO_OPACITY = [0.5, 0.3, 0.1];
+
+/**
+ * The shapes flanking the mark: the icon's own outline in grey, repeated
+ * outwards and fainter each time until it is gone.
+ *
+ * Absolute, so none of this is in the layout. The mark is centred by the column
+ * it sits in and has to stay exactly where it is — three shapes a side added to
+ * the flow would push it off centre by nothing at all on a wide screen and by
+ * half a shape on a narrow one, which is a headline that moves as the window
+ * resizes.
+ *
+ * The clip that stops these scrolling the page sideways is on the `<section>`
+ * and not on the row they sit in. The row is inside the headline's `max-w-3xl`
+ * column, and these are wider than that on purpose — clipping there cut the
+ * outermost pair off at 768px on every screen, however wide. `overflow-x-clip`
+ * rather than `hidden` so it does not become a scroll container, and on one axis
+ * only, which the mark needs: its halo is a shadow spreading well past the row's
+ * own height. Same composition the demo track uses.
+ *
+ * Each shape is two elements, and that is not decoration. `hero-rise` is
+ * declared with `fill-mode: both`, so the keyframe's closing `opacity: 1` sticks
+ * to whatever it animated and beats an inline opacity on the same element — with
+ * both on one span the three arrived at full strength and never faded at all.
+ * The outer span holds the fade and the inner one is animated, so the two
+ * multiply instead of fighting.
+ *
+ * Each one arrives after the one inside it. The mark is the hero's first row, so
+ * these step out from its own entrance rather than from the top of the sequence,
+ * and the last of them lands before the headline underneath has finished.
+ */
+function Echoes() {
+  // Outwards from the mark: the first sits a gap beyond its edge, and each one
+  // after that a whole shape and a gap further out.
+  const offsets = ECHO_OPACITY.map(
+    (_, i) => MARK_SIZE / 2 + ECHO_GAP + i * (MARK_SIZE + ECHO_GAP),
+  );
+
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0">
+      {offsets.map((offset, i) =>
+        (["left", "right"] as const).map((side) => (
+          <span
+            key={`${side}-${offset}`}
+            className="absolute top-1/2 block -translate-y-1/2"
+            style={{
+              width: MARK_SIZE,
+              height: MARK_SIZE,
+              [side]: `calc(50% + ${offset}px)`,
+              opacity: ECHO_OPACITY[i],
+            }}
+          >
+            <span
+              data-hero-enter
+              // Filled with the page's own panel grey and edged with the site's
+              // hairline, which is the same pair every card further down the page
+              // is drawn with. A fill this light needs the edge: without it the
+              // squircle stops being a shape and becomes a soft patch.
+              className="animate-hero-rise squircle block size-full border border-fg/10 bg-elevated"
+              style={{
+                borderRadius: MARK_SIZE * MARK_RADIUS,
+                animationDelay: `${(i + 1) * 90}ms`,
+              }}
+            />
+          </span>
+        )),
+      )}
+    </span>
+  );
+}
 
 /**
  * The block above the fold, on `/` and on every `/create/<slug>` page.
@@ -45,37 +136,36 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
   const rise = () => ({ animationDelay: `${row++ * STAGGER_MS}ms` });
 
   return (
-    // `relative` so the shader behind this block has something to measure its
-    // offsets against, and nothing else: `position: relative` with an automatic
-    // z-index creates no stacking context, so the shader's `-z-10` still
-    // escapes to the body's — which is the layer the CSS wash already sits in.
-    // Adding `isolate` here would trap it and paint it behind the page.
-    //
-    // `data-hero` is what `globals.css` keys the `Wash` rule on. The site's CSS
-    // wash belongs to the top of every document and this block wants the shader
-    // alone behind it, so the rule hides the wash wherever a hero renders. The
-    // attribute is in the server's HTML, so it resolves on the first paint.
-    <section data-hero className="relative pt-20 pb-16 sm:pt-28">
-      {/* The only thing behind the headline. There is no static layer under it:
-          on a browser with no WebGPU, and in the moment before the first frame,
-          the hero is the page background and the warm halo under the mark. */}
-      <ShaderWash />
+    // Nothing behind this block, and that is the whole design: paper, the mark,
+    // the sentence. There used to be a WebGPU shader stack here — a drifting
+    // mesh of the icon's sunrise, read as light pooling in a dark room — and it
+    // went when the site did, because that idea has no light-theme equivalent
+    // and it was 700kB to say it. The `relative` stays for the flow, not for a
+    // canvas to measure itself against.
+    <section className="relative overflow-x-clip pt-20 pb-16 sm:pt-28">
       <Container>
         {/* Centred, so `mx-auto` on every width-capped child rather than one
             wrapper: the measures differ on purpose — the headline is allowed to
             run wider than the paragraph, and the form narrower than both — and
             a single `max-w` would flatten that into one column. */}
         <div className="mx-auto max-w-3xl text-center">
-          {/* Two shadows: a neutral one for depth and a warm one picking up
-              the icon's own sun gradient. With no static field behind the hero,
-              that warm halo is the only colour above the fold until the shader
-              has a frame, and the whole of it on a browser that never will. */}
-          <div data-hero-enter className="animate-hero-rise" style={rise()}>
-            <Logo
-              size={104}
-              radius={0.42}
-              className="mb-8 shadow-[0_26px_50px_-16px_rgb(0_0_0_/_0.8),0_14px_46px_-14px_rgb(225_75_21_/_0.5)]"
-            />
+          {/* Two shadows: a neutral one for depth and a warm one picking up the
+              icon's own sun gradient. The warm one is now the only colour above
+              the fold at all, so it carries more than it used to and is set
+              wider than the neutral one rather than under it.
+
+              Both are far lighter than the pair this replaced. At 80% black over
+              a dark field a drop shadow is depth; on paper it is a grey bruise
+              under the mark, and the eye reads the smudge before the icon. */}
+          <div className="relative mb-8 flex justify-center">
+            <Echoes />
+            <div data-hero-enter className="animate-hero-rise" style={rise()}>
+              <Logo
+                size={MARK_SIZE}
+                radius={MARK_RADIUS}
+                className="shadow-[0_18px_36px_-14px_rgb(20_21_24_/_0.18),0_16px_52px_-12px_rgb(225_75_21_/_0.35)]"
+              />
+            </div>
           </div>
           {/* The rows that are wrapped rather than given the class directly —
               this one, the mark above and the button below — are wrapped

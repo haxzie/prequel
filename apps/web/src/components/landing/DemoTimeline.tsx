@@ -98,7 +98,7 @@ export function DemoTimeline({
             data-demo-slice={index}
             aria-label={`Play from ${slice.label}`}
             onClick={() => seek(index)}
-            className={`${sliceClass} flex h-11 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border transition-transform active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg sm:h-12 sm:gap-2`}
+            className={`${sliceClass} flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border transition-transform active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg sm:h-9 sm:gap-2`}
             // A slice later than the one before it, and nothing else about it
             // differs — which is why there is one keyframe rather than one per
             // slice.

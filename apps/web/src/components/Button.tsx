@@ -8,9 +8,12 @@ const BASE =
   "inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60";
 
 const VARIANTS: Record<Variant, string> = {
-  // White on a dark page is the loudest a button gets, so the brand gradient is
-  // left to the surfaces it decorates rather than competing with every action.
-  primary: "bg-white text-bg hover:bg-white/90",
+  // The ink colour, which is the loudest a button gets on either theme: a
+  // near-black pill on paper, a near-white one in the app. `--fg` and not a
+  // literal, because this one component serves the public site and the dashboard
+  // and a literal `white` was correct in exactly one of them. The brand gradient
+  // stays on the surfaces it decorates rather than competing with every action.
+  primary: "bg-fg text-bg hover:bg-fg/90",
   secondary: "lit border border-line bg-elevated text-fg hover:border-muted/40 hover:bg-surface",
   ghost: "text-muted hover:text-fg",
   // Destroying something. A variant rather than a `className` on a primary

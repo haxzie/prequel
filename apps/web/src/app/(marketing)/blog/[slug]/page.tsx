@@ -99,7 +99,7 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
                 alt=""
                 width={40}
                 height={40}
-                className="size-10 rounded-full ring-1 ring-white/10"
+                className="size-10 rounded-full ring-1 ring-fg/10"
               />
               <div>
                 <p className="text-sm font-medium text-fg">{AUTHOR.name}</p>
@@ -215,13 +215,18 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
               than as a tinted panel. Linear rather than radial: a radial
               centred on the mark bleeds through the left border and thickens
               it. `overflow-hidden` on the panel is what keeps the layer
-              inside the corner radius. */}
+              inside the corner radius.
+
+              Weaker than it was, and doing the opposite job. Over a near-black
+              panel this was an additive lift and needed 18% to register at all;
+              on a light one the same figure is a peach block with a hard end to
+              it. Enough now to tint the corner the mark sits in. */}
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
               backgroundImage:
-                "linear-gradient(to right, rgb(225 75 21 / 0.18), rgb(225 75 21 / 0.06) 34%, transparent 68%)",
+                "linear-gradient(to right, rgb(225 75 21 / 0.09), rgb(225 75 21 / 0.03) 34%, transparent 68%)",
             }}
           />
           {/* The mark centres on the heading and paragraph alone, so the row
@@ -229,11 +234,14 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
               the button inside, the column it centres against is taller and
               the mark drifts below the heading. */}
           <div className="relative flex items-center gap-6">
-            {/* The same warm halo the hero mark carries, at the smaller size. */}
+            {/* The same warm halo the hero mark carries, at the smaller size —
+                and lightened with it, for the reason written out there: a
+                70%-black drop shadow on a light panel is a smudge the eye reads
+                before the icon. */}
             <Logo
               size={MARK_SIZE}
               radius={0.42}
-              className="shadow-[0_16px_32px_-12px_rgb(0_0_0_/_0.7),0_10px_28px_-10px_rgb(225_75_21_/_0.45)]"
+              className="shadow-[0_12px_24px_-12px_rgb(20_21_24_/_0.16),0_10px_30px_-10px_rgb(225_75_21_/_0.32)]"
             />
             <div>
               <h2 className="text-base font-medium text-fg">Try it yourself</h2>

@@ -32,7 +32,10 @@ export function Logo({
 }) {
   return (
     <span
-      className={`squircle relative inline-block shrink-0 overflow-hidden ring-1 ring-white/10 ${className}`}
+      // `ring-fg/10` and not a literal white: the mark renders on paper in the
+      // nav and on near-black in the sidebar, and the rim has to lift it off
+      // whichever one it lands on.
+      className={`squircle relative inline-block shrink-0 overflow-hidden ring-1 ring-fg/10 ${className}`}
       style={{ width: size, height: size, borderRadius: size * radius }}
     >
       <Image src={mark} alt="" width={size} height={size} className="h-full w-full" />

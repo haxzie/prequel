@@ -52,8 +52,24 @@ first, and the project root here is the repo root. Without the flag this app's
 unstyled with nothing reported. If the site suddenly looks like plain HTML, that
 is where to look.
 
-The site is **dark only**. `color-scheme` is fixed and there is no
-`prefers-color-scheme` block to keep in sync.
+**Two themes, split by surface rather than by preference.** The public pages —
+marketing, the 404, a shared link — are light, and that is what `:root` carries,
+so `html`, `body`, the scrollbars and the form controls all inherit it. The
+signed-in app and the sign-in flow are dark, scoped under `[data-theme="dark"]`
+set in `(auth)/layout.tsx` and `app/app/layout.tsx`. `@theme inline` is what
+makes the scope work: it substitutes the `var()` into each utility rather than
+its value, so `bg-surface` resolves wherever it renders.
+
+There is still no `prefers-color-scheme` block. Which theme a page gets is a
+property of the page, not of the reader's setting.
+
+Two consequences worth knowing before editing a component. A literal `white` or
+`black` in a class is only correct inside something that is dark on both themes —
+the CSS product mocks on the landing page, which draw a dark editor being
+recorded, and a shared link's video stage. Everywhere else the ink and the ground
+are `--fg` and `--bg`, in that direction, and `bg-fg/8` is the hover tint. And
+`--surface` steps *down* from `--bg` on light and *up* from it on dark, which is
+the one thing that inverts structurally rather than by value.
 
 ## The mark
 

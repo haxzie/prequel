@@ -21,7 +21,7 @@ export default function LibraryLoading() {
       <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }, (_, index) => (
           <li key={index} className="rounded-2xl border border-line bg-elevated">
-            <div className="aspect-video w-full rounded-t-2xl bg-white/6" />
+            <div className="aspect-video w-full rounded-t-2xl bg-fg/6" />
             <div className="flex flex-col gap-3 p-4">
               <div>
                 <Skeleton className="h-4 w-3/4" />

@@ -137,6 +137,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             eyebrow="Automatic"
             title="It arrives already directed"
             lede="A raw screen recording is flat — one distance from the viewer for the whole take, with the thing that matters too small to see. Prequel watches where you click and type while it records, and opens the editor with that pass already made."
+            cta="Try Prequel free"
           />
 
           <div className="rounded-2xl border border-line bg-surface p-2">
@@ -162,6 +163,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             eyebrow="The editor"
             title="Everything you would have done in post"
             lede="It opens by itself when you stop recording, on the take you just made. Nothing to import, nothing to line up."
+            cta="See it on your Mac"
             align="centre"
           />
           <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
@@ -184,6 +186,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             eyebrow="Quality"
             title="Exports that hold up"
             lede="A video that looks produced is worth nothing if the file is soft. Capture and export run on your Mac's own media engine — hardware H.264 or HEVC, composited in Metal — so 1080p60 records without dropping frames and 4K is a setting rather than a compromise."
+            cta="Start recording"
           />
           <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
             {SPECS.map(([label, value]) => (
@@ -204,6 +207,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
             eyebrow="Formats"
             title="One MP4, shaped for wherever it is going"
             lede="Switch a recording from landscape to vertical and the look holds — the framing is stored in proportions, not pixels, so nothing slides off the frame on the way."
+            cta="Download for Mac"
             align="centre"
           />
           <ul className="mx-auto mt-10 flex max-w-3xl flex-wrap justify-center gap-2">

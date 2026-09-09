@@ -120,6 +120,7 @@ export function CaptionsDemo() {
                 </>
               }
               lede="Every word is transcribed on your Mac while you record. Pick a look, from a plain plate to each word coming into focus as it is said, then open the transcript and type. Delete a sentence there and it leaves the video with it."
+              cta="Record now"
             />
           </div>
 

@@ -122,12 +122,7 @@ export default function About() {
               address.
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <a
-                href={`mailto:${CONTACT_EMAIL}`}
-                className="inline-flex h-11 items-center rounded-full bg-white px-6 text-sm font-medium text-bg transition-colors hover:bg-white/90"
-              >
-                {CONTACT_EMAIL}
-              </a>
+              <ButtonLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</ButtonLink>
               <ButtonLink href="/download" variant="secondary">
                 Download for Mac
               </ButtonLink>

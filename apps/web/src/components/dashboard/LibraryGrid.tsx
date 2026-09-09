@@ -99,7 +99,7 @@ function Card({ video }: { video: LibraryVideo }) {
         <button
           type="button"
           role="menuitem"
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-white/8 [&_svg]:size-3.5"
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-fg/8 [&_svg]:size-3.5"
           onClick={() => {
             setMenuOpen(false);
             setError(null);

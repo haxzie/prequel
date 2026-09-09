@@ -70,7 +70,7 @@ export function Sidebar({
               prefetch={current ? false : undefined}
               aria-current={current ? "page" : undefined}
               className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 ${
-                current ? "bg-white/8 text-fg" : "text-muted hover:bg-white/5 hover:text-fg"
+                current ? "bg-fg/8 text-fg" : "text-muted hover:bg-fg/5 hover:text-fg"
               }`}
             >
               <Icon />
@@ -115,7 +115,7 @@ function TeamPicker({ teams, activeTeamId }: { teams: Team[]; activeTeamId: stri
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <span className="flex min-w-0 flex-1 items-center gap-1 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-fg transition-colors hover:bg-white/8">
+        <span className="flex min-w-0 flex-1 items-center gap-1 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-fg transition-colors hover:bg-fg/8">
           <span className="min-w-0 truncate">{active.name}</span>
           <ChevronIcon />
         </span>
@@ -126,7 +126,7 @@ function TeamPicker({ teams, activeTeamId }: { teams: Team[]; activeTeamId: stri
           key={one.id}
           type="button"
           role="menuitem"
-          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-white/8"
+          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-fg/8"
           onClick={async () => {
             if (one.id === activeTeamId) return setOpen(false);
 
@@ -159,7 +159,7 @@ function UserMenu({ user }: { user: SessionUser }) {
         // below it would open off the screen.
         placement="up"
         trigger={
-          <span className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/8">
+          <span className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-fg/8">
             <Avatar seed={user.email} size={32} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-fg">{name}</span>
@@ -171,7 +171,7 @@ function UserMenu({ user }: { user: SessionUser }) {
         <button
           type="button"
           role="menuitem"
-          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-white/8"
+          className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-fg hover:bg-fg/8"
           onClick={async () => {
             await authClient.signOut();
             window.location.href = "/";

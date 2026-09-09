@@ -16,7 +16,7 @@ import type { ReactNode } from "react";
 
 /** One placeholder. Sized by the caller; the animation lives on the wrapper. */
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div aria-hidden="true" className={`rounded bg-white/8 ${className}`} />;
+  return <div aria-hidden="true" className={`rounded bg-fg/8 ${className}`} />;
 }
 
 /**

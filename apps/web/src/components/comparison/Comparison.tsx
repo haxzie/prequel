@@ -73,7 +73,7 @@ function Mark({ competitor }: { competitor: Competitor }) {
   if (logo) {
     return (
       <span
-        className="squircle relative block size-16 overflow-hidden bg-surface ring-1 ring-white/10"
+        className="squircle relative block size-16 overflow-hidden bg-elevated ring-1 ring-fg/10"
         style={shape}
       >
         {/* A plain `img`: `next/image` refuses SVG unless `dangerouslyAllowSVG`
@@ -89,8 +89,11 @@ function Mark({ competitor }: { competitor: Competitor }) {
             size of ours standing beside it, which is a thumb on the scale.
 
             The surface underneath still matters for the marks that arrive on
-            transparency: this site is dark only, so a near-black one dropped
-            straight onto the page would disappear. */}
+            transparency, and which way it matters flipped when the site went
+            light. It used to be the near-black marks that vanished into the
+            page; now it is the white ones, so the tile is `--elevated` rather
+            than the page itself — a step down from white, enough to hold the
+            edge of a white mark without reading as a grey box. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logo}

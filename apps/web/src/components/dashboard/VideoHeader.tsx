@@ -69,7 +69,7 @@ export function VideoHeader({
           href="/app"
           aria-label="Back to library"
           title="Back to library"
-          className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/8 hover:text-fg [&_svg]:size-4"
+          className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-fg/8 hover:text-fg [&_svg]:size-4"
         >
           <BackIcon />
         </Link>
@@ -104,7 +104,7 @@ export function VideoHeader({
             <button
               type="submit"
               disabled={saving}
-              className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm text-fg hover:bg-white/8 disabled:opacity-60"
+              className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm text-fg hover:bg-fg/8 disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -128,7 +128,7 @@ export function VideoHeader({
               type="button"
               aria-label="Rename"
               title="Rename"
-              className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-white/8 hover:text-fg [&_svg]:size-4"
+              className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-fg/8 hover:text-fg [&_svg]:size-4"
               onClick={() => {
                 setDraft(title);
                 setEditing(true);
@@ -141,7 +141,7 @@ export function VideoHeader({
 
         <button
           type="button"
-          className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-white/8 hover:text-brand-from [&_svg]:size-4"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-fg/8 hover:text-brand-from [&_svg]:size-4"
           onClick={() => {
             setDeleteError(null);
             setConfirming(true);
