@@ -193,9 +193,12 @@ export function blogPostingJsonLd(post: Post) {
 /**
  * A trail, for a page that sits below the top level.
  *
- * `/create/<slug>` deliberately has none: its trail would be a single hop to a
- * `/create` index that does not exist. `/alternatives/<slug>` earns one because
- * the trail is real and three deep.
+ * Only `/blog` has an index to point at, so only the blog pages get one.
+ * `/create/<slug>` and `/alternatives/<slug>` deliberately have none: their trail
+ * would be a single hop to a `/create` or `/alternatives` index that does not
+ * exist. The alternatives pages named that hop anyway for a while, which is how
+ * a URL that 404s ends up inside a BreadcrumbList on every comparison page —
+ * valid JSON, unfetchable item, and nothing on the page says so.
  */
 export function breadcrumbJsonLd(trail: { name: string; path: `/${string}` | "/" }[]) {
   return {
