@@ -38,6 +38,7 @@ import { CursorWord, ZoomWord } from "@/components/landing/marks";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { ZOOM_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
+import { ASSETS } from "@/lib/assets";
 
 /**
  * The four slices, in the order they play.
@@ -291,7 +292,7 @@ function CameraBubble() {
     <div className="squircle absolute right-[3.4%] bottom-[6%] aspect-square w-[21%] overflow-hidden rounded-full bg-[#2a1a2e] shadow-[0_1.5cqw_3cqw_-1cqw_rgb(0_0_0_/_0.65)] ring-1 ring-white/15">
       {/* Already cut square, so the middle is what it wants — the default
           position is measured against the wide clip the layouts demo plays. */}
-      <CameraFootage src="/camera-closeup.mp4" position="50% 50%" />
+      <CameraFootage src={`${ASSETS}/camera-closeup.mp4`} position="50% 50%" />
     </div>
   );
 }

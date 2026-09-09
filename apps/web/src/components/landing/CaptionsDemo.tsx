@@ -48,6 +48,7 @@ import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { SubtitlesWord, TextWord } from "@/components/landing/marks";
 import { CAPTIONS_SCREEN, CAPTIONS_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
+import { ASSETS } from "@/lib/assets";
 
 /**
  * The sentence, as the two halves the animation treats differently.
@@ -335,7 +336,7 @@ function CameraBubble() {
       {/* Centred rather than the wide studio shot's 59%: this clip is a
           close-up with the subject in the middle, and a portrait box crops the
           width alone, so the middle is what it should keep. */}
-      <CameraFootage src="/camera-talking-head.mp4" position="50% 50%" />
+      <CameraFootage src={`${ASSETS}/camera-talking-head.mp4`} position="50% 50%" />
     </div>
   );
 }

@@ -35,6 +35,7 @@ import {
   ZoomIcon,
   ZoomInIcon,
 } from "@/components/landing/editor-icons";
+import { ASSETS } from "@/lib/assets";
 /**
  * The editor, drawn on the landing page.
  *
@@ -76,9 +77,9 @@ import {
  * the site's other footage — 1280 wide, 30fps, silent — which took 35MB of
  * ProRes-grade export down to 1.3MB.
  */
-const TAKE = "/editor-take.mp4";
+const TAKE = `${ASSETS}/editor-take.mp4`;
 /** Its first frame, so the panel opens on the composition rather than on black. */
-const POSTER = "/editor-take-poster.jpg";
+const POSTER = `${ASSETS}/editor-take-poster.jpg`;
 
 /**
  * The camera, in the corner.
@@ -93,7 +94,7 @@ const POSTER = "/editor-take-poster.jpg";
  * file is 146kB at 480², and shipping a 16:9 frame to show the middle third of
  * it is most of a megabyte spent on something no one sees.
  */
-const CAMERA = "/camera-take.mp4";
+const CAMERA = `${ASSETS}/camera-take.mp4`;
 
 /**
  * The wallpaper the window sits on.
@@ -110,7 +111,7 @@ const CAMERA = "/camera-take.mp4";
  * version. Quality 4 rather than lower for the same reason — JPEG spends its
  * bits smoothing exactly the thing that is doing the work here.
  */
-const BACKDROP = "/editor-backdrop.jpg";
+const BACKDROP = `${ASSETS}/editor-backdrop.jpg`;
 
 /**
  * The camera's outline: a true superellipse.

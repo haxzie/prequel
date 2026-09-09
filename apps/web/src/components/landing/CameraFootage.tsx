@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ASSETS } from "@/lib/assets";
 
 /**
  * The webcam picture in the demos: a short clip, looping, muted.
@@ -16,7 +17,7 @@ import { useEffect, useRef } from "react";
  * file carries no audio track either, so there is nothing to unmute.
  */
 export function CameraFootage({
-  src = "/camera-preview.mp4",
+  src = `${ASSETS}/camera-preview.mp4`,
   /**
    * Which part of the clip a box narrower than it shows.
    *
