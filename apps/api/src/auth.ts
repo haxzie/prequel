@@ -14,6 +14,7 @@ import { schema } from "@prequel/db";
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
+import { describe, post } from "./lib/slack.ts";
 import { ensureTeam } from "./lib/teams.ts";
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -55,6 +56,13 @@ export function createAuth(env: Env) {
             } catch (error: unknown) {
               console.error("could not create a team for a new account", user.id, error);
             }
+
+            // Awaited rather than deferred, because this hook is handed no
+            // execution context and a floating promise in a Worker is one the
+            // runtime may never get to. `post` swallows its own failures and
+            // gives up after five seconds, so the worst this costs a sign-up is
+            // that — and only on a deployment that configured a webhook at all.
+            await post(env, "signups", `*New sign-up* — ${describe(user)}`);
           },
         },
       },

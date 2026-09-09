@@ -49,6 +49,20 @@ export interface Env {
   POSTHOG_HOST: string;
 
   /**
+   * Where the two Slack feeds go, if anywhere.
+   *
+   * Optional, and absent is a working state rather than a broken one: `lib/
+   * slack.ts` posts nothing at all without them, the same way analytics goes
+   * quiet without a project token. A fork needs no Slack workspace.
+   *
+   * Secrets rather than `vars`. A webhook URL is a bearer credential — anybody
+   * holding one can post into the channel as this app — so it must not be in
+   * `wrangler.jsonc`, which is checked in.
+   */
+  SLACK_SIGNUPS_WEBHOOK_URL?: string;
+  SLACK_EVENTS_WEBHOOK_URL?: string;
+
+  /**
    * Which Dodo Payments environment this Worker talks to.
    *
    * A var rather than something inferred from the API key: Dodo serves test and

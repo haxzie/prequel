@@ -33,6 +33,7 @@ import {
 } from "../../lib/dodo.ts";
 import { applyPlan, GRACE_MS } from "../../lib/entitlement.ts";
 import { id } from "../../lib/ids.ts";
+import { describe, notify, personByTeam, type Deferrable } from "../../lib/slack.ts";
 
 const dodo = new Hono<{ Bindings: Env }>();
 
@@ -72,7 +73,7 @@ dodo.post("/", async (c) => {
 
   if (first.length === 0) return c.json({ ok: true, duplicate: true });
 
-  await handle(db, c.env, event);
+  await handle(db, c.env, c.executionCtx, event);
 
   // Always 200 once verified, including for an event with no handler. A 4xx on
   // something we simply do not care about makes Dodo retry it until it gives
@@ -80,16 +81,54 @@ dodo.post("/", async (c) => {
   return c.json({ ok: true });
 });
 
-async function handle(db: Database, env: Env, event: WebhookEnvelope): Promise<void> {
+/**
+ * What each branch is called in Slack.
+ *
+ * Only the ones somebody would want to hear about within the hour. The two that
+ * are absent — `plan_changed` and `updated` — are Dodo telling this app about a
+ * field it already owns, and a feed that announced those would be a feed nobody
+ * reads by the end of the week.
+ */
+const ANNOUNCED: Partial<Record<string, string>> = {
+  "subscription.active": "Subscription started",
+  "subscription.renewed": "Subscription renewed",
+  "subscription.on_hold": "Payment failed",
+  "subscription.paused": "Payment failed",
+  "subscription.failed": "Payment failed",
+  "subscription.cancelled": "Subscription cancelled",
+  "subscription.expired": "Subscription expired",
+};
+
+async function handle(
+  db: Database,
+  env: Env,
+  ctx: Deferrable,
+  event: WebhookEnvelope,
+): Promise<void> {
   // Every branch below but one is about a subscription, and the exception is
   // handled first so the narrowing holds for the rest.
   if (event.data.payload_type === "Payment") {
-    if (event.type === "payment.succeeded") await redeem(db, env, event.data);
+    if (event.type === "payment.succeeded") await redeem(db, env, ctx, event.data);
     return;
   }
 
   const subscription = event.data;
   const teamId = subscription.metadata?.teamId;
+
+  // Before the switch, so every announced branch says it without each of them
+  // repeating the lookup. The customer's address is what Dodo knows; the team's
+  // owner is what this app knows, and the two are the same person in every case
+  // but a checkout somebody paid for on another's behalf.
+  const heading = ANNOUNCED[event.type];
+  if (heading) {
+    const person = teamId ? await personByTeam(db, teamId) : null;
+    notify(
+      env,
+      ctx,
+      "events",
+      `*${heading}* — ${describe(person ?? { email: subscription.customer.email })}`,
+    );
+  }
 
   switch (event.type) {
     case "subscription.active": {
@@ -183,7 +222,12 @@ async function activate(
  * what the team ends up on — a lifetime licence bought by somebody already
  * subscribed leaves them on Pro, and surfaces the moment they cancel.
  */
-async function redeem(db: Database, env: Env, payment: DodoPayment): Promise<void> {
+async function redeem(
+  db: Database,
+  env: Env,
+  ctx: Deferrable,
+  payment: DodoPayment,
+): Promise<void> {
   // A renewal, or the opening charge of a subscription. Either way the
   // `subscription.*` events are what describe it, and this is not a purchase.
   if (payment.subscription_id) return;
@@ -247,6 +291,18 @@ async function redeem(db: Database, env: Env, payment: DodoPayment): Promise<voi
     .onConflictDoNothing({ target: schema.purchase.teamId });
 
   await applyPlan(db, teamId);
+
+  // After the row, not before: this is the only branch where a message could
+  // announce a licence that was not granted, and the insert above is what
+  // grants it.
+  notify(
+    env,
+    ctx,
+    "events",
+    `*Lifetime licence bought* — ${describe(
+      (await personByTeam(db, teamId)) ?? { email: payment.customer.email },
+    )}`,
+  );
 }
 
 /**

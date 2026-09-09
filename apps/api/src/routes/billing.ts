@@ -18,6 +18,7 @@ import { schema } from "@prequel/db";
 import { required } from "../env.ts";
 import { createCheckout, portalSession } from "../lib/dodo.ts";
 import { customerId, entitlement, purchase } from "../lib/entitlement.ts";
+import { describe, notify } from "../lib/slack.ts";
 import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, requireAdmin, requireTeam, type AppContext } from "../middleware.ts";
 
@@ -136,6 +137,16 @@ billing.post("/checkout", requireAdmin, async (c) => {
     customerId: await customerId(db, teamId),
     returnUrl: `${c.env.APP_URL}/app/settings/billing?checkout=done`,
   });
+
+  // Asked for, not paid. The gap between this and a `subscription.active` in
+  // the same feed is a checkout somebody abandoned, which is the one thing here
+  // worth noticing within the hour.
+  notify(
+    c.env,
+    c.executionCtx,
+    "events",
+    `*Checkout started* — ${plan === "lifetime" ? "Lifetime" : "Pro"} · ${describe(user)}`,
+  );
 
   return c.json({ url });
 });

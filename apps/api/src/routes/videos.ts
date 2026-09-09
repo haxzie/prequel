@@ -16,6 +16,7 @@ import type { Database } from "../db.ts";
 import { id, slug } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
 import { posterKey, signedPlayback, signedUpload, videoKey } from "../lib/r2.ts";
+import { describe, notify, personById } from "../lib/slack.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
 const videos = new Hono<AppContext>();
@@ -269,7 +270,17 @@ videos.post("/:id/complete", async (c) => {
     },
   });
 
-  return c.json({ id: row.id, slug: row.slug, url: `${c.env.APP_URL}/v/${row.slug}` });
+  const url = `${c.env.APP_URL}/v/${row.slug}`;
+
+  // The link, because a share notification without one is an errand rather than
+  // a notification — the first thing anybody does on reading this is watch it.
+  // `ownerId` is nullable — a recording outlives the account that made it — so
+  // the lookup is skipped rather than made with a null, and `describe` says so.
+  const owner = row.ownerId ? await personById(db, row.ownerId) : null;
+
+  notify(c.env, c.executionCtx, "events", `*Video shared* — ${describe(owner)}\n${url}`);
+
+  return c.json({ id: row.id, slug: row.slug, url });
 });
 
 const Update = z.object({ title: z.string().min(1).max(200) });

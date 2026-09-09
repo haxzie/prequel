@@ -52,3 +52,18 @@ DODOPAYMENT_WEBHOOK_SECRET=
 DODOPAYMENT_BRAND_ID=
 DODOPAYMENT_PRO_PRODUCT_ID=
 DODOPAYMENT_LIFETIME_PRODUCT_ID=
+
+# Slack, if you want the two feeds. Both optional — `lib/slack.ts` posts nothing
+# without them, the way analytics goes quiet without a project token.
+#
+# Deliberately left empty *here* rather than filled in like the ids above. There
+# is no `environment` property on a Slack message and no way to filter one out
+# afterwards, so a developer with these set posts every test sign-up and every
+# test checkout into the real channel. Set them on the deployment and nowhere
+# else:
+#
+#     wrangler secret put SLACK_SIGNUPS_WEBHOOK_URL --env production
+#     wrangler secret put SLACK_EVENTS_WEBHOOK_URL --env production
+#
+SLACK_SIGNUPS_WEBHOOK_URL=
+SLACK_EVENTS_WEBHOOK_URL=
