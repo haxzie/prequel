@@ -500,6 +500,12 @@ const api = {
     check: (): Promise<Entitlement> => ipcRenderer.invoke(IPC_CHANNELS.licenceCheck),
     /** Opens the billing page in the default browser. */
     upgrade: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.licenceUpgrade),
+    /**
+     * Reports that the upgrade prompt was shown. Returns nothing and awaits
+     * nothing — an analytics call that a click had to wait on would be an
+     * analytics call that can make Export feel slow.
+     */
+    prompted: (): void => ipcRenderer.send(IPC_CHANNELS.licencePrompted),
     onChange: (listener: (entitlement: Entitlement) => void): (() => void) => {
       const handler = (_event: unknown, value: Entitlement) => listener(value);
       ipcRenderer.on(IPC_CHANNELS.licenceChanged, handler);

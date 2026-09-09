@@ -33,6 +33,7 @@ import type { Entitlement } from "../shared/contract.js";
 import { apiFetch, ApiError, appUrl } from "./api.js";
 import { authToken, forgetRejectedSignIn } from "./auth.js";
 import { log } from "./log.js";
+import { track } from "./analytics.js";
 
 /**
  * Its own file, beside `auth.json` and `install.json` and for the same reason
@@ -230,4 +231,25 @@ export function clearEntitlement(): void {
  */
 export function openUpgrade(): void {
   void shell.openExternal(new URL("/app/settings/billing", appUrl()).toString());
+}
+
+/**
+ * The upgrade prompt went up in front of somebody.
+ *
+ * The one event a window has to report, because main cannot observe it.
+ * `licence:check` runs on every Export press and on a few things that are not
+ * one, and it answers `expired` without anything being shown — so counting
+ * refusals there would count moments nobody saw.
+ *
+ * The status rides along because the dialog says two different things and asks
+ * for two different acts: `signed-out` shows Sign in, `expired` shows Upgrade.
+ * Folding them into one number would average a funnel that has never had an
+ * account with one that has run out of trial, and those do not convert alike.
+ *
+ * Taken from main's own copy rather than from the renderer's argument, which is
+ * a window asserting a fact about a licence — the same reason the token never
+ * crosses that boundary.
+ */
+export function trackUpgradePrompt(): void {
+  track("upgrade_prompted", { status: entitlement().status });
 }

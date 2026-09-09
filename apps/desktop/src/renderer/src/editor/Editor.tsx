@@ -589,6 +589,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
     if (!mayExport(licence)) {
       setUpgradeOpen(true);
+      // Reported here rather than from a mount effect inside `UpgradeDialog`,
+      // which would keep the dialog the pure presentational thing it is and
+      // then have to re-derive the status from a prop that lags this answer by
+      // a render. This is the only path that opens it, and the moment the
+      // verdict arrives is the moment it is true.
+      window.prequel.licence.prompted();
       return;
     }
 

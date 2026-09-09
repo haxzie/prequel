@@ -23,12 +23,18 @@ vi.mock("./api.js", async () => {
 });
 
 const forgetRejectedSignIn = vi.fn();
+// A `let` rather than a literal so the signed-out branch is reachable. Every
+// test that does not touch it sees the same token the fixed mock used to give.
+let token = "a-token";
 vi.mock("./auth.js", () => ({
-  authToken: () => "a-token",
+  authToken: () => token,
   forgetRejectedSignIn: () => forgetRejectedSignIn(),
 }));
 
-const { statusOf, refreshEntitlement } = await import("./licence.js");
+const track = vi.fn();
+vi.mock("./analytics.js", () => ({ track: (...args: unknown[]) => track(...args) }));
+
+const { statusOf, refreshEntitlement, trackUpgradePrompt } = await import("./licence.js");
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 26, 12, 0, 0);
@@ -115,5 +121,42 @@ describe("a sign-in the server refuses", () => {
     await refreshEntitlement();
 
     expect(forgetRejectedSignIn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What the upgrade prompt reports about itself.
+ *
+ * The property is the whole value of the event. `signed-out` and `expired` put
+ * different words and a different button in front of somebody — Sign in against
+ * Upgrade — and they are two funnels that have never converted alike. An event
+ * that counted only how often the dialog appeared would answer a question
+ * nobody is asking.
+ */
+describe("the upgrade prompt event", () => {
+  beforeEach(() => {
+    apiFetch.mockReset();
+    track.mockReset();
+    token = "a-token";
+  });
+
+  it("names the status main itself holds", async () => {
+    apiFetch.mockResolvedValue({ plan: "free", trialEndsAt: Date.now() - DAY });
+    await refreshEntitlement();
+
+    trackUpgradePrompt();
+
+    expect(track).toHaveBeenCalledWith("upgrade_prompted", { status: "expired" });
+  });
+
+  it("tells a signed-out prompt apart from a lapsed one", async () => {
+    // Reached without asking the server: no token is an answer on its own, and
+    // the two states are the reason this event carries a property at all.
+    token = "";
+
+    trackUpgradePrompt();
+
+    expect(track).toHaveBeenCalledWith("upgrade_prompted", { status: "signed-out" });
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 });

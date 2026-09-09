@@ -478,6 +478,17 @@ export const IPC_CHANNELS = {
   licenceCheck: "licence:check",
   /** Opens the billing page in the browser. */
   licenceUpgrade: "licence:upgrade",
+  /**
+   * Renderer → main, fire and forget: the upgrade prompt went up.
+   *
+   * `send`, not `invoke`, and the only licence channel that is. Nothing is
+   * being asked for and there is no answer to wait on — a window reporting
+   * something main cannot see for itself. Main knows the verdict it returned
+   * from `licence:check`; it does not know a window chose to put a dialog in
+   * front of somebody because of it, and every check but this one leads
+   * somewhere else.
+   */
+  licencePrompted: "licence:prompted",
   /** Main → renderer broadcast, when the verdict changes under a window. */
   licenceChanged: "licence:changed",
   /** Uploads a finished export and answers with a link. */

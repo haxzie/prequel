@@ -36,7 +36,13 @@ import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
 import { setToggleShortcut } from "./shortcuts.js";
 import { cancelExport, chooseExportTarget, copyExport, dragExport, startExport } from "./export.js";
-import { entitlement, onEntitlementChanged, openUpgrade, refreshEntitlement } from "./licence.js";
+import {
+  entitlement,
+  onEntitlementChanged,
+  openUpgrade,
+  refreshEntitlement,
+  trackUpgradePrompt,
+} from "./licence.js";
 import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
@@ -411,6 +417,11 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.licenceCheck, () => refreshEntitlement());
 
   ipcMain.handle(IPC_CHANNELS.licenceUpgrade, () => openUpgrade());
+
+  // `on`, not `handle`, like `export:drag` below — and cleaned up by the same
+  // `removeAllListeners`, without which a second `registerIpc` would count
+  // every prompt twice.
+  ipcMain.on(IPC_CHANNELS.licencePrompted, () => trackUpgradePrompt());
 
   ipcMain.handle(IPC_CHANNELS.shareStart, (_event, share: ShareRequest) =>
     attempt(() => startShare(share)),
