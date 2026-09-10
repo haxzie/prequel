@@ -721,6 +721,12 @@ export class WebGlCompositor {
         const grown = size + pad * 2;
 
         set(gl, p, {
+          // Still the drawn box even when the corners below replace it as the
+          // pointer's position: the fragment shader measures its one-pixel edge
+          // feather against `rect`'s size, so shrinking this to the sprite's
+          // pre-projection size would put the antialiasing band in the wrong
+          // place. `layout.ts` builds the corners from exactly this box,
+          // divided back onto the picture's surface.
           rect: {
             x: point.x - item.hotspot.x * size - pad,
             y: point.y - item.hotspot.y * size - pad,
@@ -729,6 +735,11 @@ export class WebGlCompositor {
           },
           shape: { radius: 0, exponent: 2 },
           mode: MODE_IMAGE,
+          // The sprite's own corners on a tilted picture, so it lies on the
+          // screen rather than standing upright in front of it. Absent wherever
+          // nothing is tilted, and `set` falls back to `FLAT` — the same line
+          // `moving` uses for every other item.
+          ...(point.quad ? { quad: point.quad } : {}),
           // Off below a pixel: a streak that short is not visible, and the taps
           // cost the same whether they move or not.
           ...(streak >= 1

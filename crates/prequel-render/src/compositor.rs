@@ -717,9 +717,21 @@ impl Compositor {
 
                 Some((
                     Uniforms {
+                        // The sprite's own corners on a tilted picture, so it
+                        // lies on the screen rather than standing upright in
+                        // front of it. All zero without a tilt, which is what
+                        // the vertex function reads as "use the rectangle".
+                        // `dy` is the shadow's drop and means nothing here.
+                        quad: corners_of(point.quad.as_ref().map_or(&[][..], |q| &q[..]), 0.0),
                         // The hotspot is the point that lands on the position:
                         // for an arrow that is its tip, not its middle, so the
                         // image is offset rather than centred.
+                        //
+                        // Still the drawn box when the corners above replace it
+                        // as the pointer's position: the fragment function
+                        // measures its one-pixel edge feather against this
+                        // size, and `layout.ts` builds those corners from
+                        // exactly this box divided back onto the picture.
                         rect: [
                             (point.x - hotspot.x * size - pad) as f32,
                             (point.y - hotspot.y * size - pad) as f32,

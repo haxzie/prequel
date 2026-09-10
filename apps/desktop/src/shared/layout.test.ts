@@ -3133,6 +3133,339 @@ describe("perspective", () => {
   });
 });
 
+describe("the pointer on a tilted picture", () => {
+  const S = 1_000_000_000;
+
+  /** Held dead centre, so where it is drawn is a question with one answer. */
+  const CENTRED = {
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+    size: 0.035,
+    hideAfter: null,
+    samples: [
+      { at: 0, x: 0.5, y: 0.5 },
+      { at: 4 * S, x: 0.5, y: 0.5 },
+    ],
+  };
+
+  const planFor = (rotateX: number, rotateY: number, x = 0.5) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      {
+        ...CENTRED,
+        samples: CENTRED.samples.map((sample) => ({ ...sample, x })),
+      },
+      [
+        {
+          // Spread first so a field added to a zoom later cannot break this
+          // fixture; every value spelled out below still wins over the default.
+          ...DEFAULT_ZOOM,
+          id: "z",
+          source: { start: 0, end: 4 * S },
+          target: "region",
+          x: 0.5,
+          y: 0.5,
+          level: 1.5,
+          speed: 0,
+          rotateX,
+          rotateY,
+          perspective: 0.5,
+          blur: false,
+          blurSafe: 0.28,
+          blurStrength: 0.012,
+        },
+      ],
+    );
+
+  const pointerAt = (plan: RenderPlan, at: number) => {
+    const item = plan.items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return cursorAt(item.points, at)!;
+  };
+
+  it("draws a pointer at the middle of the picture at the middle of the frame", () => {
+    // The bug this pins, and the one no other test here could see: `onPlane`
+    // divided by each corner's divisor instead of multiplying by it. That is
+    // how a GPU recovers a texture coordinate from a screen position — this
+    // map's inverse — and the two agree exactly wherever one weight is 1. So
+    // all four corners landed perfectly and everything between them drifted,
+    // worst at the centre: 75 px at a twelve-degree yaw on a 1920 frame, which
+    // is the pointer sitting beside the button it clicked.
+    //
+    // A tilt turns the picture about its own centre and the zoom is aimed at
+    // the middle, so the middle of the recording is the middle of the frame at
+    // every angle and every moment of the ramp. Nothing else about the
+    // arrangement has to be worked out to know the answer.
+    for (const [rotateX, rotateY] of [
+      [0, 12],
+      [0, 30],
+      [12, 8],
+      [-20, 25],
+    ]) {
+      const plan = planFor(rotateX!, rotateY!);
+
+      for (const at of [S, 2 * S, 3 * S]) {
+        const point = pointerAt(plan, at);
+        expect(point.x).toBeCloseTo(960, 3);
+        expect(point.y).toBeCloseTo(540, 3);
+      }
+    }
+  });
+
+  it("draws it at its flat size there", () => {
+    // The same inversion, in the other number `onPlane` returns. `scale` is
+    // what both rasterisers multiply the pointer's size by, and `pressScale`
+    // rides on it — so a wrong one here is a pointer the wrong size *and* a
+    // click animation dipping from the wrong place.
+    //
+    // The centre of the picture is exactly as far from the eye as an untilted
+    // one, so it is drawn at the size it would be lying flat.
+    expect(pointerAt(planFor(0, 30), 2 * S).scale).toBeCloseTo(1, 6);
+    expect(pointerAt(planFor(-20, 25), 2 * S).scale).toBeCloseTo(1, 6);
+  });
+
+  it("draws it past the middle of the quad, on the side that leans away", () => {
+    // The centre case above with the symmetry taken out of it, so a formula
+    // that merely happens to fix the middle does not pass. Perspective packs
+    // the far half of the picture into fewer screen pixels, so half way across
+    // the *recording* lands beyond half way across the *quad* — towards the
+    // edge that leans away. Averaging the two corners is the affine answer,
+    // and the old code fell on the near side of even that.
+    const plan = planFor(0, 12);
+    const screen = image(plan, "screen")!;
+    const quad = rectAt(screen.motion ?? [], 2 * S, screen.dstRect, screen.shape.radius).quad!;
+
+    // Yawed this way the left edge is the near one, so the right is the side
+    // that leans away.
+    const affine = (quad[0]! + quad[3]!) / 2;
+    expect(pointerAt(plan, 2 * S).x).toBeGreaterThan(affine);
+  });
+
+  it("lands on the picture's own corner when the pointer is in it", () => {
+    // The case that was never broken, kept because it is the boundary of the
+    // one that was: at a corner a single weight is 1 and both the right
+    // formula and the wrong one reduce to reading that corner straight out.
+    const plan = planFor(0, 20, 0);
+    const screen = image(plan, "screen")!;
+    const quad = rectAt(screen.motion ?? [], 2 * S, screen.dstRect, screen.shape.radius).quad!;
+
+    // Halfway down the left edge, which is the midpoint of the two left
+    // corners only because they share a divisor.
+    const point = pointerAt(plan, 2 * S);
+    expect(point.x).toBeCloseTo((quad[0]! + quad[6]!) / 2, 3);
+    expect(point.y).toBeCloseTo((quad[1]! + quad[7]!) / 2, 3);
+  });
+});
+
+describe("the pointer's own corners", () => {
+  const S = 1_000_000_000;
+
+  const track = (samples: { at: number; x: number; y: number }[]) => ({
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+    size: 0.035,
+    hideAfter: null,
+    samples,
+  });
+
+  const planFor = (
+    rotateX: number,
+    rotateY: number,
+    samples: { at: number; x: number; y: number }[],
+    source = { start: 0, end: 4 * S },
+    // Snapped by default, so a moment part way in is fully tilted and the
+    // arithmetic under test is not also being asked about an easing curve.
+    speed = 0,
+  ) =>
+    buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, unsmoothed(), track(samples), [
+      {
+        // Spread first so a field added to a zoom later cannot break this
+        // fixture; every value spelled out below still wins over the default.
+        ...DEFAULT_ZOOM,
+        id: "z",
+        source,
+        target: "region",
+        x: 0.5,
+        y: 0.5,
+        level: 1.5,
+        speed,
+        rotateX,
+        rotateY,
+        perspective: 0.5,
+        blur: false,
+        blurSafe: 0.28,
+        blurStrength: 0.012,
+      },
+    ]);
+
+  const still = (x: number, y = 0.5) => [
+    { at: 0, x, y },
+    { at: 4 * S, x, y },
+  ];
+
+  const cursor = (plan: RenderPlan) => {
+    const item = plan.items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return item;
+  };
+
+  /** The four corners as points, in the order the vertex id walks them. */
+  const corners = (quad: readonly number[]) =>
+    [0, 1, 2, 3].map((index) => ({ x: quad[index * 3]!, y: quad[index * 3 + 1]! }));
+
+  const span = (from: { x: number; y: number }, to: { x: number; y: number }) =>
+    Math.hypot(to.x - from.x, to.y - from.y);
+
+  it("leans the sprite the way the picture leans", () => {
+    // The half of this the position fix does not reach: the pointer's *tip*
+    // can be exactly right while the sprite behind it is an upright square
+    // standing on a leaning picture, which reads as an arrow floating in front
+    // of the screen rather than lying on it.
+    //
+    // Leaning the top away shortens the picture's top edge against its bottom.
+    // The sprite is a few dozen pixels rather than a few thousand, so it
+    // converges by very little — but it has to converge the same way, because
+    // it is the same projection.
+    const plan = planFor(12, 0, still(0.5));
+    const point = cursorAt(cursor(plan).points, 2 * S)!;
+    const screen = image(plan, "screen")!;
+    const picture = rectAt(screen.motion ?? [], 2 * S, screen.dstRect, screen.shape.radius).quad!;
+
+    expect(point.quad).toHaveLength(12);
+
+    const [topLeft, topRight, bottomLeft, bottomRight] = corners(point.quad!);
+    expect(span(topLeft!, topRight!)).toBeLessThan(span(bottomLeft!, bottomRight!));
+    expect(picture[3]! - picture[0]!).toBeLessThan(picture[9]! - picture[6]!);
+  });
+
+  it("carries a divisor with every corner", () => {
+    // Without `w` the GPU maps the sprite across two flat triangles, and the
+    // arrow creases along the diagonal where they meet.
+    const quad = cursorAt(cursor(planFor(10, 10, still(0.5))).points, 2 * S)!.quad!;
+
+    for (let index = 2; index < quad.length; index += 3) expect(quad[index]).toBeGreaterThan(0);
+  });
+
+  it("does not magnify the sprite twice", () => {
+    // The one arithmetic trap here, and it produces a picture rather than a
+    // failure. `scale` is the magnification the projection is *about* to
+    // apply, so the square has to be measured on the picture's surface with it
+    // divided back out. Left in, it lands twice and the pointer at the near
+    // edge comes out half again as large as everything under it — which reads
+    // as somebody's choice of pointer size, not as a bug.
+    //
+    // Off centre on purpose: at the middle of the picture the magnification is
+    // 1 and squaring it would change nothing.
+    const plan = planFor(0, 20, still(0.15));
+    const item = cursor(plan);
+    const point = cursorAt(item.points, 2 * S)!;
+
+    // Nearer the eye than a flat picture, so there is something to square.
+    expect(point.scale).toBeGreaterThan(1.02);
+
+    const [topLeft, topRight, bottomLeft, bottomRight] = corners(point.quad!);
+    const mean =
+      (span(topLeft!, topRight!) +
+        span(bottomLeft!, bottomRight!) +
+        span(topLeft!, bottomLeft!) +
+        span(topRight!, bottomRight!)) /
+      4;
+
+    // The size both rasterisers draw an untilted pointer at, which is the size
+    // the projected one has to come out.
+    expect(mean).toBeCloseTo(item.size * point.scale, 0);
+  });
+
+  it("puts the tip where the plan says the pointer is", () => {
+    // The invariant that actually makes a click land: the hotspot is the part
+    // that acts, and it has to sit at `point.x, point.y` *inside the sprite's
+    // own quad* — otherwise the arrow is drawn correctly and pointing at the
+    // wrong thing. This is what pins the hotspot and the streak's padding
+    // being taken off before the projection rather than after it.
+    const plan = planFor(14, 10, still(0.35));
+    const item = cursor(plan);
+    const point = cursorAt(item.points, 2 * S)!;
+    const [topLeft, topRight, bottomLeft] = corners(point.quad!);
+
+    // Across the sprite the projection is affine to well under a pixel, so the
+    // hotspot's fraction of the quad's own two edges is where the tip lands.
+    const tip = {
+      x:
+        topLeft!.x +
+        item.hotspot.x * (topRight!.x - topLeft!.x) +
+        item.hotspot.y * (bottomLeft!.x - topLeft!.x),
+      y:
+        topLeft!.y +
+        item.hotspot.x * (topRight!.y - topLeft!.y) +
+        item.hotspot.y * (bottomLeft!.y - topLeft!.y),
+    };
+
+    expect(tip.x).toBeCloseTo(point.x, 1);
+    expect(tip.y).toBeCloseTo(point.y, 1);
+  });
+
+  it("measures the streak along the picture rather than across the frame", () => {
+    // Both shaders read the smear as an offset in the sprite quad's `uv`, and
+    // a projected quad's `uv` axes are the picture's, not the screen's. A
+    // pointer running along a row of the recording is going one way and one
+    // way only as far as the picture is concerned — but a yaw slants that row
+    // on screen, so the *screen* streak has a vertical component. Left
+    // unresolved, the blur is drawn across the plane instead of along it.
+    const plan = planFor(0, 24, [
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 4 * S, x: 0.8, y: 0.2 },
+    ]);
+    const item = cursor(plan);
+    const point = cursorAt(item.points, 2 * S)!;
+
+    // The row really is slanted here — otherwise there would be nothing to
+    // resolve and this would pass on the screen-space vector too.
+    const [topLeft, topRight] = corners(point.quad!);
+    expect(Math.abs(topRight!.y - topLeft!.y)).toBeGreaterThan(1);
+
+    expect(Math.abs(point.smearX)).toBeGreaterThan(1);
+    expect(Math.abs(point.smearY)).toBeLessThan(Math.abs(point.smearX) * 0.02);
+  });
+
+  it("carries no corners where the picture is flat", () => {
+    // Twelve numbers a sample for the identity projection, on a track that
+    // holds sixty a second — and nearly every recording has no tilt in it at
+    // all. The rasterisers draw the upright square they always did.
+    const flat = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      track(still(0.5)),
+    );
+
+    expect(cursor(flat).points.every((point) => point.quad === undefined)).toBe(true);
+  });
+
+  it("draws an upright sprite across a span that starts or ends flat", () => {
+    // `rectAt` has to fill a missing quad in from the key's own rectangle,
+    // because a zoom's keys sit a thirtieth of a second apart and a track puts
+    // a hard tilt next to a flat key — holding whichever quad existed snapped
+    // the picture upright in one frame. A pointer's flat neighbour is a
+    // different thing: it is flat because the tilt there was below a hundredth
+    // of a degree, so the picture really is upright and so is the sprite.
+    // A zoom that rests inside the recording and leans in over a ramp rather
+    // than snapping, so the pointer is on a flat picture at the start and a
+    // leaning one by the middle.
+    const points = cursor(
+      planFor(0, 20, still(0.5), { start: 1 * S, end: 5 * S }, DEFAULT_ZOOM.speed),
+    ).points;
+    const first = points.findIndex((point) => point.quad);
+
+    expect(first).toBeGreaterThan(0);
+    expect(cursorAt(points, points[first - 1]!.at + 1)!.quad).toBeUndefined();
+
+    // And every span inside the tilt has them, which is what says the absence
+    // above is the boundary rather than the rule.
+    const inside = points[first + 1]!;
+    expect(cursorAt(points, inside.at - 1)!.quad).toHaveLength(12);
+  });
+});
+
 describe("the border through a zoom", () => {
   const bordered = (over: Partial<SliceSettings["background"]> = {}) =>
     settings({

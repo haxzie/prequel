@@ -246,12 +246,28 @@ pub struct CursorPoint {
     /// picking a direction and a shutter, and two answers to "where is the
     /// pointer going" is how the two come to disagree.
     ///
+    /// Along the *picture's* two axes rather than the frame's wherever `quad`
+    /// is set: that is the basis the shader reads a smear in, and on a leaning
+    /// picture the two differ. Identical without a tilt.
+    ///
     /// Defaulted, so a plan written before motion blur existed loads and draws
     /// a sharp pointer rather than failing to parse.
     #[serde(default)]
     pub smear_x: f64,
     #[serde(default)]
     pub smear_y: f64,
+    /// The sprite's own four corners once the picture is tilted, as `x, y, w`
+    /// each — the order and the divisor convention `RectKey::quad` uses.
+    ///
+    /// A fixed array rather than the `Vec` a `RectKey` carries, and the reason
+    /// is the density: a plan holds a few dozen rectangle keys and sixty cursor
+    /// points a second, so a `Vec` here would put a heap allocation on every
+    /// one of them and cost `CursorPoint` its `Copy`.
+    ///
+    /// Defaulted, so a plan written before the pointer was laid on the picture
+    /// loads and draws an upright one rather than failing to parse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quad: Option<[f64; 12]>,
 }
 
 /// One sampled destination rectangle, in output pixels, at a source time.
@@ -633,6 +649,7 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
             scale: first.scale,
             smear_x: first.smear_x,
             smear_y: first.smear_y,
+            quad: first.quad,
         });
     }
     if at >= last.at {
@@ -642,6 +659,7 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
             scale: last.scale,
             smear_x: last.smear_x,
             smear_y: last.smear_y,
+            quad: last.quad,
         });
     }
 
@@ -663,12 +681,31 @@ pub fn cursor_at(points: &[CursorPoint], at: i64) -> Option<Placed> {
         0.0
     };
 
+    // Only where both ends carry corners, mirroring `cursorAt`. Not `rect_at`'s
+    // case, which fills a missing quad in from the key's own rectangle: a
+    // track legitimately puts a hard tilt next to a flat key and taking
+    // whichever quad existed snapped the picture upright in one frame. A
+    // pointer's flat neighbour is flat because the tilt there was below a
+    // hundredth of a degree, so the picture really is upright and an upright
+    // sprite is the right answer across that one span.
+    let quad = match (a.quad, b.quad) {
+        (Some(from), Some(to)) => {
+            let mut corners = [0.0; 12];
+            for (corner, (from, to)) in corners.iter_mut().zip(from.iter().zip(to.iter())) {
+                *corner = from + (to - from) * t;
+            }
+            Some(corners)
+        }
+        _ => None,
+    };
+
     Some(Placed {
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
         scale: a.scale + (b.scale - a.scale) * t,
         smear_x: a.smear_x + (b.smear_x - a.smear_x) * t,
         smear_y: a.smear_y + (b.smear_y - a.smear_y) * t,
+        quad,
     })
 }
 
@@ -680,6 +717,7 @@ pub struct Placed {
     pub scale: f64,
     pub smear_x: f64,
     pub smear_y: f64,
+    pub quad: Option<[f64; 12]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -880,6 +918,7 @@ mod tests {
                 visible: true,
                 smear_x: 0.0,
                 smear_y: 0.0,
+                quad: None,
             },
             CursorPoint {
                 at: 100,
@@ -889,6 +928,7 @@ mod tests {
                 visible: true,
                 smear_x: 4.0,
                 smear_y: 8.0,
+                quad: None,
             },
             CursorPoint {
                 at: 200,
@@ -898,6 +938,7 @@ mod tests {
                 visible: false,
                 smear_x: 0.0,
                 smear_y: 0.0,
+                quad: None,
             },
         ]
     }
@@ -950,6 +991,61 @@ mod tests {
         assert!((half.quad[1] - 5.0).abs() < 1e-6, "y was {}", half.quad[1]);
     }
 
+    /// The pointer's own corners, and the one way they differ from a
+    /// rectangle key's: a missing quad is *not* filled in from the point's own
+    /// box. Mirrors `cursorAt` in `layout.test.ts` — the two answering
+    /// differently is a pointer that lies on the picture in the preview and
+    /// stands upright in the export.
+    #[test]
+    fn interpolates_the_sprite_corners_with_the_position() {
+        let sprite = |at: i64, offset: f64| CursorPoint {
+            at,
+            x: offset,
+            y: 0.0,
+            scale: 1.0,
+            visible: true,
+            smear_x: 0.0,
+            smear_y: 0.0,
+            quad: Some([
+                offset,
+                0.0,
+                1.0,
+                offset + 40.0,
+                0.0,
+                0.5,
+                offset,
+                40.0,
+                1.0,
+                offset + 40.0,
+                40.0,
+                0.5,
+            ]),
+        };
+
+        let points = vec![sprite(0, 0.0), sprite(100, 100.0)];
+        let half = cursor_at(&points, 50).unwrap().quad.expect("corners");
+
+        // Halfway along, every corner is halfway — including the divisors,
+        // which ride along rather than being recomputed.
+        assert!((half[0] - 50.0).abs() < 1e-6, "x was {}", half[0]);
+        assert!((half[3] - 90.0).abs() < 1e-6, "x was {}", half[3]);
+        assert!((half[5] - 0.5).abs() < 1e-6, "w was {}", half[5]);
+    }
+
+    /// Deliberately unlike `blends_a_tilted_key_into_a_flat_one` above. A
+    /// zoom's keys sit a thirtieth of a second apart and a track puts a hard
+    /// tilt beside a flat key, so a picture has to blend into its own
+    /// rectangle. A pointer's flat neighbour is flat because the tilt there
+    /// was below a hundredth of a degree — the picture really is upright, and
+    /// so is the sprite across that one span.
+    #[test]
+    fn leaves_a_span_upright_when_either_end_is_flat() {
+        let mut points = track();
+        points[0].quad = Some([0.0; 12]);
+
+        assert!(cursor_at(&points, 50).unwrap().quad.is_none());
+    }
+
     #[test]
     fn interpolates_the_streak_with_the_position() {
         let point = cursor_at(&track(), 50).unwrap();
@@ -970,6 +1066,7 @@ mod tests {
             visible: true,
             smear_x: 0.0,
             smear_y: 0.0,
+            quad: None,
         }];
         assert_eq!(cursor_at(&single, 9999).unwrap().x, 7.0);
     }

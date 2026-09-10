@@ -520,6 +520,7 @@ fn swaps_the_pointer_image_partway_through() {
         y: (OUT_H / 2) as f64,
         scale: 1.0,
         visible,
+        quad: None,
         // Sharp. This test is about which pointer image is on screen when, and
         // a streak would soften exactly the pixels it samples to decide.
         smear_x: 0.0,
@@ -604,6 +605,125 @@ fn swaps_the_pointer_image_partway_through() {
 }
 
 #[test]
+fn lays_the_pointer_on_a_tilted_picture() {
+    // The compositor read a cursor's position out of `rect` and nothing else,
+    // so a plan carrying the sprite's projected corners was drawn as an upright
+    // square in the middle of the frame — the corners computed, serialised,
+    // parsed and then dropped on the floor. Nothing but pixels catches that:
+    // the plan is right, `cursor_at` hands back the right twelve numbers, and
+    // every shape assertion there is passes on a picture that ignores them.
+    let dir = scratch("prequel-pixels-cursor-tilt");
+
+    let source = solid(200, [0, 0, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+    write_png(&dir.join("arrow.png"), &solid(64, [255, 255, 255]));
+
+    let centre = Point { x: 0.5, y: 0.5 };
+    const SPRITE: f64 = 40.0;
+
+    // Well clear of where the upright square would be drawn, and leaning: the
+    // right edge is nearer the eye, so it is both taller and carries the
+    // smaller divisor. Written by hand rather than built from a zoom, because
+    // the plan is this side's input — what is under test is whether the
+    // compositor honours corners, not whether it can work them out.
+    let left = (OUT_W / 2) as f64 + 60.0;
+    let right = (OUT_W / 2) as f64 + 120.0;
+    let middle = (OUT_H / 2) as f64;
+    let quad = [
+        left, middle - 14.0, 1.25, // top-left, leaning away
+        right, middle - 26.0, 0.8, // top-right, nearer
+        left, middle + 14.0, 1.25, // bottom-left
+        right, middle + 26.0, 0.8, // bottom-right
+    ];
+
+    let point = |at: i64| CursorPoint {
+        at,
+        x: (OUT_W / 2) as f64,
+        y: (OUT_H / 2) as f64,
+        scale: 1.0,
+        visible: true,
+        smear_x: 0.0,
+        smear_y: 0.0,
+        quad: Some(quad),
+    };
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                motion: Vec::new(),
+            },
+            PlanItem::Cursor {
+                path: "arrow.png".to_owned(),
+                size: SPRITE,
+                hotspot: centre,
+                points: vec![point(0), point(S as i64)],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = frame_at(&output, 2);
+    let lit = |pixel: (u8, u8, u8)| pixel.0 as u16 + pixel.1 as u16 + pixel.2 as u16;
+
+    // Inside the quad, and nowhere near the square `rect` describes.
+    let on_plane = lit(frame.at(OUT_W / 2 + 90, OUT_H / 2));
+    // Where the upright sprite used to be drawn: the middle of the frame.
+    let upright = lit(frame.at(OUT_W / 2, OUT_H / 2));
+
+    assert!(
+        on_plane > 600,
+        "the pointer should be drawn on its own corners, got {on_plane}"
+    );
+    assert!(
+        upright < 30,
+        "nothing should be left where the upright square was, got {upright}"
+    );
+
+    // And it leans: the right edge is taller than the left, so a point above
+    // the quad's left end is outside it while the same height at the right end
+    // is inside. A translation would pass the two checks above and fail these.
+    assert!(
+        lit(frame.at(OUT_W / 2 + 115, OUT_H / 2 - 20)) > 600,
+        "the near edge should reach further from the middle"
+    );
+    assert!(
+        lit(frame.at(OUT_W / 2 + 62, OUT_H / 2 - 20)) < 30,
+        "the far edge should not"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn smears_the_pointer_along_the_way_it_is_going() {
     // The whole of motion blur is its direction, and nothing downstream can
     // catch that being wrong: the editor computes the streak once and both
@@ -630,6 +750,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
         visible: true,
         smear_x: SMEAR,
         smear_y: 0.0,
+        quad: None,
     };
 
     let output = dir.join("export.mp4");

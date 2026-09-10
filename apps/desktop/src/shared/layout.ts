@@ -117,9 +117,31 @@ export interface CursorPoint {
    * to "where is the pointer going" — the same mistake `scale` above exists to
    * avoid for a click. Zero wherever the pointer is still, which is most of a
    * recording.
+   *
+   * Along the *picture's* two axes rather than the frame's wherever `quad` is
+   * set, because that is the basis both shaders read a smear in — see
+   * `onAxes`. The two are the same thing on a flat picture, which is why this
+   * never needed saying before.
    */
   smearX: number;
   smearY: number;
+  /**
+   * The sprite's own four corners once the picture is tilted, as `x, y, w`
+   * each — twelve numbers, in the order top-left, top-right, bottom-left,
+   * bottom-right, the same order `RectKey.quad` uses.
+   *
+   * Absent wherever the picture is flat, for the reason `RectKey.quad` is:
+   * twelve numbers a sample for the identity projection is a much larger plan
+   * for nothing, and nearly every recording has no tilt anywhere in it.
+   *
+   * These are the corners of the box that is actually *drawn* — hotspot taken
+   * off, the streak's padding added — rather than of the bare sprite. Both
+   * shaders map their `uv` across the quad they are given and read the smear
+   * as a fraction of it, so a quad describing a different box from the one
+   * `rect` describes would draw the arrow at the wrong size inside its own
+   * outline and take its blur taps from empty texture.
+   */
+  quad?: number[];
 }
 
 /**
@@ -2372,18 +2394,6 @@ function rotatedQuad(
 }
 
 /**
- * Where a point on the picture lands once the picture is tilted.
- *
- * The rational bilinear the four corners define — perspective-correct, which an
- * ordinary bilinear is not: on a tilted plane the middle of the texture is not
- * the middle of the quad, and interpolating the corners directly puts the
- * pointer visibly off whatever it is pointing at.
- *
- * `scale` falls out of the same sum. It is the local magnification, so a
- * pointer near the leading edge is drawn larger than one at the far edge, which
- * is what makes it read as lying on the picture rather than over it.
- */
-/**
  * A key's four corners, projected or flat.
  *
  * The corner order `rotatedQuad` writes and `onPlane` reads: top-left,
@@ -2399,6 +2409,18 @@ function cornersOf(key: RectKey): number[] {
   return [key.x, key.y, 1, right, key.y, 1, key.x, bottom, 1, right, bottom, 1];
 }
 
+/**
+ * Where a point on the picture lands once the picture is tilted.
+ *
+ * The rational bilinear the four corners define — perspective-correct, which an
+ * ordinary bilinear is not: on a tilted plane the middle of the texture is not
+ * the middle of the quad, and interpolating the corners directly puts the
+ * pointer visibly off whatever it is pointing at.
+ *
+ * `scale` falls out of the same sum. It is the local magnification, so a
+ * pointer near the leading edge is drawn larger than one at the far edge, which
+ * is what makes it read as lying on the picture rather than over it.
+ */
 function onPlane(quad: readonly number[], u: number, v: number): Point & { scale: number } {
   const weights = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
 
@@ -2407,16 +2429,22 @@ function onPlane(quad: readonly number[], u: number, v: number): Point & { scale
   let total = 0;
 
   for (let corner = 0; corner < 4; corner += 1) {
-    // Divided by the corner's own divisor, which is what makes this projective
-    // rather than merely bilinear.
-    const share = weights[corner]! / Math.max(quad[corner * 3 + 2]!, 1e-6);
+    // Multiplied by the corner's divisor, not divided by it. Dividing is how a
+    // GPU recovers a texture coordinate from a screen position, which is this
+    // map's inverse — and the two agree exactly wherever one weight is 1, so
+    // all four corners land perfectly and everything between them drifts. That
+    // was the pointer 75 px off the button it clicked at a twelve-degree yaw,
+    // and no test that only checks corners can see it.
+    const share = weights[corner]! * quad[corner * 3 + 2]!;
     x += quad[corner * 3]! * share;
     y += quad[corner * 3 + 1]! * share;
     total += share;
   }
 
   if (total <= 0) return { x: 0, y: 0, scale: 1 };
-  return { x: x / total, y: y / total, scale: total };
+  // The reciprocal, because `total` is the interpolated distance from the eye
+  // rather than its inverse. Nearer is bigger.
+  return { x: x / total, y: y / total, scale: 1 / total };
 }
 
 /**
@@ -2805,48 +2833,73 @@ function cursorItems(
     }
   }
 
+  /**
+   * Where a moment's pointer sits on the picture, and on what.
+   *
+   * Read twice — once to place the point, and again to project the sprite's own
+   * corners once `withSmear` has sized their padding — rather than worked out
+   * once and stashed on the point. `withTypingGaps` writes held markers at
+   * moments no sample exists at and spreads the rest of the point from a
+   * neighbour, so a stashed plane would come through that spread as *that
+   * neighbour's*: mid-zoom the picture is a different rectangle a frame later,
+   * and the pointer would be projected onto a picture from another moment. Two
+   * binary searches at plan time is much the cheaper mistake.
+   */
+  const planeAt = (at: number): Plane => {
+    const point = cursorFraction(path, at);
+    const px = point.x * source.width;
+    const py = point.y * source.height;
+
+    // Through the picture's rectangle *at this moment*, not the un-zoomed
+    // one. Mapping the pointer with a still rectangle while the picture
+    // moves under it is what put it somewhere the thing it was pointing at
+    // was not — and the further a zoom went, the further out it was.
+    const rect = rectAt(motion, at, dstRect, 0);
+    const u = (px - srcRect.x) / srcRect.width;
+    const v = (py - srcRect.y) / srcRect.height;
+    const flat = { x: rect.x + u * rect.width, y: rect.y + v * rect.height };
+
+    // On the tilted plane when there is one, so the pointer leans with the
+    // picture instead of floating flat above it — and, when a tilt is steep,
+    // instead of being placed clean off the frame.
+    const placed = rect.quad ? onPlane(rect.quad, u, v) : { ...flat, scale: 1 };
+
+    return {
+      rect,
+      quad: rect.quad,
+      u,
+      v,
+      flat,
+      placed,
+      visible:
+        px >= srcRect.x &&
+        px <= srcRect.x + srcRect.width &&
+        py >= srcRect.y &&
+        py <= srcRect.y + srcRect.height,
+    };
+  };
+
   const points: ShapedPoint[] = [...times]
     .sort((a, b) => a - b)
     .map((at) => {
-      const point = cursorFraction(path, at);
-      const px = point.x * source.width;
-      const py = point.y * source.height;
-
-      // Through the picture's rectangle *at this moment*, not the un-zoomed
-      // one. Mapping the pointer with a still rectangle while the picture
-      // moves under it is what put it somewhere the thing it was pointing at
-      // was not — and the further a zoom went, the further out it was.
-      const rect = rectAt(motion, at, dstRect, 0);
-      const u = (px - srcRect.x) / srcRect.width;
-      const v = (py - srcRect.y) / srcRect.height;
-
-      // On the tilted plane when there is one, so the pointer leans with the
-      // picture instead of floating flat above it — and, when a tilt is steep,
-      // instead of being placed clean off the frame.
-      const placed = rect.quad
-        ? onPlane(rect.quad, u, v)
-        : { x: rect.x + u * rect.width, y: rect.y + v * rect.height, scale: 1 };
+      const plane = planeAt(at);
 
       return {
         at,
-        x: placed.x,
-        y: placed.y,
+        x: plane.placed.x,
+        y: plane.placed.y,
         // Folded into the scale the plan already carries, rather than added to
         // it as a field of its own. Both rasterisers multiply the pointer's
         // size by this one number — `compositor.rs` and `webgl.ts`, a line each
         // — so a press drawn this way cannot come out differently in the
         // preview and the export.
-        scale: placed.scale * pressScale(path.clicks, at),
+        scale: plane.placed.scale * pressScale(path.clicks, at),
         // Placeholders. `withSmear` fills these in at the end, once the gaps
         // are in and every point's real neighbours are known — measuring here
         // would use neighbours that are about to change.
         smearX: 0,
         smearY: 0,
-        visible:
-          px >= srcRect.x &&
-          px <= srcRect.x + srcRect.width &&
-          py >= srcRect.y &&
-          py <= srcRect.y + srcRect.height,
+        visible: plane.visible,
         kind: cursorKind(path, at),
       };
     });
@@ -2871,8 +2924,151 @@ function cursorItems(
     path: shape.path,
     size,
     hotspot: shape.hotspot,
-    points: drawn,
+    // Laid on the picture per track rather than once over `smeared`, because
+    // the marker `splitByShape` writes at a shape change is drawn with the
+    // *outgoing* pointer's hotspot — a quad built from the incoming one would
+    // offset that marker by the difference between two tips.
+    points: drawn.map((point) => onSprite(point, planeAt(point.at), shape.hotspot, size)),
   }));
+}
+
+/** A moment's picture, and where on it the pointer sits. */
+interface Plane {
+  rect: RectKey;
+  quad: number[] | undefined;
+  u: number;
+  v: number;
+  flat: Point;
+  placed: Point & { scale: number };
+  visible: boolean;
+}
+
+/**
+ * The pointer's own four corners, laid on the tilted picture like a decal.
+ *
+ * Without this the sprite is an upright square standing on a leaning picture.
+ * Its tip lands in the right place and nothing behind the tip does, so the
+ * arrow reads as floating in front of the screen rather than lying on it.
+ *
+ * The square is measured on the picture's *surface* — before the projection —
+ * and then put through the same homography the picture itself went through.
+ * `point.scale` is the magnification that projection is about to apply, so it
+ * is divided back out here: left in, the magnification lands twice and a
+ * pointer at the near edge comes out half again as large as the picture under
+ * it. That reads as a styling choice rather than as a fault, which is why it
+ * has a test of its own.
+ *
+ * Nothing is emitted where the picture is flat, exactly as an untilted
+ * `RectKey` carries no corners — the rasterisers then draw the upright square
+ * they always did.
+ */
+function onSprite(
+  point: CursorPoint,
+  plane: Plane,
+  hotspot: { x: number; y: number },
+  size: number,
+): CursorPoint {
+  const quad = plane.quad;
+  if (!quad || plane.rect.width <= 0 || plane.rect.height <= 0) return point;
+
+  const magnify = plane.placed.scale;
+  if (!(magnify > 0)) return point;
+
+  // The streak, turned to run along the picture rather than across the frame —
+  // see `onAxes`.
+  const [alongX, alongY] = onAxes(quad, plane, point.smearX, point.smearY);
+
+  // Every length divided back onto the surface, so the *ratios* the shaders
+  // work in — `smear / grown` and `pad / grown` — come out identical to the
+  // ones both rasterisers compute from the box they draw. Building the square
+  // at its flat size instead would leave the streak mapped across a box of the
+  // wrong width, which draws the blur at the wrong length.
+  const side = (size * point.scale) / magnify;
+  const pad = Math.hypot(alongX, alongY) / 2;
+  const grown = side + pad * 2;
+  const left = plane.flat.x - hotspot.x * side - pad;
+  const top = plane.flat.y - hotspot.y * side - pad;
+
+  const corners: number[] = [];
+
+  // Top-left, top-right, bottom-left, bottom-right — the order `rotatedQuad`
+  // writes and the order the vertex id walks a triangle strip.
+  for (const [x, y] of [
+    [left, top],
+    [left + grown, top],
+    [left, top + grown],
+    [left + grown, top + grown],
+  ]) {
+    const projected = onPlane(
+      quad,
+      (x! - plane.rect.x) / plane.rect.width,
+      (y! - plane.rect.y) / plane.rect.height,
+    );
+
+    // A corner past the horizon has no projection, and the rational bilinear
+    // turns the quad inside out rather than saying so — the pointer draws as a
+    // wedge across the whole frame. Only reachable where a padded sprite hangs
+    // off the far edge of a steep tilt, and left upright there is wrong by a
+    // few pixels rather than by the width of the picture.
+    if (!(projected.scale > 0) || !Number.isFinite(projected.scale)) return point;
+
+    // The divisor, not the magnification. `rotatedQuad` stores the same thing
+    // for the same reason: it is what a GPU divides its varyings by, and
+    // storing the reciprocal creases the sprite along the diagonal where its
+    // own two triangles meet.
+    corners.push(projected.x, projected.y, 1 / projected.scale);
+  }
+
+  return { ...point, smearX: alongX * magnify, smearY: alongY * magnify, quad: corners };
+}
+
+/**
+ * A streak measured across the frame, re-expressed along the picture's own axes.
+ *
+ * Both shaders read the smear as an offset in the sprite quad's `uv`, and a
+ * projected quad's `uv` axes are the picture's rather than the screen's.
+ * Handing them a screen-space vector draws the streak *across* the plane
+ * instead of along the way the pointer is going, and a motion blur pointing the
+ * wrong way is worse than none at all. Resolved here rather than in each
+ * rasteriser, for the reason `smearX` is a finished vector at all: two answers
+ * to "which way is the pointer going" is how a preview and an export come to
+ * disagree.
+ *
+ * Scaled back up by the local magnification on the way out, so `grown` — which
+ * both rasterisers derive from these two numbers — still comes out as the
+ * projected box's size and matches the padding built into the quad exactly.
+ */
+function onAxes(
+  quad: readonly number[],
+  plane: Plane,
+  smearX: number,
+  smearY: number,
+): [number, number] {
+  if (smearX === 0 && smearY === 0) return [0, 0];
+
+  // One flat pixel along each of the picture's two axes, projected. The basis
+  // is read at the pointer and treated as constant across the sprite: the
+  // projection's curvature over a few dozen pixels is far below the pixel it
+  // is being measured in.
+  const step = (du: number, dv: number) =>
+    onPlane(quad, plane.u + du / plane.rect.width, plane.v + dv / plane.rect.height);
+
+  const here = plane.placed;
+  const alongU = step(1, 0);
+  const alongV = step(0, 1);
+
+  const a = alongU.x - here.x;
+  const b = alongV.x - here.x;
+  const c = alongU.y - here.y;
+  const d = alongV.y - here.y;
+
+  // Edge on, where the two axes have collapsed onto one line and the question
+  // has no single answer. Left as it was measured: a plane that thin shows a
+  // few pixels of pointer, and inverting this would be a divide by nothing.
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < 1e-9) return [smearX, smearY];
+
+  return [(d * smearX - b * smearY) / determinant, (a * smearY - c * smearX) / determinant];
 }
 
 /**
@@ -3373,7 +3569,14 @@ function blurAt(word: CaptionWord, at: number): number {
 export function cursorAt(
   points: readonly CursorPoint[],
   at: number,
-): { x: number; y: number; scale: number; smearX: number; smearY: number } | null {
+): {
+  x: number;
+  y: number;
+  scale: number;
+  smearX: number;
+  smearY: number;
+  quad?: number[];
+} | null {
   if (points.length === 0) return null;
 
   // Before the first sample the pointer had not moved yet, so it was wherever
@@ -3401,12 +3604,24 @@ export function cursorAt(
   const span = b.at - a.at;
   const t = span > 0 ? (at - a.at) / span : 0;
 
+  // Only where both ends carry corners. This is not `rectAt`'s case, which has
+  // to fill a missing quad in from the key's own rectangle: a zoom's keys sit a
+  // thirtieth of a second apart and a track legitimately puts a hard tilt next
+  // to a flat key, so taking whichever quad existed snapped the picture
+  // upright in a single frame. A pointer's flat neighbour is flat because
+  // `rotatedQuad` gave up below a hundredth of a degree, so the picture there
+  // really is upright and the upright sprite is the right answer for that one
+  // span.
+  const quad =
+    a.quad && b.quad ? a.quad.map((value, index) => lerp(value, b.quad![index]!, t)) : undefined;
+
   return {
     x: a.x + (b.x - a.x) * t,
     y: a.y + (b.y - a.y) * t,
     scale: a.scale + (b.scale - a.scale) * t,
     smearX: a.smearX + (b.smearX - a.smearX) * t,
     smearY: a.smearY + (b.smearY - a.smearY) * t,
+    ...(quad ? { quad } : {}),
   };
 }
 
