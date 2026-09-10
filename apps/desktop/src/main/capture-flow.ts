@@ -6,7 +6,7 @@
  * starts, because its `CGWindowID` is what keeps it out of the frame. A window
  * created afterwards will be recorded.
  */
-import { screen, type BrowserWindow } from "electron";
+import { dialog, screen, shell, type BrowserWindow } from "electron";
 
 import type {
   DockMenu,
@@ -25,6 +25,8 @@ import { log } from "./log.js";
 import type { Preferences } from "./preferences.js";
 import type { NativeCamera } from "./recorder.js";
 import { getRecorder } from "./recorder.js";
+import { reportError } from "./errors.js";
+import { relaunchApp } from "./permissions.js";
 import { deleteRecording } from "./session.js";
 import type { RecordingSession } from "./session.js";
 import { windowId } from "./windows/base.js";
@@ -123,6 +125,24 @@ export interface CaptureFlowOptions {
    */
   checkForUpdates?: () => void;
 }
+
+/**
+ * How often to ask whether a frame has arrived yet.
+ *
+ * Cheap: a `try_lock` and a counter read. The cost of asking often is nothing,
+ * and the cost of asking rarely is a longer wait before a broken recording is
+ * caught.
+ */
+const FRAME_CHECK_MS = 400;
+
+/**
+ * How many empty answers in a row mean the stream is not going to deliver.
+ *
+ * Four checks, so about 1.6 seconds. Long enough that a slow first frame on a
+ * cold display is not called a failure, short enough that nobody has said
+ * anything they will have to say again.
+ */
+const CHECKS_BEFORE_GIVING_UP = 4;
 
 export class CaptureFlow {
   private pending: PendingSelection | null = null;
@@ -247,6 +267,25 @@ export class CaptureFlow {
     // so go straight to the picker for whichever mode was used last rather than
     // making the user ask for it again.
     void this.chooseMode(this.deps.preferences.get().mode).catch((cause) => {
+      console.warn("[flow] could not open the picker:", cause);
+    });
+  }
+
+  /**
+   * Opens the panel straight onto one kind of source.
+   *
+   * `open()` goes to whichever mode was used last, which is right for a button
+   * that says "Start Recording". The tray's three are for saying which without
+   * having gone through the panel first — the mode is a choice most people make
+   * before they think about recording at all, and it was two clicks in.
+   *
+   * Remembered as the mode, because `chooseMode` writes it to preferences: a
+   * screen recorded from the tray is what the panel offers next time.
+   */
+  openMode(mode: ScreenMode): void {
+    this.showDock();
+
+    void this.chooseMode(mode).catch((cause) => {
       console.warn("[flow] could not open the picker:", cause);
     });
   }
@@ -536,6 +575,10 @@ export class CaptureFlow {
       // leaves the app looking like it ignored the button — which is
       // indistinguishable from a bug in the button.
       console.error("[flow] could not start capturing:", cause);
+      // Reported as well as logged. This is the one failure a user cannot work
+      // around and cannot describe: the button did nothing, and whatever
+      // ScreenCaptureKit said about why is in a file they do not know about.
+      reportError("capture.start", cause);
       this.releaseCamera();
       this.deps.dock.setView("setup");
       this.deps.dock.show();
@@ -546,7 +589,103 @@ export class CaptureFlow {
     this.deps.dock.setView("recording");
     this.deps.dock.show();
     this.emit();
+    this.watchFirstFrames();
     return this.state();
+  }
+
+  /**
+   * Stops a recording that is not recording anything.
+   *
+   * ScreenCaptureKit can start a stream, report no error, and then deliver
+   * nothing at all. It is what a stale Screen Recording permission looks like
+   * from in here: the grant macOS hands a running app is the one it had at
+   * launch, so a permission granted without restarting leaves a stream that is
+   * alive and empty. macOS 15 and later can also revoke it part way through a
+   * session and ask again, and a prompt nobody answered has the same shape.
+   *
+   * Nothing downstream noticed. The dock counted up, the camera wrote several
+   * hundred megabytes, and the failure only surfaced at the stop, where the
+   * screen writer refused to finish a file it had never been given a frame for.
+   * One user recorded four minutes that way.
+   *
+   * Polled rather than asked once, because `frames_so_far` answers `-2` when the
+   * delivery queue holds the capture lock, which at 60 fps is most of the time.
+   * Every answer but a hard `0` is taken as alive.
+   */
+  private watchFirstFrames(): void {
+    let checks = 0;
+
+    const check = async (): Promise<void> => {
+      checks += 1;
+
+      let frames: number;
+      try {
+        frames = await this.deps.session.screenFramesSoFar();
+      } catch {
+        // The recorder is gone, or was never native. Either way this watcher
+        // has nothing to say.
+        clearInterval(tick);
+        return;
+      }
+
+      // Recording ended on its own, or a frame arrived. Both are the end of
+      // this, and the second is the common one.
+      if (frames !== 0) {
+        clearInterval(tick);
+        return;
+      }
+
+      if (checks < CHECKS_BEFORE_GIVING_UP) return;
+      clearInterval(tick);
+
+      await this.abandonEmptyRecording();
+    };
+
+    const tick = setInterval(() => void check(), FRAME_CHECK_MS);
+
+    tick.unref?.();
+  }
+
+  /**
+   * Ends a recording that never received a frame, and says why.
+   *
+   * The recording is stopped rather than left running: what it is writing is a
+   * camera track and nothing else, and every second more of it is a second the
+   * user will not get back when they find out. The take stays on disk with a
+   * manifest, which is what makes it openable at all.
+   */
+  private async abandonEmptyRecording(): Promise<void> {
+    log("error", "no screen frames arrived; stopping the recording");
+    reportError("capture.no_frames", "the screen stream delivered no frames");
+    track("recording_no_frames");
+
+    try {
+      await this.stop();
+    } catch (cause) {
+      console.error("[flow] could not stop an empty recording:", cause);
+    }
+
+    const { response } = await dialog.showMessageBox({
+      type: "error",
+      message: "Prequel is not receiving your screen",
+      detail:
+        "The recording started, but macOS sent no picture of your screen, so there was nothing to record. " +
+        "This is almost always the Screen Recording permission: macOS gives an app the answer it had when the app opened, " +
+        "so granting it while Prequel is running does not take effect until you quit and open it again.\n\n" +
+        "Anything your camera recorded has been kept.",
+      buttons: ["Open Screen Recording settings", "Quit and reopen Prequel", "Close"],
+      defaultId: 0,
+      cancelId: 2,
+    });
+
+    if (response === 0) {
+      await shell.openExternal(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+      );
+      return;
+    }
+
+    if (response === 1) relaunchApp();
   }
 
   /** Pauses or resumes, whichever applies. */

@@ -15,7 +15,7 @@ use prequel_session::{MediaTime, TrackKind};
 
 use crate::compositor::Compositor;
 use crate::mixer::{self, CHANNELS, Gain};
-use crate::reader::{VideoReader, read_audio};
+use crate::reader::{AudioReader, VideoReader};
 use crate::timeline::{SliceRender, Timeline};
 use crate::{Error, Result};
 
@@ -40,10 +40,26 @@ const PROGRESS_EVERY: u64 = 6;
 /// Where an export's wall clock actually goes.
 ///
 /// The loop below runs decode, composite and encode strictly one after another,
-/// and the wait in `Compositor::render` is justified by a comment saying an
-/// export is "throughput-bound on the decoder". That has never been measured,
-/// and it decides whether pipelining the three stages — they run on three
-/// independent engines — is worth the texture-lifetime work it would take.
+/// on three independent engines, and the obvious question is what that costs.
+/// Measured, on an M-series Mac, exporting a real 31-second session to 1080p60
+/// H.264 with a five-item plan: **decode 4%, render 5%, encode 85-90%**.
+///
+/// So: nothing. The export is encode-bound, and not by a little. `ffmpeg` given
+/// the same 1800 frames through the same `h264_videotoolbox` takes 7.66s where
+/// the whole export — decode, composite, mix and encode — takes 7.68s. There is
+/// no headroom in this crate to find, because VideoToolbox is the wall.
+///
+/// Overlapping render and encode was tried and measured at **0.8%**, which is
+/// what the numbers above predict: committing the frame without waiting can
+/// only recover the time the GPU was idle, and that was 2-3%. It cost retained
+/// source buffers, a double-buffered caption backdrop and a lifetime rule on
+/// every frame in flight, so it was taken back out.
+///
+/// Kept rather than deleted now the question is answered, because the answer
+/// moves: it is a property of the machine, the resolution and the codec, and
+/// the next person to ask should read a number rather than re-derive one. The
+/// thing to check first is whether encode is still the wall — if it is, the
+/// only lever left is what is asked of the encoder, not how this loop is shaped.
 ///
 /// Summed rather than sampled: the per-frame cost is tens of microseconds and a
 /// timer around each stage would be a large fraction of what it measures if it
@@ -224,19 +240,21 @@ fn run(
         }
     }
     // Before the writer exists, because the writer has to be told whether the
-    // file carries sound before it will take a single frame. A mix that fails is
-    // a silent export rather than a lost one: the footage is the part that cannot
-    // be remade.
-    let mixed = if request.format.carries_audio() {
-        mix_audio(request).unwrap_or_else(|err| {
-            tracing::warn!("could not mix the exported audio: {err}");
-            Vec::new()
-        })
-    } else {
-        Vec::new()
-    };
+    // file carries sound before it will take a single frame. Opening decodes
+    // nothing — it answers that one question from which files are there, and
+    // the mixing itself happens a chunk at a time inside the loop below.
+    let mut audio = request
+        .format
+        .carries_audio()
+        .then(|| AudioStream::open(request))
+        .flatten();
 
-    let mut writer = Sink::create(request, !mixed.is_empty())?;
+    let mut writer = Sink::create(request, audio.is_some())?;
+
+    // The mix's two working buffers, allocated once here rather than per chunk.
+    let mut chunk: Vec<f32> = Vec::new();
+    let mut scratch: Vec<f32> = Vec::new();
+    let mut audio_done = false;
 
     let screen_path = request.session_dir.join(TrackKind::Screen.file_name());
     let camera_path = request.session_dir.join(TrackKind::Camera.file_name());
@@ -246,8 +264,6 @@ fn run(
     let mut screen: Option<VideoReader> = None;
     let mut camera: Option<VideoReader> = None;
     let mut written = 0u64;
-    // How much of the mix has reached the writer, as an index into it.
-    let mut sent = 0usize;
 
     let mut times = StageTimes::default();
     let began = std::time::Instant::now();
@@ -318,14 +334,24 @@ fn run(
         // would release it. Video waits on audio, audio waits on video, and the
         // export stops. Running the sound a second in front means the video input
         // is never the one waiting.
-        if !mixed.is_empty() {
-            let upto = samples_upto(index * frame_duration + AUDIO_LEAD, mixed.len());
-            if upto > sent {
-                writer.append_audio(&mixed[sent..upto])?;
-                sent = upto;
+        if let Some(stream) = audio.as_mut()
+            && !audio_done
+        {
+            let upto = samples_upto(index * frame_duration + AUDIO_LEAD, stream.total());
+            while stream.produced() < upto && stream.next(&mut chunk, &mut scratch) {
+                writer.append_audio(&chunk)?;
             }
-            if sent == mixed.len() {
+
+            // The moment the last sample is written, and not when a later call
+            // happens to run out. `AVAssetWriter` holds the *video* input
+            // not-ready while it waits on a sound track that still might have
+            // something to say — so an audio track that is finished but never
+            // said so stops the export a second before the end, which is the
+            // same deadlock `AUDIO_LEAD` exists to avoid, arrived at from the
+            // other side.
+            if stream.produced() == stream.total() {
                 writer.finish_audio();
+                audio_done = true;
             }
         }
 
@@ -348,10 +374,16 @@ fn run(
 
     // Whatever is left. The frame grid rarely lands exactly on the last sample,
     // and dropping the remainder would clip the final fraction of a second.
-    if sent < mixed.len()
-        && let Err(err) = writer.append_audio(&mixed[sent..])
+    if let Some(stream) = audio.as_mut()
+        && !audio_done
     {
-        tracing::warn!("could not write the last of the exported audio: {err}");
+        while stream.next(&mut chunk, &mut scratch) {
+            if let Err(err) = writer.append_audio(&chunk) {
+                tracing::warn!("could not write the last of the exported audio: {err}");
+                break;
+            }
+        }
+        writer.finish_audio();
     }
 
     // Ended a frame past the last one, so the final frame has a duration rather
@@ -568,63 +600,197 @@ fn samples_upto(at: MediaTime, len: usize) -> usize {
     (frames * CHANNELS).min(len - len % CHANNELS)
 }
 
-/// Mixes the audio track down to interleaved samples.
+/// The exported soundtrack, mixed a chunk at a time as the picture is written.
 ///
-/// Mixing and writing are separate because the writer has to be told about the
-/// sound track before it starts taking frames — `AVAssetWriter` refuses an input
-/// added after `startWriting`. So this runs first, and its result decides whether
-/// the file gets an audio track at all.
+/// This used to be one `Vec<f32>` holding the whole export, built before the
+/// first frame was drawn. Interleaved stereo at 48 kHz is 384 KB a second, and
+/// the buffer doubles as it grows — so the peak was nearer 1.4 MB a second than
+/// 384 KB, with the old and new allocations both live across a reallocation.
 ///
-/// Empty when the recording had no sound, every source was muted, or nothing
-/// would decode. The caller then writes a silent video, which is the honest
-/// outcome and was always the intent.
-fn mix_audio(request: &ExportRequest) -> Result<Vec<f32>> {
-    let mic_path = request.session_dir.join(TrackKind::Microphone.file_name());
-    let system_path = request.session_dir.join(TrackKind::SystemAudio.file_name());
+/// Measured, exporting a real session with mic and system audio: peak RSS went
+/// 165 MB at a 90-second export, 528 MB at six minutes, 1.3 GB at fifteen —
+/// straight-line growth in the length of the edit. Streaming it holds flat at
+/// 65-73 MB across the same range. Nothing ever needed the mix whole: the loop
+/// below feeds the writer a second at a time through `samples_upto`.
+///
+/// What genuinely has to be known up front is only whether the file gets a
+/// sound track at all, because `AVAssetWriter` refuses an input added after
+/// `startWriting`. That is a question about which files exist, and answering it
+/// costs nothing — see `open`.
+///
+/// The audio runs ahead of the picture, so this keeps its own slice cursor
+/// rather than following the one driving the readers: by the time the last
+/// frame of a slice is drawn, the sound of the next one has already been
+/// written.
+struct AudioStream<'a> {
+    slices: &'a [SliceRender],
+    /// Absent where the recording has no such track. Held rather than re-tested
+    /// per slice, because `exists` on a missing file is a syscall a slice.
+    sources: [Option<(PathBuf, MediaTime)>; 2],
+    /// The slice being mixed, which is not the slice being drawn.
+    slot: usize,
+    readers: [Option<AudioReader>; 2],
+    gains: [Gain; 2],
+    /// Samples this slice owes, and how many of them have been mixed.
+    owed: usize,
+    done: usize,
+    /// Mixed so far, across every slice — what `samples_upto` is compared to.
+    produced: usize,
+    /// What the finished mix will contain, known without decoding a byte of it.
+    total: usize,
+}
 
-    if !mic_path.exists() && !system_path.exists() {
-        return Ok(Vec::new());
-    }
+/// How much of the mix is built at once, in interleaved samples.
+///
+/// A quarter of a second. Small enough that the peak no longer depends on how
+/// long the take was, large enough that it is hundreds of decoded buffers
+/// rather than a handful — and comfortably under `AUDIO_LEAD`, so the writer is
+/// never waiting on the next chunk to be mixed.
+const AUDIO_CHUNK: usize = (SAMPLE_RATE as usize / 4) * CHANNELS;
 
-    let mut mixed: Vec<f32> = Vec::new();
+impl<'a> AudioStream<'a> {
+    /// Prepares the mix, or `None` where the export has no sound to write.
+    ///
+    /// Deliberately decodes nothing. The old `mix_audio` answered "is there a
+    /// sound track?" with "is the mixed buffer non-empty?", which meant mixing
+    /// the entire recording before the writer could be created. The same
+    /// answer is "does either file exist, and does the edit occupy any time at
+    /// all" — a pair of `exists` calls and some arithmetic.
+    fn open(request: &'a ExportRequest) -> Option<Self> {
+        let sources = [
+            (TrackKind::Microphone, request.mic_offset),
+            (TrackKind::SystemAudio, request.system_offset),
+        ]
+        .map(|(kind, offset)| {
+            let path = request.session_dir.join(kind.file_name());
+            path.exists().then_some((path, offset))
+        });
 
-    for slice in &request.slices {
-        let mut span = mixer::silence(slice.duration(), SAMPLE_RATE);
-
-        for (path, offset, gain) in [
-            (&mic_path, request.mic_offset, Gain(slice.audio.mic)),
-            (
-                &system_path,
-                request.system_offset,
-                Gain(slice.audio.system),
-            ),
-        ] {
-            if !path.exists() || gain.is_silent() {
-                continue;
-            }
-
-            let start = slice.start.saturating_sub(offset);
-            let end = slice.end.saturating_sub(offset);
-            if end <= start {
-                continue;
-            }
-
-            match read_audio(path, start, end, SAMPLE_RATE) {
-                Ok(samples) => mixer::mix_into(&mut span, &samples, gain),
-                // A track that will not decode is a quiet export, not a failed
-                // one — the picture is still worth having.
-                Err(err) => tracing::warn!("could not read {}: {err}", path.display()),
-            }
+        if sources.iter().all(Option::is_none) {
+            return None;
         }
 
-        mixed.extend_from_slice(&span);
+        let total: usize = request
+            .slices
+            .iter()
+            .map(|slice| mixer::frames_for(slice.duration(), SAMPLE_RATE) * CHANNELS)
+            .sum();
+
+        if total == 0 {
+            return None;
+        }
+
+        let mut stream = Self {
+            slices: &request.slices,
+            sources,
+            slot: 0,
+            readers: [None, None],
+            gains: [Gain(0.0), Gain(0.0)],
+            owed: 0,
+            done: 0,
+            produced: 0,
+            total,
+        };
+        stream.open_slot();
+
+        Some(stream)
     }
 
-    // Clipped once, after everything is summed: clamping each source first
-    // would distort a track that is only loud because another sits under it.
-    mixer::clip(&mut mixed);
+    fn total(&self) -> usize {
+        self.total
+    }
 
-    Ok(mixed)
+    fn produced(&self) -> usize {
+        self.produced
+    }
+
+    /// Opens the readers for `slot` and works out what it owes.
+    ///
+    /// A source that will not decode leaves its reader `None`, which mixes as
+    /// silence: a track that will not open is a quiet export, not a failed one
+    /// — the picture is still worth having.
+    fn open_slot(&mut self) {
+        let slice = &self.slices[self.slot];
+
+        self.owed = mixer::frames_for(slice.duration(), SAMPLE_RATE) * CHANNELS;
+        self.done = 0;
+        self.gains = [Gain(slice.audio.mic), Gain(slice.audio.system)];
+
+        for (index, source) in self.sources.iter().enumerate() {
+            let Some((path, offset)) = source else {
+                self.readers[index] = None;
+                continue;
+            };
+
+            // A muted source is not opened at all. Its samples would be
+            // multiplied by zero and thrown away, and the decode is the
+            // expensive half of that.
+            if self.gains[index].is_silent() {
+                self.readers[index] = None;
+                continue;
+            }
+
+            let start = slice.start.saturating_sub(*offset);
+            let end = slice.end.saturating_sub(*offset);
+            if end <= start {
+                self.readers[index] = None;
+                continue;
+            }
+
+            self.readers[index] = match AudioReader::open(path, start, end, SAMPLE_RATE) {
+                Ok(reader) => Some(reader),
+                Err(err) => {
+                    tracing::warn!("could not read {}: {err}", path.display());
+                    None
+                }
+            };
+        }
+    }
+
+    /// Mixes the next chunk into `chunk`, reusing `scratch` for each source.
+    ///
+    /// False once every slice has been mixed. Both buffers are the caller's so
+    /// that a long export allocates them once rather than per chunk.
+    fn next(&mut self, chunk: &mut Vec<f32>, scratch: &mut Vec<f32>) -> bool {
+        // A slice can be shorter than one chunk, and a slice with no duration
+        // owes nothing at all, so this walks forward rather than stepping once.
+        while self.done == self.owed {
+            if self.slot + 1 >= self.slices.len() {
+                return false;
+            }
+            self.slot += 1;
+            self.open_slot();
+        }
+
+        let run = (self.owed - self.done).min(AUDIO_CHUNK);
+
+        // Silence to sum into. A slice whose audio is missing still occupies
+        // time in the output, so it is filled rather than skipped — otherwise
+        // every later slice would slide earlier and drift out of step with the
+        // picture.
+        chunk.clear();
+        chunk.resize(run, 0.0);
+
+        for (index, reader) in self.readers.iter_mut().enumerate() {
+            let Some(reader) = reader else { continue };
+
+            scratch.clear();
+            scratch.resize(run, 0.0);
+            let got = reader.read(scratch);
+
+            mixer::mix_into(chunk, &scratch[..got], self.gains[index]);
+        }
+
+        // Per chunk rather than once over the whole mix, which is the same
+        // thing: `clip` is a per-sample clamp, and every source that
+        // contributes to a sample has already been summed into it by here.
+        mixer::clip(chunk);
+
+        self.done += run;
+        self.produced += run;
+
+        true
+    }
 }
 
 #[cfg(test)]

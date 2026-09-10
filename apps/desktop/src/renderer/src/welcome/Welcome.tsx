@@ -5,6 +5,7 @@ import { assetUrl, permissionIconUrl } from "../../../shared/media-url";
 import { cn } from "../lib/cn";
 import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
 import { Avatar } from "../components/Avatar";
+import { PERMISSIONS, PermissionList } from "../components/PermissionList";
 import { Wash } from "../components/Wash";
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions, type Permissions } from "../hooks/usePermissions";
@@ -21,52 +22,6 @@ import { usePermissions, type Permissions } from "../hooks/usePermissions";
  * See `main/windows/welcome.ts` for when it opens, and `main/permissions.ts`
  * for why two of the four cannot be granted from a prompt.
  */
-
-/** One thing to ask for, and why anyone should say yes. */
-const PERMISSIONS: {
-  id: PermissionId;
-  label: string;
-  /** One line. Two wrap at this width, and a wrapped row reads as a warning. */
-  detail: string;
-  /**
-   * Whether macOS decides this one once per process.
-   *
-   * Screen Recording and Accessibility are both read from a value the system
-   * fixes at launch — `AXIsProcessTrusted` caches for the life of the process
-   * exactly as the screen check does. An approval given in System Settings
-   * while Prequel is running therefore never reaches the running copy, and the
-   * row goes on saying no however many times it is re-read. Camera and
-   * microphone come back from a prompt and take effect at once, so offering
-   * them a restart would be telling the user to fix something that is not
-   * broken.
-   */
-  needsRestart: boolean;
-}[] = [
-  {
-    id: "screen",
-    label: "Screen Recording",
-    detail: "Everything Prequel records comes through it.",
-    needsRestart: true,
-  },
-  {
-    id: "accessibility",
-    label: "Accessibility",
-    detail: "Lets the automatic zooms find your clicks and typing.",
-    needsRestart: true,
-  },
-  {
-    id: "camera",
-    label: "Camera",
-    detail: "For the webcam bubble, only when you turn it on.",
-    needsRestart: false,
-  },
-  {
-    id: "microphone",
-    label: "Microphone",
-    detail: "For your voice, only when you turn it on.",
-    needsRestart: false,
-  },
-];
 
 /**
  * Four, since signing in became one of them.
@@ -226,94 +181,8 @@ function PermissionsStep({ permissions }: { permissions: Permissions }) {
         </p>
       </div>
 
-      <ul className="flex flex-col gap-1.5">
-        {PERMISSIONS.map((permission) => (
-          <PermissionRow
-            key={permission.id}
-            permission={permission}
-            granted={permissions.granted(permission.id)}
-            onGrant={() => void permissions.request(permission.id)}
-          />
-        ))}
-      </ul>
+      <PermissionList permissions={permissions} />
     </div>
-  );
-}
-
-function PermissionRow({
-  permission,
-  granted,
-  onGrant,
-}: {
-  permission: (typeof PERMISSIONS)[number];
-  granted: boolean;
-  onGrant: () => void;
-}) {
-  return (
-    // Translucent rather than the panel's solid surface, so the wash at the top
-    // of the window carries through the rows instead of stopping dead at the
-    // first one.
-    <li className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-3">
-      {/* macOS's own icon for the pane this permission is granted in, so the
-          row and the System Settings window it sends you to show the same
-          picture — the artwork is the instruction for what to look for once you
-          are there, which a glyph of our own cannot be.
-
-          No tinted square behind it any more. These carry their own rounded
-          square and their own colour, and a second one around them read as an
-          icon inside a button. The grant state is the right-hand side of the
-          row, where it can be a word rather than a hue. */}
-      <img
-        src={permissionIconUrl(permission.id)}
-        alt=""
-        width={32}
-        height={32}
-        className="mt-0.5 size-8 flex-none"
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="text-xs font-medium">{permission.label}</p>
-        <p className="text-[11px] leading-relaxed text-editor-muted">{permission.detail}</p>
-
-        {/* Only where it can actually be the problem, and only while it is one.
-            See `needsRestart` above: for these two, an approval given while
-            Prequel is running does not reach the running copy, so the row stays
-            red and the app looks broken. Without this the user has granted the
-            permission, can see that they have granted it, and is told they have
-            not — with nothing on screen to do about it. */}
-        {!granted && permission.needsRestart && (
-          <p className="pt-1 text-[11px] text-editor-muted">
-            Already allowed it in System Settings?{" "}
-            <button
-              type="button"
-              className="text-editor-fg underline underline-offset-2 hover:text-selected"
-              onClick={() => void window.prequel.welcome.relaunch()}
-            >
-              Restart Prequel
-            </button>
-          </p>
-        )}
-      </div>
-
-      {granted ? (
-        <span className="flex flex-none items-center gap-1.5 self-center text-[11px] text-export [&_svg]:size-3.5">
-          <CheckIcon />
-          Allowed
-        </span>
-      ) : (
-        // One button per row. Allow already ends at System Settings for the
-        // two macOS will not grant from a prompt — `requestPermission` opens
-        // the pane itself once the prompt has been spent — so a second control
-        // beside it offered a choice that was never really a choice.
-        <button
-          type="button"
-          className="flex-none self-center rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-medium hover:bg-white/15"
-          onClick={onGrant}
-        >
-          Allow
-        </button>
-      )}
-    </li>
   );
 }
 

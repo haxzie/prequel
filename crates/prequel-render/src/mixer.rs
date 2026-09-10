@@ -57,14 +57,6 @@ pub fn frames_for(duration: MediaTime, sample_rate: f64) -> usize {
     ((duration as f64 / 1_000_000_000.0) * sample_rate).round() as usize
 }
 
-/// Samples covering `duration`, silent.
-///
-/// A slice whose audio is missing still occupies time in the output, so it is
-/// filled with silence rather than skipped — otherwise every later slice would
-/// slide earlier and the audio would drift out of step with the picture.
-pub fn silence(duration: MediaTime, sample_rate: f64) -> Vec<f32> {
-    vec![0.0; frames_for(duration, sample_rate) * CHANNELS]
-}
 
 #[cfg(test)]
 mod tests {
@@ -165,12 +157,11 @@ mod tests {
     }
 
     #[test]
-    fn silence_still_occupies_its_time() {
+    fn a_span_with_no_sound_still_occupies_its_time() {
         // A slice whose audio is missing has to hold its place, or every later
-        // slice slides earlier and the sound drifts off the picture.
-        let quiet = silence(1_000_000_000, 48_000.0);
-
-        assert_eq!(quiet.len(), 48_000 * CHANNELS);
-        assert!(quiet.iter().all(|&sample| sample == 0.0));
+        // slice slides earlier and the sound drifts off the picture. The mix is
+        // built by filling `frames_for` samples with zeroes and summing whatever
+        // decodes into them, so this is the arithmetic that keeps it in step.
+        assert_eq!(frames_for(1_000_000_000, 48_000.0) * CHANNELS, 48_000 * CHANNELS);
     }
 }

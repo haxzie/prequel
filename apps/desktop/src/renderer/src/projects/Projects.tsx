@@ -27,11 +27,9 @@ const FRAME_MS = 700;
  * there to tell two similar-looking takes apart.
  */
 export function Projects({
-  opening,
   onOpen,
 }: {
   /** The recording being loaded, if a card has been clicked. */
-  opening: string | null;
   onOpen: (dir: string) => void;
 }) {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
@@ -92,7 +90,6 @@ export function Projects({
                 key={project.dir}
                 project={project}
                 poster={project.poster ?? posters.get(project.dir) ?? null}
-                opening={opening === project.dir}
                 renaming={renaming === project.dir}
                 onOpen={() => onOpen(project.dir)}
                 onRename={() => setRenaming(project.dir)}
@@ -111,7 +108,6 @@ export function Projects({
 function Card({
   project,
   poster,
-  opening,
   renaming,
   onOpen,
   onRename,
@@ -121,7 +117,6 @@ function Card({
 }: {
   project: ProjectSummary;
   poster: string | null;
-  opening: boolean;
   renaming: boolean;
   onOpen: () => void;
   onRename: () => void;
@@ -180,7 +175,6 @@ function Card({
         <button
           type="button"
           onClick={onOpen}
-          disabled={opening}
           title={`Open ${project.name}`}
           className={cn(
             // `relative`, so the hover strip's `inset-0` resolves against this
@@ -189,7 +183,6 @@ function Card({
             // border and squares off all four corners the moment it fades in.
             "relative block w-full overflow-hidden rounded-xl border border-editor-line bg-editor-panel",
             "aspect-video transition-[border-color,opacity] hover:border-editor-accent/60",
-            opening && "pointer-events-none opacity-50",
           )}
         >
           {poster ? (
@@ -255,8 +248,11 @@ function Card({
           {project.name}
         </button>
       )}
+      {/* No "Opening…" here any more. A click navigates on the spot, so this
+          card is gone before it could say so, and the editor route names the
+          recording it is fetching instead. */}
       <span className="-mt-1.5 text-[12px] text-editor-muted">
-        {opening ? "Opening…" : formatTimeAgo(project.createdAt)}
+        {formatTimeAgo(project.createdAt)}
       </span>
     </div>
   );
@@ -283,7 +279,7 @@ function Action({
         // `pointer-events-auto` against the row's `pointer-events-none`, which
         // is what keeps the hidden controls from swallowing clicks meant for
         // the thumbnail underneath.
-        "pointer-events-auto grid size-7 place-items-center rounded-lg bg-editor-bg/80 text-editor-fg backdrop-blur",
+        "pointer-events-auto grid size-7 place-items-center rounded-full bg-editor-bg/80 text-editor-fg backdrop-blur",
         "[&_svg]:size-3.5",
         danger ? "hover:bg-editor-danger hover:text-white" : "hover:bg-editor-panel",
       )}

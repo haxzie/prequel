@@ -116,10 +116,12 @@ impl Task for ListTargets {
 ///
 /// Failing to write it does not fail the recording: the media is already on
 /// disk and intact, and a missing manifest is recoverable where a discarded
-/// recording is not.
+/// recording is not. The reverse is also true and is why `screen` is optional —
+/// a take whose screen track failed still has a camera, a microphone and a
+/// place in the library, and without a manifest the app cannot see any of it.
 fn write_manifest(
     plan: &SessionPlan,
-    screen: &capture::RecordingSummary,
+    screen: Option<&capture::RecordingSummary>,
     camera: Option<&camera::CameraSummary>,
 ) {
     use prequel_session::{
@@ -127,14 +129,20 @@ fn write_manifest(
         SourceInfo, TrackKind, TypingSample,
     };
 
-    let mut tracks = vec![track(
-        TrackKind::Screen,
-        screen.start,
-        screen.start + screen.duration,
-        Some((screen.width, screen.height)),
-        screen.frames,
-        screen.video.dropped + screen.dropped_encoder,
-    )];
+    // Only where there is one. A screen track in the manifest that names a file
+    // the recording never wrote would be worse than its absence: the editor
+    // would open on a black frame rather than on what was actually captured.
+    let mut tracks = Vec::new();
+    if let Some(screen) = screen {
+        tracks.push(track(
+            TrackKind::Screen,
+            screen.start,
+            screen.start + screen.duration,
+            Some((screen.width, screen.height)),
+            screen.frames,
+            screen.video.dropped + screen.dropped_encoder,
+        ));
+    }
 
     if let Some(camera) = camera.filter(|c| c.frames > 0) {
         tracks.push(track(
@@ -146,7 +154,7 @@ fn write_manifest(
             camera.timing.dropped + camera.dropped_encoder + camera.dropped_late,
         ));
     }
-    if let Some(audio) = screen.microphone {
+    if let Some(audio) = screen.and_then(|s| s.microphone) {
         tracks.push(track(
             TrackKind::Microphone,
             audio.first_pts,
@@ -156,7 +164,7 @@ fn write_manifest(
             audio.dropped_not_ready,
         ));
     }
-    if let Some(audio) = screen.system_audio {
+    if let Some(audio) = screen.and_then(|s| s.system_audio) {
         tracks.push(track(
             TrackKind::SystemAudio,
             audio.first_pts,
@@ -175,7 +183,12 @@ fn write_manifest(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default(),
         started_at: plan.started_at.clone(),
-        duration: screen.duration,
+        // The screen's where there is one, and the camera's otherwise, so a
+        // take that lost its screen still says how long it is.
+        duration: screen
+            .map(|s| s.duration)
+            .or_else(|| camera.map(|c| c.duration))
+            .unwrap_or(0),
         source: SourceInfo {
             kind: plan.source_kind.to_owned(),
             id: plan.source_id,
@@ -188,7 +201,8 @@ fn write_manifest(
         // Buttons only, never keys — the editor's automatic zooms are built
         // from when and where, not from what.
         clicks: screen
-            .clicks
+            .map(|s| s.clicks.as_slice())
+            .unwrap_or_default()
             .iter()
             .map(|click| ClickSample {
                 at: click.at,
@@ -200,7 +214,8 @@ fn write_manifest(
         // finer — never a key, and never enough timing to infer one. The editor
         // hides the pointer through these and nothing else reads them.
         keys: screen
-            .keys
+            .map(|s| s.keys.as_slice())
+            .unwrap_or_default()
             .iter()
             .map(|span| KeySpan {
                 start: span.start,
@@ -210,7 +225,8 @@ fn write_manifest(
         // Bounds of whatever field had keyboard focus, never a keystroke.
         // Empty without the Accessibility grant.
         typing: screen
-            .typing
+            .map(|s| s.typing.as_slice())
+            .unwrap_or_default()
             .iter()
             .map(|sample| TypingSample {
                 at: sample.at,
@@ -223,7 +239,8 @@ fn write_manifest(
         // Sampled during capture, because a pointer that was never drawn into
         // the frames leaves no other trace of where it was.
         cursor: screen
-            .cursor
+            .map(|s| s.cursor.as_slice())
+            .unwrap_or_default()
             .iter()
             .map(|sample| CursorSample {
                 at: sample.at,
@@ -731,6 +748,30 @@ impl Task for StartRecording {
     }
 }
 
+/// How many screen frames have arrived since the recording started.
+///
+/// `-1` when nothing is recording, and `-2` when the capture lock was busy —
+/// which at 60 fps is ordinary rather than exceptional, and is why the caller
+/// polls instead of asking once. Neither is a frame count, and neither means
+/// zero: only a `0` means the stream has delivered nothing.
+///
+/// Exists for the check `capture-flow` makes a moment after starting. A screen
+/// stream that is never going to deliver a frame looks exactly like one that
+/// has not delivered its first yet, and the only difference is how long you are
+/// willing to wait before saying so.
+#[napi]
+pub fn screen_frames_so_far() -> Result<i64> {
+    let slot = lock_recorder()?;
+    let Some(session) = slot.as_ref() else {
+        return Ok(-1);
+    };
+
+    Ok(session
+        .screen
+        .frames_so_far()
+        .map_or(-2, |frames| frames as i64))
+}
+
 /// Stops the recording and closes the file.
 #[napi(ts_return_type = "Promise<RecordingResult>")]
 pub fn stop_recording() -> AsyncTask<StopRecording> {
@@ -757,22 +798,35 @@ impl Task for StopRecording {
             )
         })?;
 
-        // The screen is finalised first and its error is fatal — without it
-        // there is no recording. The camera is finalised second and its error
-        // is only reported, because by then the screen track is closed on disk
-        // and throwing it away over the webcam would be the worse trade.
-        let screen = session.screen.stop().map_err(to_napi_error)?;
+        // The screen is finalised first, and its error is fatal to the *result*
+        // — without it there is no recording to open. It is no longer fatal to
+        // the two steps below it, which is what this used to get wrong.
+        let screen = session.screen.stop();
+
+        // The camera is finalised whether the screen succeeded or not. It is
+        // holding several hundred megabytes of video that has already been
+        // captured, and an `AVAssetWriter` that is never finished leaves that
+        // file without its `moov` atom: bytes on disk that no player will open.
+        // Returning early on the screen's error threw away the one track that
+        // had worked.
         let camera = match session.camera {
             None => Ok(None),
             Some(camera) => camera.stop().map(Some).map_err(|e| e.to_string()),
         };
 
+        // Written from whatever survived, including nothing. A take with no
+        // `session.json` is one the app cannot see at all: `listProjects` skips
+        // a directory with no manifest and `migrateLibrary` will not move one,
+        // so the recording sits in the library folder, visible in Finder,
+        // unreachable from the app for ever. A manifest describing a failed
+        // take is what makes it recoverable instead.
         write_manifest(
             &session.plan,
-            &screen,
+            screen.as_ref().ok(),
             camera.as_ref().ok().and_then(|c| c.as_ref()),
         );
 
+        let screen = screen.map_err(to_napi_error)?;
         Ok(StopOutput { screen, camera })
     }
 

@@ -9,7 +9,8 @@
  * and take effect at once. Screen Recording and Accessibility cannot. macOS
  * shows their prompt at most once per app, and after that the only way to
  * change the answer is System Settings — which is why every row can fall back
- * to opening the right pane, and why `needsRestart` exists at all.
+ * to opening the right pane, and why `NEEDS_RESTART` in `shared/permissions.ts`
+ * exists at all.
  */
 import { app, shell, systemPreferences } from "electron";
 

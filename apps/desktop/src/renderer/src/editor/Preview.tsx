@@ -81,6 +81,7 @@ export type Picked = Grabbable | "captions";
 export type Grabbable = PlanSource | "watermark";
 
 export function Preview({
+  ready,
   frame,
   settings,
   enter,
@@ -93,6 +94,16 @@ export function Preview({
   onPick,
   onDrag,
 }: {
+  /**
+   * Whether everything this draws with has arrived.
+   *
+   * The canvas paints regardless — it has to, so the frame revealed is a
+   * finished one rather than the first of a fresh run — but it is held back
+   * from view until this is true. What it drew before that was a background
+   * with the recording missing from it, for as long as the first video frame
+   * took to decode.
+   */
+  ready: boolean;
   frame: Size;
   settings: SliceSettings;
   /**
@@ -200,6 +211,21 @@ export function Preview({
    */
   const cached = useRef<{ key: readonly unknown[]; plan: RenderPlan } | null>(null);
 
+  /**
+   * The last set of cue bitmaps that was actually drawn for.
+   *
+   * A change of font, style or line budget is a new look, and a look has no
+   * bitmaps until they have been rasterised — a few hundred milliseconds on a
+   * long recording. Until then there is nothing under the new key, and the
+   * captions came off the preview entirely: a font picked from the list blanked
+   * them, then they reappeared, which reads as the control having broken
+   * something rather than having changed it. So the previous set stands in.
+   *
+   * Only ever a stand-in. The bitmaps behind it are swept the moment the new
+   * set is published, and by then this is no longer being read.
+   */
+  const stale = useRef<readonly RenderedCue[] | undefined>(undefined);
+
   // `cursor`, `zooms` and `cues` are in here for the same reason as the rest,
   // and it took a regression to notice they were not. The loop's effect depends
   // on `media`, which used to be a fresh object on every render — so the closure
@@ -291,7 +317,9 @@ export function Preview({
       // tracks are memoised upstream, and the two sizes only change when a
       // source loads or the camera is switched off. Compared by identity, so a
       // real edit misses and lands a new plan on the very next frame.
-      const shown = drawn.get(captionLook(current.captions));
+      const fresh = drawn.get(captionLook(current.captions));
+      const shown = fresh ?? stale.current;
+      if (fresh) stale.current = fresh;
       const key = [
         size,
         sizes.screen?.width,
@@ -854,14 +882,33 @@ export function Preview({
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}
       <div className="relative" style={{ width: fitted.width, height: fitted.height }}>
+        {/* Over the canvas rather than instead of it. The canvas has to keep
+            its box — the ring, the handles and the hit testing are all placed
+            against its size — and it has to keep painting, so what is revealed
+            is a composed frame rather than the first one of a cold start. */}
+        {!ready && (
+          <div className="absolute inset-0 z-10 grid place-items-center rounded-lg bg-editor-panel">
+            <p className="animate-pulse text-xs text-editor-muted">Loading the recording…</p>
+          </div>
+        )}
+
         <canvas
           ref={canvas}
           // `block` kills the inline baseline gap, which otherwise leaves a few
           // stray pixels under the canvas inside its grid cell.
+          //
+          // Invisible rather than unmounted until the assets are in: see
+          // `ready`. `visibility` and not `opacity`, because a transparent
+          // canvas still catches the pointer, and a drag begun on a picture
+          // nobody can see yet would move it.
           className="block rounded-lg shadow-2xl"
           // Explicit pixels rather than a percentage: see the note above on why
           // `max-h-full` cannot be relied on here.
-          style={{ width: fitted.width, height: fitted.height }}
+          style={{
+            width: fitted.width,
+            height: fitted.height,
+            visibility: ready ? "visible" : "hidden",
+          }}
           onPointerEnter={(event) => {
             canvasBox.current = event.currentTarget.getBoundingClientRect();
           }}

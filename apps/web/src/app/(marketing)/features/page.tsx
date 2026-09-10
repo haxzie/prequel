@@ -191,6 +191,7 @@ export default function Features() {
       <section className="pt-20 pb-10">
         <Container>
           <SectionHeading
+            level={1}
             eyebrow="Features"
             title="Everything Prequel does to a recording"
             lede="Nothing about the look is fixed while you record. Here is the whole list: what Prequel captures, what it does on its own, and what comes out."

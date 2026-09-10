@@ -407,15 +407,21 @@ impl Compositor {
         // Waited on rather than pipelined, which is what makes holding the
         // textures until here sufficient.
         //
-        // This used to say an export is "throughput-bound on the decoder". It
-        // is not: measured over 300 frames of 1080p from a real session, decode
-        // is 6-9% of the wall clock, this render is 27-35%, and the encode that
-        // follows it is 52-63%. Decode, Metal and VideoToolbox are three
-        // independent engines and the loop drives them one at a time, so
-        // overlapping render and encode is worth roughly 1.5×. It is not done
-        // here because a frame in flight has to keep its textures alive past
-        // this point — see `alive` below — and that is a real change rather
-        // than a smaller wait.
+        // Pipelining this was tried, on the strength of an earlier note saying
+        // it was worth roughly 1.5×. It is not. Committing without waiting and
+        // encoding the previous frame while this one runs measured **0.8%** on
+        // a real 31-second session at 1080p60 — because the GPU was only idle
+        // 2-3% of the export to begin with. `StageTimes` in `export.rs` has the
+        // full split and the ffmpeg comparison that pins it: the export is
+        // encode-bound at the hardware's own ceiling.
+        //
+        // What it cost was the interesting part, and the reason not to try
+        // again without a number first: every source pixel buffer has to be
+        // retained rather than borrowed, because the texture is a view onto the
+        // reader's memory and the reader moves on; the caption backdrop has to
+        // be double-buffered, or the frame being built blits into the one the
+        // frame still running is sampling; and a cancelled export has to wait
+        // before dropping what it had in hand. Three lifetime rules, for 0.8%.
         cmd.wait_until_completed();
         drop(alive);
         drop(target);

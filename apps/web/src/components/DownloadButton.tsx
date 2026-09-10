@@ -57,13 +57,22 @@ export function DownloadCta({
           have cut a hole in both. There is nothing behind it now, and a blur with
           nothing to blur is a composited layer for no reason. The border follows
           the site's hairline idiom, and `lit` is the one-pixel inner highlight
-          every raised surface on this page carries. */}
+          every raised surface on this page carries.
+
+          From `sm` up, and only there. The frame exists to gather a centred
+          *pair* into one object, and below `sm` there is no pair — the row
+          becomes a column, so the panel stops being a frame around two things
+          and becomes a tall grey slab with a pill at the top and four faces
+          adrift at the bottom. `rounded-full` on a box that height is a stadium
+          rather than a frame, which is what makes it read as broken rather than
+          as plain. Nothing is drawn on a phone: the button is already a filled
+          pill and carries its own shape. */}
       <div
         className={
           "flex w-fit flex-col gap-4 rounded-full sm:flex-row " +
           (bare
             ? "items-start justify-start"
-            : "lit mx-auto items-center justify-center border border-line bg-elevated p-1.5")
+            : "mx-auto items-center justify-center sm:lit sm:border sm:border-line sm:bg-elevated sm:p-1.5")
         }
       >
         <ButtonLink href="/download">
@@ -75,8 +84,12 @@ export function DownloadCta({
         </ButtonLink>
         {/* Padded off the frame's right edge, which the button does not need:
             it is a filled pill and its own edge is the shape. Loose discs sat
-            against the glass read as having been cut off by it. */}
-        {beside === undefined ? null : <span className="pr-2.5 sm:pl-0.5">{beside}</span>}
+            against the glass read as having been cut off by it.
+
+            With the frame, so both go at `sm`. Below it there is no edge to
+            stand off, and the padding only pulls the row of faces off the
+            centre the column puts everything else on. */}
+        {beside === undefined ? null : <span className="sm:pr-2.5 sm:pl-0.5">{beside}</span>}
       </div>
       {/* What the button costs, which is nothing — the one objection worth
           answering at the moment somebody is deciding to click it.

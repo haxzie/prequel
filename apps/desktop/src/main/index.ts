@@ -16,6 +16,7 @@ import {
   broadcastUpdateState,
   registerIpc,
 } from "./ipc.js";
+import { watchForErrors } from "./errors.js";
 import { initLogging, log, logPath } from "./log.js";
 import { loginItemState, seedLoginItem, startedByItself, wasOpenedAtLogin } from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
@@ -43,6 +44,11 @@ app.setName("Prequel");
 // Before anything that can fail, so a startup crash lands in the log rather
 // than in a console no packaged build has.
 initLogging();
+
+// Straight after, and for the other half of the same job: the log is what one
+// user can send us, and this is what tells us forty of them hit the same thing
+// without anybody having to write in.
+watchForErrors();
 
 // Fail fast on a bad config rather than mid-session.
 validateEnv();

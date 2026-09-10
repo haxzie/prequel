@@ -246,6 +246,10 @@ export function createFakeRecorder(): Recorder {
       state = "Recording" as RecordingState;
     },
 
+    // A fake is always delivering frames. A test that wants the opposite
+    // overrides this, which is what `capture-flow.test.ts` does.
+    screenFramesSoFar: () => 60,
+
     stopRecording: async (): Promise<RecordingResult> => {
       if (state === "Idle" || !request) {
         throw new Error("NOT_RECORDING: nothing is being recorded");

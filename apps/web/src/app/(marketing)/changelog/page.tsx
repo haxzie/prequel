@@ -39,6 +39,7 @@ export default async function Changelog() {
         <Container>
           <div className={MEASURE}>
             <SectionHeading
+              level={1}
               eyebrow="Changelog"
               title="What we shipped"
               lede="Prequel updates itself, so you are usually on the newest of these already. The app tells you when there is one waiting."

@@ -37,6 +37,7 @@ export default function About() {
       <section className="pt-20 pb-8">
         <Container>
           <SectionHeading
+            level={1}
             eyebrow="About"
             title="Built because the recording was never the hard part"
             lede="Getting the pixels is straightforward. Getting a video somebody wants to watch, out of a take you made once and cannot make again, is the work."

@@ -171,6 +171,32 @@ fn slice(start: u64, end: u64) -> SliceRender {
     }
 }
 
+/// The exported sound, decoded back to interleaved `f32`.
+///
+/// Through `ffmpeg` rather than AVFoundation so the assertion is made by
+/// something outside the code under test: a bug shared between the writer and
+/// the reader would be invisible to a round trip through our own decoder.
+fn decode_audio(path: &Path) -> Vec<f32> {
+    let output = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-map", "a:0", "-f", "f32le", "-acodec", "pcm_f32le", "-"])
+        .output()
+        .expect("ffmpeg should decode the exported audio");
+
+    assert!(
+        output.status.success(),
+        "ffmpeg failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    output
+        .stdout
+        .chunks_exact(4)
+        .map(|bytes| f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        .collect()
+}
+
 fn ffprobe(path: &Path, entries: &str) -> String {
     probe_stream(path, "v:0", entries)
 }
@@ -526,6 +552,36 @@ fn exports_the_sound_inside_the_video_file() {
     assert!(
         picture.contains(&format!("nb_frames={}", 2 * OUT_FPS)),
         "every frame of the edit must survive, got: {picture:?}"
+    );
+
+    // And the sound is continuous, which is the one thing every assertion above
+    // would pass without.
+    //
+    // The mix is built a quarter-second at a time now rather than as one buffer
+    // for the whole export, so the way it can go wrong is at a chunk boundary —
+    // a few samples dropped, repeated, or read from the wrong offset. None of
+    // that changes the codec, the channel count or the duration by anything the
+    // 0.15s tolerance above would notice; it is a click, and it is audible.
+    //
+    // The source is a 440 Hz sine at 0.25, so consecutive samples cannot differ
+    // by more than 0.25 * 2π * 440/48000 ≈ 0.0144. Anything past a few times
+    // that is a splice rather than a waveform. Compared per channel, because
+    // consecutive *interleaved* samples are the two channels of one frame.
+    let heard = decode_audio(&output);
+    assert!(
+        heard.len() >= 2 * 48_000 * 2 - 4_800,
+        "expected about 2s of stereo samples, got {}",
+        heard.len()
+    );
+
+    let mut worst = 0.0f32;
+    for pair in heard.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+        worst = worst.max((pair[1][0] - pair[0][0]).abs());
+    }
+    assert!(
+        worst < 0.05,
+        "the mix should be continuous across its chunk boundaries; \
+         biggest sample-to-sample jump was {worst}, and a 440 Hz sine at 0.25 cannot exceed 0.015"
     );
 
     // And no sidecar is left behind for the user to wonder about.

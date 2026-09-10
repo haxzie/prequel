@@ -197,6 +197,20 @@ export class RecordingSession {
     }
   }
 
+  /**
+   * Screen frames delivered so far, or a negative number meaning "no answer".
+   *
+   * `-1` while this is not recording, which includes paused: a paused stream is
+   * meant to deliver nothing, and reading zero from one would be a broken
+   * recording that is not broken. The native layer answers `-2` when the
+   * capture lock is busy, which is most of the time at 60 fps. Only `0` says
+   * the stream has delivered nothing at all.
+   */
+  async screenFramesSoFar(): Promise<number> {
+    if (this.status !== "recording") return -1;
+    return (await this.load()).screenFramesSoFar();
+  }
+
   /** Starts if idle, stops if recording — what a single hotkey should do. */
   async toggle(options: StartOptions): Promise<void> {
     if (this.status === "idle") {
@@ -293,6 +307,23 @@ export function deleteRecording(path: string, dir = SESSIONS_DIR): boolean {
  * delete, overwrite and rename — the same posture `media-protocol.ts` takes for
  * reads, for the same reason.
  */
+/**
+ * Turns a recording's folder name into its path, or null.
+ *
+ * The name arrives from the renderer, in a route the window can be pointed at
+ * by anything — a reload, an HMR round trip, a hash somebody typed. So it is
+ * treated as input rather than as a token this side handed out: `..`, a nested
+ * path and an absolute one all resolve outside the recordings directory, and
+ * `insideRecordings` is what refuses them.
+ *
+ * The same guard `deleteRecording` uses, for the same reason, and the same one
+ * the media protocol applies to the names in `prequel-media://` URLs.
+ */
+export function recordingPath(name: string, dir = SESSIONS_DIR): string | null {
+  const path = join(dir, name);
+  return insideRecordings(path, dir) ? path : null;
+}
+
 export function insideRecordings(path: string, dir = SESSIONS_DIR): boolean {
   const resolved = resolve(path);
   const root = resolve(dir);

@@ -10,6 +10,7 @@ import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  app,
   clipboard,
   dialog,
   nativeImage,
@@ -22,10 +23,11 @@ import {
 import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
+import { redact } from "./errors.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
 import { getRecorder } from "./recorder.js";
-import { RECORDINGS_DIR, fileTimestamp } from "./session.js";
+import { fileTimestamp } from "./session.js";
 
 /**
  * What the save dialog offers to call an export.
@@ -72,11 +74,21 @@ export async function chooseExportTarget(
 ): Promise<string | null> {
   const name = exportFileName(format);
 
-  // Before the sheet, not after: `NSSavePanel` silently ignores a `defaultPath`
-  // whose directory does not exist and opens on wherever it was last, so on a
-  // machine that has never recorded the suggested folder would simply not be
-  // the one offered.
-  const dir = lastDir ?? RECORDINGS_DIR;
+  // Downloads, and not `RECORDINGS_DIR`, which is where this used to open.
+  // That folder is the app's working store: the takes themselves live there in
+  // dot-directories, and offering it as the place to save the finished file
+  // asks somebody to file their export among the app's own state. Downloads is
+  // where a Mac puts a file that has just been made and is on its way somewhere
+  // else, which is what an export is.
+  //
+  // `lastDir` still wins for the rest of the session, so exporting four takes
+  // into one project folder asks once. It is only ever in memory, so every
+  // launch starts at Downloads again.
+  //
+  // Resolved before the sheet, not after: `NSSavePanel` silently ignores a
+  // `defaultPath` whose directory does not exist and opens on wherever it was
+  // last, so a deleted Downloads folder would quietly not be the one offered.
+  const dir = lastDir ?? app.getPath("downloads");
   mkdirSync(dir, { recursive: true });
 
   // Sheet-attached where there is a window to attach to. A free-floating save
@@ -263,9 +275,13 @@ function finish(update: ExportProgress): void {
   track(`export_${update.stage}`, {
     took_ms: startedAt ? Date.now() - startedAt : null,
     frames: update.framesTotal,
-    // The message, not the path. A failure reason is a bug report; a path is
-    // the user's home directory and the name of whatever they recorded.
-    ...(update.stage === "failed" ? { message: update.error?.message ?? null } : {}),
+    // The message, and never the path inside it. A failure reason is a bug
+    // report; a path is the user's home directory and the name of whatever they
+    // recorded — and almost every message that names a file quotes its full
+    // path, so saying "the message, not the path" was not enough on its own.
+    ...(update.stage === "failed"
+      ? { message: update.error?.message ? redact(update.error.message) : null }
+      : {}),
   });
 
   // Logged here rather than only shown in the editor: a failed export is the

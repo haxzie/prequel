@@ -238,6 +238,31 @@ export class AppTray {
             accelerator: boundToggle() ?? undefined,
             click: () => this.flow.open(),
           },
+      // The three sources, said out loud. Above, "Start Recording…" opens the
+      // panel on whichever was used last, which is one press for the common
+      // case and no help at all for the other two: choosing a window when the
+      // last take was an area meant opening the panel and changing the mode
+      // there. These are the same three buttons the panel has, in the menu that
+      // is always one click away.
+      ...(active
+        ? []
+        : ([
+            {
+              label: "Record Entire Screen",
+              icon: symbol("macwindow.on.rectangle"),
+              click: () => this.flow.openMode("screen"),
+            },
+            {
+              label: "Record a Window",
+              icon: symbol("macwindow"),
+              click: () => this.flow.openMode("window"),
+            },
+            {
+              label: "Record an Area",
+              icon: symbol("crop"),
+              click: () => this.flow.openMode("area"),
+            },
+          ] satisfies MenuItemConstructorOptions[])),
       {
         label: state.status === "paused" ? "Resume" : "Pause",
         // The glyph follows the label rather than the state it is in: this row

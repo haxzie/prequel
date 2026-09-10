@@ -72,8 +72,7 @@ export function useCaptionImages(
       for (const set of latest.current.cues.values()) {
         for (const cue of set) {
           if (cue.end < at - REACH_NS || cue.at > at + REACH_NS) continue;
-          wanted.add(cue.path);
-          if (cue.litPath) wanted.add(cue.litPath);
+          for (const layer of cue.layers) wanted.add(layer.path);
         }
       }
 

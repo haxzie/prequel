@@ -52,6 +52,23 @@ export interface CaptionStyle {
    */
   lit: { pop: number } | null;
   /**
+   * How solid a word is before it is spoken, as a fraction of full strength,
+   * or null for a look that draws its whole line at once.
+   *
+   * The line is on screen from the moment the cue is and fills in as it is
+   * said: the words still to come are held back, the ones already spoken are
+   * whole. Two states rather than something that moves, which is why it is
+   * baked into the bitmap rather than applied when the word is drawn — the
+   * flat layer carries the dimmed line, and the layer over it draws each word
+   * at full strength from the moment it is said. That is the two-layer
+   * machinery a lit look already uses, so this costs the plan nothing.
+   *
+   * Not so low that a word still to come cannot be read. Reading a little
+   * ahead of the voice is how captions are read, and a look that hides what is
+   * coming has stopped being one.
+   */
+  dim: number | null;
+  /**
    * How far out of focus a word sits before it is spoken, as a fraction of the
    * font size, or null for a look that draws every word sharp.
    *
@@ -118,6 +135,10 @@ const SUBTITLE: CaptionStyle = {
   shadow: null,
   plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
   lit: null,
+  // Held back until it is said. Half, which is as far as white over this plate
+  // can go and still be read a word ahead of the voice — much below it and the
+  // line reads as one word with a grey smear after it.
+  dim: 0.5,
   blurIn: null,
   onLight: null,
   // A hair tight, which is how SF is set at display sizes.
@@ -156,6 +177,10 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // Not lit. The whole line is on screen and the blur is what says which
     // word is being spoken, so a second colour would be saying it twice.
     lit: null,
+    // Nothing held back either, for the same reason: the focus is already
+    // saying which word is being spoken, and a second signal saying it too
+    // makes the line busy rather than clear.
+    dim: null,
     blurIn: 0.26,
     // Near-black where the footage is light. The words have no plate and no
     // shadow, so white on a white page is white on a white page — this is what
@@ -185,6 +210,9 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // Lit but not swollen: on a plate, a word that grows collides with the one
     // beside it, because the plate was measured around the flat layout.
     lit: { pop: 1 },
+    // The same half as `subtitle`, so the two looks differ by the colour the
+    // line fills with rather than by how hard they hold the rest of it back.
+    dim: 0.5,
     blurIn: null,
     onLight: null,
     tracking: -0.01,
@@ -212,6 +240,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // wants comes from `scale`, which is applied when the text is rasterised
     // and therefore sharp.
     lit: { pop: 1 },
+    // One word to a cue, so there is no rest of the line to hold back.
+    dim: null,
     blurIn: null,
     onLight: null,
     tracking: -0.01,
@@ -228,6 +258,9 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     shadow: null,
     plate: null,
     lit: null,
+    // Nothing held back. The look is a hard outline on every word, and a word
+    // at half strength inside a full-strength outline reads as a mistake.
+    dim: null,
     blurIn: null,
     onLight: null,
     tracking: 0,
@@ -246,6 +279,7 @@ export const CAPTION_STYLES: CaptionStyle[] = [
     // band is a difference of shape rather than of colour.
     plate: { color: "rgba(8,10,14,0.55)", radius: 0, padX: 0.6, padY: 0.42, full: true },
     lit: null,
+    dim: 0.5,
     blurIn: null,
     onLight: null,
     tracking: 0.01,

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Container, SectionHeading } from "@/components/Section";
 import { formatDate, posts } from "@/content/posts";
 import { JsonLd } from "@/components/JsonLd";
-import { blogJsonLd, breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
+import { blogJsonLd, pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
   title: "Blog",
@@ -17,6 +17,7 @@ export default function BlogIndex() {
   return (
     <Container className="py-20">
       <SectionHeading
+        level={1}
         eyebrow="Blog"
         title="Guides and comparisons"
         lede="What the tools in this category actually do, what they cost, and how to get a recording worth sending out of your Mac."
@@ -48,7 +49,12 @@ export default function BlogIndex() {
       {/* Off the same `posts` array the list above renders, so a post can never
           be in the markup and missing from the structured data. */}
       <JsonLd data={blogJsonLd(posts)} />
-      <JsonLd data={breadcrumbJsonLd([{ name: "Blog", path: "/blog" }])} />
+      {/* No `BreadcrumbList` here. This page is the top of its own trail, so the
+          only hop it can name is itself, and Google drops a breadcrumb with
+          fewer than two `ListItem`s — valid JSON-LD that earns nothing and
+          reports as a missing required property. `/usecases`, the other index,
+          has never emitted one. The posts below do, because they have a parent
+          to point at. */}
     </Container>
   );
 }

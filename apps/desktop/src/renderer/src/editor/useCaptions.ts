@@ -24,16 +24,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { captionStyle, cuesFrom, type Cue } from "../../../shared/captions";
 import type { EditorSession } from "../../../shared/contract";
-import type { RenderedCue, Size } from "../../../shared/layout";
+import type { CueLayer, RenderedCue, Size } from "../../../shared/layout";
 import { captionLook, resolveSettings, type Project } from "../../../shared/project";
 import type { Transcript } from "../../../shared/transcript";
-import { cueKey, cuePaths, rasteriseCue } from "./captionBitmap";
+import { cueKey, cuePath, rasteriseCue } from "./captionBitmap";
 import { captionFont } from "./controls/fonts";
 import { survivingWords } from "./captionText";
 import { placedSlices, slicesOf } from "./state";
 
-/** How long the settings have to hold still before anything is drawn. */
-const SETTLE_MS = 250;
+/**
+ * How long the settings have to hold still before anything is drawn.
+ *
+ * Long enough that a slider drag draws once rather than sixty times a second,
+ * short enough that picking a font is not a wait. It used to be 250, which is
+ * a quarter of a second of nothing happening on top of the drawing itself —
+ * and a change that takes half a second to appear reads as one that did not
+ * register.
+ */
+const SETTLE_MS = 120;
 
 export interface Captions {
   /**
@@ -185,38 +193,33 @@ export function useCaptions(
 
             try {
               const key = cueKey(cue, style, options);
-              const paths = cuePaths(key);
-              const { layout, flat, lit } = await rasteriseCue(cue, style, options);
+              const { layout, layers } = await rasteriseCue(cue, style, options);
 
-              const flatOk = await window.prequel.editor.captions.write(dir, paths.flat, flat);
-              if (!flatOk.ok || flatOk.value === null) continue;
-              written.push(paths.flat);
-
-              let litPath: string | null = null;
-              if (lit) {
-                const litOk = await window.prequel.editor.captions.write(dir, paths.lit, lit);
-                if (litOk.ok && litOk.value !== null) {
-                  litPath = paths.lit;
-                  written.push(paths.lit);
-                }
+              const drawn: CueLayer[] = [];
+              for (const layer of layers) {
+                const path = cuePath(key, layer.name);
+                const wrote = await window.prequel.editor.captions.write(dir, path, layer.bytes);
+                // The layer underneath is the line itself, and every layer
+                // above it is a word cropped out of a picture that has to be
+                // there. So one that will not write takes the whole cue with
+                // it rather than leaving a word or two floating on the
+                // footage.
+                if (!wrote.ok || wrote.value === null) break;
+                written.push(path);
+                drawn.push({ path, words: layer.words });
               }
+              if (drawn.length !== layers.length) continue;
 
               set.push({
                 at: cue.at,
                 end: cue.end,
-                path: paths.flat,
-                litPath,
+                layers: drawn,
                 bitmap: layout.bitmap,
                 size: layout.size,
-                // Boxes wherever a word is cropped out of the bitmap: the lit
-                // layer where there is one, the single layer of a look that
-                // shows one word at a time, and every word of a look that
-                // brings them into focus one by one. Without them the plan
-                // draws the whole bitmap across the cue's span — which is
-                // exactly what a blurring look looked like when this listed
-                // only the first two: a line that never came into focus,
-                // because nothing downstream was ever told it had words.
-                words: litPath || style.perWord || style.blurIn !== null ? layout.words : [],
+                // What the bitmaps were measured at, so a set drawn for one
+                // size can stand in — scaled — for one still being drawn at
+                // another. See `RenderedCue.drawnSize`.
+                drawnSize: current.captionSize,
               });
             } catch (cause) {
               // One cue that would not draw is one missing caption. The rest of

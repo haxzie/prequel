@@ -61,7 +61,7 @@ export function CaptionStylePicker({
   );
 }
 
-/** Two words, so a lit style has something to light. */
+/** Two words, so a look that fills its line has something half-filled. */
 function Sample({ style, accent }: { style: CaptionStyle; accent: string }) {
   // 13px of swatch standing in for the frame's shorter edge: every fraction in
   // the record is against the font size, so one number scales the whole look.
@@ -106,7 +106,11 @@ function Sample({ style, accent }: { style: CaptionStyle; accent: string }) {
         ...(style.blurIn ? { filter: `blur(${style.blurIn * size * 0.35}px)` } : {}),
       }}
     >
-      Just <span style={style.lit ? { color: accent } : undefined}>so</span>
+      {/* The first word still to come, the second already said: the one moment
+          that says what a look does with a line. A look that holds nothing
+          back draws both the same, which is equally the truth about it. */}
+      <span style={style.dim !== null ? { opacity: style.dim } : undefined}>Just</span>{" "}
+      <span style={style.lit ? { color: accent } : undefined}>so</span>
     </span>
   );
 }

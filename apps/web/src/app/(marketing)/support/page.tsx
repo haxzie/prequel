@@ -46,6 +46,7 @@ export default function Support() {
       <section className="pt-20 pb-8">
         <Container>
           <SectionHeading
+            level={1}
             eyebrow="Support"
             title="Something not working? Write to us."
             lede="One address, read by the people who build the app. Bug reports, feature requests and disagreements about codecs all go to the same place."

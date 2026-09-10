@@ -126,68 +126,139 @@ impl Drop for VideoReader {
     }
 }
 
-/// Reads an entire audio track as interleaved stereo `f32`.
+/// Reads audio out of one file, over one time range, a chunk at a time.
 ///
-/// Decoded whole rather than streamed because the mixer works on plain slices
-/// and a session's audio is small — a ten-minute stereo take at 48 kHz is about
-/// 230 MB, which is worth the simplicity of having it all in hand.
-pub fn read_audio(path: &Path, start: u64, end: u64, sample_rate: f64) -> Result<Vec<f32>> {
-    let asset = url_asset(path)?;
-    let track = first_track(&asset, av::MediaType::audio(), path)?;
+/// Streamed rather than decoded whole. This used to hand back one `Vec` for the
+/// entire range, on the reasoning that a session's audio is small enough to
+/// keep in hand — but interleaved stereo `f32` at 48 kHz is 384 KB for every
+/// second of recording, so a ten-minute take is 230 MB and an hour is 1.4 GB,
+/// held for the whole export. Nothing ever needed it whole: the writer is fed a
+/// second at a time, a second ahead of the picture.
+pub struct AudioReader {
+    reader: arc::R<av::AssetReader>,
+    output: arc::R<av::AssetReaderTrackOutput>,
+    /// Pulled from the output and not yet handed on. `AVAssetReader` chooses
+    /// its own buffer sizes, so a pull almost never lands on a chunk boundary
+    /// and the remainder has to wait for the next call.
+    spare: Vec<f32>,
+    taken: usize,
+    finished: bool,
+}
 
-    let mut reader = av::AssetReader::with_asset(&asset).map_err(|e| Error::Read {
-        path: path.display().to_string(),
-        reason: format!("{e:?}"),
-    })?;
+impl AudioReader {
+    /// Opens `path`, restricted to `[start, end)` on the file's own timeline.
+    pub fn open(path: &Path, start: u64, end: u64, sample_rate: f64) -> Result<Self> {
+        let asset = url_asset(path)?;
+        let track = first_track(&asset, av::MediaType::audio(), path)?;
 
-    reader
-        .set_time_range(cm::TimeRange {
-            start: time(start),
-            duration: time(end.saturating_sub(start)),
-        })
-        .map_err(|e| Error::Read {
+        let mut reader = av::AssetReader::with_asset(&asset).map_err(|e| Error::Read {
             path: path.display().to_string(),
-            reason: format!("could not restrict the reader to the slice: {e:?}"),
+            reason: format!("{e:?}"),
         })?;
 
-    let settings = pcm_settings(sample_rate);
-    let output =
-        av::AssetReaderTrackOutput::with_track(&track, Some(settings.as_ref())).map_err(|e| {
-            Error::Read {
+        reader
+            .set_time_range(cm::TimeRange {
+                start: time(start),
+                duration: time(end.saturating_sub(start)),
+            })
+            .map_err(|e| Error::Read {
+                path: path.display().to_string(),
+                reason: format!("could not restrict the reader to the slice: {e:?}"),
+            })?;
+
+        let settings = pcm_settings(sample_rate);
+        let output = av::AssetReaderTrackOutput::with_track(&track, Some(settings.as_ref()))
+            .map_err(|e| Error::Read {
                 path: path.display().to_string(),
                 reason: format!("{e:?}"),
-            }
+            })?;
+
+        reader.add_output(&output).map_err(|e| Error::Read {
+            path: path.display().to_string(),
+            reason: format!("{e:?}"),
         })?;
 
-    reader.add_output(&output).map_err(|e| Error::Read {
-        path: path.display().to_string(),
-        reason: format!("{e:?}"),
-    })?;
+        reader.start_reading().map_err(|e| Error::Read {
+            path: path.display().to_string(),
+            reason: format!("reader refused to start: {e:?}"),
+        })?;
 
-    reader.start_reading().map_err(|e| Error::Read {
-        path: path.display().to_string(),
-        reason: format!("reader refused to start: {e:?}"),
-    })?;
-
-    let mut output = output;
-    let mut samples = Vec::new();
-    while let Ok(Some(sample)) = output.next_sample_buf() {
-        let Some(block) = sample.data_buf() else {
-            continue;
-        };
-        let Ok(bytes) = block.as_slice() else {
-            continue;
-        };
-
-        // Safety: the output was configured for packed 32-bit float PCM, so the
-        // block's bytes are exactly a `f32` array.
-        let floats =
-            unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast::<f32>(), bytes.len() / 4) };
-        samples.extend_from_slice(floats);
+        Ok(Self {
+            reader,
+            output,
+            spare: Vec::new(),
+            taken: 0,
+            finished: false,
+        })
     }
 
-    reader.cancel_reading();
-    Ok(samples)
+    /// Fills `into` with the samples that come next, and says how many arrived.
+    ///
+    /// Short only at the end of the range, which is how the caller knows the
+    /// track has run out — a source shorter than the slice it is mixed into is
+    /// ordinary, and `mixer::mix_into` zips against whatever it is given.
+    pub fn read(&mut self, into: &mut [f32]) -> usize {
+        let mut filled = 0;
+
+        while filled < into.len() {
+            if self.taken == self.spare.len() && !self.refill() {
+                break;
+            }
+
+            let run = (into.len() - filled).min(self.spare.len() - self.taken);
+            into[filled..filled + run].copy_from_slice(&self.spare[self.taken..self.taken + run]);
+            self.taken += run;
+            filled += run;
+        }
+
+        filled
+    }
+
+    /// Pulls one sample buffer, and says whether anything usable came back.
+    ///
+    /// A buffer with no block is skipped rather than treated as the end: the
+    /// range can legitimately contain one, and stopping there would truncate
+    /// the sound at a point that varies with the file.
+    fn refill(&mut self) -> bool {
+        while !self.finished {
+            let Ok(Some(sample)) = self.output.next_sample_buf() else {
+                self.finished = true;
+                return false;
+            };
+
+            let Some(block) = sample.data_buf() else {
+                continue;
+            };
+            let Ok(bytes) = block.as_slice() else {
+                continue;
+            };
+
+            // Safety: the output was configured for packed 32-bit float PCM, so
+            // the block's bytes are exactly a `f32` array.
+            let floats = unsafe {
+                std::slice::from_raw_parts(bytes.as_ptr().cast::<f32>(), bytes.len() / 4)
+            };
+
+            self.spare.clear();
+            self.spare.extend_from_slice(floats);
+            self.taken = 0;
+
+            if !self.spare.is_empty() {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+impl Drop for AudioReader {
+    fn drop(&mut self) {
+        // Cancelled explicitly, for the reason `VideoReader` is: an export
+        // opens one of these per source per slice, and a reader dropped
+        // mid-range holds its decode session until the asset is released.
+        self.reader.cancel_reading();
+    }
 }
 
 /// Linear PCM, 32-bit float, interleaved stereo — what the mixer speaks.

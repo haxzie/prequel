@@ -90,6 +90,20 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     initialState(opened.project, opened.manifest.duration),
   );
   const [images, setImages] = useState<Images>(new Map());
+  /**
+   * Video tracks whose first frame has decoded.
+   *
+   * Reported by the elements themselves, because nothing else here knows. A
+   * track can be current, sized and seeking with no picture in it yet, and the
+   * compositor draws what it is given — so on a cold open the first frames it
+   * drew were a background with a hole where the recording goes.
+   *
+   * Reset with the recording, not accumulated: a second recording's elements
+   * are new and have decoded nothing.
+   */
+  const [decoded, setDecoded] = useState<Set<TrackKind>>(new Set());
+
+  useEffect(() => setDecoded(new Set()), [session.dir]);
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
   const [panelOpen, setPanelOpen] = useState(true);
@@ -183,6 +197,33 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     () => settingsOf(state.project, media.sliceId),
     [state.project, media.sliceId],
   );
+
+  /**
+   * Whether the preview has everything it draws with.
+   *
+   * Both halves arrive late and independently: a video decodes its first frame
+   * some way after the element is handed a source, and the background, the
+   * pointer images and the caption bitmaps are fetched over `prequel-media:`
+   * with a retry ladder behind them. The compositor draws whatever it has, so
+   * until both are in, what it paints is a background with the recording
+   * missing from it.
+   *
+   * Every video track, not just the screen. Revealing on the first one to
+   * decode would swap one flash for another on any recording with a camera in
+   * it.
+   *
+   * The images are checked against what this project actually asks for, so a
+   * composition on a solid colour is ready the moment its video is: there is no
+   * background file to wait for.
+   */
+  const ready = useMemo(() => {
+    const videos = session.media.filter(
+      (track) => track.kind === "screen" || track.kind === "camera",
+    );
+    if (!videos.every((track) => decoded.has(track.kind))) return false;
+
+    return imagePaths(state.project, CURSOR_FILES).every((path) => images.has(path));
+  }, [session.media, decoded, state.project, images]);
 
   /**
    * What the slice under the playhead is arriving from.
@@ -713,6 +754,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onChange={(frame) => dispatch({ type: "setFrame", frame })}
             />
             <Preview
+              ready={ready}
               frame={state.project.frame}
               settings={previewSettings}
               enter={previewEnter}
@@ -901,6 +943,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               muted
               playsInline
               preload="auto"
+              // The first frame having decoded, which is not the same as the
+              // track being on screen: `media.visible` says a track *covers*
+              // this moment, and it says so before there are any pixels to
+              // draw. Compositing then paints a background with nothing on it,
+              // which is the flash this reports away.
+              onLoadedData={() => {
+                setDecoded((current) =>
+                  current.has(track.kind) ? current : new Set(current).add(track.kind),
+                );
+              }}
             />
           ) : (
             <audio

@@ -201,9 +201,9 @@ pub struct Span {
 pub struct CaptionWord {
     /// The source time this crop is on screen for.
     ///
-    /// For the lit layer that is the word's own moment. For a look that blurs
-    /// its words in it runs to the end of the line: the word arrives when it
-    /// is spoken and stays, so the line fills up as it is said.
+    /// The word's own moment where the look lights only what is being said.
+    /// To the end of the line where the look fills in instead: the word stays
+    /// once it has been said, so the line fills up as it is spoken.
     pub at: i64,
     pub end: i64,
     /// The word's box, in bitmap pixels.

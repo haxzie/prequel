@@ -3691,12 +3691,15 @@ describe("captions in the plan", () => {
   const cue = (over: Partial<RenderedCue> = {}): RenderedCue => ({
     at: 1_000,
     end: 4_000,
-    path: "captions/cue-3.png",
-    litPath: null,
+    // One layer, drawn whole: the line and nothing else, which is every look
+    // that says only one thing about a word.
+    layers: [{ path: "captions/cue-3.png", words: [] }],
     bitmap: { width: 400, height: 100 },
     // A fifth of the frame's width and a tenth of its height.
     size: { width: 0.2, height: 0.1 },
-    words: [],
+    // Drawn for the size the settings below ask for, so nothing is scaled
+    // unless a test says it is.
+    drawnSize: DEFAULT_SETTINGS.captions.captionSize,
     ...over,
   });
 
@@ -3802,53 +3805,45 @@ describe("captions in the plan", () => {
     expect(bottom.dstRect.y + bottom.dstRect.height).toBeCloseTo(LANDSCAPE.height - 0.1 * unit);
   });
 
-  it("emits a lit layer only when there is a bitmap and boxes for one", () => {
-    const words = [
-      {
-        at: 1_000,
-        end: 2_000,
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 80,
-        scale: 1.1,
-        blur: 0,
-      },
-    ];
-
-    const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
-    if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
-
-    // The flat layer draws the whole bitmap; the lit one crops the spoken word
-    // out of it. Two items rather than one item emitting two draws, so every
-    // plan item stays a single quad.
-    expect(flat.words).toEqual([]);
-    expect(lit.words).toEqual(words);
-
-    // Boxes with no bitmap to crop them out of would draw the flat bitmap's
-    // whole width as if it were one word.
-    expect(drawn(LANDSCAPE, {}, [cue({ words })])).toHaveLength(1);
+  /** One word's box, at whatever moment the test is about. */
+  const box = (at: number, end: number, x = 0): CaptionWord => ({
+    at,
+    end,
+    x,
+    y: 0,
+    width: 100,
+    height: 80,
+    scale: 1,
+    blur: 0,
   });
 
-  it("draws one cropped layer for a look with no flat layer under it", () => {
+  it("draws a layer whole when it has no boxes, and a quad per box when it has", () => {
+    const words = [box(1_000, 2_000)];
+    const [line, lit] = drawn(LANDSCAPE, {}, [
+      cue({
+        layers: [
+          { path: "captions/cue-3.png", words: [] },
+          { path: "captions/cue-3-now.png", words },
+        ],
+      }),
+    ]);
+    if (line?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
+
+    // The layer underneath draws the whole bitmap; the one above crops the
+    // word out of it. Two items rather than one item emitting two draws, so
+    // every plan item stays a single quad.
+    expect(line.words).toEqual([]);
+    expect(lit.words).toEqual(words);
+  });
+
+  it("draws one cropped layer for a look with no line under it", () => {
     // A look that shows one word at a time has no line of unspoken words to
     // light against, so it is rasterised once in the accent and the plan crops
     // to the word. Emitting a flat layer as well is what made this look like
     // two texts: a glyph grown over another does not cover it, because its
     // counters grow too and the strokes underneath show through.
-    const words = [
-      {
-        at: 1_000,
-        end: 2_000,
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 80,
-        scale: 1,
-        blur: 0,
-      },
-    ];
-    const items = drawn(LANDSCAPE, {}, [cue({ litPath: null, words })]);
+    const words = [box(1_000, 2_000)];
+    const items = drawn(LANDSCAPE, {}, [cue({ layers: [{ path: "captions/cue-3.png", words }] })]);
 
     expect(items).toHaveLength(1);
     const only = items[0]!;
@@ -3861,27 +3856,103 @@ describe("captions in the plan", () => {
     expect(captionAt(only, 1_500)).not.toBeNull();
   });
 
-  it("puts both layers in exactly the same place", () => {
-    const words = [
-      {
-        at: 1_000,
-        end: 2_000,
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 80,
-        scale: 1,
-        blur: 0,
-      },
-    ];
-    const [flat, lit] = drawn(LANDSCAPE, {}, [cue({ litPath: "captions/cue-3-lit.png", words })]);
-    if (flat?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
+  it("puts every layer in exactly the same place", () => {
+    const [line, lit] = drawn(LANDSCAPE, {}, [
+      cue({
+        layers: [
+          { path: "captions/cue-3.png", words: [] },
+          { path: "captions/cue-3-now.png", words: [box(1_000, 2_000)] },
+        ],
+      }),
+    ]);
+    if (line?.kind !== "caption" || lit?.kind !== "caption") throw new Error("no caption");
 
-    // The lit word is cropped out of a bitmap laid out identically, so anything
-    // but the same box would slide the highlight off the word it is lighting.
-    expect(lit.dstRect).toEqual(flat.dstRect);
-    expect(lit.bitmap).toEqual(flat.bitmap);
-    expect(lit.span).toEqual(flat.span);
+    // A word above is cropped out of a bitmap laid out identically to the one
+    // below, so anything but the same box would slide the highlight off the
+    // word it is lighting.
+    expect(lit.dstRect).toEqual(line.dstRect);
+    expect(lit.bitmap).toEqual(line.bitmap);
+    expect(lit.span).toEqual(line.span);
+  });
+
+  it("says three things about a word where the look asks for three", () => {
+    // What Highlight needs and two layers could not carry: the word being
+    // spoken is the accent, the ones behind it are white, the ones ahead are
+    // only the held-back line. The three spans are disjoint, so exactly one
+    // layer draws any given word at any given moment.
+    const items = drawn(LANDSCAPE, {}, [
+      cue({
+        layers: [
+          { path: "captions/cue-3.png", words: [] },
+          // Said: from where each word ends to the end of the cue.
+          { path: "captions/cue-3-said.png", words: [box(2_000, 4_000), box(3_000, 4_000, 100)] },
+          // Now: each word's own moment, and no longer.
+          { path: "captions/cue-3-now.png", words: [box(1_000, 2_000), box(2_000, 3_000, 100)] },
+        ],
+      }),
+    ]);
+
+    const drawing = (path: string, moment: number) =>
+      items.filter(
+        (item) => item.kind === "caption" && item.path === path && captionAt(item, moment) !== null,
+      ).length;
+
+    // Mid-first-word: it is the accent, and nothing is white yet.
+    expect(drawing("captions/cue-3-now.png", 1_500)).toBe(1);
+    expect(drawing("captions/cue-3-said.png", 1_500)).toBe(0);
+
+    // Mid-second: the first has gone white, the second has the accent, and no
+    // word is drawn by two layers at once.
+    expect(drawing("captions/cue-3-said.png", 2_500)).toBe(1);
+    expect(drawing("captions/cue-3-now.png", 2_500)).toBe(1);
+
+    // After the last word: both white, nothing lit.
+    expect(drawing("captions/cue-3-said.png", 3_500)).toBe(2);
+    expect(drawing("captions/cue-3-now.png", 3_500)).toBe(0);
+
+    // The line underneath is there the whole time.
+    expect(drawing("captions/cue-3.png", 1_500)).toBe(1);
+    expect(drawing("captions/cue-3.png", 3_500)).toBe(1);
+  });
+
+  it("draws every word that has been said, not only the first", () => {
+    // The regression the per-box items exist for. A look that fills its line
+    // as it is spoken has overlapping boxes — each runs to the end of the cue —
+    // and `captionAt` takes the first box the moment falls inside. As one item
+    // the whole line stayed on its first word for the length of the cue.
+    const words = [box(1_000, 4_000), box(2_000, 4_000, 100)];
+    const [, ...lit] = drawn(LANDSCAPE, {}, [
+      cue({
+        layers: [
+          { path: "captions/cue-3.png", words: [] },
+          { path: "captions/cue-3-said.png", words },
+        ],
+      }),
+    ]);
+
+    expect(lit).toHaveLength(2);
+
+    // Before the second word: only the first is drawn. After it: both, each
+    // cropped to its own box.
+    const at = (moment: number) =>
+      lit.filter((item) => item.kind === "caption" && captionAt(item, moment) !== null).length;
+
+    expect(at(1_500)).toBe(1);
+    expect(at(3_000)).toBe(2);
+  });
+
+  it("scales a set drawn for another size to the one asked for", () => {
+    // What keeps the size slider live. The bitmaps take a moment to redraw, and
+    // the set on hand is stretched to the size being asked for meanwhile rather
+    // than the captions coming off the preview for the length of the drag.
+    const half = DEFAULT_SETTINGS.captions.captionSize / 2;
+    const [item] = drawn(LANDSCAPE, { captionSize: half }, [cue()]);
+    if (item?.kind !== "caption") throw new Error("no caption");
+
+    expect(item.dstRect.width).toBeCloseTo(LANDSCAPE.width * 0.2 * 0.5);
+    // Still centred, so a stretched cue grows about the middle of the frame
+    // rather than off one edge of it.
+    expect(item.dstRect.x + item.dstRect.width / 2).toBeCloseTo(LANDSCAPE.width / 2);
   });
 
   it("skips a cue that measured to nothing", () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import type {
   PickerWindow,
@@ -10,6 +10,7 @@ import type {
 } from "../../../shared/contract";
 import { AreaIcon, ScreenIcon } from "../dock/icons";
 import { follow } from "../lib/live";
+import { anchorOf, HANDLE_CURSOR, HANDLES, moved, resized, type Handle } from "./resize";
 
 /** Ignore a drag this small — it is a click that wobbled, not a region. */
 const MIN_AREA_EDGE = 8;
@@ -35,6 +36,18 @@ const OVERLAY_SETTLED = "fixed inset-0 cursor-default bg-[rgba(6,7,9,0.4)]";
  */
 const HIGHLIGHT =
   "pointer-events-none absolute rounded-md border-2 border-selected bg-selected/10 " +
+  "shadow-[0_0_0_9999px_rgba(6,7,9,0.26)]";
+
+/**
+ * The same outline once it is drawn, and grabbable.
+ *
+ * `pointer-events-none` on the drawing one is deliberate: while a drag is in
+ * progress the rectangle is under the pointer drawing it, and a box that ate
+ * the moves would stop the drag the moment it grew past the cursor. Once
+ * settled there is no drag to interrupt, and the body is what moves the region.
+ */
+const HIGHLIGHT_SETTLED =
+  "absolute cursor-move rounded-md border-2 border-selected bg-selected/10 " +
   "shadow-[0_0_0_9999px_rgba(6,7,9,0.26)]";
 
 /** White on a white window is invisible, and there is no card behind the text
@@ -319,7 +332,7 @@ function AreaSelection({
   // is a warning in the console of an overlay nobody can open again.
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
-  const region = useMemo(() => regionOf(origin, current), [origin, current]);
+  const drawn = useMemo(() => regionOf(origin, current), [origin, current]);
 
   const start = useCallback(
     (dragged: Region) => {
@@ -357,6 +370,38 @@ function AreaSelection({
     setSettled(true);
   }, []);
 
+  /**
+   * The grip being dragged, and where the pointer was when it was taken.
+   *
+   * A ref rather than state: this is read on every mousemove, and a render per
+   * move to store a value the move itself provides is the thing the frame
+   * coalescing below exists to avoid.
+   */
+  const grip = useRef<{ handle: Handle; from: Point; rect: Region } | null>(null);
+
+  /** The settled region, once it can be moved and resized away from the drag. */
+  const [adjusted, setAdjusted] = useState<Region | null>(null);
+
+  const region = adjusted ?? drawn;
+
+  const onGrip = useCallback(
+    (handle: Handle) => (event: ReactMouseEvent) => {
+      const from = { x: event.clientX, y: event.clientY };
+      // From state, never from the drawing refs. `commit` clears `originRef` on
+      // its way to settling, so reading the region back out of the refs here
+      // returned null for every grip and each one silently did nothing.
+      const rect = adjusted ?? drawn;
+      if (!rect) return;
+
+      // The overlay is listening for moves on the sheet, and the sheet is
+      // underneath these grips. Without this the press also reaches it.
+      event.stopPropagation();
+      event.preventDefault();
+      grip.current = { handle, from, rect };
+    },
+    [adjusted, drawn],
+  );
+
   return (
     <div
       className={settled ? OVERLAY_SETTLED : OVERLAY}
@@ -364,7 +409,8 @@ function AreaSelection({
         // Deaf once a region is drawn. This used to start a fresh drag from
         // wherever it landed and clear `settled` on the way — so a press
         // anywhere, including one aimed at the card sitting on top, wiped the
-        // selection and left an empty overlay. Escape starts again.
+        // selection and left an empty overlay. Escape starts again, and the
+        // grips above adjust what is there.
         if (settled) return;
 
         const point = { x: event.clientX, y: event.clientY };
@@ -377,6 +423,22 @@ function AreaSelection({
         setCurrent(point);
       }}
       onMouseMove={(event) => {
+        const held = grip.current;
+        if (held) {
+          const point = { x: event.clientX, y: event.clientY };
+          const bounds = { width: window.innerWidth, height: window.innerHeight };
+
+          // From the rectangle the grip was taken on, not from the last frame:
+          // accumulating deltas drifts, and a resize that drifts is one that
+          // ends up a pixel or two off whatever it was aimed at.
+          setAdjusted(
+            held.handle === "move"
+              ? moved(held.rect, { x: point.x - held.from.x, y: point.y - held.from.y }, bounds)
+              : resized(held.rect, held.handle, point, bounds),
+          );
+          return;
+        }
+
         if (settled || !originRef.current) return;
         currentRef.current = { x: event.clientX, y: event.clientY };
 
@@ -393,14 +455,28 @@ function AreaSelection({
         });
       }}
       onMouseUp={() => {
+        if (grip.current) {
+          grip.current = null;
+          return;
+        }
         if (!settled) commit();
       }}
     >
       {region && (
         <div
-          className={HIGHLIGHT}
-          style={{ left: region.x, top: region.y, width: region.width, height: region.height }}
+          className={settled ? HIGHLIGHT_SETTLED : HIGHLIGHT}
+          style={{
+            left: region.x,
+            top: region.y,
+            width: region.width,
+            height: region.height,
+          }}
+          // The body moves the region. Only once settled: while drawing, the
+          // rectangle is under the pointer that is drawing it.
+          onMouseDown={settled ? onGrip("move") : undefined}
         >
+          {settled && <Grips onGrip={onGrip} />}
+
           {settled ? (
             <SelectionCard
               icon={
@@ -425,10 +501,48 @@ function AreaSelection({
         </div>
       )}
 
-      {!settled && (
+      {settled ? (
+        <Hint title="Drag the edges to adjust" detail="Or drag inside to move it · Esc to cancel" />
+      ) : (
         <Hint title="Drag to select an area" detail="Release to confirm · Esc to cancel" />
       )}
     </div>
+  );
+}
+
+/**
+ * The eight grips on a settled area.
+ *
+ * Drawn as boxes bigger than they look: the visible dot is 10px, the target is
+ * 20px and centred on the same point, because a 10px corner is a hard thing to
+ * hit and missing one starts nothing at all — the sheet under it is deaf while
+ * a region is settled.
+ *
+ * On the edges as well as the corners. Corners alone means every adjustment
+ * changes two dimensions, and "make it a bit wider" is the common one.
+ */
+function Grips({ onGrip }: { onGrip: (handle: Handle) => (event: ReactMouseEvent) => void }) {
+  return (
+    <>
+      {HANDLES.map((handle) => {
+        const at = anchorOf(handle);
+        return (
+          <span
+            key={handle}
+            onMouseDown={onGrip(handle)}
+            className="absolute z-10 grid size-5 place-items-center"
+            style={{
+              left: `${at.x * 100}%`,
+              top: `${at.y * 100}%`,
+              transform: "translate(-50%, -50%)",
+              cursor: HANDLE_CURSOR[handle],
+            }}
+          >
+            <span className="size-2.5 rounded-[2px] border border-black/40 bg-white shadow-sm" />
+          </span>
+        );
+      })}
+    </>
   );
 }
 

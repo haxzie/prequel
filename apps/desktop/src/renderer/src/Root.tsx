@@ -1,4 +1,7 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
+
+import { Opening } from "./editor/Opening";
+import { navigate, recordingInRoute, useRoute } from "./lib/route";
 
 /**
  * Every window loads the same bundle and picks its view from the hash.
@@ -25,8 +28,17 @@ const Welcome = lazy(() => import("./welcome/Welcome").then((m) => ({ default: m
 const Workspace = lazy(() =>
   import("./workspace/Workspace").then((m) => ({ default: m.Workspace })),
 );
+const EditorRoute = lazy(() =>
+  import("./editor/EditorRoute").then((m) => ({ default: m.EditorRoute })),
+);
 
 function view(route: string) {
+  // Before the switch, because this route has a recording's name on the end of
+  // it and the switch matches exactly — the same reason `/welcome/permissions`
+  // is a case of its own rather than `/welcome?step=`.
+  const recording = recordingInRoute(route);
+  if (recording) return <EditorRoute name={recording} />;
+
   switch (route) {
     case "/dock":
       return <Dock />;
@@ -38,9 +50,9 @@ function view(route: string) {
       return <Selection />;
     case "/camera":
       return <Camera />;
-    // One route for every screen the app window has — the library, its panes
-    // and the editor. Which one is showing is pushed by main, so a reload lands
-    // back where the window was rather than on the grid.
+    // The app window's library: the grid and Settings. The editor is
+    // `/editor/<name>` above, so a reload lands back on the recording that was
+    // open rather than on the grid.
     case "/workspace":
       return <Workspace />;
     case "/welcome":
@@ -57,13 +69,52 @@ function view(route: string) {
   }
 }
 
-export function Root() {
-  const route = window.location.hash.replace(/^#/, "") || "/dock";
+/**
+ * Routes the app window can be on.
+ *
+ * Main only ever sends a navigation to that window, so this is belt and braces
+ * — but every window in the app runs this same `Root`, and a stray move that
+ * took the dock panel to `/workspace` would be a panel with a recordings grid
+ * in it and no way back.
+ */
+function ownsNavigation(route: string): boolean {
+  return route === "/workspace" || route.startsWith("/editor/");
+}
 
-  // Nothing rather than a spinner. Every one of these windows is opened by main
-  // already sized and positioned, and several of them are transparent overlays
-  // — a placeholder would be a flash of something the window is not, on top of
-  // the screen the user is about to record. The chunk is local and the wait is
-  // a frame or two.
-  return <Suspense fallback={null}>{view(route)}</Suspense>;
+export function Root() {
+  // Read on every render rather than once. The hash is what moves the app
+  // window between the library and an editor now, and main can move it too.
+  const route = useRoute();
+
+  /**
+   * Main asking the window to go somewhere.
+   *
+   * Here rather than inside the library, which is where it started and where it
+   * was wrong: `Workspace` is unmounted for the whole time an editor is on
+   * screen, so every move main made while one was open went to nobody. Deleting
+   * the recording being edited left the window sitting on it, the tray's Open
+   * Recordings did nothing from an editor, and a take finishing while one was
+   * open did not bring the new one up.
+   *
+   * `Root` is the one component that is mounted whatever the route is.
+   */
+  useEffect(() => {
+    if (!ownsNavigation(route)) return;
+    return window.prequel.workspace.onNavigate(navigate);
+  }, [route]);
+
+  // Nothing rather than a spinner, for every window but one. They are opened by
+  // main already sized and positioned, and several are transparent overlays — a
+  // placeholder would be a flash of something the window is not, on top of the
+  // screen the user is about to record.
+  //
+  // The exception is the editor, which is the one route that says what it is
+  // waiting for: its name is in the URL, so the window can name the recording
+  // while the chunk that draws it is still loading, rather than showing an
+  // empty frame for the length of a 784 KB parse.
+  const recording = recordingInRoute(route);
+
+  return (
+    <Suspense fallback={recording ? <Opening name={recording} /> : null}>{view(route)}</Suspense>
+  );
 }

@@ -199,28 +199,27 @@ const api = {
 
   editor: {
     /**
-     * Fires once the window has loaded, with the recording it was opened for.
+     * The recording this route is for.
      *
-     * Re-sent on every load, so a reload or an HMR round trip restores the
-     * session rather than leaving an editor with nothing to edit.
+     * `null` inside a successful result means the name resolved to nothing in
+     * the library: a recording deleted while its route was still in the window,
+     * or a hash that was never ours. The route says so rather than treating it
+     * as a failure.
+     *
+     * Asking is also how main learns the window is on this recording, so it is
+     * called once per visit and not per render.
      */
-    onOpen: (listener: (session: EditorSession) => void): (() => void) => {
-      const handler = (_event: unknown, session: EditorSession) => listener(session);
-      ipcRenderer.on(IPC_CHANNELS.editorOpen, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.editorOpen, handler);
-    },
+    session: (name: string): Promise<IpcResult<EditorSession | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorSession, name),
 
     /**
-     * A recording is coming, ahead of it being ready.
+     * Says this route is done with its recording.
      *
-     * Loading one probes its media, so there is a gap between the window being
-     * on screen and there being anything to draw in it. This is what fills it.
+     * From the route's cleanup, so it runs whether the user pressed Back, the
+     * window navigated somewhere else, or React unmounted the editor to put a
+     * different one in its place. Main flushes the edit on the strength of it.
      */
-    onOpening: (listener: (dir: string) => void): (() => void) => {
-      const handler = (_event: unknown, dir: string) => listener(dir);
-      ipcRenderer.on(IPC_CHANNELS.editorOpening, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.editorOpening, handler);
-    },
+    leave: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.editorLeave),
 
     /** Persists the edit. Debounced by the renderer, which owns it. */
     saveProject: (dir: string, project: Project): Promise<IpcResult<void>> =>
@@ -417,32 +416,12 @@ const api = {
   /**
    * The local library, as the Projects grid works with it.
    *
-   * `open` and `show` move the one app window between its two screens; the
-   * editor arrives on `editor.onOpen`, not as their result, because loading a
-   * recording probes its media.
+   * Reading and writing only. Moving the window between the library and an
+   * editor is navigation now: the grid sets the route, and the editor route
+   * fetches what it needs through `editor.session`.
    */
   projects: {
     list: (): Promise<IpcResult<ProjectSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.projectsList),
-
-    /** Shows this recording in the editor. Answered on `editor.onOpen`. */
-    open: (dir: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.projectsOpen, dir),
-
-    /** Back to the grid. Main writes the edit being left behind. */
-    show: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.projectsShow),
-
-    /**
-     * Fires when the grid becomes what the window is showing.
-     *
-     * The answer to `show`, and to anything else that takes the window off a
-     * recording — the tray asking for the grid over an open editor, or the
-     * recording on screen being deleted.
-     */
-    onShowing: (listener: () => void): (() => void) => {
-      const handler = () => listener();
-      ipcRenderer.on(IPC_CHANNELS.projectsShowing, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.projectsShowing, handler);
-    },
 
     rename: (dir: string, name: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsRename, dir, name),
@@ -473,6 +452,19 @@ const api = {
    * has no window of its own to open any more.
    */
   workspace: {
+    /**
+     * Main asking the window to go somewhere.
+     *
+     * For the moves the renderer cannot know about: the tray opening a
+     * recording, a finished capture opening its take, and a delete taking the
+     * window off what it just removed.
+     */
+    onNavigate: (listener: (route: string) => void): (() => void) => {
+      const handler = (_event: unknown, route: string) => listener(route);
+      ipcRenderer.on(IPC_CHANNELS.workspaceNavigate, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.workspaceNavigate, handler);
+    },
+
     onSection: (listener: (section: WorkspaceSection) => void): (() => void) => {
       const handler = (_event: unknown, section: WorkspaceSection) => listener(section);
       ipcRenderer.on(IPC_CHANNELS.workspaceSection, handler);

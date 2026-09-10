@@ -34,13 +34,11 @@ const SECTIONS = [
 export function Library({
   section,
   onSection,
-  opening,
   onOpen,
 }: {
   section: WorkspaceSection;
   onSection: (section: WorkspaceSection) => void;
   /** The recording being loaded, if a card has been clicked. */
-  opening: string | null;
   onOpen: (dir: string) => void;
 }) {
   return (
@@ -115,7 +113,7 @@ export function Library({
           read, and the sidebar is where the frost belongs. */}
       <main className="flex min-w-0 flex-1 flex-col bg-editor-scrim">
         {section === "projects" ? (
-          <Projects opening={opening} onOpen={onOpen} />
+          <Projects onOpen={onOpen} />
         ) : (
           <Pane icon={<GeneralIcon />} title="Settings">
             <SettingsPane />

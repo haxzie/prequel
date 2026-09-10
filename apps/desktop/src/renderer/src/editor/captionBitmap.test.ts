@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { captionStyle, type CaptionStyle, type Cue } from "../../../shared/captions";
-import { cueKey, cuePaths } from "./captionBitmap";
+import { cueKey, cuePath } from "./captionBitmap";
 
 const CUE: Cue = {
   at: 0,
@@ -63,6 +63,10 @@ describe("cueKey", () => {
       { caps: true },
       { stroke: { color: "#000000", width: 0.1 } },
       { shadow: { color: "#000000", blur: 0.2, dy: 0.05 } },
+      // How far a word is held back before it is said is drawn into the flat
+      // layer, so it names the file like everything else the pixels depend on.
+      { dim: 0.2 },
+      { dim: null },
     ];
 
     for (const over of changed) {
@@ -110,11 +114,16 @@ describe("cueKey", () => {
     expect(cueKey(CUE, tweak({ fill: "#123456" }), OPTIONS)).not.toBe(key);
   });
 
-  it("keeps the two layers of one cue apart", () => {
-    const { flat, lit } = cuePaths(cueKey(CUE, captionStyle("highlight"), OPTIONS));
+  it("keeps the layers of one cue apart", () => {
+    // Highlight draws three, and two of them landing on the same name would be
+    // one layer drawn over itself in the wrong colour.
+    const key = cueKey(CUE, captionStyle("highlight"), OPTIONS);
+    const paths = ["", "said", "now"].map((name) => cuePath(key, name));
 
-    expect(flat).not.toBe(lit);
-    expect(flat.startsWith("captions/")).toBe(true);
-    expect(lit.endsWith(".png")).toBe(true);
+    expect(new Set(paths).size).toBe(3);
+    for (const path of paths) {
+      expect(path.startsWith("captions/")).toBe(true);
+      expect(path.endsWith(".png")).toBe(true);
+    }
   });
 });

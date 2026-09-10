@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { AfterRecording, UpdateStatus } from "../../../shared/contract";
 import { Field, Section } from "../editor/controls/Field";
+import { PermissionList } from "../components/PermissionList";
+import { usePermissions } from "../hooks/usePermissions";
 import { Segmented, Toggle } from "../editor/controls/inputs";
 import { useDock } from "../hooks/useDock";
 import { ShortcutField } from "./ShortcutField";
@@ -35,8 +37,33 @@ export function SettingsPane() {
     <div className="flex flex-col">
       <General preferences={preferences} set={set} />
       <Recording preferences={preferences} set={set} />
+      <PermissionsSection />
       <Shortcuts accelerator={preferences.toggleShortcut} />
+      <Version />
     </div>
+  );
+}
+
+/**
+ * What macOS has and has not allowed, and a way to fix it.
+ *
+ * The same four rows the first run shows, from the same module, because this is
+ * where somebody arrives when a recording came out empty weeks later — and a
+ * list here that disagreed with the one they said yes to on day one would be
+ * worse than no list at all.
+ *
+ * Polled by `usePermissions` and re-read when the window takes focus, which is
+ * the moment a trip to System Settings ends. Screen Recording and Accessibility
+ * are read from a value macOS fixes at launch, so a row that still says no
+ * after a grant offers the restart that makes it take effect.
+ */
+function PermissionsSection() {
+  const permissions = usePermissions();
+
+  return (
+    <Section title="Permissions">
+      <PermissionList permissions={permissions} />
+    </Section>
   );
 }
 
@@ -53,7 +80,6 @@ const AFTER_RECORDING: { value: AfterRecording; label: string }[] = [
 
 function General({ preferences, set }: PaneProps) {
   const [openAtLogin, setOpenAtLogin] = useState<boolean | null>(null);
-  const { state: update } = useUpdate();
 
   /**
    * Read from macOS, never from `preferences.json`.
@@ -97,30 +123,49 @@ function General({ preferences, set }: PaneProps) {
           onChange={(value) => set({ afterRecording: value })}
         />
       </Field>
-
-      {/* The only place in the app that says which version this is. The
-          welcome window shows it once and is never seen again. */}
-      <Field label={`Version ${update.current}`} inline>
-        <button
-          type="button"
-          className="rounded-md border border-editor-line px-2.5 py-1 text-[11px] text-editor-muted hover:text-editor-fg disabled:opacity-40"
-          disabled={update.status === "checking" || update.status === "downloading"}
-          onClick={() => {
-            // Checked from here, shown over there: the result needs release
-            // notes and a progress bar, and this pane is a list of switches.
-            void window.prequel.update.check().then((state) => {
-              if (state.status !== "idle") void window.prequel.update.open();
-            });
-          }}
-        >
-          {updateLabel(update.status)}
-        </button>
-      </Field>
     </Section>
   );
 }
 
-/** What the button in General says, given where the check has got to. */
+/**
+ * Which version this is, at the foot of the pane.
+ *
+ * The only place in the app that says so: the welcome window shows it once and
+ * is never seen again, and the tray menu has it behind a right-click nobody
+ * makes to read a number. It is here rather than in General because that is
+ * where a version belongs in every settings window on this platform, and
+ * because it is not a setting — nothing on this line is something you choose.
+ *
+ * Not a `Section`. A heading over one line reads as a category with one thing
+ * in it; what this wants to be is a footer, and the section above keeping its
+ * bottom border is what separates it.
+ */
+function Version() {
+  const { state: update } = useUpdate();
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3.5">
+      <span className="text-[11px] text-editor-muted">Version {update.current}</span>
+
+      <button
+        type="button"
+        className="rounded-md border border-editor-line px-2.5 py-1 text-[11px] text-editor-muted hover:text-editor-fg disabled:opacity-40"
+        disabled={update.status === "checking" || update.status === "downloading"}
+        onClick={() => {
+          // Checked from here, shown over there: the result needs release notes
+          // and a progress bar, and this pane is a list of switches.
+          void window.prequel.update.check().then((state) => {
+            if (state.status !== "idle") void window.prequel.update.open();
+          });
+        }}
+      >
+        {updateLabel(update.status)}
+      </button>
+    </div>
+  );
+}
+
+/** What the button on that line says, given where the check has got to. */
 function updateLabel(status: UpdateStatus): string {
   switch (status) {
     case "checking":

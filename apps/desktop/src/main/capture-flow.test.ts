@@ -48,9 +48,27 @@ vi.mock("electron", () => ({
       scaleFactor: 2,
     }),
   },
-  shell: { openPath: async () => "", showItemInFolder: () => undefined },
+  shell: {
+    openPath: async () => "",
+    showItemInFolder: () => undefined,
+    openExternal: async (url: string) => void opened.push(url),
+  },
+  dialog: {
+    showMessageBox: async (options: { message: string }) => {
+      shown.push(options.message);
+      // "Close". A test that opened System Settings would be a test that
+      // changed the machine it ran on.
+      return { response: 2 };
+    },
+  },
   app: { getPath: () => SCRATCH },
 }));
+
+vi.mock("./permissions.js", () => ({ relaunchApp: () => undefined }));
+
+/** What the guard put in front of the user, and where it offered to send them. */
+const shown: string[] = [];
+const opened: string[] = [];
 
 vi.mock("./windows/base.js", () => ({
   windowId: (window: { id: number }) => window.id,
@@ -185,6 +203,77 @@ beforeEach(() => {
 });
 
 afterEach(() => setRecorder(null));
+
+describe("a screen stream that delivers nothing", () => {
+  /**
+   * The failure this exists for, in the shape it arrived in.
+   *
+   * ScreenCaptureKit started, reported no error, and sent no frames. Nothing
+   * downstream noticed: the dock counted up, the camera wrote 349 MB, and the
+   * only complaint came at the stop, from a writer refusing to finish a file it
+   * had never been given a frame for. The user recorded four minutes of nothing
+   * and was told at the end, by an empty library.
+   */
+  it("stops the recording and says why", async () => {
+    vi.useFakeTimers();
+    shown.length = 0;
+
+    let stops = 0;
+    const fake = createFakeRecorder();
+    setRecorder({
+      ...fake,
+      // The stream is alive and empty, which is what a stale Screen Recording
+      // permission looks like from in here.
+      screenFramesSoFar: () => 0,
+      stopRecording: async () => {
+        stops += 1;
+        return fake.stopRecording();
+      },
+    });
+
+    const { flow } = makeFlow();
+    await flow.record();
+
+    // Nothing yet: a first frame is allowed to be slow, and a recording called
+    // broken at 400ms would be called broken on every cold display.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(stops).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(stops).toBe(1);
+    expect(shown).toHaveLength(1);
+    // Named, rather than "something went wrong". The user can act on this one.
+    expect(shown[0]).toContain("screen");
+
+    vi.useRealTimers();
+  });
+
+  it("leaves a recording that is delivering frames alone", async () => {
+    vi.useFakeTimers();
+    shown.length = 0;
+
+    let stops = 0;
+    const fake = createFakeRecorder();
+    setRecorder({
+      ...fake,
+      stopRecording: async () => {
+        stops += 1;
+        return fake.stopRecording();
+      },
+    });
+
+    const { flow } = makeFlow();
+    await flow.record();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(stops).toBe(0);
+    expect(shown).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+});
 
 describe("starting a recording", () => {
   it("resolves the panel's camera label to an AVFoundation device id", async () => {

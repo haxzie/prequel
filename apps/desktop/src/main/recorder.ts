@@ -112,6 +112,14 @@ export interface Recorder {
   releaseCamera(): void;
 
   startRecording(request: StartRecordingRequest): Promise<void>;
+  /**
+   * Screen frames delivered so far, or a negative number meaning "no answer":
+   * `-1` when nothing is recording, `-2` when the capture lock was busy.
+   *
+   * Only `0` says the stream has delivered nothing, which is the one thing
+   * worth acting on. See `CaptureFlow.watchFirstFrames`.
+   */
+  screenFramesSoFar(): number;
   stopRecording(): Promise<RecordingResult>;
   pauseRecording(): void;
   resumeRecording(): void;
@@ -191,6 +199,8 @@ export const RecorderErrorCode = {
   DisplayAsleep: "DISPLAY_ASLEEP",
   WindowNotFound: "WINDOW_NOT_FOUND",
   ScreenCaptureKit: "SCREEN_CAPTURE_KIT",
+  /** The stream started and then delivered nothing. See `watchFirstFrames`. */
+  NoScreenFrames: "NO_SCREEN_FRAMES",
   Encode: "ENCODE",
   AlreadyRecording: "ALREADY_RECORDING",
   NotRecording: "NOT_RECORDING",

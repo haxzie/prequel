@@ -66,7 +66,7 @@ import {
   pickBackgroundImage,
   pickWatermarkImage,
 } from "./wallpaper.js";
-import { deleteRecording } from "./editor-session.js";
+import { deleteRecording, readEditorSession } from "./editor-session.js";
 import type { SelectionOverlay } from "./windows/selection.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
@@ -317,16 +317,25 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   // returns and `invoke` answers `any`, so nothing but this catches it.
   ipcMain.handle(IPC_CHANNELS.projectsList, () => attempt(() => listProjects()));
 
-  ipcMain.handle(IPC_CHANNELS.projectsOpen, (_event, dir: string) =>
-    // Answered by a push on `editor:open` rather than by this promise: opening
-    // a recording probes its media, and the window has to be drawing while that
-    // happens rather than waiting on it.
-    // Not announced: the library *is* the screen here, and the card that was
-    // clicked marks itself while the list stays put under it.
-    attempt(() => workspace.showProject(dir, false)),
+  /**
+   * The recording behind a route, and the record that the window is on it.
+   *
+   * One call for both, because they are one event: this promise resolving is
+   * what the editor renders from, and main cannot learn where the window went
+   * any earlier than the window asking.
+   *
+   * `null` rather than a throw for a name that resolves nowhere. The route puts
+   * up "this recording could not be opened"; an error here would be reported by
+   * nothing, since there is no longer a grid on screen waiting for an answer.
+   */
+  ipcMain.handle(IPC_CHANNELS.editorSession, (_event, name: string) =>
+    attempt(async () => {
+      const dir = workspace.enterRecording(name);
+      return dir ? await readEditorSession(dir) : null;
+    }),
   );
 
-  ipcMain.handle(IPC_CHANNELS.projectsShow, () => attempt(() => workspace.showProjects()));
+  ipcMain.handle(IPC_CHANNELS.editorLeave, () => attempt(() => workspace.leaveRecording()));
 
   ipcMain.handle(IPC_CHANNELS.projectsRename, (_event, dir: string, name: string) =>
     attempt(() => renameProject(dir, name)),

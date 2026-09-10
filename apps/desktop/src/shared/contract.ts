@@ -340,8 +340,28 @@ export const IPC_CHANNELS = {
   dockChanged: "dock:changed",
   /** Main → renderer broadcast. */
   sessionChanged: "session:changed",
-  /** Main → editor renderer, once per window. */
-  editorOpen: "editor:open",
+  /**
+   * Editor renderer → main: the recording at this route, please.
+   *
+   * The route carries the recording's folder *name*, never its path — the same
+   * identifier `prequel-media://` uses, resolved by main against the recordings
+   * directory and refused if it lands outside. A path in a URL would put the
+   * user's home directory in the window's address.
+   *
+   * This is also the moment main learns where the window has gone: the answer
+   * commits the switch, flushing the edit being left behind before the next
+   * recording loads.
+   */
+  editorSession: "editor:session",
+  /**
+   * Editor renderer → main: I have left the recording I was showing.
+   *
+   * Called from the route's own cleanup. Main flushes the held project and
+   * forgets it, which is what keeps `editor-project`'s pending map from
+   * outliving the screen it belongs to: a stale entry there is what a later
+   * open, or a rename, would read in preference to the file on disk.
+   */
+  editorLeave: "editor:leave",
   editorSaveProject: "editor:saveProject",
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
@@ -362,13 +382,6 @@ export const IPC_CHANNELS = {
   backgroundsCatalogue: "backgrounds:catalogue",
   backgroundsThumbnail: "backgrounds:thumbnail",
   backgroundsEnsure: "backgrounds:ensure",
-  /**
-   * A recording is on its way to the editor.
-   *
-   * Sent before its media is probed, so the window has something to show for
-   * the second that takes rather than falling back to the library.
-   */
-  editorOpening: "editor:opening",
   /**
    * Workspace renderer → main: I am mounted, send me what I should show.
    *
@@ -394,20 +407,15 @@ export const IPC_CHANNELS = {
    * two things and only one of them is a list of these.
    */
   projectsList: "projects:list",
-  /** Renderer → main: show this recording in the editor. Answered by a push on
-      `editor:open`, because loading one means probing its media. */
-  projectsOpen: "projects:open",
-  /** Renderer → main: leave the editor. Main flushes the edit before it does. */
-  projectsShow: "projects:show",
   /**
-   * Main → renderer: the grid is what the window is showing now.
+   * Main → renderer: go to this route.
    *
-   * The window's screen is main's to decide — leaving an editor means writing
-   * its edit first, and the tray can ask for the grid while one is open. So the
-   * renderer asks and then follows this, rather than switching on its own and
-   * trusting the two to agree.
+   * The renderer navigates itself for anything the user clicks. This is for the
+   * moves it cannot know about: the tray opening a recent recording, a finished
+   * capture opening its take, and deleting the recording on screen taking the
+   * window off it. All of those happen in main, to a window already loaded.
    */
-  projectsShowing: "projects:showing",
+  workspaceNavigate: "workspace:navigate",
   projectsRename: "projects:rename",
   projectsDelete: "projects:delete",
   /** Renderer → main: cache a still the grid just made. */

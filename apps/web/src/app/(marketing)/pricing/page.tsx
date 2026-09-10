@@ -19,6 +19,7 @@ export default function Pricing() {
       <section className="pt-20 pb-4">
         <Container>
           <SectionHeading
+            level={1}
             eyebrow="Pricing"
             title="Try for free. Upgrade when you are ready."
             lede="Seven days with the whole app, then pick whichever fits. If you make a video now and then, buy it once and forget about it. If you are recording for work every week, Pro gives you unlimited storage for the links you share. It is the same app either way — the plan only decides how much you keep online."

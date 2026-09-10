@@ -62,15 +62,18 @@ export function StarredBy({ className = "" }: { className?: string }) {
       ))}
 
       {/* Last, so the row reads left to right as faces and then the rest of
-          them. The ink colour, matching the button it stands beside, with the
-          count knocked out of it.
+          them. The page's own ground with the count in ink, which is the
+          inverse of the faces beside it and of the button behind them — the
+          tally is the one disc in the row that is not a picture, and reading as
+          a gap in the stack rather than as a fifth face is the point.
 
-          `text-bg/60` rather than the site's `--muted`: that grey is tuned for
-          type on the page itself and comes out near 3:1 against this disc, which
-          at ten pixels is a smudge. This is the page's own ground, let down until
-          it reads as grey rather than as a second label. */}
+          The hairline is what keeps it a disc. `--bg` is a literal white, so on
+          a phone — where the frame behind this is gone from `sm` down — a white
+          fill on a white page leaves the count floating with no edge at all.
+          `border-fg/8` is the same line the tooltip below carries, which is the
+          site's idiom for an edge that has to exist without being drawn. */}
       <span
-        className={`${DISC} grid place-items-center bg-fg text-[10px] leading-none font-medium tracking-tight text-bg/60`}
+        className={`${DISC} grid place-items-center border border-fg/8 bg-bg text-[10px] leading-none font-medium tracking-tight text-fg`}
       >
         {MORE}
       </span>

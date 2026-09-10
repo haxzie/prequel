@@ -313,17 +313,43 @@ export type PlanItem =
 export interface RenderedCue {
   at: number;
   end: number;
-  /** The flat layer's bitmap, relative to the session directory. */
-  path: string;
   /**
-   * The lit layer's bitmap, laid out identically in the accent colour, or null
-   * for a look that does not light the spoken word.
+   * The layers to draw, back to front.
+   *
+   * A cue is a stack rather than one picture because what a word looks like
+   * depends on when you ask: a look that fills its line as it is spoken says
+   * three things about the same word — still to come, being said, already said
+   * — and a bitmap says one. Every layer is laid out by the same measurement,
+   * so a word lands exactly over itself all the way up the stack.
    */
-  litPath: string | null;
+  layers: CueLayer[];
   bitmap: Size;
   /** How much of the frame the bitmap covers, as fractions of each edge. */
   size: Size;
-  /** Word boxes, in bitmap pixels. Empty for a look with no lit layer. */
+  /**
+   * The `captionSize` these bitmaps were laid out at.
+   *
+   * Carried so a set drawn at one size can stand in for one still being drawn
+   * at another. Dragging the size slider is a stream of edits and a cue takes
+   * a moment to rasterise, so `captionItems` scales what it has by the ratio
+   * between the two rather than leaving the frame with no captions at all
+   * until the new bitmaps land — which is what the slider used to do, and read
+   * as a control that did nothing until it was let go.
+   *
+   * It is exactly 1 by the time anything is exported: `useExport` waits for
+   * the redraw to settle, so a file is never written from a scaled bitmap.
+   */
+  drawnSize: number;
+}
+
+/** One layer of a rendered cue. */
+export interface CueLayer {
+  /** The bitmap, relative to the session directory. */
+  path: string;
+  /**
+   * Empty draws the whole layer for the length of the cue — the line itself.
+   * Otherwise one quad per box, each on screen only for its own moment.
+   */
   words: CaptionWord[];
 }
 
@@ -332,10 +358,10 @@ export interface CaptionWord {
   /**
    * The source time this crop is on screen for.
    *
-   * For the lit layer that is the word's own moment, because the highlight is
-   * only there while the word is being said. For a look that blurs its words
-   * in it runs to the end of the line: the word arrives when it is spoken and
-   * stays, so the line fills up as it is said.
+   * The word's own moment where the look lights only what is being said, so
+   * the highlight moves along the line. To the end of the line where the look
+   * fills in instead — whether the word arrives out of focus and settles or
+   * comes up out of a dimmed line, it stays once it has been said.
    */
   at: number;
   end: number;
@@ -875,11 +901,10 @@ export function buildRenderPlan(
 /**
  * Places already-rasterised cues in the frame.
  *
- * One item per cue for the flat layer, plus a second carrying the word boxes
- * for looks that light the spoken word — which is what `PlanItem.Caption`
- * already expects, and why it holds `words` rather than emitting two draws from
- * one item. Both point at bitmaps laid out identically, so the lit word lands
- * exactly over the flat one it replaces.
+ * One item per layer, or one per word where a layer crops to its words — which
+ * is what `PlanItem.Caption` already expects, and why it holds `words` rather
+ * than emitting several draws from one item. Every item of a cue points at
+ * bitmaps laid out identically, so a word lands exactly over itself.
  */
 function captionItems(
   frame: Size,
@@ -896,8 +921,12 @@ function captionItems(
   const tint = look.onLight ? { onDark: look.fill, onLight: look.onLight } : null;
 
   for (const cue of cues) {
-    const width = cue.size.width * frame.width;
-    const height = cue.size.height * frame.height;
+    // Scaled where the set to hand was drawn for another size — see
+    // `RenderedCue.drawnSize`. A stand-in for the few hundred milliseconds a
+    // redraw takes, and 1 the rest of the time, including every export.
+    const stretch = cue.drawnSize > 0 ? captions.captionSize / cue.drawnSize : 1;
+    const width = cue.size.width * frame.width * stretch;
+    const height = cue.size.height * frame.height * stretch;
     // A cue that measured to nothing — an empty line, a style with a zero size —
     // would divide by zero in `captionAt`. Skipped rather than clamped, since
     // there is nothing to see either way.
@@ -922,18 +951,32 @@ function captionItems(
 
     const span = { start: cue.at, end: cue.end };
 
-    // A quad per word, where the words come into focus one at a time.
+    // A quad per box, or one for the whole layer where a layer has no boxes.
     //
-    // A blur belongs to a draw: one quad for the line could only be soft all
-    // over or sharp all over, and what this look needs is a line that is both
-    // at once. The boxes tile — they were measured to meet halfway through the
-    // space between two words — so the line is covered exactly once and no
-    // word is drawn over its neighbour's.
-    if (cue.words.some((word) => word.blur > 0)) {
-      for (const word of cue.words) {
+    // One item per box rather than one item that finds the box for the moment:
+    // a look that fills its line as it is said has every word so far on screen
+    // at once, and one item can only draw one of them — `captionAt` takes the
+    // first box the moment falls inside, so the whole line stayed on its first
+    // word. A layer whose boxes do not overlap gets the same picture out of
+    // this that it got out of a single item.
+    for (const layer of cue.layers) {
+      if (layer.words.length === 0) {
         items.push({
           kind: "caption",
-          path: cue.path,
+          path: layer.path,
+          bitmap: cue.bitmap,
+          dstRect,
+          span,
+          words: [],
+          tint,
+        });
+        continue;
+      }
+
+      for (const word of layer.words) {
+        items.push({
+          kind: "caption",
+          path: layer.path,
           bitmap: cue.bitmap,
           dstRect,
           span,
@@ -941,34 +984,6 @@ function captionItems(
           tint,
         });
       }
-      continue;
-    }
-
-    // Two layers where a look lights one word against the rest of its line: a
-    // flat one carrying the whole cue, and a lit one cropped to the word being
-    // spoken. One layer where there is no rest of the line — a look that shows
-    // a single word at a time draws it once, already in the accent, and the
-    // word boxes go on that item so it draws nothing between words.
-    items.push({
-      kind: "caption",
-      path: cue.path,
-      bitmap: cue.bitmap,
-      dstRect,
-      span,
-      words: cue.litPath ? [] : cue.words,
-      tint,
-    });
-
-    if (cue.litPath && cue.words.length > 0) {
-      items.push({
-        kind: "caption",
-        path: cue.litPath,
-        bitmap: cue.bitmap,
-        dstRect,
-        span,
-        words: cue.words,
-        tint,
-      });
     }
   }
 

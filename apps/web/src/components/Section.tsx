@@ -25,6 +25,7 @@ export function SectionHeading({
   lede,
   cta,
   align = "left",
+  level = 2,
 }: {
   eyebrow?: string;
   title: ReactNode;
@@ -46,8 +47,23 @@ export function SectionHeading({
    */
   cta?: string;
   align?: "left" | "centre";
+  /**
+   * Which heading level the title renders at.
+   *
+   * `h2` by default, because most callers are one section of a page whose `h1`
+   * is the hero above them. The pages with no hero — `/pricing`, `/features`,
+   * `/blog`, `/about`, `/changelog`, `/support`, `/usecases` — open with this
+   * component instead, and an `h2` there leaves the page with no `h1` at all.
+   * Nothing about that shows on screen, which is why all seven shipped that
+   * way; to a crawler it is a page that never says what it is about.
+   */
+  level?: 1 | 2;
 }) {
   const centred = align === "centre";
+  // A tag name, not a second block of markup: the classes below are the whole
+  // of the heading's look and must not fork per level, or the one `h1` on the
+  // site drifts a size away from every `h2`.
+  const Heading = level === 1 ? "h1" : "h2";
   return (
     <div className={`max-w-2xl ${centred ? "mx-auto text-center" : ""}`}>
       {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
@@ -56,9 +72,9 @@ export function SectionHeading({
           box around a word, and at the heading's default line height two
           chipped lines sit close enough to touch. A heading of plain words is
           left exactly as it was. */}
-      <h2 className="text-3xl font-medium tracking-tight text-balance text-fg has-[[data-heading-chip]]:leading-[1.35] sm:text-4xl">
+      <Heading className="text-3xl font-medium tracking-tight text-balance text-fg has-[[data-heading-chip]]:leading-[1.35] sm:text-4xl">
         {title}
-      </h2>
+      </Heading>
       {lede ? <p className="mt-4 text-lg leading-relaxed text-pretty text-muted">{lede}</p> : null}
       {/* `size="sm"` and not the hero's. The hero's button is the page's ask and
           these are a section's, so they are deliberately a step quieter — seven

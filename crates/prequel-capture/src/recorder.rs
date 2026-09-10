@@ -348,6 +348,24 @@ impl ScreenRecorder {
     /// Starts capturing. Blocks until ScreenCaptureKit confirms the stream is
     /// running, so a permission failure surfaces here rather than as an empty
     /// file later.
+    /// Frames ScreenCaptureKit has delivered so far.
+    ///
+    /// `None` when the capture lock cannot be taken, which at 60 fps is a real
+    /// outcome rather than a theoretical one: the delivery queue holds it most
+    /// of the time. A caller polling this must read "not yet" from `None` and
+    /// ask again, never "no frames".
+    ///
+    /// Counted off the timeline rather than the writer because the timeline is
+    /// what the capture callback touches on every frame, including the ones the
+    /// encoder was too busy to take. The question this answers is whether the
+    /// stream is alive at all, and a frame that arrived and was dropped still
+    /// says it is.
+    pub fn frames_so_far(&self) -> Option<u64> {
+        let inner = self.state.try_lock().ok()?;
+        let stats = inner.video.stats();
+        Some(stats.accepted + stats.dropped)
+    }
+
     pub fn start(options: &RecordOptions, clock: SharedClock) -> Result<Self> {
         let content = crate::targets::current_shareable_content()?;
         let filter = build_filter(&content, options)?;

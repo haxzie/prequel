@@ -79,6 +79,7 @@ export default function UseCases() {
       <section className="pt-20 pb-10">
         <Container>
           <SectionHeading
+            level={1}
             eyebrow="Use cases"
             title="What people record with Prequel"
             lede="One short page for each kind of video. Pick whichever is closest to what you are making: each says what usually goes wrong with it, and which part of Prequel is the answer."

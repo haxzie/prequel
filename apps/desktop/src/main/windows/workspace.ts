@@ -18,10 +18,18 @@
  * menu-bar app has no app menu, so every surface it owns has to be found and
  * got back to, and three separate windows for one app is three things to find.
  *
- * The screen on show is pushed, never encoded in the route. The hash has to
- * survive a reload and an HMR round trip and a serialised manifest in it would
- * not — so the window always loads `/workspace`, and the renderer asks for
- * whichever recording was open as soon as it is mounted.
+ * The screen on show *is* the route: `/workspace` for the library, and
+ * `/editor/<name>` for one recording. It used to be pushed instead, on the
+ * grounds that a hash had to survive a reload and a serialised manifest in one
+ * would not — but a recording's folder name survives both, and the editor now
+ * fetches the rest for itself. What that buys is one answer to "where is this
+ * window": a reload lands where it was without main replaying anything.
+ *
+ * This class keeps `current` all the same, because three things in main depend
+ * on knowing which recording is on screen: the flush that makes the invariant
+ * above true, the window title, and the delete that has to take the window off
+ * a recording it just removed. The renderer reports both ends of a visit
+ * (`editor:session` and `editor:leave`) and this is where that is recorded.
  */
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -32,7 +40,7 @@ import { IPC_CHANNELS, type WorkspaceSection } from "../../shared/contract.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../../shared/manifest.js";
 import { flushProject } from "../editor-project.js";
 import { mirrorConsole } from "../log.js";
-import { readEditorSession } from "../editor-session.js";
+import { recordingPath } from "../session.js";
 import { createWindow, loadRoute } from "./base.js";
 
 const MIN_WIDTH = 960;
@@ -107,7 +115,7 @@ export class WorkspaceWindow {
 
       // Asked for by name, so it is what shows: the tray's Open Recordings is
       // not a request to focus whatever happens to be on screen already.
-      if (dir) this.showProject(dir);
+      if (dir) this.openRecording(dir);
       else this.showProjects();
 
       this.window.show();
@@ -169,7 +177,10 @@ export class WorkspaceWindow {
       this.options.onClose?.(this.fromCapture);
     });
 
-    void loadRoute(window, "/workspace");
+    // Straight to the screen it was opened for. A window that always loaded the
+    // library and was then told to move showed the grid for a frame on its way
+    // to an editor, which is what `editor:opening` used to paper over.
+    void loadRoute(window, this.current ? editorRoute(this.current) : "/workspace");
 
     this.options.onOpen?.();
     return window;
@@ -198,30 +209,21 @@ export class WorkspaceWindow {
   }
 
   /**
-   * Shows one recording in the editor.
+   * Puts the window on one recording's editor.
    *
-   * Throws for a directory that is not an openable recording, so the caller can
-   * report it rather than the window going blank.
+   * Verified here rather than in the route, so a directory that is not an
+   * openable recording throws at the call site — the tray's Open Recent can
+   * then report it, where a window that had already navigated could only show
+   * an error in place of the editor.
+   *
+   * No flush and no `current` here. The renderer reports both ends of a visit,
+   * and doing it from this side as well would mean guessing at an order the
+   * renderer actually decides: it unmounts the editor it is leaving (which
+   * flushes) before mounting the next one.
    */
-  showProject(dir: string, announce = true): void {
+  openRecording(dir: string): void {
     const verified = verifyRecording(dir);
-
-    // Already the open one as far as main is concerned — but that is not the
-    // same as the renderer showing it, and a window that missed the push is
-    // exactly the window whose user clicks the recording again. Said again
-    // rather than returned into silence, which left a card reading "Opening…"
-    // for ever. No flush and no retitle: nothing is being left behind.
-    if (this.current === verified) {
-      this.push(announce);
-      return;
-    }
-
-    // The edit being left behind, before the next one loads. Two projects held
-    // at once is exactly the state the single window exists to prevent.
-    this.flush();
-    this.current = verified;
-    this.window?.setTitle(basename(verified));
-    this.push(announce);
+    this.navigate(editorRoute(verified));
   }
 
   /**
@@ -232,15 +234,51 @@ export class WorkspaceWindow {
    * to be before one was opened.
    */
   showProjects(section: WorkspaceSection = "projects"): void {
+    // Belt and braces. Leaving an editor flushes from the renderer's own
+    // cleanup, and this is the same call again for the case where that never
+    // ran — a renderer that crashed, or a window told to move while its editor
+    // was mid-mount. `flushProject` is a no-op when nothing is held.
     this.flush();
     this.current = null;
     this.section = section;
     this.window?.setTitle(GRID_TITLE);
-    // Told rather than assumed. The renderer does not decide this — the tray
-    // can ask for the grid over an open editor, and deleting the recording on
-    // screen takes the window off it.
-    this.window?.webContents.send(IPC_CHANNELS.projectsShowing);
+    this.navigate("/workspace");
     this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+  }
+
+  /**
+   * Records that the renderer is now showing a recording, and answers with it.
+   *
+   * The one place `current` moves forward. Flushing here rather than on the way
+   * out covers the case the way out cannot: two editors in a row, where the
+   * second mounts before anything told this side the first had gone.
+   *
+   * `null` for a name that does not resolve to a recording inside the library,
+   * which the route treats as "this could not be opened" rather than throwing
+   * an error at somebody who only clicked a card.
+   */
+  enterRecording(name: string): string | null {
+    const dir = recordingPath(name);
+    if (!dir) return null;
+
+    if (this.current !== dir) this.flush();
+    this.current = dir;
+    this.window?.setTitle(basename(dir));
+    return dir;
+  }
+
+  /**
+   * Records that the renderer has left the recording it was showing.
+   *
+   * Called from the editor route's cleanup, which React runs before the next
+   * screen mounts. What it protects is `editor-project`'s pending map: an entry
+   * left there outlives the editor that made it, and `loadProject` prefers it to
+   * the file on disk, so a stale one is what a later open or a rename reads.
+   */
+  leaveRecording(): void {
+    this.flush();
+    this.current = null;
+    this.window?.setTitle(GRID_TITLE);
   }
 
   /**
@@ -263,48 +301,41 @@ export class WorkspaceWindow {
   }
 
   /**
-   * Sends the open recording to the renderer, and the pane behind it.
+   * Sends the window the pane it should be showing.
    *
-   * `announce` says whether to tell the renderer a recording is *coming*, ahead
-   * of it arriving. Loading one probes its media and, on a take that has never
-   * been opened, copies its background in — hundreds of milliseconds during
-   * which this window is already on screen with no session to draw. It showed
-   * the library for that gap, so stopping a recording flashed the grid before
-   * the editor appeared, which reads as having opened the wrong thing.
-   *
-   * False from the grid, where the library is not a fallback but the screen the
-   * user is standing on: a card there marks itself as opening and the list stays
-   * put underneath, which is the better answer when the list is what you are
-   * looking at.
+   * All that is left of what this used to push. The recording is in the route
+   * now, so a mounted renderer already knows which one it is on; the pane is
+   * still main's, because the tray's Settings item has no other way in.
    */
-  private push(announce = true): void {
-    const window = this.window;
-    if (!window) return;
+  private push(): void {
+    this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+  }
 
-    // Always, and first: this is what a reload or an HMR round trip restores,
-    // and the pane is as much part of where the window was as the recording is.
-    window.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
-
-    const dir = this.current;
-    if (!dir) return;
-
-    if (announce) window.webContents.send(IPC_CHANNELS.editorOpening, dir);
-
-    void readEditorSession(dir)
-      .then((session) => {
-        // Still the same screen: loading probes the media, which takes long
-        // enough for somebody to have gone back to the grid meanwhile.
-        if (window.isDestroyed() || this.current !== dir) return;
-        window.webContents.send(IPC_CHANNELS.editorOpen, session);
-      })
-      .catch((cause) => {
-        console.warn(`[editor] could not load ${dir}:`, cause);
-      });
+  /**
+   * Tells an open window to go somewhere.
+   *
+   * Only for moves the renderer cannot know about: the tray, a finished
+   * capture, a delete taking the window off what it removed. Anything the user
+   * clicks in the window navigates there and tells this side afterwards.
+   */
+  private navigate(route: string): void {
+    this.window?.webContents.send(IPC_CHANNELS.workspaceNavigate, route);
   }
 
   private flush(): void {
     if (this.current) flushProject(this.current);
   }
+}
+
+/**
+ * The route that shows one recording.
+ *
+ * Encoded here and nowhere else. `loadRoute` concatenates its argument straight
+ * into a URL, and every recording's name has spaces in it, so a raw name would
+ * arrive at the renderer already broken.
+ */
+function editorRoute(dir: string): string {
+  return `/editor/${encodeURIComponent(basename(dir))}`;
 }
 
 /**
