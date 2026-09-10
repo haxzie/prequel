@@ -32,7 +32,7 @@
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
-import { IdeasWord, LayoutsWord } from "@/components/landing/marks";
+import { LayoutsWord } from "@/components/landing/marks";
 import { LAYOUT_SCREEN, LAYOUT_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
 
@@ -140,12 +140,11 @@ export function LayoutDemo() {
               eyebrow="Layouts"
               title={
                 <>
-                  <LayoutsWord>Layouts</LayoutsWord> to communicate your big{" "}
-                  <IdeasWord>ideas</IdeasWord>
+                  Switch <LayoutsWord>layouts</LayoutsWord> clip by clip
                 </>
               }
-              lede="Ten ways to frame the same take. Camera in a corner, beside the screen, splitting the frame with it, or gone entirely. Pick one for the whole video, or a different one for every clip."
-              cta="Try it free"
+              lede="Choose from fourteen layouts for the same take: camera in the corner, beside the screen, split with it or hidden entirely. Use one layout for the whole video, or change it clip by clip."
+              cta="Download for Mac"
             />
           </div>
         </div>

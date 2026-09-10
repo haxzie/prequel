@@ -120,8 +120,8 @@ export function CaptionsDemo() {
                   <TextWord>text</TextWord>
                 </>
               }
-              lede="Every word is transcribed on your Mac while you record. Pick a look, then open the transcript and type. Delete a sentence there and it leaves the video with it."
-              cta="Record now"
+              lede="Prequel transcribes every word on your Mac when the editor opens. Fix captions by typing in the transcript, choose a subtitle style or delete a sentence to remove it from the video."
+              cta="Download for Mac"
             />
           </div>
 

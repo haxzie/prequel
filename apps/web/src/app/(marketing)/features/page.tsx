@@ -70,7 +70,7 @@ const FIRST_PASS = [
     body: "A generated zoom is identical to one you add yourself. Move it, retime it, point it somewhere else, delete it.",
   },
   {
-    title: "Run the zoom pass again at any time",
+    title: "Add zoom and pan again at any time",
     body: "Add zooms automatically fills the stretches that are not already covered. A take you have cut about in gets topped up rather than started again.",
   },
 ];
@@ -86,8 +86,8 @@ const FIRST_PASS = [
  */
 const EDITOR_PICTURE = [
   {
-    title: "Fifteen layouts for the screen and camera",
-    body: "Fifteen arrangements in three groups: the screen and camera together, the camera alone, or the screen alone. One for the video, or a different one per clip.",
+    title: "Fourteen layouts for the screen and camera",
+    body: "Fourteen arrangements in three groups: the screen and camera together, the camera alone, or the screen alone. One for the video, or a different one per clip.",
   },
   {
     title: "Zooms that follow the cursor, a region or a field",
@@ -287,8 +287,8 @@ export default function Features() {
           </ul>
           <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-relaxed text-muted">
             The preview and the exporter draw the same plan, so the file you get is the frame you
-            approved. GIF is the one exception to the sizes above: it is silent, and it tops out at a
-            720 pixel short edge.
+            approved. GIF is the one exception to the sizes above: it is silent, and it tops out at
+            a 720 pixel short edge.
           </p>
         </Container>
       </section>

@@ -36,12 +36,7 @@ import {
   ZoomIcon,
   ZoomInIcon,
 } from "@/components/landing/editor-icons";
-import {
-  ColorField,
-  Segmented,
-  Slider,
-  ToggleField,
-} from "@/components/editor-controls";
+import { ColorField, Segmented, Slider, ToggleField } from "@/components/editor-controls";
 import { ASSETS } from "@/lib/assets";
 /**
  * The editor, drawn on the landing page.
@@ -121,6 +116,24 @@ const CAMERA = `${ASSETS}/camera-take.mp4`;
 const BACKDROP = `${ASSETS}/editor-backdrop.jpg`;
 
 /**
+ * The width the preview is shown at, and the width its media is fetched at.
+ *
+ * The home page hides this panel below `md`: an editor window with a title bar,
+ * a dock, an inspector and a timeline in it is illegible on a phone, and what
+ * survives the squeeze is not a picture of the product.
+ *
+ * Hiding it in CSS is only half of that. `display: none` stops the paint, not
+ * the fetch, and it does not stop a `play()` that has already been asked for —
+ * so a phone would pull 1.45 MB of video and decode it behind a panel nobody
+ * ever sees. Both files are therefore `preload="none"` and neither is started
+ * until this query matches.
+ *
+ * `page.tsx` writes the same breakpoint as `hidden md:block`. Tailwind's `md` is
+ * 48rem, and the two have to move together.
+ */
+const ON_SCREEN = "(min-width: 48rem)";
+
+/**
  * The camera's outline: a true superellipse.
  *
  * `corner-shape: squircle` — what the site's `squircle` utility sets, and what
@@ -166,7 +179,7 @@ const CLIPS = [
   LAST_CLIP,
 ];
 
-/** The zoom pass, in seconds from the start of the take. */
+/** The zoom and pan, in seconds from the start of the take. */
 const PANEL_ZOOM = { id: "z2", at: 11, length: 4.4, level: 1.8, target: "typing" as const };
 const ZOOMS = [
   { id: "z1", at: 1.5, length: 5.2, level: 2.4, target: "cursor" as const },
@@ -337,6 +350,7 @@ export function AppPreview() {
   const tab = "recording";
   const strip = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const camera = useRef<HTMLVideoElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const clock = useRef<HTMLSpanElement>(null);
 
@@ -395,7 +409,7 @@ export function AppPreview() {
   }, [playing, paint]);
 
   /**
-   * Starts the take on its own.
+   * Starts the take and the camera on their own, once the panel is on screen.
    *
    * Muted, which is what browsers require of a video that plays without being
    * asked — and correct anyway: a page that makes noise on open is a page people
@@ -403,19 +417,46 @@ export function AppPreview() {
    * regardless, iOS in Low Power Mode being the common one, so the rejection is
    * swallowed and the poster stays up with the transport waiting to be pressed.
    *
+   * `ON_SCREEN` is the gate, and it is what replaced the camera's `autoPlay` and
+   * both files' `preload="auto"`. Below it the panel is `display: none`, which
+   * would have stopped neither: the bytes are the point, not the paint.
+   *
    * Not under `prefers-reduced-motion`. The site stops the wash, the demos and
    * the hero's entrance outright under that setting rather than slowing them
    * down, and thirty seconds of moving picture is a stronger claim on the eye
    * than any of them. The first frame is still there, and so is the play button.
+   * The camera is exempt for the reason it always was: it is a layer of the
+   * picture rather than something to watch, and a frozen one reads as a dropped
+   * video call.
    */
   useEffect(() => {
-    const element = video.current;
-    if (!element) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wide = window.matchMedia(ON_SCREEN);
 
-    void element.play().catch(() => {
-      // Refused. The poster and the transport are the fallback.
-    });
+    const start = () => {
+      if (!wide.matches) return;
+
+      void camera.current?.play().catch(() => {
+        // Refused, and there is no fallback frame to show. An empty corner is
+        // the same thing the clip path would have been drawn around.
+      });
+
+      // Left on its poster, which is what this setting asked for. Nothing is
+      // fetched until somebody presses the transport.
+      if (still) return;
+
+      void video.current?.play().catch(() => {
+        // Refused. The poster and the transport are the fallback.
+      });
+    };
+
+    start();
+
+    // A window that opens narrow and is widened, or a phone turned on its side,
+    // would otherwise keep the poster and an empty camera corner for as long as
+    // the page is open.
+    wide.addEventListener("change", start);
+    return () => wide.removeEventListener("change", start);
   }, []);
 
   const toggle = () => {
@@ -513,7 +554,7 @@ export function AppPreview() {
 
             {/* The composition, which is a finished export playing. Nothing is
               drawn over it: the background, the rounded screen, the camera and
-              the zoom pass are all in the file, because the file came out of the
+              the zoom and pan are all in the file, because the file came out of the
               app. `loop` because it is a picture of the editor rather than
               something to watch to the end — it should be moving whenever anyone
               looks at it, and a still panel halfway down a page reads as broken.
@@ -532,7 +573,7 @@ export function AppPreview() {
                   loop
                   playsInline
                   poster={POSTER}
-                  preload="auto"
+                  preload="none"
                   className="max-h-full w-full max-w-[38rem] cursor-pointer rounded-lg shadow-[0_10px_30px_-12px_rgb(0_0_0_/_0.7)]"
                   onClick={toggle}
                   onPlay={() => setPlaying(true)}
@@ -561,21 +602,23 @@ export function AppPreview() {
                 which is the shape a shadow of this thing should have. The ring
                 goes with it: there is no border left to draw on.
 
-                Its own `loop` and `autoPlay`: it is a face, not a take, and it
-                has nothing to stay in step with — the transport drives the
-                composition, and a camera that stopped when the take was paused
-                would read as a frozen video call rather than as a layer. */}
+                Its own `loop`, and started on its own: it is a face, not a
+                take, and it has nothing to stay in step with — the transport
+                drives the composition, and a camera that stopped when the take
+                was paused would read as a frozen video call rather than as a
+                layer. It played from `autoPlay` until that turned out to fire
+                behind `display: none` as happily as in front of it. */}
                 <div
                   aria-hidden
                   className="pointer-events-none absolute right-[4%] bottom-[4%] w-[20%] [filter:drop-shadow(0_5px_10px_rgb(0_0_0_/_0.55))]"
                 >
                   <video
+                    ref={camera}
                     src={CAMERA}
-                    autoPlay
                     muted
                     loop
                     playsInline
-                    preload="auto"
+                    preload="none"
                     className="block w-full"
                     style={{ clipPath: `url(#${SQUIRCLE_ID})` }}
                   />

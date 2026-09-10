@@ -22,6 +22,7 @@ import {
 import { CaptionsDemo } from "@/components/landing/CaptionsDemo";
 import { LayoutDemo } from "@/components/landing/LayoutDemo";
 import { ZoomDemo } from "@/components/landing/ZoomDemo";
+import { CaptureStep, PlayerStep, TimelineStep } from "@/components/landing/step-visuals";
 import { Container, Eyebrow, SectionHeading } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import type { FaqEntry } from "@/lib/faq";
@@ -45,35 +46,78 @@ const ALREADY_DONE = [
   },
 ];
 
+/**
+ * The whole product in three steps, in the order they happen.
+ *
+ * The title is the step and the body is what it actually involves, which is the
+ * only thing that makes a step worth reading: "Record your screen and camera"
+ * on its own is a sentence nobody needed, and the display-or-window-or-region
+ * choice under it is the answer to the first question anybody has.
+ *
+ * Step two is passive on purpose. `COPY.md` says Prequel does the verb, and it
+ * does in that step's body, but the whole of what the step itself promises is
+ * that the reader is not the one doing it.
+ */
+const STEPS = [
+  {
+    title: "Record your screen and camera",
+    body: "Pick a display, a window or an area you drag out, with your camera, microphone and system audio each on their own track.",
+    visual: <CaptureStep />,
+  },
+  {
+    title: "Zooms and layout are applied automatically",
+    body: "Prequel reads where you clicked and typed, then places the zooms, frames your camera and sets a background behind it.",
+    visual: <TimelineStep />,
+  },
+  {
+    title: "Edit, export and share",
+    body: "Move a zoom, trim a clip or fix a caption, then export one MP4 at up to 4K or send a link that plays anywhere.",
+    visual: <PlayerStep />,
+  },
+];
+
+/**
+ * The editor, as six outcomes.
+ *
+ * The title is what the reader gets and the body is how, which is the split a
+ * dash was doing in the brief these were rewritten from. A card titled
+ * "Backgrounds" names a control and leaves the reader to work out why they
+ * would touch it; naming the outcome first is what makes the control worth
+ * reading about.
+ *
+ * The bodies stay exact. An outcome with nothing checkable under it is the
+ * failure mode at the other end, and the numbers here are all real: five camera
+ * shapes in `CameraShape`, fifteen pointer styles in `CURSOR_STYLES`.
+ */
 const FEATURES = [
   {
-    title: "Zooms that follow the work",
-    body: "Push in on the cursor, on a region you draw, or on whatever you are typing into. Set the level and the speed, with blur falling away from the focus.",
+    title: "Guide attention automatically",
+    body: "Prequel zooms into the part of the screen that matters: the cursor, a region you draw, or whatever you are typing into. Set the level, the speed and how much the rest of the frame blurs.",
     illustration: <ZoomIllustration />,
   },
   {
-    title: "A camera you frame afterwards",
-    body: "Circle, squircle, rounded or wide, in any corner and any size. Your camera is never burned into the recording, so none of this is decided while you record.",
+    title: "Look present without taking over the video",
+    body: "Your camera stays framed and out of the way: circle, squircle, rounded, wide or portrait, in any corner and any size. It is never burned into the recording, so none of it is decided while you record.",
     illustration: <CameraIllustration />,
   },
   {
-    title: "Backgrounds, padding and shadow",
-    body: "Your own wallpaper by default, seven bundled presets, gradients and solids. Set the padding, the radius, the border and the shadow on top.",
+    title: "Make recordings look designed",
+    body: "Add a background, padding and a shadow without editing any of it by hand. Your own wallpaper by default, seven bundled presets, gradients and solids.",
     illustration: <BackgroundIllustration />,
   },
   {
-    title: "Cuts on a real timeline",
+    title: "Cut the parts nobody needs to see",
     body: "Trim the pauses yourself, slice by slice, with a waveform under every clip. Layout, background and audio can all change mid-take.",
     illustration: <TimelineIllustration />,
   },
   {
-    title: "A cursor that behaves",
-    body: "Four pointer styles, resized so it survives a zoom, and hidden after a few seconds of stillness instead of parked over your work.",
+    title: "Keep the pointer out of the way",
+    body: "Fifteen pointer styles, resized so the cursor survives a zoom. Smoothed while it travels, and hidden after a few seconds of stillness.",
     illustration: <CursorIllustration />,
   },
   {
-    title: "What you see is what exports",
-    body: "The preview and the exporter draw the same plan, so the file is the frame you approved rather than a close approximation of it.",
+    title: "Export the frame you approved",
+    body: "The preview and the exporter draw the same plan, so the file matches what you signed off in the editor.",
     illustration: <ExportIllustration />,
   },
 ];
@@ -111,11 +155,50 @@ const PRESETS = [
 export function LandingBody({ faq }: { faq: FaqEntry[] }) {
   return (
     <>
-      {/* The first thing under the hero, and the only place on the page where
-          the product is shown doing something rather than described. It
-          replaced a composed screenshot of the editor: the still could show the
-          zoom slices sitting on a timeline but not the push in, which is the
-          part worth seeing. */}
+      {/* Before the demos rather than after them. The three below are each a
+          close look at one step, and a visitor who has not been told there are
+          only three steps reads them as three separate features. It is also the
+          shortest thing on the page, so it costs a skimmer nothing. */}
+      <section className="pt-16 pb-8">
+        <Container>
+          <SectionHeading
+            eyebrow="How it works"
+            title="Three steps to a finished video"
+            align="centre"
+            cta="Download for Mac"
+          />
+          {/* An `ol`, because these are a sequence and not a set: read out in a
+              different order they stop being true.
+
+              Gapped cards rather than the hairline grid the feature cards use.
+              That grid exists to make a set read as one object, and it is right
+              where the cells are text; here each cell opens on a picture, and
+              three pictures meeting at a hairline read as one wide image cut
+              into thirds. */}
+          <ol className="mx-auto mt-10 grid max-w-5xl gap-5 sm:grid-cols-3">
+            {STEPS.map((step, index) => (
+              <li
+                key={step.title}
+                className="flex flex-col overflow-hidden rounded-2xl border border-line bg-bg"
+              >
+                {step.visual}
+                <div className="flex flex-col gap-2.5 p-6">
+                  <span className="font-mono text-xs tracking-wider text-muted" aria-hidden>
+                    {index + 1}
+                  </span>
+                  <span className="text-[0.9375rem] font-medium text-fg">{step.title}</span>
+                  <span className="text-sm leading-relaxed text-muted">{step.body}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Container>
+      </section>
+
+      {/* The first place on the page where the product is shown doing something
+          rather than described. It replaced a composed screenshot of the editor:
+          the still could show the zoom slices sitting on a timeline but not the
+          push in, which is the part worth seeing. */}
       <ZoomDemo />
 
       {/* Directly under it, because the two make one argument between them: the
@@ -134,10 +217,10 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
       <section className="py-24">
         <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">
           <SectionHeading
-            eyebrow="Automatic"
-            title="It arrives already directed"
-            lede="A raw recording holds one distance for the whole take, and the thing that matters is too small to see. Prequel watches where you click and type, then opens the editor with that pass already made."
-            cta="Try Prequel free"
+            eyebrow="Instant edit"
+            title="Start with the edit already done"
+            lede="Prequel records where you click and type, then opens the editor with zooms already placed, a framed camera and a polished background. Spend less time building the first cut and more time fine-tuning."
+            cta="Download for Mac"
           />
 
           <div className="rounded-2xl border border-line bg-surface p-2">
@@ -161,9 +244,9 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
         <Container>
           <SectionHeading
             eyebrow="The editor"
-            title="Everything you would have done in post"
+            title="Everything you would have done by hand"
             lede="It opens by itself when you stop recording, on the take you just made. Nothing to import, nothing to line up."
-            cta="See it on your Mac"
+            cta="Download for Mac"
             align="centre"
           />
           <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
@@ -184,9 +267,9 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
         <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">
           <SectionHeading
             eyebrow="Quality"
-            title="Exports that hold up"
-            lede="A video that looks produced is worth nothing if the file is soft. Capture and export run on your Mac's own media engine, so 1080p60 records without dropping frames and 4K is a setting rather than a compromise."
-            cta="Start recording"
+            title="Videos stay sharp at 4K"
+            lede="Capture and export run on your Mac's own media engine. 1080p at 60 fps records without dropping frames, and 4K is a setting you pick."
+            cta="Download for Mac"
           />
           <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
             {SPECS.map(([label, value]) => (
@@ -205,8 +288,8 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
         <Container>
           <SectionHeading
             eyebrow="Formats"
-            title="One MP4, shaped for wherever it is going"
-            lede="Switch a recording from landscape to vertical and the look holds. Framing is stored in proportions rather than pixels, so nothing slides off the frame on the way."
+            title="Export in any frame"
+            lede="Turn one recording into different formats without manually reframing every element. Switch from landscape to vertical and the layout stays intact."
             cta="Download for Mac"
             align="centre"
           />
@@ -284,7 +367,7 @@ function CallToAction(): ReactNode {
         <div className="squircle lit relative overflow-hidden rounded-3xl border border-line bg-surface px-6 py-16 text-center sm:px-16">
           <div className="brand-gradient pointer-events-none absolute inset-x-0 top-0 h-px opacity-70" />
           <h2 className="text-3xl font-medium tracking-tight text-balance text-fg sm:text-4xl">
-            Record something worth watching
+            Record demos worth sharing
           </h2>
           <p className="mx-auto mt-4 max-w-md text-pretty text-muted">
             Free for {TRIAL_DAYS} days. No watermark on anything you export.

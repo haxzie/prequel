@@ -18,7 +18,7 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "What is Prequel?",
     answer:
-      "Prequel is a screen recorder for macOS that hands back a finished video rather than raw footage. It records your screen, your camera, your microphone and system audio, then opens an editor on the take with the zooms already placed, the camera framed and a background applied. Export is one MP4 at up to 4K, rendered on your Mac's own media engine.",
+      "Prequel is a screen recorder for macOS that does the editing for you, so you spend less time editing screen recordings. It records your screen, your camera, your microphone and system audio, then opens an editor on the take with the zooms already placed, the camera framed and a background applied. Export is one MP4 at up to 4K, rendered on your Mac's own media engine.",
   },
   {
     question: "How do the automatic zooms work?",
@@ -28,7 +28,7 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "Can I change or delete the automatic zooms?",
     answer:
-      "Yes. Every generated zoom is an ordinary slice on the timeline, identical to one you add yourself. Move it, retime it, point it somewhere else or delete it. Nothing about the automatic pass is baked in.",
+      "Yes. Every generated zoom is an ordinary slice on the timeline, identical to one you add yourself. Move it, retime it, point it somewhere else or delete it. Nothing it placed for you is baked in.",
   },
   {
     question: "Can I zoom in on something other than the cursor?",

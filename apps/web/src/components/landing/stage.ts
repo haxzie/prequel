@@ -70,7 +70,12 @@ export const CAPTIONS_SCREEN = "/screen-checkout.jpg";
  * shows a horizontal band of cheek. The app draws the track as filmstrip cells
  * for exactly this reason, and a cell is portrait.
  *
- * 3.8kB, cropped 4:3 around the subject at the source, which is why it is in
+ * 3.8kB, cropped 3:4 around the subject at the source, which is why it is in
  * `public/` and not R2 with the footage it came from.
+ *
+ * **Taken at 9.0s.** The frame before this one was a blink, which nobody notices
+ * in a contact sheet and everybody notices in a 64px bubble on a landing page.
+ * If this is ever re-cut, `crop=495:660:393:0` is the framing the rest of the
+ * page is composed around, and the eyes are the thing to check.
  */
 export const CAMERA_STILL = "/camera-still.jpg";

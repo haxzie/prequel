@@ -54,6 +54,24 @@ subordinate clause hanging off a subordinate clause, it is two sentences.
 **No hedging.** Not "helps you add zooms", not "designed to make editing
 easier", not "can automatically". It either does it or it is not on the page.
 
+**Never define the thing by what it is not.** No "not X, but Y", and none of
+its cousins: "X rather than Y", "X instead of Y", "what opens is a finished
+video, not raw footage". The shape reads as written rather than said, and the
+page was full of it. Say what the thing does and stop. A factual contrast
+inside a sentence is allowed where the contrast is the fact ("stored in
+proportions, so nothing slides off the frame"); the rhetorical version is not.
+
+**No superlatives, no buzzwords, and no claim with nothing in it.** "Exports
+that hold up" says less than "It stays sharp at 4K". "Layouts to communicate
+your big ideas" says less than "Layouts for the screen and the camera". If a
+heading would survive being moved to a different product's page, it is not
+about this one.
+
+**No trade jargon.** "in post", "the pass", "assets". The reader records their
+screen for work; they do not edit for a living.
+
+**The automatic zooms are called zoom and pan.** Never "the zoom pass".
+
 **Concrete nouns only.** Cursor, corner, padding, shadow, waveform, playhead,
 timeline, wallpaper. Never workflow, experience, solution, engine, platform.
 Whatever is on screen is what the sentence names.
@@ -70,13 +88,19 @@ adjectives. It is also the only place self-criticism is allowed, and it is not
 self-criticism: a reader who buys something that will not run leaves a refund
 request and a one-star review.
 
-**Card titles are labels, not sentences.** Sentence case, no full stop, no
-title case. `Cuts on a real timeline`, `A cursor that behaves`,
-`Backgrounds, padding and shadow`. If a title needs a verb, the verb is the
-feature.
+**Card titles are outcomes, and the body is the mechanism.** Sentence case, no
+full stop, no title case. `Guide attention automatically`,
+`Keep the pointer out of the way`, `Export the frame you approved`. A title
+that only names the control (`Backgrounds`, `Automatic zooms`, `Camera
+framing`) leaves the reader to work out why they would ever touch it, and that
+is the reader's job done badly rather than briefly.
+
+The pairing is the point: the title says what they get, the body says how, and
+the body stays exact. An outcome with nothing checkable under it is the other
+failure, so the numbers under these titles are real ones, read off the app.
 
 **Section headers are spoken English.** `Zooms, exports and the rest`, not
-`Frequently asked questions`. `Everything you would have done in post`, not
+`Frequently asked questions`. `Everything you would have done by hand`, not
 `Editor features`.
 
 **Repetition across pages is fine.** The same card body appears on `/` and on

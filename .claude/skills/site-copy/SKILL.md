@@ -59,13 +59,16 @@ indirection.
 Eyebrow      One or two words, small caps. A category, not a claim.
 Heading      One line. Two beats if it wants them, second beat shorter.
 Lede         Two sentences. Three only if the third is short.
-Cards        3 to 6. Bare noun-phrase title, then one or two sentences.
+Cards        3 to 6. Outcome as the title, mechanism in one or two sentences.
 ```
 
 `SectionHeading` takes `eyebrow`, `title`, `lede`, `cta` and `align`. Every
-`cta` links to `/download`; the words differ per section because the same six
-words repeated down a page read as one banner. Write the ask the section has
-earned, not the ask the hero made.
+`cta` links to `/download`, and every one of them says **Download for Mac**.
+They used to differ per section, on the grounds that one phrase repeated down a
+page reads as a banner. Asked for on 2026-09-10: one action, worded the same
+everywhere, so a reader who has decided is never made to check whether "Try it
+free" and "Start recording" go to the same place. It matches the hero button
+and the nav.
 
 ## The rules, in short
 
@@ -83,7 +86,8 @@ Full reasoning is in `COPY.md`. The ones that get broken:
   experience, solution, platform.
 - **Value is work not done.** Already placed, nothing to import, opens by
   itself, no upload step.
-- **Card titles are labels.** Sentence case, no full stop, no title case.
+- **Card titles are outcomes, bodies are mechanisms.** Sentence case, no full
+  stop, no title case. Never a bare control name (`Backgrounds`).
 
 ## Claims that may not be made
 

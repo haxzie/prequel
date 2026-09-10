@@ -1,5 +1,5 @@
 /**
- * The zoom pass, running, in place of a screenshot of it.
+ * The zoom and pan, running, in place of a screenshot of it.
  *
  * A still picture of a directed recording cannot show the one thing the
  * product does — the push in, the hold, the pull back out — so this is the
@@ -34,7 +34,7 @@
  * rather than reproducing anyone's mark or wordmark.
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
-import { CursorWord, ZoomWord } from "@/components/landing/marks";
+import { ZoomWord } from "@/components/landing/marks";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { ZOOM_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
@@ -101,27 +101,27 @@ export function ZoomDemo() {
             the rest. */}
         <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-16">
           {/*
-            Deliberately not the hero's "pushed in on the work", and
-            deliberately not "Prequel watches ... while it records", which is
-            the sentence the next section down opens with. This is the first
-            thing under the hero and it sits directly above the section that
-            explains the pass, so both of those phrases were being said twice
-            within a screen of each other.
+            The heading describes what the picture beside it is doing rather
+            than claiming a result. The demo pushes in on four things in turn,
+            so "Zooms that follow the action" can be checked against the screen
+            by the person reading it, which is not true of any sentence about
+            videos people want to watch.
 
-            Nor "Zooms that follow the work", which is a feature card a screen
-            further down. The cursor is what this one is about — it is what the
-            picture below actually shows, and naming it is the difference
-            between a claim and a description of what is on screen.
+            It also has to avoid the sentence the "Instant edit" section opens
+            with a screen further down. Both are about the same automatic zooms,
+            and said in the same words within a screen of each other they read
+            as the page repeating itself: this one is the mechanism, that one is
+            the time it saves.
           */}
           <SectionHeading
-            eyebrow="The zoom pass"
+            eyebrow="Zoom and pan"
             title={
               <>
-                The <ZoomWord>zoom</ZoomWord> follows your <CursorWord>cursor</CursorWord>
+                <ZoomWord>Zooms</ZoomWord> that follow the action
               </>
             }
-            lede="Prequel follows your pointer while it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass playing, not a picture of it."
-            cta="Record your first take"
+            lede="Prequel automatically zooms in when you click or type, then softens the rest of the window so viewers know where to look. Every zoom is added to the timeline, so you can move, retime or delete it at any time."
+            cta="Download for Mac"
           />
 
           {/*
