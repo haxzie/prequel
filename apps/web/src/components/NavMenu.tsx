@@ -53,7 +53,7 @@ export function NavMenu({ stars }: { stars: ReactNode }) {
   }, [open]);
 
   return (
-    <div className="relative sm:hidden">
+    <div className="relative lg:hidden">
       <button
         ref={trigger}
         type="button"

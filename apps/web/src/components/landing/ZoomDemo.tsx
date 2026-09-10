@@ -120,7 +120,7 @@ export function ZoomDemo() {
                 The <ZoomWord>zoom</ZoomWord> follows your <CursorWord>cursor</CursorWord>
               </>
             }
-            lede="Prequel reads the pointer as it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass, playing — not a picture of it."
+            lede="Prequel follows your pointer while it records and frames each thing you did, holding the rest of the window soft behind it. This is that pass playing, not a picture of it."
             cta="Record your first take"
           />
 
@@ -139,7 +139,7 @@ export function ZoomDemo() {
           <div data-zoom-demo>
             <div
               role="img"
-              aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar — each time with the rest of the window falling out of focus behind it — while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
+              aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar, each time with the rest of the window falling out of focus behind it, while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
             >
               {/*
                 The stage: the wallpaper a recording sits on, and the frame that

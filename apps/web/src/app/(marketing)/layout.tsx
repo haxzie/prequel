@@ -22,20 +22,13 @@ import { organizationJsonLd, websiteJsonLd } from "@/lib/seo";
  * indexed — every dashboard route, the auth flow, a share link — have no use for
  * them.
  */
-export default function MarketingLayout({
-  children,
-  badge,
-}: {
-  children: ReactNode;
-  /** The `@badge` slot: a directory badge on the home page, nothing elsewhere. */
-  badge: ReactNode;
-}) {
+export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
       <Nav />
       <main>{children}</main>
-      <Footer badge={badge} />
+      <Footer />
     </>
   );
 }

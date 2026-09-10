@@ -19,6 +19,7 @@ import {
   OpacityIcon,
   PaddingIcon,
   PauseIcon,
+  PerspectiveIcon,
   PlayIcon,
   PresetsIcon,
   ScissorsIcon,
@@ -35,6 +36,12 @@ import {
   ZoomIcon,
   ZoomInIcon,
 } from "@/components/landing/editor-icons";
+import {
+  ColorField,
+  Segmented,
+  Slider,
+  ToggleField,
+} from "@/components/editor-controls";
 import { ASSETS } from "@/lib/assets";
 /**
  * The editor, drawn on the landing page.
@@ -187,7 +194,7 @@ const ZOOMS = [
  */
 type Row =
   | { kind: "slider"; label: string; value: number; read: string; Icon: () => React.ReactElement }
-  | { kind: "toggle"; label: string; on: boolean }
+  | { kind: "toggle"; label: string; on: boolean; Icon: () => React.ReactElement }
   | { kind: "segmented"; options: string[]; at: number }
   | { kind: "colour"; label: string; hex: string; Icon: () => React.ReactElement }
   | { kind: "grid"; columns: number; items: string[]; at: number };
@@ -247,13 +254,13 @@ const CATEGORIES: { id: string; label: string; Icon: () => React.ReactElement; r
     label: "Camera",
     Icon: CameraIcon,
     rows: [
-      { kind: "toggle", label: "Camera", on: true },
+      { kind: "toggle", label: "Camera", on: true, Icon: CameraIcon },
       { kind: "segmented", options: ["Circle", "Squircle", "Rectangle"], at: 0 },
       { kind: "slider", label: "Roundness", value: 0.9, read: "90%", Icon: CornerRadiusIcon },
       { kind: "slider", label: "Size", value: 0.34, read: "18%", Icon: SizeIcon },
       { kind: "slider", label: "Zoom", value: 0.2, read: "1.2×", Icon: ZoomIcon },
-      { kind: "toggle", label: "Mirror", on: true },
-      { kind: "toggle", label: "Shrink on zoom", on: false },
+      { kind: "toggle", label: "Mirror", on: true, Icon: PerspectiveIcon },
+      { kind: "toggle", label: "Shrink on zoom", on: false, Icon: ZoomIcon },
       { kind: "slider", label: "Size while zoomed", value: 0.5, read: "12%", Icon: ZoomInIcon },
     ],
   },
@@ -262,7 +269,7 @@ const CATEGORIES: { id: string; label: string; Icon: () => React.ReactElement; r
     label: "Audio",
     Icon: AudioIcon,
     rows: [
-      { kind: "toggle", label: "Include", on: true },
+      { kind: "toggle", label: "Include", on: true, Icon: SpeakerIcon },
       { kind: "slider", label: "Volume", value: 0.8, read: "80%", Icon: SpeakerIcon },
     ],
   },
@@ -271,12 +278,12 @@ const CATEGORIES: { id: string; label: string; Icon: () => React.ReactElement; r
     label: "Cursor",
     Icon: CursorIcon,
     rows: [
-      { kind: "toggle", label: "Pointer", on: true },
+      { kind: "toggle", label: "Pointer", on: true, Icon: CursorIcon },
       { kind: "slider", label: "Size", value: 0.52, read: "1.3×", Icon: SizeIcon },
       { kind: "slider", label: "Smoothing", value: 0.66, read: "66%", Icon: SmoothingIcon },
       { kind: "slider", label: "Motion blur", value: 0.24, read: "24%", Icon: BlurIcon },
-      { kind: "toggle", label: "Hide while typing", on: true },
-      { kind: "toggle", label: "Hide when still", on: false },
+      { kind: "toggle", label: "Hide while typing", on: true, Icon: CursorIcon },
+      { kind: "toggle", label: "Hide when still", on: false, Icon: ClockIcon },
       { kind: "slider", label: "After", value: 0.35, read: "1.2s", Icon: ClockIcon },
     ],
   },
@@ -285,7 +292,7 @@ const CATEGORIES: { id: string; label: string; Icon: () => React.ReactElement; r
     label: "Captions",
     Icon: CaptionsIcon,
     rows: [
-      { kind: "toggle", label: "Show captions", on: true },
+      { kind: "toggle", label: "Show captions", on: true, Icon: CaptionsIcon },
       { kind: "slider", label: "Size", value: 0.48, read: "42", Icon: SizeIcon },
       { kind: "slider", label: "Distance from edge", value: 0.2, read: "6%", Icon: OffsetIcon },
       { kind: "slider", label: "Lines", value: 0.5, read: "2", Icon: LinesIcon },
@@ -836,138 +843,37 @@ export function AppPreview() {
 }
 
 /**
- * A slider, copied from `editor/controls/inputs.tsx`.
+ * One row of a panel, drawn as whatever control the app puts there.
  *
- * The label and the reading sit *inside* the bar rather than above and beside
- * it, which is the thing the panel is a list of: a stack of bars, not a repeated
- * label / track / number. The icon stands outside the track — inside it would
- * slide under the fill and change contrast as the value moved.
- *
- * `value` is the fill as a fraction here, where the app takes a real number with
- * a min and a max and computes it. This is a picture, so the fraction is the
- * only part of that which shows.
+ * The four ordinary kinds come from `components/editor-controls.tsx`, which is
+ * the one place the app's controls are redrawn. They used to be written out
+ * here, and two of them had already drifted: the toggle had lost its well and
+ * was a muted label beside a switch, and the colour field had lost its chevron
+ * and set the hex in the body face. Neither was wrong on its own terms, which
+ * is exactly the problem with a second copy.
  */
-function Slider({
-  label,
-  value,
-  read,
-  icon,
-}: {
-  label: string;
-  value: number;
-  read: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="flex-none text-editor-muted [&_svg]:size-4" aria-hidden>
-        {icon}
-      </span>
-
-      <div className="group relative h-7 flex-1 overflow-hidden rounded-md bg-white/5">
-        {/* A floor on the width, so the fill keeps its rounded end at zero
-            instead of collapsing into a sliver against the left edge. */}
-        <div
-          className="absolute inset-y-0 left-0 rounded-md bg-white/12 transition-[width] duration-75"
-          style={{ width: `max(0.75rem, ${value * 100}%)` }}
-        >
-          {/* Inside the fill, at its leading edge: on a bar this plain it is the
-              only part that says it can be dragged. Green on hover — the grip is
-              the thing being reached for, so it is the thing that answers. */}
-          <span className="absolute top-1/2 right-1.5 h-3.5 w-0.5 -translate-y-1/2 rounded-full bg-white transition-colors group-hover:bg-toggle" />
-        </div>
-
-        {/* Over the fill and under the input, so the words never eat a drag. */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2.5 text-[11px]">
-          <span className="truncate text-white">{label}</span>
-          <span className="flex-none tabular-nums text-white/70">{read}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** One row of a panel, drawn as whatever control the app puts there. */
 function PanelRow({ row }: { row: Row }) {
   if (row.kind === "slider") {
     return <Slider label={row.label} value={row.value} read={row.read} icon={<row.Icon />} />;
   }
 
   if (row.kind === "toggle") {
-    // `ToggleField`: the label and the switch on one line, the switch pinned
-    // right. The track is `--toggle` green when on and `bg-white/15` when off,
-    // with the knob moved by `left` rather than a transform — the app's own.
-    return (
-      <div className="flex items-center gap-1.5">
-        <span className="flex-1 text-[11px] text-editor-muted">{row.label}</span>
-        <span
-          className={`relative block h-[18px] w-8 flex-none rounded-md transition-colors ${
-            row.on ? "bg-toggle" : "bg-white/15"
-          }`}
-          aria-hidden
-        >
-          <span
-            className={`absolute top-0.5 size-3.5 rounded bg-white transition-[left] ${
-              row.on ? "left-4" : "left-0.5"
-            }`}
-          />
-        </span>
-      </div>
-    );
+    return <ToggleField icon={<row.Icon />} label={row.label} on={row.on} />;
   }
 
   if (row.kind === "segmented") {
-    // The marked option carries a pill rather than a background of its own, the
-    // same two-pill construction the dock uses. A slot is one option plus the
-    // 2px beside it, so a whole number of slots lands the pill on an option
-    // rather than drifting a gap further along at every step.
-    const slot = `calc((100% - 0.25rem - ${row.options.length - 1} * 0.125rem) / ${row.options.length})`;
-    return (
-      <div className="relative flex gap-0.5 rounded-lg bg-white/5 p-0.5" role="radiogroup">
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md bg-white/12"
-          style={{ width: slot, transform: `translateX(calc(${row.at} * (100% + 0.125rem)))` }}
-        />
-        {row.options.map((option, index) => (
-          <span
-            key={option}
-            className={`relative z-10 flex h-7 flex-1 items-center justify-center gap-1 rounded-md px-2 text-[11px] whitespace-nowrap ${
-              index === row.at ? "font-medium text-editor-fg" : "text-editor-muted"
-            }`}
-          >
-            {option}
-          </span>
-        ))}
-      </div>
-    );
+    return <Segmented options={row.options} at={row.at} />;
   }
 
   if (row.kind === "colour") {
-    // `ColorField`: a swatch, a divider and the hex, with the glyph outside the
-    // well as it is on a slider. No word in the well — the icon and the group
-    // above carry what it is for.
-    return (
-      <div className="flex items-center gap-2">
-        <span className="flex-none text-editor-muted [&_svg]:size-4" aria-hidden>
-          <row.Icon />
-        </span>
-        <div className="flex h-7 flex-1 items-center gap-2 rounded-md bg-white/5 px-1.5">
-          <span
-            className="size-4 flex-none rounded"
-            style={{ backgroundColor: row.hex }}
-            aria-label={row.label}
-          />
-          <span className="h-4 w-px flex-none bg-white/10" />
-          <span className="text-[11px] tabular-nums text-white/70">{row.hex}</span>
-        </div>
-      </div>
-    );
+    return <ColorField icon={<row.Icon />} hex={row.hex} />;
   }
 
   // A picker: `ScenePresetCard` on Presets, `LayoutPicker` on Layout. Both are
   // grids of pictures rather than lists of settings, which is why neither panel
-  // carries a label over it — the grid is a control that shows what it is.
+  // carries a label over it — the grid is a control that shows what it is. It
+  // stays here rather than moving to the shared file: nothing else draws one,
+  // and a component used once is indirection.
   return (
     <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${row.columns}, 1fr)` }}>
       {row.items.map((item, index) => (

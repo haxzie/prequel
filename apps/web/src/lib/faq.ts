@@ -18,12 +18,12 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "What is Prequel?",
     answer:
-      "Prequel is a screen recorder for macOS that hands back a finished video rather than raw footage. It records your screen, your webcam, your microphone and system audio, then opens an editor on the take with the zooms already placed, the camera framed and a background applied. Export is one MP4 at up to 4K, rendered on your Mac's own media engine.",
+      "Prequel is a screen recorder for macOS that hands back a finished video rather than raw footage. It records your screen, your camera, your microphone and system audio, then opens an editor on the take with the zooms already placed, the camera framed and a background applied. Export is one MP4 at up to 4K, rendered on your Mac's own media engine.",
   },
   {
     question: "How do the automatic zooms work?",
     answer:
-      "Prequel records where you click and type while it captures. When the editor opens on the take, those moments have already been clustered into zooms — pushed in on what you were doing, and pulled back out when you moved on. There is nothing to set up before you record.",
+      "Prequel records where you click and type while it captures. When the editor opens on the take, those moments have already been clustered into zooms: pushed in on what you were doing, and pulled back out when you moved on. There is nothing to set up before you record.",
   },
   {
     question: "Can I change or delete the automatic zooms?",
@@ -38,12 +38,12 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "Does zooming in make the recording blurry?",
     answer:
-      "It depends on how much headroom the recording has. Capture runs at your display's native resolution, so a Retina Mac recording a 3024 by 1898 screen and exporting at 1080p has roughly three times the pixels it needs — a 2x zoom still lands on real detail. Push past the source resolution and it softens, the same as any crop.",
+      "It depends on how much headroom the recording has. Capture runs at your display's native resolution, so a Retina Mac recording a 3024 by 1898 screen and exporting at 1080p has roughly three times the pixels it needs, and a 2x zoom still lands on real detail. Push past the source resolution and it softens, the same as any crop.",
   },
   {
     question: "Can I control how fast a zoom moves?",
     answer:
-      "Level, speed, tilt and yaw are all set per zoom, and blur falls away progressively from the focus, so a push reads as depth rather than a jump cut. Slow and shallow for a walkthrough, faster and tighter for a highlight.",
+      "Level, speed, tilt and yaw are all set per zoom, and blur falls away from the focus, so a push reads as depth rather than a jump cut. Slow and shallow for a walkthrough, faster and tighter for a highlight.",
   },
   {
     question: "Do I need to set anything up before I record?",
@@ -53,7 +53,7 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "Can I move the webcam after recording?",
     answer:
-      "Yes. The webcam is never burned into the screen recording, so its shape — circle, squircle, rounded or wide — along with its size, its corner and whether it is mirrored are all still yours once the take is finished.",
+      "Yes. Your camera is never burned into the screen recording, so its shape (circle, squircle, rounded or wide), its size, its corner and whether it is mirrored are all still yours once the take is finished.",
   },
   {
     question: "What can Prequel export?",
@@ -78,7 +78,7 @@ export const PRODUCT_FAQ: FaqEntry[] = [
   {
     question: "Does my recording leave my machine?",
     answer:
-      "Not to make one. Recording, editing and export all happen locally, on your Mac's own media engine — there is no upload step and no cloud render. Uploading a finished export to get a shareable link is a thing you ask for, on a file you have already made, rather than something the app does on its own.",
+      "Not to make one. Recording, editing and export all happen locally, on your Mac's own media engine. There is no upload step and no cloud render. Uploading a finished export to get a shareable link is something you ask for, on a file you have already made.",
   },
 ];
 

@@ -131,6 +131,30 @@ export function websiteJsonLd() {
   };
 }
 
+/**
+ * An index page's set, enumerated.
+ *
+ * `ItemList` and not `CollectionPage`: the claim being made is "here are sixteen
+ * pages, in this order", which is the only thing an index of a keyword set has
+ * to say that its own links do not already say.
+ *
+ * The URLs are absolute. A relative `item` is accepted by the validator and
+ * resolved against nothing useful, which is a list of sixteen broken references
+ * that reports as valid.
+ */
+export function itemListJsonLd(items: { name: string; path: `/${string}` }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: items.map((item, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: item.name,
+      url: absoluteUrl(item.path),
+    })),
+  };
+}
+
 export function faqPageJsonLd(entries: FaqEntry[]) {
   return {
     "@context": "https://schema.org",
@@ -193,12 +217,17 @@ export function blogPostingJsonLd(post: Post) {
 /**
  * A trail, for a page that sits below the top level.
  *
- * Only `/blog` has an index to point at, so only the blog pages get one.
- * `/create/<slug>` and `/alternatives/<slug>` deliberately have none: their trail
- * would be a single hop to a `/create` or `/alternatives` index that does not
- * exist. The alternatives pages named that hop anyway for a while, which is how
- * a URL that 404s ends up inside a BreadcrumbList on every comparison page —
- * valid JSON, unfetchable item, and nothing on the page says so.
+ * The rule is that every hop must be a page that exists. `/blog` and `/usecases`
+ * are indexes, so their pages get a trail; `/alternatives/<slug>` still has none,
+ * because there is nothing to point at. Those pages named the hop anyway for a
+ * while, which is how a URL that 404s ends up inside a BreadcrumbList on every
+ * comparison page — valid JSON, unfetchable item, and nothing on the page says
+ * so.
+ *
+ * `/usecases` is the one trail whose path does not mirror the URL: the pages it
+ * indexes live at `/create/<slug>`. That is allowed, and it is the honest shape
+ * — a breadcrumb describes where a page sits in the site, not how its path was
+ * spelled.
  */
 export function breadcrumbJsonLd(trail: { name: string; path: `/${string}` | "/" }[]) {
   return {

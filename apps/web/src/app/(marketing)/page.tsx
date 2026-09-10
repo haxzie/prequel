@@ -29,7 +29,7 @@ export default function Home() {
             <HeroPlatform>Mac</HeroPlatform>
           </>
         }
-        lede="Record once. Prequel hands back a finished video: pushed in on the work, the camera framed, a background behind it. It exports at up to 4K."
+        lede="Record once. Prequel places the zooms, frames your camera and sets a background behind it. What opens is a finished video, not raw footage."
       />
       {/* The editor itself, under the hero. Here rather than inside
           `LandingBody` because that component is shared with all sixteen

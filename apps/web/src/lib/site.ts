@@ -31,6 +31,8 @@ export const SITE = {
 } as const;
 
 export const NAV: { href: Route; label: string }[] = [
+  { href: "/features", label: "Features" },
+  { href: "/usecases", label: "Use cases" },
   { href: "/pricing", label: "Pricing" },
   { href: "/blog", label: "Blog" },
   { href: "/changelog", label: "Changelog" },
@@ -69,4 +71,22 @@ export const AUTHOR = {
   url: "https://haxzie.com",
   x: "https://x.com/haxzie_",
   linkedin: "https://www.linkedin.com/in/haxzie",
+} as const;
+
+/**
+ * Who stands behind the product where it has to be said out loud.
+ *
+ * `/privacy` and `/terms` both name the operator and the law, and a reader who
+ * finds two different answers on two legal pages reasonably concludes both were
+ * copied from somewhere else. One constant, read twice.
+ *
+ * A sole trader, so there is no company number to give and no registered office
+ * to print. Saying "an individual trading as Prequel" is the honest version of
+ * that, and it is better than the implied company a bare "Prequel Inc." would
+ * invent.
+ */
+export const OPERATOR = {
+  name: "Musthaq Ahamad",
+  description: "an individual trading as Prequel",
+  country: "India",
 } as const;

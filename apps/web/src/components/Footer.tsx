@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { competitors } from "@/content/competitors";
@@ -9,12 +8,7 @@ import { Logo } from "./Logo";
 import { Container } from "./Section";
 import { DownloadCta } from "./DownloadButton";
 
-/**
- * `badge` is the marketing layout's `@badge` slot, which is filled on the home
- * page and empty everywhere else. It arrives as a prop because a footer that
- * decided this for itself would have to know the route, and a layout does not.
- */
-export function Footer({ badge }: { badge?: ReactNode }) {
+export function Footer() {
   return (
     <footer className="mt-32 border-t border-line">
       <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
@@ -51,7 +45,9 @@ export function Footer({ badge }: { badge?: ReactNode }) {
               `Route` would reject every one of these. `Link` infers it from the
               literal instead — the same thing `blog/page.tsx` does. */}
           <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
-            <span className="col-span-2 font-medium text-fg">Use cases</span>
+            <Link href="/usecases" className="col-span-2 font-medium text-fg hover:text-muted">
+              Use cases
+            </Link>
             {useCases.map((useCase) => (
               <Link
                 key={useCase.slug}
@@ -95,7 +91,20 @@ export function Footer({ badge }: { badge?: ReactNode }) {
 
       <Container className="flex flex-col items-start gap-4 border-t border-line py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:gap-6">
         <p>© {new Date().getFullYear()} Prequel. Made for macOS.</p>
-        {badge}
+        {/* The legal pages sit in the bottom bar rather than in a column above
+            it, because that is where a reader who wants them already looks, and
+            because the columns above are about what the product does. They are
+            also what the transparency rules of a few places we post in ask to
+            see, so they need to be reachable from every page rather than only
+            from the one that links them. */}
+        <nav className="flex items-center gap-5" aria-label="Legal">
+          <Link href="/privacy" className="hover:text-fg">
+            Privacy
+          </Link>
+          <Link href="/terms" className="hover:text-fg">
+            Terms
+          </Link>
+        </nav>
         <p className="font-mono tracking-wide">{SITE.platform}</p>
       </Container>
     </footer>

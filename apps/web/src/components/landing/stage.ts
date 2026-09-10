@@ -59,3 +59,18 @@ export const CAPTIONS_STAGE = "/peony.jpg";
  */
 export const LAYOUT_SCREEN = "/screen-stream.jpg";
 export const CAPTIONS_SCREEN = "/screen-checkout.jpg";
+
+/**
+ * A frame of the camera, for a filmstrip of the camera track.
+ *
+ * Cut from `camera-talking-head.mp4` — the clip the captions demo plays — so the
+ * face in the features page's timeline is the face on the home page. A frame
+ * rather than the video itself: a camera lane is 38px tall and a couple of
+ * hundred wide, and `object-cover` on a 16:9 talking head in a box that shape
+ * shows a horizontal band of cheek. The app draws the track as filmstrip cells
+ * for exactly this reason, and a cell is portrait.
+ *
+ * 3.8kB, cropped 4:3 around the subject at the source, which is why it is in
+ * `public/` and not R2 with the footage it came from.
+ */
+export const CAMERA_STILL = "/camera-still.jpg";

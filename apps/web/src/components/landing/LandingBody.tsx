@@ -48,32 +48,32 @@ const ALREADY_DONE = [
 const FEATURES = [
   {
     title: "Zooms that follow the work",
-    body: "Push in on the cursor, a region or whatever you are typing into. Level, speed, tilt and yaw, with progressive blur falling away from the focus.",
+    body: "Push in on the cursor, on a region you draw, or on whatever you are typing into. Set the level and the speed, with blur falling away from the focus.",
     illustration: <ZoomIllustration />,
   },
   {
     title: "A camera you frame afterwards",
-    body: "Circle, squircle, rounded or wide, in any corner and any size. The webcam is never burned into the recording, so none of it is decided while you record.",
+    body: "Circle, squircle, rounded or wide, in any corner and any size. Your camera is never burned into the recording, so none of this is decided while you record.",
     illustration: <CameraIllustration />,
   },
   {
-    title: "Backgrounds worth shipping",
-    body: "Your own wallpaper by default, seven bundled presets, gradients and solids. Padding, radius, border and shadow on top.",
+    title: "Backgrounds, padding and shadow",
+    body: "Your own wallpaper by default, seven bundled presets, gradients and solids. Set the padding, the radius, the border and the shadow on top.",
     illustration: <BackgroundIllustration />,
   },
   {
     title: "Cuts on a real timeline",
-    body: "Trim the pauses, slice by slice, with a waveform under every clip and a playhead that scrubs. Layout, background and audio can all change mid-take.",
+    body: "Trim the pauses yourself, slice by slice, with a waveform under every clip. Layout, background and audio can all change mid-take.",
     illustration: <TimelineIllustration />,
   },
   {
     title: "A cursor that behaves",
-    body: "Four pointer styles, resized to survive a zoom, and gone from the frame after a few seconds of stillness rather than parked over your work.",
+    body: "Four pointer styles, resized so it survives a zoom, and hidden after a few seconds of stillness instead of parked over your work.",
     illustration: <CursorIllustration />,
   },
   {
     title: "What you see is what exports",
-    body: "The preview and the exporter draw the same plan, so the file is the frame you approved — not a close approximation of it.",
+    body: "The preview and the exporter draw the same plan, so the file is the frame you approved rather than a close approximation of it.",
     illustration: <ExportIllustration />,
   },
 ];
@@ -136,7 +136,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           <SectionHeading
             eyebrow="Automatic"
             title="It arrives already directed"
-            lede="A raw screen recording is flat — one distance from the viewer for the whole take, with the thing that matters too small to see. Prequel watches where you click and type while it records, and opens the editor with that pass already made."
+            lede="A raw recording holds one distance for the whole take, and the thing that matters is too small to see. Prequel watches where you click and type, then opens the editor with that pass already made."
             cta="Try Prequel free"
           />
 
@@ -185,7 +185,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           <SectionHeading
             eyebrow="Quality"
             title="Exports that hold up"
-            lede="A video that looks produced is worth nothing if the file is soft. Capture and export run on your Mac's own media engine — hardware H.264 or HEVC, composited in Metal — so 1080p60 records without dropping frames and 4K is a setting rather than a compromise."
+            lede="A video that looks produced is worth nothing if the file is soft. Capture and export run on your Mac's own media engine, so 1080p60 records without dropping frames and 4K is a setting rather than a compromise."
             cta="Start recording"
           />
           <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
@@ -206,7 +206,7 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           <SectionHeading
             eyebrow="Formats"
             title="One MP4, shaped for wherever it is going"
-            lede="Switch a recording from landscape to vertical and the look holds — the framing is stored in proportions, not pixels, so nothing slides off the frame on the way."
+            lede="Switch a recording from landscape to vertical and the look holds. Framing is stored in proportions rather than pixels, so nothing slides off the frame on the way."
             cta="Download for Mac"
             align="centre"
           />
@@ -287,8 +287,7 @@ function CallToAction(): ReactNode {
             Record something worth watching
           </h2>
           <p className="mx-auto mt-4 max-w-md text-pretty text-muted">
-            Free for {TRIAL_DAYS} days, with nothing held back and no watermark on anything you
-            export.
+            Free for {TRIAL_DAYS} days. No watermark on anything you export.
           </p>
           <DownloadCta className="mt-8" />
           <p className="mt-8 text-xs text-muted">

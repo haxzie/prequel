@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { Hero } from "@/components/landing/Hero";
+import { JsonLd } from "@/components/JsonLd";
 import { LandingBody } from "@/components/landing/LandingBody";
 import { Container } from "@/components/Section";
 import { findUseCase, useCases } from "@/content/use-cases";
-import { pageMetadata } from "@/lib/seo";
+import { breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
 
 export function generateStaticParams() {
   return useCases.map((useCase) => ({ slug: useCase.slug }));
@@ -61,6 +62,16 @@ export default async function UseCasePage({ params }: PageProps<"/create/[slug]"
           list here is what made thirteen of every page's fifteen answers
           identical to the other fifteen pages'. */}
       <LandingBody faq={useCase.faq} />
+
+      {/* Only possible since `/usecases` exists. Both hops resolve, which is the
+          whole of the rule this trail used to fall foul of — see the note on
+          `breadcrumbJsonLd`. The FAQ block comes off `LandingBody` above. */}
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Use cases", path: "/usecases" },
+          { name: useCase.heading, path: `/create/${useCase.slug}` },
+        ])}
+      />
     </>
   );
 }

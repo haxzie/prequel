@@ -19,6 +19,12 @@ The marketing pages are static. `/app/*`, `/login`, `/onboarding`, `/invite/*`,
 signed URL. `pnpm --filter @prequel/web build` prints the table; anything marked
 `ƒ` outside that list is worth chasing down.
 
+**The words are governed separately.** `COPY.md` is the style guide for
+everything a visitor reads: the section shape, the voice, where each string
+lives, and the claims that may not be made. It is a different register from this
+repo's code comments and the comment voice is the one that leaks, so read it
+before touching a headline, a lede, a feature card or an FAQ answer.
+
 ## Layout
 
 ```

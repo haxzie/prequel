@@ -42,9 +42,13 @@ export function Nav() {
             Prequel
           </Link>
 
-          {/* Gone below `sm`, where the row cannot hold it. The same links are
+          {/* Gone below `lg`, where the row cannot hold it. Six labels, a
+              wordmark, a sign-in link, the star count and the download button
+              need about a thousand pixels between them; below that they wrap,
+              which reads as a broken header rather than a full one. The same
+              links are
               in the menu at the other end of the header — see `NavMenu`. */}
-          <nav className="hidden items-center gap-1 sm:flex">
+          <nav className="hidden items-center gap-1 lg:flex">
             {NAV.map((item) => (
               <Link
                 key={item.href}
@@ -53,7 +57,7 @@ export function Nav() {
                 // rather than as small print. The hover moves to a background
                 // instead of a colour: the text is already at the end of its
                 // range, and a link with no hover state at all reads as inert.
-                className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-fg/8"
+                className="rounded-full px-3 py-2 text-sm whitespace-nowrap text-fg transition-colors hover:bg-fg/8"
               >
                 {item.label}
               </Link>
@@ -73,7 +77,7 @@ export function Nav() {
               way back in. */}
           <Link
             href="/login"
-            className="rounded-full px-3 py-2 text-sm text-fg transition-colors hover:bg-fg/8"
+            className="rounded-full px-3 py-2 text-sm whitespace-nowrap text-fg transition-colors hover:bg-fg/8"
           >
             Sign in
           </Link>
@@ -90,11 +94,11 @@ export function Nav() {
               The repository sits before the button rather than after it. The
               download is what the page is asking for and belongs at the end of
               the row, where the eye finishes. */}
-          <span className="hidden sm:block">
+          <span className="hidden lg:block">
             <GitHubStars />
           </span>
 
-          <span className="ml-1.5 hidden sm:block">
+          <span className="ml-1.5 hidden lg:block">
             <ButtonLink href="/download" size="sm">
               <AppleIcon className="-mt-0.5 size-4" />
               Download

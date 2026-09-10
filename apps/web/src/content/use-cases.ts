@@ -18,11 +18,59 @@
  *  frontmatter.
  */
 
+import {
+  AppWindow,
+  AudioLines,
+  BookOpen,
+  Bug,
+  Clapperboard,
+  Code,
+  GraduationCap,
+  MonitorPlay,
+  Rocket,
+  ScrollText,
+  Send,
+  Smartphone,
+  Store,
+  UserPlus,
+  Users,
+  Webcam,
+  type LucideIcon,
+} from "lucide-react";
+
 import type { FaqEntry } from "@/lib/faq";
+
+/** The bands on `/usecases`. That page owns their order and their labels. */
+export type UseCaseGroup = "demos" | "teaching" | "publishing" | "engineering" | "capability";
 
 export type UseCase = {
   /** The MDX filename in `src/content/create`, and the URL segment. */
   slug: string;
+  /**
+   * Which band this sits in on `/usecases`, ordered by `GROUPS` there.
+   *
+   * Required rather than optional, and that is the point: the index is grouped,
+   * so a new entry with no band would have to be dropped somewhere by default —
+   * which is how a page ends up published, linked from the footer, and missing
+   * from the one page that exists to list them. The compiler asks instead.
+   *
+   * It has no bearing on the array's order below, which is the footer's.
+   */
+  group: UseCaseGroup;
+  /**
+   * The mark on this entry's card on `/usecases`.
+   *
+   * Required for the same reason `group` is: sixteen cards in a grid read as a
+   * set, and one with an empty tile where the others have a mark reads as a
+   * page that failed to load rather than as a card without an icon. A default
+   * would hide that, so the compiler asks instead.
+   *
+   * A component and not an icon name. A name would need a lookup table
+   * somewhere, which is a second list of sixteen things to keep in step with
+   * this one. Nothing renders these but `/usecases`, and Next only ever pulls
+   * this file into a server build, so the icons cost a visitor nothing.
+   */
+  icon: LucideIcon;
   /** Small caps line above the heading. Also the kicker on the OG card. */
   eyebrow: string;
   /**
@@ -67,6 +115,8 @@ export type UseCase = {
 export const useCases: UseCase[] = [
   {
     slug: "product-demo-video",
+    group: "demos",
+    icon: MonitorPlay,
     eyebrow: "Product demos",
     heading: "Record a product demo that looks produced",
     lede: "Walk through the product once. Prequel pushes in on every click, frames your camera, sets it on a background and exports one MP4 at up to 4K.",
@@ -114,6 +164,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "app-demo-video",
+    group: "demos",
+    icon: AppWindow,
     eyebrow: "App demos",
     heading: "Show your app the way the store would",
     lede: "Record the app on your own machine and let Prequel do the part that usually needs an editor — the pushes, the framing, the background, the cuts.",
@@ -161,6 +213,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "sales-demo-video",
+    group: "demos",
+    icon: Send,
     eyebrow: "Sales",
     heading: "Send the demo instead of booking the call",
     lede: "Record the walkthrough once, at the quality you would want on a call, and let it answer the question while you are asleep.",
@@ -208,6 +262,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "onboarding-video",
+    group: "teaching",
+    icon: UserPlus,
     eyebrow: "Onboarding",
     heading: "Onboarding that customers actually finish",
     lede: "A recording that pushes in on the thing being clicked is a recording people watch to the end. Prequel places those pushes for you.",
@@ -255,6 +311,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "training-video",
+    group: "teaching",
+    icon: Users,
     eyebrow: "Training",
     heading: "Record the training video once",
     lede: "Do the process on your screen while Prequel watches where you click and type. What comes back is the video you would have spent an afternoon editing.",
@@ -302,6 +360,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "online-course-video",
+    group: "teaching",
+    icon: GraduationCap,
     eyebrow: "Courses",
     heading: "Record course lessons that hold attention",
     lede: "One distance from the viewer for forty minutes is what makes a lesson hard to watch. Prequel varies it for you, on the moments that earn it.",
@@ -349,6 +409,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "software-tutorial",
+    group: "teaching",
+    icon: BookOpen,
     eyebrow: "Tutorials",
     heading: "Software tutorials people can follow",
     lede: "Record the steps once. The zooms land on what you clicked, the cursor stops wandering, and the result is a tutorial rather than a screen capture.",
@@ -396,6 +458,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "youtube-tutorial",
+    group: "publishing",
+    icon: Clapperboard,
     eyebrow: "YouTube",
     heading: "Screen recordings ready for YouTube",
     lede: "Record, look at a take that already has the pushes and the framing, trim what you fumbled, and export at 4K.",
@@ -442,6 +506,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "youtube-shorts-video",
+    group: "publishing",
+    icon: Smartphone,
     eyebrow: "Vertical",
     heading: "The same take, vertical",
     lede: "Record once in landscape and switch the frame to 9:16. The camera and the padding stay where you put them instead of sliding off the edge.",
@@ -489,6 +555,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "app-store-preview-video",
+    group: "demos",
+    icon: Store,
     eyebrow: "App Store",
     heading: "App previews, sized for the store",
     lede: "Record the app, let the zooms land on the moments worth seeing, and export at the shape the listing wants.",
@@ -536,6 +604,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "product-launch-video",
+    group: "demos",
+    icon: Rocket,
     eyebrow: "Launches",
     heading: "A launch video worth the front page",
     lede: "The video on a launch post is doing the selling. Record it once and let Prequel hand back something that looks like it took a week.",
@@ -583,6 +653,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "bug-report-recording",
+    group: "engineering",
+    icon: Bug,
     eyebrow: "Bug reports",
     heading: "Show the bug instead of describing it",
     lede: "A recording that pushes in on the thing that went wrong saves the round trip that starts with which button did you press.",
@@ -630,6 +702,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "code-walkthrough-video",
+    group: "engineering",
+    icon: Code,
     eyebrow: "Code",
     heading: "Walk through code at a readable size",
     lede: "Prequel places a zoom on every burst of typing, so the line you are talking about is the line filling the frame.",
@@ -677,6 +751,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "changelog-video",
+    group: "engineering",
+    icon: ScrollText,
     eyebrow: "Changelog",
     heading: "Ship the changelog as a clip",
     lede: "Thirty seconds of the feature actually working, recorded in the time it takes to write the paragraph about it.",
@@ -724,6 +800,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "screen-record-with-webcam",
+    group: "capability",
+    icon: Webcam,
     eyebrow: "Screen and camera",
     heading: "Record your screen and your camera at once",
     lede: "Both at the same time, as separate tracks — so where the camera sits, what shape it is and whether it is there at all are decided afterwards.",
@@ -771,6 +849,8 @@ export const useCases: UseCase[] = [
   },
   {
     slug: "screen-recorder-with-audio",
+    group: "capability",
+    icon: AudioLines,
     eyebrow: "System audio",
     heading: "Screen recording with system audio and mic",
     lede: "Both recorded, on separate tracks with separate gains, with no virtual audio driver to install first.",
