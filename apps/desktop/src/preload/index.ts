@@ -16,6 +16,7 @@ import type {
   PermissionId,
   PermissionState,
   PermissionStatus,
+  ProjectPage,
   ProjectSummary,
   RecordingPreferences,
   ScreenMode,
@@ -421,7 +422,16 @@ const api = {
    * fetches what it needs through `editor.session`.
    */
   projects: {
-    list: (): Promise<IpcResult<ProjectSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.projectsList),
+    /**
+     * One page of recordings, newest first.
+     *
+     * Paged rather than whole because the answer is built by opening files: a
+     * library of a thousand takes is four thousand syscalls on the main process
+     * before the grid can draw the twelve it is about to show. `total` counts
+     * candidate folders, so the grid knows whether to keep asking.
+     */
+    list: (limit?: number, offset?: number): Promise<IpcResult<ProjectPage>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsList, limit, offset),
 
     rename: (dir: string, name: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsRename, dir, name),

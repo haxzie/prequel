@@ -59,28 +59,65 @@ function recording(name: string, secondsAgo = 0): string {
 
 /** The one entry for a directory, whatever else is in the scratch folder. */
 function entry(dir: string) {
-  return listProjects(SCRATCH).find((project) => project.dir === dir);
+  return listProjects(undefined, 0, SCRATCH).projects.find((project) => project.dir === dir);
 }
 
 describe("listProjects", () => {
-  it("lists recordings newest first", () => {
-    const older = recording("older", 60);
-    const newer = recording("newer", 10);
+  it("lists recordings newest first, by the timestamp in the name", () => {
+    // Every take is called `Prequel <date> <time>`, so the names sort
+    // chronologically as strings. That is what lets a page be picked out of a
+    // `readdir` without opening a single manifest — see `listProjects`.
+    const older = recording("Prequel 2026-09-01 08-00-00", 60);
+    const newer = recording("Prequel 2026-09-10 17-30-00", 10);
 
-    const listed = listProjects(SCRATCH).map((project) => project.dir);
+    const listed = listProjects(undefined, 0, SCRATCH).projects.map((project) => project.dir);
     expect(listed.indexOf(newer)).toBeLessThan(listed.indexOf(older));
+  });
+
+  it("returns one page, and says how many there are", () => {
+    for (const at of ["10-00-00", "11-00-00", "12-00-00", "13-00-00"]) {
+      recording(`Prequel 2026-09-11 ${at}`, 10);
+    }
+
+    const page = listProjects(2, 0, SCRATCH);
+
+    expect(page.projects).toHaveLength(2);
+    // The newest two, because the page is taken after the sort and before
+    // anything is read.
+    expect(page.projects.map((project) => project.name)).toEqual([
+      "Prequel 2026-09-11 13-00-00",
+      "Prequel 2026-09-11 12-00-00",
+    ]);
+    expect(page.total).toBeGreaterThanOrEqual(4);
+  });
+
+  it("carries on from an offset", () => {
+    for (const at of ["10-00-00", "11-00-00", "12-00-00", "13-00-00"]) {
+      recording(`Prequel 2026-09-12 ${at}`, 10);
+    }
+
+    const first = listProjects(2, 0, SCRATCH).projects.map((project) => project.dir);
+    const second = listProjects(2, 2, SCRATCH).projects.map((project) => project.dir);
+
+    // No overlap: a grid asking for the next page must not draw a card twice.
+    expect(second.some((dir) => first.includes(dir))).toBe(false);
   });
 
   it("skips a directory with no manifest", () => {
     // An interrupted take. There is nothing to open.
     mkdirSync(join(SCRATCH, "interrupted"), { recursive: true });
 
-    expect(listProjects(SCRATCH).map((project) => project.name)).not.toContain("interrupted");
+    expect(
+      listProjects(undefined, 0, SCRATCH).projects.map((project) => project.name),
+    ).not.toContain("interrupted");
   });
 
   it("returns nothing when the recordings folder does not exist yet", () => {
     // Before the first recording. The grid is empty rather than broken.
-    expect(listProjects(join(SCRATCH, "never-created"))).toEqual([]);
+    expect(listProjects(undefined, 0, join(SCRATCH, "never-created"))).toEqual({
+      projects: [],
+      total: 0,
+    });
   });
 
   it("names a recording after its folder until it is renamed", () => {

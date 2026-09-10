@@ -13,7 +13,12 @@ import {
   type ExportProgress,
   type ExportSlice,
 } from "../../../shared/contract";
-import { buildRenderPlan, type RenderedCue, type Size } from "../../../shared/layout";
+import {
+  buildRenderPlan,
+  withWholeTimes,
+  type RenderedCue,
+  type Size,
+} from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
 import {
@@ -218,40 +223,50 @@ function buildSlices(
     const previous = index > 0 ? all[index - 1] : undefined;
 
     return {
-      start: slice.source.start,
-      end: slice.source.end,
+      // Whole nanoseconds. A slice's times are written by the timeline, where
+      // trimming maps pixels to time through a division, so a trimmed clip is
+      // saved as something like `38277886131.081215` and stays that way. The
+      // exporter reads these as `i64`, and a fraction fails the whole export
+      // with `invalid type: floating point, expected i64` — nothing renders,
+      // and the message names a number rather than a field.
+      start: Math.round(slice.source.start),
+      end: Math.round(slice.source.end),
       // The same function the preview draws from, so the two cannot disagree
-      // about where anything sits.
-      plan: buildRenderPlan(
-        frame,
-        sources,
-        settings,
-        session.cursor && {
-          ...session.cursor,
-          ...cursorImages(settings.layout.cursorStyle),
-          size: settings.layout.cursorSize,
-          hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
-          // Resolved here rather than in the plan, like `hideAfter`: a track
-          // with no spans and one the user asked to keep the pointer through
-          // are the same thing to draw.
-          keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
-        },
-        project.zooms,
-        previous
-          ? {
-              from: resolveSettings(project.defaults, previous.overrides),
-              source: slice.source,
-            }
-          : null,
-        // This clip's own look. Caption settings are per clip, so a clip that
-        // styles its captions differently is handed the set drawn for it —
-        // and one whose captions are off has no look and gets nothing.
-        //
-        // Every cue in that set, not only the ones inside this clip: a caption
-        // whose span falls outside simply never draws, and filtering here would
-        // be a second answer to a question `captionAt` already answers per
-        // frame.
-        cues.get(captionLook(settings.captions)),
+      // about where anything sits — with every time in it rounded to a whole
+      // nanosecond on the way out, which the preview does not need and the
+      // exporter cannot do without. See `withWholeTimes`.
+      plan: withWholeTimes(
+        buildRenderPlan(
+          frame,
+          sources,
+          settings,
+          session.cursor && {
+            ...session.cursor,
+            ...cursorImages(settings.layout.cursorStyle),
+            size: settings.layout.cursorSize,
+            hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
+            // Resolved here rather than in the plan, like `hideAfter`: a track
+            // with no spans and one the user asked to keep the pointer through
+            // are the same thing to draw.
+            keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
+          },
+          project.zooms,
+          previous
+            ? {
+                from: resolveSettings(project.defaults, previous.overrides),
+                source: slice.source,
+              }
+            : null,
+          // This clip's own look. Caption settings are per clip, so a clip that
+          // styles its captions differently is handed the set drawn for it —
+          // and one whose captions are off has no look and gets nothing.
+          //
+          // Every cue in that set, not only the ones inside this clip: a caption
+          // whose span falls outside simply never draws, and filtering here would
+          // be a second answer to a question `captionAt` already answers per
+          // frame.
+          cues.get(captionLook(settings.captions)),
+        ),
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,

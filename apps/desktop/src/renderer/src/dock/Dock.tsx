@@ -62,8 +62,18 @@ export function Dock() {
         // takes what the margins leave, which is exactly `PANEL_HEIGHT`. The
         // natural width lives on the setup row, which is what gets measured and
         // reported to main.
-        "dock-theme m-(--panel-inset) flex-1 rounded-[10px] border border-white/12 " +
-        "bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
+        //
+        // `overflow-hidden` is load-bearing, not tidiness. The setup row is
+        // `w-max` and main animates the window to a reported width over
+        // `RESIZE_MS`, so for those frames the row is wider than the window it
+        // sits in — and an overflowing descendant of `body` puts a horizontal
+        // scrollbar on the document. Turning a camera on is enough to trigger
+        // it: the label goes from "Camera" to the device's own name, the row
+        // grows, and a scrollbar flicks in and out across the bottom of the
+        // pill while the window catches up. Clipped, the name is revealed as
+        // the panel widens, which is what the animation is for.
+        "dock-theme m-(--panel-inset) flex-1 overflow-hidden rounded-[10px] " +
+        "border border-white/12 bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}

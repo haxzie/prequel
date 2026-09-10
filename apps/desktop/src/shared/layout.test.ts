@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRenderPlan,
+  withWholeTimes,
   captionAt,
   cropToFrame,
   cursorAt,
@@ -4291,5 +4292,65 @@ describe("arriving from the slice before", () => {
     // Half the slice at most, the same cap a zoom's ease takes: a move still in
     // flight when the clip cuts never shows where it was going.
     expect(keys[keys.length - 1]!.at).toBeLessThanOrEqual(S / 20);
+  });
+});
+
+describe("whole nanoseconds", () => {
+  /**
+   * Every `at`, `start` and `end` in a plan is an `i64` on the Rust side.
+   *
+   * A fraction in any of them fails the whole export at the first parse, with a
+   * message that names the number and not the field. The number below is the
+   * one a user actually hit: a caption word starting 1.132 seconds in.
+   *
+   * The fractions are authored by dragging — trimming a clip and retiming a
+   * zoom both map pixels to time through a division — so this is about every
+   * project already saved, not about a bug upstream that can simply be fixed.
+   */
+  it("rounds every time in a plan, however deep", () => {
+    const plan = {
+      items: [
+        { kind: "image", span: { start: 0.5, end: 3_014_302_061.961239 } },
+        {
+          kind: "cursor",
+          points: [{ at: 1_132_194_919.1015906, x: 12.5, y: 9.25, smearX: 0.5 }],
+        },
+        {
+          kind: "captions",
+          cues: [
+            {
+              at: 1_132_194_919.1015906,
+              end: 2_000_000_000.5,
+              layers: [{ words: [{ at: 1_132_194_919.1015906, end: 1.5, x: 4.5, blur: 0.25 }] }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const whole = withWholeTimes(plan);
+
+    expect(whole.items[0]!.span).toEqual({ start: 1, end: 3_014_302_062 });
+    expect(whole.items[1]!.points![0]!.at).toBe(1_132_194_919);
+    expect(whole.items[2]!.cues![0]!.layers[0]!.words[0]!.at).toBe(1_132_194_919);
+    expect(whole.items[2]!.cues![0]!.end).toBe(2_000_000_001);
+  });
+
+  it("leaves everything that is not a time alone", () => {
+    // Positions, sizes, blurs and smears are all `f64` over there, and rounding
+    // one would move the picture to fix a parse error it never caused.
+    const whole = withWholeTimes({
+      items: [
+        { kind: "cursor", points: [{ at: 5.5, x: 12.5, y: 9.25, smearX: 0.5, scale: 1.25 }] },
+      ],
+    });
+
+    expect(whole.items[0]!.points[0]).toEqual({
+      at: 6,
+      x: 12.5,
+      y: 9.25,
+      smearX: 0.5,
+      scale: 1.25,
+    });
   });
 });

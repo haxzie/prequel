@@ -315,7 +315,9 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   // "No recordings yet" over a folder with a hundred takes in it, with nothing
   // logged on either side. `ipcMain.handle` does not check what its callback
   // returns and `invoke` answers `any`, so nothing but this catches it.
-  ipcMain.handle(IPC_CHANNELS.projectsList, () => attempt(() => listProjects()));
+  ipcMain.handle(IPC_CHANNELS.projectsList, (_event, limit?: number, offset?: number) =>
+    attempt(() => listProjects(limit, offset)),
+  );
 
   /**
    * The recording behind a route, and the record that the window is on it.

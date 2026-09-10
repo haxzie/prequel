@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type TrackGain } from "./audio";
+import { writeTicker } from "../lib/ticker";
 import { Playback, syncElement } from "./playback";
 import {
   hasJumped,
@@ -278,8 +279,11 @@ export function useEditorPlayback(
       const text = format(at);
       if (text !== shown) {
         shown = text;
-        if (timecode.current) timecode.current.textContent = text;
-        if (headTime.current) headTime.current.textContent = text;
+        // Through `writeTicker` rather than straight onto the node: an element
+        // that draws its digits as sliding columns registers a writer, and the
+        // loop must not care which kind it is holding.
+        if (timecode.current) writeTicker(timecode.current, text);
+        if (headTime.current) writeTicker(headTime.current, text);
       }
     };
 

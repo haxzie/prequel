@@ -2,6 +2,7 @@ import type { Dispatch } from "react";
 
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
+import { Timecode } from "./Timecode";
 import {
   ScissorsIcon,
   PauseIcon,
@@ -103,8 +104,9 @@ export function PlaybackControls({
           pair instead, where nothing is reading it. */}
       <div className="flex items-center gap-1 text-xs tabular-nums">
         {/* Rendered once. The playback loop rewrites its text, so React must not. */}
-        <span
-          ref={media.timecodeRef}
+        <Timecode
+          elementRef={media.timecodeRef}
+          initial="0:00.00"
           className="flex-none text-right text-editor-fg"
           // The total, because the two share a format and nothing the clock can
           // say is wider than the thing it is counting towards. `ch` is the
@@ -112,9 +114,7 @@ export function PlaybackControls({
           // so this is exact for the digits and generous by the difference on
           // the colon and the point — which is the safe direction to be wrong.
           style={{ width: `${String(formatTimecode(duration).length)}ch` }}
-        >
-          0:00.00
-        </span>
+        />
         <span className="text-editor-muted">/ {formatTimecode(duration)}</span>
       </div>
       <div className="flex items-center justify-center gap-1">

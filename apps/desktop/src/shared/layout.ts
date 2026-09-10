@@ -1398,7 +1398,12 @@ function betweenZooms(zooms: readonly ZoomSlice[]): Between[] {
 
 /** Seconds of travel, as nanoseconds. */
 function easeNs(zoom: ZoomSlice): number {
-  return Math.max(0, zoom.speed) * 1_000_000_000;
+  // Rounded, because this is a *time* and every time in a plan is a whole
+  // nanosecond: `Span`, `RectKey.at` and `CursorPoint.at` are all `i64` on the
+  // Rust side, and serde refuses a float for one with an error naming a number
+  // and nothing else. A speed is seconds from a slider, so this is the first
+  // place a fraction can get in.
+  return Math.round(Math.max(0, zoom.speed) * 1_000_000_000);
 }
 
 /**
@@ -1490,8 +1495,11 @@ function zoomPresence(zooms: readonly ZoomSlice[]): { at: number; amount: number
     // thirty times a second would put three hundred identical keys in the
     // camera's track.
     if (held) {
-      push(stage.from, 1);
-      push(stage.to, 1);
+      // Rounded like every other sample below. A hold takes its boundaries
+      // straight from the stage rather than from the sampling loop, so it is
+      // the one path into the camera's keys that never met a `Math.round`.
+      push(Math.round(stage.from), 1);
+      push(Math.round(stage.to), 1);
       continue;
     }
 
@@ -4457,4 +4465,40 @@ function rgba(hex: string, alpha: number): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Every time in a plan as a whole nanosecond.
+ *
+ * `RenderPlan` crosses to Rust as JSON, and on that side every field called
+ * `at`, `start` or `end` is an `i64` — six of them, and not one is a float. A
+ * fraction in any of them fails the *entire* export at the first parse, with a
+ * message naming a number and no field: `invalid type: floating point
+ * \`1132194919.1015906\`, expected i64`. The picture is fine, the edit is fine,
+ * and nothing comes out.
+ *
+ * The fractions are authored by dragging. Trimming a clip and retiming a zoom
+ * both map pixels to time through a division, so `project.json` carries values
+ * like `38277886131.081215`, and every project already saved has them.
+ *
+ * A blind walk rather than a field-by-field pass, because the names are the
+ * contract: nothing in a plan called `at`, `start` or `end` is allowed to be
+ * fractional, so anything that is, is wrong wherever it came from. It also
+ * keeps working when the plan grows a field.
+ *
+ * Called once per slice per export and never from the preview, which rebuilds
+ * its plan every frame: a deep copy at 60 Hz to fix something only the exporter
+ * reads would be the wrong thing sixty times a second.
+ */
+export function withWholeTimes<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withWholeTimes) as T;
+  if (!value || typeof value !== "object") return value;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, inner] of Object.entries(value)) {
+    const timed = key === "at" || key === "start" || key === "end";
+    out[key] = timed && typeof inner === "number" ? Math.round(inner) : withWholeTimes(inner);
+  }
+
+  return out as T;
 }

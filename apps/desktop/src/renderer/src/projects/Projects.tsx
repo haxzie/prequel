@@ -26,6 +26,16 @@ const FRAME_MS = 700;
  * the same. The thumbnail is doing the work here; the name and the age are
  * there to tell two similar-looking takes apart.
  */
+/**
+ * How many recordings a page holds.
+ *
+ * Enough to fill the grid on an ordinary window, so the first page is the whole
+ * screen and everything after it is scrolling. Smaller would show a half-empty
+ * grid and immediately fetch again; larger would put the cost this exists to
+ * avoid back into the first request.
+ */
+const PAGE = 12;
+
 export function Projects({
   onOpen,
 }: {
@@ -36,14 +46,57 @@ export function Projects({
   /** Which card is being renamed. Only ever one. */
   const [renaming, setRenaming] = useState<string | null>(null);
 
+  /** How many recordings there are to page through, once the first page says. */
+  const [total, setTotal] = useState(0);
+  /** A page is in flight. Kept in a ref: the observer below reads it, and a
+      render per fetch would be a render while the user is scrolling. */
+  const loading = useRef(false);
+
+  /**
+   * Replaces the grid with its first page.
+   *
+   * Used for a fresh open and after anything that changes the list — a rename,
+   * a delete — because both can move a recording between pages.
+   */
   const list = useCallback(async () => {
-    const result = await window.prequel.projects.list();
+    loading.current = true;
+    const result = await window.prequel.projects.list(PAGE);
+    loading.current = false;
+
     // An empty grid rather than none at all: main has logged whatever went
     // wrong, and a screen that never resolves says nothing to the user.
-    setProjects(result.ok ? result.value : []);
+    setProjects(result.ok ? result.value.projects : []);
+    setTotal(result.ok ? result.value.total : 0);
   }, []);
 
-  useEffect(() => void list(), [list]);
+  /**
+   * Adds the next page.
+   *
+   * Offset by candidates seen rather than by cards drawn: a folder with no
+   * manifest is counted in `total` and never becomes a card, so paging on the
+   * number of cards would ask for the same page for ever.
+   */
+  const more = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
+
+    const offset = seen.current;
+    const result = await window.prequel.projects.list(PAGE, offset);
+    loading.current = false;
+    if (!result.ok) return;
+
+    seen.current = offset + PAGE;
+    setProjects((current) => [...(current ?? []), ...result.value.projects]);
+    setTotal(result.value.total);
+  }, []);
+
+  /** Candidate folders asked for so far, which is what the offset counts. */
+  const seen = useRef(PAGE);
+
+  useEffect(() => {
+    seen.current = PAGE;
+    void list();
+  }, [list]);
 
   const posters = usePosters(projects ?? []);
 
@@ -77,9 +130,11 @@ export function Projects({
       </PaneHeader>
 
       {projects === null ? (
-        // Blank rather than a spinner: the list is a directory read, and
-        // anything that announces itself is on screen for one frame.
-        <div className="flex-1" />
+        // Skeletons rather than a blank. This used to be empty on the grounds
+        // that a directory read is over in a frame — true of twenty takes and
+        // not of a thousand, where the window opened on nothing at all while
+        // main worked through them.
+        <Skeletons />
       ) : projects.length === 0 ? (
         <Empty />
       ) : (
@@ -98,10 +153,77 @@ export function Projects({
                 onDelete={() => void remove(project.dir)}
               />
             ))}
+
+            {/* The next page, fetched when this comes into view.
+                Skeletons rather than a spinner: they are the size of what is
+                coming, so the scrollbar stops jumping as each page lands. */}
+            {projects.length < total && <Sentinel onVisible={more} />}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A grid of cards that are not there yet.
+ *
+ * The same shape and spacing as the real ones, so the first page lands in place
+ * rather than pushing a half-drawn grid down the screen. Eight of them: enough
+ * to look like a library on any window, few enough that a small one is not
+ * scrolled by placeholders.
+ */
+function Skeletons() {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-5" aria-hidden>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+        {Array.from({ length: 8 }, (_, index) => (
+          <div key={index} className="flex flex-col gap-2">
+            <div className="aspect-video animate-pulse rounded-xl border border-editor-line bg-editor-panel" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-editor-panel" />
+            <div className="h-2.5 w-1/3 animate-pulse rounded bg-editor-panel" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Asks for the next page when it is scrolled to.
+ *
+ * An `IntersectionObserver` rather than a scroll handler: a scroll listener
+ * fires on every frame of a flick and has to measure the scroller to decide
+ * anything, which is a layout read in the middle of a scroll — the one thing
+ * the editor's own rules single out as making a list judder.
+ *
+ * `rootMargin` so it fires a screen early. Waiting until the placeholder is
+ * actually visible means the user reaches the end of the list and stops there,
+ * which reads as the library having run out.
+ */
+function Sentinel({ onVisible }: { onVisible: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onVisible();
+      },
+      { rootMargin: "600px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [onVisible]);
+
+  return (
+    <div ref={ref} className="flex flex-col gap-2" aria-hidden>
+      <div className="aspect-video animate-pulse rounded-xl border border-editor-line bg-editor-panel" />
+      <div className="h-3 w-2/3 animate-pulse rounded bg-editor-panel" />
+    </div>
   );
 }
 

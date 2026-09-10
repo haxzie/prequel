@@ -219,7 +219,11 @@ export class AppTray {
     const state = this.session.snapshot();
     const active = state.status === "recording" || state.status === "paused";
 
-    const recent = listProjects().slice(0, RECENT_LIMIT);
+    // Asked for by the page rather than sliced off the whole library: this menu
+    // is rebuilt on every right-click, and reading a thousand manifests to show
+    // five names is work the tray does not need to do while the pointer is held
+    // down on it.
+    const recent = listProjects(RECENT_LIMIT).projects;
 
     return Menu.buildFromTemplate([
       active

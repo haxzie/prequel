@@ -29,6 +29,18 @@ const INITIAL = { width: 240, height: 120 };
 
 export class DockMenuWindow {
   private window: BrowserWindow | null = null;
+  /**
+   * Whether the renderer has run.
+   *
+   * `prepare` creates the window and starts a load; `loadRoute` is
+   * asynchronous. So the first menu of a launch is pushed to a webContents
+   * that has not executed a line of the bundle yet, and showing the window at
+   * that moment puts an empty frosted rectangle above the pill until the load
+   * finishes. Tracked rather than read from `webContents.isLoading()`, which
+   * is a question about the network stack and answers `false` in the gap
+   * before a load has started.
+   */
+  private ready = false;
   private menu: DockMenu | null = null;
   private size = INITIAL;
   /** The dock window's frame, which is what a menu is positioned against. */
@@ -43,10 +55,21 @@ export class DockMenuWindow {
     // overlays. Without this the menu opens *behind* the panel that owns it —
     // the two windows are siblings and nothing else decides the order.
     window.setAlwaysOnTop(true, "screen-saver", 2);
+    this.ready = false;
     void loadRoute(window, "/dock-menu");
     // Re-sent on load, which is what restores the menu across an HMR round trip
     // rather than leaving an empty frosted rectangle on screen.
-    window.webContents.on("did-finish-load", () => this.push());
+    window.webContents.on("did-finish-load", () => {
+      this.ready = true;
+      this.push();
+      // A menu that was asked for while this was still loading. `open` left it
+      // hidden precisely so it would not be seen empty; now there is something
+      // in it, so it can be placed and shown.
+      if (this.menu !== null && !window.isDestroyed()) {
+        this.applyBounds();
+        window.showInactive();
+      }
+    });
 
     this.window = window;
     return window;
@@ -72,6 +95,14 @@ export class DockMenuWindow {
     const window = this.prepare();
     this.push();
     this.applyBounds();
+
+    // Not until the renderer has run. On the first open of a launch this
+    // window was created a few lines ago and the push above reached nobody, so
+    // showing here is what put an empty menu under the pointer — every time,
+    // and only the first time, which is exactly how it reads as a glitch
+    // rather than a state. `did-finish-load` shows it instead.
+    if (!this.ready) return;
+
     // `showInactive`, as everywhere else in this app: a menu that takes focus
     // takes it from whatever the user is about to record.
     window.showInactive();
@@ -117,6 +148,7 @@ export class DockMenuWindow {
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
     this.menu = null;
+    this.ready = false;
   }
 
   private push(): void {

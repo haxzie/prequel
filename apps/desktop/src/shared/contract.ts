@@ -1172,6 +1172,19 @@ export interface TrackMedia {
  * This is the card: enough to draw the tile and open the thing, and nothing
  * that would need the manifest parsed to produce.
  */
+/**
+ * One page of the library, and how many recordings there are to page through.
+ *
+ * `total` counts candidate folders rather than confirmed recordings: it comes
+ * from a `readdir`, where confirming one means opening its manifest. A page
+ * that turns out to hold a broken take therefore comes back shorter than it
+ * asked for, and the caller keeps going until it has walked `total`.
+ */
+export interface ProjectPage {
+  projects: ProjectSummary[];
+  total: number;
+}
+
 export interface ProjectSummary {
   /** Absolute path to the recording's directory. */
   dir: string;

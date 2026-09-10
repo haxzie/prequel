@@ -16,6 +16,7 @@ import type { MediaTime } from "../../../shared/manifest";
 import type { ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
+import { Timecode } from "./Timecode";
 import { CameraIcon, CursorIcon, FillIcon, ScreenIcon, TypingIcon, ZoomIcon } from "./icons";
 import { fitZoom, ticks } from "./ruler";
 import {
@@ -939,8 +940,9 @@ function Playhead({
           about for `--export`, so the label takes the blue a few steps down and
           reaches 5.4:1. The line keeps the bright one — a marker has to be
           found before it has to be read. */}
-      <span
-        ref={labelRef}
+      <Timecode
+        elementRef={labelRef}
+        initial="0:00.00"
         className="absolute top-0 left-1/2 h-5 rounded-full bg-indicator-deep text-center text-[11px] leading-5 font-medium tabular-nums text-white"
         style={{
           width: HEAD_LABEL_W,
@@ -951,11 +953,12 @@ function Playhead({
 
       {/* The tail, hanging off the label onto the line.
           
-          A sibling of the label rather than a child of it: the loop writes the
-          time with `textContent`, which would take any child of that span with
-          it on the first frame. So it is centred on the *line* instead, which
-          is where a tail should point anyway — and the label is only ever
-          nudged sideways by half its own width, so the line never leaves it.
+          A sibling of the label rather than a child of it. That began as a
+          hard constraint — the loop wrote the time with `textContent`, which
+          would have taken any child of that span with it on the first frame —
+          and `Timecode` writes cells now, so it is only the better place: a
+          tail should point at the *line*, and the label is nudged sideways by
+          half its own width, so the line never leaves it.
 
           Curved rather than a triangle: the sides ease out of the label's own
           rounded edge, where a straight taper reads as a second shape stuck

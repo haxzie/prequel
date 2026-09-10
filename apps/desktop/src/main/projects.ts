@@ -37,28 +37,54 @@ export const POSTER_FILE_NAME = "poster.jpg";
 export const FILMSTRIP_FILE_NAME = "filmstrip.jpg";
 
 /**
- * Every recording, newest first.
+ * One page of recordings, newest first.
  *
  * A directory only counts if it holds a manifest: an interrupted take can leave
  * a folder with a half-written screen track and nothing describing it, and
  * offering that as something to open would only produce an error on click.
  *
- * Sorted by the manifest's own mtime rather than the directory's, which macOS
- * touches for reasons that have nothing to do with when the take was made.
+ * **Sorted by folder name, and paged before anything is read.** Every take is
+ * called `Prequel <date> <time>`, so the names sort chronologically as strings
+ * and the newest page can be picked out of a `readdir` alone. That is the whole
+ * point: this used to stat a manifest, look for a poster, look for a filmstrip
+ * and read a `project.json` for *every* recording on disk before it could
+ * return the twelve the grid was about to draw, on the main process, with the
+ * tray and the panel waiting behind it. Four syscalls a take is nothing at
+ * twenty and a visible stall at a thousand.
+ *
+ * It used to sort on the manifest's mtime, on the grounds that macOS touches a
+ * directory's for reasons of its own. A name is steadier still — it is written
+ * once, when the take is made, and a rename does not move the folder — and it
+ * is the only key that can be sorted without opening anything.
+ *
+ * `total` counts candidate directories rather than confirmed recordings, so it
+ * is a `readdir` and not a scan. The caller keeps asking until it has seen
+ * every one; a page that turns out to hold a broken take simply comes back
+ * shorter than it asked for.
  */
-export function listProjects(dir = SESSIONS_DIR): ProjectSummary[] {
-  if (!existsSync(dir)) return [];
+export function listProjects(
+  limit?: number,
+  offset = 0,
+  dir = SESSIONS_DIR,
+): { projects: ProjectSummary[]; total: number } {
+  if (!existsSync(dir)) return { projects: [], total: 0 };
 
   let entries: string[];
   try {
-    entries = readdirSync(dir);
+    // Newest first, by name. A `readdir` and a string sort, with nothing opened
+    // yet — see the note above on why the name is the right key.
+    entries = readdirSync(dir).sort().reverse();
   } catch (cause) {
     console.warn(`[library] could not read ${dir}:`, cause);
-    return [];
+    return { projects: [], total: 0 };
   }
 
+  const total = entries.length;
+  const wanted =
+    limit === undefined ? entries.slice(offset) : entries.slice(offset, offset + limit);
+
   const projects: ProjectSummary[] = [];
-  for (const name of entries) {
+  for (const name of wanted) {
     const path = join(dir, name);
     try {
       projects.push({
@@ -75,7 +101,10 @@ export function listProjects(dir = SESSIONS_DIR): ProjectSummary[] {
     }
   }
 
-  return projects.sort((a, b) => b.createdAt - a.createdAt);
+  // Already in order: the names were sorted before anything was read, and the
+  // page is a slice of that. Sorting again on `createdAt` would undo it for the
+  // one recording whose manifest was rewritten after it was made.
+  return { projects, total };
 }
 
 /**
