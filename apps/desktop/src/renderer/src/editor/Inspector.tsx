@@ -24,6 +24,7 @@ import type { Backgrounds } from "./useBackgrounds";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
+import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import { CursorPicker } from "./controls/CursorPicker";
 import { EasingPad } from "./controls/EasingPad";
@@ -722,30 +723,66 @@ function Rail<T extends string>({
       <span aria-hidden className={cn(pill, "bg-selected")} style={{ ...step(at), ...slide }} />
 
       {items.map(({ id, label, Icon }, index) => (
-        <button
+        <RailButton
           key={id}
-          type="button"
-          aria-current={id === value}
-          // The label the icon replaced, kept where it is still needed: as the
-          // accessible name, and as the tooltip that is now the only way to
-          // find out what a glyph means.
-          aria-label={label}
-          title={label}
-          // Above the pills, which are painted behind the whole column. White
-          // whether or not it is the one showing: with no surface behind the
-          // rail there is nothing for a muted colour to read against, and a
-          // dimmed icon on the editor's own background looks disabled rather
-          // than merely unselected — so the fill behind the chosen one carries
-          // that on its own. Tried at 45% with a lift on hover, and it still
-          // read as a column of unavailable things.
-          className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
-          onPointerEnter={() => setHovered(index)}
-          onClick={() => onChange(id)}
+          label={label}
+          current={id === value}
+          onHover={() => setHovered(index)}
+          onPress={() => onChange(id)}
         >
           <Icon />
-        </button>
+        </RailButton>
       ))}
     </nav>
+  );
+}
+
+/**
+ * One of the rail's icons. A component of its own so each can own a tooltip,
+ * which is a hook and cannot be called from inside `items.map`.
+ */
+function RailButton({
+  label,
+  current,
+  onHover,
+  onPress,
+  children,
+}: {
+  label: string;
+  current: boolean;
+  onHover: () => void;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  // To the left: the rail sits against the panel, and the board is the only
+  // side with room for a word.
+  const tooltip = useTooltip(label, "left");
+
+  return (
+    <button
+      type="button"
+      aria-current={current}
+      // The label the icon replaced, kept where it is still needed: as the
+      // accessible name, and as the tooltip that is now the only way to find
+      // out what a glyph means.
+      aria-label={label}
+      // Above the pills, which are painted behind the whole column. White
+      // whether or not it is the one showing: with no surface behind the
+      // rail there is nothing for a muted colour to read against, and a
+      // dimmed icon on the editor's own background looks disabled rather
+      // than merely unselected — so the fill behind the chosen one carries
+      // that on its own. Tried at 45% with a lift on hover, and it still
+      // read as a column of unavailable things.
+      className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
+      {...tooltip}
+      onPointerEnter={() => {
+        tooltip.onPointerEnter();
+        onHover();
+      }}
+      onClick={onPress}
+    >
+      {children}
+    </button>
   );
 }
 

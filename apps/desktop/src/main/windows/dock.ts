@@ -8,13 +8,19 @@
  */
 import { screen, type BrowserWindow, type Rectangle } from "electron";
 
-import { PANEL_HEIGHT, PANEL_INSET, type DockMenu, type DockView } from "../../shared/contract.js";
+import {
+  DOCK_HEADROOM,
+  PANEL_HEIGHT,
+  PANEL_INSET,
+  type DockMenu,
+  type DockView,
+} from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
 import { DockMenuWindow } from "./dock-menu.js";
 
 /**
- * The size of the visible panel. The window adds `PANEL_INSET` all round — see
- * `windowSize`.
+ * The size of the visible panel. The window adds `PANEL_INSET` around it and
+ * `DOCK_HEADROOM` above — see `windowSize`.
  *
  * Setup's width is only a starting point: the panel's real width depends on
  * the device names in it, which main has no way to measure, so the renderer
@@ -187,8 +193,8 @@ export class DockWindow {
    * The two axes do not agree, which is the whole reason this is a function.
    *
    * `y` is the panel's top edge rather than the window's, because a drop-up is
-   * placed above the panel and the window now stands `PANEL_INSET` taller than
-   * it. Passing the window's would float every menu an inset too high, over a
+   * placed above the panel and the window stands `DOCK_HEADROOM` taller than
+   * it. Passing the window's would float every menu a band too high, over a
    * transparent margin, with the gap looking wrong and nothing to point at.
    *
    * `x` stays the *window's* left. `anchorX` is measured by the renderer with
@@ -198,7 +204,7 @@ export class DockWindow {
    */
   private panelOrigin(window: BrowserWindow): { x: number; y: number } {
     const { x, y } = window.getBounds();
-    return { x, y: y + PANEL_INSET };
+    return { x, y: y + DOCK_HEADROOM };
   }
 
   browserWindow(): BrowserWindow | null {
@@ -259,14 +265,16 @@ export class DockWindow {
    * the material fills the window's rectangle, so any part of the window the
    * panel did not cover was frosted desktop hanging in mid-air.
    *
-   * The margin is back, because the panel is drawn in CSS again — but only the
-   * margin. The drop-ups stayed in their own window, so there is no headroom
-   * here and the inset is even on all four sides.
+   * The margin is back, because the panel is drawn in CSS again. The drop-ups
+   * stayed in their own window, so none of it is for them — but the top is
+   * `DOCK_HEADROOM` rather than the inset, because the tooltips are drawn in
+   * this window and above the panel, and the inset alone clips them. The
+   * `Dock` component insets the panel by the same two numbers.
    */
   private windowSize(): { width: number; height: number } {
     const { width, height } = SIZES[this.view];
     const panel = this.view === "setup" ? (this.contentWidth ?? width) : width;
-    return { width: panel + PANEL_INSET * 2, height: height + PANEL_INSET * 2 };
+    return { width: panel + PANEL_INSET * 2, height: height + DOCK_HEADROOM + PANEL_INSET };
   }
 
   private reposition(options: { animate?: boolean; duration?: number } = {}): void {

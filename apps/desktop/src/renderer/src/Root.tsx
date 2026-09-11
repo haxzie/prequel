@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect } from "react";
 
+import { TooltipLayer } from "./components/Tooltip";
 import { Opening } from "./editor/Opening";
 import { navigate, recordingInRoute, useRoute } from "./lib/route";
 
@@ -115,6 +116,12 @@ export function Root() {
   const recording = recordingInRoute(route);
 
   return (
-    <Suspense fallback={recording ? <Opening name={recording} /> : null}>{view(route)}</Suspense>
+    <>
+      <Suspense fallback={recording ? <Opening name={recording} /> : null}>{view(route)}</Suspense>
+      {/* One bubble per window, whatever the view: the dock and the editor
+          both label their icons through it. Outside the Suspense boundary so
+          it is not part of any chunk's fallback. */}
+      <TooltipLayer />
+    </>
   );
 }

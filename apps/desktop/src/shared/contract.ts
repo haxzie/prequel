@@ -201,6 +201,23 @@ export const PANEL_INSET = 18;
 export const PANEL_HEIGHT = 44;
 
 /**
+ * The transparent band above the dock's panel, replacing `PANEL_INSET` on
+ * that one side.
+ *
+ * The panel's tooltips are drawn here. They are DOM inside the dock's window,
+ * and the window is exactly the panel plus its inset — so a label placed above
+ * a button is clipped to a sliver unless the window stands taller than the
+ * panel by the label's height. Sized for one line of 11px text, its padding
+ * and hairline, a 6px gap, and the 3px it eases in over — with a little to
+ * spare, since the row's buttons start 7px below the panel's top edge.
+ *
+ * Main sizes the window with it and the renderer insets the panel by it, for
+ * the reason `PANEL_INSET` lives here: the two drifting apart clips the
+ * label or leaves a dead band above the panel.
+ */
+export const DOCK_HEADROOM = 32;
+
+/**
  * The gap between the top of the panel and the drop-up above it.
  *
  * Shared because neither side can work it out alone: the menu is its own

@@ -1,7 +1,8 @@
-import { useEffect, useRef, type ComponentType } from "react";
+import { useCallback, useEffect, useRef, type ComponentType } from "react";
 
 import type { MediaDevice } from "../../../shared/contract";
 import { withoutDeviceIds } from "../../../shared/contract";
+import { useTooltip } from "../components/Tooltip";
 import { useAudioLevel } from "../hooks/useAudioLevel";
 import { useDock } from "../hooks/useDock";
 import { cn } from "../lib/cn";
@@ -148,6 +149,18 @@ export function DeviceMenu({
       ? `${name} — ${error ?? "unavailable"}`
       : `${name} ${status}`;
 
+  // The full name and the state, which the truncated label beside the dot
+  // cannot always carry. Shares the button's ref with the anchor measurement
+  // above; see `IconButton` for why the merged ref has to be stable.
+  const tooltip = useTooltip(label, "top");
+  const triggerRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      trigger.current = node;
+      tooltip.ref(node);
+    },
+    [tooltip.ref],
+  );
+
   return (
     <div className="flex items-center gap-0.5">
       <IconButton
@@ -181,14 +194,15 @@ export function DeviceMenu({
           "which device is this, and can I change it", so making only the
           chevron clickable turns a wide, obvious target into a 16px one. */}
       <button
-        ref={trigger}
+        {...tooltip}
+        ref={triggerRef}
         type="button"
         className={cn(
           "no-drag flex h-[30px] items-center gap-1.5 rounded-lg px-1.5 text-xs text-dock-fg",
           "disabled:opacity-35 [&_svg]:size-[11px] [&_svg]:flex-none [&_svg]:text-dock-muted",
           open ? "bg-dock-hover" : "not-disabled:hover:bg-dock-hover",
         )}
-        title={label}
+        aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={unavailable}

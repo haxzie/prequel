@@ -1,3 +1,4 @@
+import { useTooltip } from "../components/Tooltip";
 import { useUpdate } from "../update/useUpdate";
 import { UpdateIcon } from "./icons";
 
@@ -30,9 +31,20 @@ export function UpdateButton() {
   // background check is worse than one that waits until there is an answer.
   const pending =
     state.status === "available" || state.status === "downloading" || state.status === "ready";
-  if (!pending) return null;
-
   const version = state.version ?? "A new version";
+
+  // Before the early return, as a hook has to be. What each state actually
+  // means goes here rather than in the label — see the comment on the word.
+  const tooltip = useTooltip(
+    state.status === "ready"
+      ? `${version} is downloaded and installs on relaunch`
+      : state.status === "downloading"
+        ? `Downloading ${version}`
+        : `${version} is available`,
+    "top",
+  );
+
+  if (!pending) return null;
 
   return (
     <button
@@ -48,14 +60,8 @@ export function UpdateButton() {
         "no-drag flex h-[30px] flex-none items-center gap-1.5 rounded-lg bg-dock-selected px-2 " +
         "text-[11px] font-medium text-white hover:brightness-110 [&_svg]:size-[14px]"
       }
-      title={
-        state.status === "ready"
-          ? `${version} is downloaded and installs on relaunch`
-          : state.status === "downloading"
-            ? `Downloading ${version}`
-            : `${version} is available`
-      }
       onClick={() => void window.prequel.update.open()}
+      {...tooltip}
     >
       <UpdateIcon />
       {/* The same word in all three states, on purpose. The panel sizes itself

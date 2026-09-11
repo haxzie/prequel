@@ -109,6 +109,10 @@
      another. */
   --animate-view-in: view-in 200ms ease-out;
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  /* A tooltip's entrance. No fill mode, on purpose: the bubble fades out
+     through a transition on the same property, and a `forwards` fill would
+     hold `opacity: 1` over it and leave every label stuck on screen. */
+  --animate-tooltip-in: tooltip-in 140ms ease-out;
   /* Duration comes from the element, which knows how long a step lasts. */
   --animate-countdown-pop: countdown-pop var(--countdown-step, 1000ms) ease-out both;
 
@@ -121,6 +125,17 @@
   @keyframes pulse-dot {
     50% {
       opacity: 0.3;
+    }
+  }
+
+  /* From a step towards the control it labels — the direction is the
+     element's to set, since which side the control is on differs between the
+     dock and the rail — and a touch smaller, so it reads as growing out of the
+     control rather than being dropped beside it. */
+  @keyframes tooltip-in {
+    from {
+      opacity: 0;
+      transform: translate(var(--tooltip-shift, 0, 0)) scale(0.96);
     }
   }
 

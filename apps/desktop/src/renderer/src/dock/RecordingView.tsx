@@ -1,4 +1,7 @@
+import type { ReactNode } from "react";
+
 import type { DockState } from "../../../shared/contract";
+import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import { formatElapsed } from "../lib/format";
 import { PauseIcon, PlayIcon, StopIcon, TrashIcon } from "./icons";
@@ -29,31 +32,61 @@ export function RecordingView({ state }: { state: DockState }) {
         {/* Before Pause, and away from Stop: the two destructive-looking
             buttons are the ones that end the take, and putting Discard next to
             Stop is how a hurried click loses a recording. */}
-        <button
-          type="button"
-          className={cn(BUTTON, "hover:bg-dock-record hover:text-white")}
-          title="Discard recording"
+        <Control
+          label="Discard recording"
+          className="hover:bg-dock-record hover:text-white"
           onClick={() => void window.prequel.dock.discard()}
         >
           <TrashIcon />
-        </button>
-        <button
-          type="button"
-          className={cn(BUTTON, "hover:bg-dock-hover")}
-          title={paused ? "Resume" : "Pause"}
+        </Control>
+        <Control
+          label={paused ? "Resume" : "Pause"}
+          className="hover:bg-dock-hover"
           onClick={() => void window.prequel.dock.togglePause()}
         >
           {paused ? <PlayIcon /> : <PauseIcon />}
-        </button>
-        <button
-          type="button"
-          className={cn(BUTTON, "bg-dock-record text-white hover:brightness-[1.12]")}
-          title="Stop recording"
+        </Control>
+        <Control
+          label="Stop recording"
+          className="bg-dock-record text-white hover:brightness-[1.12]"
           onClick={() => void window.prequel.dock.stop()}
         >
           <StopIcon />
-        </button>
+        </Control>
       </div>
     </div>
+  );
+}
+
+/**
+ * One of the pill's buttons, labelled by the shared tooltip.
+ *
+ * Not `IconButton`: that one is the setup row's 18px control with its own
+ * hover and selected fills, and this pill's glyphs are smaller and coloured
+ * per button. Layering a second set of hover classes over the first would
+ * leave the outcome to stylesheet order — the reason `cn` never overrides.
+ */
+function Control({
+  label,
+  className,
+  onClick,
+  children,
+}: {
+  label: string;
+  className: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const tooltip = useTooltip(label, "top");
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={cn(BUTTON, className)}
+      onClick={onClick}
+      {...tooltip}
+    >
+      {children}
+    </button>
   );
 }

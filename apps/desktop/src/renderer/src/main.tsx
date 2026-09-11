@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { PANEL_INSET } from "../../shared/contract";
+import { DOCK_HEADROOM, PANEL_INSET } from "../../shared/contract";
 import { Root } from "./Root";
 import "./index.css";
 
@@ -10,6 +10,10 @@ import "./index.css";
 // window geometry from drifting apart — a mismatch would clip the shadow it is
 // there to hold or leave a dead band around it.
 document.documentElement.style.setProperty("--panel-inset", `${PANEL_INSET}px`);
+// The dock's top margin, which is the inset plus room for a tooltip. Published
+// for the same reason: main grows the window by it, and the panel has to sit
+// exactly that far down or the label is drawn over the panel or off the top.
+document.documentElement.style.setProperty("--dock-headroom", `${DOCK_HEADROOM}px`);
 
 // Hover any element and press ⌘C to copy it, with its component stack and
 // source locations, for an agent to read.

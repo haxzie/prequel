@@ -63,6 +63,11 @@ export function Dock() {
         // natural width lives on the setup row, which is what gets measured and
         // reported to main.
         //
+        // The top margin is `DOCK_HEADROOM`, not the inset: the tooltips over
+        // the buttons are drawn into it. Main grows the window by the same
+        // amount — see `DockWindow.windowSize` — and the two must agree, or
+        // the panel is drawn either over the band or short of it.
+        //
         // `overflow-hidden` is load-bearing, not tidiness. The setup row is
         // `w-max` and main animates the window to a reported width over
         // `RESIZE_MS`, so for those frames the row is wider than the window it
@@ -72,7 +77,7 @@ export function Dock() {
         // grows, and a scrollbar flicks in and out across the bottom of the
         // pill while the window catches up. Clipped, the name is revealed as
         // the panel widens, which is what the animation is for.
-        "dock-theme m-(--panel-inset) flex-1 overflow-hidden rounded-[10px] " +
+        "dock-theme m-(--panel-inset) mt-(--dock-headroom) flex-1 overflow-hidden rounded-[10px] " +
         "border border-white/12 bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
     >

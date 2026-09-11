@@ -1,5 +1,6 @@
-import type { ButtonHTMLAttributes, Ref } from "react";
+import { useCallback, type ButtonHTMLAttributes, type Ref } from "react";
 
+import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -41,17 +42,62 @@ export function IconButton({
   className,
   title,
   "aria-label": label,
+  ref,
+  onPointerEnter,
+  onPointerLeave,
+  onPointerDown,
+  onFocus,
+  onBlur,
   ...props
 }: IconButtonProps) {
+  // Drawn by `TooltipLayer` rather than by the button's `title`. The native
+  // one takes a second to appear, cannot be styled, and in a transparent
+  // panel window turns up as a grey system chip floating over the desktop.
+  const tooltip = useTooltip(title, "top");
+
+  // Both the caller's and the tooltip's. A caller that measures this control
+  // to place a menu against it hands in a ref, and the tooltip needs one to
+  // measure it too — the second must not replace the first. Memoised because
+  // React re-runs a ref callback whose identity changed, detaching first, and
+  // the tooltip treats a detach as the control going away.
+  const mergedRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      tooltip.ref(node);
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref, tooltip.ref],
+  );
+
   return (
     <button
       type="button"
-      title={title}
       // The tooltip does double duty. A button holding nothing but an `<svg>`
-      // has no text for a screen reader to read, and `title` alone is the
-      // weakest way to supply one — so it is written as a name as well, and a
-      // caller whose tooltip reads badly out of context can still override it.
+      // has no text for a screen reader to read, so the label is written as a
+      // name as well, and a caller whose tooltip reads badly out of context
+      // can still override it.
       aria-label={label ?? title}
+      ref={mergedRef}
+      onPointerEnter={(event) => {
+        tooltip.onPointerEnter();
+        onPointerEnter?.(event);
+      }}
+      onPointerLeave={(event) => {
+        tooltip.onPointerLeave();
+        onPointerLeave?.(event);
+      }}
+      onPointerDown={(event) => {
+        tooltip.onPointerDown();
+        onPointerDown?.(event);
+      }}
+      onFocus={(event) => {
+        tooltip.onFocus(event);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        tooltip.onBlur();
+        onBlur?.(event);
+      }}
       className={cn(
         "no-drag grid size-[30px] place-items-center rounded-lg disabled:opacity-35 [&_svg]:size-[18px]",
         // Only one of these three is ever emitted. `selected` keeps its fill on
