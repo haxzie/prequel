@@ -29,7 +29,7 @@ import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
-import { place, totalDuration, type PlacedSlice } from "./timeline";
+import { place, toSourceTime, totalDuration, type PlacedSlice } from "./timeline";
 
 /** Shortest slice a cut may leave behind. Below this it cannot be grabbed. */
 const MIN_SLICE_NS = 100_000_000;
@@ -151,6 +151,17 @@ export type EditorAction =
    * — a zoom drawn leftwards is the same zoom.
    */
   | { type: "addZoom"; at: MediaTime; to?: MediaTime }
+  /**
+   * Lays a zoom at `at`, or in the nearest gap that will hold one when a zoom
+   * is already there. The transport's Add Zoom button, which has a playhead
+   * rather than a pointer: a click on the row over an existing zoom selects
+   * it, but a button that does nothing has no such excuse.
+   *
+   * `at` is *project* time, like `split`'s and unlike `addZoom`'s: both come
+   * from the playhead, and the strip is the only caller that already thinks
+   * in source time.
+   */
+  | { type: "addZoomNear"; at: MediaTime }
   | { type: "setZooms"; zooms: ZoomSlice[] }
   | { type: "selectZoom"; zoomId: string | null }
   | { type: "deleteZoom"; zoomId: string }
@@ -275,6 +286,7 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "deleteSlice":
     case "deleteRange":
     case "addZoom":
+    case "addZoomNear":
     case "deleteZoom":
     case "duplicateZoom":
     case "setZooms":
@@ -398,7 +410,12 @@ function apply(
       );
 
     case "addZoom":
-      return addZoom(state, action.at, action.to);
+      return addZoom(state, zoomSpanAt(state.project, action.at, action.to));
+
+    case "addZoomNear": {
+      const source = toSourceTime(placedSlices(state.project), action.at);
+      return source === null ? state : addZoom(state, zoomSpanNear(state.project, source));
+    }
 
     case "setZooms":
       // Replaces the list wholesale, which only the first cut does. It counts
@@ -432,17 +449,20 @@ function apply(
 }
 
 /**
- * Drops a zoom on the timeline at `at`, or across to `to` where it was drawn.
+ * Drops a zoom on the timeline over `span`, or declines when there is none.
  *
- * Declines where one already is. Two zooms covering the same moment have no
- * defined answer — which of the two is the picture supposed to be? — so
- * overlapping is made unreachable rather than resolved after the fact.
- *
- * Fitted into the gap when there is not room for a full-length one, and
- * declined outright when the gap is too small to grab afterwards.
+ * The span is decided by `zoomSpanAt` or `zoomSpanNear` before this is
+ * reached, so that the two ways in share one rule about where a zoom may go.
+ * Both decline where one already is: two zooms covering the same moment have
+ * no defined answer — which of the two is the picture supposed to be? — so
+ * overlapping is made unreachable rather than resolved after the fact. Both
+ * fit into the gap when there is not room for a full-length one, and answer
+ * null when the gap is too small to grab afterwards.
  */
-function addZoom(state: EditorState, at: MediaTime, to?: MediaTime): EditorState {
-  const span = zoomSpanAt(state.project, at, to);
+function addZoom(
+  state: EditorState,
+  span: { start: MediaTime; end: MediaTime } | null,
+): EditorState {
   if (!span) return state;
 
   const zoom: ZoomSlice = {
@@ -511,6 +531,62 @@ export function zoomSpanAt(
   const end = Math.min(ceiling, Math.max(from, drawn));
 
   return end - start < MIN_ZOOM_NS ? null : { start, end };
+}
+
+/**
+ * The span a zoom added at the playhead would occupy, or null if none would.
+ *
+ * `zoomSpanAt` answers for a pointer, which is always somewhere a zoom may or
+ * may not go and can move if it may not. A playhead cannot: it stops wherever
+ * playback was paused, and that is over an existing zoom as often as not. So
+ * where `zoomSpanAt` declines, this looks sideways for the nearest gap that
+ * will hold one — the closest empty stretch beside whatever is in the way —
+ * and lays the zoom hard against the near end of it, so it sits next to the
+ * moment asked for rather than somewhere in the middle of the gap.
+ *
+ * Every gap is a candidate, not just the two beside the playhead: a run of
+ * back-to-back zooms, or a gap between them too small to grab, is skipped
+ * over rather than stopping the search. The one chosen is the nearest, and on
+ * a tie the later one — playback runs forwards, so that is the one about to
+ * be seen.
+ *
+ * Null only when no gap anywhere is big enough, which is also the answer to
+ * "can a zoom be added at all" — the same call from any `at` says so.
+ */
+export function zoomSpanNear(
+  project: Project,
+  at: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  const { zooms } = project;
+  const duration = sourceEnd(project);
+
+  // The empty stretches, in order: before the first zoom, between each pair,
+  // and after the last. Zooms are kept sorted by start, so consecutive pairs
+  // are neighbours.
+  const edges = [0, ...zooms.flatMap((zoom) => [zoom.source.start, zoom.source.end]), duration];
+
+  let best: { span: { start: MediaTime; end: MediaTime }; distance: MediaTime } | null = null;
+  for (let index = 0; index < edges.length; index += 2) {
+    const floor = edges[index]!;
+    const ceiling = edges[index + 1]!;
+    if (ceiling - floor < MIN_ZOOM_NS) continue;
+
+    // The point in this gap closest to the playhead — the playhead itself when
+    // it is inside. Forwards from there when there is room, the way a click
+    // grows; otherwise backwards from the gap's far end, so the zoom still
+    // finishes hard against whatever stopped it growing.
+    const anchor = Math.max(floor, Math.min(at, ceiling));
+    const span =
+      ceiling - anchor >= MIN_ZOOM_NS
+        ? zoomSpanAt(project, anchor)
+        : zoomSpanAt(project, Math.max(floor, ceiling - DEFAULT_ZOOM_LENGTH), ceiling);
+    if (!span) continue;
+
+    const distance = Math.abs(at - anchor);
+    if (best === null || distance <= best.distance) best = { span, distance };
+  }
+
+  return best?.span ?? null;
 }
 
 /**

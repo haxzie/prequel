@@ -1366,13 +1366,30 @@ function Handle({
  *
  * Dashed and translucent so it reads as a proposal rather than as something
  * already there. Positioned by hand rather than through React — see `showGhost`.
+ *
+ * Labelled, because an empty dashed box under the pointer reads as a hover
+ * highlight — something the row is doing — rather than as the thing a click
+ * puts there. The label is laid out the way a zoom's own is, so a click
+ * replaces the outline with a bar of the same shape carrying the same glyph,
+ * and the only thing that changes is that it is now solid. Truncated for the
+ * reason the bar's is: fitted into a gap half a second wide, the outline is a
+ * few pixels across and the words have to fall away rather than spill over
+ * the zooms either side.
  */
 function ZoomGhost({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
   return (
     <div
       ref={ref}
-      className="pointer-events-none absolute inset-y-0 rounded border border-dashed border-zoom-ring/70 bg-zoom-fill/15 opacity-0 transition-opacity duration-75"
-    />
+      className={cn(
+        "pointer-events-none absolute inset-y-0 flex items-center justify-center overflow-hidden rounded px-3.5",
+        "border border-dashed border-zoom-ring/70 bg-zoom-fill/15 opacity-0 transition-opacity duration-75",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
+        <ZoomIcon />
+        <span className="truncate">Add Zoom</span>
+      </span>
+    </div>
   );
 }
 

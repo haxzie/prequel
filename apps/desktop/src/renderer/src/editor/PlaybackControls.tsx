@@ -4,6 +4,7 @@ import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
 import {
+  AddZoomIcon,
   ScissorsIcon,
   PauseIcon,
   PlayIcon,
@@ -50,21 +51,26 @@ const TRANSPORT =
  */
 export function PlaybackControls({
   media,
+  canAddZoom,
   canSplit,
   canDelete,
   canUndo,
+  onAddZoom,
   onSplit,
   onDelete,
   onUndo,
   dispatch,
 }: {
   media: EditorPlayback;
+  /** Some gap in the zoom row is big enough to hold one. */
+  canAddZoom: boolean;
   /** A clip is selected, so there is something to cut. */
   canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
   canDelete: boolean;
   /** The timeline has been changed at least once, so there is a step back. */
   canUndo: boolean;
+  onAddZoom: () => void;
   onSplit: () => void;
   onDelete: () => void;
   onUndo: () => void;
@@ -153,49 +159,81 @@ export function PlaybackControls({
         </button>
       </div>
 
-      <div className="flex items-center justify-self-end gap-0.5 rounded-lg bg-white/5 p-0.5">
-        {/* Hidden until there is a step back, not disabled like the two beside
-            it — those are always the verbs for the current selection, whereas
-            undo is a claim that something happened, and an empty history has
-            nothing to say. Because the group is pinned to the right by the
-            spacer above, appearing extends it leftwards and the cut and delete
-            buttons stay exactly where they were. */}
-        {canUndo && (
-          <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
-        )}
-        <Action
-          label="Split at the playhead"
-          shortcut="S"
-          Icon={ScissorsIcon}
-          // Both act on the selection, so with nothing selected there is
-          // nothing for either to do. Disabled rather than hidden: they are
-          // where they will be when there is.
-          disabled={!canSplit}
-          onClick={onSplit}
-        />
-        <Action
-          label="Delete"
-          shortcut="⌫"
-          Icon={TrashIcon}
-          disabled={!canDelete}
-          onClick={onDelete}
-        />
+      <div className="flex items-center justify-self-end gap-2">
+        {/* On its own, in a pill of its own. The group beside it is the verbs
+            for the current selection — undo, cut, delete all act on what you
+            have already picked — and this one acts on the playhead instead,
+            so putting it in the same box said it was a fourth of the same
+            kind. It is also the one with a word on it: a bare magnifier next
+            to a pair of scissors reads as a search box. */}
+        <div className="rounded-lg bg-white/5 p-0.5">
+          <Action
+            label="Add Zoom"
+            shortcut="Z"
+            Icon={AddZoomIcon}
+            text
+            // Only ever off when the zoom row is full — every gap is already
+            // taken or too small to grab. Not tied to the playhead: the button
+            // finds the nearest gap itself, so where the head is does not
+            // decide whether pressing it does something.
+            disabled={!canAddZoom}
+            onClick={onAddZoom}
+          />
+        </div>
+
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+          {/* Hidden until there is a step back, not disabled like the two beside
+              it — those are always the verbs for the current selection, whereas
+              undo is a claim that something happened, and an empty history has
+              nothing to say. Because the group is pinned to the right by the
+              spacer above, appearing extends it leftwards and the cut and delete
+              buttons stay exactly where they were. */}
+          {canUndo && (
+            <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
+          )}
+          <Action
+            label="Split at the playhead"
+            shortcut="S"
+            Icon={ScissorsIcon}
+            // Both act on the selection, so with nothing selected there is
+            // nothing for either to do. Disabled rather than hidden: they are
+            // where they will be when there is.
+            disabled={!canSplit}
+            onClick={onSplit}
+          />
+          <Action
+            label="Delete"
+            shortcut="⌫"
+            Icon={TrashIcon}
+            disabled={!canDelete}
+            onClick={onDelete}
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-/** One of the two verbs, with its shortcut in the tooltip. */
+/**
+ * One of the verbs, with its shortcut in the tooltip.
+ *
+ * A square glyph by default; with `text` it grows into a pill with the word
+ * beside the glyph, the same height, so the two shapes sit on one baseline in
+ * the same group without looking like two kinds of control.
+ */
 function Action({
   label,
   shortcut,
   Icon,
+  text,
   disabled,
   onClick,
 }: {
   label: string;
   shortcut: string;
   Icon: () => React.JSX.Element;
+  /** Whether the label is written out beside the glyph. */
+  text?: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
@@ -206,7 +244,8 @@ function Action({
       aria-label={label}
       disabled={disabled}
       className={cn(
-        "grid size-7 place-items-center rounded-md [&_svg]:size-[15px]",
+        "flex h-7 items-center gap-1.5 rounded-md text-[11px] [&_svg]:size-[15px]",
+        text ? "px-2" : "w-7 justify-center",
         disabled
           ? "text-editor-muted/40"
           : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
@@ -214,6 +253,7 @@ function Action({
       onClick={onClick}
     >
       <Icon />
+      {text && <span>{label}</span>}
     </button>
   );
 }

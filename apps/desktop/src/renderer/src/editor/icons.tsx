@@ -596,6 +596,25 @@ export function ZoomIcon() {
   );
 }
 
+/**
+ * `ZoomIcon` with a plus in the lens: the transport's Add Zoom button.
+ *
+ * Built on the same glyph rather than on Lucide's `zoom-in`, whose lens is a
+ * size larger — side by side with the bars on the zoom row, which carry
+ * `ZoomIcon`, the button should read as "one of those, added" and not as a
+ * different magnifier.
+ */
+export function AddZoomIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+      <path d="M11 8v6" />
+      <path d="M8 11h6" />
+    </svg>
+  );
+}
+
 /** Lucide `captions`. The CC plate, drawn as two short runs of text. */
 export function CaptionsIcon() {
   return (

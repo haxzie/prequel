@@ -30,6 +30,7 @@ import {
   settingsOf,
   slicesOf,
   placedSlices,
+  zoomSpanNear,
   type EditorAction,
   type EditorState,
 } from "./state";
@@ -1098,6 +1099,95 @@ describe("duplicating a zoom", () => {
 
     const after = run(one, { type: "duplicateZoom", zoomId: only.id });
     expect(after.project.zooms).toHaveLength(1);
+  });
+});
+
+describe("adding a zoom at the playhead", () => {
+  const zoomsOf = (state: EditorState) => state.project.zooms;
+
+  it("lands where the playhead is when nothing is there", () => {
+    const state = run(start(), { type: "addZoomNear", at: 3 * S });
+    const [zoom] = zoomsOf(state);
+
+    expect(zoom!.source.start).toBe(3 * S);
+    expect(state.selectedZoomId).toBe(zoom!.id);
+    expect(state.selectedSliceId).toBeNull();
+  });
+
+  it("goes in the nearest gap when the playhead is over a zoom", () => {
+    // The row's click declines here, because the pointer can move; a playhead
+    // stops wherever playback was paused, which is over a zoom as often as
+    // not, and a button that does nothing has no such excuse.
+    const one = run(start(), { type: "addZoom", at: 4 * S });
+    const [existing] = zoomsOf(one);
+    expect(existing!.source).toEqual({ start: 4 * S, end: 6 * S });
+
+    // Nearer the end than the start, so the space after it is the closer one,
+    // and the new zoom starts exactly where the old one stops.
+    const after = run(one, { type: "addZoomNear", at: 5.5 * S });
+    expect(zoomsOf(after)).toHaveLength(2);
+    const later = zoomsOf(after).find((zoom) => zoom.id !== existing!.id)!;
+    expect(later.source.start).toBe(6 * S);
+    expect(after.selectedZoomId).toBe(later.id);
+
+    // Nearer the start, so the space before it — and hard against it, ending
+    // where the old one begins rather than floating somewhere in the gap.
+    const before = run(one, { type: "addZoomNear", at: 4.5 * S });
+    const earlier = zoomsOf(before).find((zoom) => zoom.id !== existing!.id)!;
+    expect(earlier.source.end).toBe(4 * S);
+    expect(earlier.source.start).toBe(2 * S);
+  });
+
+  it("skips over a run of zooms and the gaps too small to hold one", () => {
+    // 1s-3s, 3s-5s back to back, then a sliver before 5.1s-7.1s. From over the
+    // middle one the nearest room is after the third, not the sliver.
+    const packed = run(
+      start(),
+      { type: "addZoom", at: 1 * S },
+      { type: "addZoom", at: 3 * S },
+      { type: "addZoom", at: 5.1 * S },
+    );
+    expect(zoomsOf(packed)).toHaveLength(3);
+
+    const state = run(packed, { type: "addZoomNear", at: 4.9 * S });
+    expect(zoomsOf(state)).toHaveLength(4);
+    expect(zoomsOf(state).at(-1)!.source.start).toBe(7.1 * S);
+  });
+
+  it("never overlaps what is already there", () => {
+    // The invariant every zoom edit keeps: no two cover the same moment.
+    let state = start();
+    for (let index = 0; index < 8; index += 1) {
+      state = run(state, { type: "addZoomNear", at: 4 * S });
+    }
+    const zooms = zoomsOf(state);
+    for (let index = 1; index < zooms.length; index += 1) {
+      expect(zooms[index]!.source.start).toBeGreaterThanOrEqual(zooms[index - 1]!.source.end);
+    }
+  });
+
+  it("declines when the row is full", () => {
+    // Five two-second zooms over a ten-second take leave nowhere to go.
+    let state = start();
+    for (let index = 0; index < 5; index += 1) {
+      state = run(state, { type: "addZoom", at: index * 2 * S });
+    }
+    expect(zoomsOf(state)).toHaveLength(5);
+    expect(zoomSpanNear(state.project, 0)).toBeNull();
+
+    const after = run(state, { type: "addZoomNear", at: 3 * S });
+    expect(after).toBe(state);
+  });
+
+  it("takes the playhead in project time, across a cut", () => {
+    // The playhead measures the edit; zooms are stored against the recording.
+    // With 2s-4s cut away, 5s into the edit is 7s into the take.
+    const edit = run(start(), { type: "split", at: 2 * S }, { type: "split", at: 4 * S });
+    const middle = slicesOf(edit.project)[1]!;
+    const cut = run(edit, { type: "deleteSlice", sliceId: middle.id });
+
+    const state = run(cut, { type: "addZoomNear", at: 5 * S });
+    expect(zoomsOf(state)[0]!.source.start).toBe(7 * S);
   });
 });
 

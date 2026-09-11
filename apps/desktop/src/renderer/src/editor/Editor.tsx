@@ -44,6 +44,7 @@ import {
   initialState,
   slicesOf,
   zoomInProject,
+  zoomSpanNear,
   type EditorAction,
   type EditorState,
 } from "./state";
@@ -899,7 +900,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           // only one of them is ever the thing being removed.
           canSplit={state.selectedSliceId !== null}
           canDelete={state.selectedSliceId !== null || state.selectedZoomId !== null}
+          // Asked from the start rather than from the playhead, which is not
+          // React state and could not re-enable the button as it moved. The
+          // search covers every gap whatever it is given, so any one answer
+          // is the answer for all of them.
+          canAddZoom={zoomSpanNear(state.project, 0) !== null}
           canUndo={canUndo(state)}
+          onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
             if (state.selectedZoomId) {
@@ -1409,6 +1416,12 @@ function useShortcuts(
         case "KeyS":
           event.preventDefault();
           dispatch({ type: "split", at: media.playback.position() });
+          return;
+
+        // Adds a zoom where the playhead is, for the same reason S cuts there.
+        case "KeyZ":
+          event.preventDefault();
+          dispatch({ type: "addZoomNear", at: media.playback.position() });
           return;
 
         case "Backspace":
