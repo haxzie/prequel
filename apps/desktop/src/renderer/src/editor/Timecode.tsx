@@ -86,17 +86,35 @@ export function Timecode({
           there to be found rather than to interrupt. */}
       <span ref={label} className="sr-only" />
 
-      {[...shape].map((character, index) => (
-        <Character
-          key={index}
-          character={character}
-          // Left of the point only. See the note at the top.
-          sliding={!shape.slice(0, index).includes(".")}
-          ref={(cell) => {
-            cells.current[index] = cell;
-          }}
-        />
-      ))}
+      {/* A row of its own, rather than cells dropped straight into the
+          caller's box.
+
+          Two things go wrong without it, and both look like the digits have
+          come apart. The cells are inline-level boxes where there used to be
+          one string, so they can be broken across lines — in a readout that is
+          exactly one line tall, the second line is simply drawn over the first.
+          And they carry their own line height, which disagrees with whatever
+          the caller set: the playhead's label is `leading-5` around 11px text,
+          so a digit sitting on a 1em line box and the colon beside it sitting
+          on a 20px one are two different baselines.
+
+          `leading-none` here settles both: every cell agrees on the line, and
+          `whitespace-nowrap` means the row cannot break. `align-middle` centres
+          the row in the caller's taller line rather than hanging it off the
+          baseline. */}
+      <span className="inline-flex items-center align-middle leading-none whitespace-nowrap">
+        {[...shape].map((character, index) => (
+          <Character
+            key={index}
+            character={character}
+            // Left of the point only. See the note at the top.
+            sliding={!shape.slice(0, index).includes(".")}
+            ref={(cell) => {
+              cells.current[index] = cell;
+            }}
+          />
+        ))}
+      </span>
     </span>
   );
 }
@@ -170,11 +188,7 @@ function Character({
     // `overflow-hidden` on a box exactly one line tall is the window the wheel
     // turns behind. `align-bottom` because an inline-block sits on the text
     // baseline by default, which would drop the whole readout by its descender.
-    <span
-      className="relative inline-block h-[1em] overflow-hidden align-bottom"
-      style={{ width: "1ch" }}
-      aria-hidden
-    >
+    <span className="relative inline-block h-[1em] overflow-hidden align-middle" aria-hidden>
       <span
         ref={column}
         className="flex flex-col"
