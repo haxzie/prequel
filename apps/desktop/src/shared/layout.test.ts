@@ -2887,7 +2887,12 @@ describe("following typing", () => {
   type Span = { at: number; x: number; y: number; width: number; height: number };
 
   /** Where the picture is pushed to at `at`, aiming at whatever is given. */
-  const shotAt = (target: ZoomSlice["target"], typing: Span[], at: number) => {
+  const shotAt = (
+    target: ZoomSlice["target"],
+    typing: Span[],
+    at: number,
+    typed?: { start: number; end: number }[],
+  ) => {
     const plan = buildRenderPlan(
       FRAME,
       { screen: SCREEN, camera: null },
@@ -2903,6 +2908,7 @@ describe("following typing", () => {
           { at: 12 * S, x: 0.9, y: 0.9 },
         ],
         typing,
+        typed,
       },
       [
         {
@@ -2976,6 +2982,67 @@ describe("following typing", () => {
     const bar: Span[] = [{ at: 0, x: 0, y: 0.02, width: 1, height: 0.08 }];
 
     expect(shotAt("typing", bar, 3 * S).y).not.toBeCloseTo(shotAt("cursor", [], 3 * S).y, 0);
+  });
+
+  /** A field that gains focus at two seconds and keeps it, sampled every second. */
+  const focused = (x: number, y: number, width: number, height: number): Span[] =>
+    Array.from({ length: 11 }, (_, i) => ({ at: (2 + i) * S, x, y, width, height }));
+
+  /** Where a fraction of the capture lands across the frame, in output pixels. */
+  const across = (rect: { x: number; width: number }, fraction: number) =>
+    rect.x + fraction * rect.width;
+
+  it("comes to rest on the field rather than a dead zone short of it", () => {
+    // The shot opens on the pointer, bottom-right, and the field takes focus
+    // two seconds in. A pointer is only chased once it leaves the middle of
+    // the frame, and with the same rule applied to the field the camera
+    // stopped as soon as the field was inside that box — a seventh of the
+    // frame off centre — and a form field wide enough to reach that far had
+    // its first words cut off for as long as it was typed into.
+    // Far enough in that the shot can centre on it without panning off the
+    // recording, which would clamp the answer for a different reason.
+    const field = focused(0.35, 0.4, 0.2, 0.05);
+    const shot = shotAt("typing", field, 9 * S);
+
+    expect(across(shot, 0.45)).toBeCloseTo(FRAME.width / 2, 0);
+  });
+
+  it("looks at the field only while keys are going down", () => {
+    // A chat box, a terminal, a form that focuses its first field on arrival:
+    // all sit focused for as long as the window is up. A shot that looked at
+    // the field whenever it had focus looked at it for the whole recording
+    // while the pointer worked the rest of the screen.
+    const field = focused(0.35, 0.4, 0.2, 0.05);
+    const runs = [{ start: 3 * S, end: 5 * S }];
+
+    // Mid-run: on the field, give or take the last few pixels of the pan.
+    expect(across(shotAt("typing", field, 4 * S, runs), 0.45)).toBeCloseTo(FRAME.width / 2, -1);
+    // Long after the last press, still focused: back on the pointer.
+    expect(shotAt("typing", field, 11 * S, runs).x).toBeCloseTo(shotAt("cursor", [], 11 * S).x, 0);
+  });
+
+  it("never looks at a field on a recording where nobody typed", () => {
+    // Focused is not typed into. An empty run list is the capture saying no
+    // keys went down, which is a different recording from one that does not
+    // say — that one, with no list at all, still takes focus as the account.
+    const field = focused(0.35, 0.4, 0.2, 0.05);
+
+    expect(shotAt("typing", field, 9 * S, [])).toEqual(shotAt("cursor", [], 9 * S));
+    expect(shotAt("typing", field, 9 * S)).not.toEqual(shotAt("cursor", [], 9 * S));
+  });
+
+  it("frames a field wider than the shot from the end the text starts at", () => {
+    // A title box across a web form is wider than a 2× shot. Centred, the shot
+    // shows the middle of an empty box and cuts the label and the first words
+    // off the left, which is the one part of it anyone typing is looking at.
+    const wide = focused(0.1, 0.4, 0.8, 0.05);
+    const shot = shotAt("typing", wide, 9 * S);
+
+    // The leading edge is on screen, a little in from the frame's edge, and
+    // the far end is what runs off — never the start.
+    expect(across(shot, 0.1)).toBeGreaterThan(0);
+    expect(across(shot, 0.1)).toBeLessThan(FRAME.width / 8);
+    expect(across(shot, 0.9)).toBeGreaterThan(FRAME.width);
   });
 });
 

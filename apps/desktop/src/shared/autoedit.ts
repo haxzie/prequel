@@ -15,7 +15,7 @@
  * Pure, and free of any `electron`, Node or DOM import, so the judgement calls
  * below are testable without a recording.
  */
-import type { MediaTime } from "./manifest.js";
+import type { KeySpan, MediaTime, TypingSample } from "./manifest.js";
 import { DEFAULT_ZOOM, type ZoomSlice } from "./project.js";
 
 const NS = 1_000_000_000;
@@ -91,6 +91,17 @@ const MAX_TYPING_SPAN = 45 * NS;
 /** Nothing closer together than this is worth two separate zooms. */
 const MIN_GAP = 0.6 * NS;
 
+/**
+ * How far outside a run of key presses a focus sample may fall and still be
+ * read as part of the typing.
+ *
+ * A second, because that is how often the capture samples the focused field:
+ * the sample before the first press and the one after the last are the same
+ * second of typing seen from either side, and the runs themselves are rounded
+ * to a tenth. Anything wider starts admitting the field being *looked at*.
+ */
+const TYPED_SLACK = 1 * NS;
+
 /** One thing that happened, wherever it happened. */
 export interface Moment {
   at: MediaTime;
@@ -109,6 +120,31 @@ export interface AutoEditOptions {
 }
 
 /**
+ * The focus samples that were taken while somebody was actually typing.
+ *
+ * The capture samples the focused text field once a second for as long as it
+ * stays focused, which is not the same thing as typing: a web form focuses its
+ * first field on arrival, and a field stays focused after the last word until
+ * something else is clicked. Read as typing, those seconds pull the clicks
+ * before the form into the typing cluster and hold the shot on the field until
+ * the recording ends — a demo of a form got one zoom, aimed at a box nobody
+ * was typing into, for the whole of it.
+ *
+ * A recording without a `keys` track is one made before presses were
+ * recorded, and for that the samples are the only account there is.
+ */
+export function whileTyping(
+  samples: readonly TypingSample[],
+  keys: readonly KeySpan[] | undefined,
+): TypingSample[] {
+  if (keys === undefined) return [...samples];
+
+  return samples.filter((sample) =>
+    keys.some((span) => sample.at >= span.start - TYPED_SLACK && sample.at <= span.end + TYPED_SLACK),
+  );
+}
+
+/**
  * Zooms for a recording, from what happened in it.
  *
  * Returns an empty list when there is nothing worth zooming to — which is the
@@ -120,6 +156,9 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
 
   for (const group of cluster(moments)) {
     const typed = group.filter((moment) => moment.kind === "typing").length;
+    const clicks = group.length - typed;
+    // Majority typing still decides how the cluster is *cut* — a form is one
+    // continuous act however it was started — but not what it follows.
     const typing = typed > group.length / 2;
     const span = group[group.length - 1]!.at - group[0]!.at;
 
@@ -164,9 +203,16 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
       zooms.push({
         id: `auto-${String(zooms.length)}`,
         source: { start, end },
-        // Typing knows exactly which field to frame; a run of clicks is better
-        // served by following the pointer, which is where the next one will be.
-        target: typing ? "typing" : options.hasCursor ? "cursor" : "region",
+        // A click is where the person put the pointer; a focus sample is where
+        // the system says the caret is. Anywhere they disagree the click wins,
+        // so a cluster with a single click in it follows the pointer, and only
+        // a run of nothing but typing frames the field. Sampled once a second,
+        // typing outvoted clicks in every cluster it touched: a terminal or a
+        // chat box that keeps focus for the whole recording turned every shot
+        // into a typing shot, aimed at the box while the pointer clicked
+        // through the rest of the screen unwatched. A cluster with no pointer
+        // track to follow is a fixed region, as before.
+        target: clicks > 0 ? (options.hasCursor ? "cursor" : "region") : "typing",
         x: centre.x,
         y: centre.y,
         level: levelFor(chunk),

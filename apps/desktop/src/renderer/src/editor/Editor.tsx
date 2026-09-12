@@ -17,7 +17,7 @@ import {
   presetNeedsBackground,
   type ScenePreset,
 } from "../../../shared/scene-presets";
-import { augmentZooms, autoZooms, type Moment } from "../../../shared/autoedit";
+import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon, WandIcon } from "./icons";
@@ -1092,8 +1092,10 @@ function useAutoFrame(
 function momentsOf(session: EditorSession): Moment[] {
   return [
     ...(session.manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
-    // The middle of the field, which is what a zoom would frame anyway.
-    ...(session.manifest.typing ?? []).map((span) => ({
+    // The middle of the field, which is what a zoom would frame anyway. Only
+    // the samples taken while keys were going down: the rest are a field that
+    // was focused, which is not something that happened.
+    ...whileTyping(session.manifest.typing ?? [], session.manifest.keys).map((span) => ({
       at: span.at,
       x: span.x + span.width / 2,
       y: span.y + span.height / 2,

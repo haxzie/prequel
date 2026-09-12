@@ -249,6 +249,9 @@ function buildSlices(
             // with no spans and one the user asked to keep the pointer through
             // are the same thing to draw.
             keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
+            // Unresolved: whether the shot looks at a field is not a question
+            // about whether the pointer is drawn.
+            typed: session.cursor.keys,
           },
           project.zooms,
           previous

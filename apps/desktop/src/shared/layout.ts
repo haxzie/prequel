@@ -1604,22 +1604,32 @@ function shotTrack(
     maxY: frame.height / 2 - base.y + base.height * (level - 1),
   };
 
+  // How much of the capture the shot can show at once, as fractions of it. A
+  // field wider than this cannot be framed whole, and `typingCentre` needs to
+  // know so it can frame the end of it that has the text.
+  const shows = {
+    width: srcRect.width / source.width / level,
+    height: srcRect.height / source.height / level,
+  };
+
   // What the shot is aimed at, moment by moment — mapped to output pixels here
   // rather than followed as fractions of the capture. Mapping first is what lets
   // the dead zone and the speed limit be stated against the frame, and it stops
   // the steadying being stronger vertically than horizontally on every source
   // that is not square.
-  const aims = at.map((when) => {
+  const aims: Aim[] = at.map((when) => {
+    const field = zoom.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
       zoom.target === "region"
         ? { x: zoom.x, y: zoom.y }
-        : zoom.target === "typing"
-          ? (typingCentre(cursor, when) ?? cursorFraction(cursor, when))
-          : cursorFraction(cursor, when);
+        : (field ?? cursorFraction(cursor, when));
 
     return {
       x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
       y: ((point.y * source.height - srcRect.y) / srcRect.height) * base.height * level,
+      // A focused field is a place, not a pointer: the follow treats the two
+      // differently — see `followPath`.
+      field: field !== null,
     };
   });
 
@@ -2041,7 +2051,12 @@ function moveWindow(enter: EnterTransition): number {
  * one made without the Accessibility grant — the caller falls back to the
  * pointer, so a `typing` zoom is never worse than a `cursor` one.
  */
-function typingCentre(cursor: CursorTrack | null | undefined, at: number): Point | null {
+function typingCentre(
+  cursor: CursorTrack | null | undefined,
+  at: number,
+  /** How much of the capture the shot shows, as fractions of it. */
+  shows: Size,
+): Point | null {
   const spans = cursor?.typing;
   if (!spans?.length || at < spans[0]!.at) return null;
 
@@ -2058,6 +2073,17 @@ function typingCentre(cursor: CursorTrack | null | undefined, at: number): Point
   // the interesting part of the picture is now.
   if (at - span.at > TYPING_STALE_NS) return null;
 
+  // Focused is not typed into. A chat box, a terminal, a form that focuses its
+  // first field on arrival — all sit focused for as long as the window is up,
+  // and a shot that looked at the field whenever it had focus looked at it for
+  // the whole recording while the pointer worked the rest of the screen. The
+  // field is the answer only while keys are going down; between runs the
+  // pointer is, and a click is always where the person meant to look.
+  const typed = cursor?.typed;
+  if (typed && !typed.some((run) => at >= run.start - TYPED_SLACK_NS && at <= run.end + TYPED_SLACK_NS)) {
+    return null;
+  }
+
   // A field the size of the picture is not a field, it is the page. An editor,
   // a terminal, a note — the focused element is one `AXTextArea` filling the
   // window, and its middle is the middle of the frame however far up the corner
@@ -2068,11 +2094,35 @@ function typingCentre(cursor: CursorTrack | null | undefined, at: number): Point
   // down.
   if (span.width > TYPING_MAX_SPAN && span.height > TYPING_MAX_SPAN) return null;
 
-  return { x: span.x + span.width / 2, y: span.y + span.height / 2 };
+  // The middle of the field, or of as much of it as fits, taken from the top
+  // left. A title box across a web form is wider than a 2× shot; centred, the
+  // shot shows the middle of an empty box and cuts the label and the first
+  // words off the left — which is the one part of a field somebody typing into
+  // it is looking at. The room is so the edge is not the edge of the frame.
+  const width = Math.min(span.width, shows.width * (1 - FIELD_ROOM));
+  const height = Math.min(span.height, shows.height * (1 - FIELD_ROOM));
+  return { x: span.x + width / 2, y: span.y + height / 2 };
 }
 
 /** How long a focused field stays the answer after it was last seen. */
 const TYPING_STALE_NS = 3_000_000_000;
+
+/**
+ * How far either side of a run of key presses the field is still the answer.
+ *
+ * A second — the same slack `autoedit` gives the moments, and about the lead
+ * a zoom opens with, so the shot is on the field as the first word lands
+ * rather than panning to it a word late, and stays through the pause after
+ * the last one rather than leaving on the keystroke.
+ */
+const TYPED_SLACK_NS = 1_000_000_000;
+
+/**
+ * How much narrower than the shot a field that overflows it is framed as, as a
+ * fraction of what the shot shows. Half of it ends up as a margin inside the
+ * leading edge; the rest of the field runs off the far side regardless.
+ */
+const FIELD_ROOM = 0.1;
 
 /**
  * How much of the frame a focused field may cover in *both* directions and
@@ -2156,13 +2206,13 @@ function followPath(
    * moment the guarantee is needed. Checking the smoothed one instead is a
    * guarantee about a position nothing ever draws.
    */
-  drawn: readonly Point[],
+  drawn: readonly Aim[],
   stepSeconds: number,
   frame: Size,
   bounds: { minX: number; maxX: number; minY: number; maxY: number },
 ): Point[] {
   const first = aims[0];
-  if (!first || stepSeconds <= 0) return [...aims];
+  if (!first || stepSeconds <= 0) return aims.map(({ x, y }) => ({ x, y }));
 
   // Measured against each edge separately, so the box the pointer is free to
   // move in has the frame's own proportions rather than being a square that
@@ -2184,8 +2234,18 @@ function followPath(
   const out: Point[] = [];
 
   for (const [step, aim] of aims.entries()) {
-    const targetX = clamp(x + past(aim.x - x, still.x), bounds.minX, bounds.maxX);
-    const targetY = clamp(y + past(aim.y - y, still.y), bounds.minY, bounds.maxY);
+    // A pointer is only worth chasing once it has left the middle of the
+    // frame; a focused field is a place, and the shot should come to rest on
+    // it. Given the pointer's dead zone the camera stopped as soon as the field
+    // was *inside* the box — a seventh of the frame off centre, on whichever
+    // side it arrived from — and a form field wide enough to reach that far
+    // had its label and its first words cut off for as long as it was typed
+    // into.
+    const real: Aim = drawn[step] ?? { ...aim, field: false };
+    const stillX = real.field ? 0 : still.x;
+    const stillY = real.field ? 0 : still.y;
+    const targetX = clamp(x + past(aim.x - x, stillX), bounds.minX, bounds.maxX);
+    const targetY = clamp(y + past(aim.y - y, stillY), bounds.minY, bounds.maxY);
 
     const wasX = x;
     const wasY = y;
@@ -2216,7 +2276,6 @@ function followPath(
     // anyway.
     const sprungX = x;
     const sprungY = y;
-    const real = drawn[step] ?? aim;
     x = clamp(hold(x, real.x, keep.x), bounds.minX, bounds.maxX);
     y = clamp(hold(y, real.y, keep.y), bounds.minY, bounds.maxY);
 
@@ -2315,6 +2374,11 @@ function cursorFraction(cursor: CursorTrack | null | undefined, at: number): Poi
 interface Point {
   x: number;
   y: number;
+}
+
+/** Where a shot is pointed at one moment, and whether that is a field. */
+interface Aim extends Point {
+  field: boolean;
 }
 
 /**
@@ -2599,6 +2663,16 @@ export interface CursorTrack {
    * are the same thing to draw, and neither is worth a second field.
    */
   keys?: readonly { start: number; end: number }[];
+  /**
+   * The same stretches, unresolved, for a zoom that follows typing.
+   *
+   * A second field rather than `keys` because that one is a drawing decision:
+   * it is emptied when the person asks to keep the pointer on screen while
+   * they type, and whether the shot should look at a field has nothing to do
+   * with that. Absent, a focused field is taken as being typed into; empty,
+   * nobody typed and no field is ever aimed at.
+   */
+  typed?: readonly { start: number; end: number }[];
 }
 
 /**

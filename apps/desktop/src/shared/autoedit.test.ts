@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { augmentZooms, autoZooms, type Moment } from "./autoedit.js";
+import { augmentZooms, autoZooms, whileTyping, type Moment } from "./autoedit.js";
 import { DEFAULT_ZOOM, type ZoomSlice } from "./project.js";
 
 const S = 1_000_000_000;
@@ -148,9 +148,68 @@ describe("clustering", () => {
   });
 });
 
+describe("what counts as typing", () => {
+  /** A field focused from `from` to `to` seconds, sampled once a second. */
+  const focus = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => ({
+      at: (from + i) * S,
+      x: 0.1,
+      y: 0.2,
+      width: 0.5,
+      height: 0.05,
+    }));
+
+  it("keeps only the samples taken while keys were going down", () => {
+    // A web form focuses its first field on arrival and the field stays
+    // focused after the last word. Neither is typing: read as such, the clicks
+    // before the form join the typing cluster and the shot holds on a box
+    // nobody is typing into until the recording ends.
+    const kept = whileTyping(focus(0, 30), [{ start: 10 * S, end: 15 * S }]);
+
+    expect(kept.map((sample) => sample.at / S)).toEqual([9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it("allows a second either side, which is how often the field is sampled", () => {
+    // The sample before the first press and the one after the last are the
+    // same second of typing seen from either side.
+    const kept = whileTyping(focus(0, 30), [{ start: 10.4 * S, end: 10.6 * S }]);
+
+    expect(kept.map((sample) => sample.at / S)).toEqual([10, 11]);
+  });
+
+  it("keeps everything on a recording that never noted presses", () => {
+    // Made before the capture recorded keys, so the focus samples are the only
+    // account of typing there is — and an empty list means "nobody typed",
+    // which is a different recording from one that does not say.
+    expect(whileTyping(focus(0, 5), undefined)).toHaveLength(6);
+    expect(whileTyping(focus(0, 5), [])).toHaveLength(0);
+  });
+});
+
 describe("what a zoom follows", () => {
-  it("frames the field when the cluster is mostly typing", () => {
-    expect(autoZooms([typing(10), typing(10.5), click(10.8)], OPTIONS)[0]!.target).toBe("typing");
+  it("frames the field when the cluster is nothing but typing", () => {
+    expect(autoZooms([typing(10), typing(11), typing(12)], OPTIONS)[0]!.target).toBe("typing");
+  });
+
+  it("follows the pointer as soon as there is a click to follow", () => {
+    // Sampled once a second, typing outvotes clicks in any cluster it touches.
+    // A chat box or a terminal that keeps focus for the whole recording made
+    // every shot a typing shot aimed at the box, while the pointer went round
+    // the rest of the screen unwatched. A click is the person saying where to
+    // look; a focus sample is only where the caret is.
+    const zooms = autoZooms([typing(10), typing(11), typing(12), click(12.5), typing(13)], OPTIONS);
+
+    expect(zooms[0]!.target).toBe("cursor");
+  });
+
+  it("still cuts a form as one shot, however it was started", () => {
+    // The click that focused the field puts the shot on the pointer, but the
+    // typing after it is one continuous act and is held as one.
+    const moments = [click(10), ...Array.from({ length: 30 }, (_, i) => typing(11 + i))];
+    const zooms = autoZooms(moments, OPTIONS);
+
+    expect(zooms).toHaveLength(1);
+    expect(zooms[0]!.target).toBe("cursor");
   });
 
   it("follows the pointer for a run of clicks", () => {

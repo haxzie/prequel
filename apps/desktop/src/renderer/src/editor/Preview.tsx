@@ -350,6 +350,9 @@ export function Preview({
                 // track with no spans and one the user asked to keep the
                 // pointer through are the same thing to draw.
                 keys: current.layout.cursorHideWhileTyping ? pointer.keys : [],
+                // Unresolved: whether the shot looks at a field is not a
+                // question about whether the pointer is drawn.
+                typed: pointer.keys,
               },
               shots,
               arriving,
