@@ -505,33 +505,35 @@ export function ToggleField({
  * stay the same object as it slides — a knob that changes colour with the track
  * reads as two different things rather than as one moving.
  *
- * Squared off rather than a pill. Everything else in the panel is a rounded
- * rectangle at the same radius — the wells, the cards, the tab pills — and a
- * capsule among them was the one shape drawn from a different set.
+ * Drawn as the platform's own switch: a capsule track, and a knob that is a
+ * wide capsule rather than a disc, the way macOS 26 draws it. It used to be a
+ * rounded rectangle at the panel's radius, on the argument that a capsule was
+ * the one shape here drawn from a different set — but a switch is the one
+ * control everyone already knows from System Settings, and one that matches
+ * it reads as a switch before it reads as anything else.
  *
- * The two radii are concentric: the knob's is the track's less the gap between
- * them, 6 − 2 = 4. Corners nested any other way have their curves running at
- * different rates through the gap, which reads as a wobble in the space between
- * the two rather than as a mistake in either.
+ * The proportions are the system's, scaled to the row: the knob is three
+ * fifths of the track's width and sits two pixels inside it. A capsule keeps
+ * the two radii concentric for free — each is half its own height, and the
+ * knob's height is the track's less the gap either side.
  *
- * Worth knowing that a pill satisfies this too, and trivially: a 9px track
- * around a knob inset by 2 wants a 7px knob, and 7 is exactly half of 14. That
- * is why the capsule looked right — going square is a change of shape, not a
- * correction.
+ * The knob moves by `translate` rather than `left`, so the slide runs on the
+ * compositor and never lays the row out.
  */
 function Switch({ value }: { value: boolean }) {
   return (
     <span
       className={cn(
-        "relative block h-[18px] w-8 flex-none rounded-md transition-colors",
+        "relative block h-[18px] w-10 flex-none rounded-full transition-colors",
         value ? "bg-toggle" : "bg-white/15",
       )}
       aria-hidden
     >
       <span
         className={cn(
-          "absolute top-0.5 size-3.5 rounded bg-white transition-[left]",
-          value ? "left-4" : "left-0.5",
+          "absolute top-0.5 left-0.5 h-3.5 w-6 rounded-full bg-white",
+          "shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform ease-out",
+          value && "translate-x-3",
         )}
       />
     </span>
