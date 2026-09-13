@@ -185,17 +185,36 @@ jobs:
       # an installed copy of it can never update in place: Squirrel refuses a
       # replacement whose signature does not match what is running. Do not tag
       # from a run that was not signed.
+      #
+      # The notes are the site's changelog for the version, not
+      # `--generate-notes`: that writes the commit subjects since the last tag,
+      # which is a record of work rather than of what the app can now do, and
+      # the changelog is written by hand for exactly that reason. The `.mdx` is
+      # a Markdown list under a line of `export`s, so the exports are dropped
+      # and the rest is the body. A version without a changelog still gets a
+      # release, with only the compare link, rather than no release at all.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          notes=$(mktemp)
+          changelog="apps/web/src/content/changelog/${version}.mdx"
+          if [ -f "$changelog" ]; then
+            grep -v '^export ' "$changelog" | sed '/./,$!d' >> "$notes"
+            echo >> "$notes"
+          fi
+          if [ -n "$previous" ]; then
+            echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${GITHUB_REF_NAME}" >> "$notes"
+          fi
           gh release create "$GITHUB_REF_NAME" \
             apps/desktop/release/*.dmg \
             apps/desktop/release/*.zip \
             apps/desktop/release/latest-mac.yml \
             --title "Prequel $GITHUB_REF_NAME" \
-            --generate-notes \
+            --notes-file "$notes" \
             --verify-tag
 
   # The CDN copy, and the manifest the site reads to find it.
