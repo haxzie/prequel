@@ -353,6 +353,11 @@ export const IPC_CHANNELS = {
   dockWidth: "dock:width",
   /** Renderer → main: the camera preview failed, or recovered. */
   cameraError: "dock:cameraError",
+  /**
+   * Main → the bubble: whether the cursor is over it. The bubble is a drag
+   * region, and a drag region gets no mouse events, so it cannot tell.
+   */
+  cameraHover: "camera:hover",
   /** Main → renderer broadcast. */
   dockChanged: "dock:changed",
   /** Main → renderer broadcast. */

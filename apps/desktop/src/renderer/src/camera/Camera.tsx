@@ -13,6 +13,12 @@ export function Camera() {
   const { preferences, devicesLive } = useDock();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // Told by main rather than read from `:hover`: the bubble is a drag region,
+  // and a drag region gets no mouse events, so the close button used to appear
+  // only once the cursor was already on the button itself.
+  const [hovered, setHovered] = useState(false);
+
+  useEffect(() => window.prequel.dock.onCameraHover(setHovered), []);
 
   useEffect(() => {
     const deviceId = preferences.cameraId;
@@ -63,7 +69,7 @@ export function Camera() {
     // itself is the drag handle.
     <div
       className={
-        "group drag squircle relative m-(--panel-inset) h-[calc(100%-var(--panel-inset)*2)] " +
+        "drag squircle relative m-(--panel-inset) h-[calc(100%-var(--panel-inset)*2)] " +
         "w-[calc(100%-var(--panel-inset)*2)] overflow-hidden rounded-[60%] border-2 " +
         "border-white/22 bg-[#101114] shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
@@ -91,13 +97,14 @@ export function Camera() {
           same preference. */}
       <button
         type="button"
-        // Appears on hover, inset far enough to clear the squircle's corner.
-        // The bubble is a drag handle; this must not be, or the button would
-        // move the window instead of being pressed.
+        // Appears while the cursor is over the bubble, inset far enough to
+        // clear the squircle's corner. The bubble is a drag handle; this must
+        // not be, or the button would move the window instead of being pressed.
         className={
           "no-drag absolute top-[11%] right-[11%] grid size-[26px] place-items-center " +
-          "rounded-full bg-black/55 text-white opacity-0 transition-opacity duration-[120ms] " +
-          "ease-out group-hover:opacity-100 hover:bg-black/78 [&_svg]:size-[13px]"
+          "rounded-full bg-black/55 text-white transition-opacity duration-[120ms] " +
+          "ease-out hover:bg-black/78 [&_svg]:size-[13px] " +
+          (hovered ? "opacity-100" : "opacity-0")
         }
         title="Turn camera off"
         onClick={() => {

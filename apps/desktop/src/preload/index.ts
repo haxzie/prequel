@@ -168,6 +168,17 @@ const api = {
     reportCameraError: (message: string | null): Promise<DockState> =>
       ipcRenderer.invoke(IPC_CHANNELS.cameraError, message),
 
+    /**
+     * Whether the cursor is over the bubble, from main. Returns an unsubscribe
+     * function. The bubble is a drag region and so never sees the cursor
+     * itself — see `HOVER_POLL_MS` in main's camera window.
+     */
+    onCameraHover: (listener: (hovered: boolean) => void): (() => void) => {
+      const handler = (_event: unknown, hovered: boolean) => listener(hovered);
+      ipcRenderer.on(IPC_CHANNELS.cameraHover, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.cameraHover, handler);
+    },
+
     /** Subscribes to panel state. Returns an unsubscribe function. */
     onChange: (listener: (state: DockState) => void): (() => void) => {
       const handler = (_event: unknown, state: DockState) => listener(state);

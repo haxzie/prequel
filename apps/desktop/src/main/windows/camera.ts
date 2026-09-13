@@ -8,7 +8,7 @@
  */
 import { screen, type BrowserWindow } from "electron";
 
-import { PANEL_INSET } from "../../shared/contract.js";
+import { IPC_CHANNELS, PANEL_INSET } from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
 
 /** Diameter of the visible circle. The window adds `PANEL_INSET` all round. */
@@ -25,6 +25,18 @@ function windowEdge(size: CameraSize): number {
 }
 
 /**
+ * How often the cursor is checked against the bubble while it is showing.
+ *
+ * The bubble is one `-webkit-app-region: drag` — that is what makes it a
+ * handle — and a drag region receives no mouse events at all, so the close
+ * button's `:hover` only ever fired over the button itself. Main can see the
+ * cursor, so it watches instead and tells the bubble. Twelve times a second is
+ * quick enough that the button appears as the cursor arrives, and cheap
+ * enough that a bubble left open all day costs nothing worth measuring.
+ */
+const HOVER_POLL_MS = 80;
+
+/**
  * How much of the bubble has to be on a display for a stored position to be
  * reused.
  *
@@ -39,6 +51,8 @@ export class CameraWindow {
   /** Centre of the circle, as last left by the user. */
   private position: { x: number; y: number } | null = null;
   private listener: ((position: { x: number; y: number }) => void) | null = null;
+  private hoverTimer: ReturnType<typeof setInterval> | null = null;
+  private hovered = false;
 
   /**
    * Restores a remembered position.
@@ -89,14 +103,43 @@ export class CameraWindow {
     // `showInactive`: presenting the bubble must not take focus from whatever
     // the user is recording.
     window.showInactive();
+    this.watchHover(window);
   }
 
   hide(): void {
+    this.stopWatchingHover();
     // `?.` covers "never opened", not "already destroyed", and a quit leaves
     // exactly the second: Electron destroys the window while this still holds
     // the reference, and calling anything on it then throws.
     if (!this.window || this.window.isDestroyed()) return;
     this.window.hide();
+  }
+
+  /** Starts telling the bubble whether the cursor is over it. */
+  private watchHover(window: BrowserWindow): void {
+    if (this.hoverTimer) return;
+    this.hovered = false;
+    this.hoverTimer = setInterval(() => {
+      if (window.isDestroyed() || !window.isVisible()) {
+        this.stopWatchingHover();
+        return;
+      }
+      const hovered = overBubble(window.getBounds(), screen.getCursorScreenPoint());
+      if (hovered === this.hovered) return;
+      this.hovered = hovered;
+      window.webContents.send(IPC_CHANNELS.cameraHover, hovered);
+    }, HOVER_POLL_MS);
+  }
+
+  private stopWatchingHover(): void {
+    if (!this.hoverTimer) return;
+    clearInterval(this.hoverTimer);
+    this.hoverTimer = null;
+    // Hidden while hovered would otherwise reopen with the button showing.
+    if (this.hovered && this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send(IPC_CHANNELS.cameraHover, false);
+    }
+    this.hovered = false;
   }
 
   setSize(size: CameraSize): void {
@@ -122,6 +165,7 @@ export class CameraWindow {
   }
 
   destroy(): void {
+    this.stopWatchingHover();
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
   }
@@ -157,6 +201,24 @@ export class CameraWindow {
       height: edge,
     };
   }
+}
+
+/**
+ * Whether a point is over the visible circle, not merely the window.
+ *
+ * The window carries `PANEL_INSET` of transparent margin for the shadow, and a
+ * button that appeared while the cursor was still in thin air would look
+ * haunted. The circle is checked as a circle: the bubble is drawn at a 60%
+ * radius, close enough that its corners are never where a cursor rests.
+ */
+function overBubble(
+  bounds: { x: number; y: number; width: number; height: number },
+  point: { x: number; y: number },
+): boolean {
+  const radius = bounds.width / 2 - PANEL_INSET;
+  const dx = point.x - (bounds.x + bounds.width / 2);
+  const dy = point.y - (bounds.y + bounds.height / 2);
+  return dx * dx + dy * dy <= radius * radius;
 }
 
 /** Whether enough of a window falls on some display to be usable. */
