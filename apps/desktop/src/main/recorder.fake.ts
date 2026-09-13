@@ -14,7 +14,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CursorSample, Manifest, Track } from "../shared/manifest.js";
-import { MANIFEST_FILE_NAME, MANIFEST_VERSION, TRACK_FILE_NAMES } from "../shared/manifest.js";
+import {
+  CAMERA_MATTE_FILE_NAME,
+  MANIFEST_FILE_NAME,
+  MANIFEST_VERSION,
+  TRACK_FILE_NAMES,
+} from "../shared/manifest.js";
 import type {
   PermissionStatus,
   Recorder,
@@ -131,6 +136,16 @@ function writeManifest(
       height: 720,
       samples: Math.round((summary.durationMs / 1000) * 30),
       dropped: 0,
+      // A matte beside every fake camera, as the native pipeline writes one
+      // beside every real one: without it no end-to-end run ever sees the
+      // "Remove background" control enabled.
+      matte: {
+        file_name: CAMERA_MATTE_FILE_NAME,
+        width: 512,
+        height: 288,
+        samples: Math.round((summary.durationMs / 1000) * 30),
+        dropped: 0,
+      },
     });
   }
 
@@ -269,7 +284,10 @@ export function createFakeRecorder(): Recorder {
       // A camera produces a second file, as it does natively — otherwise an
       // end-to-end run would pass against a session that is missing a track.
       const camera = request.camera ?? null;
-      if (camera) writeFileSync(join(request.outputPath, "camera.mp4"), STUB_MP4);
+      if (camera) {
+        writeFileSync(join(request.outputPath, "camera.mp4"), STUB_MP4);
+        writeFileSync(join(request.outputPath, CAMERA_MATTE_FILE_NAME), STUB_MP4);
+      }
 
       const width = Math.round(target.bounds.width * target.scaleFactor) & ~1;
       const height = Math.round(target.bounds.height * target.scaleFactor) & ~1;
@@ -307,6 +325,8 @@ export function createFakeRecorder(): Recorder {
         cameraStartMs: camera ? CAMERA_START_MS : 0,
         cameraWidth: camera ? 1280 : 0,
         cameraHeight: camera ? 720 : 0,
+        cameraMatteFrames: camera ? Math.round((durationMs / 1000) * 30) : 0,
+        cameraMatteDropped: 0,
       };
     },
 

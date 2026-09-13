@@ -213,6 +213,74 @@ export function syncElement(
 }
 
 /**
+ * Keeps one element on the frame another is showing.
+ *
+ * For the camera's matte, which is a second `<video>` that has to show the
+ * mask for the *exact* picture the camera element is showing. `syncElement`
+ * cannot do that: it corrects each element against the clock on its own, and
+ * while playing it tolerates a quarter of a second before it seeks — fine
+ * between the screen and the camera, where nobody can see 200 ms, but between
+ * a picture and its mask it is a soft silhouette hanging off the person
+ * wherever they moved. So the mask follows the camera element itself, and
+ * tightly: more than a frame apart is a seek, less is nudged out at a rate a
+ * silent 512-pixel stream can afford. Both elements run on the same wall
+ * clock, so once they are together they stay together.
+ *
+ * `shown` is false when the camera has no frame for this moment; the mask
+ * then pauses with it.
+ */
+export function followElement(
+  element: HTMLMediaElement,
+  leader: HTMLMediaElement,
+  shown: boolean,
+  playing: boolean,
+): void {
+  if (!shown) {
+    if (!element.paused) element.pause();
+    return;
+  }
+
+  const target = leader.currentTime;
+  const drift = (element.currentTime - target) * 1000 * NS_PER_MS;
+  const magnitude = Math.abs(drift);
+
+  // Paused, anything measurable is a seek: there is no rate to nudge with,
+  // and the camera element was itself just seeked to a whole frame, so the
+  // same time lands on the same frame in a file with the same timestamps.
+  if (magnitude > (playing ? FOLLOW_SEEK_NS : FOLLOW_EXACT_NS)) {
+    element.currentTime = target;
+    setRate(element, 1);
+  } else if (playing && magnitude > FOLLOW_EXACT_NS) {
+    setRate(element, drift < 0 ? 1 + FOLLOW_NUDGE_RATE : 1 - FOLLOW_NUDGE_RATE);
+  } else {
+    setRate(element, 1);
+  }
+
+  if (playing && element.paused) {
+    void element.play().catch(() => undefined);
+  } else if (!playing && !element.paused) {
+    element.pause();
+  }
+}
+
+/**
+ * A follower further from its leader than this is seeked. One frame at 30 fps,
+ * the camera's rate: a mask one frame out is a hairline on a moving edge, two
+ * is a fringe.
+ */
+const FOLLOW_SEEK_NS = 33 * NS_PER_MS;
+
+/** Under this the follower is on the same frame and is left alone. */
+const FOLLOW_EXACT_NS = 4 * NS_PER_MS;
+
+/**
+ * Harder than `NUDGE_RATE`: the follower is a small silent stream, so a 10 %
+ * rate is invisible, and it closes a frame's gap in a third of a second rather
+ * than in nearly one.
+ */
+const FOLLOW_NUDGE_RATE = 0.1;
+
+/**
  * Sets the playback rate, but only when it actually changes.
  *
  * Assigning to a media element is not free even when the value is identical —

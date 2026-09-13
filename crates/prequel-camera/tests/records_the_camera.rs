@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use prequel_camera::{CAMERA_FILE, CameraOptions, CameraRecorder, list_cameras};
 use prequel_encode::host_now;
-use prequel_session::SharedClock;
+use prequel_session::{CAMERA_MATTE_FILE, SharedClock};
 
 const RECORD_FOR: Duration = Duration::from_secs(3);
 
@@ -112,6 +112,33 @@ fn records_a_camera_to_a_playable_mp4() {
         (duration - wanted).abs() < 1.0,
         "recorded {duration}s, expected about {wanted}s"
     );
+
+    // The matte is best-effort, but when it was written the summary and the
+    // file have to agree — a size the manifest gets wrong is the kind of
+    // thing nothing downstream notices.
+    let matte_file = path.join(CAMERA_MATTE_FILE);
+    match summary.matte {
+        Some(matte) => {
+            println!(
+                "matte: {}x{} · {} frames · {} dropped",
+                matte.width, matte.height, matte.frames, matte.dropped
+            );
+            assert!(
+                matte_file.exists(),
+                "the summary reports a matte but there is no file"
+            );
+            assert!(matte.frames > 0, "a matte with no frames: {matte:?}");
+            let probed = ffprobe(&matte_file, "stream=width,height");
+            assert!(
+                probed.contains(&format!("width={}", matte.width)),
+                "the matte summary and the file disagree: {probed} vs {matte:?}"
+            );
+        }
+        None => {
+            eprintln!("no matte was written (segmentation unavailable?)");
+            assert!(!matte_file.exists(), "a matte file with no summary");
+        }
+    }
 
     let _ = std::fs::remove_dir_all(&path);
 }

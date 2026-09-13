@@ -480,6 +480,17 @@ export function PersonIcon() {
   );
 }
 
+/** A person lifted off their background: the frame behind them is dashed. */
+export function CutoutIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3" strokeDasharray="2 3" strokeOpacity="0.5" />
+      <circle cx="12" cy="9" r="3" />
+      <path d="M6.5 21c.5-3.5 2.8-5.5 5.5-5.5s5 2 5.5 5.5" />
+    </svg>
+  );
+}
+
 export function CircleIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">

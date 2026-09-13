@@ -252,6 +252,125 @@ describe("the camera", () => {
     }
   });
 
+  describe("as a cutout", () => {
+    const cutout = (
+      cameraX = 0.5,
+      cameraY = 0.5,
+      shape: "circle" | "squircle" = "squircle",
+      cameraCutout = true,
+    ) =>
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            cameraCutout,
+            cameraShape: shape,
+            cameraWidth: 0.22,
+            cameraHeight: 0.22,
+            cameraBorderWidth: 0.01,
+            cameraX,
+            cameraY,
+          },
+        }),
+      );
+
+    it("asks the rasterisers for the matte, and only on the camera", () => {
+      // The flag is the whole mechanism: without it both rasterisers draw the
+      // camera whole, matte file or not.
+      const plan = cutout();
+      expect(image(plan, "camera")!.matte).toBe(true);
+      expect(image(plan, "screen")!.matte).toBeUndefined();
+
+      // And never on a bubble that was not asked for it, so a plan from a
+      // project that predates the matte serialises exactly as it did.
+      const bubble = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
+      expect("matte" in image(bubble, "camera")!).toBe(false);
+    });
+
+    it("shows the whole source with no corners", () => {
+      // The matte is the outline. A circle crop would slice the shoulders off
+      // a person, and a radius would clip the top of their head — and the
+      // source rect must be all of it, or the cutout is a cropped picture with
+      // its edges sliced straight rather than round.
+      const { srcRect, dstRect, shape } = image(cutout(0.5, 0.5, "circle"), "camera")!;
+
+      expect(srcRect).toEqual({ x: 0, y: 0, width: CAMERA.width, height: CAMERA.height });
+      expect(shape.radius).toBe(0);
+      expect(dstRect.width / dstRect.height).toBeCloseTo(CAMERA.width / CAMERA.height, 6);
+    });
+
+    it("keeps the bubble's framing: the same pixels land in the same place", () => {
+      // The cutout bug: letterboxing the whole source *inside* the bubble's
+      // box shrank the person to a strip across it. The person has to stand
+      // exactly where the bubble had them, at the bubble's zoom and offset —
+      // the whole picture is drawn at the scale the bubble's crop was, so the
+      // bubble's window maps onto the bubble's own box, and the rest spills.
+      //
+      // Positions where neither is clamped: a cutout is allowed further off
+      // the frame than a bubble, which is a different rule and its own test.
+      for (const [x, y] of [
+        [0.5, 0.5],
+        [0.2, 0.8],
+        [0.8, 0.3],
+      ]) {
+        const bubble = image(cutout(x!, y!, "squircle", false), "camera")!;
+        const cut = image(cutout(x!, y!), "camera")!;
+
+        const scale = cut.dstRect.width / CAMERA.width;
+        expect(scale).toBeCloseTo(bubble.dstRect.width / bubble.srcRect.width, 6);
+        expect(cut.dstRect.x + bubble.srcRect.x * scale).toBeCloseTo(bubble.dstRect.x, 6);
+        expect(cut.dstRect.y + bubble.srcRect.y * scale).toBeCloseTo(bubble.dstRect.y, 6);
+      }
+    });
+
+    it("may be pushed half off the frame, and no further", () => {
+      // A bubble stays wholly inside — half a card off the edge is half a
+      // card — but a cutout has no edge, and running the person into a corner
+      // with the head half out of shot is a shot. Half, so the centre never
+      // leaves and the person cannot be dragged away entirely.
+      const bubble = placement(
+        LANDSCAPE,
+        {
+          ...DEFAULT_SETTINGS.layout,
+          cameraWidth: 0.22,
+          cameraHeight: 0.22,
+          cameraX: 2,
+          cameraY: 2,
+        },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: CAMERA },
+        "camera",
+      )!.dstRect;
+      expect(bubble.x + bubble.width).toBeCloseTo(1920, 6);
+      expect(bubble.y + bubble.height).toBeCloseTo(1080, 6);
+
+      const cut = placement(
+        LANDSCAPE,
+        {
+          ...DEFAULT_SETTINGS.layout,
+          cameraCutout: true,
+          cameraWidth: 0.22,
+          cameraHeight: 0.22,
+          cameraX: 2,
+          cameraY: 2,
+        },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: CAMERA },
+        "camera",
+      )!.dstRect;
+      // The centre sits on the corner: half the box is out of shot.
+      expect(cut.x + cut.width / 2).toBeCloseTo(1920, 6);
+      expect(cut.y + cut.height / 2).toBeCloseTo(1080, 6);
+
+      // And the picture drawn still contains that box.
+      const drawn = image(cutout(2, 2), "camera")!.dstRect;
+      expect(drawn.x).toBeLessThanOrEqual(cut.x + 1e-6);
+      expect(drawn.x + drawn.width).toBeGreaterThanOrEqual(cut.x + cut.width - 1e-6);
+    });
+  });
+
   it("keeps the camera's own proportions when it is wide", () => {
     // The point of `wide`: nothing cropped, nothing stretched. The source rect
     // is the whole camera and the destination has the same shape as it.
@@ -3737,6 +3856,24 @@ describe("the border through a zoom", () => {
     expect(cut.src.y).toBeCloseTo(source.height * 0.25);
     expect(cut.src.width).toBeCloseTo(source.width * 0.5);
     expect(cut.src.height).toBeCloseTo(source.height * 0.5);
+  });
+
+  it("a mirrored picture cut on the left takes the source from its right", () => {
+    // The cutout bug: pushed past the left edge, a mirrored camera stood
+    // still while its box left. The rasterisers flip within the slice they
+    // are handed, so for a cut on the left the slice that is on screen after
+    // the flip is the source's *right* — reading it as "the left" handed them
+    // the part that was already off screen. Same numbers as `plan.rs`.
+    const source = { x: 0, y: 0, width: 1000, height: 500 };
+    const rect = { x: -300, y: 0, width: 1000, height: 500 };
+
+    const mirrored = cropToFrame(rect, source, LANDSCAPE, false, true);
+    expect(mirrored.rect).toEqual({ x: 0, y: 0, width: 700, height: 500 });
+    expect(mirrored.src.x).toBeCloseTo(0);
+    expect(mirrored.src.width).toBeCloseTo(700);
+
+    const plain = cropToFrame(rect, source, LANDSCAPE, false, false);
+    expect(plain.src.x).toBeCloseTo(300);
   });
 
   it("leaves a picture that fits, and a tilted one, exactly alone", () => {

@@ -285,7 +285,7 @@ impl Preview {
             } = self;
             let screen = reader.frame_at(at);
             compositor
-                .render(plan, screen, None, at)
+                .render(plan, screen, None, None, at)
                 .map_err(anyhow::Error::from)
                 .and_then(|frame| yuv.convert(&frame))
         };
@@ -477,7 +477,7 @@ fn check_pixels(source: Source) -> Result<()> {
     // A second in, so the recording has certainly produced a frame and the zoom
     // has not started — the picture is the plain inset composite.
     let at = source.duration.min(1_000_000_000);
-    let mut composited = compositor.render(&plan, reader.frame_at(at), None, at)?;
+    let mut composited = compositor.render(&plan, reader.frame_at(at), None, None, at)?;
     let mut converted = yuv.convert(&composited)?;
 
     // Spread across the frame: the gradient background at two corners, and two

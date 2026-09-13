@@ -42,6 +42,7 @@ function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
     width: 1280,
     height: 720,
     frameRate: 30,
+    matteUrl: null,
     ...overrides,
   };
 }

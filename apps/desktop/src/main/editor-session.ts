@@ -66,6 +66,9 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
       width: probe?.width ?? track.width ?? null,
       height: probe?.height ?? track.height ?? null,
       frameRate: probe?.frameRate ?? null,
+      // The name comes from the manifest rather than a constant, so a matte
+      // written under any name the recorder chooses is the one that plays.
+      matteUrl: track.matte ? mediaUrl(dir, track.matte.file_name) : null,
     };
   });
 

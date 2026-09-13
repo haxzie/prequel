@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { Playback, syncElement } from "./playback";
+import { Playback, followElement, syncElement } from "./playback";
 
 const S = 1_000_000_000;
 const MS = 1_000_000;
@@ -302,5 +302,58 @@ describe("correcting a paused element", () => {
     syncElement(camera, null, true);
 
     expect(camera.paused).toBe(true);
+  });
+});
+
+describe("a mask following its picture", () => {
+  function element(at: number, paused = true) {
+    const fake = {
+      currentTime: at,
+      paused,
+      playbackRate: 1,
+      play: () => Promise.resolve(),
+      pause: () => {
+        fake.paused = true;
+      },
+    };
+    return fake as unknown as HTMLMediaElement & { currentTime: number; paused: boolean };
+  }
+
+  it("seeks to the picture's frame while playing once it is a frame behind", () => {
+    // The matte bug: corrected against the clock like any other track, the
+    // mask could sit 200 ms from the picture while playing, which drew a soft
+    // silhouette hanging off the person wherever they had just moved.
+    const camera = element(5.0, false);
+    const mask = element(5.2, false);
+    followElement(mask, camera, true, true);
+
+    expect(mask.currentTime).toBe(5.0);
+  });
+
+  it("nudges rather than seeks when it is under a frame out", () => {
+    const camera = element(5.0, false);
+    const mask = element(5.02, false);
+    followElement(mask, camera, true, true);
+
+    expect(mask.currentTime).toBe(5.02);
+    expect(mask.playbackRate).toBeLessThan(1);
+  });
+
+  it("lands on exactly the picture's time when paused", () => {
+    // A scrub seeks the camera to a whole frame; the mask has to land on the
+    // same time, not within the tolerance the clock sync allows itself.
+    const camera = element(5.0);
+    const mask = element(5.01);
+    followElement(mask, camera, true, false);
+
+    expect(mask.currentTime).toBe(5.0);
+  });
+
+  it("pauses with a camera that has no frame for this moment", () => {
+    const camera = element(0, false);
+    const mask = element(0, false);
+    followElement(mask, camera, false, true);
+
+    expect(mask.paused).toBe(true);
   });
 });

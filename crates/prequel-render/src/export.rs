@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cidre::cv;
 use prequel_encode::{AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig};
-use prequel_session::{MediaTime, TrackKind};
+use prequel_session::{CAMERA_MATTE_FILE, MediaTime, TrackKind};
 
 use crate::compositor::Compositor;
 use crate::mixer::{self, CHANNELS, Gain};
@@ -258,11 +258,13 @@ fn run(
 
     let screen_path = request.session_dir.join(TrackKind::Screen.file_name());
     let camera_path = request.session_dir.join(TrackKind::Camera.file_name());
+    let matte_path = request.session_dir.join(CAMERA_MATTE_FILE);
 
     let frame_duration = timeline.frame_duration();
     let mut current_slot = usize::MAX;
     let mut screen: Option<VideoReader> = None;
     let mut camera: Option<VideoReader> = None;
+    let mut matte: Option<VideoReader> = None;
     let mut written = 0u64;
 
     let mut times = StageTimes::default();
@@ -286,6 +288,12 @@ fn run(
             current_slot = slot;
             screen = open_reader(&screen_path, slice, request.screen_offset);
             camera = open_reader(&camera_path, slice, request.camera_offset);
+            // The camera's offset, not one of its own: the matte was written
+            // at the camera's timestamps from the camera's origin, which is
+            // what lets the two readers land on the same frame. `open_reader`
+            // yields `None` for a file that is not there, so a recording made
+            // before the matte existed exports exactly as it always did.
+            matte = open_reader(&matte_path, slice, request.camera_offset);
         }
 
         let decoding = std::time::Instant::now();
@@ -302,6 +310,10 @@ fn run(
             .as_mut()
             .zip(file_time(source, request.camera_offset))
             .and_then(|(reader, at)| reader.frame_at(at));
+        let matte_frame = matte
+            .as_mut()
+            .zip(file_time(source, request.camera_offset))
+            .and_then(|(reader, at)| reader.frame_at(at));
 
         // Immediately before the render and never inside it — see
         // `load_captions`. Caption bitmaps are decoded on demand rather than
@@ -310,7 +322,8 @@ fn run(
         times.decode += decoding.elapsed();
 
         let rendering = std::time::Instant::now();
-        let composited = compositor.render(&slice.plan, screen_frame, camera_frame, source)?;
+        let composited =
+            compositor.render(&slice.plan, screen_frame, camera_frame, matte_frame, source)?;
         times.render += rendering.elapsed();
 
         let encoding = std::time::Instant::now();

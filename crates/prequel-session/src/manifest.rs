@@ -39,6 +39,33 @@ impl TrackKind {
     }
 }
 
+/// File name of the camera's person matte inside a session directory.
+///
+/// A sidecar of the camera track rather than a `TrackKind` of its own:
+/// kinds are enumerated by the timeline's lanes, the audio mixer, the probe
+/// and the export offsets, and every one of them would have to learn to skip
+/// it. The matte is written at the camera's own timestamps, so it has nothing
+/// to say about alignment that the camera track does not already say.
+pub const CAMERA_MATTE_FILE: &str = "camera-matte.mp4";
+
+/// The person matte recorded beside a camera track.
+///
+/// One grayscale frame per camera frame, luma being alpha, at whatever size
+/// the segmentation model produces — nothing lays out against `width` and
+/// `height`; both rasterisers sample it with the picture's normalised
+/// coordinates, so a size mismatch costs nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Matte {
+    pub file_name: String,
+    pub width: u32,
+    pub height: u32,
+    pub samples: u64,
+    /// Frames the camera has that the matte does not: skipped because the
+    /// segmenter was still busy, or refused by the encoder. The previous mask
+    /// stands in for each, so a small count is invisible.
+    pub dropped: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub kind: TrackKind,
@@ -56,6 +83,11 @@ pub struct Track {
     /// Samples the timing guard rejected. A non-zero count is not a failure,
     /// but a large one points at a struggling capture pipeline.
     pub dropped: u64,
+    /// Only ever set on the camera track. Defaulted so a manifest written
+    /// before the matte existed still parses — as a camera with no matte,
+    /// which is what it recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matte: Option<Matte>,
 }
 
 impl Track {
@@ -243,6 +275,24 @@ mod tests {
                     height: Some(2234),
                     samples: 600,
                     dropped: 0,
+                    matte: None,
+                },
+                Track {
+                    kind: TrackKind::Camera,
+                    file_name: TrackKind::Camera.file_name().to_owned(),
+                    start: 200_000_000,
+                    end: 10 * S,
+                    width: Some(1280),
+                    height: Some(720),
+                    samples: 294,
+                    dropped: 0,
+                    matte: Some(Matte {
+                        file_name: CAMERA_MATTE_FILE.to_owned(),
+                        width: 512,
+                        height: 288,
+                        samples: 290,
+                        dropped: 4,
+                    }),
                 },
                 Track {
                     kind: TrackKind::Microphone,
@@ -254,6 +304,7 @@ mod tests {
                     height: None,
                     samples: 470,
                     dropped: 2,
+                    matte: None,
                 },
             ],
             cursor_baked: false,
@@ -310,6 +361,24 @@ mod tests {
         // An audio track has no dimensions; they must not serialise as null.
         assert!(!json.contains("\"width\": null"));
         assert!(!json.contains("\"app_name\": \"\""));
+        // The matte belongs to the camera alone; the other tracks must not
+        // carry a null for it.
+        assert_eq!(json.matches("\"matte\"").count(), 1);
+    }
+
+    #[test]
+    fn a_track_without_a_matte_is_read_as_having_none() {
+        // Every recording written before the matte existed has a camera track
+        // with no such key. It has to open as a camera with no matte, not
+        // fail to open.
+        let mut value: serde_json::Value =
+            serde_json::from_str(&sample_manifest().to_json().unwrap()).unwrap();
+        for track in value["tracks"].as_array_mut().unwrap() {
+            track.as_object_mut().unwrap().remove("matte");
+        }
+
+        let parsed = Manifest::from_json(&value.to_string()).unwrap();
+        assert!(parsed.tracks.iter().all(|track| track.matte.is_none()));
     }
 
     #[test]
@@ -347,6 +416,7 @@ mod tests {
             TrackKind::SystemAudio,
         ];
         let mut names: Vec<_> = kinds.iter().map(|k| k.file_name()).collect();
+        names.push(CAMERA_MATTE_FILE);
         names.sort_unstable();
         let count = names.len();
         names.dedup();

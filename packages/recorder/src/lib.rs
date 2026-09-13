@@ -125,8 +125,8 @@ fn write_manifest(
     camera: Option<&camera::CameraSummary>,
 ) {
     use prequel_session::{
-        ClickSample, CursorSample, KeySpan, MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest,
-        SourceInfo, TrackKind, TypingSample,
+        CAMERA_MATTE_FILE, ClickSample, CursorSample, KeySpan, MANIFEST_FILE_NAME,
+        MANIFEST_VERSION, Manifest, Matte, SourceInfo, TrackKind, TypingSample,
     };
 
     // Only where there is one. A screen track in the manifest that names a file
@@ -145,14 +145,25 @@ fn write_manifest(
     }
 
     if let Some(camera) = camera.filter(|c| c.frames > 0) {
-        tracks.push(track(
+        let mut entry = track(
             TrackKind::Camera,
             camera.start,
             camera.start + camera.duration,
             Some((camera.width, camera.height)),
             camera.frames,
             camera.timing.dropped + camera.dropped_encoder + camera.dropped_late,
-        ));
+        );
+        // The matte rides on the camera track: it is the one thing that
+        // tells the editor the file exists, and the file name is carried
+        // here so no reader has to know the constant.
+        entry.matte = camera.matte.map(|matte| Matte {
+            file_name: CAMERA_MATTE_FILE.to_owned(),
+            width: matte.width,
+            height: matte.height,
+            samples: matte.frames,
+            dropped: matte.dropped,
+        });
+        tracks.push(entry);
     }
     if let Some(audio) = screen.and_then(|s| s.microphone) {
         tracks.push(track(
@@ -284,6 +295,7 @@ fn track(
         height: size.map(|(_, h)| h),
         samples,
         dropped,
+        matte: None,
     }
 }
 
@@ -309,6 +321,9 @@ fn to_camera_error(err: camera::Error) -> Error {
         camera::Error::SessionRejected { .. } => "CAMERA_SESSION_REJECTED",
         camera::Error::Output { .. } => "OUTPUT",
         camera::Error::Encode(_) => "ENCODE",
+        // Never surfaces here — the recorder logs it and carries on without
+        // a matte — but the match has to say so.
+        camera::Error::Matte(_) => "MATTE",
     };
     Error::new(Status::GenericFailure, format!("{code}: {err}"))
 }
@@ -593,6 +608,12 @@ pub struct RecordingResult {
     pub camera_start_ms: f64,
     pub camera_width: u32,
     pub camera_height: u32,
+    /// Person-matte frames written beside the camera. 0 when segmentation was
+    /// unavailable, in which case the manifest carries no matte and the editor
+    /// cannot offer to remove the background.
+    pub camera_matte_frames: i64,
+    /// Camera frames the matte is missing; the previous mask stands in.
+    pub camera_matte_dropped: i64,
     /// Why the camera track failed, if it did.
     ///
     /// Reported rather than thrown: the screen recording is already on disk and
@@ -848,6 +869,8 @@ impl Task for StopRecording {
             camera_start_ms: camera.map_or(0.0, |c| c.start as f64 / 1_000_000.0),
             camera_width: camera.map_or(0, |c| c.width),
             camera_height: camera.map_or(0, |c| c.height),
+            camera_matte_frames: camera.and_then(|c| c.matte).map_or(0, |m| m.frames as i64),
+            camera_matte_dropped: camera.and_then(|c| c.matte).map_or(0, |m| m.dropped as i64),
             camera_error: output.camera.err(),
         })
     }

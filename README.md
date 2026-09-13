@@ -149,6 +149,11 @@ The cost is that something has to record how the four line up in time, which is
 `session.json` — written by `prequel-session`, and the only place a track's
 late start exists.
 
+`camera-matte.mp4` sits beside the camera when it was recorded: the person
+mask, one grayscale frame per camera frame at the camera's own timestamps,
+described on the camera track in `session.json` rather than as a track of its
+own. It is what "Remove background" in the editor reads.
+
 ### Rust for capture and render, Electron for everything else
 
 Electron's `desktopCapturer` + `MediaRecorder` cannot hit the quality bar:

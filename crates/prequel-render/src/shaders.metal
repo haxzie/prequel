@@ -65,6 +65,9 @@ struct Uniforms {
     float adapt;
     // How opaque a still image is drawn, 0 to 1. Everything else passes 1.
     float alpha;
+    // Non-zero to multiply the picture by the person mask at texture 2. In
+    // the tail `alpha` opened, so nothing above it moves.
+    uint matte;
 };
 
 struct Vertex {
@@ -302,7 +305,12 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
                                    // under this quad. Only an adaptive caption
                                    // reads it; every other draw binds the same
                                    // texture as `image` and ignores it.
-                                   texture2d<float> backdrop [[texture(1)]]) {
+                                   texture2d<float> backdrop [[texture(1)]],
+                                   // The camera's person mask, luma being
+                                   // alpha. Only a camera drawn as a cutout
+                                   // reads it; every other draw binds a
+                                   // stand-in and ignores it.
+                                   texture2d<float> matte [[texture(2)]]) {
     // Declared here rather than bound: clamped so a sample a hair outside the
     // crop cannot wrap to the far edge of the frame, which shows as a seam.
     constexpr sampler smp(filter::linear, address::clamp_to_edge);
@@ -374,6 +382,14 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
             // applied first, so it flips the crop rather than moving it.
             uv = u.src.xy + uv * u.src.zw;
             sampled = sample_focused(image, smp, u, uv, in.screen);
+            // The mask is a separate, smaller stream sampled at the *same*
+            // uv as the picture, so mirror and crop reach it for free and its
+            // size need not match. Multiplied through every channel: the
+            // picture is premultiplied, and colour has to scale with alpha
+            // or the edge of the person glows.
+            if (u.matte != 0) {
+                sampled *= matte.sample(smp, uv).r;
+            }
         }
         // Recoloured against what is behind, for a look whose words stand on
         // the footage with nothing under them. The bitmap is white where it is

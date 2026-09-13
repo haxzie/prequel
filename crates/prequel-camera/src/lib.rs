@@ -10,9 +10,11 @@
 //! timeline and pausing one pauses both.
 
 mod devices;
+mod matte;
 mod recorder;
 
 pub use devices::{CameraDevice, list_cameras};
+pub use matte::{MatteSummary, MatteWorker, Segmenter, VisionSegmenter};
 pub use recorder::{
     CAMERA_FILE, CameraOptions, CameraRecorder, CameraSummary, DEFAULT_FPS, WarmCamera,
 };
@@ -35,6 +37,11 @@ pub enum Error {
 
     #[error("camera encoding failed: {0}")]
     Encode(String),
+
+    /// Never fatal to a recording: the camera carries on without a matte and
+    /// the reason is logged.
+    #[error("person matte failed: {0}")]
+    Matte(String),
 }
 
 impl From<prequel_encode::Error> for Error {

@@ -226,6 +226,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
                 exponent: 2.0,
             },
             mirror: false,
+            matte: false,
             motion: Vec::new(),
         }],
     };
@@ -284,6 +285,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
                 exponent: 2.0,
             },
             mirror: true,
+            matte: false,
         }],
     };
 
@@ -358,6 +360,7 @@ fn draws_an_image_background() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
         ],
@@ -553,6 +556,7 @@ fn swaps_the_pointer_image_partway_through() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -630,10 +634,18 @@ fn lays_the_pointer_on_a_tilted_picture() {
     let right = (OUT_W / 2) as f64 + 120.0;
     let middle = (OUT_H / 2) as f64;
     let quad = [
-        left, middle - 14.0, 1.25, // top-left, leaning away
-        right, middle - 26.0, 0.8, // top-right, nearer
-        left, middle + 14.0, 1.25, // bottom-left
-        right, middle + 26.0, 0.8, // bottom-right
+        left,
+        middle - 14.0,
+        1.25, // top-left, leaning away
+        right,
+        middle - 26.0,
+        0.8, // top-right, nearer
+        left,
+        middle + 14.0,
+        1.25, // bottom-left
+        right,
+        middle + 26.0,
+        0.8, // bottom-right
     ];
 
     let point = |at: i64| CursorPoint {
@@ -673,6 +685,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -779,6 +792,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -951,6 +965,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
@@ -1039,6 +1054,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
             PlanItem::Stroke {
@@ -1076,6 +1092,198 @@ fn draws_a_border_of_one_width_all_the_way_round() {
     near(frame.at(45, 45), (0, 0, 255), "outside the top-left corner");
     // And just inside it is border, the same as the straight edges above.
     near(frame.at(55, 55), (255, 0, 0), "inside the top-left corner");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A plan that draws the camera edge to edge over a red fill.
+fn camera_over_red(matte: bool) -> RenderPlan {
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "#ff0000".to_owned(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Camera,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 400.0,
+                    height: 200.0,
+                },
+                dst_rect: full,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte,
+                motion: Vec::new(),
+            },
+        ],
+    }
+}
+
+#[test]
+fn cuts_the_camera_to_its_matte() {
+    // The matte bug has two halves. One: the mask is a separate file at its
+    // own size — here half the camera's on each side — and has to land on
+    // the picture through the picture's coordinates, not its own. Two: the
+    // picture is premultiplied, so the mask has to scale colour with alpha,
+    // or the cut edge glows green over the red rather than vanishing into it.
+    let dir = scratch("prequel-pixels-matte");
+    record(
+        &dir,
+        "camera.mp4",
+        400,
+        200,
+        &solid_wide(400, 200, [0, 255, 0]),
+    );
+    // White where the person is (the left), black elsewhere.
+    record(
+        &dir,
+        "camera-matte.mp4",
+        200,
+        100,
+        &split_frame(200, 100, [255, 255, 255], [0, 0, 0]),
+    );
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![slice(camera_over_red(true))]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    near(
+        frame.at(40, 120),
+        (0, 255, 0),
+        "inside the mask, the camera shows",
+    );
+    near(
+        frame.at(280, 120),
+        (255, 0, 0),
+        "outside the mask, the background shows through",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ignores_the_matte_unless_the_plan_asks() {
+    // The file being there is not the decision; the plan is. Otherwise a
+    // recording with a matte could never be shown whole again.
+    let dir = scratch("prequel-pixels-matte-off");
+    record(
+        &dir,
+        "camera.mp4",
+        400,
+        200,
+        &solid_wide(400, 200, [0, 255, 0]),
+    );
+    record(
+        &dir,
+        "camera-matte.mp4",
+        200,
+        100,
+        &split_frame(200, 100, [255, 255, 255], [0, 0, 0]),
+    );
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![slice(camera_over_red(false))]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    near(frame.at(40, 120), (0, 255, 0), "left, un-masked");
+    near(frame.at(280, 120), (0, 255, 0), "right, un-masked");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn solid_wide(width: u32, height: u32, colour: [u8; 3]) -> arc::R<cv::PixelBuf> {
+    split_frame(width, height, colour, colour)
+}
+
+#[test]
+fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
+    // The cutout bug, at the pixel level: a mirrored camera pushed half off
+    // the left edge. Mirrored, the picture's right half — the part still on
+    // screen — shows the *left* half of the source, which is blue. The old
+    // crop handed the shader the source's right half instead, so the red
+    // stayed on screen and the person appeared to stand still while their
+    // box left the frame.
+    let dir = scratch("prequel-pixels-mirror-cut");
+    let source = split_frame(400, 200, [0, 0, 255], [255, 0, 0]);
+    record(&dir, "camera.mp4", 400, 200, &source);
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![PlanItem::Image {
+            source: PlanSource::Camera,
+            src_rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 400.0,
+                height: 200.0,
+            },
+            // Half of it off the left edge.
+            dst_rect: Rect {
+                x: -(OUT_W as f64),
+                y: 0.0,
+                width: OUT_W as f64 * 2.0,
+                height: OUT_H as f64,
+            },
+            shape: Shape {
+                radius: 0.0,
+                exponent: 2.0,
+            },
+            mirror: true,
+            matte: false,
+            motion: Vec::new(),
+        }],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    near(
+        frame.at(40, 120),
+        (0, 0, 255),
+        "left of the frame, from the source's left",
+    );
+    near(
+        frame.at(280, 120),
+        (0, 0, 255),
+        "right of the frame, still the source's left",
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

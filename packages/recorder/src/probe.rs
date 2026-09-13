@@ -50,6 +50,10 @@ impl Task for ProbeSession {
     type JsValue = Vec<TrackProbe>;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        // Tracks only. The camera's matte sidecar is deliberately not probed:
+        // nothing lays out against its size — both rasterisers sample it with
+        // the picture's normalised coordinates — and the `<video>` that plays
+        // it reports its own dimensions.
         const KINDS: [TrackKind; 4] = [
             TrackKind::Screen,
             TrackKind::Camera,

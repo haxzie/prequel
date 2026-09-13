@@ -281,6 +281,23 @@ impl VideoWriter {
     /// skipped. That is a normal outcome under load, not an error: dropping a
     /// frame keeps the recording live, whereas blocking would stall capture and
     /// lose more.
+    /// Opens the session at `pts` before any frame has been appended.
+    ///
+    /// For a file that has to share another file's origin. The camera's matte
+    /// may miss the first few camera frames while the segmenter warms up, and
+    /// a session opened at its own first frame would then start late: lined up
+    /// from zero against the camera, every mask would land early by exactly
+    /// that much. A no-op once the session is open.
+    pub fn start_session_at(&mut self, pts: MediaTime) {
+        if self.session_open {
+            return;
+        }
+        self.writer
+            .start_session_at_src_time(cm::Time::new(pts as i64, TIMESCALE));
+        self.session_open = true;
+        self.first_pts = Some(pts);
+    }
+
     pub fn append(&mut self, image: &cv::PixelBuf, pts: MediaTime) -> Result<bool> {
         let time = cm::Time::new(pts as i64, TIMESCALE);
 

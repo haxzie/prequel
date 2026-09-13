@@ -13,7 +13,7 @@ import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type TrackGain } from "./audio";
 import { writeTicker } from "../lib/ticker";
-import { Playback, syncElement } from "./playback";
+import { Playback, followElement, syncElement } from "./playback";
 import {
   hasJumped,
   place,
@@ -40,12 +40,21 @@ export const HEAD_LABEL_W = 54;
 /** Tracks that carry sound, and therefore need a gain of their own. */
 const AUDIO_KINDS: TrackKind[] = ["microphone", "system_audio"];
 
+/**
+ * What a media element can stand for: a track, or the camera's person matte.
+ *
+ * The matte is not a `TrackKind` — it is never a lane, never mixed, never
+ * probed — but it is a `<video>` the loop has to keep on the camera's clock,
+ * so it needs a key of its own in the same map.
+ */
+export type MediaKey = TrackKind | "camera_matte";
+
 export interface EditorPlayback {
   playback: Playback;
   playing: boolean;
   duration: MediaTime;
   /** Ref callback for a track's media element. */
-  register: (kind: TrackKind) => (element: HTMLMediaElement | null) => void;
+  register: (key: MediaKey) => (element: HTMLMediaElement | null) => void;
   /**
    * The live element for a track, or null.
    *
@@ -53,7 +62,7 @@ export interface EditorPlayback {
    * a video's contents change without React being told, so anything sampling
    * one has to reach for it rather than receive it as a prop.
    */
-  getElement: (kind: TrackKind) => HTMLVideoElement | null;
+  getElement: (key: MediaKey) => HTMLVideoElement | null;
   /** Attach to the element whose text should be the running timecode. */
   timecodeRef: (element: HTMLElement | null) => void;
   /**
@@ -132,7 +141,7 @@ export function useEditorPlayback(
   const playback = useMemo(() => new Playback(), []);
   const mixer = useMemo(() => new AudioMixer(), []);
 
-  const elements = useRef(new Map<TrackKind, HTMLMediaElement>());
+  const elements = useRef(new Map<MediaKey, HTMLMediaElement>());
   const timecode = useRef<HTMLElement | null>(null);
   const headTime = useRef<HTMLElement | null>(null);
   const playhead = useRef<HTMLElement | null>(null);
@@ -219,6 +228,17 @@ export function useEditorPlayback(
         syncElement(element, fileTime, playback.isPlaying, { seek: jumped });
       }
 
+      // The matte follows the camera *element* rather than the clock: it has
+      // to show the mask for the picture the camera is showing, and two
+      // elements corrected against the clock on their own can sit a quarter
+      // of a second apart while playing — see `followElement`. Never in
+      // `visible` — it is not a lane.
+      const matte = elements.current.get("camera_matte");
+      const cameraElement = elements.current.get("camera");
+      if (matte && cameraElement) {
+        followElement(matte, cameraElement, nowVisible.has("camera"), playback.isPlaying);
+      }
+
       // Only when it changes: this runs every frame, and a fresh Set each time
       // would re-render the preview sixty times a second.
       setVisible((current) =>
@@ -292,19 +312,19 @@ export function useEditorPlayback(
   }, [session, placed, duration, playback, tracks]);
 
   const register = useCallback(
-    (kind: TrackKind) => (element: HTMLMediaElement | null) => {
+    (key: MediaKey) => (element: HTMLMediaElement | null) => {
       if (!element) {
-        elements.current.delete(kind);
+        elements.current.delete(key);
         return;
       }
-      elements.current.set(kind, element);
-      if (AUDIO_KINDS.includes(kind)) mixer.connect(kind, element);
+      elements.current.set(key, element);
+      if (key !== "camera_matte" && AUDIO_KINDS.includes(key)) mixer.connect(key, element);
     },
     [mixer],
   );
 
   const getElement = useCallback(
-    (kind: TrackKind) => (elements.current.get(kind) as HTMLVideoElement | undefined) ?? null,
+    (key: MediaKey) => (elements.current.get(key) as HTMLVideoElement | undefined) ?? null,
     [],
   );
 

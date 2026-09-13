@@ -13,6 +13,7 @@ cidre = { workspace = true, features = [
   "av",       # AVCaptureSession, AVCaptureDevice
   "cv",       # the pixel buffers frames arrive in
   "cm",       # CMSampleBuffer and its timestamps
+  "vn",       # Vision's person segmentation — the OS's own model, nothing bundled
   "blocks",
   "async",
   "dispatch", # the delegate's callback queue

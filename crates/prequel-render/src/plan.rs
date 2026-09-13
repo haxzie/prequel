@@ -103,6 +103,12 @@ pub enum PlanItem {
         dst_rect: Rect,
         shape: Shape,
         mirror: bool,
+        /// Multiply the picture by the camera's person mask, when the
+        /// recording has one. Defaulted, so a plan written before the mask
+        /// existed still parses — and parses as un-masked, which is what it
+        /// drew.
+        #[serde(default)]
+        matte: bool,
     },
     Stroke {
         rect: Rect,
@@ -434,7 +440,19 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
 ///
 /// A tilted picture is left alone. It is positioned by four projected corners
 /// rather than by its rectangle, and a clipped projective quad is a polygon.
-pub fn crop_to_frame(rect: Rect, src: Rect, frame: Size, tilted: bool) -> (Rect, Rect) {
+///
+/// `mirror` says the picture is drawn flipped. The shader mirrors *within* the
+/// source rect it is handed, so a cut on the left of a mirrored picture has to
+/// come off the *right* of the source — otherwise the slice that survives is
+/// the one that was already off screen, and a person dragged past the edge
+/// stands still while their box leaves.
+pub fn crop_to_frame(
+    rect: Rect,
+    src: Rect,
+    frame: Size,
+    tilted: bool,
+    mirror: bool,
+) -> (Rect, Rect) {
     if tilted || rect.width <= 0.0 || rect.height <= 0.0 {
         return (rect, src);
     }
@@ -459,6 +477,9 @@ pub fn crop_to_frame(rect: Rect, src: Rect, frame: Size, tilted: bool) -> (Rect,
     // a rectangle means.
     let left = (x - rect.x) / rect.width;
     let top = (y - rect.y) / rect.height;
+    let shown_x = (right - x) / rect.width;
+    let shown_y = (bottom - y) / rect.height;
+    let from_left = if mirror { 1.0 - left - shown_x } else { left };
 
     (
         Rect {
@@ -468,10 +489,10 @@ pub fn crop_to_frame(rect: Rect, src: Rect, frame: Size, tilted: bool) -> (Rect,
             height: bottom - y,
         },
         Rect {
-            x: src.x + left * src.width,
+            x: src.x + from_left * src.width,
             y: src.y + top * src.height,
-            width: (right - x) / rect.width * src.width,
-            height: (bottom - y) / rect.height * src.height,
+            width: shown_x * src.width,
+            height: shown_y * src.height,
         },
     )
 }
@@ -1293,6 +1314,7 @@ mod tests {
             source,
             frame,
             false,
+            false,
         );
 
         assert_eq!(cut.x, 0.0);
@@ -1329,7 +1351,7 @@ mod tests {
         // Fully on screen: the common case, and it must not drift or every
         // unzoomed frame moves.
         assert_eq!(
-            crop_to_frame(inside, source, frame, false),
+            crop_to_frame(inside, source, frame, false, false),
             (inside, source)
         );
 
@@ -1341,7 +1363,53 @@ mod tests {
             width: 4000.0,
             height: 3000.0,
         };
-        assert_eq!(crop_to_frame(over, source, frame, true), (over, source));
+        assert_eq!(
+            crop_to_frame(over, source, frame, true, false),
+            (over, source)
+        );
+    }
+
+    #[test]
+    fn a_mirrored_picture_cut_on_the_left_takes_the_source_from_its_right() {
+        // Deliberately the same numbers as "a mirrored picture cut on the left
+        // takes the source from its right" in `layout.test.ts`. The shader
+        // flips within the slice it is handed, so the slice has to be the
+        // one that *is* on screen after the flip — the source's right, for a
+        // cut on the left. The old arithmetic handed it the left, which is
+        // the part off screen, and a person pushed past the edge stood still.
+        let frame = Size {
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let source = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 500.0,
+        };
+        // Spills 30% off the left edge.
+        let rect = Rect {
+            x: -300.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 500.0,
+        };
+
+        let (cut, crop) = crop_to_frame(rect, source, frame, false, true);
+        assert_eq!(cut.x, 0.0);
+        assert_eq!(cut.width, 700.0);
+        assert!(
+            (crop.x - 0.0).abs() < 1e-9,
+            "from the source's left: {crop:?}"
+        );
+        assert!((crop.width - 700.0).abs() < 1e-9);
+
+        // Un-mirrored, the same cut comes off the same side.
+        let (_, plain) = crop_to_frame(rect, source, frame, false, false);
+        assert!(
+            (plain.x - 300.0).abs() < 1e-9,
+            "from the source's right: {plain:?}"
+        );
     }
 
     #[test]
@@ -1510,6 +1578,33 @@ mod tests {
 
         match serde_json::from_str::<PlanItem>(json).unwrap() {
             PlanItem::Image { motion, .. } => assert!(motion.is_empty()),
+            other => panic!("parsed as {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_image_item_with_no_matte_flag_draws_the_whole_picture() {
+        // Every plan written before the camera had a matte, and every
+        // non-camera item since, carries no `matte`. They have to parse, and
+        // parse as un-masked — masking a screen against a mask it never had
+        // would draw nothing at all.
+        let json = r#"{
+            "kind": "image",
+            "source": "camera",
+            "srcRect": { "x": 0, "y": 0, "width": 100, "height": 100 },
+            "dstRect": { "x": 0, "y": 0, "width": 100, "height": 100 },
+            "shape": { "radius": 0, "exponent": 2 },
+            "mirror": true
+        }"#;
+
+        match serde_json::from_str::<PlanItem>(json).unwrap() {
+            PlanItem::Image { matte, .. } => assert!(!matte),
+            other => panic!("parsed as {other:?}"),
+        }
+
+        let json = json.replace("\"mirror\": true", "\"mirror\": true, \"matte\": true");
+        match serde_json::from_str::<PlanItem>(&json).unwrap() {
+            PlanItem::Image { matte, .. } => assert!(matte),
             other => panic!("parsed as {other:?}"),
         }
     }

@@ -229,6 +229,12 @@ export type PlanItem =
       /** Overrides `dstRect` and the shape's radius over time, for a zoom.
           Absent when nothing moves, which is every item but a zoomed screen. */
       motion?: RectKey[];
+      /**
+       * Multiply the picture by the camera's person matte, when the recording
+       * has one. Only ever set on the camera. Absent means no, so a plan from
+       * before the matte existed draws what it drew.
+       */
+      matte?: boolean;
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
@@ -621,6 +627,7 @@ export function buildRenderPlan(
           layout.cameraY,
           Math.max(1, layout.cameraWidth * unit * scale),
           Math.max(1, layout.cameraHeight * unit * scale),
+          cameraSlack(layout),
         ),
         slot.fit,
         layout.cameraZoom,
@@ -658,10 +665,29 @@ export function buildRenderPlan(
     // path rather than a special case that could drift from it. The radius is
     // measured off the shorter edge, or a wide camera's corners would grow with
     // its width and swallow the picture.
-    const shape: Shape = {
-      radius: radiusFor(layout, Math.min(dstRect.width, dstRect.height)),
-      exponent: SHAPE_EXPONENT[layout.cameraShape],
-    };
+    //
+    // Unless the background is cut away. Then the matte is the outline, and
+    // the shape, the shadow and the ring below all go with it: they dress a
+    // card edge, and a person standing on the wallpaper has none. A squircle
+    // shadow under a cutout is the shadow of a card that is not there.
+    //
+    // The box, the crop, the zoom and the offset are all kept: the person
+    // stands exactly where the bubble had them, at the size the bubble had
+    // them. What changes is that the rest of the source is drawn too —
+    // `uncropped` puts the whole picture down at the scale the crop drew it,
+    // so the shoulders the bubble's edge sliced off are back, spilling past
+    // the box and off the frame where they must. Letterboxing the source
+    // *inside* the box instead shrank the person to a strip across it.
+    const cutout = layout.cameraCutout;
+    const camera = sources.camera;
+    const whole: Rect = { x: 0, y: 0, width: camera.width, height: camera.height };
+    const shown = cutout ? uncropped(dstRect, srcRect, camera) : dstRect;
+    const shape: Shape = cutout
+      ? { radius: 0, exponent: 2 }
+      : {
+          radius: radiusFor(layout, Math.min(dstRect.width, dstRect.height)),
+          exponent: SHAPE_EXPONENT[layout.cameraShape],
+        };
 
     // A shadow measured against the camera itself rather than against the
     // frame, because every other distance here is a fraction of the frame's
@@ -672,7 +698,7 @@ export function buildRenderPlan(
     // own numbers.
     const against = slot.card ? unit : Math.min(dstRect.width, dstRect.height);
     const blur = background.shadowBlur * against;
-    const spread = (blur / 2) * SHADOW_SPREAD;
+    const spread = cutout ? 0 : (blur / 2) * SHADOW_SPREAD;
 
     /**
      * The camera's own ring, outside its own picture.
@@ -687,7 +713,7 @@ export function buildRenderPlan(
      * out of a zoom's way is `cameraKeys`' business, and it is not this number —
      * see the note on the ring's own track.
      */
-    const border = layout.cameraBorderWidth * unit;
+    const border = cutout ? 0 : layout.cameraBorderWidth * unit;
     const outer = grow(dstRect, border);
     const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
 
@@ -708,12 +734,14 @@ export function buildRenderPlan(
       shadow: shadowMotion,
     } = cameraKeys(
       (amount) => {
-        const rect = shrunk(amount);
+        const box = shrunk(amount);
         return {
-          rect,
+          // The shrunken box is the same crop at a smaller scale, so the
+          // whole source follows it through the same uncropping.
+          rect: cutout ? uncropped(box, srcRect, camera) : box,
           // Measured off the box it is on, not off the resting one: a bubble
           // whose corners stayed put as it shrank would change shape on the way.
-          radius: radiusFor(layout, Math.min(rect.width, rect.height)),
+          radius: cutout ? 0 : radiusFor(layout, Math.min(box.width, box.height)),
         };
       },
       spread,
@@ -721,7 +749,11 @@ export function buildRenderPlan(
       presence,
       enter
         ? {
-            from: leaving ? reshaped(leaving.dstRect, dstRect) : nothingAt(dstRect),
+            from: leaving
+              ? cutout
+                ? uncropped(reshaped(leaving.dstRect, dstRect), srcRect, camera)
+                : reshaped(leaving.dstRect, dstRect)
+              : nothingAt(shown),
             radius: leaving ? cameraRadius(reshaped(leaving.dstRect, dstRect), enter.from) : 0,
             start: enter.source.start,
             duration: moveWindow(enter),
@@ -731,7 +763,7 @@ export function buildRenderPlan(
 
     const moving = motion.length > 0 ? { motion } : {};
 
-    if (background.shadowOpacity > 0) {
+    if (!cutout && background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
         // Cast by the bubble *and* its ring, the same rule the screen follows:
@@ -752,11 +784,12 @@ export function buildRenderPlan(
     items.push({
       kind: "image",
       source: "camera",
-      srcRect,
-      dstRect,
+      srcRect: cutout ? whole : srcRect,
+      dstRect: shown,
       shape,
       mirror: layout.cameraMirror,
       ...moving,
+      ...(cutout ? { matte: true } : {}),
     });
 
     if (border > 0) {
@@ -792,16 +825,23 @@ export function buildRenderPlan(
     // past the end of the track, so what is drawn for the rest of the slice is
     // nothing either way, and a resting value that could ever draw would be a
     // bubble reappearing at the end of a clip that has no camera in it.
-    const gone = nothingAt(leaving.dstRect);
+    // Drawn under the settings it was leaving under, cutout included: a
+    // bubble that was a person on the wallpaper must not grow a card on its
+    // way out, and it leaves as the whole picture it was drawn as.
+    const wasCutout = enter.from.layout.cameraCutout;
+    const was = wasCutout
+      ? uncropped(leaving.dstRect, leaving.srcRect, sources.camera)
+      : leaving.dstRect;
+    const gone = nothingAt(was);
     const radius = cameraRadius(leaving.dstRect, enter.from);
     const against = leaving.card ? unit : Math.min(leaving.dstRect.width, leaving.dstRect.height);
     const blur = enter.from.background.shadowBlur * against;
-    const spread = (blur / 2) * SHADOW_SPREAD;
+    const spread = wasCutout ? 0 : (blur / 2) * SHADOW_SPREAD;
 
     // The ring the departing camera was wearing, from the settings it was drawn
     // under — `enter.from`, not this slice's. This arrangement has no camera at
     // all, so its own border width says nothing about the bubble on its way out.
-    const border = enter.from.layout.cameraBorderWidth * unit;
+    const border = wasCutout ? 0 : enter.from.layout.cameraBorderWidth * unit;
 
     // Nothing to shrink under a zoom here: this camera is on its way out, and
     // where it is going is nowhere.
@@ -810,7 +850,7 @@ export function buildRenderPlan(
       border: borderMotion,
       shadow: shadowMotion,
     } = cameraKeys(() => ({ rect: gone, radius: 0 }), spread, border, [], {
-      from: leaving.dstRect,
+      from: was,
       radius,
       start: enter.source.start,
       duration: moveWindow(enter),
@@ -822,7 +862,7 @@ export function buildRenderPlan(
         exponent: SHAPE_EXPONENT[enter.from.layout.cameraShape],
       };
 
-      if (enter.from.background.shadowOpacity > 0) {
+      if (!wasCutout && enter.from.background.shadowOpacity > 0) {
         items.push({
           kind: "shadow",
           rect: gone,
@@ -840,11 +880,14 @@ export function buildRenderPlan(
       items.push({
         kind: "image",
         source: "camera",
-        srcRect: leaving.srcRect,
+        srcRect: wasCutout
+          ? { x: 0, y: 0, width: sources.camera.width, height: sources.camera.height }
+          : leaving.srcRect,
         dstRect: gone,
         shape,
         mirror: enter.from.layout.cameraMirror,
         motion,
+        ...(wasCutout ? { matte: true } : {}),
       });
 
       if (border > 0) {
@@ -998,6 +1041,9 @@ function captionItems(
  * and the shape it is leaving is the previous slice's, not this one's.
  */
 function cameraRadius(rect: Rect, settings: SliceSettings): number {
+  // A cutout has no corners: the matte is the outline, and a radius would
+  // clip the person's head at the top of a tall frame.
+  if (settings.layout.cameraCutout) return 0;
   return radiusFor(settings.layout, Math.min(rect.width, rect.height));
 }
 
@@ -3782,15 +3828,51 @@ export function shapeAspect(shape: CameraShape, source?: Size | null): number {
  * to explain afterwards. A box wider than the frame degrades to flush left
  * rather than to a negative range.
  */
-function boxAt(frame: Size, cx: number, cy: number, width: number, height: number): Rect {
+function boxAt(
+  frame: Size,
+  cx: number,
+  cy: number,
+  width: number,
+  height: number,
+  /** How much of the box may leave the frame, as a fraction of it. */
+  slack = 0,
+): Rect {
+  const giveX = width * slack;
+  const giveY = height * slack;
   return {
-    x: clamp(cx * frame.width, width / 2, Math.max(width / 2, frame.width - width / 2)) - width / 2,
+    x:
+      clamp(
+        cx * frame.width,
+        width / 2 - giveX,
+        Math.max(width / 2 - giveX, frame.width - width / 2 + giveX),
+      ) -
+      width / 2,
     y:
-      clamp(cy * frame.height, height / 2, Math.max(height / 2, frame.height - height / 2)) -
+      clamp(
+        cy * frame.height,
+        height / 2 - giveY,
+        Math.max(height / 2 - giveY, frame.height - height / 2 + giveY),
+      ) -
       height / 2,
     width,
     height,
   };
+}
+
+/**
+ * How far a cutout's box may be pushed off the frame: half of it, so the
+ * centre never leaves and the person cannot be lost entirely.
+ *
+ * A bubble stays wholly inside, because half a card hanging off the edge is
+ * half a card. A cutout has no edge — the person's outline is the matte — so
+ * running them into a corner with the head half out of shot is a shot, not a
+ * mistake, and the slack is what makes it reachable by dragging.
+ */
+const CUTOUT_SLACK = 0.5;
+
+/** The slack the camera's box gets under these settings. */
+function cameraSlack(layout: LayoutSettings): number {
+  return layout.cameraCutout ? CUTOUT_SLACK : 0;
 }
 
 /**
@@ -3942,6 +4024,7 @@ export function layoutBoxes(
       layout.cameraY,
       Math.max(1, layout.cameraWidth * unit),
       Math.max(1, layout.cameraHeight * unit),
+      cameraSlack(layout),
     ),
     fit: "cover",
     card: !cameraFloats(layout),
@@ -4451,6 +4534,26 @@ function toPaint(background: Background, blur: number): Paint {
 }
 
 /** A rectangle grown outwards on every edge. */
+/**
+ * The whole source, at the scale a crop of it was drawn at.
+ *
+ * `box` shows `crop` — the bubble's window onto the camera. This is the
+ * rectangle the *entire* picture occupies at that same scale, so the pixels
+ * inside the box land exactly where they did and everything the crop left out
+ * spills past it. It is how a cutout keeps the bubble's framing while showing
+ * the shoulders the bubble's edge cut off; it can and should run off the
+ * frame, and the rasterisers cut it there.
+ */
+function uncropped(box: Rect, crop: Rect, source: Size): Rect {
+  const scale = crop.width > 0 ? box.width / crop.width : 1;
+  return {
+    x: box.x - crop.x * scale,
+    y: box.y - crop.y * scale,
+    width: source.width * scale,
+    height: source.height * scale,
+  };
+}
+
 function grow(rect: Rect, by: number): Rect {
   return {
     x: rect.x - by,
@@ -4488,6 +4591,14 @@ export function cropToFrame(
   src: Rect,
   frame: Size,
   tilted: boolean,
+  /**
+   * Whether the picture is drawn flipped. The rasterisers mirror *within* the
+   * source rect they are handed, so a cut on the left of a mirrored picture
+   * has to come off the *right* of the source — otherwise the slice that
+   * survives is the one that was already off screen, and a person dragged
+   * past the edge stands still while their box leaves.
+   */
+  mirror = false,
 ): { rect: Rect; src: Rect } {
   if (tilted || rect.width <= 0 || rect.height <= 0) return { rect, src };
 
@@ -4516,14 +4627,16 @@ export function cropToFrame(
   // same side of the other.
   const left = (x - rect.x) / rect.width;
   const top = (y - rect.y) / rect.height;
+  const shownX = (right - x) / rect.width;
+  const shownY = (bottom - y) / rect.height;
 
   return {
     rect: { x, y, width: right - x, height: bottom - y },
     src: {
-      x: src.x + left * src.width,
+      x: src.x + (mirror ? 1 - left - shownX : left) * src.width,
       y: src.y + top * src.height,
-      width: ((right - x) / rect.width) * src.width,
-      height: ((bottom - y) / rect.height) * src.height,
+      width: shownX * src.width,
+      height: shownY * src.height,
     },
   };
 }

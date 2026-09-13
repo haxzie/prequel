@@ -50,6 +50,30 @@ describe("parseManifest", () => {
     expect(parseManifest(JSON.stringify(sample()))).toEqual(sample());
   });
 
+  it("carries the camera's matte when the recorder wrote one, and not otherwise", () => {
+    // Every recording made before the matte existed has a camera track with no
+    // such key. It has to open as a camera with no matte, not refuse to open —
+    // and one that has it must keep the file name, which is the only thing the
+    // editor uses to find the file.
+    expect(findTrack(parseManifest(JSON.stringify(sample())), "camera")!.matte).toBeUndefined();
+
+    const matted = sample();
+    matted.tracks[1]!.matte = {
+      file_name: "camera-matte.mp4",
+      width: 512,
+      height: 288,
+      samples: 290,
+      dropped: 2,
+    };
+    expect(findTrack(parseManifest(JSON.stringify(matted)), "camera")!.matte).toEqual({
+      file_name: "camera-matte.mp4",
+      width: 512,
+      height: 288,
+      samples: 290,
+      dropped: 2,
+    });
+  });
+
   it("preserves a late track's start offset", () => {
     // The whole reason the manifest exists: a track that started late must not
     // silently be treated as starting at zero.

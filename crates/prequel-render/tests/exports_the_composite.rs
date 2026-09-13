@@ -153,6 +153,7 @@ fn plan() -> RenderPlan {
                     exponent: 2.0,
                 },
                 mirror: false,
+                matte: false,
                 motion: Vec::new(),
             },
         ],

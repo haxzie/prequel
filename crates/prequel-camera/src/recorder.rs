@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex};
 use cidre::av::capture::VideoDataOutputSampleBufDelegate as _;
 use cidre::{arc, av, cm, cv, define_obj_type, dispatch, ns, objc};
 use prequel_encode::{VideoCodec, VideoWriter, VideoWriterConfig, host_nanos};
-use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
+use prequel_session::{CAMERA_MATTE_FILE, SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
+use crate::matte::{MatteSummary, MatteWorker, VisionSegmenter};
 use crate::{Error, Result};
 
 /// The camera track's file name inside a session directory.
@@ -77,11 +78,22 @@ pub struct CameraSummary {
     /// Frames AVFoundation discarded before we ever saw them, because the
     /// delegate queue was still busy with the previous one.
     pub dropped_late: u64,
+    /// The person matte written beside the track, when segmentation was
+    /// available. `None` is not a failure: the camera recorded as it always
+    /// has, and the editor simply cannot offer to remove its background.
+    pub matte: Option<MatteSummary>,
 }
 
 /// Shared between the capture callback and the controlling thread.
 struct Inner {
     writer: Option<VideoWriter>,
+    /// Segments every frame the encoder took, on its own thread.
+    ///
+    /// Always on, with no preference: removing the background is an *edit*,
+    /// decided in the editor, and a matte cannot be recovered from the
+    /// finished file without decoding all of it again — which is the one wait
+    /// nobody should be asked for. Taken out once the worker gives up.
+    matte: Option<MatteWorker>,
     /// Deferred until the first frame: the session preset is a request, and the
     /// device is free to hand back a different size.
     path: PathBuf,
@@ -123,10 +135,26 @@ impl Inner {
             return;
         }
 
-        if let Some(writer) = self.writer.as_mut()
-            && let Err(e) = writer.append(image, pts)
+        let appended = match self.writer.as_mut().map(|writer| writer.append(image, pts)) {
+            Some(Ok(appended)) => appended,
+            Some(Err(e)) => {
+                self.failure = Some(e.to_string());
+                return;
+            }
+            None => return,
+        };
+
+        // Only a frame the encoder took gets a mask, so every matte
+        // timestamp is a camera timestamp: the two files are read from zero
+        // against the same origin, and a mask for a frame that is not in the
+        // camera file would land on its neighbour instead. `offer` never
+        // waits — see `MatteWorker` for why a skipped mask is the right
+        // trade.
+        if appended
+            && let Some(worker) = self.matte.as_mut()
+            && !worker.offer(image, pts)
         {
-            self.failure = Some(e.to_string());
+            self.matte = None;
         }
     }
 
@@ -365,8 +393,19 @@ impl CameraRecorder {
             reason: e.to_string(),
         })?;
 
+        let matte = match MatteWorker::spawn(options.output.join(CAMERA_MATTE_FILE), || {
+            Box::new(VisionSegmenter::new())
+        }) {
+            Ok(worker) => Some(worker),
+            Err(e) => {
+                tracing::warn!("{e}; the camera records without a matte");
+                None
+            }
+        };
+
         let state = Arc::new(Mutex::new(Inner {
             writer: None,
+            matte,
             path: options.path(),
             codec: options.codec,
             clock,
@@ -405,9 +444,29 @@ impl CameraRecorder {
             .lock()
             .map_err(|_| Error::Encode("camera state was poisoned".to_owned()))?;
 
+        // Before the camera's own writer, and on every path out of here: the
+        // worker owns a thread that only ends when told, and a matte that is
+        // finished after the summary is built is a file the manifest does not
+        // mention.
+        let matte = inner.matte.take().and_then(MatteWorker::stop);
+        if let Some(matte) = &matte {
+            tracing::info!(
+                frames = matte.frames,
+                dropped = matte.dropped,
+                width = matte.width,
+                height = matte.height,
+                "camera matte written"
+            );
+        }
+
         if let Some(failure) = inner.failure.take() {
             if let Some(writer) = inner.writer.take() {
                 writer.cancel();
+            }
+            // The camera file is being thrown away; a matte with nothing to
+            // mask would otherwise sit in the session directory unmentioned.
+            if matte.is_some() {
+                let _ = std::fs::remove_file(inner.path.with_file_name(CAMERA_MATTE_FILE));
             }
             return Err(Error::Encode(failure));
         }
@@ -424,6 +483,7 @@ impl CameraRecorder {
                 timing: inner.timeline.stats(),
                 dropped_encoder: 0,
                 dropped_late: inner.dropped_late,
+                matte: None,
             });
         };
 
@@ -440,6 +500,7 @@ impl CameraRecorder {
             timing: inner.timeline.stats(),
             dropped_encoder: summary.dropped_not_ready,
             dropped_late: inner.dropped_late,
+            matte,
         })
     }
 }

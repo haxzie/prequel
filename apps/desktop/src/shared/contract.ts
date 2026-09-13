@@ -1180,6 +1180,13 @@ export interface TrackMedia {
   width: number | null;
   height: number | null;
   frameRate: number | null;
+  /**
+   * A `prequel-media://` URL for the camera's person matte, a sidecar of the
+   * camera track. `null` on every other track, and on a camera recorded
+   * before the matte existed. It shares this track's `offset`: the matte was
+   * written at the camera's timestamps from the camera's origin.
+   */
+  matteUrl: string | null;
 }
 
 /**

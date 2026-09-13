@@ -96,8 +96,23 @@ struct Uniforms {
     /// 4 rather than 16, so it will not add that itself. Hence the padding
     /// below, written out for the reason `_align` above is.
     alpha: f32,
+    /// Non-zero to multiply the sampled picture by the matte at slot 2.
+    ///
+    /// The second field to use the tail `alpha` opened: both sides are still
+    /// 240, and nothing above it moves. Only the camera ever sets it.
+    matte: u32,
     /// Padding to 240, which is where MSL puts the end of this struct.
-    _tail: [f32; 3],
+    _tail: [f32; 2],
+}
+
+/// The video frames one output frame is drawn from.
+#[derive(Clone, Copy)]
+struct Sources<'a> {
+    screen: Option<&'a cv::PixelBuf>,
+    camera: Option<&'a cv::PixelBuf>,
+    /// Whether a person mask is bound at slot 2 this frame. An item that asks
+    /// for one without it draws un-masked, as the preview does.
+    has_matte: bool,
 }
 
 const MODE_FILL: u32 = 0;
@@ -300,6 +315,9 @@ impl Compositor {
         plan: &RenderPlan,
         screen: Option<&cv::PixelBuf>,
         camera: Option<&cv::PixelBuf>,
+        // The camera's person mask for this moment, when the recording has
+        // one and the plan asks for it.
+        matte: Option<&cv::PixelBuf>,
         // Source time, for the one item in a plan that moves.
         at: MediaTime,
     ) -> Result<arc::R<cv::PixelBuf>> {
@@ -311,6 +329,16 @@ impl Compositor {
         // Held until after the command buffer completes: the texture is only
         // valid while its wrapper is alive, and this one is being drawn into.
         let target = self.texture_for(&output, None)?;
+        // Wrapped once for the frame rather than per item, and held for the
+        // same reason as `target`.
+        let matte = matte
+            .map(|buffer| self.texture_for(buffer, None))
+            .transpose()?;
+        let sources = Sources {
+            screen,
+            camera,
+            has_matte: matte.is_some(),
+        };
 
         let descriptor = mtl::RenderPassDesc::new();
         let attachments = descriptor.color_attaches();
@@ -375,7 +403,7 @@ impl Compositor {
             // frame for this moment — before the camera opened, say — and the
             // item is skipped rather than drawn from nothing.
             let (uniforms, texture) =
-                match self.uniforms_for(item, frame, screen, camera, at, &mut alive)? {
+                match self.uniforms_for(item, frame, &sources, at, &mut alive)? {
                     Some(pair) => pair,
                     None => continue,
                 };
@@ -396,6 +424,12 @@ impl Compositor {
             // leaving slot 1 empty is a validation error rather than an unused
             // binding. Only `adapt` decides whether it is sampled.
             encoder.set_fragment_texture_at(self.backdrop.as_deref().or(texture), 1);
+            // Slot 2 likewise: only `matte` in the uniforms decides whether
+            // it is sampled, and a frame with no matte binds the picture.
+            encoder.set_fragment_texture_at(
+                matte.as_ref().map(|held| held.texture.as_ref()).or(texture),
+                2,
+            );
 
             encoder.draw_primitives(mtl::Primitive::TriangleStrip, 0, 4);
         }
@@ -424,6 +458,7 @@ impl Compositor {
         // before dropping what it had in hand. Three lifetime rules, for 0.8%.
         cmd.wait_until_completed();
         drop(alive);
+        drop(matte);
         drop(target);
 
         Ok(output)
@@ -434,11 +469,15 @@ impl Compositor {
         &'a self,
         item: &PlanItem,
         frame: [f32; 2],
-        screen: Option<&cv::PixelBuf>,
-        camera: Option<&cv::PixelBuf>,
+        sources: &Sources<'_>,
         at: MediaTime,
         alive: &'a mut Vec<Held>,
     ) -> Result<Option<(Uniforms, Option<&'a mtl::Texture>)>> {
+        let Sources {
+            screen,
+            camera,
+            has_matte,
+        } = *sources;
         let base = Uniforms {
             quad: [[0.0; 4]; 4],
             rect: [0.0; 4],
@@ -452,7 +491,9 @@ impl Compositor {
             // Opaque unless a watermark says otherwise — the one item that
             // draws a picture at less than its own alpha.
             alpha: 1.0,
-            _tail: [0.0; 3],
+            // Un-masked unless a camera item asks otherwise.
+            matte: 0,
+            _tail: [0.0; 2],
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -536,8 +577,7 @@ impl Compositor {
                                     cover(rect, held.texture.width(), held.texture.height()),
                                     rect,
                                     held.texture.width(),
-                                ))
-                                as f32,
+                                )) as f32,
                             ..base
                         },
                         // Already held by `self.images`, so it needs no entry
@@ -584,6 +624,7 @@ impl Compositor {
                 dst_rect,
                 shape,
                 mirror,
+                matte,
             } => {
                 let buffer = match source {
                     PlanSource::Screen => screen,
@@ -607,6 +648,7 @@ impl Compositor {
                         height: frame[1] as f64,
                     },
                     !now.quad.is_empty(),
+                    *mirror,
                 );
 
                 Some((
@@ -630,6 +672,11 @@ impl Compositor {
                         shape: [now.radius as f32, shape.exponent as f32],
                         mode: MODE_IMAGE,
                         mirror: u32::from(*mirror),
+                        // The camera's, never the screen's: the mask at slot
+                        // 2 is the person in front of the camera.
+                        matte: u32::from(
+                            *matte && has_matte && matches!(source, PlanSource::Camera),
+                        ),
                         ..base
                     },
                     Some(alive.last().unwrap().texture.as_ref()),
@@ -1073,6 +1120,8 @@ mod tests {
         // it already carried. MSL rounds to the next 16, so both sides are 240
         // and the tail is written out here because Rust would not add it.
         assert_eq!(offset_of!(Uniforms, alpha), 224);
+        // In the tail `alpha` opened, so the size is unchanged.
+        assert_eq!(offset_of!(Uniforms, matte), 228);
         assert_eq!(align_of::<Uniforms>(), 4);
         assert_eq!(size_of::<Uniforms>(), 240);
     }

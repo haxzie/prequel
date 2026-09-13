@@ -33,6 +33,31 @@ export const TRACK_FILE_NAMES: Record<TrackKind, string> = {
   system_audio: "system.m4a",
 };
 
+/**
+ * The camera's person matte, recorded beside `camera.mp4`.
+ *
+ * Written at record time by the camera pipeline: one grayscale frame per
+ * camera frame, luma being alpha, at whatever size the segmentation model
+ * works in. Nothing lays out against `width` and `height` — both rasterisers
+ * sample the mask with the picture's own normalised coordinates, which is why
+ * the size need not match the camera's.
+ */
+export interface Matte {
+  file_name: string;
+  width: number;
+  height: number;
+  samples: number;
+  /** Camera frames with no mask of their own; the previous mask stands in. */
+  dropped: number;
+}
+
+/**
+ * Where the camera pipeline writes the matte. Only the fake recorder writes
+ * with this name — every reader takes `Track.matte.file_name` from the
+ * manifest, so the constant on the Rust side is the one that matters.
+ */
+export const CAMERA_MATTE_FILE_NAME = "camera-matte.mp4";
+
 export interface Track {
   kind: TrackKind;
   file_name: string;
@@ -52,6 +77,12 @@ export interface Track {
   /** Samples the timing guard rejected. A large count points at a struggling
       capture pipeline, but is not itself a failure. */
   dropped: number;
+  /**
+   * Only ever on the camera track, and only when segmentation was available
+   * while recording. Absent on every recording made before it existed — a
+   * camera with no matte, which is what those recorded.
+   */
+  matte?: Matte;
 }
 
 export interface SourceInfo {

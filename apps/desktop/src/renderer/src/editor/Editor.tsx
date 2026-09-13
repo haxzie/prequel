@@ -51,6 +51,7 @@ import {
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime } from "./timeline";
 import { useEditorPlayback } from "./useEditorPlayback";
+import type { MediaKey } from "./useEditorPlayback";
 import { useExport } from "./useExport";
 import { useFilmstrip } from "./useFilmstrip";
 import { useLicence } from "../hooks/useLicence";
@@ -102,9 +103,21 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * Reset with the recording, not accumulated: a second recording's elements
    * are new and have decoded nothing.
    */
-  const [decoded, setDecoded] = useState<Set<TrackKind>>(new Set());
+  const [decoded, setDecoded] = useState<Set<MediaKey>>(new Set());
 
   useEffect(() => setDecoded(new Set()), [session.dir]);
+
+  const markDecoded = useCallback((key: MediaKey) => {
+    setDecoded((current) => (current.has(key) ? current : new Set(current).add(key)));
+  }, []);
+
+  /** The camera's person matte, or null on a recording made without one. */
+  const matteUrl = useMemo(
+    () => session.media.find((track) => track.kind === "camera")?.matteUrl ?? null,
+    [session],
+  );
+  /** Whether the camera came with a person matte — the cutout needs one. */
+  const cameraMatte = matteUrl !== null;
   // Shown by default: the panel is where the editing happens, and an editor
   // that opens with its controls put away is a puzzle.
   const [panelOpen, setPanelOpen] = useState(true);
@@ -222,9 +235,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       (track) => track.kind === "screen" || track.kind === "camera",
     );
     if (!videos.every((track) => decoded.has(track.kind))) return false;
+    // The matte too, when there is one: revealed before the mask has decoded,
+    // a cutout shows one frame of the person as a bare rectangle.
+    if (matteUrl && !decoded.has("camera_matte")) return false;
 
     return imagePaths(state.project, CURSOR_FILES).every((path) => images.has(path));
-  }, [session.media, decoded, state.project, images]);
+  }, [session.media, matteUrl, decoded, state.project, images]);
 
   /**
    * What the slice under the playhead is arriving from.
@@ -387,10 +403,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
         }
       }
 
+      // A look saved from a take with a matte, applied to one without, would
+      // ask for a cutout this recording cannot supply and draw the camera as a
+      // bare rectangle. Everything else about the look still applies.
+      if (ready.layout.cameraCutout && !cameraMatte) {
+        ready = { ...ready, layout: { ...ready.layout, cameraCutout: false } };
+      }
+
       if (stale()) return;
       dispatch({ type: "applyPreset", preset: ready });
     },
-    [session.dir],
+    [session.dir, cameraMatte],
   );
 
   /**
@@ -803,6 +826,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               pendingBackground={pendingBackground}
               frame={state.project.frame}
               cameraSource={cameraSource}
+              cameraMatte={cameraMatte}
               tab={panelTab}
               onTab={setPanelTab}
               presets={{
@@ -955,11 +979,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // this moment, and it says so before there are any pixels to
               // draw. Compositing then paints a background with nothing on it,
               // which is the flash this reports away.
-              onLoadedData={() => {
-                setDecoded((current) =>
-                  current.has(track.kind) ? current : new Set(current).add(track.kind),
-                );
-              }}
+              onLoadedData={() => markDecoded(track.kind)}
             />
           ) : (
             <audio
@@ -970,6 +990,23 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               preload="auto"
             />
           ),
+        )}
+        {matteUrl && (
+          <video
+            key="camera_matte"
+            ref={media.register("camera_matte")}
+            src={matteUrl}
+            crossOrigin="anonymous"
+            muted
+            playsInline
+            preload="auto"
+            onLoadedData={() => markDecoded("camera_matte")}
+            // Counted as decoded on failure as well: a sidecar that will not
+            // open must not hold the whole editor behind the loading screen.
+            // The camera then draws whole, which is what the preview does for
+            // any matte that is not there.
+            onError={() => markDecoded("camera_matte")}
+          />
         )}
       </div>
 

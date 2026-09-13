@@ -41,6 +41,12 @@ export type Images = Map<string, CanvasImageSource>;
 export interface Sources {
   screen: HTMLVideoElement | null;
   camera: HTMLVideoElement | null;
+  /**
+   * The camera's person matte, when the recording has one and it is ready.
+   * Sampled only where the plan asks for it — a matte the plan does not name
+   * is a file, not a decision.
+   */
+  cameraMatte: HTMLVideoElement | null;
 }
 
 export interface Backing {
@@ -156,6 +162,11 @@ uniform sampler2D u_backdrop;
 uniform vec4 u_onDark;
 uniform vec4 u_onLight;
 uniform float u_adapt;
+// The camera's person mask, luma being alpha, and whether to apply it. Only a
+// camera drawn as a cutout sets \`u_useMatte\`; every other draw leaves the
+// sampler pointing wherever it was and never reads it.
+uniform sampler2D u_matte;
+uniform int u_useMatte;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -393,6 +404,12 @@ void main() {
       // Mirroring first, so it flips the crop rather than moving it.
       uv = u_src.xy + uv * u_src.zw;
       sampled = sampleFocused(uv);
+      // The mask is a separate, smaller stream sampled at the *same* uv as the
+      // picture, so mirror and crop reach it for free and its size need not
+      // match. Multiplied through every channel: the picture is premultiplied,
+      // and colour has to scale with alpha or the edge of the person glows.
+      // Mirrors the Metal side in shaders.metal.
+      if (u_useMatte != 0) sampled *= texture(u_matte, uv).r;
     }
     // Recoloured against what is behind, for a look whose words stand on the
     // footage with nothing under them. The bitmap is white where it is opaque,
@@ -447,6 +464,8 @@ interface Program {
   vignette: WebGLUniformLocation | null;
   texel: WebGLUniformLocation | null;
   alpha: WebGLUniformLocation | null;
+  matte: WebGLUniformLocation | null;
+  useMatte: WebGLUniformLocation | null;
 }
 
 export class WebGlCompositor {
@@ -632,6 +651,12 @@ export class WebGlCompositor {
         // opened, and holding its first one would misrepresent the take.
         if (!source) break;
 
+        // The mask goes up first, on its own unit, so the picture's upload
+        // below leaves unit 0 — the one every draw samples — bound to the
+        // picture. Only the camera has one, and only when the plan asks.
+        const matte = item.matte === true && item.source === "camera" ? sources.cameraMatte : null;
+        const masked = matte !== null && this.upload(gl, "camera_matte", matte, true, 2) !== null;
+
         const texture = this.upload(gl, item.source, source, true);
         if (!texture) break;
 
@@ -639,7 +664,13 @@ export class WebGlCompositor {
         // Cut to the frame, with the source cropped to match, so a zoom that
         // scales the picture past every edge still draws its rounded corners.
         // The same arithmetic the exporter runs — see `cropToFrame`.
-        const cut = cropToFrame(moment.rect, item.srcRect, frame, Boolean(moment.quad));
+        const cut = cropToFrame(
+          moment.rect,
+          item.srcRect,
+          frame,
+          Boolean(moment.quad),
+          item.mirror,
+        );
         const { shape, quad, focus, vignette } = moment;
         const rect = cut.rect;
         const src = normalised(cut.src, source.videoWidth, source.videoHeight);
@@ -656,6 +687,7 @@ export class WebGlCompositor {
           mode: MODE_IMAGE,
           src,
           mirror: item.mirror,
+          matte: masked,
         });
         drawQuad(gl);
         break;
@@ -923,6 +955,9 @@ export class WebGlCompositor {
     key: string,
     image: CanvasImageSource,
     live: boolean,
+    // Unit 0 for the picture every draw samples; the camera's matte takes 2,
+    // beside the backdrop on 1, so binding it does not unbind the picture.
+    unit = 0,
   ): WebGLTexture | null {
     // Deleted before it is set so the key moves to the end: `Map.set` on a key
     // that is already there keeps its original position, which would make the
@@ -939,7 +974,7 @@ export class WebGlCompositor {
       this.textures.set(key, texture);
     }
 
-    gl.activeTexture(gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, texture);
 
     if (fresh) {
@@ -992,6 +1027,8 @@ export class WebGlCompositor {
       if (!live) this.uploaded.add(image);
     }
 
+    // Left on unit 0, which the rest of this file assumes is the active one.
+    if (unit !== 0) gl.activeTexture(gl.TEXTURE0);
     return texture;
   }
 }
@@ -1048,6 +1085,8 @@ interface Draw {
   soften?: number;
   /** Two colours to choose between by what has already been drawn under it. */
   tint?: { onDark: string; onLight: string };
+  /** Multiply by the person mask on texture unit 2. Only the camera sets it. */
+  matte?: boolean;
 }
 
 function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
@@ -1056,6 +1095,11 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   gl.uniform1i(p.mode, draw.mode);
   gl.uniform1f(p.weight, draw.weight ?? 0);
   gl.uniform1i(p.mirror, draw.mirror ? 1 : 0);
+  // The sampler is pointed at its unit every draw rather than once at link:
+  // it costs one integer, and it cannot then be forgotten by a later change
+  // to how the program is built.
+  gl.uniform1i(p.matte, 2);
+  gl.uniform1i(p.useMatte, draw.matte ? 1 : 0);
 
   const src = draw.src ?? [0, 0, 1, 1];
   gl.uniform4f(p.src, src[0], src[1], src[2], src[3]);
@@ -1241,6 +1285,8 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     vignette: at("u_vignette"),
     texel: at("u_texel"),
     alpha: at("u_alpha"),
+    matte: at("u_matte"),
+    useMatte: at("u_useMatte"),
   };
 }
 

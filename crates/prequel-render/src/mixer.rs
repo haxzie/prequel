@@ -57,7 +57,6 @@ pub fn frames_for(duration: MediaTime, sample_rate: f64) -> usize {
     ((duration as f64 / 1_000_000_000.0) * sample_rate).round() as usize
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +161,9 @@ mod tests {
         // slice slides earlier and the sound drifts off the picture. The mix is
         // built by filling `frames_for` samples with zeroes and summing whatever
         // decodes into them, so this is the arithmetic that keeps it in step.
-        assert_eq!(frames_for(1_000_000_000, 48_000.0) * CHANNELS, 48_000 * CHANNELS);
+        assert_eq!(
+            frames_for(1_000_000_000, 48_000.0) * CHANNELS,
+            48_000 * CHANNELS
+        );
     }
 }

@@ -287,6 +287,7 @@ export function Preview({
       } = latest.current;
       const screen = media.getElement("screen");
       const camera = media.getElement("camera");
+      const matte = media.getElement("camera_matte");
 
       if (box.width <= 0 || box.height <= 0) return;
 
@@ -306,6 +307,11 @@ export function Preview({
         // Two separate reasons there may be nothing to draw, and both mean the
         // same thing here: the frame does not exist yet, so it is not invented.
         camera: media.visible.has("camera") && isReady(camera) ? camera : null,
+        // Only with the camera: a mask with no picture under it is nothing to
+        // draw. Before it is ready the camera draws whole for a frame, which
+        // is what the exporter does for a matte that is not there.
+        cameraMatte:
+          media.visible.has("camera") && isReady(camera) && isReady(matte) ? matte : null,
       };
 
       const sizes: SourceSizes = {

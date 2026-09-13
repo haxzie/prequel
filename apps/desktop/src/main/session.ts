@@ -184,6 +184,15 @@ export class RecordingSession {
     try {
       const result = await (await this.load()).stopRecording();
       this.lastResult = outputPath ? { ...result, outputPath } : null;
+      // A breadcrumb rather than a warning: no matte is the expected outcome
+      // when there was no camera, and the Rust side already warns when the
+      // segmenter refused one it was given.
+      if (result.cameraFrames > 0) {
+        log("info", "camera matte", {
+          frames: result.cameraMatteFrames,
+          dropped: result.cameraMatteDropped,
+        });
+      }
       return result;
     } catch (cause) {
       this.error = describeRecorderError(cause);

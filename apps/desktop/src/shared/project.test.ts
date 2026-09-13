@@ -293,6 +293,17 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.overrides.layout?.preset).toBe("stacked");
   });
 
+  it("opens a project saved before the camera could be cut out as a bubble", () => {
+    // The leaf is new; every project on disk lacks it. It has to read back as
+    // off — anything else would turn every old take's bubble into a cutout
+    // it may have no matte for.
+    const project = stored() as { defaults: { layout: Record<string, unknown> } };
+    delete project.defaults.layout.cameraCutout;
+
+    const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
+    expect(repaired.defaults.layout.cameraCutout).toBe(false);
+  });
+
   it("repairs a frame size rather than refusing the file", () => {
     const project = stored() as { frame: { width: unknown; height: unknown } };
     project.frame.width = "wide";

@@ -47,6 +47,7 @@ import {
   ClockIcon,
   CloseIcon,
   CursorIcon,
+  CutoutIcon,
   DepthIcon,
   DropletIcon,
   EyeIcon,
@@ -134,6 +135,8 @@ export interface InspectorProps {
   frame: Size;
   /** The camera track's own dimensions, or null when there is no camera. */
   cameraSource: Size | null;
+  /** Whether the camera came with a person matte, which the cutout needs. */
+  cameraMatte: boolean;
   /**
    * Play the selected zoom's span once, to show what a control just changed.
    *
@@ -580,6 +583,7 @@ export function Inspector(props: InspectorProps) {
                   settings={settings}
                   frame={props.frame}
                   cameraSource={props.cameraSource}
+                  cameraMatte={props.cameraMatte}
                   field={field}
                   set={set}
                 />
@@ -1081,6 +1085,7 @@ function CameraPanel({
   settings,
   frame,
   cameraSource,
+  cameraMatte,
   field,
   set,
 }: {
@@ -1088,6 +1093,8 @@ function CameraPanel({
   frame: Size;
   /** The camera's own dimensions, for the `wide` shape's proportions. */
   cameraSource: Size | null;
+  /** Whether the recording has a person matte beside the camera. */
+  cameraMatte: boolean;
   field: FieldProps;
   set: Setter;
 }) {
@@ -1096,6 +1103,11 @@ function CameraPanel({
   // with them, so turning the camera off and on again moves everything below —
   // and hides what turning it back on is going to do.
   const off = !layout.cameraVisible;
+  // A cutout has no shape, corners or ring — the matte is its outline — so the
+  // controls that dress a card edge are greyed while it is on, for the reason
+  // the Border section gives below: in place, they still say what turning the
+  // cutout off would give back.
+  const cutout = layout.cameraCutout;
   // Where the camera is a card beside the screen, the arrangement decides how
   // big it is and where it sits — so those controls are unavailable rather than
   // visibly doing nothing. Shape is not among them: the camera is round because
@@ -1130,10 +1142,25 @@ function CameraPanel({
           }}
         />
 
+        <ToggleField
+          icon={<CutoutIcon />}
+          label="Remove background"
+          {...field("layout", "cameraCutout")}
+          value={layout.cameraCutout}
+          // Greyed rather than hidden on a recording without a matte, so the
+          // control still says the feature exists — and the title says why it
+          // cannot be had here.
+          disabled={off || !cameraMatte}
+          title={
+            cameraMatte ? undefined : "This recording was made before backgrounds could be removed"
+          }
+          onChange={(value) => set("layout", "cameraCutout", value)}
+        />
+
         <Field icon={<SquircleIcon />} {...field("layout", "cameraShape")}>
           <Segmented
             value={layout.cameraShape}
-            disabled={off}
+            disabled={off || cutout}
             iconsOnly
             options={[
               { value: "circle", label: "Circle", icon: <CircleIcon /> },
@@ -1177,7 +1204,7 @@ function CameraPanel({
           min={0}
           max={0.5}
           format={(value) => `${Math.round((value / 0.5) * 100)}%`}
-          disabled={off}
+          disabled={off || cutout}
           onChange={(value) => set("layout", "cameraCornerRadius", value)}
         />
 
@@ -1257,7 +1284,7 @@ function CameraPanel({
           min={0}
           max={0.02}
           format={percent}
-          disabled={off}
+          disabled={off || cutout}
           onChange={(value) => set("layout", "cameraBorderWidth", value)}
         />
 
@@ -1274,7 +1301,7 @@ function CameraPanel({
           label="Colour"
           {...field("layout", "cameraBorderColor")}
           value={layout.cameraBorderColor}
-          disabled={off || layout.cameraBorderWidth === 0}
+          disabled={off || cutout || layout.cameraBorderWidth === 0}
           onChange={(value) => set("layout", "cameraBorderColor", value)}
         />
 
@@ -1286,7 +1313,7 @@ function CameraPanel({
           min={0}
           max={1}
           format={percent}
-          disabled={off || layout.cameraBorderWidth === 0}
+          disabled={off || cutout || layout.cameraBorderWidth === 0}
           onChange={(value) => set("layout", "cameraBorderOpacity", value)}
         />
       </Section>

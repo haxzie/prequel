@@ -192,6 +192,15 @@ export interface LayoutSettings {
    */
   cameraMirror: boolean;
   /**
+   * Draw only the person: the camera's matte cuts the background away and the
+   * whole frame lands over the wallpaper with no shape, shadow or border —
+   * there is no card edge left to dress.
+   *
+   * Needs a matte beside the camera, which every recording made since the
+   * pipeline wrote one has. The inspector greys the control out on the rest.
+   */
+  cameraCutout: boolean;
+  /**
    * The bubble's corner radius, as a fraction of *its own* shorter edge.
    *
    * Its own rather than the frame's, because that is the edge the corners are
@@ -774,6 +783,9 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // enough that whoever is on camera is still legible rather than a thumbnail.
   cameraShrinkTo: 0.7,
   cameraMirror: true,
+  // Off, so every project saved before the matte existed reads back drawing
+  // what it drew.
+  cameraCutout: false,
   // In step with `cameraShape: "squircle"` above, because the shape control is
   // what writes this. The two have to open agreeing or the first touch of the
   // shape control would visibly re-round a bubble nobody had asked it to.
