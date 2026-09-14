@@ -6,6 +6,7 @@ import type {
   AuthState,
   BackgroundImage,
   DockMenu,
+  DockMenuPick,
   DockState,
   EditorSession,
   Entitlement,
@@ -37,6 +38,7 @@ export type {
   AppInfo,
   BackgroundImage,
   DockMenu,
+  DockMenuPick,
   DockState,
   EditorSession,
   Entitlement,
@@ -136,24 +138,14 @@ const api = {
     close: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.closePopover),
 
     /**
-     * Opens a drop-up above the panel, or closes the one that is open.
+     * Opens a drop-up above the panel, resolving with what was picked in it —
+     * or with `null` when it was dismissed.
      *
-     * The menu is a window of its own, so main needs its whole content and not
-     * just the fact that one is open — see `DockMenu`.
+     * The menu is native, so main needs its whole content and not just the
+     * fact that one is open — see `DockMenu`.
      */
-    setMenu: (menu: DockMenu | null): Promise<void> =>
+    openMenu: (menu: DockMenu): Promise<DockMenuPick | null> =>
       ipcRenderer.invoke(IPC_CHANNELS.dockMenu, menu),
-
-    /** Reports how large the open drop-up is, so its window can match it. */
-    setMenuSize: (size: { width: number; height: number }): Promise<void> =>
-      ipcRenderer.invoke(IPC_CHANNELS.dockMenuSize, size),
-
-    /** Subscribes the menu window to what it should draw. */
-    onMenu: (listener: (menu: DockMenu | null) => void): (() => void) => {
-      const handler = (_event: unknown, menu: DockMenu | null) => listener(menu);
-      ipcRenderer.on(IPC_CHANNELS.dockMenuContent, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.dockMenuContent, handler);
-    },
 
     /**
      * Reports how wide the panel wants to be.

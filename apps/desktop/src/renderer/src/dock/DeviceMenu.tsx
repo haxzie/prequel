@@ -52,13 +52,13 @@ interface DeviceMenuProps {
   meter?: boolean;
   open: boolean;
   /**
-   * Opens or closes the chooser, reporting the centre of the control that did
-   * it in window coordinates.
+   * Opens the chooser, reporting the top-left of the control that did it in
+   * window coordinates.
    *
-   * The menu is its own window now, so main places it — and the only frame
-   * this renderer can measure in is its own window's.
+   * The menu is native and main pops it from this window, so the frame this
+   * renderer measures in is exactly the one `Menu.popup` takes.
    */
-  onToggle: (anchorX: number) => void;
+  onOpen: (anchor: { x: number; y: number }) => void;
   /**
    * Reports the whole device, not just its id: the label is what the native
    * recorder can resolve, since Chromium's ids are salted per origin.
@@ -83,7 +83,7 @@ export function DeviceMenu({
   error,
   meter,
   open,
-  onToggle,
+  onOpen,
   onSelect,
   OnIcon,
   OffIcon,
@@ -109,14 +109,13 @@ export function DeviceMenu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, selected?.deviceId, selectedId]);
 
-  // The chooser's anchor: this control's centre, handed to main when it opens.
-  // Nudging a menu back inside the screen edge used to happen here against
-  // `window.innerWidth`, and belongs to main now — the edge that matters is the
-  // display's, not this window's.
+  // The chooser's anchor: this control's top-left, handed to main when it
+  // opens. Nudging a menu back inside the screen edge used to happen here
+  // against `window.innerWidth`; a native menu is kept on the screen by AppKit.
   const trigger = useRef<HTMLButtonElement>(null);
-  const toggle = () => {
+  const openMenu = () => {
     const box = trigger.current?.getBoundingClientRect();
-    onToggle(box ? box.left + box.width / 2 : 0);
+    onOpen(box ? { x: box.left, y: box.top } : { x: 0, y: 0 });
   };
 
   const levelRef = useAudioLevel(
@@ -203,10 +202,10 @@ export function DeviceMenu({
           open ? "bg-dock-hover" : "not-disabled:hover:bg-dock-hover",
         )}
         aria-label={label}
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
         disabled={unavailable}
-        onClick={toggle}
+        onClick={openMenu}
       >
         <span
           className={cn("size-1.5 flex-none rounded-full", STATUS_COLOUR[status][kind])}
@@ -219,7 +218,20 @@ export function DeviceMenu({
         <span className={cn("max-w-[132px] truncate text-left", !enabled && "text-dock-muted")}>
           {display}
         </span>
-        <ChevronIcon />
+        {/* Turned to point at the menu while it is up: the list opens above the
+            panel, so a chevron still pointing down under an open menu points
+            at nothing. The same easing as the tooltip's slide, so the two
+            motions in this panel read as one. */}
+        <span
+          className={cn(
+            "flex-none transition-transform duration-200",
+            "ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
+            open && "rotate-180",
+          )}
+          aria-hidden="true"
+        >
+          <ChevronIcon />
+        </span>
       </button>
     </div>
   );

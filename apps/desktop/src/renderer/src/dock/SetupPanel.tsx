@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
-
 import type {
   DockMenu,
+  DockMenuPick,
   DockState,
   MediaDevice,
   PermissionId,
@@ -41,19 +40,11 @@ export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
   const cameras = useMediaDevices("videoinput");
   const microphones = useMediaDevices("audioinput");
-  // Which drop-up is open comes from main, not from here: the menu is its own
-  // window and closes itself when a device is picked in it. A local flag would
-  // still say "open", and the preference change it had just made would re-send
-  // the content and open it straight back up.
+  // Which drop-up is open comes from main, not from here: the menu is native
+  // and closes itself — on a pick, or on a click anywhere else — and only main
+  // hears it close. A local flag would still say "open" after the menu had
+  // gone, and the trigger would stay drawn as pressed.
   const open = state.openMenu;
-  /**
-   * Where the open menu is anchored, in this window's coordinates.
-   *
-   * A ref because it is written by a click and read while rebuilding the
-   * payload — holding it in state would re-render the whole panel to record a
-   * number that changes nothing on screen.
-   */
-  const anchor = useRef(0);
 
   // No timer. The panel is up for as long as the app is, and the two
   // permissions that matter here are read from a value macOS fixes at launch —
@@ -69,52 +60,44 @@ export function SetupPanel({ state }: { state: DockState }) {
     microphone: preferences.micId !== null,
   });
 
-  /**
-   * What the open drop-up should be drawing, pushed to main.
-   *
-   * Re-sent whenever its contents change and not only when it opens: a device
-   * unplugged while the list is up has to leave the list. Keyed on the
-   * serialised content rather than on the object, which is rebuilt on every
-   * render and would otherwise send an identical payload per keystroke of the
-   * audio meter.
-   */
-  const menu = buildMenu(open, anchor.current, {
-    cameras,
-    microphones,
-    preferences,
-    missing,
-  });
-  const serialised = JSON.stringify(menu);
-  const latest = useRef(menu);
-  latest.current = menu;
-  useEffect(() => {
-    void window.prequel.dock.setMenu(latest.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serialised]);
-
-  // The warning can disappear under an open menu — granting the last missing
-  // permission from inside it is the ordinary way that happens — and a menu
-  // left open over nothing is a frosted panel floating on the desktop.
-  useEffect(() => {
-    if (open === "permissions" && missing.length === 0) void window.prequel.dock.setMenu(null);
-  }, [open, missing.length]);
-
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
 
-  /**
-   * Where the open menu is anchored, in this window's coordinates.
-   *
-   * A ref because it is written by a click and read while building the payload
-   * above — putting it in state would re-render the panel to record a number
-   * that changes nothing on screen.
-   */
-  const toggle = (kind: DockMenu["kind"], anchorX: number) => {
-    anchor.current = anchorX;
-    void window.prequel.dock.setMenu(
-      open === kind
-        ? null
-        : buildMenu(kind, anchorX, { cameras, microphones, preferences, missing }),
+  const choose = (kind: "camera" | "microphone", device: MediaDevice | null) =>
+    void window.prequel.dock.updatePreferences(
+      kind === "camera"
+        ? { cameraId: device?.deviceId ?? null, cameraLabel: device?.label ?? null }
+        : { micId: device?.deviceId ?? null, micLabel: device?.label ?? null },
     );
+
+  const act = (pick: DockMenuPick) => {
+    switch (pick.kind) {
+      case "camera":
+      case "microphone":
+        choose(pick.kind, pick.device);
+        return;
+      case "permission":
+        void permissions.request(pick.id);
+        return;
+      case "relaunch":
+        void window.prequel.welcome.relaunch();
+        return;
+    }
+  };
+
+  /**
+   * Opens a drop-up and acts on what comes back from it.
+   *
+   * The outcome is handled here rather than in main because both halves of it
+   * are this renderer's already: a device choice is the same preference write
+   * the toggle beside the chevron makes, and a permission request has to go
+   * through `permissions` so the warning refreshes from the answer — main
+   * asking macOS itself would grant the permission and leave the alert up.
+   */
+  const openMenu = async (kind: DockMenu["kind"], anchor: { x: number; y: number }) => {
+    const pick = await window.prequel.dock.openMenu(
+      buildMenu(kind, anchor, { cameras, microphones, preferences, missing }),
+    );
+    if (pick !== null) act(pick);
   };
 
   return (
@@ -162,13 +145,8 @@ export function SetupPanel({ state }: { state: DockState }) {
           selectedLabel={preferences.cameraLabel}
           error={cameraError}
           open={open === "camera"}
-          onToggle={(anchorX) => toggle("camera", anchorX)}
-          onSelect={(device) =>
-            void window.prequel.dock.updatePreferences({
-              cameraId: device?.deviceId ?? null,
-              cameraLabel: device?.label ?? null,
-            })
-          }
+          onOpen={(anchor) => void openMenu("camera", anchor)}
+          onSelect={(device) => choose("camera", device)}
           OnIcon={CameraIcon}
           OffIcon={CameraOffIcon}
         />
@@ -180,13 +158,8 @@ export function SetupPanel({ state }: { state: DockState }) {
           selectedLabel={preferences.micLabel}
           meter
           open={open === "microphone"}
-          onToggle={(anchorX) => toggle("microphone", anchorX)}
-          onSelect={(device) =>
-            void window.prequel.dock.updatePreferences({
-              micId: device?.deviceId ?? null,
-              micLabel: device?.label ?? null,
-            })
-          }
+          onOpen={(anchor) => void openMenu("microphone", anchor)}
+          onSelect={(device) => choose("microphone", device)}
           OnIcon={MicIcon}
           OffIcon={MicOffIcon}
         />
@@ -204,7 +177,7 @@ export function SetupPanel({ state }: { state: DockState }) {
           <PermissionMenu
             missing={missing}
             open={open === "permissions"}
-            onToggle={(anchorX) => toggle("permissions", anchorX)}
+            onOpen={(anchor) => void openMenu("permissions", anchor)}
           />
         </>
       )}
@@ -215,30 +188,28 @@ export function SetupPanel({ state }: { state: DockState }) {
 }
 
 /**
- * The open drop-up's content, as main needs it.
+ * A drop-up's content, as main needs it to build the menu.
  *
- * Built here rather than in the menu's own window because the device lists are
- * this renderer's: Chromium only fills in device labels for a renderer that has
- * already opened a stream, so a second one enumerating for itself would get a
- * list of blank names and no error at all.
+ * Built here rather than in main because the device lists are this renderer's:
+ * Chromium only fills in device labels for a renderer that has already opened
+ * a stream, and main has no list of its own.
  */
 function buildMenu(
-  kind: DockMenu["kind"] | null,
-  anchorX: number,
+  kind: DockMenu["kind"],
+  anchor: { x: number; y: number },
   from: {
     cameras: MediaDevice[];
     microphones: MediaDevice[];
     preferences: RecordingPreferences;
     missing: PermissionId[];
   },
-): DockMenu | null {
-  if (kind === null) return null;
-  if (kind === "permissions") return { kind, anchorX, missing: from.missing };
+): DockMenu {
+  if (kind === "permissions") return { kind, anchor, missing: from.missing };
 
   const camera = kind === "camera";
   return {
     kind,
-    anchorX,
+    anchor,
     devices: camera ? from.cameras : from.microphones,
     selectedId: camera ? from.preferences.cameraId : from.preferences.micId,
   };

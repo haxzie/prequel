@@ -34,6 +34,34 @@ export const NEEDS_RESTART: Record<PermissionId, boolean> = {
   microphone: false,
 };
 
+/** The permission as the panel names it, in a menu that has room for two words. */
+export const PERMISSION_LABEL: Record<PermissionId, string> = {
+  screen: "Screen Recording",
+  accessibility: "Accessibility",
+  camera: "Camera",
+  microphone: "Microphone",
+};
+
+/**
+ * What each missing permission costs, said as a consequence.
+ *
+ * Not "Prequel needs Accessibility". Nobody grants a permission because an app
+ * says it wants one; they grant it when they know what they lose. The
+ * Accessibility line is the whole reason the panel's warning exists — without
+ * it a recording comes back with one click in it, the automatic zooms have
+ * nothing to work from, and every symptom points at the editor rather than at
+ * a permission nobody was ever told about.
+ *
+ * Here rather than beside the menu that shows them, because the menu is built
+ * in main and the trigger that summarises them is drawn by the renderer.
+ */
+export const PERMISSION_CONSEQUENCE: Record<PermissionId, string> = {
+  screen: "Nothing can be recorded at all.",
+  accessibility: "Clicks and typing aren't captured, so automatic zooms have nothing to find.",
+  camera: "Your camera is switched on but won't appear in the recording.",
+  microphone: "Your microphone is switched on but won't be heard.",
+};
+
 /** What the device menus in the panel currently have switched on. */
 export interface DevicesInUse {
   camera: boolean;

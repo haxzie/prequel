@@ -1,121 +1,221 @@
 /**
- * A menu is not shown before there is something in it.
+ * The drop-ups are native menus, and what is worth pinning about them is the
+ * contract the panel relies on: a pick comes back through the promise, a
+ * dismissal comes back as `null`, and the menu is placed so it stands *above*
+ * the panel rather than on it.
  *
- * The same shape of bug `workspace.test.ts` opens with, in a different window:
- * `prepare` creates the window and starts a load, `loadRoute` is asynchronous,
- * and the content is pushed over IPC. Show the window in between and the push
- * has reached a renderer that has not executed a line of the bundle, so the
- * user gets an empty frosted rectangle above the pill — on the first open of a
- * launch and only the first, which is what makes it read as a glitch rather
- * than as a state anybody could describe.
- *
- * Nothing downstream can catch it. The menu is correct, the geometry is
- * correct, the push happens; the only thing wrong is the order, and the window
- * fills itself in a moment later.
+ * Placement is the one with history. A menu popped with no positioning item
+ * is put wherever fits on the screen, which at the bottom of a display means
+ * on top of the pill that opened it — Electron only keeps a popup on the
+ * screen, not clear of its own window. Positioning the *last* item is what
+ * makes the menu grow upward from the point, and that is asserted here because
+ * dropping the option would still open a menu, just in the wrong place.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/** Every `did-finish-load` handler registered, so a test can run the load. */
-const loadHandlers: (() => void)[] = [];
-const shown: string[] = [];
-const sent: unknown[] = [];
+import type { MenuItemConstructorOptions } from "electron";
 
-class FakeWindow {
-  destroyed = false;
-  webContents = {
-    on: (event: string, handler: () => void) => {
-      if (event === "did-finish-load") loadHandlers.push(handler);
-    },
-    send: (_channel: string, payload: unknown) => {
-      sent.push(payload);
-    },
-  };
-  setAlwaysOnTop() {}
-  setBounds() {}
-  isDestroyed() {
-    return this.destroyed;
-  }
-  showInactive() {
-    shown.push("shown");
-  }
-  hide() {}
-  destroy() {
-    this.destroyed = true;
-  }
+import type { DockMenu } from "../../shared/contract.js";
+
+interface Popup {
+  x?: number;
+  y?: number;
+  positioningItem?: number;
+  callback?: () => void;
 }
 
+/** Every popup asked for, with its options, so a test can close it. */
+const popups: { template: MenuItemConstructorOptions[]; options: Popup }[] = [];
+const closed: number[] = [];
+
 vi.mock("electron", () => ({
-  screen: {
-    getDisplayNearestPoint: () => ({
-      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+  Menu: {
+    buildFromTemplate: (template: MenuItemConstructorOptions[]) => ({
+      items: template,
+      popup(options: Popup) {
+        popups.push({ template, options });
+      },
+      closePopup() {
+        closed.push(popups.length);
+      },
     }),
   },
 }));
 
-vi.mock("./base.js", () => ({
-  createPanel: () => new FakeWindow(),
-  // Deliberately never resolves on its own. A real load finishes when Chromium
-  // says so, and the point of these tests is what happens before it does.
-  loadRoute: () => new Promise<void>(() => undefined),
-}));
+const { DockMenuPopup, dockMenuTemplate } = await import("./dock-menu.js");
 
-const { DockMenuWindow } = await import("./dock-menu.js");
+const WINDOW = { isDestroyed: () => false } as never;
 
-const MENU = { kind: "camera", devices: [], selectedId: null, anchorX: 100 } as never;
-const DOCK = { x: 400, y: 900 };
+const CAMERAS: DockMenu = {
+  kind: "camera",
+  anchor: { x: 120, y: 40 },
+  devices: [
+    { deviceId: "a", label: "MacBook Pro Camera" },
+    { deviceId: "b", label: "iPhone Camera" },
+  ],
+  selectedId: "b",
+};
+
+/** Clicks the item at `index` in the last popup and then closes the menu —
+    the order Electron delivers them in, and deliberately so. */
+function pickItem(index: number) {
+  const popup = popups.at(-1)!;
+  popup.template[index]!.click?.(undefined as never, undefined, undefined as never);
+  popup.options.callback?.();
+}
 
 beforeEach(() => {
-  loadHandlers.length = 0;
-  shown.length = 0;
-  sent.length = 0;
+  popups.length = 0;
+  closed.length = 0;
 });
 
-describe("the first menu of a launch", () => {
-  it("is not shown while its renderer is still loading", () => {
-    const menus = new DockMenuWindow();
-    menus.open(MENU, DOCK);
+describe("a device menu", () => {
+  it("lists every device, then Off, with the chosen one ticked", () => {
+    const template = dockMenuTemplate(CAMERAS, () => undefined);
 
-    expect(shown).toHaveLength(0);
+    expect(template.map((item) => item.label ?? item.type)).toEqual([
+      "MacBook Pro Camera",
+      "iPhone Camera",
+      "separator",
+      "Off",
+    ]);
+    expect(template.map((item) => item.checked ?? false)).toEqual([false, true, false, false]);
   });
 
-  it("is shown once the renderer has run, with the menu already pushed", () => {
-    const menus = new DockMenuWindow();
-    menus.open(MENU, DOCK);
+  it("ticks Off when the device is switched off", () => {
+    const template = dockMenuTemplate({ ...CAMERAS, selectedId: null }, () => undefined);
 
-    // What Chromium reports when the bundle has executed.
-    for (const handler of loadHandlers) handler();
-
-    expect(shown).toHaveLength(1);
-    // Pushed before the window appeared, which is the whole point — a show
-    // that races the content is the bug this file exists for.
-    expect(sent.at(-1)).toBe(MENU);
+    expect(template.at(-1)).toMatchObject({ label: "Off", checked: true });
   });
 
-  it("stays hidden when it was closed again before it finished loading", () => {
-    // Fast enough to open and close a menu inside a page load is unusual but
-    // not impossible, and a menu that appeared *after* being dismissed would
-    // be worse than one that appeared late.
-    const menus = new DockMenuWindow();
-    menus.open(MENU, DOCK);
-    menus.open(null, DOCK);
+  it("resolves with the device that was picked", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(CAMERAS, WINDOW);
 
-    for (const handler of loadHandlers) handler();
+    pickItem(0);
 
-    expect(shown).toHaveLength(0);
+    await expect(picked).resolves.toEqual({
+      kind: "camera",
+      device: { deviceId: "a", label: "MacBook Pro Camera" },
+    });
+  });
+
+  it("resolves with no device when Off is picked", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(CAMERAS, WINDOW);
+
+    pickItem(3);
+
+    await expect(picked).resolves.toEqual({ kind: "camera", device: null });
   });
 });
 
-describe("every menu after the first", () => {
-  it("is shown straight away", () => {
-    const menus = new DockMenuWindow();
-    menus.open(MENU, DOCK);
-    for (const handler of loadHandlers) handler();
-    shown.length = 0;
+describe("the permissions menu", () => {
+  it("offers each missing permission with what it costs underneath", () => {
+    const template = dockMenuTemplate(
+      { kind: "permissions", anchor: { x: 0, y: 0 }, missing: ["camera"] },
+      () => undefined,
+    );
 
-    menus.open(MENU, DOCK);
+    expect(template).toHaveLength(1);
+    expect(template[0]).toMatchObject({
+      label: "Allow Camera…",
+      sublabel: expect.stringContaining("camera") as string,
+    });
+  });
 
-    // No second load to wait for: the window is already there and holding a
-    // renderer, so anything else would be a menu that lagged its own click.
-    expect(shown).toHaveLength(1);
+  it("offers a restart only when a missing permission needs one", () => {
+    // Camera and microphone come back from a prompt and take effect at once;
+    // a Restart item beside them would be an instruction with no reason.
+    const prompted = dockMenuTemplate(
+      { kind: "permissions", anchor: { x: 0, y: 0 }, missing: ["camera", "microphone"] },
+      () => undefined,
+    );
+    expect(prompted.some((item) => item.label === "Restart Prequel")).toBe(false);
+
+    const fixedAtLaunch = dockMenuTemplate(
+      { kind: "permissions", anchor: { x: 0, y: 0 }, missing: ["accessibility"] },
+      () => undefined,
+    );
+    expect(fixedAtLaunch.at(-1)).toMatchObject({ label: "Restart Prequel" });
+  });
+
+  it("resolves with the permission that was asked for", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(
+      { kind: "permissions", anchor: { x: 0, y: 0 }, missing: ["screen", "accessibility"] },
+      WINDOW,
+    );
+
+    pickItem(1);
+
+    await expect(picked).resolves.toEqual({ kind: "permission", id: "accessibility" });
+  });
+});
+
+describe("any menu", () => {
+  it("resolves with nothing when it is dismissed", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(CAMERAS, WINDOW);
+
+    popups.at(-1)!.options.callback?.();
+
+    await expect(picked).resolves.toBeNull();
+    expect(menus.openKind).toBeNull();
+  });
+
+  it("reports which kind is open for as long as it is", () => {
+    const menus = new DockMenuPopup();
+    void menus.open(CAMERAS, WINDOW);
+
+    expect(menus.openKind).toBe("camera");
+
+    popups.at(-1)!.options.callback?.();
+
+    expect(menus.openKind).toBeNull();
+  });
+
+  it("is popped from its last item, above the control", () => {
+    const menus = new DockMenuPopup();
+    void menus.open(CAMERAS, WINDOW);
+
+    const { options, template } = popups.at(-1)!;
+    // The last item, so the menu grows upward from the point — see the file
+    // comment. The first would put the menu's top there and the rest of it
+    // over the panel.
+    expect(options.positioningItem).toBe(template.length - 1);
+    expect(options.x).toBe(120);
+    // Above the control's top edge, not on it.
+    expect(options.y).toBeLessThan(40);
+  });
+
+  it("lifts a menu further when its last item is two lines tall", () => {
+    // The Restart item carries a sublabel, and a menu lifted by a one-line
+    // item's height would end on top of the panel by the other line's.
+    const menus = new DockMenuPopup();
+    void menus.open(CAMERAS, WINDOW);
+    const plain = popups.at(-1)!.options.y!;
+
+    void menus.open(
+      { kind: "permissions", anchor: CAMERAS.anchor, missing: ["accessibility"] },
+      WINDOW,
+    );
+    const twoLine = popups.at(-1)!.options.y!;
+
+    expect(twoLine).toBeLessThan(plain);
+  });
+
+  it("closes what is open before opening another, resolving the first with nothing", async () => {
+    const menus = new DockMenuPopup();
+    const first = menus.open(CAMERAS, WINDOW);
+
+    void menus.open({ ...CAMERAS, kind: "microphone" }, WINDOW);
+    // What AppKit does once `closePopup` lands.
+    popups[0]!.options.callback?.();
+
+    expect(closed).toHaveLength(1);
+    await expect(first).resolves.toBeNull();
+    // The second menu's state is not undone by the first one's close.
+    expect(menus.openKind).toBe("microphone");
   });
 });

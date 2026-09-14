@@ -13,10 +13,11 @@ import {
   PANEL_HEIGHT,
   PANEL_INSET,
   type DockMenu,
+  type DockMenuPick,
   type DockView,
 } from "../../shared/contract.js";
 import { createPanel, loadRoute } from "./base.js";
-import { DockMenuWindow } from "./dock-menu.js";
+import { DockMenuPopup } from "./dock-menu.js";
 
 /**
  * The size of the visible panel. The window adds `PANEL_INSET` around it and
@@ -67,13 +68,13 @@ export class DockWindow {
   /** The setup panel's measured width, once the renderer has reported one. */
   private contentWidth: number | null = null;
   /**
-   * The drop-ups, which are a second window.
+   * The drop-ups, which are native menus popped over this window.
    *
    * Owned here rather than beside this one in `capture-flow`, because every
-   * event that has to close or move a menu — hiding, collapsing to the
-   * recording view, being dragged across the screen — arrives at the dock.
+   * event that has to close a menu — hiding, collapsing to the recording view
+   * — arrives at the dock.
    */
-  readonly menu = new DockMenuWindow();
+  readonly menu = new DockMenuPopup();
 
   /** Creates the window without showing it, so its id exists to be excluded. */
   prepare(): BrowserWindow {
@@ -100,16 +101,6 @@ export class DockWindow {
     window.setAlwaysOnTop(true, "screen-saver", 1);
     void loadRoute(window, "/dock");
 
-    // An open menu is its own window and does not move with this one, so a
-    // dragged dock would otherwise leave it stranded where the panel used to
-    // be. `move` fires throughout the drag, and repositioning is cheaper than
-    // closing — a menu that vanishes because the panel was nudged reads as the
-    // click having missed.
-    window.on("move", () => {
-      if (!this.menu.isOpen) return;
-      this.menu.follow(this.panelOrigin(window));
-    });
-
     this.window = window;
     return window;
   }
@@ -126,7 +117,7 @@ export class DockWindow {
   }
 
   hide(): void {
-    this.menu.hide();
+    this.menu.close();
     this.stopAnimation();
     // As in `CameraWindow.hide`: `?.` does not cover a window Electron has
     // already destroyed, which is what a quit leaves behind.
@@ -148,9 +139,9 @@ export class DockWindow {
     if (this.view === view) return;
     this.view = view;
     // The recording view has none of the controls a menu belongs to, so a menu
-    // left open would be a frosted panel floating over the screen with nothing
+    // left open would be a list floating over the screen with nothing
     // underneath it.
-    this.menu.hide();
+    this.menu.close();
     // Animated: pressing Record should read as the panel collapsing into the
     // recording controls, not as one window being swapped for another.
     this.reposition({ animate: true });
@@ -175,36 +166,17 @@ export class DockWindow {
   }
 
   /**
-   * Opens a drop-up above the panel, or closes the one that is open.
+   * Opens a drop-up above the panel, resolving with what was picked in it.
    *
-   * The menu is a window of its own — see `DockMenuWindow` — so this window
-   * does not change shape for it any more. What it does supply is where the
-   * panel currently is, which is the frame `menu.anchorX` is measured in.
+   * The menu is native and this window is what it is popped from, so the
+   * anchor stays in this window's coordinates: `getBoundingClientRect` in the
+   * renderer already measures relative to it, inset and headroom included, and
+   * `Menu.popup` takes exactly that.
    */
-  setMenu(menu: DockMenu | null): void {
+  openMenu(menu: DockMenu): Promise<DockMenuPick | null> {
     const window = this.browserWindow();
-    if (!window) return;
-    this.menu.open(menu, this.panelOrigin(window));
-  }
-
-  /**
-   * Where the visible panel's top-left sits on screen.
-   *
-   * The two axes do not agree, which is the whole reason this is a function.
-   *
-   * `y` is the panel's top edge rather than the window's, because a drop-up is
-   * placed above the panel and the window stands `DOCK_HEADROOM` taller than
-   * it. Passing the window's would float every menu a band too high, over a
-   * transparent margin, with the gap looking wrong and nothing to point at.
-   *
-   * `x` stays the *window's* left. `anchorX` is measured by the renderer with
-   * `getBoundingClientRect`, so it is already relative to the window and
-   * already carries the inset; adding it again here would push every menu one
-   * inset to the right of the control that opened it.
-   */
-  private panelOrigin(window: BrowserWindow): { x: number; y: number } {
-    const { x, y } = window.getBounds();
-    return { x, y: y + DOCK_HEADROOM };
+    if (!window) return Promise.resolve(null);
+    return this.menu.open(menu, window);
   }
 
   browserWindow(): BrowserWindow | null {
@@ -213,7 +185,7 @@ export class DockWindow {
 
   destroy(): void {
     this.stopAnimation();
-    this.menu.destroy();
+    this.menu.close();
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
   }
@@ -266,7 +238,7 @@ export class DockWindow {
    * panel did not cover was frosted desktop hanging in mid-air.
    *
    * The margin is back, because the panel is drawn in CSS again. The drop-ups
-   * stayed in their own window, so none of it is for them — but the top is
+   * are native menus, so none of it is for them — but the top is
    * `DOCK_HEADROOM` rather than the inset, because the tooltips are drawn in
    * this window and above the panel, and the inset alone clips them. The
    * `Dock` component insets the panel by the same two numbers.
@@ -280,8 +252,6 @@ export class DockWindow {
   private reposition(options: { animate?: boolean; duration?: number } = {}): void {
     const window = this.window;
     if (!window || window.isDestroyed()) return;
-    // Menus are never animated: the drop-up is drawn into the headroom the
-    // moment it opens, so the window has to be that size already.
     this.applyBounds(window, { keepPlace: true, ...options });
   }
 
@@ -300,15 +270,15 @@ export class DockWindow {
       const target = {
         x: Math.round(current.x + (current.width - size.width) / 2),
         // Held by the bottom edge, not the centre: the panel is drawn at the
-        // bottom of the window, so the window can grow upward for a drop-up
-        // without the panel itself moving.
+        // bottom of the window, under the headroom, so a change of height
+        // must not move the panel itself.
         y: Math.round(current.y + current.height - size.height),
         ...size,
       };
 
       if (options.animate) this.animateTo(window, target, options.duration ?? COLLAPSE_MS);
-      // Menus are never animated: the drop-up is drawn into the headroom the
-      // moment it opens, so the window has to be that size already.
+      // The first measured width is not animated — see `setContentWidth` —
+      // and a resize that is not eased has to land at once.
       else {
         this.stopAnimation();
         window.setBounds(target);

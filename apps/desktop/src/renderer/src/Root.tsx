@@ -20,7 +20,6 @@ import { navigate, recordingInRoute, useRoute } from "./lib/route";
  */
 const Camera = lazy(() => import("./camera/Camera").then((m) => ({ default: m.Camera })));
 const Dock = lazy(() => import("./dock/Dock").then((m) => ({ default: m.Dock })));
-const DockMenu = lazy(() => import("./dock/DockMenu").then((m) => ({ default: m.DockMenu })));
 const Selection = lazy(() =>
   import("./selection/Selection").then((m) => ({ default: m.Selection })),
 );
@@ -43,10 +42,6 @@ function view(route: string) {
   switch (route) {
     case "/dock":
       return <Dock />;
-    // The panel's drop-ups, which are a window of their own so that they can
-    // carry the same frosted material the panel does — see `DockMenu`.
-    case "/dock-menu":
-      return <DockMenu />;
     case "/selection":
       return <Selection />;
     case "/camera":

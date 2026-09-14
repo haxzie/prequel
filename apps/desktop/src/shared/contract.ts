@@ -218,52 +218,43 @@ export const PANEL_HEIGHT = 44;
 export const DOCK_HEADROOM = 32;
 
 /**
- * The gap between the top of the panel and the drop-up above it.
+ * A drop-up the panel wants opened, as main needs it to build the menu.
  *
- * Shared because neither side can work it out alone: the menu is its own
- * window now, so main positions it, while the renderer's cap on how tall a
- * list may grow is measured from the same gap.
- */
-export const DOCK_MENU_GAP = 10;
-
-/**
- * How tall a *device list* may grow before it scrolls instead.
+ * The menu is native — an `NSMenu` through Electron's `Menu.popup` — so main
+ * builds it, but it cannot build it from `DockState`. The device lists live in
+ * the dock *renderer* (`useMediaDevices`), not in main, and Chromium only fills
+ * in device labels for a renderer that has already opened a stream: main has no
+ * list of its own to draw from. So the dock hands over the list it already
+ * has, and gets back what was picked in it.
  *
- * A cap on the list, not on the menu. It used to be both, because the drop-up
- * was drawn inside headroom the dock's window was grown by and anything taller
- * was clipped away. The menu is its own window now, so prose — the permissions
- * panel — simply takes the height it needs, and only an unbounded list of
- * devices still needs a limit.
- */
-export const DOCK_LIST_MAX_HEIGHT = 180;
-
-/** How close a drop-up may come to the top of the screen. */
-export const DOCK_MENU_MARGIN = 8;
-
-/**
- * An open drop-up, as main needs to see it.
- *
- * The menu is a second window, so main has to size and place it — and it can
- * do neither from `DockState`. The device lists live in the dock *renderer*
- * (`useMediaDevices`), not in main, and Chromium only fills in device labels
- * for a renderer that has already opened a stream: a second renderer calling
- * `enumerateDevices` for itself would get a list of blank names and no error.
- * So the dock hands over the list it already has.
- *
- * `anchorX` is the centre of the control that opened it, in dock-window
- * coordinates. Main adds the window's own x and clamps to the display, which
- * is the nudging the two menu components used to do against `window.innerWidth`
- * back when they were trapped inside the dock's window.
+ * `anchor` is the top-left of the control that opened it, in dock-window
+ * coordinates, which is the frame `Menu.popup` takes. Keeping the menu on the
+ * screen is AppKit's job from there.
  */
 export type DockMenu =
   | {
       kind: "camera" | "microphone";
-      anchorX: number;
+      anchor: { x: number; y: number };
       devices: MediaDevice[];
       /** `null` means the device is switched off. */
       selectedId: string | null;
     }
-  | { kind: "permissions"; anchorX: number; missing: PermissionId[] };
+  | { kind: "permissions"; anchor: { x: number; y: number }; missing: PermissionId[] };
+
+/**
+ * What was chosen in a drop-up.
+ *
+ * Handed back to the renderer that opened the menu rather than acted on in
+ * main, because the renderer owns both halves of every outcome: the device
+ * choice is a preference write it already makes for the toggle beside the
+ * chevron, and a permission request has to go through its `usePermissions`,
+ * which is what refreshes the warning — main asking macOS directly would grant
+ * the permission and leave the panel's alert exactly where it was.
+ */
+export type DockMenuPick =
+  | { kind: "camera" | "microphone"; device: MediaDevice | null }
+  | { kind: "permission"; id: PermissionId }
+  | { kind: "relaunch" };
 
 /** What the panel is currently showing. */
 export type DockView = "setup" | "recording";
@@ -343,12 +334,8 @@ export const IPC_CHANNELS = {
   preferences: "prefs:get",
   updatePreferences: "prefs:update",
   ensureDeviceAccess: "devices:ensureAccess",
-  /** Renderer → main: which drop-up is open, or `null`. Drives the menu window. */
+  /** Renderer → main: open a drop-up. Resolves with what was picked, or `null`. */
   dockMenu: "dock:menu",
-  /** Renderer → main: the open drop-up's measured size, so its window can match. */
-  dockMenuSize: "dock:menuSize",
-  /** Main → menu renderer: what to draw. */
-  dockMenuContent: "dock:menuContent",
   /** Renderer → main: the panel's natural width, so the window can match it. */
   dockWidth: "dock:width",
   /** Renderer → main: the camera preview failed, or recovered. */
@@ -858,11 +845,10 @@ export interface DockState {
   /**
    * Which drop-up is open, if any.
    *
-   * Main owns this rather than the panel, because the menu is its own window
-   * now and closes itself when something in it is picked. Were the panel to
-   * keep the flag locally it would still believe the menu was open, and the
-   * change it had just made to the preferences would re-send the content and
-   * open it straight back up.
+   * Main owns this rather than the panel, because the menu is native and
+   * closes itself — on a pick, or on a click anywhere else, which AppKit eats
+   * — so only main hears it close. It is what draws the trigger as pressed
+   * for exactly as long as the menu is up.
    *
    * The kind only. The menu's *content* travels on `dock:menu` instead, so a
    * device list is not broadcast to every window on every state change.

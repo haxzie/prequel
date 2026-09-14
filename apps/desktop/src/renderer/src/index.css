@@ -58,7 +58,6 @@
   --color-sunrise-cool: var(--sunrise-cool);
 
   --color-dock-bg: var(--dock-bg);
-  --color-dock-menu: var(--dock-menu);
   --color-dock-line: var(--dock-line);
   --color-dock-fg: var(--dock-fg);
   --color-dock-muted: var(--dock-muted);
@@ -302,17 +301,10 @@ body {
    matter what is behind it — a translucent, theme-following panel reads as part
    of whatever it happens to be sitting on.
 
-   Really blurred, the same way the editor's chrome is: the dock's window is
-   vibrant (`vibrancy: "hud"`), so what these two colours paint is a scrim over
-   an `NSVisualEffectView` rather than a fill over the desktop. `backdrop-filter`
-   is still no use here and never was — it only samples what the page itself
-   drew, and the desktop behind a window is not that.
-
-   A material fills its window's whole rectangle, which is why the dock's window
-   is now exactly the pill and the drop-ups are a second window of their own.
-   Lighter than they were as fills, because the frost behind them is already
-   doing most of the work of separating the panel from the wallpaper; much below
-   these and the controls stop holding against a bright desktop. */
+   Not blurred. `backdrop-filter` only samples what the page itself drew, and
+   the desktop behind a window is not that; the frosted material the window
+   once carried went with the corner radius it forced — see `DockWindow`. The
+   drop-ups are native menus and take the system's material for themselves. */
 /**
  * The editor's palette, dark whatever the system theme is.
  *
@@ -512,18 +504,12 @@ body {
      in it competes with whatever is behind. Kept a little short of opaque so it
      still sits *over* the screen rather than punching a hole in it. */
   --dock-bg: rgba(28, 33, 40, 0.96);
-  /* A step darker than the panel. The two are separate windows over the same
-     material, and a menu that matched the panel exactly would read as a piece
-     of it that had come loose rather than as something laid over it. */
-  --dock-menu: rgba(32, 38, 46, 0.66);
-  /* Dividers, and only dividers. The menu's window is shaped and outlined by
-     macOS, and the panel draws its own hairline in `Dock.tsx`, so nothing here
-     is a border.
+  /* Dividers, and only dividers. The panel draws its own hairline in
+     `Dock.tsx`, so nothing here is a border.
 
-     Translucent white rather than the dark tone this was, for the same reason
-     `--dock-hover` below is: the surface under it is frosted desktop, not a
-     fixed colour, and a dark hairline drawn on glass reads as grime on it
-     rather than as a rule between two things. Light enough to find, faint
+     Translucent white rather than a dark tone, for the same reason
+     `--dock-hover` below is: a dark hairline on a dark panel reads as grime on
+     it rather than as a rule between two things. Light enough to find, faint
      enough that a strip of three of them is not what the eye lands on. */
   --dock-line: rgba(255, 255, 255, 0.16);
   --dock-fg: #eceef1;

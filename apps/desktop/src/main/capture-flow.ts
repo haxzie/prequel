@@ -10,6 +10,7 @@ import { dialog, screen, shell, type BrowserWindow } from "electron";
 
 import type {
   DockMenu,
+  DockMenuPick,
   DockState,
   DockView,
   PendingSelection,
@@ -362,23 +363,18 @@ export class CaptureFlow {
     this.deps.dock.setContentWidth(width);
   }
 
-  /** Opens a drop-up above the panel, or closes the one that is open. */
-  setMenu(menu: DockMenu | null): void {
-    if (this.deps.dock.menu.openKind === (menu?.kind ?? null)) {
-      // Same menu, new content — a device unplugged while the list is up. The
-      // window is updated, but nothing about `DockState` has changed.
-      this.deps.dock.setMenu(menu);
-      return;
-    }
-    this.deps.dock.setMenu(menu);
-    // Broadcast, so the trigger shows as pressed and so a menu that closed
-    // itself is not re-opened by the panel — see `openMenu` on `DockState`.
+  /**
+   * Opens a drop-up above the panel, resolving with what was picked in it.
+   *
+   * Broadcast on the way in and the way out, so the trigger shows as pressed
+   * for exactly as long as the menu is up — see `openMenu` on `DockState`.
+   */
+  async openMenu(menu: DockMenu): Promise<DockMenuPick | null> {
+    const picked = this.deps.dock.openMenu(menu);
     this.emit();
-  }
-
-  /** The open drop-up has measured itself, so its window can match. */
-  setMenuSize(size: { width: number; height: number }): void {
-    this.deps.dock.menu.setSize(size);
+    const pick = await picked;
+    this.emit();
+    return pick;
   }
 
   /** Shows or hides the camera bubble to match the chosen device. */
@@ -529,11 +525,6 @@ export class CaptureFlow {
     // Prepared even when hidden: a window created after capture starts cannot
     // be excluded, and the user may switch the camera on mid-recording.
     const camera = this.deps.camera.prepare();
-    // Prepared for the same reason, though a menu cannot in practice be on
-    // screen during a capture — `setView("recording")` closes it. The rule in
-    // `excludedIds` is "every window of ours that could be on screen", and the
-    // cost of being wrong about that is a UI panel in somebody's video.
-    const menu = this.deps.dock.menu.prepare();
 
     log("info", "starting capture", {
       target: `${selection.target.kind} ${String(selection.target.id)}`,
@@ -568,7 +559,7 @@ export class CaptureFlow {
         microphone: preferences.micId !== null,
         // The bubble is only a preview; this is what writes `camera.mp4`.
         camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
-        excludedWindowIds: this.excludedIds([dock, camera, menu]),
+        excludedWindowIds: this.excludedIds([dock, camera]),
       });
     } catch (cause) {
       // Said out loud, and the panel put back. A start that fails silently

@@ -238,9 +238,8 @@ export function TooltipLayer() {
         ? [control.left + control.width / 2 - width / 2, control.top - GAP - height]
         : [control.left - GAP - width, control.top + control.height / 2 - height / 2];
 
-    // `Math.max` outermost, as in `DockMenuWindow.applyBounds`: a label wider
-    // than the window pins to the leading edge rather than being pushed off
-    // the other side by the clamp.
+    // `Math.max` outermost: a label wider than the window pins to the leading
+    // edge rather than being pushed off the other side by the clamp.
     const left = Math.round(Math.max(MARGIN, Math.min(x, maxX)));
     const top = Math.round(Math.max(MARGIN, Math.min(y, maxY)));
     node.style.transform = `translate(${String(left)}px, ${String(top)}px)`;

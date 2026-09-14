@@ -201,11 +201,7 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, menu: DockMenu | null) => flow.setMenu(menu));
-
-  ipcMain.handle(IPC_CHANNELS.dockMenuSize, (_event, size: { width: number; height: number }) =>
-    flow.setMenuSize(size),
-  );
+  ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, menu: DockMenu) => flow.openMenu(menu));
 
   ipcMain.handle(IPC_CHANNELS.dockWidth, (_event, width: number) => flow.setPanelWidth(width));
 

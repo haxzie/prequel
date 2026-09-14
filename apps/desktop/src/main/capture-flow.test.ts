@@ -37,7 +37,6 @@ afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
 /** Ids the fake windows report, so assertions can name them. */
 const DOCK_WINDOW_ID = 101;
 const CAMERA_WINDOW_ID = 202;
-const MENU_WINDOW_ID = 303;
 
 vi.mock("electron", () => ({
   screen: {
@@ -134,16 +133,11 @@ function makeFlow(
     session: new RecordingSession(),
     dock: {
       prepare: () => fakeWindow(DOCK_WINDOW_ID),
-      setMenu: () => undefined,
+      openMenu: () => Promise.resolve(null),
       setContentWidth: () => undefined,
-      // The drop-ups are a window of their own, so they are a third id to keep
-      // out of the recording.
-      menu: {
-        prepare: () => fakeWindow(MENU_WINDOW_ID),
-        openKind: null,
-        setSize: () => undefined,
-        hide: () => undefined,
-      },
+      // The drop-ups are native menus popped over the panel, not windows, so
+      // there is no third id to keep out of the recording.
+      menu: { openKind: null, close: () => undefined },
       // Tracked rather than fixed: whether the devices should be held open is
       // derived from it, so a stub that never changes cannot show the bug.
       get isVisible() {
@@ -300,7 +294,7 @@ describe("starting a recording", () => {
     expect(requests[0]!.camera).toBeUndefined();
   });
 
-  it("excludes the panel, its menus and the camera bubble from the capture", async () => {
+  it("excludes the panel and the camera bubble from the capture", async () => {
     // `setContentProtection` does not work against ScreenCaptureKit, so these
     // ids are the only thing keeping our own UI out of the recording.
     const { flow } = makeFlow({ cameraId: "some-id", cameraLabel: "MacBook Pro Camera" });
@@ -308,7 +302,7 @@ describe("starting a recording", () => {
     await flow.record();
 
     expect(requests[0]!.excludedWindowIds).toEqual(
-      expect.arrayContaining([DOCK_WINDOW_ID, CAMERA_WINDOW_ID, MENU_WINDOW_ID]),
+      expect.arrayContaining([DOCK_WINDOW_ID, CAMERA_WINDOW_ID]),
     );
   });
 
