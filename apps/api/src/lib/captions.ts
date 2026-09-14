@@ -137,3 +137,74 @@ export function vttFrom(transcript: Transcript): string {
 function escapeCue(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+/**
+ * Whisper's language names, as ISO 639-1.
+ *
+ * `whisper-1` reports `"german"`, not `"de"`, and the desktop app stores what
+ * the provider said. A `<track srclang>` wants the tag; browsers shrug at a
+ * name, but a screen reader picking a voice does not. Anything that already
+ * looks like a tag passes through, and an unknown name is kept as it is
+ * rather than guessed at.
+ */
+const LANGUAGE_TAGS: Record<string, string> = {
+  english: "en",
+  german: "de",
+  french: "fr",
+  spanish: "es",
+  italian: "it",
+  portuguese: "pt",
+  dutch: "nl",
+  swedish: "sv",
+  norwegian: "no",
+  danish: "da",
+  finnish: "fi",
+  polish: "pl",
+  czech: "cs",
+  slovak: "sk",
+  hungarian: "hu",
+  romanian: "ro",
+  bulgarian: "bg",
+  greek: "el",
+  turkish: "tr",
+  russian: "ru",
+  ukrainian: "uk",
+  hebrew: "he",
+  arabic: "ar",
+  persian: "fa",
+  hindi: "hi",
+  bengali: "bn",
+  tamil: "ta",
+  telugu: "te",
+  malayalam: "ml",
+  kannada: "kn",
+  marathi: "mr",
+  gujarati: "gu",
+  urdu: "ur",
+  indonesian: "id",
+  malay: "ms",
+  vietnamese: "vi",
+  thai: "th",
+  chinese: "zh",
+  japanese: "ja",
+  korean: "ko",
+  catalan: "ca",
+  croatian: "hr",
+  serbian: "sr",
+  slovenian: "sl",
+  lithuanian: "lt",
+  latvian: "lv",
+  estonian: "et",
+  filipino: "fil",
+  tagalog: "tl",
+  swahili: "sw",
+  afrikaans: "af",
+  welsh: "cy",
+  icelandic: "is",
+};
+
+export function languageTag(language: string): string {
+  const trimmed = language.trim();
+  if (/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(trimmed)) return trimmed.toLowerCase();
+  return LANGUAGE_TAGS[trimmed.toLowerCase()] ?? trimmed;
+}

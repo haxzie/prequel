@@ -13,6 +13,7 @@ import { z } from "zod";
 import { schema } from "@prequel/db";
 
 import type { Database } from "../db.ts";
+import { languageTag } from "../lib/captions.ts";
 import { retryChaptersIfDue, storeChapters } from "../lib/chapters.ts";
 import { id, slug } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
@@ -372,7 +373,7 @@ videos.post("/:id/transcript", async (c) => {
     .update(schema.video)
     .set({
       transcriptKey: key,
-      transcriptLanguage: transcript.language,
+      transcriptLanguage: languageTag(transcript.language),
       chapters: null,
       chaptersSource: null,
       chaptersModel: null,

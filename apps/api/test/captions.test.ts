@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { cuesFrom, vttFrom, vttTimestamp } from "../src/lib/captions.ts";
+import { cuesFrom, languageTag, vttFrom, vttTimestamp } from "../src/lib/captions.ts";
 import type { TranscriptWord } from "../src/lib/chapters.ts";
 
 /** `text` said one word per `pace`; a word ending in `|` is followed by a breath. */
@@ -84,5 +84,16 @@ describe("vttFrom", () => {
     expect(vtt).toContain("00:00:00.000 --> 00:00:02.000 line:-3\nHello there.");
     // What was said is never markup.
     expect(vtt).toContain("A &lt;b&gt; &amp; B");
+  });
+});
+
+describe("languageTag", () => {
+  it("turns Whisper's names into tags and leaves tags alone", () => {
+    expect(languageTag("german")).toBe("de");
+    expect(languageTag("English")).toBe("en");
+    expect(languageTag("en-GB")).toBe("en-gb");
+    expect(languageTag("pt-BR")).toBe("pt-br");
+    // Unknown, and kept rather than guessed.
+    expect(languageTag("klingon")).toBe("klingon");
   });
 });

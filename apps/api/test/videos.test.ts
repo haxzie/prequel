@@ -554,7 +554,8 @@ describe("POST /v1/videos/:id/transcript", () => {
   });
 
   it("serves the transcript as subtitles, and says so on both playback answers", async () => {
-    const { id } = await send("", { ...transcript, language: "fr" }, 30_000);
+    // As Whisper names it; stored as the tag a `<track>` wants.
+    const { id } = await send("", { ...transcript, language: "french" }, 30_000);
     await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
     await call(`/v1/videos/${id}/complete`, { method: "POST" });
 
