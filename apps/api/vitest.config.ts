@@ -37,6 +37,13 @@ export default defineConfig({
           // and overrides this itself.
           POSTHOG_PROJECT_TOKEN: "",
           POSTHOG_HOST: "https://us.i.posthog.com",
+          // Empty for the same reason, and more so: `.dev.vars` carries the
+          // real keys, and a chapter test that left them in place would ask
+          // Anthropic for chapters — a real call, billed, on every run. A
+          // test that wants a model in the chain passes a key of its own.
+          OPENAI_API_KEY: "",
+          ANTHROPIC_API_KEY: "",
+          MOONSHOT_API_KEY: "",
           // Billing, with nothing real behind it. Every suite that reaches a
           // billing route stubs `fetch`, so these only have to satisfy
           // `required()` — but they have to be here, or a suite that never

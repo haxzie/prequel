@@ -5,6 +5,7 @@ import type { LibraryVideo } from "@/app/app/page";
 import { formatBytes } from "@/lib/format";
 import { VideoActions } from "@/components/dashboard/VideoActions";
 import { VideoHeader } from "@/components/dashboard/VideoHeader";
+import { Watch, type ApiChapter } from "@/components/player/Watch";
 import { API_URL } from "@/lib/api";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
@@ -31,6 +32,9 @@ export const dynamic = "force-dynamic";
 interface Playback {
   src: string;
   contentType: string;
+  chapters: ApiChapter[];
+  slug: string;
+  captions: { language: string } | null;
 }
 
 /**
@@ -79,57 +83,72 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
     <div className="mx-auto max-w-3xl">
       <VideoHeader id={video.id} title={video.title} className="mb-6" />
 
-      <div className="overflow-hidden rounded-2xl border border-line bg-black">
-        {playback === null ? (
-          // The signature could not be minted — R2 credentials, or a Worker
-          // being redeployed. The still is worth keeping for this: a page that
-          // suddenly has no picture at all reads as the recording being gone,
-          // where a frame of it with no controls reads as what it is.
-          video.poster ? (
-            <img src={video.poster} alt="" className="block aspect-video w-full object-cover" />
-          ) : (
-            <div className="aspect-video w-full bg-surface" />
-          )
-        ) : playback.contentType === "image/gif" ? (
-          // A GIF is not a video, and a `<video>` pointed at one shows nothing at
-          // all — no error, just a black rectangle with controls.
-          <img src={playback.src} alt={video.title} className="block w-full" />
-        ) : (
-          <video
-            src={playback.src}
-            poster={video.poster ?? undefined}
-            controls
-            playsInline
-            // `metadata` rather than `auto`, as on the share page: enough to draw
-            // the scrubber and no more, so opening the library's detail page does
-            // not pull a hundred megabytes down for somebody who came to copy the
-            // link.
-            preload="metadata"
-            className="block max-h-[70dvh] w-full bg-black"
-          />
-        )}
-      </div>
-
-      <VideoActions url={url} className="mt-6" />
-
-      <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-line pt-6 text-sm sm:grid-cols-4">
-        <Fact label="Shared by" value={video.ownerName ?? "Someone"} />
-        <Fact
-          label="Size"
-          value={`${formatBytes(video.sizeBytes)}${video.width ? ` · ${video.width}×${video.height}` : ""}`}
-        />
-        <Fact label="Views" value={String(video.viewCount)} />
-        <Fact
-          label="Shared"
-          value={new Date(video.createdAt).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-            timeZone: "UTC",
-          })}
-        />
-      </dl>
+      {playback === null ? (
+        // The signature could not be minted — R2 credentials, or a Worker
+        // being redeployed. The still is worth keeping for this: a page that
+        // suddenly has no picture at all reads as the recording being gone,
+        // where a frame of it with no controls reads as what it is.
+        <>
+          <div className="overflow-hidden rounded-2xl border border-line bg-black">
+            {video.poster ? (
+              <img src={video.poster} alt="" className="block aspect-video w-full object-cover" />
+            ) : (
+              <div className="aspect-video w-full bg-surface" />
+            )}
+          </div>
+          <VideoActions url={url} className="mt-6" />
+          <Facts video={video} />
+        </>
+      ) : (
+        // The same player the share page has, chapters included — what the
+        // owner sees here is what the link shows, which is the point of
+        // opening it before sending. The list goes under the facts rather
+        // than beside the picture: this column is narrower than the share
+        // page's, and a panel beside it would leave the video the width of
+        // a thumbnail.
+        <Watch
+          src={playback.src}
+          poster={video.poster}
+          title={video.title}
+          durationMs={video.durationMs}
+          width={video.width}
+          height={video.height}
+          contentType={playback.contentType}
+          chapters={playback.chapters ?? []}
+          captions={
+            playback.captions
+              ? { src: `/v/${playback.slug}/captions.vtt`, language: playback.captions.language }
+              : null
+          }
+          panel="below"
+        >
+          <VideoActions url={url} className="mt-6" />
+          <Facts video={video} />
+        </Watch>
+      )}
     </div>
+  );
+}
+
+function Facts({ video }: { video: LibraryVideo }) {
+  return (
+    <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-line pt-6 text-sm sm:grid-cols-4">
+      <Fact label="Shared by" value={video.ownerName ?? "Someone"} />
+      <Fact
+        label="Size"
+        value={`${formatBytes(video.sizeBytes)}${video.width ? ` · ${video.width}×${video.height}` : ""}`}
+      />
+      <Fact label="Views" value={String(video.viewCount)} />
+      <Fact
+        label="Shared"
+        value={new Date(video.createdAt).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        })}
+      />
+    </dl>
   );
 }
 

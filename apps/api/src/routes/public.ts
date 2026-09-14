@@ -13,6 +13,8 @@ import { schema } from "@prequel/db";
 
 import { database } from "../db.ts";
 import type { Env } from "../env.ts";
+import { vttFrom } from "../lib/captions.ts";
+import { retryChaptersIfDue, type Transcript } from "../lib/chapters.ts";
 import { captureServer } from "../lib/posthog.ts";
 import { signedPlayback } from "../lib/r2.ts";
 
@@ -33,6 +35,11 @@ publicRoutes.get("/:slug", async (c) => {
       objectKey: schema.video.objectKey,
       posterKey: schema.video.posterKey,
       createdAt: schema.video.createdAt,
+      chapters: schema.video.chapters,
+      transcriptKey: schema.video.transcriptKey,
+      transcriptLanguage: schema.video.transcriptLanguage,
+      chaptersSource: schema.video.chaptersSource,
+      chaptersRetryAt: schema.video.chaptersRetryAt,
       deletedAt: schema.video.deletedAt,
       status: schema.video.status,
       teamId: schema.video.teamId,
@@ -60,6 +67,11 @@ publicRoutes.get("/:slug", async (c) => {
       .where(and(eq(schema.video.id, row.id), isNull(schema.video.deletedAt))),
   );
 
+  // A view is when better chapters are worth having. Chapters the heuristic
+  // wrote — because every model was down when the recording was shared — are
+  // offered to the models again from here, at most once an hour.
+  retryChaptersIfDue(c.env, c.executionCtx, db, row);
+
   // Anonymous, and it has to be. The person opening a share link has no account
   // and never will; making a PostHog person out of every one of them would fill
   // the project with rows that do exactly one thing each and are counted for
@@ -80,6 +92,13 @@ publicRoutes.get("/:slug", async (c) => {
     height: row.height,
     teamName: row.teamName,
     createdAt: row.createdAt,
+    // An empty list rather than null, so the page has one shape to render and
+    // "no chapters" is the list being empty rather than a second case.
+    chapters: row.chapters ?? [],
+    // Whether there is a subtitle track, and its language. The track itself
+    // is at `/p/:slug/captions.vtt`; the page builds that URL rather than
+    // being handed it, because it fetches the track through its own origin.
+    captions: row.transcriptKey ? { language: row.transcriptLanguage ?? "en" } : null,
     src: await signedPlayback(c.env, row.objectKey),
     // A stable URL, not a signed one — see the handler below.
     poster: row.posterKey ? `${c.env.API_URL}/p/${row.slug}/poster` : null,
@@ -130,6 +149,41 @@ publicRoutes.get("/:slug/poster", async (c) => {
       // one fetch, short enough that deleting a recording takes its picture out
       // of circulation the same afternoon. `immutable` would be true of the
       // bytes and wrong about the permission.
+      "cache-control": "public, max-age=3600",
+    },
+  });
+});
+
+/**
+ * The subtitles, as WebVTT.
+ *
+ * Served rather than signed, for the poster's reasons: it is small, and a
+ * `<track>` in a page is fetched again on every view. Unauthenticated, for
+ * the share link's reason: the slug is the secret, and the words are those of
+ * a recording anybody holding it can already watch. Deleting the recording
+ * deletes the object, so this answers 404 from then on.
+ */
+publicRoutes.get("/:slug/captions.vtt", async (c) => {
+  const db = database(c.env);
+
+  const [row] = await db
+    .select({ transcriptKey: schema.video.transcriptKey, deletedAt: schema.video.deletedAt })
+    .from(schema.video)
+    .where(eq(schema.video.slug, c.req.param("slug")))
+    .limit(1);
+
+  if (!row?.transcriptKey || row.deletedAt) return c.notFound();
+
+  const object = await c.env.MEDIA.get(row.transcriptKey);
+  if (!object) return c.notFound();
+
+  const transcript = (await object.json()) as Transcript;
+
+  return new Response(vttFrom(transcript), {
+    headers: {
+      "content-type": "text/vtt; charset=utf-8",
+      // An hour, as the poster: a corrected transcript re-shared this
+      // afternoon is showing by the evening, and a deleted one goes with it.
       "cache-control": "public, max-age=3600",
     },
   });

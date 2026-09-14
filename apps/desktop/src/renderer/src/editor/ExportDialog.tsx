@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { AuthState, ExportFormat } from "../../../shared/contract";
+import type { AuthState, ExportFormat, ShareTranscript } from "../../../shared/contract";
 import { GIF_MAX_SHORT_EDGE, type OutputSettings } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { Segmented } from "./controls/inputs";
@@ -59,6 +59,7 @@ export function ExportDialog({
   state,
   output,
   poster,
+  transcript,
   onChange,
   onClose,
 }: {
@@ -66,6 +67,8 @@ export function ExportDialog({
   output: OutputSettings;
   /** A still of the composition, from the preview canvas. Null if none loaded. */
   poster: string | null;
+  /** What was said in the finished file, for the link's chapters. Null if never transcribed. */
+  transcript: ShareTranscript | null;
   onChange: (output: OutputSettings) => void;
   onClose: () => void;
 }) {
@@ -200,7 +203,13 @@ export function ExportDialog({
           </div>
         )}
 
-        <Actions state={state} share={share} poster={still ?? poster} onClose={onClose} />
+        <Actions
+          state={state}
+          share={share}
+          poster={still ?? poster}
+          transcript={transcript}
+          onClose={onClose}
+        />
       </div>
     </div>
   );
@@ -372,11 +381,13 @@ function Actions({
   state,
   share,
   poster,
+  transcript,
   onClose,
 }: {
   state: ExportState;
   share: ShareState;
   poster: string | null;
+  transcript: ShareTranscript | null;
   onClose: () => void;
 }) {
   const { running, result } = state;
@@ -404,8 +415,8 @@ function Actions({
   const beginShare = useCallback(() => {
     if (!result) return;
     const name = result.path.split("/").pop() ?? "";
-    void share.start(name.replace(/\.[^.]+$/, ""), poster, state.durationMs);
-  }, [result, poster, share, state.durationMs]);
+    void share.start(name.replace(/\.[^.]+$/, ""), poster, state.durationMs, transcript);
+  }, [result, poster, share, state.durationMs, transcript]);
 
   // The other half of `pendingShare`: the sign-in finished, so do what the
   // press asked for. Guarded on `share.progress` being empty so a token

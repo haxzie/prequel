@@ -43,6 +43,13 @@
       "when": 1788340452382,
       "tag": "0005_unlimited_pro_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789357181741,
+      "tag": "0006_video_chapters",
+      "breakpoints": true
     }
   ]
 }

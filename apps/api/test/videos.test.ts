@@ -14,7 +14,7 @@ import {
   env,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import app from "../src/index.ts";
 import { scalar } from "./helpers.ts";
@@ -274,6 +274,355 @@ describe("GET /v1/videos/:id/playback", () => {
     const { id } = (await (await create(100)).json()) as { id: string };
 
     expect((await call(`/v1/videos/${id}/playback`)).status).toBe(404);
+  });
+});
+
+describe("POST /v1/videos/:id/transcript", () => {
+  /** A minute and a half of one word a second — long enough to divide. */
+  const transcript = {
+    language: "en",
+    words: Array.from({ length: 90 }, (_, index) => ({
+      at: index * 1000,
+      end: index * 1000 + 800,
+      text: `w${index}`,
+    })),
+  };
+
+  /** What the model answers, or a status to fail with. */
+  let openai: { chapters: { at: number; title: string }[] } | number = { chapters: [] };
+  /** How many times OpenAI was asked. */
+  let asked = 0;
+
+  beforeEach(() => {
+    openai = { chapters: [] };
+    asked = 0;
+
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.includes("api.openai.com")) return original(input as RequestInfo, init);
+
+      asked += 1;
+      if (typeof openai === "number") return new Response("no", { status: openai });
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify(openai) } }],
+        usage: { prompt_tokens: 321, completion_tokens: 45 },
+      });
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Only OpenAI configured, so the chain is one model and then the heuristic. */
+  const keyed = { ...env, OPENAI_API_KEY: "test-key" };
+
+  /** `call`, with a key in the environment so the model is actually asked. */
+  async function send(id: string, body: unknown, durationMs = 90_000) {
+    const created = (await (
+      await call("/v1/videos", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "A recording",
+          contentType: "video/mp4",
+          sizeBytes: 100,
+          durationMs,
+        }),
+      })
+    ).json()) as { id: string };
+
+    const ctx = createExecutionContext();
+    const response = await app.fetch(
+      new Request(`https://api.prequel.sh/v1/videos/${id || created.id}/transcript`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      keyed,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    return { id: created.id, response };
+  }
+
+  async function rowOf(id: string) {
+    const row = await env.DB.prepare(
+      "SELECT chapters, chapters_source, chapters_model, chapters_input_tokens, chapters_output_tokens, chapters_retry_at FROM video WHERE id = ?",
+    )
+      .bind(id)
+      .first<{
+        chapters: string | null;
+        chapters_source: string | null;
+        chapters_model: string | null;
+        chapters_input_tokens: number | null;
+        chapters_output_tokens: number | null;
+        chapters_retry_at: number | null;
+      }>();
+    return row!;
+  }
+
+  async function chaptersOf(id: string) {
+    const stored = await scalar<string | null>(
+      env.DB.prepare("SELECT chapters FROM video WHERE id = ?").bind(id),
+    );
+    return stored ? (JSON.parse(stored) as { at: number; title: string }[]) : null;
+  }
+
+  it("stores the transcript and the chapters made from it", async () => {
+    openai = {
+      chapters: [
+        { at: 0, title: "Getting started" },
+        { at: 45, title: "The second half" },
+      ],
+    };
+
+    const { id, response } = await send("", transcript);
+    // 202: the transcript is stored, the chapters are still being made. The
+    // desktop app does not wait on the model to finish its own upload.
+    expect(response.status).toBe(202);
+
+    const object = await env.MEDIA.get(`transcripts/org1/${id}.json`);
+    expect(object).not.toBeNull();
+    expect(((await object!.json()) as { words: unknown[] }).words).toHaveLength(90);
+
+    expect(await chaptersOf(id)).toEqual([
+      { at: 0, title: "Getting started" },
+      // Seconds from the model, milliseconds on the row: the player reads the
+      // same unit as `durationMs` and never converts.
+      { at: 45_000, title: "The second half" },
+    ]);
+
+    // Who made them and what it cost, for the record.
+    const row = await rowOf(id);
+    expect(row.chapters_source).toBe("model");
+    expect(row.chapters_model).toBe("openai/gpt-4o-mini");
+    expect(row.chapters_input_tokens).toBe(321);
+    expect(row.chapters_output_tokens).toBe(45);
+    expect(row.chapters_retry_at).toBeNull();
+  });
+
+  it("never asks the model about a recording too short to divide", async () => {
+    const { id, response } = await send("", transcript, 30_000);
+
+    expect(response.status).toBe(202);
+    expect(asked).toBe(0);
+    expect(await chaptersOf(id)).toBeNull();
+    expect((await rowOf(id)).chapters_source).toBe("none");
+  });
+
+  it("falls back to heuristic chapters when the model fails, and marks them for a retry", async () => {
+    openai = 500;
+
+    const { id, response } = await send("", transcript);
+
+    // The share is not the thing that failed, and the link still has a table
+    // of contents — a rougher one, made from the pauses in the transcript.
+    expect(response.status).toBe(202);
+    const row = await rowOf(id);
+    expect(row.chapters_source).toBe("heuristic");
+    expect(row.chapters_model).toBe("heuristic");
+    expect(row.chapters_input_tokens).toBe(0);
+    expect((await chaptersOf(id))?.length).toBeGreaterThanOrEqual(2);
+    // Stamped for another go at the models, an hour on.
+    expect(row.chapters_retry_at).toBeGreaterThan(Date.now() / 1000 + 3_000);
+    // The transcript is kept so that retry has something to read.
+    expect(await env.MEDIA.get(`transcripts/org1/${id}.json`)).not.toBeNull();
+  });
+
+  it("offers heuristic chapters to the model again when the link is opened", async () => {
+    openai = 500;
+    const { id } = await send("", transcript);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+    expect((await rowOf(id)).chapters_source).toBe("heuristic");
+
+    // The outage is over, and the hour has passed.
+    openai = {
+      chapters: [
+        { at: 0, title: "Getting started" },
+        { at: 45, title: "The second half" },
+      ],
+    };
+    await env.DB.prepare("UPDATE video SET chapters_retry_at = 1 WHERE id = ?").bind(id).run();
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+    const ctx = createExecutionContext();
+    await app.fetch(new Request(`https://api.prequel.sh/p/${slug}`), keyed, ctx);
+    await waitOnExecutionContext(ctx);
+
+    const row = await rowOf(id);
+    expect(row.chapters_source).toBe("model");
+    expect(row.chapters_model).toBe("openai/gpt-4o-mini");
+    expect(row.chapters_retry_at).toBeNull();
+    expect(await chaptersOf(id)).toEqual([
+      { at: 0, title: "Getting started" },
+      { at: 45_000, title: "The second half" },
+    ]);
+  });
+
+  it("does not retry before the hour is up, nor a row the model already wrote", async () => {
+    openai = 500;
+    const { id } = await send("", transcript);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const before = asked;
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+    const ctx = createExecutionContext();
+    await app.fetch(new Request(`https://api.prequel.sh/p/${slug}`), keyed, ctx);
+    await waitOnExecutionContext(ctx);
+
+    // A view inside the hour costs nothing: an outage is not multiplied by
+    // however many people open the link during it.
+    expect(asked).toBe(before);
+    expect((await rowOf(id)).chapters_source).toBe("heuristic");
+  });
+
+  it("clears the previous chapters when a new transcript arrives", async () => {
+    openai = {
+      chapters: [
+        { at: 0, title: "Old start" },
+        { at: 45, title: "Old middle" },
+      ],
+    };
+    const { id } = await send("", transcript);
+    expect((await rowOf(id)).chapters_model).toBe("openai/gpt-4o-mini");
+
+    // The second transcript's chapters fall to the heuristic. What must not
+    // happen is the first transcript's chapters — or its model and tokens —
+    // staying on the row and describing a recording they were not made from.
+    openai = 500;
+    await send(id, transcript);
+    const row = await rowOf(id);
+    expect(row.chapters_source).toBe("heuristic");
+    expect(row.chapters_model).toBe("heuristic");
+    expect(await chaptersOf(id)).not.toEqual([
+      { at: 0, title: "Old start" },
+      { at: 45_000, title: "Old middle" },
+    ]);
+  });
+
+  it("refuses a transcript that is not one", async () => {
+    const { response } = await send("", { words: "hello" });
+    expect(response.status).toBe(400);
+    expect(asked).toBe(0);
+  });
+
+  it("refuses a recording belonging to another team", async () => {
+    const { id } = await send("", transcript);
+
+    await env.DB.exec(
+      "INSERT INTO organization (id, name, slug) VALUES ('org2', 'Other', 'other')",
+    );
+    await env.DB.exec("UPDATE video SET team_id = 'org2'");
+
+    expect((await send(id, transcript)).response.status).toBe(404);
+  });
+
+  it("hands the chapters to the owner and to the share link alike", async () => {
+    openai = {
+      chapters: [
+        { at: 0, title: "Getting started" },
+        { at: 45, title: "The second half" },
+      ],
+    };
+    const { id } = await send("", transcript);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const playback = (await (await call(`/v1/videos/${id}/playback`)).json()) as {
+      chapters: unknown;
+    };
+    expect(playback.chapters).toEqual([
+      { at: 0, title: "Getting started" },
+      { at: 45_000, title: "The second half" },
+    ]);
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+    const ctx = createExecutionContext();
+    const shared = (await (
+      await app.fetch(new Request(`https://api.prequel.sh/p/${slug}`), env, ctx)
+    ).json()) as { chapters: unknown };
+    await waitOnExecutionContext(ctx);
+
+    expect(shared.chapters).toEqual(playback.chapters);
+  });
+
+  it("serves the transcript as subtitles, and says so on both playback answers", async () => {
+    const { id } = await send("", { ...transcript, language: "fr" }, 30_000);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const playback = (await (await call(`/v1/videos/${id}/playback`)).json()) as {
+      slug: string;
+      captions: { language: string } | null;
+    };
+    expect(playback.captions).toEqual({ language: "fr" });
+
+    const ctx = createExecutionContext();
+    const shared = (await (
+      await app.fetch(new Request(`https://api.prequel.sh/p/${playback.slug}`), env, ctx)
+    ).json()) as { captions: unknown };
+    await waitOnExecutionContext(ctx);
+    expect(shared.captions).toEqual({ language: "fr" });
+
+    const track = await app.fetch(
+      new Request(`https://api.prequel.sh/p/${playback.slug}/captions.vtt`),
+      env,
+      createExecutionContext(),
+    );
+    expect(track.status).toBe(200);
+    expect(track.headers.get("content-type")).toContain("text/vtt");
+    const body = await track.text();
+    expect(body.startsWith("WEBVTT")).toBe(true);
+    expect(body).toContain("w0 w1");
+  });
+
+  it("has no subtitles for a recording that was never transcribed", async () => {
+    const { id } = (await (await create(100)).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const playback = (await (await call(`/v1/videos/${id}/playback`)).json()) as {
+      slug: string;
+      captions: unknown;
+    };
+    expect(playback.captions).toBeNull();
+
+    const track = await app.fetch(
+      new Request(`https://api.prequel.sh/p/${playback.slug}/captions.vtt`),
+      env,
+      createExecutionContext(),
+    );
+    expect(track.status).toBe(404);
+  });
+
+  it("answers an empty list, not null, for a recording with none", async () => {
+    const { id } = await send("", transcript, 30_000);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const playback = (await (await call(`/v1/videos/${id}/playback`)).json()) as {
+      chapters: unknown;
+    };
+    expect(playback.chapters).toEqual([]);
+  });
+
+  it("goes with the recording when it is deleted", async () => {
+    const { id } = await send("", transcript);
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    await call(`/v1/videos/${id}`, { method: "DELETE" });
+
+    // Storage is the thing being paid for, and a transcript is somebody's
+    // words. Neither has any business outliving the recording.
+    expect(await env.MEDIA.get(`transcripts/org1/${id}.json`)).toBeNull();
   });
 });
 

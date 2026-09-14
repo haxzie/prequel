@@ -1693,6 +1693,18 @@
     outline-offset: 2px;
   }
 
+  /* The player's subtitles. Browsers draw cues in their own font on their own
+     plate, and the two defaults differ enough between Chrome and Safari that
+     the same recording reads as two products. `::cue` accepts only a handful
+     of properties — colour, background, font — so this is the whole of what
+     can be said, and the size is left alone: the browser scales it with the
+     picture, which a fixed size would not. */
+  video::cue {
+    background: rgb(0 0 0 / 0.75);
+    color: #fff;
+    font-family: var(--font-sans);
+  }
+
   /* Inherited rather than fixed, so a control follows the theme of the page it
      is on: `dark` inside the app and the sign-in form, `light` everywhere
      public. The reason to say anything at all is Chrome's autofill, which lands

@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { ShareProgress } from "../../../shared/contract";
+import type { ShareProgress, ShareTranscript } from "../../../shared/contract";
 import type { ExportResult } from "./useExport";
 
 export interface ShareState {
@@ -18,7 +18,12 @@ export interface ShareState {
   /** 0–1 while uploading, null before there is a total to divide by. */
   fraction: number | null;
   error: string | null;
-  start: (title: string, poster: string | null, durationMs: number) => Promise<void>;
+  start: (
+    title: string,
+    poster: string | null,
+    durationMs: number,
+    transcript: ShareTranscript | null,
+  ) => Promise<void>;
   cancel: () => void;
 }
 
@@ -33,7 +38,12 @@ export function useShare(result: ExportResult | null, frame: { width: number; he
   useEffect(() => setProgress(null), [result?.path]);
 
   const start = useCallback(
-    async (title: string, poster: string | null, durationMs: number) => {
+    async (
+      title: string,
+      poster: string | null,
+      durationMs: number,
+      transcript: ShareTranscript | null,
+    ) => {
       if (!result) return;
 
       // Shown immediately rather than waiting for the first tick from main, so
@@ -54,6 +64,7 @@ export function useShare(result: ExportResult | null, frame: { width: number; he
         durationMs,
         width: frame.width,
         height: frame.height,
+        transcript,
       });
 
       if (!started.ok) {

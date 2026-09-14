@@ -118,6 +118,15 @@ export interface Env {
   OPENAI_API_KEY?: string;
 
   /**
+   * The rest of the chapter chain — see `lib/chapters.ts`. Each is optional
+   * and a missing one is skipped rather than failed: a deployment with only
+   * an OpenAI key still makes chapters, it simply has one fewer thing to fall
+   * back on.
+   */
+  ANTHROPIC_API_KEY?: string;
+  MOONSHOT_API_KEY?: string;
+
+  /**
    * Optional, and only for the release-notes lookup.
    *
    * Public data either way — this raises GitHub's 60-per-hour limit for an

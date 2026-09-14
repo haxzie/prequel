@@ -10,6 +10,13 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 
 import { organization, user } from "./auth-schema.ts";
 
+/** One entry in a recording's table of contents. */
+export interface Chapter {
+  /** Milliseconds into the finished file. The first is always 0. */
+  at: number;
+  title: string;
+}
+
 const createdAt = () =>
   integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -66,6 +73,62 @@ export const video = sqliteTable(
     width: integer("width").notNull().default(0),
     height: integer("height").notNull().default(0),
     viewCount: integer("view_count").notNull().default(0),
+    /**
+     * The words spoken in the finished cut, as an object in R2.
+     *
+     * Only present when the desktop app had a transcript to send — nothing is
+     * transcribed on this side to get one. An object rather than a column so
+     * the row stays small enough to list two hundred at a time, and kept at
+     * all so the chapters below can be made again without a second upload.
+     */
+    transcriptKey: text("transcript_key"),
+    /**
+     * BCP-47, as the transcriber reported it, for the subtitle track's
+     * `srclang`. On the row rather than read out of the object, so answering
+     * "does this recording have subtitles, and in what" costs no R2 read on
+     * every view.
+     */
+    transcriptLanguage: text("transcript_language"),
+    /**
+     * Where the recording changes subject, for the player's scrub bar and its
+     * side panel. Null until generated, and null for good when there was no
+     * transcript or the recording was too short to be worth dividing.
+     *
+     * `at` is milliseconds into the finished file, the same unit `durationMs`
+     * uses, so the player never converts.
+     */
+    chapters: text("chapters", { mode: "json" }).$type<Chapter[]>(),
+    /**
+     * How the chapters were made, so a worse answer can be replaced by a
+     * better one later.
+     *
+     * `heuristic` is the fallback — boundaries found by the pauses in the
+     * transcript, titled with their opening words — written when the model
+     * could not be reached or answered badly. A row marked so is retried on
+     * view, once `chaptersRetryAt` has passed; `model` and `none` are final.
+     */
+    chaptersSource: text("chapters_source", { enum: ["model", "heuristic", "none"] }),
+    /**
+     * Which model wrote them — `openai/gpt-4o-mini`, `anthropic/claude-opus-5`
+     * — or `heuristic`. Provider-qualified so the same name from two vendors
+     * can never be confused, and kept as a string rather than an enum so a
+     * new model is a constant in `chapters.ts` and not a migration.
+     */
+    chaptersModel: text("chapters_model"),
+    /**
+     * What that call cost, in the model's own units. Input and output apart
+     * because they are priced apart — one number would be the wrong number
+     * for every price list.
+     */
+    chaptersInputTokens: integer("chapters_input_tokens"),
+    chaptersOutputTokens: integer("chapters_output_tokens"),
+    /**
+     * When a heuristic row may next be offered to the model.
+     *
+     * A retry per hour rather than per view, so an outage at OpenAI is not
+     * multiplied by however many people open the link during it.
+     */
+    chaptersRetryAt: integer("chapters_retry_at", { mode: "timestamp" }),
     createdAt: createdAt(),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()

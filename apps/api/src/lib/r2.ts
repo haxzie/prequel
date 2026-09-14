@@ -104,3 +104,13 @@ export function videoKey(teamId: string, videoId: string, extension: string): st
 export function posterKey(teamId: string, videoId: string, contentType: string): string {
   return `posters/${teamId}/${videoId}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
 }
+
+/**
+ * Where a recording's transcript lives.
+ *
+ * Beside the video rather than the poster, because it shares the video's
+ * lifetime: it is deleted with the recording and never handed out on its own.
+ */
+export function transcriptKey(teamId: string, videoId: string): string {
+  return `transcripts/${teamId}/${videoId}.json`;
+}

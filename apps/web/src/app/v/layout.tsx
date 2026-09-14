@@ -27,7 +27,7 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="border-b border-line">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
+        <div className="mx-auto flex h-14 w-full max-w-[90rem] items-center justify-between gap-4 px-5 sm:px-8">
           <Link
             href="/"
             className="flex items-center gap-2.5 transition-opacity hover:opacity-80"

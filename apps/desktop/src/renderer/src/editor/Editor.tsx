@@ -37,6 +37,7 @@ import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useTranscription } from "./useTranscription";
+import { transcriptForShare } from "./shareTranscript";
 import {
   settingsOf,
   canUndo,
@@ -612,6 +613,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const exportState = useExport(session, state.project, state.project.output, captions);
 
   /**
+   * The words as the finished file will have them, for the share page's
+   * chapters. Computed live, like `durationMs`: the dialog is what stops the
+   * edit changing between the export and the share.
+   */
+  const shareTranscript = useMemo(
+    () => transcriptForShare(transcript, placed),
+    [transcript, placed],
+  );
+
+  /**
    * Opens the dialog, then fills its picture in.
    *
    * The still cannot be taken by the dialog itself — it has to come out of the
@@ -1028,6 +1039,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           state={exportState}
           output={state.project.output}
           poster={poster}
+          transcript={shareTranscript}
           onChange={(output) => dispatch({ type: "setOutput", output })}
           onClose={() => {
             setExportOpen(false);

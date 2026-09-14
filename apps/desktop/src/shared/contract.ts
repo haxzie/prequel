@@ -692,6 +692,20 @@ export function mayExport(entitlement: Entitlement): boolean {
   );
 }
 
+/**
+ * What was said in the finished file, for the share page's chapters.
+ *
+ * Milliseconds into the *export*, not nanoseconds on the session clock: every
+ * cut has already been applied and every word in cut-out footage is already
+ * gone, so the API and the player never see the edit. `apps/api` validates
+ * exactly this shape.
+ */
+export interface ShareTranscript {
+  /** BCP-47, as the transcriber reported it. */
+  language: string;
+  words: { at: number; end: number; text: string }[];
+}
+
 export interface ShareRequest {
   /** Absolute path of the finished export. */
   path: string;
@@ -701,6 +715,8 @@ export interface ShareRequest {
   durationMs: number;
   width: number;
   height: number;
+  /** Null when the recording was never transcribed; the link then has no chapters. */
+  transcript: ShareTranscript | null;
 }
 
 /**

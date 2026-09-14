@@ -31,6 +31,13 @@ SES_SECRET_ACCESS_KEY=
 # broken deployment.
 OPENAI_API_KEY=
 
+# The chapter chain, in the order it is tried: OpenAI above, then these two,
+# then a heuristic that needs no key at all. Each is optional and a missing
+# one is skipped — a share still gets chapters, from the next thing that can
+# make them. `chapters_model` on the video row says which did.
+ANTHROPIC_API_KEY=
+MOONSHOT_API_KEY=
+
 # Dodo Payments. The product and brand ids are not secret and live in
 # wrangler.jsonc; these two are.
 #

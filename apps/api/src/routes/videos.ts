@@ -13,9 +13,10 @@ import { z } from "zod";
 import { schema } from "@prequel/db";
 
 import type { Database } from "../db.ts";
+import { retryChaptersIfDue, storeChapters } from "../lib/chapters.ts";
 import { id, slug } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
-import { posterKey, signedPlayback, signedUpload, videoKey } from "../lib/r2.ts";
+import { posterKey, signedPlayback, signedUpload, transcriptKey, videoKey } from "../lib/r2.ts";
 import { describe, notify, personById } from "../lib/slack.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
@@ -110,13 +111,21 @@ videos.get("/", async (c) => {
  * would be two hundred HMACs nobody watches.
  */
 videos.get("/:id/playback", async (c) => {
-  const [row] = await c
-    .get("db")
+  const db = c.get("db");
+  const [row] = await db
     .select({
+      id: schema.video.id,
+      slug: schema.video.slug,
       objectKey: schema.video.objectKey,
       contentType: schema.video.contentType,
       status: schema.video.status,
       deletedAt: schema.video.deletedAt,
+      chapters: schema.video.chapters,
+      durationMs: schema.video.durationMs,
+      transcriptKey: schema.video.transcriptKey,
+      transcriptLanguage: schema.video.transcriptLanguage,
+      chaptersSource: schema.video.chaptersSource,
+      chaptersRetryAt: schema.video.chaptersRetryAt,
     })
     .from(schema.video)
     .where(
@@ -135,11 +144,24 @@ videos.get("/:id/playback", async (c) => {
     return c.json({ message: "No such recording." }, 404);
   }
 
+  // The owner checking the link is as good a moment as any to try the models
+  // again on chapters the heuristic wrote.
+  retryChaptersIfDue(c.env, c.executionCtx, db, row);
+
   return c.json({
     src: await signedPlayback(c.env, row.objectKey),
     // The player has to know before it draws: a `<video>` pointed at a GIF shows
     // a black rectangle with controls and reports no error at all.
     contentType: row.contentType,
+    // With the playback URL rather than in the listing, because the two are
+    // read by the same page and only that page: the library's grid draws a
+    // still and a title, and two hundred tables of contents would be the
+    // biggest thing in a response nothing on it reads.
+    chapters: row.chapters ?? [],
+    // The dashboard's player fetches the same public track the share page
+    // does, by slug — one track, one cache, and nothing to sign.
+    slug: row.slug,
+    captions: row.transcriptKey ? { language: row.transcriptLanguage ?? "en" } : null,
   });
 });
 
@@ -283,6 +305,93 @@ videos.post("/:id/complete", async (c) => {
   return c.json({ id: row.id, slug: row.slug, url });
 });
 
+/**
+ * The finished cut's words, in output time.
+ *
+ * Capped at the size of a long talk. A transcript is a few dozen bytes a word,
+ * so twenty thousand words is well past an hour of continuous speech and well
+ * under anything a Worker minds receiving.
+ */
+const TranscriptBody = z.object({
+  language: z.string().min(2).max(35).default("en"),
+  words: z
+    .array(
+      z.object({
+        at: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+        text: z.string().min(1).max(200),
+      }),
+    )
+    .max(20_000),
+});
+
+/**
+ * Takes the transcript, and makes the chapters from it.
+ *
+ * Its own request rather than a field on `complete`, and it is meant to arrive
+ * *before* the bytes do: the app sends it as soon as the row exists, so the
+ * model is reading while the upload runs and the chapters are on the row by the
+ * time there is a link to open. Making it part of `complete` would put the
+ * model's latency between pressing Share and getting a link, for a table of
+ * contents nobody is looking at yet.
+ *
+ * Answers as soon as the transcript is stored. The generation runs in
+ * `waitUntil`, and its failure is nobody's error — the row simply has no
+ * chapters, which is what it had before.
+ */
+videos.post("/:id/transcript", async (c) => {
+  const db = c.get("db");
+  const { teamId } = c.get("identity");
+
+  const parsed = TranscriptBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ message: "That transcript isn't valid." }, 400);
+
+  const [row] = await db
+    .select({
+      id: schema.video.id,
+      durationMs: schema.video.durationMs,
+      deletedAt: schema.video.deletedAt,
+    })
+    .from(schema.video)
+    .where(and(eq(schema.video.id, c.req.param("id")), eq(schema.video.teamId, teamId!)))
+    .limit(1);
+
+  if (!row || row.deletedAt) return c.json({ message: "No such recording." }, 404);
+
+  const transcript = parsed.data;
+  const key = transcriptKey(teamId!, row.id);
+
+  await c.env.MEDIA.put(key, JSON.stringify(transcript), {
+    httpMetadata: { contentType: "application/json" },
+  });
+
+  // Cleared as well as set: a second transcript for the same recording — a
+  // re-share after correcting the captions — must not leave the first one's
+  // chapters on the row while the new ones are being made.
+  await db
+    .update(schema.video)
+    .set({
+      transcriptKey: key,
+      transcriptLanguage: transcript.language,
+      chapters: null,
+      chaptersSource: null,
+      chaptersModel: null,
+      chaptersInputTokens: null,
+      chaptersOutputTokens: null,
+      chaptersRetryAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.video.id, row.id));
+
+  c.executionCtx.waitUntil(
+    storeChapters(c.env, db, row.id, transcript, row.durationMs).catch((error: unknown) =>
+      console.error("chapters: failed to store", error),
+    ),
+  );
+
+  return c.json({ ok: true }, 202);
+});
+
 const Update = z.object({ title: z.string().min(1).max(200) });
 
 videos.patch("/:id", async (c) => {
@@ -329,7 +438,9 @@ videos.delete("/:id", async (c) => {
 
   if (!row) return c.json({ message: "No such recording." }, 404);
 
-  const keys = [row.objectKey, row.posterKey].filter((key): key is string => key !== null);
+  const keys = [row.objectKey, row.posterKey, row.transcriptKey].filter(
+    (key): key is string => key !== null,
+  );
   await c.env.MEDIA.delete(keys);
 
   await db

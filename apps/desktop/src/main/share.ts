@@ -83,6 +83,34 @@ export async function startShare(share: ShareRequest): Promise<void> {
       }
     }
 
+    // The transcript goes before the bytes, and not after. The API makes the
+    // link's chapters from it in the background, and a model reading a
+    // transcript takes seconds — sent now, that work runs under the upload and
+    // the chapters are on the row before there is a link to open. Sent after
+    // `complete`, the first person to open the link would find none.
+    //
+    // Not fatal, for the same reason the poster is not: a share that failed
+    // because its table of contents did not upload is not a share anybody
+    // wanted.
+    let transcriptSent = !share.transcript;
+    const sendTranscript = async () => {
+      try {
+        await apiFetch(`/v1/videos/${created.id}/transcript`, {
+          method: "POST",
+          token,
+          signal: abort.signal,
+          body: JSON.stringify(share.transcript),
+        });
+        transcriptSent = true;
+      } catch (cause) {
+        // Cancelling aborts this like everything else, and the catch below
+        // reports that; a warning here would call it a transcript failure.
+        if (abort.signal.aborted) throw cause;
+        console.warn("[share] the transcript did not upload:", cause);
+      }
+    };
+    if (!transcriptSent) await sendTranscript();
+
     broadcast({ path: share.path, stage: "uploading", bytesSent: 0, bytesTotal: size });
 
     await putFile(created.uploadUrl, share.path, size, contentType, abort.signal, (sent) => {
@@ -96,6 +124,14 @@ export async function startShare(share: ShareRequest): Promise<void> {
       token,
       signal: abort.signal,
     });
+
+    // A second go, now that the bytes are through. The first attempt failed
+    // on something transient more often than not — the network dropping for
+    // the second it was sent, an API deploy — and an upload of hundreds of
+    // megabytes has just proved the way is clear. The link is a round-trip
+    // later than it would be, for a table of contents it would otherwise
+    // never have.
+    if (!transcriptSent) await sendTranscript();
 
     log("info", `shared ${basename(share.path)}`);
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { Watch, type ApiChapter } from "@/components/player/Watch";
 import { API_URL } from "@/lib/api";
 import { absoluteUrl, OG_IMAGE } from "@/lib/seo";
 import { SITE } from "@/lib/site";
@@ -26,6 +27,10 @@ interface Shared {
   height: number;
   teamName: string | null;
   createdAt: string;
+  /** Empty for a recording with none; never absent. */
+  chapters: ApiChapter[];
+  /** Null when the recording was never transcribed. */
+  captions: { language: string } | null;
   src: string;
   poster: string | null;
 }
@@ -146,38 +151,36 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
   const shared = found.shared;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-8 sm:px-8">
-      <div className="overflow-hidden rounded-2xl border border-line bg-black">
-        {shared.contentType === "image/gif" ? (
-          // A GIF is not a video and a `<video>` pointed at one shows nothing at
-          // all — no error, just a black rectangle with controls.
-          <img src={shared.src} alt={shared.title} className="block w-full" />
-        ) : (
-          <video
-            src={shared.src}
-            poster={shared.poster ?? undefined}
-            controls
-            playsInline
-            // `metadata` rather than `auto`: the browser fetches enough to draw
-            // the scrubber and no more, so opening a link does not pull a
-            // hundred megabytes down for somebody who never presses play.
-            preload="metadata"
-            className="block max-h-[75dvh] w-full bg-black"
-          />
-        )}
-      </div>
-
-      {/* No second Prequel mark here — the bar above already carries it, and
-          the same wordmark twice on one short page reads as a template that
-          could not decide. What belongs under the video is whose recording it
-          is. */}
-      <div className="mt-6 min-w-0">
-        <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
-        <p className="mt-1 text-sm text-muted">
-          {shared.teamName ? `Shared by ${shared.teamName}` : "Shared with Prequel"}
-          {shared.createdAt ? ` · ${formatShared(shared.createdAt)}` : ""}
-        </p>
-      </div>
+    <div className="mx-auto flex w-full max-w-[90rem] flex-1 flex-col px-5 py-8 sm:px-8">
+      <Watch
+        src={shared.src}
+        poster={shared.poster}
+        title={shared.title}
+        durationMs={shared.durationMs}
+        width={shared.width}
+        height={shared.height}
+        contentType={shared.contentType}
+        chapters={shared.chapters ?? []}
+        // Through this site's own route rather than the API's — see
+        // `captions.vtt/route.ts` for why the track cannot be cross-origin.
+        captions={
+          shared.captions
+            ? { src: `/v/${slug}/captions.vtt`, language: shared.captions.language }
+            : null
+        }
+      >
+        {/* No second Prequel mark here — the bar above already carries it, and
+            the same wordmark twice on one short page reads as a template that
+            could not decide. What belongs under the video is whose recording it
+            is. */}
+        <div className="mt-6 min-w-0">
+          <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {shared.teamName ? `Shared by ${shared.teamName}` : "Shared with Prequel"}
+            {shared.createdAt ? ` · ${formatShared(shared.createdAt)}` : ""}
+          </p>
+        </div>
+      </Watch>
     </div>
   );
 }
