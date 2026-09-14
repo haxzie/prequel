@@ -884,7 +884,9 @@ describe("the pointer layer", () => {
     expect(item.kind).toBe("cursor");
     if (item.kind !== "cursor" || screen.kind !== "image") throw new Error("wrong item");
 
-    const middle = item.points[1]!;
+    // By moment rather than by index: the samples are seconds apart, so each
+    // gap is a park and carries a held knot of its own.
+    const middle = item.points.find((point) => point.at === 1_000_000_000)!;
     expect(middle.x).toBeCloseTo(screen.dstRect.x + screen.dstRect.width / 2);
     expect(middle.y).toBeCloseTo(screen.dstRect.y + screen.dstRect.height / 2);
     expect(middle.visible).toBe(true);
@@ -1175,8 +1177,111 @@ describe("hiding a parked pointer", () => {
     ).items.find((candidate) => candidate.kind === "cursor")!;
     if (item.kind !== "cursor") throw new Error("wrong item");
 
-    expect(item.points).toHaveLength(still.samples.length);
+    // Every sample is still there and nothing is hidden. Not a count: the
+    // parks are held, which adds a knot to each gap whether or not it hides.
+    for (const sample of still.samples) {
+      expect(item.points.find((point) => point.at === sample.at)).toBeDefined();
+    }
+    expect(item.points.every((point) => point.visible)).toBe(true);
     expect(cursorAt(item.points, 20_000_000_000)).not.toBeNull();
+  });
+});
+
+describe("holding a parked pointer", () => {
+  const S = 1_000_000_000;
+  const SHAPES = { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } };
+
+  const drawn = (samples: { at: number; x: number; y: number; kind?: CursorKind }[]) => {
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      { shapes: SHAPES, size: 0.035, hideAfter: null, samples },
+    ).items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return item;
+  };
+
+  /** A short move, a five-second rest, and a move away. */
+  const RESTED = [
+    { at: 0, x: 0.2, y: 0.2 },
+    { at: 33_000_000, x: 0.3, y: 0.3 },
+    { at: 5 * S, x: 0.6, y: 0.6 },
+    { at: 5 * S + 33_000_000, x: 0.7, y: 0.7 },
+  ];
+
+  it("stays where it stopped until it moves again", () => {
+    // The complaint this answers. The capture writes a sample only when the
+    // pointer moves, so a rest is one span between where it stopped and where
+    // it set off to — and drawn as a span, the pointer spent the whole rest
+    // creeping across the picture at a speed no hand makes.
+    const item = drawn(RESTED);
+    const stopped = cursorAt(item.points, 33_000_000)!;
+
+    for (const at of [S, 2.5 * S, 5 * S - 50_000_000]) {
+      const point = cursorAt(item.points, at)!;
+      expect(point.x, `at ${at}`).toBeCloseTo(stopped.x, 6);
+      expect(point.y, `at ${at}`).toBeCloseTo(stopped.y, 6);
+    }
+  });
+
+  it("keeps the shape it rested with", () => {
+    // `cursorKind` steps at the sample that recorded a change. A knot that
+    // took the far sample's kind would put the I-beam on screen an interval
+    // before the pointer reached the field.
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      {
+        shapes: { arrow: SHAPES.arrow, text: { path: "text.png", hotspot: { x: 0.5, y: 0.5 } } },
+        size: 0.035,
+        hideAfter: null,
+        samples: [
+          { at: 0, x: 0.2, y: 0.2 },
+          { at: 5 * S, x: 0.6, y: 0.6, kind: "text" },
+        ],
+      },
+    ).items.filter((candidate) => candidate.kind === "cursor");
+
+    const arrow = item.find(
+      (candidate) => candidate.kind === "cursor" && candidate.path === "cursor.png",
+    )!;
+    if (arrow.kind !== "cursor") throw new Error("wrong item");
+    expect(cursorAt(arrow.points, 5 * S - 20_000_000)).not.toBeNull();
+    expect(cursorAt(arrow.points, 5 * S + 1)).toBeNull();
+  });
+
+  it("leaves a hand in steady motion alone", () => {
+    // The sampler misses its own gate by a hair often enough that a moving
+    // pointer is written at every other poll. Holding across those would turn
+    // a sweep into a stutter — still for a poll, then a jump.
+    const sweep = Array.from({ length: 10 }, (_, step) => ({
+      at: step * 66_000_000,
+      x: 0.1 + step * 0.08,
+      y: 0.5,
+    }));
+    const item = drawn(sweep);
+
+    expect(item.points.map((point) => point.at)).toEqual(sweep.map((sample) => sample.at));
+    const a = cursorAt(item.points, 0)!;
+    const b = cursorAt(item.points, 66_000_000)!;
+    const mid = cursorAt(item.points, 33_000_000)!;
+    expect(mid.x).toBeCloseTo((a.x + b.x) / 2, 6);
+  });
+
+  it("keeps the rest for the auto-hide to find", () => {
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      { shapes: SHAPES, size: 0.035, hideAfter: 2, samples: RESTED },
+    ).items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+
+    expect(cursorAt(item.points, S)).not.toBeNull();
+    expect(cursorAt(item.points, 3 * S)).toBeNull();
+    expect(cursorAt(item.points, 5 * S)).not.toBeNull();
   });
 });
 
@@ -3598,10 +3703,17 @@ describe("the pointer's own corners", () => {
     // way only as far as the picture is concerned — but a yaw slants that row
     // on screen, so the *screen* streak has a vertical component. Left
     // unresolved, the blur is drawn across the plane instead of along it.
-    const plan = planFor(0, 24, [
-      { at: 0, x: 0.2, y: 0.2 },
-      { at: 4 * S, x: 0.8, y: 0.2 },
-    ]);
+    // Sampled at the capture's rate rather than as two samples four seconds
+    // apart: a gap that wide is a park, and a parked pointer is held still.
+    const plan = planFor(
+      0,
+      24,
+      Array.from({ length: 121 }, (_, step) => ({
+        at: Math.round((step * S) / 30),
+        x: 0.2 + (step / 120) * 0.6,
+        y: 0.2,
+      })),
+    );
     const item = cursor(plan);
     const point = cursorAt(item.points, 2 * S)!;
 

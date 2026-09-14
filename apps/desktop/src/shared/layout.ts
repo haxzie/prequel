@@ -437,6 +437,11 @@ export function buildRenderPlan(
   const items: PlanItem[] = [];
   const { layout, background } = settings;
 
+  // Held once, here, rather than in `cursorItems`: a zoom that follows the
+  // pointer reads the same track, and a park the sprite holds through would
+  // otherwise still be one the shot drifted across.
+  if (cursor) cursor = { ...cursor, samples: withHeldParks(cursor.samples) };
+
   // The shorter edge is the reference for every fraction, so a setting means
   // the same thing in a landscape frame and a portrait one.
   const unit = Math.min(frame.width, frame.height);
@@ -2817,6 +2822,65 @@ export function pressScale(clicks: readonly number[] | undefined, at: number): n
   }
 
   return deepest;
+}
+
+/**
+ * How often the capture looks at where the pointer is, in nanoseconds.
+ *
+ * `SAMPLE_INTERVAL_NS` in `crates/prequel-capture/src/cursor.rs`, and written
+ * out here rather than carried by the manifest because every recording ever
+ * made was sampled at this rate, and a park in one of them needs holding as
+ * much as a park in the next.
+ */
+const SAMPLE_INTERVAL_NS = 33_000_000;
+
+/**
+ * The longest gap between two samples that is still one movement, in
+ * nanoseconds.
+ *
+ * The sampler sleeps for an interval and then refuses a reading that arrives
+ * a hair short of one, so a hand in steady motion is written at every other
+ * poll as often as at every poll. Three intervals is clear of that; a gap
+ * longer still means the pointer was looked at in between and found not to
+ * have moved.
+ */
+const PARK_NS = SAMPLE_INTERVAL_NS * 3;
+
+/**
+ * The recorded path with every park held where the pointer stopped.
+ *
+ * The capture writes a sample only when the pointer moves, so a pointer that
+ * rests for ten seconds is two samples ten seconds apart — and both rasterisers
+ * interpolate straight across a span. Drawn as recorded, the pointer spends the
+ * whole rest creeping towards wherever it went next, at a speed too slow to be
+ * a move and too steady to be a hand, and then sets off from a place it never
+ * was.
+ *
+ * One knot an interval short of the far sample, holding the near one's
+ * position, is exactly what the sampler saw: still at its last poll, moved by
+ * the next. The gap `withIdleGaps` reads as stillness is kept — the knot sits
+ * at the end of it, not inside — and `smoothPath` starts the next move from
+ * the held position rather than from the drift.
+ */
+function withHeldParks(samples: CursorTrack["samples"]): CursorTrack["samples"] {
+  if (!samples.some((sample, index) => index > 0 && sample.at - samples[index - 1]!.at > PARK_NS)) {
+    return samples;
+  }
+
+  const out: CursorTrack["samples"][number][] = [];
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index]!;
+    const previous = samples[index - 1];
+    if (previous && sample.at - previous.at > PARK_NS) {
+      // The near sample's shape as well as its position: `cursorKind` steps
+      // at the sample that recorded a change, so the knot has to report what
+      // the pointer looked like while it rested, not what it became.
+      out.push({ ...previous, at: sample.at - SAMPLE_INTERVAL_NS });
+    }
+    out.push(sample);
+  }
+
+  return out;
 }
 
 /**
