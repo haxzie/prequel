@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { competitors } from "@/content/competitors";
 import { useCases } from "@/content/use-cases";
-import { CONTACT_EMAIL, NAV, SITE } from "@/lib/site";
+import { CONTACT_EMAIL, FOOTER_NAV, SITE } from "@/lib/site";
 
 import { Logo } from "./Logo";
 import { Container } from "./Section";
@@ -28,7 +28,7 @@ export function Footer() {
         <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_1.5fr_1fr_auto] sm:gap-x-12">
           <nav className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Site</span>
-            {NAV.map((item) => (
+            {FOOTER_NAV.map((item) => (
               <Link key={item.href} href={item.href} className="text-muted hover:text-fg">
                 {item.label}
               </Link>
@@ -59,8 +59,10 @@ export function Footer() {
             ))}
           </nav>
 
-          {/* Same reasoning as the use cases above: the comparison pages have no
-              index either, so this column is what makes them crawlable. */}
+          {/* `/compare` indexes these now, so this column is no longer the only
+              path to them. It stays for the same reason the use cases do: a
+              link from every page is what keeps eleven-deep pages crawled, and
+              one index page linked from the header is not that. */}
           <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm sm:grid-cols-1">
             <span className="col-span-2 font-medium text-fg sm:col-span-1">Alternatives</span>
             {competitors.map((competitor) => (

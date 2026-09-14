@@ -18,6 +18,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // this index holds no date of its own, and `new Date()` would claim it
     // changed on every deploy.
     { url: `${base}/usecases`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${base}/compare`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.8 },
     // The date of the newest release, which is the only thing on the page that
     // ever moves. It has a real one, so it can say so.

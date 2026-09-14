@@ -90,6 +90,12 @@
      in the listicles disappeared. */
   --positive: #137a54;
 
+  /* The one red, for a feature a product does not have: the cross in a
+     comparison table. `negative` and not `red` for the reason `positive` is
+     not `green`. Darker than a warning red would be, so a 14px cross reads as
+     a cross rather than a smudge: 5.6:1 on `--surface`. */
+  --negative: #c1272d;
+
   /* The inset highlight `lit` paints. A white line is what lifts a dark card;
      on paper there is nothing brighter than the surface, so the same job is done
      by a dark lip along the top edge. A token rather than two utilities, so the
@@ -122,6 +128,7 @@
 
   --lilac: #eeacff;
   --positive: #5ad19a;
+  --negative: #f2706c;
 
   --lit: rgb(255 255 255 / 0.06);
 }
@@ -145,6 +152,7 @@
   --color-brand-to-deep: var(--brand-to-deep);
   --color-iris-deep: var(--iris-deep);
   --color-positive: var(--positive);
+  --color-negative: var(--negative);
 
   /* The editor picture's palette. Declared here so the utilities exist, and
      given values only inside `editor-theme` — outside that subtree they resolve

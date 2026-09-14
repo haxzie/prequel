@@ -52,6 +52,10 @@ export const FEATURE_ROWS = [
   { key: "smoothCursor", label: "Cursor smoothing and resizing" },
   { key: "camera", label: "Camera overlay, shaped and placed after" },
   { key: "backgrounds", label: "Backgrounds, padding and shadow" },
+  { key: "layouts", label: "Layouts for the screen and camera" },
+  { key: "cameraCutout", label: "Camera cut out of its background" },
+  { key: "tiltFocus", label: "Perspective tilt and focus falloff on zooms" },
+  { key: "localCaptions", label: "Captions transcribed on your Mac" },
   { key: "timeline", label: "Timeline editing" },
   { key: "separateTracks", label: "Separate audio tracks" },
   { key: "systemAudio", label: "System audio without a virtual driver" },
@@ -61,6 +65,7 @@ export const FEATURE_ROWS = [
   { key: "workspace", label: "Team workspace" },
   { key: "iosCapture", label: "Records an iPhone or iPad" },
   { key: "maxExport", label: "Maximum export" },
+  { key: "downloadSize", label: "Download size" },
   { key: "platforms", label: "Platforms" },
   { key: "licence", label: "Licence" },
 ] as const;
@@ -88,6 +93,19 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   smoothCursor: true,
   camera: true,
   backgrounds: true,
+  // The count is the one `/features` gives, and it is the one thing on the
+  // row a tick would hide: most of the column has layouts of some kind.
+  layouts: "Fourteen, per clip",
+  // "Remove background" in the Camera panel, 0.0.19 — a segmentation mask made
+  // while recording, so it is you over the wallpaper with no card. Not a
+  // virtual background inside a bubble, which is what most of the column has.
+  cameraCutout: true,
+  tiltFocus: true,
+  // `SpeechAnalyzer` on macOS 26 and `SFSpeechRecognizer` below it, both
+  // on-device — see `main/transcribe/apple.ts`. Nothing leaves the Mac. A tick here is a claim about where the audio goes,
+  // not whether captions exist, so every rival with cloud transcription gets
+  // a string saying so rather than a tick.
+  localCaptions: true,
   timeline: true,
   separateTracks: true,
   systemAudio: true,
@@ -102,6 +120,13 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   // capture — see `TargetKind` in apps/desktop/src/shared/contract.ts.
   iosCapture: false,
   maxExport: "4K, 120 fps",
+  // The `.dmg` on the v0.0.19 GitHub release, 102,171,961 bytes. Every size on
+  // this row is the vendor's own Apple Silicon `.dmg` as served on 2026-09-14
+  // — `Content-Length` of the URL the Homebrew cask points at, in decimal
+  // megabytes, and the version in the source's label — so a number here can
+  // be re-measured with one `curl -I` rather than trusted. Ours moves with
+  // every release; re-read it when it is bumped.
+  downloadSize: "102 MB",
   platforms: "macOS 14+, Apple Silicon",
   licence: "$9/month or $29 once, 7-day trial",
 };
@@ -197,6 +222,10 @@ export const competitors: Competitor[] = [
       smoothCursor: true,
       camera: true,
       backgrounds: true,
+      layouts: "Camera over the screen, or full screen",
+      cameraCutout: false,
+      tiltFocus: false,
+      localCaptions: true,
       timeline: true,
       separateTracks: true,
       systemAudio: true,
@@ -206,6 +235,7 @@ export const competitors: Competitor[] = [
       workspace: false,
       iosCapture: true,
       maxExport: "4K, 60 fps",
+      downloadSize: "366 MB",
       platforms: "macOS",
       licence: "Subscription only",
     },
@@ -215,6 +245,14 @@ export const competitors: Competitor[] = [
     sources: [
       { label: "Screen Studio", url: "https://screen.studio/" },
       { label: "screen.studio pricing", url: "https://screen.studio/#pricing" },
+      {
+        label: "Dynamic camera layouts",
+        url: "https://screen.studio/guide/dynamic-camera-layouts-",
+      },
+      {
+        label: "Screen Studio 3.7.5 installer",
+        url: "https://screenstudioassets.com/releases/3.7.5-4595/Screen%20Studio%203.7.5-4595%20Apple%20Silicon.dmg",
+      },
     ],
     heading: "Looking for a Screen Studio alternative?",
     lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $29 once, which is the lifetime licence they stopped selling in 2025. Seven days free to judge the output before you pay.",
@@ -275,6 +313,10 @@ export const competitors: Competitor[] = [
       smoothCursor: false,
       camera: true,
       backgrounds: "Blur and simple backgrounds",
+      layouts: "Screen and camera, screen only, camera only",
+      cameraCutout: "Virtual background inside the bubble",
+      tiltFocus: false,
+      localCaptions: "After upload to Loom",
       timeline: "Trim and transcript-based edits",
       separateTracks: false,
       systemAudio: true,
@@ -284,6 +326,7 @@ export const competitors: Competitor[] = [
       workspace: true,
       iosCapture: false,
       maxExport: "4K on paid plans",
+      downloadSize: "228 MB",
       platforms: "macOS, Windows, web, Chrome",
       licence: "Per-seat subscription",
     },
@@ -295,6 +338,18 @@ export const competitors: Competitor[] = [
       {
         label: "Loom's recent product investments",
         url: "https://support.atlassian.com/loom/docs/looms-recent-product-investments/",
+      },
+      {
+        label: "Loom capture modes",
+        url: "https://support.atlassian.com/loom/docs/use-looms-different-capture-modes/",
+      },
+      {
+        label: "Loom virtual backgrounds",
+        url: "https://support.atlassian.com/loom/docs/add-a-virtual-background-to-your-camera-bubble/",
+      },
+      {
+        label: "Loom 0.374.2 installer",
+        url: "https://packages.loom.com/desktop-packages/Loom-0.374.2-arm64.dmg",
       },
     ],
     heading: "Looking for a Loom alternative?",
@@ -355,6 +410,10 @@ export const competitors: Competitor[] = [
       smoothCursor: false,
       camera: true,
       backgrounds: true,
+      layouts: "Rev templates",
+      cameraCutout: true,
+      tiltFocus: false,
+      localCaptions: "After upload to TechSmith",
       timeline: "A full multi-track editor",
       separateTracks: true,
       systemAudio: true,
@@ -364,6 +423,7 @@ export const competitors: Competitor[] = [
       workspace: true,
       iosCapture: false,
       maxExport: "4K",
+      downloadSize: "435 MB",
       platforms: "macOS 14+, Windows",
       licence: "Subscription only, annual",
     },
@@ -379,6 +439,15 @@ export const competitors: Competitor[] = [
       {
         label: "Difference between Camtasia Pro, Create and Essentials",
         url: "https://support.techsmith.com/hc/en-us/articles/41688340554765-What-Is-the-Difference-Between-Camtasia-Pro-Create-and-Essentials",
+      },
+      { label: "Camtasia features", url: "https://www.techsmith.com/camtasia/features/" },
+      {
+        label: "Camtasia transcription",
+        url: "https://www.techsmith.com/camtasia/features/transcribe-audio-to-text/",
+      },
+      {
+        label: "Camtasia 2026.2.2 installer",
+        url: "https://download.techsmith.com/camtasiamac/releases/2026.2.2/Camtasia.dmg",
       },
     ],
     heading: "Looking for a lighter Camtasia alternative?",
@@ -431,6 +500,10 @@ export const competitors: Competitor[] = [
       smoothCursor: false,
       camera: true,
       backgrounds: true,
+      layouts: "Templates you build",
+      cameraCutout: true,
+      tiltFocus: false,
+      localCaptions: "Typed in a caption editor",
       timeline: "A full multi-track editor",
       separateTracks: true,
       systemAudio: true,
@@ -440,6 +513,7 @@ export const competitors: Competitor[] = [
       workspace: false,
       iosCapture: "Over USB",
       maxExport: "4K",
+      downloadSize: "89 MB",
       platforms: "macOS 15 or macOS 26",
       licence: "One-off, paid major upgrades",
     },
@@ -454,6 +528,19 @@ export const competitors: Competitor[] = [
       {
         label: "ScreenFlow 10 on the Mac App Store",
         url: "https://apps.apple.com/us/app/screenflow-10/id1568414480?mt=12",
+      },
+      { label: "ScreenFlow features", url: "https://www.telestream.net/screenflow/overview.htm" },
+      {
+        label: "ScreenFlow background removal",
+        url: "https://support.telestream.net/s/article/Auto-Background-Removal",
+      },
+      {
+        label: "ScreenFlow captions",
+        url: "https://support.telestream.net/s/article/Creating-Captions/",
+      },
+      {
+        label: "ScreenFlow 10.5.2 installer",
+        url: "https://www.telestream.net/download-files/screenflow/10-5/ScreenFlow-10.5.2.dmg",
       },
     ],
     heading: "Looking for a ScreenFlow alternative?",
@@ -511,6 +598,10 @@ export const competitors: Competitor[] = [
       smoothCursor: false,
       camera: "Picture in picture",
       backgrounds: "Green screen removal",
+      layouts: "Split-screen and scene layouts",
+      cameraCutout: true,
+      tiltFocus: false,
+      localCaptions: "In the cloud",
       timeline: "Transcript-based, plus multi-track",
       separateTracks: true,
       systemAudio: true,
@@ -520,6 +611,7 @@ export const competitors: Competitor[] = [
       workspace: true,
       iosCapture: false,
       maxExport: "4K on Creator and above",
+      downloadSize: "255 MB",
       platforms: "macOS, Windows, web",
       licence: "Per-seat subscription",
     },
@@ -529,6 +621,11 @@ export const competitors: Competitor[] = [
     sources: [
       { label: "Descript pricing", url: "https://www.descript.com/pricing" },
       { label: "Descript security", url: "https://www.descript.com/security" },
+      { label: "Descript tools", url: "https://www.descript.com/tools" },
+      {
+        label: "Descript 114.0.4 installer",
+        url: "https://electron.descript.com/Descript-114.0.4-release.20250509.32955-arm64.dmg",
+      },
     ],
     heading: "Looking for a Descript alternative for screen recording?",
     lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen: automatic zooms, a perspective tilt, focus falling away from the subject, recorded and rendered on your own Mac and uploaded only when you ask. $9 a month, or $29 once — under every paid Descript tier either way.",
@@ -583,6 +680,10 @@ export const competitors: Competitor[] = [
       smoothCursor: false,
       camera: true,
       backgrounds: true,
+      layouts: true,
+      cameraCutout: "Blur, a colour or an image",
+      tiltFocus: false,
+      localCaptions: "After upload to Tella",
       timeline: true,
       separateTracks: true,
       systemAudio: true,
@@ -592,6 +693,7 @@ export const competitors: Competitor[] = [
       workspace: true,
       iosCapture: false,
       maxExport: "4K; 60 fps on Premium only",
+      downloadSize: "25 MB, editor in the browser",
       platforms: "macOS, Windows, web, Chrome",
       licence: "Per-seat subscription, no free plan",
     },
@@ -601,6 +703,12 @@ export const competitors: Competitor[] = [
     sources: [
       { label: "Tella pricing", url: "https://www.tella.com/pricing" },
       { label: "Tella plans", url: "https://www.tella.com/help/introduction/plans" },
+      { label: "Tella features", url: "https://www.tella.com/features" },
+      {
+        label: "Tella camera background",
+        url: "https://www.tella.com/help/recording/blur-your-camera-background",
+      },
+      { label: "Tella 2.33 installer", url: "https://mac.tella.tv/Tella-2.33-254.dmg" },
     ],
     heading: "Looking for a Tella alternative?",
     lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $9 a month, under both Tella's $13 Pro and its $19 Premium, or $29 once.",

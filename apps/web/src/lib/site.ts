@@ -33,9 +33,24 @@ export const SITE = {
 export const NAV: { href: Route; label: string }[] = [
   { href: "/features", label: "Features" },
   { href: "/usecases", label: "Use cases" },
+  { href: "/compare", label: "Compare" },
   { href: "/pricing", label: "Pricing" },
   { href: "/blog", label: "Blog" },
   { href: "/changelog", label: "Changelog" },
+];
+
+/**
+ * The footer's "Site" column: the header's row, and then the pages that are
+ * reachable but not sold.
+ *
+ * `/about` used to be in `NAV`, and it came out when `/compare` went in: the
+ * header holds six labels before it wraps — the note in `Nav.tsx` has the
+ * arithmetic — and a stranger choosing a recorder reads a comparison before
+ * they read who made it. The page still has to be linked from everywhere,
+ * which is what the footer is for.
+ */
+export const FOOTER_NAV: { href: Route; label: string }[] = [
+  ...NAV,
   { href: "/about", label: "About" },
 ];
 

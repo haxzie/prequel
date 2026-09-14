@@ -56,24 +56,27 @@ function logoFor(competitor: Competitor): string | null {
  * to a rounded logo. The fraction is the one `ComparisonHero` already passes to
  * `Logo`, so their mark and ours are the same size and the same curve.
  */
-const MARK_SIZE = 64;
-const MARK_RADIUS = 0.42;
+export const MARK_SIZE = 64;
+export const MARK_RADIUS = 0.42;
 
 /**
  * The competitor's mark: their logo where we have one, their monogram where we
  * do not.
  *
- * Both render at the size and curve above, so a page with a logo and a page
- * without are the same page rather than two different designs.
+ * Both render at the same size and curve, so a page with a logo and a page
+ * without are the same page rather than two different designs. The size is a
+ * prop because `/compare` draws seven of these in a row of column headings,
+ * where the hero's 64px is a row of billboards; the curve is not, so a smaller
+ * mark is the same shape rather than a squarer one.
  */
-function Mark({ competitor }: { competitor: Competitor }) {
+export function Mark({ competitor, size = MARK_SIZE }: { competitor: Competitor; size?: number }) {
   const logo = logoFor(competitor);
-  const shape = { borderRadius: MARK_SIZE * MARK_RADIUS };
+  const shape = { width: size, height: size, borderRadius: size * MARK_RADIUS };
 
   if (logo) {
     return (
       <span
-        className="squircle relative block size-16 overflow-hidden bg-elevated ring-1 ring-fg/10"
+        className="squircle relative block overflow-hidden bg-elevated ring-1 ring-fg/10"
         style={shape}
       >
         {/* A plain `img`: `next/image` refuses SVG unless `dangerouslyAllowSVG`
@@ -98,8 +101,8 @@ function Mark({ competitor }: { competitor: Competitor }) {
         <img
           src={logo}
           alt={`${competitor.name} logo`}
-          width={MARK_SIZE}
-          height={MARK_SIZE}
+          width={size}
+          height={size}
           className="size-full object-cover"
         />
       </span>
@@ -108,8 +111,11 @@ function Mark({ competitor }: { competitor: Competitor }) {
 
   return (
     <div
-      className="squircle flex size-16 items-center justify-center border text-xl font-medium tracking-tight"
+      className="squircle flex items-center justify-center border font-medium tracking-tight"
       style={{
+        // The letters scale with the tile: a fixed `text-xl` fills a 64px
+        // square and spills a 40px one.
+        fontSize: size * 0.3125,
         ...shape,
         // Their accent, tinted rather than poured in flat. A fully saturated
         // brand colour next to our own mark reads as their page rather than a
@@ -266,7 +272,7 @@ export function FeatureMatrix({ competitor }: { competitor: Competitor }) {
                     {row.label}
                   </th>
                   <td className="px-5 py-4">
-                    <Cell value={PREQUEL_FEATURES[row.key]} />
+                    <Cell value={PREQUEL_FEATURES[row.key]} own />
                   </td>
                   <td className="px-5 py-4">
                     <Cell value={competitor.features[row.key]} />

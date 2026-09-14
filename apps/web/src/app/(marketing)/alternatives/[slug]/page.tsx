@@ -7,10 +7,11 @@ import {
   FeatureMatrix,
   PricingCompare,
 } from "@/components/comparison/Comparison";
+import { JsonLd } from "@/components/JsonLd";
 import { LandingBody } from "@/components/landing/LandingBody";
 import { Container } from "@/components/Section";
 import { competitors, findCompetitor } from "@/content/competitors";
-import { pageMetadata } from "@/lib/seo";
+import { breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
 
 export function generateStaticParams() {
   return competitors.map((competitor) => ({ slug: competitor.slug }));
@@ -66,12 +67,20 @@ export default async function AlternativePage({ params }: PageProps<"/alternativ
       <FeatureMatrix competitor={competitor} />
       <PricingCompare competitor={competitor} />
 
-      {/* No trail, for the same reason /create has none: there is no index above
-          these pages, so the only parent to name is `/alternatives`, which 404s.
-          It shipped that way — a BreadcrumbList pointing at a URL Google cannot
-          fetch, on all six comparison pages. Restore it if an index is built.
-          The FAQPage schema comes off `LandingBody`'s own array. */}
+      {/* The FAQPage schema comes off `LandingBody`'s own array. */}
       <LandingBody faq={competitor.faq} />
+
+      {/* `/compare` is the index above these pages, so the trail can name a
+          parent that resolves. It used to be left off: the only candidate was
+          `/alternatives`, which 404s, and a BreadcrumbList pointing at a URL
+          Google cannot fetch shipped on all six pages before that was noticed.
+          The path does not mirror the URL, which `breadcrumbJsonLd` allows. */}
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Compare", path: "/compare" },
+          { name: competitor.name, path: `/alternatives/${competitor.slug}` },
+        ])}
+      />
     </>
   );
 }
