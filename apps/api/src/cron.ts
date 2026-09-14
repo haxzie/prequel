@@ -13,12 +13,13 @@
  *   Neither is an event; both are just rows that disagree, so they are swept
  *   for from both ends.
  */
-import { and, eq, isNotNull, lt, ne, notExists, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lt, ne, notExists, notLike, sql } from "drizzle-orm";
 
 import { schema } from "@prequel/db";
 
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
+import { mirrorProviderPicture } from "./lib/avatars.ts";
 import { applyPlan } from "./lib/entitlement.ts";
 import { id } from "./lib/ids.ts";
 import { ensureTeam } from "./lib/teams.ts";
@@ -29,7 +30,18 @@ export async function scheduled(env: Env): Promise<void> {
   await expireGrace(db);
   await settleTeams(db);
   await settleUsers(db);
+  await mirrorAvatars(env, db);
 }
+
+/**
+ * How many provider pictures one run copies.
+ *
+ * Every account that signed up before pictures were copied has a Google URL
+ * on its row, and this is what brings them across — a few dozen an hour is
+ * two runs for everyone there is, and a bound on what one run does if a host
+ * is slow.
+ */
+const AVATARS_PER_RUN = 25;
 
 type Database = ReturnType<typeof database>;
 
@@ -217,4 +229,24 @@ async function settleUsers(db: Database): Promise<void> {
 
     if (teamId) console.warn("team created for an account that had none", user.id, teamId);
   }
+}
+
+/**
+ * Users whose picture is still the provider's.
+ *
+ * The sign-up hook copies it for new accounts; this is for the accounts that
+ * predate the hook and for any sign-up where the copy failed. One that keeps
+ * failing — a picture host that answers 403 for good — is retried every hour
+ * for the cost of one request, which is cheaper than a column to remember it.
+ */
+async function mirrorAvatars(env: Env, db: Database): Promise<void> {
+  const pending = await db
+    .select({ id: schema.user.id, image: schema.user.image })
+    .from(schema.user)
+    .where(
+      and(isNotNull(schema.user.image), notLike(schema.user.image, `${env.API_URL}/p/avatar/%`)),
+    )
+    .limit(AVATARS_PER_RUN);
+
+  for (const user of pending) await mirrorProviderPicture(env, db, user);
 }

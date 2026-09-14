@@ -16,6 +16,7 @@ import { UpgradeCard } from "./UpgradeCard";
 
 const LINKS = [
   { href: "/app", label: "Library", Icon: LibraryIcon },
+  { href: "/app/settings", label: "Account", Icon: AccountIcon },
   { href: "/app/settings/billing", label: "Billing", Icon: BillingIcon },
 ] as const;
 
@@ -49,8 +50,13 @@ export function Sidebar({
       <nav className="flex flex-col gap-0.5 px-3 py-2">
         {LINKS.map(({ href, label, Icon }) => {
           // `startsWith` would light Library up everywhere, since every
-          // dashboard path begins with `/app`.
-          const current = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+          // dashboard path begins with `/app` — and Account on Billing, which
+          // sits under `/app/settings`. Exact for both; a prefix only for a
+          // link that has pages of its own beneath it.
+          const current =
+            href === "/app" || href === "/app/settings"
+              ? pathname === href
+              : pathname.startsWith(href);
 
           return (
             <Link
@@ -160,7 +166,7 @@ function UserMenu({ user }: { user: SessionUser }) {
         placement="up"
         trigger={
           <span className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-fg/8">
-            <Avatar seed={user.email} size={32} />
+            <Avatar seed={user.email} image={user.image} size={32} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-fg">{name}</span>
               <span className="block truncate text-xs text-muted">{user.email}</span>
@@ -191,6 +197,17 @@ function LibraryIcon() {
     <svg {...STROKE} aria-hidden="true">
       <rect width="18" height="14" x="3" y="5" rx="2" />
       <path d="m10 9 5 3-5 3z" />
+    </svg>
+  );
+}
+
+/** Lucide `circle-user-round`. */
+function AccountIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M18 20a6 6 0 0 0-12 0" />
+      <circle cx="12" cy="10" r="4" />
+      <circle cx="12" cy="12" r="10" />
     </svg>
   );
 }

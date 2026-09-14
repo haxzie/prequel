@@ -13,6 +13,7 @@ import { schema } from "@prequel/db";
 
 import { database } from "../db.ts";
 import type { Env } from "../env.ts";
+import { avatarFileOf, avatarKey, isOurAvatar } from "../lib/avatars.ts";
 import { vttFrom } from "../lib/captions.ts";
 import { retryChaptersIfDue, type Transcript } from "../lib/chapters.ts";
 import { sha256 } from "../lib/ids.ts";
@@ -47,6 +48,7 @@ publicRoutes.get("/:slug", async (c) => {
       teamName: schema.organization.name,
       ownerId: schema.video.ownerId,
       ownerName: schema.user.name,
+      ownerImage: schema.user.image,
     })
     .from(schema.video)
     .leftJoin(schema.organization, eq(schema.video.teamId, schema.organization.id))
@@ -102,7 +104,13 @@ publicRoutes.get("/:slug", async (c) => {
     // not be handed. The marble therefore differs from the owner's own, which
     // nobody opening a link has seen.
     owner: row.ownerId
-      ? { name: row.ownerName ?? "Someone", seed: await sha256(row.ownerId) }
+      ? {
+          name: row.ownerName ?? "Someone",
+          seed: await sha256(row.ownerId),
+          // Only a picture this API serves. A provider's URL still on the row
+          // is one the copy has not reached, and is nobody's to hand out.
+          image: isOurAvatar(c.env, row.ownerImage) ? row.ownerImage : null,
+        }
       : null,
     createdAt: row.createdAt,
     // An empty list rather than null, so the page has one shape to render and
@@ -198,6 +206,30 @@ publicRoutes.get("/:slug/captions.vtt", async (c) => {
       // An hour, as the poster: a corrected transcript re-shared this
       // afternoon is showing by the evening, and a deleted one goes with it.
       "cache-control": "public, max-age=3600",
+    },
+  });
+});
+
+/**
+ * A profile picture. Public and cached for a year: the file name is a random
+ * token that changes with every upload, so a stale copy is never a wrong one.
+ *
+ * `/p/avatar/…` rather than `/p/:slug/…`, so the route cannot collide with a
+ * recording whose slug happens to be `avatar` — slugs are sixteen characters,
+ * and this segment is not.
+ */
+publicRoutes.get("/avatar/:file", async (c) => {
+  const file = avatarFileOf(c.env, `${c.env.API_URL}/p/avatar/${c.req.param("file")}`);
+  if (!file) return c.notFound();
+
+  const object = await c.env.MEDIA.get(avatarKey(file));
+  if (!object) return c.notFound();
+
+  return new Response(object.body, {
+    headers: {
+      "content-type": object.httpMetadata?.contentType ?? "image/jpeg",
+      "content-length": String(object.size),
+      "cache-control": "public, max-age=31536000, immutable",
     },
   });
 });

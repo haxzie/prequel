@@ -27,8 +27,11 @@ interface Shared {
   width: number;
   height: number;
   teamName: string | null;
-  /** Who shared it. `seed` is opaque — a hash the API makes, never the email. */
-  owner: { name: string; seed: string } | null;
+  /**
+   * Who shared it. `seed` is opaque — a hash the API makes, never the email —
+   * and `image` is a picture the API serves, or null.
+   */
+  owner: { name: string; seed: string; image: string | null } | null;
   createdAt: string;
   /** Empty for a recording with none; never absent. */
   chapters: ApiChapter[];
@@ -197,7 +200,14 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
             team under it. The marble is the dashboard's, seeded from the hash
             the API sends rather than the email it seeds with there. */}
         <div className="mt-6 flex items-start gap-3">
-          {shared.owner && <Avatar seed={shared.owner.seed} size={40} className="mt-0.5" />}
+          {shared.owner && (
+            <Avatar
+              seed={shared.owner.seed}
+              image={shared.owner.image}
+              size={40}
+              className="mt-0.5"
+            />
+          )}
           <div className="min-w-0">
             <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
             <p className="mt-1 text-sm text-muted">{sharedBy(shared)}</p>

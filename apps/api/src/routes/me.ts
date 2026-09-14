@@ -12,6 +12,7 @@ import { Hono } from "hono";
 
 import { schema } from "@prequel/db";
 
+import { AVATAR_MAX_BYTES, removeAvatar, sniffImage, storeAvatar } from "../lib/avatars.ts";
 import { ensureTeam } from "../lib/teams.ts";
 import { trialEndsAt, trialStatus } from "../lib/trial.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
@@ -152,6 +153,37 @@ me.get("/", async (c) => {
     trial: trialStatus(active?.plan ?? "free", trialEndsAt(createdAt)),
     devices: devices.filter((device) => device.revokedAt === null),
   });
+});
+
+/**
+ * A new profile picture, as bytes.
+ *
+ * Through the Worker rather than a presigned URL, unlike a video: the
+ * dashboard crops to 256×256 before sending, so this is tens of kilobytes,
+ * and passing it through is what lets the type be read off the bytes and the
+ * old object be removed in the same breath.
+ */
+me.put("/avatar", async (c) => {
+  const length = Number(c.req.header("content-length") ?? "0");
+  if (length > AVATAR_MAX_BYTES) {
+    return c.json({ message: "That picture is too large. Crop it to 256 pixels." }, 413);
+  }
+
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.byteLength > AVATAR_MAX_BYTES) {
+    return c.json({ message: "That picture is too large. Crop it to 256 pixels." }, 413);
+  }
+
+  const type = sniffImage(bytes);
+  if (!type) return c.json({ message: "That isn't a PNG, JPEG or WebP." }, 415);
+
+  const image = await storeAvatar(c.env, c.get("db"), c.get("identity").userId, bytes, type);
+  return c.json({ image });
+});
+
+me.delete("/avatar", async (c) => {
+  await removeAvatar(c.env, c.get("db"), c.get("identity").userId);
+  return c.json({ image: null });
 });
 
 export default me;

@@ -13,6 +13,7 @@ import { schema } from "@prequel/db";
 
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
+import { mirrorProviderPicture } from "./lib/avatars.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
 import { describe, post } from "./lib/slack.ts";
 import { ensureTeam } from "./lib/teams.ts";
@@ -63,6 +64,11 @@ export function createAuth(env: Env) {
             // gives up after five seconds, so the worst this costs a sign-up is
             // that — and only on a deployment that configured a webhook at all.
             await post(env, "signups", `*New sign-up* — ${describe(user)}`);
+
+            // The Google picture, copied while the URL is fresh. Swallows its
+            // own failures for the reason above, and the cron's `mirrorAvatars`
+            // picks up anyone this misses.
+            await mirrorProviderPicture(env, db, user);
           },
         },
       },
