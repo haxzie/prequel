@@ -124,6 +124,41 @@ describe("POST /v1/videos", () => {
   });
 });
 
+describe("the export settings", () => {
+  it("are kept with the recording", async () => {
+    const response = await call("/v1/videos", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "A recording",
+        contentType: "video/mp4",
+        sizeBytes: 100,
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        // "Full": the frame's own size, which is null rather than a number.
+        shortEdge: null,
+      }),
+    });
+    const { id } = (await response.json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const listed = (await (await call("/v1/videos")).json()) as {
+      videos: { exportFps: number | null; exportShortEdge: number | null }[];
+    };
+    expect(listed.videos[0]?.exportFps).toBe(60);
+    expect(listed.videos[0]?.exportShortEdge).toBeNull();
+  });
+
+  it("are optional, for an app that predates them", async () => {
+    const { id } = (await (await create(100)).json()) as { id: string };
+    const row = await env.DB.prepare("SELECT export_fps, export_short_edge FROM video WHERE id = ?")
+      .bind(id)
+      .first<{ export_fps: number | null; export_short_edge: number | null }>();
+    expect(row).toEqual({ export_fps: null, export_short_edge: null });
+  });
+});
+
 describe("the poster", () => {
   it("is stored as the type the client actually has", async () => {
     const response = await call("/v1/videos", {
@@ -601,6 +636,28 @@ describe("POST /v1/videos/:id/transcript", () => {
       createExecutionContext(),
     );
     expect(track.status).toBe(404);
+  });
+
+  it("names the sharer on the link without giving their email away", async () => {
+    const { id } = (await (await create(100)).json()) as { id: string };
+    await env.MEDIA.put(`videos/org1/${id}.mp4`, new Uint8Array(100));
+    await call(`/v1/videos/${id}/complete`, { method: "POST" });
+
+    const slug = await scalar<string>(
+      env.DB.prepare("SELECT slug FROM video WHERE id = ?").bind(id),
+    );
+    const ctx = createExecutionContext();
+    const response = await app.fetch(new Request(`https://api.prequel.sh/p/${slug}`), env, ctx);
+    const text = await response.text();
+    await waitOnExecutionContext(ctx);
+
+    const shared = JSON.parse(text) as { owner: { name: string; seed: string } | null };
+    expect(shared.owner?.name).toBe("Ana");
+    // Stable, so the marble is the same on every view; opaque, so it is not
+    // the id or the address.
+    expect(shared.owner?.seed).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(text).not.toContain("ana@example.com");
+    expect(text).not.toContain('"u1"');
   });
 
   it("answers an empty list, not null, for a recording with none", async () => {

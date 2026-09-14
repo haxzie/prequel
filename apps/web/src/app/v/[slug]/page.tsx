@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { Avatar } from "@/components/dashboard/Avatar";
 import { Watch, type ApiChapter } from "@/components/player/Watch";
 import { API_URL } from "@/lib/api";
 import { absoluteUrl, OG_IMAGE } from "@/lib/seo";
@@ -26,6 +27,8 @@ interface Shared {
   width: number;
   height: number;
   teamName: string | null;
+  /** Who shared it. `seed` is opaque — a hash the API makes, never the email. */
+  owner: { name: string; seed: string } | null;
   createdAt: string;
   /** Empty for a recording with none; never absent. */
   chapters: ApiChapter[];
@@ -128,6 +131,24 @@ function formatShared(value: string): string {
   });
 }
 
+/**
+ * "Shared by Ana · Acme · 14 Sep 2026", with whichever parts there are.
+ *
+ * The person first, because a marble sits beside the line and a marble with a
+ * company's name under it reads as a logo that failed to load. The team only
+ * when it says something the name does not — "Ana's team" after "Ana" is the
+ * same fact twice.
+ */
+function sharedBy(shared: Shared): string {
+  const who = shared.owner?.name ?? shared.teamName;
+  const parts = [who ? `Shared by ${who}` : "Shared with Prequel"];
+  if (shared.owner && shared.teamName && !shared.teamName.startsWith(shared.owner.name)) {
+    parts.push(shared.teamName);
+  }
+  if (shared.createdAt) parts.push(formatShared(shared.createdAt));
+  return parts.join(" · ");
+}
+
 export default async function SharedVideoPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const found = await fetchShared(slug);
@@ -172,13 +193,15 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
         {/* No second Prequel mark here — the bar above already carries it, and
             the same wordmark twice on one short page reads as a template that
             could not decide. What belongs under the video is whose recording it
-            is. */}
-        <div className="mt-6 min-w-0">
-          <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {shared.teamName ? `Shared by ${shared.teamName}` : "Shared with Prequel"}
-            {shared.createdAt ? ` · ${formatShared(shared.createdAt)}` : ""}
-          </p>
+            is: the person, as a marble beside the title, and their name and
+            team under it. The marble is the dashboard's, seeded from the hash
+            the API sends rather than the email it seeds with there. */}
+        <div className="mt-6 flex items-start gap-3">
+          {shared.owner && <Avatar seed={shared.owner.seed} size={40} className="mt-0.5" />}
+          <div className="min-w-0">
+            <h1 className="text-xl font-medium tracking-tight text-fg">{shared.title}</h1>
+            <p className="mt-1 text-sm text-muted">{sharedBy(shared)}</p>
+          </div>
         </div>
       </Watch>
     </div>

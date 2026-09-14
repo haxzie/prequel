@@ -50,6 +50,13 @@
       "when": 1789357181741,
       "tag": "0006_video_chapters",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789358850054,
+      "tag": "0007_export_settings",
+      "breakpoints": true
     }
   ]
 }

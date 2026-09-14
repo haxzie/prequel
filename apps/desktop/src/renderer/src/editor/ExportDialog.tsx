@@ -75,7 +75,7 @@ export function ExportDialog({
   const { progress, running, frame, result } = state;
   const failed = progress?.stage === "failed";
 
-  const share = useShare(result, frame);
+  const share = useShare(result, frame, output);
 
   /**
    * A still taken from the finished file, once there is one.

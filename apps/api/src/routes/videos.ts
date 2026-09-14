@@ -39,6 +39,10 @@ const Create = z.object({
   height: z.number().int().nonnegative().default(0),
   /** Absent when there is no still. Its presence is what asks for an upload URL. */
   posterContentType: z.enum(["image/png", "image/jpeg"]).optional(),
+  /** The export dialog's settings. Optional, so an older app still shares. */
+  fps: z.number().int().positive().max(240).optional(),
+  /** The Quality picker: the shorter edge in pixels, or null for the frame's own size. */
+  shortEdge: z.number().int().positive().nullable().optional(),
 });
 
 /** The team's library, newest first. */
@@ -63,6 +67,8 @@ videos.get("/", async (c) => {
         viewCount: schema.video.viewCount,
         createdAt: schema.video.createdAt,
         posterKey: schema.video.posterKey,
+        exportFps: schema.video.exportFps,
+        exportShortEdge: schema.video.exportShortEdge,
         ownerName: schema.user.name,
       })
       .from(schema.video)
@@ -229,6 +235,8 @@ videos.post("/", async (c) => {
     durationMs: body.durationMs,
     width: body.width,
     height: body.height,
+    exportFps: body.fps ?? null,
+    exportShortEdge: body.shortEdge ?? null,
   });
 
   return c.json({

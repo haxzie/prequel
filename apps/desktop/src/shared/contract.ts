@@ -715,6 +715,10 @@ export interface ShareRequest {
   durationMs: number;
   width: number;
   height: number;
+  /** What the Export dialog was set to, kept on the library row. */
+  fps: number;
+  /** The Quality picker: the shorter edge, or null for the frame's own size. */
+  shortEdge: number | null;
   /** Null when the recording was never transcribed; the link then has no chapters. */
   transcript: ShareTranscript | null;
 }

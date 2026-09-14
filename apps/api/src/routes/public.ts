@@ -15,6 +15,7 @@ import { database } from "../db.ts";
 import type { Env } from "../env.ts";
 import { vttFrom } from "../lib/captions.ts";
 import { retryChaptersIfDue, type Transcript } from "../lib/chapters.ts";
+import { sha256 } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
 import { signedPlayback } from "../lib/r2.ts";
 
@@ -44,9 +45,12 @@ publicRoutes.get("/:slug", async (c) => {
       status: schema.video.status,
       teamId: schema.video.teamId,
       teamName: schema.organization.name,
+      ownerId: schema.video.ownerId,
+      ownerName: schema.user.name,
     })
     .from(schema.video)
     .leftJoin(schema.organization, eq(schema.video.teamId, schema.organization.id))
+    .leftJoin(schema.user, eq(schema.video.ownerId, schema.user.id))
     .where(eq(schema.video.slug, c.req.param("slug")))
     .limit(1);
 
@@ -91,6 +95,15 @@ publicRoutes.get("/:slug", async (c) => {
     width: row.width,
     height: row.height,
     teamName: row.teamName,
+    // Who shared it, for the page to draw. The avatar is a marble generated
+    // from a seed, and the seed is a hash of the owner's id rather than the
+    // email the dashboard seeds with: this answer goes to strangers, and an
+    // email address on it would be the one thing about the owner they should
+    // not be handed. The marble therefore differs from the owner's own, which
+    // nobody opening a link has seen.
+    owner: row.ownerId
+      ? { name: row.ownerName ?? "Someone", seed: await sha256(row.ownerId) }
+      : null,
     createdAt: row.createdAt,
     // An empty list rather than null, so the page has one shape to render and
     // "no chapters" is the list being empty rather than a second case.

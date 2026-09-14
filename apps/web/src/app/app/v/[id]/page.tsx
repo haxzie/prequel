@@ -139,6 +139,14 @@ function Facts({ video }: { video: LibraryVideo }) {
         value={`${formatBytes(video.sizeBytes)}${video.width ? ` · ${video.width}×${video.height}` : ""}`}
       />
       <Fact label="Views" value={String(video.viewCount)} />
+      {video.exportFps !== null && (
+        <Fact
+          label="Export"
+          // As the dialog labels them: "1080p · 60 fps", or "Full · 30 fps"
+          // for a file written at the frame's own size.
+          value={`${video.exportShortEdge === null ? "Full" : `${video.exportShortEdge}p`} · ${video.exportFps} fps`}
+        />
+      )}
       <Fact
         label="Shared"
         value={new Date(video.createdAt).toLocaleDateString("en-GB", {

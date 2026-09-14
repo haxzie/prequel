@@ -28,6 +28,10 @@ export interface LibraryVideo {
   /** A presigned R2 URL, minted by the API. Null if the share had no still. */
   poster: string | null;
   ownerName: string | null;
+  /** The export dialog's settings when it was shared; null on older rows. */
+  exportFps: number | null;
+  /** The Quality picker: shorter edge in pixels, or null for the frame's own size. */
+  exportShortEdge: number | null;
 }
 
 export default async function LibraryPage() {

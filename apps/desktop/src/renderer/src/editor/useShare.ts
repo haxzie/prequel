@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ShareProgress, ShareTranscript } from "../../../shared/contract";
+import type { OutputSettings } from "../../../shared/project";
 import type { ExportResult } from "./useExport";
 
 export interface ShareState {
@@ -27,7 +28,11 @@ export interface ShareState {
   cancel: () => void;
 }
 
-export function useShare(result: ExportResult | null, frame: { width: number; height: number }) {
+export function useShare(
+  result: ExportResult | null,
+  frame: { width: number; height: number },
+  output: OutputSettings,
+) {
   const [progress, setProgress] = useState<ShareProgress | null>(null);
 
   useEffect(() => window.prequel.editor.share.onProgress(setProgress), []);
@@ -64,6 +69,8 @@ export function useShare(result: ExportResult | null, frame: { width: number; he
         durationMs,
         width: frame.width,
         height: frame.height,
+        fps: output.fps,
+        shortEdge: output.shortEdge,
         transcript,
       });
 
@@ -78,7 +85,7 @@ export function useShare(result: ExportResult | null, frame: { width: number; he
         });
       }
     },
-    [result, frame.width, frame.height],
+    [result, frame.width, frame.height, output.fps, output.shortEdge],
   );
 
   const cancel = useCallback(() => void window.prequel.editor.share.cancel(), []);

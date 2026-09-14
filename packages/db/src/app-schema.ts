@@ -72,6 +72,17 @@ export const video = sqliteTable(
     durationMs: integer("duration_ms").notNull().default(0),
     width: integer("width").notNull().default(0),
     height: integer("height").notNull().default(0),
+    /**
+     * The export settings the file was written with — what the desktop's
+     * Export dialog was set to when Share was pressed.
+     *
+     * `width` and `height` above say what the file is; these say what was
+     * asked for. `exportShortEdge` is the Quality picker: 1080 for "1080p",
+     * null for "Full", the frame's own size. Both null on a row shared before
+     * they were sent.
+     */
+    exportFps: integer("export_fps"),
+    exportShortEdge: integer("export_short_edge"),
     viewCount: integer("view_count").notNull().default(0),
     /**
      * The words spoken in the finished cut, as an object in R2.

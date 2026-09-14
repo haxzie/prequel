@@ -68,6 +68,8 @@ export async function startShare(share: ShareRequest): Promise<void> {
         durationMs: Math.round(share.durationMs),
         width: share.width,
         height: share.height,
+        fps: share.fps,
+        shortEdge: share.shortEdge,
         posterContentType: poster?.contentType,
       }),
     });
