@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Logo } from "@/components/Logo";
 import { SITE } from "@/lib/site";
 
 /**
@@ -28,18 +27,21 @@ export default function PlayerLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-dvh flex-col bg-bg">
       <header className="border-b border-line">
         <div className="mx-auto flex h-14 w-full max-w-[90rem] items-center justify-between gap-4 px-5 sm:px-8">
+          {/* The name alone, without the mark beside it. The mark is an app
+              icon, and an app icon in a header over a video says "this is a
+              window of that app" — the bubble the sharer recorded in, not a
+              page for the stranger watching it. The script name names the
+              product without dressing the page as the product.
+
+              Playwrite VN, with a stroke rather than a heavier cut: the family
+              stops at 400 and `next/font` refuses to synthesise one. Matches
+              the marketing nav, which is the canonical treatment. */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
+            className="font-script text-base text-fg transition-opacity hover:opacity-80 [-webkit-text-stroke:0.4px_currentColor]"
             aria-label={`${SITE.name} home`}
           >
-            <Logo size={24} />
-            {/* Playwrite VN, with a stroke rather than a heavier cut: the family
-                stops at 400 and `next/font` refuses to synthesise one. Matches
-                the marketing nav, which is the canonical treatment. */}
-            <span className="font-script text-base text-fg [-webkit-text-stroke:0.4px_currentColor]">
-              {SITE.name}
-            </span>
+            {SITE.name}
           </Link>
 
           {/* The one piece of selling on the page, and it sits after the video
