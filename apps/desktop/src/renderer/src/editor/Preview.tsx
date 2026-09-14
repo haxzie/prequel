@@ -588,33 +588,32 @@ export function Preview({
   const find = (point: Point): Grip | null => {
     const near = HANDLE * grain();
     const { screen, camera } = pictures();
+    const boxes: Record<Grabbable, Rect | null> = {
+      watermark: watermarkBox(),
+      camera: camera?.dstRect ?? null,
+      screen: screen?.dstRect ?? null,
+    };
 
-    // The logo first: it is drawn over both pictures, so a mark sitting on the
-    // bubble would otherwise be unreachable wherever the two overlap — the same
-    // reason the camera comes before the screen below.
-    const mark = watermarkBox();
-    if (mark) {
-      const corner = selected === "watermark" ? cornerAt(mark, point, near) : null;
-      if (corner) return { kind: "resize", target: "watermark", corner, box: mark, from: point };
-      if (inside(mark, point)) return { kind: "move", target: "watermark", box: mark, from: point };
+    // The ringed picture's corners first, whatever is stacked over them. The
+    // ring is drawn above every picture, so its handles sit on top of a bubble
+    // that overlaps them — and testing bodies in stacking order first, as
+    // below, answered a pull on the screen's corner with a drag of the camera
+    // standing on it. Only the ringed picture answers to its corners at all:
+    // the handles are what say a corner is there, so a resize on a picture
+    // showing none is a gesture nobody aimed — and on the stacked arrangements
+    // it is usually the *other* picture's edge the pointer was heading for.
+    if (selected) {
+      const box = boxes[selected];
+      const corner = box ? cornerAt(box, point, near) : null;
+      if (box && corner) return { kind: "resize", target: selected, corner, box, from: point };
     }
 
-    // The camera next, because in every arrangement that stacks them it is the
-    // one on top — and a bubble sitting over the screen would otherwise be
-    // unreachable wherever the two overlap.
-    for (const target of ["camera", "screen"] as const) {
-      const found = target === "camera" ? camera : screen;
-      if (!found) continue;
-
-      // Only the ringed picture answers to its corners. The handles are what
-      // say a corner is there, so a resize on a picture showing none is a
-      // gesture nobody aimed — and on the stacked arrangements it is usually
-      // the *other* picture's edge the pointer was heading for.
-      const corner = target === selected ? cornerAt(found.dstRect, point, near) : null;
-      if (corner) return { kind: "resize", target, corner, box: found.dstRect, from: point };
-      if (inside(found.dstRect, point)) {
-        return { kind: "move", target, box: found.dstRect, from: point };
-      }
+    // Then bodies, top down. The logo is drawn over both pictures, and the
+    // camera over the screen in every arrangement that stacks them, so a
+    // picture underneath is reachable only where nothing covers it.
+    for (const target of ["watermark", "camera", "screen"] as const) {
+      const box = boxes[target];
+      if (box && inside(box, point)) return { kind: "move", target, box, from: point };
     }
 
     return null;

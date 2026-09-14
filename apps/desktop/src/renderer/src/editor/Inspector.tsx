@@ -1142,44 +1142,57 @@ function CameraPanel({
           }}
         />
 
-        <ToggleField
-          icon={<CutoutIcon />}
-          label="Remove background"
-          {...field("layout", "cameraCutout")}
-          value={layout.cameraCutout}
-          // Greyed rather than hidden on a recording without a matte, so the
-          // control still says the feature exists — and the title says why it
-          // cannot be had here.
-          disabled={off || !cameraMatte}
-          title={
-            cameraMatte ? undefined : "This recording was made before backgrounds could be removed"
+        {/* The cutout is offered as a shape, though it is stored as a switch
+            beside the shape. It used to be a toggle of its own above this row,
+            which put the same question — what outline does the camera have —
+            in two controls that greyed each other out. As an option here the
+            row answers it once. The switch stays underneath because the
+            geometry reads it, and because it keeps the shape that was chosen
+            before: pick a shape again and the cutout simply lets go of it. */}
+        <Field
+          icon={<SquircleIcon />}
+          // Set for the clip if either half of the answer is.
+          overridden={
+            field("layout", "cameraShape").overridden || field("layout", "cameraCutout").overridden
           }
-          onChange={(value) => set("layout", "cameraCutout", value)}
-        />
-
-        <Field icon={<SquircleIcon />} {...field("layout", "cameraShape")}>
-          <Segmented
-            value={layout.cameraShape}
-            disabled={off || cutout}
+        >
+          <Segmented<CameraShape | "cutout">
+            value={cutout ? "cutout" : layout.cameraShape}
+            disabled={off}
             iconsOnly
+            // The name alone as each option's tooltip. A description under a
+            // glyph was tried and read as a paragraph in a bubble; the glyph
+            // and its name say it.
             options={[
+              {
+                value: "cutout",
+                label: "Remove background",
+                // Greyed rather than hidden on a recording without a matte, so
+                // the option still says the feature exists — and the tooltip
+                // says why it cannot be had here.
+                title: cameraMatte
+                  ? undefined
+                  : "This recording was made before backgrounds could be removed",
+                icon: <CutoutIcon />,
+                disabled: !cameraMatte,
+              },
               { value: "circle", label: "Circle", icon: <CircleIcon /> },
               { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
               { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
-              {
-                value: "wide",
-                label: "Wide",
-                title: "The camera at its own size, corners rounded",
-                icon: <WideIcon />,
-              },
-              {
-                value: "portrait",
-                label: "Portrait",
-                title: "Taller than it is wide, cropped to the middle of the picture",
-                icon: <PortraitIcon />,
-              },
+              { value: "wide", label: "Wide", icon: <WideIcon /> },
+              { value: "portrait", label: "Portrait", icon: <PortraitIcon /> },
             ]}
             onChange={(value) => {
+              if (value === "cutout") {
+                // The size, zoom and framing are left as they are: the cutout
+                // is the same picture with its background gone, not a new one.
+                set("layout", "cameraCutout", true);
+                return;
+              }
+              // Only when there is a cutout to let go of. Written every time,
+              // `false` would land in a clip's overrides on any shape change
+              // and mark the cutout as set for that clip when nobody set it.
+              if (cutout) set("layout", "cameraCutout", false);
               set("layout", "cameraShape", value);
               // The shape decides the proportions and the roundness once, here,
               // rather than on every frame. Derived during layout instead, a

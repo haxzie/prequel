@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { useEffect, useState } from "react";
 
+import { useTooltip } from "../../components/Tooltip";
 import { cn } from "../../lib/cn";
 import { ChevronDownIcon } from "../icons";
 import { ScrollFade } from "./ScrollFade";
@@ -175,7 +176,18 @@ export function Segmented<T extends string>({
   onChange,
 }: {
   value: T;
-  options: { value: T; label: string; title?: string; icon?: ReactNode }[];
+  /**
+   * `disabled` on one option greys that option alone and leaves the rest
+   * live: for a choice the recording cannot offer — a cutout with no matte —
+   * where greying the whole row would say the *shape* cannot be changed.
+   */
+  options: {
+    value: T;
+    label: string;
+    title?: string;
+    icon?: ReactNode;
+    disabled?: boolean;
+  }[];
   disabled?: boolean;
   /** Drop the labels. For a row of shapes, where the glyph *is* the answer and
       the words only repeat it — the name still reaches a screen reader and the
@@ -226,33 +238,86 @@ export function Segmented<T extends string>({
       />
 
       {options.map((option, index) => (
-        <button
+        <SegmentedOption
           key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={option.value === value}
-          aria-label={option.label}
-          disabled={disabled}
-          title={option.title ?? option.label}
-          className={cn(
-            // The icon sits beside the label rather than replacing it: a glyph
-            // alone has to be learned, and a label alone makes every option in
-            // the panel look the same at a glance.
-            "relative z-10 flex flex-1 items-center justify-center gap-1 rounded-md px-2",
-            CONTROL_H,
-            "text-[11px] whitespace-nowrap transition-colors [&_svg]:size-3.5",
-            option.value === value
-              ? "font-medium text-editor-fg"
-              : "text-editor-muted hover:text-editor-fg",
-          )}
-          onPointerEnter={() => setHovered(index)}
-          onClick={() => onChange(option.value)}
+          option={option}
+          checked={option.value === value}
+          disabled={disabled || option.disabled}
+          // A tooltip only where the words are not already on the button: a
+          // glyph has to be told, and so does an option with more to say than
+          // its label, but a label repeated in a bubble is noise.
+          tooltip={option.title ?? (iconsOnly ? option.label : null)}
+          // No hover pill on an option that cannot be picked: the pill says
+          // "this is where a click would land", and here it would land nowhere.
+          onHover={() => setHovered(option.disabled ? null : index)}
+          onPick={() => onChange(option.value)}
         >
           {option.icon}
           {!iconsOnly && option.label}
-        </button>
+        </SegmentedOption>
       ))}
     </div>
+  );
+}
+
+/**
+ * One option of a `Segmented` row.
+ *
+ * A component rather than a branch of the `map` above because of the tooltip:
+ * `useTooltip` is a hook, and a hook cannot run inside a loop. The app's own
+ * bubble rather than `title`, as on the rail and the dock, so a row of glyphs
+ * explains itself in the same voice and at the same speed as every other icon
+ * in the window.
+ */
+function SegmentedOption({
+  option,
+  checked,
+  disabled,
+  tooltip,
+  onHover,
+  onPick,
+  children,
+}: {
+  option: { label: string; disabled?: boolean };
+  checked: boolean;
+  disabled?: boolean;
+  /** `null` for no bubble at all. */
+  tooltip: string | null;
+  onHover: () => void;
+  onPick: () => void;
+  children: ReactNode;
+}) {
+  // Always called — the hook has to be — and only spread when there is a
+  // label worth showing.
+  const bubble = useTooltip(tooltip ?? option.label);
+  const labelled = tooltip !== null ? bubble : null;
+
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      aria-label={option.label}
+      disabled={disabled}
+      className={cn(
+        // The icon sits beside the label rather than replacing it: a glyph
+        // alone has to be learned, and a label alone makes every option in
+        // the panel look the same at a glance.
+        "relative z-10 flex flex-1 items-center justify-center gap-1 rounded-md px-2",
+        CONTROL_H,
+        "text-[11px] whitespace-nowrap transition-colors [&_svg]:size-3.5",
+        checked ? "font-medium text-editor-fg" : "text-editor-muted hover:text-editor-fg",
+        option.disabled && "opacity-35 hover:text-editor-muted",
+      )}
+      {...labelled}
+      onPointerEnter={() => {
+        labelled?.onPointerEnter();
+        onHover();
+      }}
+      onClick={onPick}
+    >
+      {children}
+    </button>
   );
 }
 
