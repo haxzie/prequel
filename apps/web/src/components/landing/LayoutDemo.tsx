@@ -32,6 +32,7 @@
  */
 import { CameraFootage } from "@/components/landing/CameraFootage";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
+import { type Layout, LayoutGlyph } from "@/components/landing/glyphs";
 import { LayoutsWord } from "@/components/landing/marks";
 import { LAYOUT_SCREEN, LAYOUT_STAGE } from "@/components/landing/stage";
 import { Container, SectionHeading } from "@/components/Section";
@@ -62,30 +63,6 @@ const LAYOUTS = [
   { name: "Split", screen: [0, 0, 8, 9], camera: [8, 0, 8, 9] },
   { name: "Camera", camera: [0, 0, 16, 9] },
 ] satisfies Layout[];
-
-/**
- * One layout, as the two boxes it puts on the frame.
- *
- * `[x, y, w, h]` in the frame's own units — 16 across by 9 down — which is the
- * same coordinate space the keyframes are written in, so a glyph and the
- * picture it labels cannot disagree about which layout they are showing.
- * A screen-less layout simply has no `screen`.
- */
-interface Layout {
-  name: string;
-  screen?: Box;
-  camera: Box;
-  /** The camera is a bubble over the screen rather than a card beside it. */
-  bubble?: boolean;
-}
-
-/**
- * A tuple and not `number[]`, so `noUncheckedIndexedAccess` can see that all
- * four are there. Destructuring an array of unknown length hands back four
- * `number | undefined`, and every one of them then has to be defended against
- * for a figure written six lines above.
- */
-type Box = [x: number, y: number, width: number, height: number];
 
 export function LayoutDemo() {
   return (
@@ -184,71 +161,6 @@ function LayoutTrack() {
         ),
       }))}
     />
-  );
-}
-
-/**
- * An layout as the shape it makes: the frame faint, the screen tinted
- * inside it, the camera solid.
- *
- * Drawn from the same `[x, y, w, h]` figures the slice carries, in the frame's
- * own 16-by-9 units, so there is one description of a layout rather than
- * a picture and a second drawing of it that have to be kept in agreement. It is
- * the app's own layout picker in miniature, and for its reason: two rectangles
- * are understood before "padded screen with the camera beside it, matched to
- * its height" is finished being read.
- */
-function LayoutGlyph({ layout }: { layout: Layout }) {
-  const [cx, cy, cw, ch] = layout.camera;
-
-  return (
-    <svg viewBox="-0.5 -0.5 17 10" className="h-3.5 w-[1.55rem] shrink-0" aria-hidden>
-      {/* The output frame, faint, behind both boxes — the edge a padded screen
-          is padded *from*. Every layout that does not fill the frame needs
-          something to be inset within, or it reads as a smaller frame rather
-          than as a smaller picture in the same one. */}
-      <rect
-        x="0"
-        y="0"
-        width="16"
-        height="9"
-        rx="0.8"
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity="0.35"
-        strokeWidth="0.9"
-      />
-
-      {layout.screen ? (
-        <rect
-          x={layout.screen[0]}
-          y={layout.screen[1]}
-          width={layout.screen[2]}
-          height={layout.screen[3]}
-          rx="0.8"
-          // Tinted, where the camera below is solid. Outlining both left a
-          // full-frame screen and a padded one as the same rectangle drawn a
-          // hair smaller; filling the screen turns the difference into an area,
-          // which survives being fourteen pixels tall.
-          fill="currentColor"
-          fillOpacity="0.3"
-          stroke="currentColor"
-          strokeWidth="0.9"
-        />
-      ) : null}
-
-      {/* A bubble is a squircle and a card is a slightly-rounded rectangle, the
-          same two shapes the picture uses — so the corner radius is the whole
-          difference, and at this size it is enough of one. */}
-      <rect
-        x={cx}
-        y={cy}
-        width={cw}
-        height={ch}
-        rx={layout.bubble ? cw * 0.32 : 0.8}
-        fill="currentColor"
-      />
-    </svg>
   );
 }
 

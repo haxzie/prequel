@@ -79,3 +79,19 @@ export const CAPTIONS_SCREEN = "/screen-checkout.jpg";
  * page is composed around, and the eyes are the thing to check.
  */
 export const CAMERA_STILL = "/camera-still.jpg";
+
+/**
+ * The same frame with the background cut away.
+ *
+ * Made by `scripts/make-camera-cutout.swift`, which runs Vision's person
+ * segmentation — the model the app's own matte comes from — over the frame
+ * `CAMERA_STILL` was cut from, at full size. It is the picture on the features
+ * page's "remove background" card, and it has to be a real matte of the same
+ * face: a drawn silhouette would be a diagram of the feature, and any other
+ * face would read as a second person in the recording.
+ *
+ * WebP with alpha, 300 wide, 12kB. `public/` rather than R2 for the reason
+ * `CAMERA_STILL` is: it is small and it is composed against the rest of the
+ * page, so it should ship with it.
+ */
+export const CAMERA_CUTOUT = "/camera-cutout.webp";
