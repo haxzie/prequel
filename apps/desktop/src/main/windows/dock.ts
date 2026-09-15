@@ -61,12 +61,33 @@ const COLLAPSE_MS = 220;
 const RESIZE_MS = 150;
 const FRAME_MS = 16;
 
+/**
+ * How often the cursor is checked against the panel while the dock is showing.
+ *
+ * The window is bigger than the panel — `DOCK_HEADROOM` above it and
+ * `PANEL_INSET` on the other three sides — and a transparent window still
+ * takes every click over it. The band above the pill was a strip nothing
+ * behind could be clicked through, with nothing drawn in it to say why. So the
+ * window ignores the mouse except while the cursor is over the panel, and main
+ * watches the cursor to say when — the way `CameraWindow` does for its bubble,
+ * and for the same reason: the pill is a drag region, and a drag region gets
+ * no mouse events for the renderer to decide this from.
+ *
+ * Quicker than the bubble's poll. That one reveals a button; this one decides
+ * whether a click lands at all, and a cursor that crossed the edge and clicked
+ * inside one tick would fall through to whatever is behind.
+ */
+const CURSOR_POLL_MS = 40;
+
 export class DockWindow {
   private window: BrowserWindow | null = null;
   private view: DockView = "setup";
   private animation: ReturnType<typeof setInterval> | null = null;
   /** The setup panel's measured width, once the renderer has reported one. */
   private contentWidth: number | null = null;
+  private cursorTimer: ReturnType<typeof setInterval> | null = null;
+  /** Whether the window is currently letting the mouse through to what is behind. */
+  private passthrough = true;
   /**
    * The drop-ups, which are native menus popped over this window.
    *
@@ -99,6 +120,10 @@ export class DockWindow {
     // changed while choosing what to record — which is exactly when you look at
     // them.
     window.setAlwaysOnTop(true, "screen-saver", 1);
+    // Click-through until the cursor is known to be over the panel — see
+    // `watchCursor`. Set here as well as there so the state matches
+    // `passthrough` from the first frame rather than from the first tick.
+    window.setIgnoreMouseEvents(true);
     void loadRoute(window, "/dock");
 
     this.window = window;
@@ -114,11 +139,13 @@ export class DockWindow {
     // `showInactive` rather than `show`: the panel must never take focus from
     // whatever the user is about to record.
     window.showInactive();
+    this.watchCursor(window);
   }
 
   hide(): void {
     this.menu.close();
     this.stopAnimation();
+    this.stopWatchingCursor();
     // As in `CameraWindow.hide`: `?.` does not cover a window Electron has
     // already destroyed, which is what a quit leaves behind.
     if (!this.window || this.window.isDestroyed()) return;
@@ -185,6 +212,7 @@ export class DockWindow {
 
   destroy(): void {
     this.stopAnimation();
+    this.stopWatchingCursor();
     this.menu.close();
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
@@ -227,6 +255,43 @@ export class DockWindow {
     if (!this.animation) return;
     clearInterval(this.animation);
     this.animation = null;
+  }
+
+  /**
+   * Lets the mouse through the window except where the panel is.
+   *
+   * Checked once on the way in and then on every tick, so a dock that opens
+   * under the cursor is clickable at once rather than a tick later.
+   */
+  private watchCursor(window: BrowserWindow): void {
+    if (this.cursorTimer) return;
+
+    const track = () => {
+      if (window.isDestroyed() || !window.isVisible()) {
+        this.stopWatchingCursor();
+        return;
+      }
+      const passthrough = !overPanel(window.getBounds(), screen.getCursorScreenPoint());
+      if (passthrough === this.passthrough) return;
+      this.passthrough = passthrough;
+      window.setIgnoreMouseEvents(passthrough);
+    };
+
+    track();
+    this.cursorTimer = setInterval(track, CURSOR_POLL_MS);
+  }
+
+  private stopWatchingCursor(): void {
+    if (!this.cursorTimer) return;
+    clearInterval(this.cursorTimer);
+    this.cursorTimer = null;
+    // Back to click-through while hidden, so the next `show` starts from the
+    // state `prepare` established rather than from wherever the cursor last
+    // was.
+    if (!this.passthrough && this.window && !this.window.isDestroyed()) {
+      this.window.setIgnoreMouseEvents(true);
+    }
+    this.passthrough = true;
   }
 
   /**
@@ -298,4 +363,23 @@ export class DockWindow {
       ...size,
     });
   }
+}
+
+/**
+ * Whether a point is over the panel, not merely the window.
+ *
+ * The panel sits at the bottom of the window under `DOCK_HEADROOM` of
+ * transparent band, with `PANEL_INSET` of transparent margin on its other
+ * three sides. Both are for what is drawn *around* the pill — tooltips above
+ * it and its shadow — and neither should take a click meant for the app behind.
+ * The `Dock` component insets the pill by the same two numbers, which is what
+ * makes this rectangle the one on screen.
+ */
+export function overPanel(bounds: Rectangle, point: { x: number; y: number }): boolean {
+  return (
+    point.x >= bounds.x + PANEL_INSET &&
+    point.x < bounds.x + bounds.width - PANEL_INSET &&
+    point.y >= bounds.y + DOCK_HEADROOM &&
+    point.y < bounds.y + bounds.height - PANEL_INSET
+  );
 }
