@@ -22,20 +22,30 @@ import { scalar } from "./helpers.ts";
 
 const SECRET = env.DODOPAYMENT_WEBHOOK_SECRET!;
 
+/** Where the events feed goes in the tests that switch it on. */
+const SLACK_URL = "https://hooks.slack.example/events";
+
 /**
- * Catches anything addressed to Dodo, and lets everything else through.
+ * Catches anything addressed to Dodo or to Slack, and lets everything else
+ * through.
  *
- * Nothing in this file should call out any more — the handler only writes to
- * D1 — so the recorder doubles as the assertion that it does not. A blanket
- * `fetch` stub is not an option: Better Auth and R2 presigning share this
- * Worker's `fetch`.
+ * Nothing in this file should reach Dodo any more — the handler only writes to
+ * D1 — so the recorder doubles as the assertion that it does not. Slack is
+ * silent unless a test hands the route a webhook URL; the ones that do are
+ * checking that a message went, or did not. A blanket `fetch` stub is not an
+ * option: Better Auth and R2 presigning share this Worker's `fetch`.
  */
-function interceptDodo() {
+function intercept() {
   const sent: { url: string; method: string; body: unknown }[] = [];
   const original = globalThis.fetch;
 
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
+
+    if (url === SLACK_URL) {
+      sent.push({ url, method: init?.method ?? "GET", body: JSON.parse(String(init?.body)) });
+      return new Response("ok");
+    }
 
     if (url.includes("dodopayments.com")) {
       sent.push({
@@ -61,7 +71,10 @@ function interceptDodo() {
   return sent;
 }
 
-let dodo: { url: string; method: string; body: unknown }[] = [];
+let sent: { url: string; method: string; body: unknown }[] = [];
+
+const dodo = () => sent.filter((call) => call.url.includes("dodopayments.com"));
+const slack = () => sent.filter((call) => call.url === SLACK_URL);
 
 /** What `GET /payments/{id}` answers with, per test. Null means it fails. */
 let dodoPayment: { product_cart: { product_id: string; quantity: number }[] } | null = null;
@@ -89,7 +102,7 @@ beforeEach(async () => {
   );
 
   dodoPayment = null;
-  dodo = interceptDodo();
+  sent = intercept();
 });
 
 afterEach(() => {
@@ -170,7 +183,12 @@ function payment(data: Record<string, unknown> = {}) {
 
 async function deliver(
   body: string,
-  { id = crypto.randomUUID(), timestamp = Math.floor(Date.now() / 1000), signature = "" } = {},
+  {
+    id = crypto.randomUUID(),
+    timestamp = Math.floor(Date.now() / 1000),
+    signature = "",
+    announce = false,
+  } = {},
 ) {
   const ctx = createExecutionContext();
 
@@ -185,7 +203,7 @@ async function deliver(
       },
       body,
     }),
-    env,
+    announce ? { ...env, SLACK_EVENTS_WEBHOOK_URL: SLACK_URL } : env,
     ctx,
   );
 
@@ -262,7 +280,35 @@ describe("subscription events", () => {
     // has grown back that should not have.
     await deliver(envelope("subscription.active"));
 
-    expect(dodo).toEqual([]);
+    expect(dodo()).toEqual([]);
+  });
+
+  it("tells Slack about a subscription to its own product", async () => {
+    await deliver(envelope("subscription.active"), { announce: true });
+
+    expect(slack()).toHaveLength(1);
+    expect(slack()[0]?.body).toMatchObject({
+      text: expect.stringContaining("Subscription started"),
+    });
+  });
+
+  it("says nothing, and writes nothing, for another product on the same account", async () => {
+    // One Dodo account sells for more than one app, and the endpoint hears
+    // about every subscription on it. Before this guard each purchase of the
+    // other product announced itself in the events feed as though it were a
+    // Prequel subscription, and its activation logged a missing-team error.
+    const other = { product_id: "pdt_other_app", metadata: {} };
+
+    expect((await deliver(envelope("subscription.active", other), { announce: true })).status).toBe(
+      200,
+    );
+    await deliver(envelope("subscription.cancelled", { ...other, status: "cancelled" }), {
+      announce: true,
+    });
+
+    expect(slack()).toEqual([]);
+    expect(await scalar(env.DB.prepare("SELECT COUNT(*) FROM subscription"))).toBe(0);
+    expect(await plan()).toBe("free");
   });
 
   it("ignores a repeat of the same delivery", async () => {
@@ -386,7 +432,7 @@ describe("one-time payments", () => {
 
     expect(await plan()).toBe("lifetime");
     expect(await purchases()).toBe(1);
-    expect(dodo.some((call) => call.url.includes("/payments/"))).toBe(true);
+    expect(dodo().some((call) => call.url.includes("/payments/"))).toBe(true);
   });
 
   it("lets Dodo retry when the cart cannot be read at all", async () => {

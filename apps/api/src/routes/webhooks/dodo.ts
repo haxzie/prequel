@@ -113,6 +113,15 @@ async function handle(
   }
 
   const subscription = event.data;
+
+  // One Dodo account sells for more than one product, and a webhook endpoint
+  // hears about all of them. A subscription to something this app does not
+  // sell is nobody's here: without this, every purchase of the other product
+  // posted "Subscription started" into the events feed, and its activation
+  // logged an error about a team it was never going to have. `redeem` makes
+  // the same check against the lifetime id on the payment side.
+  if (subscription.product_id !== required(env, "DODOPAYMENT_PRO_PRODUCT_ID")) return;
+
   const teamId = subscription.metadata?.teamId;
 
   // Before the switch, so every announced branch says it without each of them
