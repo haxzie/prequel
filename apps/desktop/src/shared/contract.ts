@@ -928,11 +928,12 @@ export const CURSOR_STYLES = [
       // artwork rather than assuming the corner — this tip is rounded, so the
       // bounding box's corner is a couple of pixels outside the pointer.
       arrow: { file: "cursor-modern-black.png", hotspot: { x: 0.0696, y: 0.0752 } },
-      // The other four are the classic set in the same tone, deliberately. A
-      // style is a tone rather than a shape, and the pointer still has to
-      // become a hand over a link and an I-beam in text — the artwork this one
-      // is drawn from offers an arrow and nothing else.
-      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      // The other four are shared with the classic set in the same tone,
+      // deliberately. A style is a tone rather than a shape, and the pointer
+      // still has to become a hand over a link and an I-beam in text. The
+      // resize pointers are drawn from the same icon family as this arrow and
+      // the hand from another — `scripts/make-cursor.mjs` says which and why.
+      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-black-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-black-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-v": { file: "cursor-black-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
@@ -943,7 +944,7 @@ export const CURSOR_STYLES = [
     label: "White",
     shapes: {
       arrow: { file: "cursor-modern-white.png", hotspot: { x: 0.0696, y: 0.0752 } },
-      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-white-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-white-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-v": { file: "cursor-white-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
@@ -954,7 +955,7 @@ export const CURSOR_STYLES = [
     label: "Classic Black",
     shapes: {
       arrow: { file: "cursor-black.png", hotspot: { x: 0.055, y: 0.055 } },
-      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      hand: { file: "cursor-black-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-black-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-black-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-v": { file: "cursor-black-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },
@@ -965,7 +966,7 @@ export const CURSOR_STYLES = [
     label: "Classic White",
     shapes: {
       arrow: { file: "cursor-white.png", hotspot: { x: 0.055, y: 0.055 } },
-      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.3754, y: 0.055 } },
+      hand: { file: "cursor-white-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-white-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-white-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-v": { file: "cursor-white-resize-v.png", hotspot: { x: 0.5, y: 0.5 } },

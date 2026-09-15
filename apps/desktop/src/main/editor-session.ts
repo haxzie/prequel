@@ -159,7 +159,7 @@ export async function deleteRecording(dir: string, window: BrowserWindow | null)
 }
 
 /**
- * The pointer image, copied into the recording the first time it is needed.
+ * The pointer images, copied into the recording when it is opened.
  *
  * Copied rather than referenced from the app bundle so a recording directory
  * stays self-contained — the same rule the wallpaper follows, and the reason a
@@ -179,10 +179,17 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
   // recording rather than by anyone. They are a couple of kilobytes each.
   for (const file of CURSOR_FILES) {
     const target = join(dir, file);
-    if (existsSync(target)) continue;
 
     try {
-      copyFileSync(fileURLToPath(new URL(`../../resources/${file}`, import.meta.url)), target);
+      const source = fileURLToPath(new URL(`../../resources/${file}`, import.meta.url));
+      // Replaced when the bundle's copy differs, not only when the recording
+      // has none. The artwork is the app's, not the recording's: a redrawn
+      // hand that only ever reached recordings made after the update left
+      // every older one exporting the old one, with nothing in the editor to
+      // say a newer picture existed. Compared by content rather than skipped
+      // on existence — a few kilobytes a file, once per open.
+      if (existsSync(target) && readFileSync(target).equals(readFileSync(source))) continue;
+      copyFileSync(source, target);
     } catch (cause) {
       // Without the image there is no pointer, which is a recording that looks
       // like it was made with the cursor hidden — not a broken editor.

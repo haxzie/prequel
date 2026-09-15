@@ -30,13 +30,16 @@ const SIZE = 128;
  * wherever the recording says the system was showing one, which is what makes
  * a composited pointer behave like the real one over a link.
  *
- * Exported as JSON beside the images so `shared/contract.ts` does not have to
- * repeat numbers that are decided here.
+ * Each hotspot is printed beside its image so `shared/contract.ts` copies a
+ * number decided here rather than guessing one.
  */
 const STYLES = [
   // The modern pointer, in the same two tones and each outlined in the other.
   // The SVG it is taken from has no stroke at all, and a pointer with nothing
-  // round it disappears into anything of its own tone.
+  // round it disappears into anything of its own tone. The hand and the two
+  // resize pointers are finished artwork as well — see `GLYPHS` — and the
+  // classic arrow shares them, because the old hand-typed hand was a
+  // silhouette nobody would take for one.
   { id: "modern-black", shape: "pointer", fill: 0, stroke: 255, alpha: 255 },
   { id: "modern-white", shape: "pointer", fill: 255, stroke: 0, alpha: 255 },
   { id: "black", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
@@ -55,31 +58,6 @@ const STYLES = [
   // nothing round it disappears into anything of its own tone, which is how the
   // one option with no outline became the one nobody could see.
   { id: "circle", shape: "dot", fill: 0, stroke: 255, alpha: 200 },
-];
-
-/**
- * A pointing hand, as fractions of its own bounding box.
- *
- * Index finger up and to the left, thumb out, the other three curled — the
- * silhouette macOS uses for a link. Drawn as one loop like the arrow.
- */
-const HAND = [
-  [0.3, 0.0],
-  [0.42, 0.06],
-  [0.44, 0.42],
-  [0.52, 0.36],
-  [0.64, 0.4],
-  [0.66, 0.36],
-  [0.78, 0.42],
-  [0.8, 0.38],
-  [0.92, 0.46],
-  [0.94, 0.74],
-  [0.84, 0.96],
-  [0.46, 1.0],
-  [0.28, 0.84],
-  [0.06, 0.58],
-  [0.1, 0.48],
-  [0.3, 0.56],
 ];
 
 /** Black outline, in image pixels. What keeps a white arrow visible on white. */
@@ -108,48 +86,156 @@ const ARROW = [
 const ASPECT = 0.56 / 0.86;
 
 /**
- * The modern pointer, in the 28×28 box its artwork was drawn in.
+ * The shapes taken from icon sets, as the `d` attribute of each glyph, verbatim.
  *
- * Fluent UI System Icons (MIT, Microsoft), transcribed from the glyph's `d`
- * attribute rather than fetched: a build must not need a network or an SVG
- * library to draw a pointer. Kept as the commands the path actually uses so it
- * can be checked against the source a line at a time — the only edit is that
- * every coordinate is absolute where the path wrote some of them relative.
+ * Copied in rather than fetched: a build must not need a network or an SVG
+ * library to draw a pointer. Verbatim rather than transcribed so a line can be
+ * checked against the source by eye — the pointer used to be a hand-converted
+ * list of absolute commands, which was right, but only provably so by
+ * converting it again.
  *
- * It carries no stroke of its own. The outline comes from the same
+ * Two families. The pointer and the resize arrows are Fluent UI System Icons
+ * (MIT, Microsoft). The hand is Font Awesome's, because Fluent's `hand_point`
+ * is a mitten — a thumb and a lump — and a link cursor with no fingers on it
+ * reads as a smudge at the size a pointer is drawn. Font Awesome Free is
+ * CC BY 4.0, and this comment is the attribution it asks for: the project's
+ * own guidance is that the credit embedded beside the artwork is sufficient.
+ *
+ * None of them carries a stroke of its own. The outline comes from the same
  * fill-and-outline pass every other shape here goes through, which is what
- * makes a black pointer visible against something black.
+ * makes a black pointer visible against something black. On the hand that
+ * pass also fills the three finger creases, which are cut-outs: they come out
+ * in the outline's tone, which is what draws them.
  */
-const POINTER = [
-  { to: [6, 3.604] },
-  {
-    curve: [
-      [6, 2.258],
-      [7.56, 1.514],
-      [8.607, 2.361],
-    ],
-  },
-  { line: [25.487, 16.03] },
-  {
-    curve: [
-      [26.505, 16.854],
-      [25.922, 18.5],
-      [24.612, 18.5],
-    ],
-  },
-  { line: [15.235, 18.5] },
-  // The one arc in the path — `a2.25 2.25 0 0 0` — the rounded corner where the
-  // tail meets the shoulder.
-  { arc: [13.486, 19.335], radius: 2.25, clockwise: false },
-  { line: [8.524, 25.469] },
-  {
-    curve: [
-      [7.682, 26.51],
-      [6, 25.915],
-      [6, 24.576],
-    ],
-  },
-];
+const GLYPHS = {
+  // ic_fluent_cursor_28_filled
+  pointer:
+    "M6 3.604c0-1.346 1.56-2.09 2.607-1.243l16.88 13.669c1.018.824.435 2.47-.875 2.47h-9.377a2.25 2.25 0 0 0-1.749.835l-4.962 6.134C7.682 26.51 6 25.915 6 24.576z",
+  // Font Awesome 7 Solid `hand-pointer`, by Dave Gandy — CC BY 4.0,
+  // https://creativecommons.org/licenses/by/4.0/
+  hand: "M224 104c0-22.1 17.9-40 40-40s40 17.9 40 40v148.2c8.5-7.6 19.7-12.2 32-12.2c20.6 0 38.2 13 45 31.2c8.8-9.3 21.2-15.2 35-15.2c25.3 0 46 19.5 47.9 44.3c8.5-7.7 19.8-12.3 32.1-12.3c26.5 0 48 21.5 48 48v112c0 70.7-57.3 128-128 128h-85.3c-5 0-9.9-.3-14.7-1c-55.3-5.6-106.2-34-140-79l-72-96c-13.3-17.7-9.7-42.7 8-56s42.7-9.7 56 8l56 74.7zm112 264c0-8.8-7.2-16-16-16s-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16zm48-16c-8.8 0-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16v-96c0-8.8-7.2-16-16-16m80 16c0-8.8-7.2-16-16-16s-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16z",
+  // ic_fluent_arrow_bidirectional_left_right_24_filled
+  "resize-h":
+    "M10.707 7.295a1 1 0 0 1 0 1.414l-4.293 4.293h15.172l-4.293-4.293a1 1 0 0 1 1.414-1.414l6 6a1 1 0 0 1 0 1.414l-6 6a1 1 0 0 1-1.414-1.415l4.293-4.292H6.414l4.293 4.292a1 1 0 0 1-1.414 1.415l-6-6a1 1 0 0 1 0-1.415l6-6a1 1 0 0 1 1.414 0",
+  // ic_fluent_arrow_bidirectional_up_down_24_filled
+  "resize-v":
+    "M7.975 9.689a1 1 0 1 1-1.45-1.378l4.75-5a1 1 0 0 1 1.45 0l4.75 5a1 1 0 1 1-1.45 1.378L13 6.505v10.99l3.025-3.184a1 1 0 1 1 1.45 1.378l-4.75 5a1 1 0 0 1-1.45 0l-4.75-5a1 1 0 1 1 1.45-1.378L11 17.496V6.505z",
+};
+
+/**
+ * A path's `d` attribute as closed polygons, one per subpath, in the glyph's
+ * own box.
+ *
+ * Only the commands the four glyphs above use — `M L H V C S A Z`, in both
+ * cases — and a deliberate error for anything else, so a glyph pasted in with
+ * a `Q` fails here rather than drawing with a piece missing. Arcs are the
+ * circular case `arc` handles; Fluent draws every rounded corner that way and
+ * never with an ellipse or a rotation.
+ *
+ * A second `M` starts a second ring. Whether that ring is a hole or an island
+ * is not decided here: `inside` counts crossings over every ring, which for
+ * these glyphs — cut-outs wholly within the shape — is the even-odd rule the
+ * SVGs are drawn with.
+ */
+function outline(d) {
+  const tokens = d.match(/[MLHVCSAZmlhvcsaz]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  const rings = [];
+  let points = [];
+  let at = [0, 0];
+  let command = "";
+  /** The last cubic's second control point, which `S` reflects. */
+  let handle = null;
+
+  const next = () => Number(tokens.shift());
+  const close = () => {
+    if (points.length > 0) rings.push(points);
+    points = [];
+  };
+
+  while (tokens.length > 0) {
+    if (/[A-Za-z]/.test(tokens[0])) command = tokens.shift();
+    // A command followed by more numbers than it takes repeats itself, which
+    // is how a path writes two lines in a row without saying `l` twice.
+    const relative = command === command.toLowerCase();
+    const origin = relative ? at : [0, 0];
+    const letter = command.toUpperCase();
+
+    // A smooth curve's first handle is the last one mirrored through the
+    // current point, or the point itself when the last command was not a
+    // curve. Taken before the switch, because the switch below is what
+    // replaces it.
+    const mirrored = handle ? [2 * at[0] - handle[0], 2 * at[1] - handle[1]] : at;
+    handle = null;
+
+    switch (letter) {
+      case "M": {
+        // A move inside a path closes the ring before it and opens the next.
+        // An `M` that repeats its numbers draws lines, like a repeated `L`.
+        if (points.length > 0) close();
+        at = [origin[0] + next(), origin[1] + next()];
+        points.push(at);
+        while (tokens.length > 0 && !/[A-Za-z]/.test(tokens[0])) {
+          at = [(relative ? at[0] : 0) + next(), (relative ? at[1] : 0) + next()];
+          points.push(at);
+        }
+        break;
+      }
+      case "L": {
+        at = [origin[0] + next(), origin[1] + next()];
+        points.push(at);
+        break;
+      }
+      case "H": {
+        at = [origin[0] + next(), at[1]];
+        points.push(at);
+        break;
+      }
+      case "V": {
+        at = [at[0], origin[1] + next()];
+        points.push(at);
+        break;
+      }
+      case "C":
+      case "S": {
+        const control = [
+          letter === "C" ? [origin[0] + next(), origin[1] + next()] : mirrored,
+          [origin[0] + next(), origin[1] + next()],
+          [origin[0] + next(), origin[1] + next()],
+        ];
+        points.push(...cubic(at, control));
+        handle = control[1];
+        at = control[2];
+        break;
+      }
+      case "A": {
+        const radius = next();
+        const ry = next();
+        const rotation = next();
+        const large = next() === 1;
+        const sweep = next() === 1;
+        const to = [origin[0] + next(), origin[1] + next()];
+        if (ry !== radius || rotation !== 0) {
+          throw new Error(`only circular arcs are drawn: a${radius} ${ry} ${rotation}`);
+        }
+        points.push(...arc(at, to, radius, large, sweep));
+        at = to;
+        break;
+      }
+      case "Z": {
+        // Closing is implicit — a ring joins its last point to its first — so
+        // the command moves the pen back to the start and ends the ring.
+        at = points[0] ?? at;
+        close();
+        break;
+      }
+      default:
+        throw new Error(`unsupported path command: ${command}`);
+    }
+  }
+
+  close();
+  return rings;
+}
 
 /**
  * Straight pieces each curve is cut into.
@@ -185,7 +271,7 @@ function cubic(from, [c1, c2, to]) {
  * circular case — equal radii, no rotation — which is all a rounded corner
  * ever needs.
  */
-function arc(from, to, radius, clockwise) {
+function arc(from, to, radius, large, clockwise) {
   const mx = (from[0] + to[0]) / 2;
   const my = (from[1] + to[1]) / 2;
   const dx = (from[0] - to[0]) / 2;
@@ -195,7 +281,10 @@ function arc(from, to, radius, clockwise) {
   // too small to span the ends would put the square root in the negative, and
   // the specification's answer there is to grow the radius rather than fail.
   const offset = Math.max(0, (radius * radius - dx * dx - dy * dy) / (dx * dx + dy * dy));
-  const scale = Math.sqrt(offset) * (clockwise ? 1 : -1);
+  // Which side of the chord the centre is on is what the two flags decide
+  // between them: the long way round in a given direction is the short way
+  // round from the centre on the other side.
+  const scale = Math.sqrt(offset) * (large !== clockwise ? 1 : -1);
 
   const cx = mx + scale * dy;
   const cy = my - scale * dx;
@@ -203,7 +292,8 @@ function arc(from, to, radius, clockwise) {
   const start = Math.atan2(from[1] - cy, from[0] - cx);
   let sweep = Math.atan2(to[1] - cy, to[0] - cx) - start;
 
-  // The short way round, in the direction the flag asked for.
+  // In the direction the flag asked for. Whether that is the short way or the
+  // long way round already fell out of where the centre was put.
   if (clockwise && sweep < 0) sweep += Math.PI * 2;
   if (!clockwise && sweep > 0) sweep -= Math.PI * 2;
 
@@ -216,56 +306,50 @@ function arc(from, to, radius, clockwise) {
   return points;
 }
 
-/** The pointer as a closed polygon, still in its own 28×28 box. */
-function pointerOutline() {
-  let at = [0, 0];
-  const points = [];
-
-  for (const step of POINTER) {
-    if (step.curve) {
-      points.push(...cubic(at, step.curve));
-      at = step.curve[2];
-    } else if (step.arc) {
-      points.push(...arc(at, step.arc, step.radius, step.clockwise));
-      at = step.arc;
-    } else {
-      at = step.to ?? step.line;
-      points.push(at);
-    }
-  }
-
-  return points;
-}
-
 /**
- * The pointer fitted into the image, and where its tip lands in it.
+ * A Fluent glyph fitted into the image, and where its tip lands in it.
  *
- * Anchored on the tip rather than on the bounding box, which for this shape are
- * not the same point: the corner it points with is rounded off, so the box's
- * own corner sits in empty space outside the artwork. Aiming from there would
- * miss what is being pointed at by a margin that grows with the frame.
+ * Anchored on the tip rather than on the bounding box, which for these shapes
+ * are not the same point: the corner a pointer points with is rounded off, and
+ * the fingertip a hand points with is the crown of an arc, so the box's own
+ * corner sits in empty space outside the artwork. Aiming from there would miss
+ * what is being pointed at by a margin that grows with the frame.
  *
- * The tip is the point on the outline furthest towards the top-left, because
- * that is the direction this pointer points.
+ * `tip` picks the point that does the pointing: the pointer's is the one
+ * furthest towards the top-left, the hand's is the highest.
  */
-function pointer() {
-  const outline = pointerOutline();
+function fitted(shape, tip) {
+  const rings = outline(GLYPHS[shape]);
   const span = SIZE - OUTLINE * 2;
 
-  const xs = outline.map(([x]) => x);
-  const ys = outline.map(([, y]) => y);
+  const all = rings.flat();
+  const xs = all.map(([x]) => x);
+  const ys = all.map(([, y]) => y);
   const left = Math.min(...xs);
   const top = Math.min(...ys);
+  const width = Math.max(...xs) - left;
+  const height = Math.max(...ys) - top;
 
-  // Fitted on its longer edge, so it is drawn at the scale the arrow is.
-  const scale = span / Math.max(Math.max(...xs) - left, Math.max(...ys) - top);
-  const points = outline.map(([x, y]) => [
-    OUTLINE + (x - left) * scale,
-    OUTLINE + (y - top) * scale,
-  ]);
+  // Fitted on its longer edge, so it is drawn at the scale the arrow is. A
+  // shape that points with a tip is laid out from the corner like the arrow;
+  // one that points with its middle is centred, so its hotspot is the image's.
+  const scale = span / Math.max(width, height);
+  const dx = tip ? 0 : (span - width * scale) / 2;
+  const dy = tip ? 0 : (span - height * scale) / 2;
+  const placed = rings.map((ring) =>
+    ring.map(([x, y]) => [OUTLINE + dx + (x - left) * scale, OUTLINE + dy + (y - top) * scale]),
+  );
 
-  return { points, tip: points.reduce((best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best)) };
+  // The tip is on the outer ring, which every glyph here writes first; a
+  // cut-out is never the part that points.
+  return { rings: placed, tip: tip ? placed[0].reduce(tip) : null };
 }
+
+/** Which point of a glyph does the pointing, for `fitted`. */
+const TIPS = {
+  pointer: (best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best),
+  hand: (best, p) => (p[1] < best[1] ? p : best),
+};
 
 /**
  * The text cursor, as fractions of its own bounding box.
@@ -296,56 +380,21 @@ const IBEAM = [
 const IBEAM_ASPECT = 0.42;
 
 /**
- * The horizontal resize pointer: a bar with an arrowhead at each end.
- *
- * One loop rather than three pieces — a bar with two triangles laid over it
- * seams where the three antialias against each other, which is the same reason
- * the fill and the outline are accumulated per subsample rather than composited.
+ * The shape scaled into the image, leaving room for the outline on every side,
+ * as rings: one for a plain silhouette, more for a glyph with cut-outs.
  */
-const RESIZE = [
-  [0.0, 0.5],
-  [0.26, 0.16],
-  [0.26, 0.36],
-  [0.74, 0.36],
-  [0.74, 0.16],
-  [1.0, 0.5],
-  [0.74, 0.84],
-  [0.74, 0.64],
-  [0.26, 0.64],
-  [0.26, 0.84],
-];
-
-/** Wide and short. The vertical one is this turned a quarter, and so is its reciprocal. */
-const RESIZE_ASPECT = 1 / 0.62;
-
-/** Arrow scaled into the image, leaving room for the outline on every side. */
-function polygon(shape) {
+function rings(shape) {
   const span = SIZE - OUTLINE * 2;
 
-  if (shape === "hand") {
-    return HAND.map(([x, y]) => [OUTLINE + x * span, OUTLINE + y * span]);
-  }
+  if (shape in GLYPHS) return fitted(shape, TIPS[shape]).rings;
 
-  // Centred rather than anchored to the corner, because these three point with
-  // their middle. The arrow and the hand point with a corner and are laid out
-  // from it, which is what makes their hotspots the small fractions below.
-  if (shape === "ibeam") return centred(IBEAM, IBEAM_ASPECT, span);
-  if (shape === "resize-h") return centred(RESIZE, RESIZE_ASPECT, span);
-  if (shape === "resize-v") {
-    // The same shape through the diagonal. Turned here rather than written out
-    // twice: two lists of ten points that have to stay each other's transpose
-    // is a pair that drifts the first time one of them is adjusted.
-    return centred(
-      RESIZE.map(([x, y]) => [y, x]),
-      1 / RESIZE_ASPECT,
-      span,
-    );
-  }
-
-  if (shape === "pointer") return pointer().points;
+  // Centred rather than anchored to the corner, because it points with its
+  // middle. The arrow points with a corner and is laid out from it, which is
+  // what makes its hotspot the small fraction below.
+  if (shape === "ibeam") return [centred(IBEAM, IBEAM_ASPECT, span)];
 
   const width = span * ASPECT;
-  return ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * span]);
+  return [ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * span])];
 }
 
 /**
@@ -364,30 +413,37 @@ function centred(points, aspect, span) {
   return points.map(([x, y]) => [left + x * width, top + y * height]);
 }
 
-/** Even-odd ray cast. The arrow is simple, so this needs no winding rule. */
-function inside(points, px, py) {
+/**
+ * Even-odd ray cast over every ring at once, so a ring inside another is a
+ * hole. The shapes here never self-intersect, so this needs no winding rule.
+ */
+function inside(rings, px, py) {
   let hit = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const [xi, yi] = points[i];
-    const [xj, yj] = points[j];
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) hit = !hit;
+  for (const points of rings) {
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const [xi, yi] = points[i];
+      const [xj, yj] = points[j];
+      if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) hit = !hit;
+    }
   }
   return hit;
 }
 
-/** Shortest distance from a point to the polygon's boundary. */
-function distance(points, px, py) {
+/** Shortest distance from a point to any ring's boundary. */
+function distance(rings, px, py) {
   let best = Infinity;
 
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const [xi, yi] = points[i];
-    const [xj, yj] = points[j];
-    const dx = xj - xi;
-    const dy = yj - yi;
-    const len = dx * dx + dy * dy;
-    // A degenerate edge collapses to its endpoint rather than dividing by zero.
-    const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len));
-    best = Math.min(best, Math.hypot(px - (xi + t * dx), py - (yi + t * dy)));
+  for (const points of rings) {
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const [xi, yi] = points[i];
+      const [xj, yj] = points[j];
+      const dx = xj - xi;
+      const dy = yj - yi;
+      const len = dx * dx + dy * dy;
+      // A degenerate edge collapses to its endpoint rather than dividing by zero.
+      const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len));
+      best = Math.min(best, Math.hypot(px - (xi + t * dx), py - (yi + t * dy)));
+    }
   }
 
   return best;
@@ -402,7 +458,7 @@ function distance(points, px, py) {
  * antialias against each other.
  */
 function draw(style) {
-  const points = polygon(style.shape);
+  const shape = rings(style.shape);
   const rgba = new Uint8Array(SIZE * SIZE * 4);
   const centre = (SIZE - 1) / 2;
   const dotRadius = SIZE * 0.34;
@@ -427,8 +483,8 @@ function draw(style) {
             continue;
           }
 
-          const within = inside(points, px, py);
-          const d = distance(points, px, py);
+          const within = inside(shape, px, py);
+          const d = distance(shape, px, py);
 
           if (within) white++;
           else if (d <= OUTLINE) black++;
@@ -499,15 +555,13 @@ function encodePng(rgba) {
 function hotspot(shape) {
   // The arrow's tip sits one outline in from the top-left corner.
   if (shape === "arrow") return { x: OUTLINE / SIZE, y: OUTLINE / SIZE };
-  // The modern pointer's tip is rounded off, so it is measured from the artwork
-  // rather than assumed to be the corner — see `pointer()`.
-  if (shape === "pointer") {
-    const { tip } = pointer();
+  // The modern pointer's tip is rounded off and the hand's fingertip is the
+  // crown of an arc, so both are measured from the artwork rather than assumed
+  // to be a corner — see `fitted()`.
+  if (shape === "pointer" || shape === "hand") {
+    const { tip } = fitted(shape, TIPS[shape]);
     return { x: tip[0] / SIZE, y: tip[1] / SIZE };
   }
-  // The hand points with the top of its index finger.
-  if (shape === "hand")
-    return { x: (OUTLINE + (SIZE - OUTLINE * 2) * 0.36) / SIZE, y: OUTLINE / SIZE };
   // Everything else points with its middle: a dot by definition, and the text
   // and resize pointers because that is where the system puts their hotspot —
   // an I-beam aimed from its corner would insert one character off.
