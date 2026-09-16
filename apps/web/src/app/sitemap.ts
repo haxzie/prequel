@@ -4,6 +4,7 @@ import { env } from "@prequel/env";
 
 import { latestDate } from "@/content/changelog";
 import { competitors } from "@/content/competitors";
+import { DOCS } from "@/content/docs";
 import { posts } from "@/content/posts";
 import { useCases } from "@/content/use-cases";
 
@@ -20,10 +21,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/usecases`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/compare`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}/docs`, changeFrequency: "monthly", priority: 0.8 },
     // The date of the newest release, which is the only thing on the page that
     // ever moves. It has a real one, so it can say so.
     {
-      url: `${base}/changelog`,
+      url: `${base}/docs/changelog`,
       lastModified: await latestDate(),
       changeFrequency: "weekly",
       priority: 0.6,
@@ -55,5 +57,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "yearly" as const,
       priority: 0.6,
     })),
+    // No `lastModified`, as for the use-case pages: a docs page carries no date
+    // of its own.
+    ...DOCS.flatMap((section) =>
+      section.pages.map((slug) => ({
+        url: `${base}/docs/${slug}`,
+        changeFrequency: "monthly" as const,
+        priority: 0.7,
+      })),
+    ),
   ];
 }

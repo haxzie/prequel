@@ -89,6 +89,9 @@ export function PlaybackControls({
     // are one section, so the line goes above the pair rather than between
     // them, where it read as the timeline being a separate panel.
     <div
+      // The documentation screenshots clip to this row — see the note on
+      // `data-panel="inspector"` in `Editor.tsx`.
+      data-panel="transport"
       className={
         "grid flex-none grid-cols-[1fr_auto_1fr] items-center gap-3 " +
         "border-t border-editor-line bg-editor-veil px-4 py-2"

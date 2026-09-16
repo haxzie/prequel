@@ -1,0 +1,48 @@
+export const title = "Export";
+export const description = "Turning the edit into a file.";
+export const faq = [
+  {
+    question: "Which format should I choose?",
+    answer:
+      "MP4 plays everywhere and is the usual choice. HEVC is smaller at the same quality but plays in fewer places. GIF is silent, loops, and is much larger per second.",
+  },
+  {
+    question: "Can I export at a lower resolution?",
+    answer:
+      "Yes. Quality offers 1080p, 720p and 480p, which scale the frame so its shorter edge is that many pixels. Full keeps the frame's own size.",
+  },
+  {
+    question: "Can I keep editing while an export runs?",
+    answer:
+      "Yes. Closing the dialog does not stop the export, and the Export button brings it back where it left off.",
+  },
+];
+
+## The dialog
+
+**Export** in the editor's header opens the dialog.
+
+![The export dialog: type, quality, frame rate and a summary line](/docs/export-dialog.webp)
+
+- **Type**: **MP4** (H.264, plays everywhere), **HEVC** (smaller at the same quality, less widely playable) or **GIF** (silent, looping, and much larger per second).
+- **Quality**: **Full** keeps the frame's own size. **1080p**, **720p** and **480p** scale it so the shorter edge is that many pixels. A GIF is capped at 720.
+- **Frame rate**: 60 or 30 for MP4 and HEVC; 20 or 10 for GIF.
+
+The line under the controls sums it up, for instance **1920 × 1080 · 60 fps**, with **silent** added for a GIF.
+
+## Rendering
+
+Click **Export** and choose where to save; the dialog opens on Downloads the first time and remembers where you last saved. The export runs on the Mac's video hardware, and a ring shows progress. You can keep editing meanwhile, and closing the dialog does not stop it; the **Export** button brings it back where it left off.
+
+## When it is done
+
+![The export dialog after a render: a looping preview, Reveal in Folder, Copy and Share Link](/docs/export-done.webp)
+
+The finished video plays back in the dialog.
+
+- **Drag and drop anywhere**: drag the preview into Slack, Mail, a browser or a folder.
+- **Reveal in Folder** shows the file in Finder.
+- **Copy** puts the file on the clipboard, ready to paste into a message or a folder.
+- **Share Link** uploads it and gives you a link. See [Share links](/docs/share-links).
+
+Exports need a trial or a paid licence; see [Pricing and trial](/docs/pricing-and-trial).

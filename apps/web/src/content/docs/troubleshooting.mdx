@@ -1,0 +1,51 @@
+export const title = "Troubleshooting";
+export const description = "The handful of things that go wrong, and what to do about each.";
+export const faq = [
+  {
+    question: "Prequel says a permission is missing after I granted it. What now?",
+    answer:
+      "Relaunch the app. macOS reports Screen Recording and Accessibility only at launch, so a grant made while Prequel is running is not seen until it restarts.",
+  },
+  {
+    question: "Where is the log file?",
+    answer:
+      "Right-click the menu bar icon and choose Show Log in Finder. The file is main.log under Library/Logs/Prequel in your home folder.",
+  },
+  {
+    question: "A recording says it could not be opened. Is it lost?",
+    answer:
+      "Its folder is no longer where it was, most likely moved or deleted. If it is in the Trash or elsewhere on disk, put it back in the recordings folder and it opens again.",
+  },
+];
+
+## I allowed Screen Recording but Prequel still says it is missing
+
+macOS reports Screen Recording and Accessibility to an app only when it launches. Quit Prequel from the menu bar and open it again, or use **Restart Prequel** in the dock's warning menu. See [Permissions](/docs/permissions).
+
+## Nothing is recorded, or the recording is black
+
+Screen Recording has not been granted, or was granted after launch. Relaunch, then check **Settings › Permissions**.
+
+## No automatic zooms
+
+Automatic zooms come from your clicks and typing, which the recording can only see with the Accessibility permission granted before the take. Recordings made without it have nothing for the wand to work from, and the editor says so when you hover it.
+
+## The camera or microphone shows a red dot
+
+The device is switched on in Prequel but cannot be opened. It may have been unplugged, or another app may be holding it. Choose it again from the chevron menu, or pick another device.
+
+## A recording says it could not be opened
+
+The editor shows this when a recording's folder is no longer where it was. It may have been deleted or moved out of the recordings folder. See [Where files live](/docs/where-files-live).
+
+## Captions never appear
+
+Transcription needs a microphone track and, the first time, a download of a speech model from Apple. Give it a moment with the Captions panel open. A recording with nothing said in it ends on **No speech to caption**.
+
+## Finding the log
+
+Right-click the menu bar icon and choose **Show Log in Finder**. The file is `~/Library/Logs/Prequel/main.log`, and it records app lifecycle, export progress and any errors. Attach it when you write to [support@prequel.sh](mailto:support@prequel.sh).
+
+## Quitting
+
+There is no Dock icon, so the menu bar is the way out: right-click the icon and choose **Quit Prequel**.

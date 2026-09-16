@@ -45,9 +45,11 @@ export function Nav() {
           {/* Gone below `lg`, where the row cannot hold it. Six labels, a
               wordmark, a sign-in link, the star count and the download button
               need about a thousand pixels between them; below that they wrap,
-              which reads as a broken header rather than a full one. The same
-              links are
-              in the menu at the other end of the header — see `NavMenu`. */}
+              which reads as a broken header rather than a full one. Six is
+              therefore a cap: `/about` and then `/changelog` each left the row
+              to make room, and the next addition takes a slot rather than
+              adding one. The same links are in the menu at the other end of
+              the header — see `NavMenu`. */}
           <nav className="hidden items-center gap-1 lg:flex">
             {NAV.map((item) => (
               <Link

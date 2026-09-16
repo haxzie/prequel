@@ -1,0 +1,51 @@
+export const title = "Timeline and cuts";
+export const description = "Trimming, splitting and removing parts of a recording.";
+export const faq = [
+  {
+    question: "How do I cut a part out of the recording?",
+    answer:
+      "Move the playhead to where the cut should start and press S, do the same where it should end, then click the clip in between and press Backspace. The clips either side close up.",
+  },
+  {
+    question: "How do I trim the start or end?",
+    answer:
+      "Drag the clip's edge. The filmstrip moves with it so you can see the frame you are cutting to.",
+  },
+  {
+    question: "Can I zoom in on the timeline?",
+    answer:
+      "Yes. Hold Command and scroll, or pinch on the trackpad.",
+  },
+];
+
+## Reading the timeline
+
+The ruler runs along the top; click anywhere on it to move the playhead. Below it, the clip row shows the recording as a filmstrip with the audio's waveform over it. A fresh recording is one clip. Under the clips, the zoom row holds the zooms. See [Zooms](/docs/zooms).
+
+Hold **Command** and scroll, or pinch on the trackpad, to zoom the timeline in and out.
+
+## Playback
+
+**Space** plays and pauses. The transport also has **Go to start** and **Go to end**, and the time shows the playhead against the edited length, which shrinks as you cut.
+
+![The transport: time, playback, and the add zoom, undo, split and delete verbs](/docs/playback-controls.webp)
+
+## Trimming
+
+Drag either end of a clip to trim it. The filmstrip moves with the edge so you can see the frame you are cutting to.
+
+## Splitting and removing
+
+1. Move the playhead to where the cut should be.
+2. Press **S**, or click the scissors, to split the clip there.
+3. Click the part you want gone and press **Backspace**.
+
+The clips either side close up, and the finished video runs straight through. Right-clicking a clip offers **Split here** at the pointer and **Delete clip**.
+
+## Cutting by the words
+
+If the recording has captions, the caption editor is another way to cut: select a run of words and press Backspace, and the footage they were spoken over is removed. See [Captions](/docs/captions).
+
+## Undo
+
+**Command + Z** undoes any of this.

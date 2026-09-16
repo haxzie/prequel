@@ -64,7 +64,10 @@ export function FrameBar({
     // the composition does, so the eye goes to the frame rather than to a bar
     // above it. Centred for the same reason — the controls belong to the thing
     // in the middle, not to the left edge of the window.
-    <div className="relative flex flex-none items-center justify-center gap-3 px-4 py-2">
+    <div
+      className="relative flex flex-none items-center justify-center gap-3 px-4 py-2"
+      data-panel="frame-bar"
+    >
       <span className="text-[11px] tracking-wide text-editor-muted uppercase">Frame</span>
 
       <button

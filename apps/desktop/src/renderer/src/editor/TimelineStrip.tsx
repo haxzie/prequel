@@ -481,7 +481,7 @@ export function TimelineStrip({
   return (
     // Padded to match the transport above it, now that there is no track
     // column holding the strip off the window edge.
-    <div className="flex flex-none flex-col bg-editor-veil px-4 pb-4">
+    <div className="flex flex-none flex-col bg-editor-veil px-4 pb-4" data-panel="timeline">
       <div
         ref={attachScroller}
         className="no-scrollbar relative overflow-x-auto overflow-y-hidden"

@@ -820,6 +820,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               nothing reflows on the way past. */}
           <div
             aria-hidden={!panelOpen}
+            // Named by attribute for the documentation screenshots, which clip
+            // to this box: `gallery/shots.tsx` finds it this way rather than by
+            // class, so the utilities above can be rearranged without moving
+            // the crop. Same convention as `data-panel='setup'` on the dock.
+            data-panel="inspector"
             className={cn(
               "flex flex-none overflow-hidden transition-[width,opacity] duration-200 ease-out",
               panelOpen ? "opacity-100" : "pointer-events-none opacity-0",

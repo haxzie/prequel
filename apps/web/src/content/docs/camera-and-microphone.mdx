@@ -1,0 +1,45 @@
+export const title = "Camera and microphone";
+export const description = "Turning devices on, choosing between them, and where the camera bubble goes.";
+export const faq = [
+  {
+    question: "Why does my camera show a red dot?",
+    answer:
+      "The camera is switched on in Prequel but cannot be opened. It may have been unplugged, or another app may be holding it. Pick it again from the chevron menu, or choose another device.",
+  },
+  {
+    question: "Is the camera bubble part of the recording?",
+    answer:
+      "No. The bubble is a preview so you can check your framing. The camera is recorded as its own track and placed in the finished video afterwards, in the editor.",
+  },
+  {
+    question: "Does Prequel record the Mac's own sound?",
+    answer:
+      "Yes, when Record system audio is on in Settings, which it is by default. System audio is its own track, so you can drop it or set its level separately from your voice.",
+  },
+];
+
+## Toggles and menus
+
+The dock has a camera control and a microphone control. Each is an icon that turns the device on or off, and a name with a chevron that opens the list of devices.
+
+- A green dot beside the name means the device is on and available.
+- The microphone's dot fills with the live level while it is on, so you can see it hears you before you start.
+- A red dot means the device is switched on but cannot be used: it was unplugged, or another app holds it.
+
+The chevron opens a menu of every camera or microphone the Mac can see, plus **Off**. With exactly one device, turning it on picks it without a menu.
+
+Prequel remembers the device by name, so the same camera is chosen again after a restart even when macOS gives it a new identifier.
+
+## The camera bubble
+
+When the camera is on, a round preview appears on screen so you can see your framing before you record. Drag it anywhere; Prequel remembers where you put it. Hover to reveal a **Turn camera off** button.
+
+The bubble is not part of the recording. The camera is recorded as its own track, and where it sits in the finished video is decided afterwards in the editor. See [Camera](/docs/camera).
+
+## System audio
+
+Sound from the Mac itself is recorded as a separate track when **Record system audio** is on in Settings. It is on by default. In the editor you can include or drop it, and set its volume, independently of your voice. See [Audio](/docs/audio).
+
+## Permissions
+
+The camera and microphone each need their own grant. Prequel asks only when you turn the device on, and never opens either while you are not recording. See [Permissions](/docs/permissions).

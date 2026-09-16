@@ -30,13 +30,22 @@ export const SITE = {
   platform: "Apple Silicon · macOS 14+",
 } as const;
 
+/**
+ * The header's row. Six labels, and no more: the note in `Nav.tsx` has the
+ * arithmetic for why a seventh wraps.
+ *
+ * `/changelog` held the last slot until the docs arrived. It now lives inside
+ * them, at `/docs/changelog` and in the docs sidebar, because someone reading
+ * how a panel works is the person who asks what changed in it, and the header
+ * is read by a stranger deciding whether to download at all.
+ */
 export const NAV: { href: Route; label: string }[] = [
   { href: "/features", label: "Features" },
   { href: "/usecases", label: "Use cases" },
   { href: "/compare", label: "Compare" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/docs", label: "Docs" },
   { href: "/blog", label: "Blog" },
-  { href: "/changelog", label: "Changelog" },
 ];
 
 /**

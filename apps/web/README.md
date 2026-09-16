@@ -106,6 +106,48 @@ Remark and rehype plugins must be named as **strings** in `next.config.ts`.
 Turbopack runs them in Rust and cannot be handed a JavaScript function, which
 rules out most syntax highlighters.
 
+## Adding a docs page
+
+The `/docs/<slug>` pages are the manual. Flat URLs, grouped into sections only
+in the sidebar.
+
+1. Write `src/content/docs/<slug>.mdx`. Three exports at the top, then prose
+   from `##`:
+
+   ```mdx
+   export const title = "Permissions";
+   export const description = "What macOS asks for, and what a missing grant costs.";
+   export const faq = [
+     { question: "Do I have to grant the camera?", answer: "Only if you record it. …" },
+   ];
+   ```
+
+   The FAQ renders under the body and is emitted as `FAQPage` JSON-LD off the
+   same array. Three questions a reader of that page would ask, in its terms.
+
+2. Add the slug to the right section's `pages` in `src/content/docs.ts`. Order
+   there is the sidebar's order and the previous/next order.
+
+The `h1` is drawn from `title`; a `#` in the body is a second one. Keep headings
+plain text — no inline code or links — because their ids are computed twice,
+by `rehype-slug` at compile time and by `src/lib/toc.ts` for the "On this page"
+list, and the two only agree on plain text.
+
+Screenshots are `![alt](/docs/<shot>.webp)`. They are not taken by hand: the
+desktop package's gallery renders the real renderer components in headless
+Chrome and writes them here, along with `src/content/docs/shots.json`, which
+the docs route uses to draw each one at life size. Regenerate them all with
+
+```bash
+pnpm --filter @prequel/desktop shots
+```
+
+after a change to the app's UI, and commit the `.webp`s with it. The shot list
+is `apps/desktop/gallery/shots.tsx`.
+
+The changelog lives inside the docs at `/docs/changelog`; `/changelog` redirects
+there from `next.config.ts`.
+
 ## Adding a use-case page
 
 The `/create/<slug>` pages are the keyword landing pages. They share one hero

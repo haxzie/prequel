@@ -108,6 +108,30 @@ Do not name a colour token so it collides with a Tailwind namespace —
 `--clip-*` would generate `bg-clip-fill`, which lives in `background-clip`'s
 namespace.
 
+## The gallery
+
+`gallery/` renders the renderer's components in an ordinary browser, for the
+documentation's screenshots on prequel.sh. It is a second Vite root beside the
+electron-vite one: `gallery/bridge.ts` stands in for `window.prequel` (typed
+`satisfies DesktopApi`, so a preload method without a twin fails `typecheck`),
+and the Vite config swaps `shared/media-url.ts` for a copy that answers over
+`/media/...`, served by `gallery/server/media.ts` from a real recording under
+`~/Movies/Prequel/.recordings` and the caches under Application Support.
+
+```bash
+pnpm gallery          # http://127.0.0.1:5199/#/ lists every shot
+pnpm shots            # captures them all into apps/web/public/docs
+pnpm shots --only editor,dock-setup --recording "Prequel 2026-08-22 09-03-02"
+```
+
+`scripts/shoot-docs.mjs` drives headless Chrome over the DevTools protocol with
+real input events — the timeline's `setPointerCapture` throws on a synthetic
+one — and needs WebGL, so it starts Chrome with SwiftShader and never
+`--disable-gpu`. Shots are declared in `gallery/shots.tsx`; the four
+`data-panel` attributes in the editor exist so they have something stable to
+crop to. Nothing is written into the recording: caption bitmaps the editor
+asks for land in an overlay directory under the system temp folder.
+
 ## Packaging
 
 `asar` is the trap. `nativeImage.createFromPath` is native code and cannot read

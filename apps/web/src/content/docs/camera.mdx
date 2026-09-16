@@ -1,0 +1,49 @@
+export const title = "Camera";
+export const description = "The shape, size, position and border of your camera.";
+export const faq = [
+  {
+    question: "Can I remove the background behind me?",
+    answer:
+      "Yes, on recordings made since Prequel began recording a person matte alongside the camera. Choose Remove background as the shape. On an older take the option explains why it cannot be used.",
+  },
+  {
+    question: "Why is my camera mirrored?",
+    answer:
+      "Mirror is on by default because most people expect to see themselves as in a mirror. Turn it off in the Camera panel if you would rather not.",
+  },
+  {
+    question: "Can the camera get smaller when a zoom happens?",
+    answer:
+      "Yes. Turn on Shrink on zoom and set Size while zoomed. The camera shrinks during zooms so it covers less of what you are zooming into.",
+  },
+];
+
+## The panel
+
+![The Camera panel: shape, roundness, size, zoom, a position map and mirror](/docs/inspector-camera.webp)
+
+The Camera panel appears only for recordings that have a camera track.
+
+- **Camera** turns it on or off in the composition. Off is not deleted; the track is still there to turn back on.
+- **Shape**: Circle, Squircle, Rounded, Wide or Portrait, plus **Remove background**.
+- **Roundness** rounds the corners of the rectangular shapes.
+- **Size** is the camera's height as a share of the frame.
+- **Zoom** enlarges the picture inside its shape, which crops the edges. Handy for sitting closer without moving.
+
+## Remove background
+
+The first shape cuts you out of your surroundings, leaving just you over the composition's background. It works from a person matte recorded alongside the camera, so it is only offered on recordings made since the matte existed. On an older take the option explains why it cannot be used.
+
+## Position and mirror
+
+The map at the bottom places the camera at one of nine positions in the frame. Dragging it in the composition is the other way, and gives you any position at all.
+
+**Mirror** flips the picture so it matches what you see in a mirror, which is how most people expect to look. It is on by default.
+
+## Border
+
+**Width**, **Colour** and **Opacity** draw an edge around the camera. Widths are a fraction of the frame, so the same value is a hairline on a 4K export and on a 720p one alike.
+
+## When zoomed
+
+A zoom pushes into the screen, and a camera the same size as before covers more of what you are zooming into. **Shrink on zoom** reduces it during zooms; **Size while zoomed** sets how small.

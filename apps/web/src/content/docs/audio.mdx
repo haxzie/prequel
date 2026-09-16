@@ -1,0 +1,40 @@
+export const title = "Audio";
+export const description = "Which sound goes into the export, and how loud.";
+export const faq = [
+  {
+    question: "Can I mute the system audio but keep my voice?",
+    answer:
+      "Yes. In the Audio panel, turn off Include under System audio and leave the microphone included.",
+  },
+  {
+    question: "Why is the Audio panel missing?",
+    answer:
+      "The recording has no audio tracks. The microphone was off and Record system audio was off when it was made.",
+  },
+  {
+    question: "Does a GIF have sound?",
+    answer:
+      "No. A GIF export is silent whatever is set in the Audio panel, and the export dialog's summary says so.",
+  },
+];
+
+## Two sources
+
+A recording can carry two audio tracks: your **Microphone**, and the Mac's own **System audio**. Each is recorded separately so they can be mixed afterwards.
+
+![The Audio panel: include and volume for the microphone and for system audio](/docs/inspector-audio.webp)
+
+For each source:
+
+- **Include** puts it in the export or leaves it out.
+- **Volume** sets its level.
+
+The panel is only offered for recordings that have at least one audio track, and it says so when there is none.
+
+## Recording system audio
+
+Whether the Mac's sound is captured at all is a recording-time setting: **Record system audio** in Settings, on by default. A take made with it off has no system track to include later.
+
+## GIF
+
+A GIF export is silent whatever is set here. The export dialog says so in its summary line.

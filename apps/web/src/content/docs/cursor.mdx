@@ -1,0 +1,41 @@
+export const title = "Cursor";
+export const description = "Restyling, smoothing and hiding the pointer.";
+export const faq = [
+  {
+    question: "Why is there no Cursor panel on my recording?",
+    answer:
+      "The pointer was baked into the frames, because Bake the pointer into the recording was on in Settings when the take was made. Recordings made with it off carry the pointer as a layer that can be restyled.",
+  },
+  {
+    question: "Can I hide the pointer?",
+    answer:
+      "Yes. Turn off Pointer to hide it entirely, or use Hide when still to fade it after it stops moving and Hide while typing to fade it while keys are pressed.",
+  },
+  {
+    question: "Can I make the pointer bigger?",
+    answer:
+      "Yes. Size in the Cursor panel scales it as a share of the frame, so it stays the same relative size at any export resolution.",
+  },
+];
+
+## When the panel appears
+
+Prequel records the pointer as its own layer rather than baking it into the frames, so it can be changed afterwards. The Cursor panel appears for those recordings. If **Bake the pointer into the recording** was on in Settings when the take was made, the pointer is already in the picture and there is nothing to restyle.
+
+![The Cursor panel: pointer style, size, smoothing, motion blur and hiding](/docs/inspector-cursor.webp)
+
+## Style and size
+
+- **Pointer** shows or hides it entirely.
+- **Style**: Black, White, Classic Black, Classic White, Circle, Point, and a set of playful ones: Hammer, Wrench, Cooking, Baby bottle, Corn, Fish, Frog, Hamster and Football. A style sets the arrow; the hand and the text cursor that go with it are chosen to match.
+- **Size** scales the pointer, as a share of the frame.
+
+## Motion
+
+- **Smoothing** steadies the pointer's path, so a shaky hand reads as a deliberate move.
+- **Motion blur** streaks the pointer during fast moves, as a camera would.
+
+## Hiding
+
+- **Hide while typing** fades the pointer out while keys are being pressed. This needs the recording to know when you typed, which is what the Accessibility permission provides.
+- **Hide when still** fades it after it has stopped moving; **After** sets how long to wait.

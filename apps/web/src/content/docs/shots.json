@@ -1,0 +1,110 @@
+{
+  "dock-setup": {
+    "width": 622,
+    "height": 100
+  },
+  "dock-setup-window": {
+    "width": 622,
+    "height": 100
+  },
+  "dock-permissions": {
+    "width": 666,
+    "height": 100
+  },
+  "dock-recording": {
+    "width": 232,
+    "height": 100
+  },
+  "welcome-permissions": {
+    "width": 720,
+    "height": 520
+  },
+  "projects": {
+    "width": 1280,
+    "height": 820
+  },
+  "settings": {
+    "width": 1280,
+    "height": 820
+  },
+  "editor": {
+    "width": 1280,
+    "height": 820
+  },
+  "inspector-presets": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-layout": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-background": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-recording": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-camera": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-audio": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-cursor": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-captions": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-logo": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-zoom": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-angle": {
+    "width": 384,
+    "height": 577
+  },
+  "inspector-focus": {
+    "width": 384,
+    "height": 577
+  },
+  "timeline-zoom": {
+    "width": 720,
+    "height": 156
+  },
+  "playback-controls": {
+    "width": 1280,
+    "height": 49
+  },
+  "frame-bar-presets": {
+    "width": 928,
+    "height": 400
+  },
+  "caption-editor": {
+    "width": 384,
+    "height": 577
+  },
+  "export-dialog": {
+    "width": 460,
+    "height": 490
+  },
+  "export-done": {
+    "width": 460,
+    "height": 400
+  },
+  "upgrade-dialog": {
+    "width": 460,
+    "height": 612
+  }
+}

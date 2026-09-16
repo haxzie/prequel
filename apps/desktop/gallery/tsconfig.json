@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.web.json",
+  "compilerOptions": {
+    "composite": false,
+    "paths": {
+      "@/*": ["../src/renderer/src/*"]
+    }
+  },
+  "include": [
+    "../src/renderer/**/*.ts",
+    "../src/renderer/**/*.tsx",
+    "../src/preload/index.ts",
+    "../src/shared/**/*.ts",
+    "./*.ts",
+    "./*.tsx"
+  ],
+  "exclude": ["./vite.config.ts", "./server"]
+}

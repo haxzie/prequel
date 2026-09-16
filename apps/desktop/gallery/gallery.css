@@ -1,0 +1,11 @@
+/* The renderer's stylesheet, plus this directory as a Tailwind source.
+   `index.css` names its own sources relative to itself, so the gallery's
+   classes would otherwise never be generated. */
+@import "../src/renderer/src/index.css";
+@source "./";
+
+/* The page behind a shot is never transparent here: there is no window for
+   it to be transparent onto. The frame paints its own backdrop. */
+body {
+  background: #101114;
+}

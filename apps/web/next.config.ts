@@ -59,14 +59,32 @@ const nextConfig: NextConfig = {
     // nothing reports an error. New in 16.3.
     turbopackLocalPostcssConfig: true,
   },
+
+  /**
+   * The changelog moved inside the docs.
+   *
+   * `/changelog` has been the public address since 0.0.5 and is what release
+   * announcements link to, so it keeps answering. Permanent, because the old
+   * page is gone rather than duplicated: a temporary redirect would have
+   * crawlers keep the dead URL in the index indefinitely.
+   */
+  async redirects() {
+    return [{ source: "/changelog", destination: "/docs/changelog", permanent: true }];
+  },
 };
 
 // Plugins must be named as strings. Turbopack runs them in Rust and cannot be
 // handed a JavaScript function, so anything configured with a callback — most
 // syntax highlighters — is unusable here.
+//
+// `rehype-slug` is option-free, which is what lets it be named at all. It gives
+// every heading an `id`, and that is what the docs' "On this page" list links
+// to; `scroll-mt-24` on the headings in `mdx-components.tsx` is what keeps the
+// target clear of the top of the viewport when one is followed.
 const withMDX = createMDX({
   options: {
     remarkPlugins: ["remark-gfm"],
+    rehypePlugins: ["rehype-slug"],
   },
 });
 

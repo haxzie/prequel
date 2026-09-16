@@ -1,0 +1,53 @@
+export const title = "Where files live";
+export const description = "Recordings, exports and the edit, on disk.";
+export const faq = [
+  {
+    question: "Where does Prequel save recordings?",
+    answer:
+      "Under Movies/Prequel in your home folder. The takes are in a hidden .recordings folder inside it, one folder per take.",
+  },
+  {
+    question: "Can I move a recording to another Mac?",
+    answer:
+      "Yes. A take's folder holds everything it needs, including copied backgrounds and pointer images, so it opens and exports the same on another Mac with Prequel installed.",
+  },
+  {
+    question: "Where do exports go?",
+    answer:
+      "Wherever you point the save dialog. It opens on Downloads the first time and remembers where you last saved.",
+  },
+];
+
+## The recordings folder
+
+Everything Prequel writes is under `~/Movies/Prequel`. **Show Recordings in Finder** in the menu bar opens it.
+
+The takes are in a hidden folder inside it, `.recordings`, one folder per take named by when it was made, for instance `Prequel 2026-08-22 09-03-02`.
+
+Exports go wherever you point the save dialog. It opens on your Downloads folder the first time and remembers where you last saved.
+
+## Inside a take
+
+| File | What it is |
+| --- | --- |
+| `screen.mp4` | The recorded screen. |
+| `camera.mp4` | The camera, when it was on. |
+| `camera-matte.mp4` | The person matte for removing the camera's background, on recent recordings. |
+| `mic.m4a` | Your microphone. |
+| `system.m4a` | The Mac's own sound. |
+| `session.json` | The manifest: what was recorded, when each track started, and every pointer position, click and keystroke span. |
+| `project.json` | The edit: layout, background, zooms, cuts and every other setting. |
+| `transcript.json` | The words, once transcribed. |
+| `poster.jpg`, `filmstrip.jpg` | Stills for the library grid. |
+| `captions/` | Rendered caption images. |
+| `cursor-*.png`, background pictures, a logo | Copied in when chosen, so the folder has everything it needs. |
+
+A folder is self-contained by design. Copy it to another Mac with Prequel installed and it opens and exports the same.
+
+## The edit never touches the video
+
+`project.json` describes what to do with the tracks; the tracks are never rewritten. Deleting the edit puts a recording back to how it was captured.
+
+## Deleting
+
+The bin in the editor, or **Move to the Trash** on a card in the library, moves the whole folder to the Trash. You can put it back from there.

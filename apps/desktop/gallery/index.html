@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      No Content-Security-Policy, unlike the renderer's own index.html. The
+      renderer's `script-src 'self'` would block the inline React Refresh
+      preamble Vite injects in development, and the result is a blank page with
+      one console line. Nothing here is served to anyone but the capture script.
+    -->
+    <title>Prequel gallery</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

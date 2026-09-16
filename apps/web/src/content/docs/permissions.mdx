@@ -1,0 +1,50 @@
+export const title = "Permissions";
+export const description = "The four grants macOS asks for, what each is used for, and why two of them need a relaunch.";
+export const faq = [
+  {
+    question: "I allowed Screen Recording but Prequel still says it is missing. Why?",
+    answer:
+      "macOS reports Screen Recording and Accessibility to an app only when it launches. Quit Prequel and open it again, or use Restart Prequel in the dock's warning menu, and the grant is picked up.",
+  },
+  {
+    question: "Do I have to grant the camera and microphone?",
+    answer:
+      "Only if you want to record them. Prequel asks for each when you first turn the device on for a recording, and never opens either while you are not recording.",
+  },
+  {
+    question: "What does Accessibility do for a screen recorder?",
+    answer:
+      "It lets Prequel see where you clicked and typed while recording, which is what the automatic zooms are built from. Without it the recording still works, but the first pass has nothing to place zooms on.",
+  },
+];
+
+## The four permissions
+
+macOS asks for each of these separately, and Prequel asks only for what you are about to use.
+
+![The permissions step of the welcome window, with Screen Recording allowed and three still to grant](/docs/welcome-permissions.webp)
+
+| Permission | What it is for | Without it |
+| --- | --- | --- |
+| Screen Recording | Everything Prequel records comes through it. | Nothing can be recorded at all. |
+| Accessibility | Lets the automatic zooms find your clicks and typing. | Clicks and typing are not captured, so automatic zooms have nothing to find. |
+| Camera | The webcam bubble, only when you turn the camera on. | Your camera is switched on but does not appear in the recording. |
+| Microphone | Your voice, only when you turn the microphone on. | Your microphone is switched on but is not heard. |
+
+Prequel never opens the camera or the microphone unless you turn them on for a recording.
+
+## Granting them
+
+The welcome window lists all four with an **Allow** button beside each. Each button opens the matching pane in System Settings, or triggers the system prompt where macOS offers one. The same list is in **Settings** under **Permissions**, so you can come back to it at any time.
+
+## Screen Recording and Accessibility need a relaunch
+
+macOS tells an app about these two grants only when it launches. If you allow Screen Recording or Accessibility while Prequel is running, the app still believes it is missing until you restart it.
+
+The dock knows this. When something a recording needs is missing, an amber warning appears at the right end of the dock. Its menu lists what to allow and ends with **Restart Prequel**, which relaunches the app so it can read the new grant.
+
+![The dock with an amber warning at its right end, because Accessibility has not been allowed](/docs/dock-permissions.webp)
+
+## What "missing" means
+
+The warning appears only for a permission the next recording would actually use. A camera that is switched off needs no camera grant, so the dock does not complain about one.

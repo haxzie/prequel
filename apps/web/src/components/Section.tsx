@@ -52,7 +52,7 @@ export function SectionHeading({
    *
    * `h2` by default, because most callers are one section of a page whose `h1`
    * is the hero above them. The pages with no hero — `/pricing`, `/features`,
-   * `/blog`, `/about`, `/changelog`, `/support`, `/usecases` — open with this
+   * `/blog`, `/about`, `/docs`, `/support`, `/usecases` — open with this
    * component instead, and an `h2` there leaves the page with no `h1` at all.
    * Nothing about that shows on screen, which is why all seven shipped that
    * way; to a crawler it is a page that never says what it is about.

@@ -1,0 +1,60 @@
+export const title = "Zooms";
+export const description = "Pushing into the work: automatic zooms, adding your own, and the angle and focus of each.";
+export const faq = [
+  {
+    question: "How do I add a zoom by hand?",
+    answer:
+      "Press Z or click Add Zoom to add one at the playhead, drag across an empty stretch of the zoom row to draw one, or right-click an existing zoom and choose Duplicate.",
+  },
+  {
+    question: "Can a zoom follow the pointer?",
+    answer:
+      "Yes. Set Follow to Cursor and the zoom moves with the pointer. Set it to Region to hold a fixed area you choose on the map.",
+  },
+  {
+    question: "What do Angle and Focus do?",
+    answer:
+      "Angle tilts the picture in three dimensions as the zoom pushes in, with presets like Lean in and Hero. Focus blurs everything outside a sharp region and can darken the edges with a vignette.",
+  },
+];
+
+## Where zooms come from
+
+Prequel adds zooms on its own the first time a recording opens, one for each place you clicked or typed. That needs the Accessibility permission to have been granted while recording. The wand in the editor's header runs the pass again for anything not already covered.
+
+You can add your own in three ways:
+
+- Press **Z**, or click **Add Zoom** in the transport, to add one at the playhead.
+- Drag across an empty stretch of the zoom row, under the clips, to draw one.
+- Right-click an existing zoom and choose **Duplicate**.
+
+![The timeline with a zoom selected in the zoom row](/docs/timeline-zoom.webp)
+
+Drag a zoom to move it, drag its ends to change how long it lasts, and press **Backspace** to delete the selected one. Every change plays the zoom's span once in the composition so you can see what it did.
+
+## The Zoom tab
+
+Selecting a zoom swaps the Inspector for the zoom's own three tabs.
+
+![The Zoom tab: follow cursor or region, area, level, speed and ease](/docs/inspector-zoom.webp)
+
+- **Follow**: **Cursor** keeps the pointer in view as the zoom moves with it; **Region** holds a fixed area you choose on the map.
+- **Level** is how far in to go.
+- **Speed** is how long the push in and pull out take.
+- **Ease**: **Smooth**, **Linear**, **Slow in** or **Slow out**, with a curve you can drag for anything in between.
+
+## The Angle tab
+
+A zoom can tilt the picture in three dimensions as it pushes in.
+
+![The Angle tab: perspective presets and depth, tilt and yaw sliders](/docs/inspector-angle.webp)
+
+- **Perspective** presets: **Flat**, **Lean back**, **Lean in**, **Left**, **Right** and **Hero**.
+- The **Angles** pad sets tilt and yaw together by dragging.
+- **Depth**, **Tilt** and **Yaw** set each on its own.
+
+## The Focus tab
+
+- **Blur around** softens everything outside a sharp region while the zoom is in.
+- **Sharp area** sets how large that region is, and **Strength** how soft the rest becomes.
+- **Vignette** darkens the edges.

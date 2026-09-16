@@ -6,6 +6,8 @@
   },
   "include": [
     "electron.vite.config.ts",
+    "gallery/vite.config.ts",
+    "gallery/server/**/*.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts"

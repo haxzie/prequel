@@ -1,0 +1,47 @@
+export const title = "Screen, window or area";
+export const description = "The three ways to choose what gets recorded.";
+export const faq = [
+  {
+    question: "Can I record just one window?",
+    answer:
+      "Yes. Choose Window on the dock, then move over the window you want and click it, or press Start recording on the highlighted window to begin at once. The recording follows that window wherever it moves.",
+  },
+  {
+    question: "Can I record part of the screen?",
+    answer:
+      "Yes. Choose Area and drag a rectangle. Drag its edges to adjust or drag inside to move it before you start.",
+  },
+  {
+    question: "How do I cancel choosing a source?",
+    answer:
+      "Press Esc while the overlay is up. It also cancels the countdown once a source is chosen.",
+  },
+];
+
+## Three modes
+
+The first group of buttons on the dock chooses what to record.
+
+- **Entire screen** records a whole display. With more than one display, you pick which in the overlay.
+- **Window** records one window, wherever it moves.
+- **Area** records a rectangle you draw on the screen.
+
+The dock shows the current choice beside the mode once you have made one, for instance **Window · Safari**.
+
+![The dock in Window mode, with Safari chosen](/docs/dock-setup-window.webp)
+
+## The overlay
+
+Choosing a mode dims the screen and puts an overlay over each display.
+
+**Entire screen** shows a card naming the display and its size in pixels, with a **Start recording** button.
+
+**Window** highlights whichever window is under the pointer, with its app icon and name. Click to choose it, or press **Start recording** on the highlighted window to begin at once. Windows with no title show as **Untitled window**.
+
+**Area** asks you to drag a rectangle. Release to confirm it. You can then drag the edges to adjust, or drag inside to move it, before you start.
+
+Press **Esc** at any point to cancel and go back to the dock.
+
+## What the pointer looks like
+
+By default the pointer is recorded as its own layer, so you can restyle, resize or hide it afterwards in the editor. If you would rather have the pointer baked into the frames exactly as it appeared, turn on **Bake the pointer into the recording** in Settings. See [Settings](/docs/settings).
