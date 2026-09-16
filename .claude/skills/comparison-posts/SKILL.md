@@ -13,6 +13,15 @@ sells to a stranger who is deciding in about forty seconds.
 `/alternatives/<slug>` pages are the neighbouring genre and are **not** this.
 Those make narrow, cited, head-to-head claims and are governed by
 `src/content/competitors.ts`. These are the wide roundups that link to them.
+How-tos, explainers and pillars are `[[guide-posts]]`. A post built around
+leaving one named tool ("Loom alternatives") is `[[alternatives-posts]]`,
+which has its own shape: proof for every reason people leave, a methodology
+block, pros and cons per tool. This skill keeps the screenshot procedure
+that both use.
+
+Prices and complaints come from a brief. If `.context/research/<slug>.md`
+exists, `[[blog-research]]` has already fetched and dated them; if it does
+not, run that skill before writing a post that names ten prices.
 
 ## Where things go
 
@@ -126,6 +135,10 @@ true and checkable, because the surrounding facts are:
 - Renders locally. No upload, no queue, nothing leaves the Mac unasked.
 - $29 once, against subscriptions and against far dearer one-off licences.
 - A camera re-framed after the take, because the sources are recorded separately.
+- The code is on GitHub (github.com/haxzie/prequel), under FSL-1.1-ALv2, which
+  becomes Apache 2.0 two years after each release. Say "the code is on GitHub"
+  and name the licence; do not write "open source" bare, which a GPL or MIT
+  user will dispute, and never claim an OSI licence.
 
 Pick the one that actually contrasts with the tool in that section. Against a
 free tool, price is not the win, so use the fact that it arrives edited.
@@ -163,13 +176,9 @@ here with more force, because a roundup carries ten times as many numbers.
 
 **Never link a competitor's site.** Not in prose, not on their name, not in the
 image. The screenshots are hosted locally precisely so the post does not have
-to. Reddit is the one permitted outbound host, for citations (below). Check with
-a grep that no other host appears:
-
-```bash
-grep -ohE "https?://[a-z0-9./-]+" apps/web/src/content/blog/*.mdx \
-  | sed -E 's|(https?://[^/]+).*|\1|' | sort -u   # reddit.com only
-```
+to. The citation hosts are the only outbound links: reddit.com,
+news.ycombinator.com, x.com, g2.com (and github.com or producthunt.com for a
+scale figure). The check script flags anything else.
 
 `mdx-components.tsx` gives any `http(s)` link `target="_blank"` and
 `rel="noreferrer noopener"` off the href, so nothing needs setting per link.
@@ -283,10 +292,17 @@ this evidence is used:
   surface in search are founders announcing their own alternative. The title
   reads like a user grievance and the body is an advert.
 
-- **Never synthesise the missing screenshot.** A card styled as a Reddit post or
-  a tweet, holding content that did not come from a verifiable post, is a
-  fabricated review attached to a named company, and it discredits every checked
-  price on every one of these pages.
+- **Or draw the card from the thread's real data.** Since 2026-09-16 there is
+  `alternatives-posts/scripts/render-quote-card.mjs`: read the title, sub,
+  author, score and first paragraph from the open thread and it renders a
+  clean card with no rail to crop. Every field copied verbatim, the link
+  under the image. That is a rendering of a real post, which is fine.
+
+- **Never synthesise the missing post.** A card holding content that did not
+  come from a verifiable URL is a fabricated review attached to a named
+  company, and it discredits every checked price on every one of these
+  pages. The renderer makes this easier to do by accident, which is why the
+  link under the card is not optional.
 
 **Some banners will not die.** Screen Studio's survived three passes of the
 remover, which is a good moment to stop rewriting selectors: it is one image,
@@ -303,14 +319,24 @@ magick shot.png -crop 2269x1418+305+0 +repage \
 The result is a tighter hero crop that looks deliberate rather than salvaged,
 so this is a fine outcome rather than a fallback to feel bad about.
 
-Prequel's own shot needs padding to the same 16:10 rather than cropping, since
-`editor-shot.png` is a different ratio and `object-cover` slices the dock off:
+Prequel's own shot is its landing page, captured the same way as everyone
+else's so the row of screenshots reads as one set. Asked for on 2026-09-16;
+before that it was the editor screenshot padded onto 16:10, which looked
+like the odd one out. The dev server is the source, and `next dev` draws its
+"N" badge in the bottom-left corner, which is painted over because that spot
+is plain white:
 
 ```bash
-magick apps/web/public/editor-shot.png \
-  -resize 1440x900 -background none -gravity center -extent 1440x900 \
-  -strip -quality 82 apps/web/public/blog/tools/prequel.webp
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new --disable-gpu --hide-scrollbars --no-first-run \
+  --force-device-scale-factor=2 --window-size=1440,900 \
+  --screenshot=/tmp/prequel-site.png "http://localhost:3111/"
+magick /tmp/prequel-site.png -fill white -draw "rectangle 20,1660 140,1790" \
+  -resize 1440x900 -strip -quality 82 apps/web/public/blog/tools/prequel.webp
 ```
+
+Check the corner afterwards; if the landing page ever gets a dark footer
+there, the rectangle needs a different colour.
 
 ## Registering the post
 
@@ -344,11 +370,14 @@ Nothing to add per post.
 ## Before it ships
 
 ```bash
-grep -c "—" apps/web/src/content/blog/<slug>.mdx        # must be 0
-grep -oE "https?://" apps/web/src/content/blog/<slug>.mdx # must be empty
-pnpm --filter @prequel/web exec tsc --noEmit
+.claude/skills/blog-review/scripts/check-post.sh <slug>   # exits with the blocker count
+pnpm --filter @prequel/web typecheck
 npx prettier --write apps/web/src/content/blog/<slug>.mdx
 ```
+
+The script is the mechanical half of `[[blog-review]]`: em dashes, outside
+hosts, the claims that may not be made, dead links, a duplicate definitional
+question, the `posts.ts` entry. Run the skill itself for the read.
 
 Then load the page and read it. Check that every screenshot resolves, that each
 `/alternatives/` link is a real route (`typedRoutes` catches a dead one at
