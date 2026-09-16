@@ -59,6 +59,100 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "screen-studio-alternatives",
+    title: "The best Screen Studio alternatives for Mac",
+    excerpt:
+      "Screen Studio went subscription-only in October 2025 and the threads asking for a way out have not stopped. We tried the six tools people move to, with the prices checked and the complaints linked, and here is where each one fits.",
+    date: "2026-09-16",
+    tag: "Comparison",
+    readingMinutes: 12,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "What is the best Screen Studio alternative?",
+        answer:
+          "Prequel, if the price was the problem and the video was not. It does the same automatic zoom-and-pan on clicks and typing, adds a perspective tilt and focus falloff that Screen Studio does not have, frames the camera after the take, and exports 4K at up to 120 fps against Screen Studio's 4K 60. It is $29 once or $9 a month, where Screen Studio is $29 a month or $108 a year with no one-off licence.",
+      },
+      {
+        question: "How much does Screen Studio cost?",
+        answer:
+          "$29 a month billed monthly, or $108 a year, which works out at $9 a month. There is no free plan and, since October 2025, no lifetime licence for new customers. Checked on 16 September 2026.",
+      },
+      {
+        question: "Is there a free alternative to Screen Studio?",
+        answer:
+          "OBS Studio is free and records anything on a Mac with no limits, but it has no editor and no automatic zoom, so the look Screen Studio is known for is work you do afterwards. Cap has a free tier capped at five minutes a recording. Prequel is not free but its seven-day trial is the whole app with clean exports, after that it is $29 once, and its source is on GitHub under the Functional Source License.",
+      },
+      {
+        question: "Is there a Screen Studio alternative for Windows?",
+        answer:
+          "FocuSee does automatic zoom on Windows and macOS, from $49.99 a year or $199.99 for a lifetime licence. Cap runs on both and is open source. Screen Studio itself is Mac only, as is Prequel, which needs an Apple Silicon Mac on macOS 14 or later.",
+      },
+      {
+        question: "Can I still buy Screen Studio once?",
+        answer:
+          "No. Screen Studio withdrew its one-off licence in October 2025 and sells subscriptions only. People who bought a lifetime licence before then keep it. If a one-off purchase is what you want, Prequel's $29 lifetime licence is the closest thing in the category, and CleanShot X sells a $35 licence that includes a year of updates.",
+      },
+      {
+        question: "Is Screen Studio still worth it?",
+        answer:
+          "If you record every week, want the most polished automatic zoom in the category, and the subscription does not bother you, yes. It is a mature app with a founder who ships quickly. The people who leave are the ones who record a few times a month and would rather buy once, which is what Prequel is priced for.",
+      },
+      {
+        question: "What happens to my Screen Studio projects if I switch?",
+        answer:
+          "Your exported videos are ordinary MP4 files and stay yours. The project files are Screen Studio's own format and no other app opens them, so anything you have not exported yet should be exported before the subscription lapses. Prequel's projects are likewise its own, with every export an MP4 you keep.",
+      },
+    ],
+  },
+  {
+    slug: "cleanshot-alternatives",
+    title: "The best CleanShot X alternatives for screen recording on Mac",
+    excerpt:
+      "CleanShot X is the Mac's best screenshot tool and, since version 5, it has a video editor. We tried the six tools people use instead when the job is a demo rather than a clip, with prices checked and the threads linked.",
+    date: "2026-09-16",
+    tag: "Comparison",
+    readingMinutes: 10,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "What is the best CleanShot X alternative for screen recording?",
+        answer:
+          "Prequel, if what you record is demos and walkthroughs. It was built around the video: when you stop recording, the editor opens with zooms on your clicks and typing, the camera framed, a background applied and the audio balanced. CleanShot X added a video editor in September 2026; Prequel has been one since day one, and its $29 licence never stops updating.",
+      },
+      {
+        question: "How much does CleanShot X cost?",
+        answer:
+          "$35 once for CleanShot Basic, which includes the Mac app, a year of updates and 1 GB of cloud storage, with an optional $19 a year to keep updating after that. CleanShot Pro is $10 per user per month billed yearly, or $12 billed monthly, and adds unlimited cloud storage and team features. It requires macOS 13 or later. Checked on 16 September 2026.",
+      },
+      {
+        question: "Does CleanShot X have a video editor?",
+        answer:
+          "Yes, since version 5.0 on 1 September 2026. Studio Mode adds automatic smart zooms that follow the cursor, cursor smoothing, motion blur, backgrounds and trimming. Before that CleanShot recorded and trimmed video without an editor. Prequel does the same first pass and adds a perspective tilt, focus falloff and a camera you reframe after the take.",
+      },
+      {
+        question: "Is there a free alternative to CleanShot X?",
+        answer:
+          "For screenshots, macOS has Cmd+Shift+5 built in and Shottr is free. For recording, Kap is free and open source for short clips and GIFs, OBS Studio is free with no limits, and QuickTime Player is already installed. None of the free ones edit the video for you; Prequel does, for $29 once after a seven-day trial.",
+      },
+      {
+        question: "Do I have to renew CleanShot X every year?",
+        answer:
+          "No. The $35 licence keeps working. It includes a year of updates, and after that you can keep the version you have or pay $19 a year for new ones. Prequel's $29 licence includes updates without a renewal.",
+      },
+      {
+        question: "Can CleanShot X record system audio?",
+        answer:
+          "Yes, CleanShot X records the Mac's own audio alongside the microphone. So do Prequel and OBS Studio. QuickTime Player and Kap need a virtual audio driver to capture system sound.",
+      },
+      {
+        question: "Should I keep CleanShot X for screenshots and use something else for video?",
+        answer:
+          "That is what most people on this list do. Nothing here beats CleanShot at screenshots, scrolling capture and annotation. For a demo somebody outside the company will watch, Prequel hands back a video with the zooms, camera and background already done, and the two apps do not overlap much.",
+      },
+    ],
+  },
+  {
     slug: "add-subtitles-to-screen-recording",
     title: "How to add subtitles to a screen recording on a Mac",
     excerpt:
@@ -324,9 +418,9 @@ const ENTRIES: Post[] = [
     title: "The best Loom alternatives for Mac",
     excerpt:
       "People leave Loom for three reasons: the price, the five-minute free cap, or videos that live on someone else's servers. Here is where to go for each, and which one we would actually pick.",
-    date: "2026-09-02",
+    date: "2026-09-16",
     tag: "Comparison",
-    readingMinutes: 7,
+    readingMinutes: 11,
     faq: [
       {
         question: "What is the best Loom alternative for Mac?",
@@ -341,12 +435,27 @@ const ENTRIES: Post[] = [
       {
         question: "Is there an open source alternative to Loom?",
         answer:
-          "Cap. It is open source, offers instant hosted links and a local Studio mode with an editor, and you can point it at your own S3 bucket or Google Drive so recordings stay on infrastructure you control. Note it uses a custom licence rather than a standard OSI one.",
+          "Two, depending on what you mean. Cap offers instant hosted links and a local Studio mode, and you can point it at your own S3 bucket or Google Drive; its code is on GitHub under a custom licence rather than an OSI one. Prequel's code is also on GitHub, under the Functional Source License, which becomes Apache 2.0 two years after each release. OBS Studio is the fully OSI-licensed option, under GPL-2.0, with no editor.",
       },
       {
         question: "How much does Loom cost?",
         answer:
-          "There is a free Starter plan capped at five minutes a video, then Business at $18 per user per month and Business with AI at $24. Checked on 2 September 2026.",
+          "There is a free Starter plan capped at five minutes a video and 25 videos, then Business at $18 per user per month and Business + AI at $24. Since August 2026 there are no free Creator Lite seats, so every person who records is a paid seat. Checked on 16 September 2026.",
+      },
+      {
+        question: "What happened to Loom's pricing in 2026?",
+        answer:
+          "Loom removed the free Creator Lite role in August 2026 as part of moving billing into Atlassian's admin system. Teams that had paid only for the people who record now pay for every seat that records, which is why threads about a tenfold bill increase appeared that month. Business is still $18 per user per month. Prequel is one $29 licence, or $9 a month, with no per-seat pricing.",
+      },
+      {
+        question: "What happens to my Loom videos if I leave?",
+        answer:
+          "Loom lets you download each video as an MP4 from its page, so export anything you want to keep before the workspace closes. Comments and transcripts do not come with the file. Every recording you make in Prequel is already a local file, so there is nothing to export later.",
+      },
+      {
+        question: "Is Loom still the right choice for some teams?",
+        answer:
+          "Yes, if the video is for colleagues and the link is the point. Nothing gets a two-minute walkthrough into somebody's inbox faster, and the comments and view counts on a Loom page are useful inside a company. The people who leave are sending video outside the company, where the recording needs to look finished and the file needs to be theirs.",
       },
       {
         question: "Can I download my videos instead of sharing a link?",
