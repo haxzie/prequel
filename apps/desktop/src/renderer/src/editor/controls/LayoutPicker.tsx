@@ -137,14 +137,27 @@ const THUMB_MIN_PADDING = 0.1;
 // whose own edge is only a slightly lighter fill has no edge at low contrast,
 // and these sit on a panel the same family of grey as they are. The chosen one
 // still says so with the blue ring, which is drawn inside this.
+// No aspect of its own: the cell is as tall as the plate inside it plus the
+// same padding on every side. It used to be square, which left a 16:9 plate
+// in a box nearly twice its height, with the slack above and below it reading
+// as padding that the sides did not have.
 const CELL =
-  "relative grid aspect-square place-items-center rounded-lg border border-white/10 " +
-  "bg-white/5 p-0.5 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
+  "relative grid place-items-center rounded-lg border border-white/10 " +
+  "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
-// Three across. The cells are square — see `CELL` — so this is also what sets
-// how tall they are: wide enough that a thumbnail can be told apart at a
-// glance, without the column of them running off the panel.
+// Three across. Wide enough that a thumbnail can be told apart at a glance,
+// without the column of them running off the panel.
 const GRID = "grid grid-cols-3 gap-1";
+
+/**
+ * How tall a portrait plate is drawn.
+ *
+ * A landscape plate fills the cell's width and its height follows; a
+ * portrait one cannot, or it would be a tall sliver taller than the panel is
+ * wide. So it is given a height instead, near what a landscape plate comes
+ * to at the panel's width, and its width follows from the frame.
+ */
+const PORTRAIT_PLATE = "3rem";
 
 export function LayoutPicker({
   frame,
@@ -297,8 +310,9 @@ function Plate({
   return (
     <span
       className="relative block overflow-hidden rounded-[6px] bg-black/40"
-      // Whichever edge runs out first, so a 9:16 frame draws as a tall sliver
-      // inside a square cell rather than overflowing it.
+      // The width for a landscape frame and a set height for a portrait one —
+      // see `PORTRAIT_PLATE` — so neither overflows the cell nor leaves it
+      // mostly empty.
       //
       // The paint goes on last so an image that has not loaded — or one the
       // recording never copied in — leaves the dark plate underneath rather
@@ -306,7 +320,7 @@ function Plate({
       style={{
         aspectRatio: `${frame.width} / ${frame.height}`,
         width: frame.width >= frame.height ? "100%" : undefined,
-        height: frame.width >= frame.height ? undefined : "100%",
+        height: frame.width >= frame.height ? undefined : PORTRAIT_PLATE,
         ...paint,
       }}
     >

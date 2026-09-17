@@ -17,6 +17,7 @@ import {
   type LayoutSettings,
   type SettingsSection,
   type SliceSettings,
+  type TextStyle,
   type ZoomSlice,
   WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
@@ -38,6 +39,7 @@ import {
   AngleIcon,
   AudioIcon,
   BackdropIcon,
+  ImageIcon,
   BackIcon,
   BlurIcon,
   BorderIcon,
@@ -112,11 +114,21 @@ import { ScenePresetCard } from "./controls/ScenePresetCard";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import {
   activeSettings,
+  findText,
   selectedSlice,
   slicesOf,
   type EditorAction,
   type EditorState,
 } from "./state";
+import {
+  TEXT_TABS,
+  TextStylePanel,
+  TextContentPanel,
+  TextPositionPanel,
+  type TextPatch,
+  type TextTabId,
+} from "./TextPanels";
+import type { Fonts } from "./useFonts";
 
 export interface InspectorProps {
   state: EditorState;
@@ -133,6 +145,8 @@ export interface InspectorProps {
   pendingBackground: string | null;
   /** Output size, so the camera map can take the frame's own proportions. */
   frame: Size;
+  /** The faces a text can be set in, and how to load one. */
+  fonts: Fonts;
   /** The camera track's own dimensions, or null when there is no camera. */
   cameraSource: Size | null;
   /** Whether the camera came with a person matte, which the cutout needs. */
@@ -246,6 +260,8 @@ export interface CaptionsState {
 export function Inspector(props: InspectorProps) {
   const { state, dispatch, tab, onTab } = props;
   const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
+  // Above the early returns, for the reason `naming` below gives.
+  const [textTab, setTextTab] = useState<TextTabId>("style");
   /**
    * Which of the captions category's two views is showing.
    *
@@ -268,8 +284,8 @@ export function Inspector(props: InspectorProps) {
    */
   const [naming, setNaming] = useState(false);
   useEffect(() => {
-    if (state.selectedZoomId !== null) setCaptionView("options");
-  }, [state.selectedZoomId]);
+    if (state.selectedZoomId !== null || state.selectedTextId !== null) setCaptionView("options");
+  }, [state.selectedZoomId, state.selectedTextId]);
 
   const settings = activeSettings(state);
   const slice = selectedSlice(state);
@@ -324,15 +340,71 @@ export function Inspector(props: InspectorProps) {
               clips={slicesOf(state.project).length}
               onClose={props.onClose}
             />
-            <div className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto">
+            {/* Keyed on the tab, so React replaces the view rather than
+                reconciling one panel's controls into another's and the
+                animation has something to run on. The key is on the scroller
+                rather than the view inside it, for the reason the clip
+                panel's is — see there. */}
+            <div
+              key={zoomTab}
+              className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+            >
               <ScrollFade className="sticky top-0 z-10" />
-              {/* Keyed on the tab, so React replaces the view rather than
-                  reconciling one panel's controls into another's and the
-                  animation has something to run on. */}
-              <div key={zoomTab} className="flex min-w-0 flex-1 flex-col animate-view-in">
+              <div className="flex min-w-0 flex-1 flex-col animate-view-in">
                 {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
                 {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
                 {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    );
+  }
+
+  // A selected text takes the panel over the way a zoom does, and for the
+  // same reason: none of a clip's questions apply to it.
+  const text = findText(state.project, state.selectedTextId);
+  if (text) {
+    const panel = {
+      text,
+      frame: props.frame,
+      fonts: props.fonts,
+      onChange: (patch: TextPatch) => dispatch({ type: "setText", textId: text.id, patch }),
+      onField: (index: number, patch: { text?: string; style?: Partial<TextStyle> }) =>
+        dispatch({ type: "setTextField", textId: text.id, index, patch }),
+      onTemplate: (templateId: string) =>
+        dispatch({ type: "applyTextTemplate", textId: text.id, templateId }),
+      onBeginEdit: () => dispatch({ type: "beginEdit" }),
+    };
+    const showingTextTab = TEXT_TABS.find((entry) => entry.id === textTab) ?? TEXT_TABS[0]!;
+
+    return (
+      <div className={SHELL}>
+        <Rail items={TEXT_TABS} value={textTab} onChange={setTextTab} />
+
+        <aside className={PANEL}>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <PanelHeader
+              title={showingTextTab.label}
+              icon={<showingTextTab.Icon />}
+              clips={slicesOf(state.project).length}
+              onClose={props.onClose}
+            />
+            {/* Keyed on the tab and the text, so switching either replaces
+                the view rather than reconciling one text's controls into
+                another's — a textarea kept across texts would keep its caret
+                in words that are no longer there. On the scroller, for the
+                reason the clip panel's is. */}
+            <div
+              key={`${textTab}:${text.id}`}
+              className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+            >
+              <ScrollFade className="sticky top-0 z-10" />
+              <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+                {textTab === "text" && <TextContentPanel {...panel} />}
+                {textTab === "style" && <TextStylePanel {...panel} />}
+                {textTab === "position" && <TextPositionPanel {...panel} />}
               </div>
             </div>
           </div>
@@ -347,7 +419,10 @@ export function Inspector(props: InspectorProps) {
     // before you start rather than as another group of controls.
     { id: "presets", label: "Presets", Icon: PresetsIcon },
     { id: "layout", label: "Layout", Icon: LayoutIcon },
-    { id: "background", label: "Background", Icon: BackdropIcon },
+    // A picture, not a palette: the palette glyph went to the text panel's
+    // Style tab, where a look is chosen, and what this panel mostly holds is
+    // wallpapers.
+    { id: "background", label: "Background", Icon: ImageIcon },
     // "Recording", not "Frame". Everything in it — the padding, the corner, the
     // border, the shadow — is how the recording is presented, and `frame` is
     // already the output's own dimensions two lines above `FrameBar`. One word
@@ -513,7 +588,16 @@ export function Inspector(props: InspectorProps) {
             />
           )}
 
-          <div className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {/* Keyed on what it shows, and the key is on the *scroller*, not on
+              the view inside it. Keyed one level down, the column that scrolls
+              survived every switch and kept its `scrollTop`, so a panel opened
+              after scrolling another was already scrolled to wherever that one
+              had been left — the top of the new panel out of sight, for no
+              reason anyone could see. A remounted scroller opens at the top. */}
+          <div
+            key={editingCaptions ? "captions-editor" : active}
+            className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+          >
             <ScrollFade className="sticky top-0 z-10" />
 
             {/* The panel's content, faded in on the way to a new one.
@@ -528,10 +612,7 @@ export function Inspector(props: InspectorProps) {
                 mounted and float over the incoming one, and these are a
                 scrolling column of very different heights: the two would have
                 to agree on a size neither has. */}
-            <div
-              key={editingCaptions ? "captions-editor" : active}
-              className="flex min-w-0 flex-1 flex-col animate-view-in"
-            >
+            <div className="flex min-w-0 flex-1 flex-col animate-view-in">
               {editingCaptions && <CaptionEditor {...props.editing} />}
 
               {active === "presets" && (

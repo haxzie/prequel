@@ -36,14 +36,19 @@ import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
+import { useFonts } from "./useFonts";
+import { useTextBitmaps } from "./useTextBitmaps";
 import { useTranscription } from "./useTranscription";
 import { transcriptForShare } from "./shareTranscript";
 import {
   settingsOf,
   canUndo,
   editorReducer,
+  findText,
   initialState,
   slicesOf,
+  textInProject,
+  textSpanNear,
   zoomInProject,
   zoomSpanNear,
   type EditorAction,
@@ -153,7 +158,26 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     (target: Picked) => {
       setPanelTab(PANEL_FOR[target]);
       setPanelOpen(true);
+      // Both, for the reason the zoom is dropped: a selected text takes the
+      // panel over the same way, and the tab just set would be behind it.
       dispatch({ type: "selectZoom", zoomId: null });
+      dispatch({ type: "selectText", textId: null });
+    },
+    [dispatch],
+  );
+
+  /**
+   * A text was clicked in the preview, or picked on the timeline.
+   *
+   * Selecting it is what shows its panel — the inspector reads the selection
+   * — so this only has to open the panel, and seek to the text where the
+   * playhead is not already on it: a text you cannot see is one you cannot
+   * place.
+   */
+  const pickText = useCallback(
+    (textId: string) => {
+      dispatch({ type: "selectText", textId });
+      setPanelOpen(true);
     },
     [dispatch],
   );
@@ -166,7 +190,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * put that clip's settings somewhere the user could no longer reach, and the
    * click read as doing nothing at all.
    */
-  const selected = state.selectedSliceId ?? state.selectedZoomId;
+  const selected = state.selectedSliceId ?? state.selectedZoomId ?? state.selectedTextId;
   const [exportOpen, setExportOpen] = useState(false);
   /**
    * The upgrade prompt, which stands in for the export dialog rather than
@@ -523,7 +547,34 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     state.project,
     captionFrame,
   );
-  useCaptionImages(session, captions.byLook, media, setImages);
+  const fonts = useFonts();
+  const textBitmaps = useTextBitmaps(session, state.project, captionFrame, fonts);
+  /**
+   * Every text's bitmaps by when it is on screen, for the image cache.
+   *
+   * Rebuilt only when the rows or the bitmaps change; a drag along the
+   * timeline changes the rows and is cheap, a slider in the panel changes
+   * neither until the settle redraws.
+   */
+  const textImages = useMemo(
+    () =>
+      state.project.texts.flatMap((track) =>
+        track.slices.flatMap((text) => {
+          const drawn = textBitmaps.rendered.get(text.id);
+          return drawn
+            ? [
+                {
+                  at: text.source.start,
+                  end: text.source.end,
+                  paths: drawn.fields.map((field) => field.path),
+                },
+              ]
+            : [];
+        }),
+      ),
+    [state.project.texts, textBitmaps.rendered],
+  );
+  useCaptionImages(session, captions.byLook, textImages, media, setImages);
 
   // Keyed on the slices rather than the project, so typing a correction —
   // which changes the project — does not lay the clips out again and hand the
@@ -545,10 +596,39 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    */
   useEffect(() => {
     if (!media.sliceId || media.sliceId === state.selectedSliceId) return;
-    if (state.selectedZoomId) return;
+    // Nor a text, for the same reason: scrubbing across a cut while a title
+    // is being typed must not swap the panel out from under the keyboard.
+    if (state.selectedZoomId || state.selectedTextId) return;
 
     dispatch({ type: "select", sliceId: media.sliceId });
-  }, [media.sliceId, state.selectedSliceId, state.selectedZoomId]);
+  }, [media.sliceId, state.selectedSliceId, state.selectedZoomId, state.selectedTextId]);
+
+  /**
+   * Seeks to a text the moment it is selected, when the playhead is not on it.
+   *
+   * On the selection changing rather than in `pickText`: the timeline selects
+   * a text by dispatching, and having every path that selects one also seek
+   * would be the same rule in three places. Just past the entrance, so what
+   * comes up is the text at rest rather than the first frame of its arrival.
+   */
+  useEffect(() => {
+    const text = findText(state.project, state.selectedTextId);
+    if (!text) return;
+    // The hold, not the span: a text added at the playhead starts exactly
+    // there, and the first frame of an entrance is fully transparent — so
+    // "inside the span" left the preview on a text nobody could see. The
+    // same halving `textKeys` applies, so a short text still has a hold.
+    const length = text.source.end - text.source.start;
+    const enter = Math.min(text.enterMs * 1_000_000, length / 2);
+    const exit = Math.min(text.exitMs * 1_000_000, length / 2);
+    const at = media.sourceAt() ?? 0;
+    if (at >= text.source.start + enter && at < text.source.end - exit) return;
+    const span = textInProject(state.project, text);
+    if (span) media.playback.seek(Math.min(span.start + enter, span.end));
+    // Only on the selection: the text's span moving under the playhead is a
+    // drag, and seeking during one would fight the hand doing it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedTextId]);
   /**
    * The words the captions editor shows, and the ones it does not.
    *
@@ -610,7 +690,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     sourceAt: media.sourceAt,
   };
 
-  const exportState = useExport(session, state.project, state.project.output, captions);
+  const exportState = useExport(
+    session,
+    state.project,
+    state.project.output,
+    captions,
+    textBitmaps,
+  );
 
   /**
    * The words as the finished file will have them, for the share page's
@@ -798,8 +884,19 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               cursor={session.cursor}
               zooms={state.project.zooms}
               cues={captions.byLook}
+              texts={state.project.texts}
+              rendered={textBitmaps.rendered}
+              selectedTextId={state.selectedTextId}
               grab={grab}
               onPick={showPanelFor}
+              onPickText={pickText}
+              onDragText={(textId, drag) => {
+                if (drag.kind === "move") {
+                  dispatch({ type: "setText", textId, patch: { x: drag.x, y: drag.y } });
+                } else {
+                  dispatch({ type: "sizeText", textId, sizes: drag.sizes });
+                }
+              }}
               onDrag={(section, patch) => {
                 // One dispatch per key, because that is what the override
                 // bookkeeping counts in: a gesture that writes five keys has to
@@ -856,6 +953,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 onRename: renamePreset,
                 onDelete: deletePreset,
               }}
+              fonts={fonts}
               onPreviewZoom={previewZoom}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing
@@ -864,6 +962,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onClose={() => {
                 dispatch({ type: "select", sliceId: null });
                 dispatch({ type: "selectZoom", zoomId: null });
+                dispatch({ type: "selectText", textId: null });
                 setPanelOpen(false);
               }}
               // Everything the panels draw comes out of the session
@@ -939,17 +1038,25 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           // Both act on the selection, and the two are mutually exclusive —
           // only one of them is ever the thing being removed.
           canSplit={state.selectedSliceId !== null}
-          canDelete={state.selectedSliceId !== null || state.selectedZoomId !== null}
+          canDelete={
+            state.selectedSliceId !== null ||
+            state.selectedZoomId !== null ||
+            state.selectedTextId !== null
+          }
           // Asked from the start rather than from the playhead, which is not
           // React state and could not re-enable the button as it moved. The
           // search covers every gap whatever it is given, so any one answer
           // is the answer for all of them.
           canAddZoom={zoomSpanNear(state.project, 0) !== null}
+          canAddText={textSpanNear(state.project, 0) !== null}
           canUndo={canUndo(state)}
           onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
+          onAddText={() => dispatch({ type: "addTextNear", at: media.playback.position() })}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
-            if (state.selectedZoomId) {
+            if (state.selectedTextId) {
+              dispatch({ type: "deleteText", textId: state.selectedTextId });
+            } else if (state.selectedZoomId) {
               dispatch({ type: "deleteZoom", zoomId: state.selectedZoomId });
             } else if (state.selectedSliceId) {
               dispatch({ type: "deleteSlice", sliceId: state.selectedSliceId });
@@ -1442,10 +1549,13 @@ function useShortcuts(
     const onKeyDown = (event: KeyboardEvent) => {
       // Never while typing in a field, or a space would toggle playback instead
       // of being a space, and D would change tool mid-word.
+      // `TEXTAREA` too: the text panel types into one, and without it a
+      // space toggled playback mid-sentence and T added a second title.
       const target = event.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
         target?.tagName === "SELECT" ||
+        target?.tagName === "TEXTAREA" ||
         target?.isContentEditable
       ) {
         return;
@@ -1480,11 +1590,22 @@ function useShortcuts(
           dispatch({ type: "addZoomNear", at: media.playback.position() });
           return;
 
+        // Adds a text where the playhead is, for the same reason Z adds a zoom.
+        case "KeyT":
+          event.preventDefault();
+          dispatch({ type: "addTextNear", at: media.playback.position() });
+          return;
+
         case "Backspace":
         case "Delete": {
-          // Whichever of the two is selected — they are mutually exclusive, so
-          // there is never a question of which one Backspace means.
-          const { selectedSliceId, selectedZoomId } = latest.current;
+          // Whichever of the three is selected — they are mutually exclusive,
+          // so there is never a question of which one Backspace means.
+          const { selectedSliceId, selectedZoomId, selectedTextId } = latest.current;
+          if (selectedTextId) {
+            event.preventDefault();
+            dispatch({ type: "deleteText", textId: selectedTextId });
+            return;
+          }
           if (selectedZoomId) {
             event.preventDefault();
             dispatch({ type: "deleteZoom", zoomId: selectedZoomId });

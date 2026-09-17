@@ -48,6 +48,16 @@ export function backgroundUrl(fileName: string): string {
 }
 
 /**
+ * A URL for a hosted font file main has cached.
+ *
+ * Its own host for the reason a thumbnail has one: the files live in the
+ * app's cache directory, not inside any recording.
+ */
+export function fontUrl(fileName: string): string {
+  return `${MEDIA_SCHEME}://font/${encodeURIComponent(fileName)}`;
+}
+
+/**
  * A URL for a scene preset's card.
  *
  * Two segments, because the two kinds live in different places: `mine` is a

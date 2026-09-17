@@ -626,6 +626,147 @@ export function AddZoomIcon() {
   );
 }
 
+/** Lucide `type`: a capital T on its baseline. The text row's glyph. */
+export function TextIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M4 7V5h16v2" />
+      <path d="M12 5v14" />
+      <path d="M9 19h6" />
+    </svg>
+  );
+}
+
+/** `TextIcon` with a plus beside it: the transport's Add Text button. */
+export function AddTextIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M3 7V5h12v2" />
+      <path d="M9 5v14" />
+      <path d="M6 19h6" />
+      <path d="M18 12v6" />
+      <path d="M15 15h6" />
+    </svg>
+  );
+}
+
+/** Lucide `move`: the four-way arrows of a position control. */
+export function MoveIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 2v20M2 12h20" />
+      <path d="m15 19-3 3-3-3M19 9l3 3-3 3M5 9l-3 3 3 3M9 5l3-3 3 3" />
+    </svg>
+  );
+}
+
+// ── Text motions ────────────────────────────────────────────────────────────
+//
+// One glyph per way a text can arrive or leave, for the picker to set beside
+// each name. Every one is Lucide's, so the row of them reads as one set: the
+// arrows are `move-*`, which carry the whole line the text travels along.
+
+/** Lucide `ban`: no motion at all. */
+export function NoMotionIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="m4.9 4.9 14.2 14.2" />
+    </svg>
+  );
+}
+
+/** Lucide `circle-dashed`: a shape that is only partly there. */
+export function FadeIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M10.1 2.182a10 10 0 0 1 3.8 0" />
+      <path d="M13.9 21.818a10 10 0 0 1-3.8 0" />
+      <path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" />
+      <path d="M2.182 13.9a10 10 0 0 1 0-3.8" />
+      <path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" />
+      <path d="M21.818 10.1a10 10 0 0 1 0 3.8" />
+      <path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" />
+      <path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" />
+    </svg>
+  );
+}
+
+/** Lucide `move-up`. */
+export function RiseIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M8 6 12 2l4 4" />
+      <path d="M12 2v20" />
+    </svg>
+  );
+}
+
+/** Lucide `move-down`. */
+export function DropIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m8 18 4 4 4-4" />
+      <path d="M12 2v20" />
+    </svg>
+  );
+}
+
+/** Lucide `move-right`: arriving from the left, travelling right. */
+export function FromLeftIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m18 8 4 4-4 4" />
+      <path d="M2 12h20" />
+    </svg>
+  );
+}
+
+/** Lucide `move-left`: arriving from the right, travelling left. */
+export function FromRightIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m6 8-4 4 4 4" />
+      <path d="M2 12h20" />
+    </svg>
+  );
+}
+
+/** Lucide `expand`: growing from its own centre. */
+export function PopIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m21 21-6-6m6 6v-4.8m0 4.8h-4.8" />
+      <path d="M3 16.2V21m0 0h4.8M3 21l6-6" />
+      <path d="M21 7.8V3m0 0h-4.8M21 3l-6 6" />
+      <path d="M3 7.8V3m0 0h4.8M3 3l6 6" />
+    </svg>
+  );
+}
+
+/** Lucide `keyboard`: one key at a time. */
+export function TypewriterIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="20" height="16" x="2" y="4" rx="2" />
+      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" />
+    </svg>
+  );
+}
+
+/** Lucide `whole-word`: one word at a time. */
+export function WordsIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="7" cy="12" r="3" />
+      <path d="M10 9v6" />
+      <circle cx="17" cy="12" r="3" />
+      <path d="M14 7v8" />
+      <path d="M22 17v1c0 .5-.5 1-1 1H3c-.5 0-1-.5-1-1v-1" />
+    </svg>
+  );
+}
+
 /** Lucide `captions`. The CC plate, drawn as two short runs of text. */
 export function CaptionsIcon() {
   return (

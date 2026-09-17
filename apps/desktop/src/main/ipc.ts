@@ -50,6 +50,7 @@ import { describeRecorderError, getRecorder } from "./recorder.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
+import { catalogue as fontsCatalogue, ensureFont } from "./fonts.js";
 import {
   applyImage as applyPresetImage,
   applyWatermark as applyPresetWatermark,
@@ -59,7 +60,7 @@ import {
   save as savePreset,
 } from "./scene-presets.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
-import { sweepCaptions, writeCaption } from "./captions.js";
+import { sweepBitmaps, writeBitmap } from "./captions.js";
 import {
   captureWallpaper,
   copyPresetBackground,
@@ -251,6 +252,11 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
     attempt(() => ensureBackground(dir, file)),
   );
 
+  ipcMain.handle(IPC_CHANNELS.fontsCatalogue, () => attempt(() => fontsCatalogue()));
+  ipcMain.handle(IPC_CHANNELS.fontsEnsure, (_event, file: string) =>
+    attempt(() => ensureFont(file)),
+  );
+
   // ── scene presets ────────────────────────────────────────────────────────
   //
   // Saved looks, all of them the user's own. Here rather than in the renderer
@@ -294,13 +300,15 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   );
 
   ipcMain.handle(
-    IPC_CHANNELS.editorWriteCaption,
-    (_event, dir: string, file: string, bytes: Uint8Array) =>
-      attempt(() => writeCaption(dir, file, bytes)),
+    IPC_CHANNELS.editorWriteBitmap,
+    (_event, kind: string, dir: string, file: string, bytes: Uint8Array) =>
+      attempt(() => writeBitmap(kind, dir, file, bytes)),
   );
 
-  ipcMain.handle(IPC_CHANNELS.editorSweepCaptions, (_event, dir: string, keep: string[]) =>
-    attempt(() => sweepCaptions(dir, keep)),
+  ipcMain.handle(
+    IPC_CHANNELS.editorSweepBitmaps,
+    (_event, kind: string, dir: string, keep: string[]) =>
+      attempt(() => sweepBitmaps(kind, dir, keep)),
   );
 
   // ── the library ──────────────────────────────────────────────────────────

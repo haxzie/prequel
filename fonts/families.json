@@ -1,0 +1,9 @@
+{
+  "categories": [
+    { "id": "sans", "label": "Sans" },
+    { "id": "serif", "label": "Serif" },
+    { "id": "display", "label": "Display" },
+    { "id": "mono", "label": "Mono" }
+  ],
+  "families": []
+}

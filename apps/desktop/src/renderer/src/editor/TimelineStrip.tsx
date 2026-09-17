@@ -13,15 +13,25 @@ import {
 } from "react";
 
 import type { MediaTime } from "../../../shared/manifest";
-import type { ZoomSlice } from "../../../shared/project";
+import { MAX_TEXT_TRACKS, type TextSlice, type ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
-import { CameraIcon, CursorIcon, FillIcon, ScreenIcon, TypingIcon, ZoomIcon } from "./icons";
+import {
+  CameraIcon,
+  CursorIcon,
+  FillIcon,
+  ScreenIcon,
+  TextIcon,
+  TypingIcon,
+  ZoomIcon,
+} from "./icons";
 import { fitZoom, ticks } from "./ruler";
 import {
   placedSlices,
   projectDuration,
+  textCopySpan,
+  textSpanAt,
   zoomSpanAt,
   type EditorAction,
   type EditorState,
@@ -103,6 +113,18 @@ const ZOOM_EDGE = 1;
 
 /** Clip row height: the picture, plus the band above and below it. */
 export const CLIP_H = CLIP_FRAME_H + CLIP_EDGE * 2;
+
+/**
+ * A text row's height, and the gap between two of them.
+ *
+ * Thinner than the clips and the zooms on purpose, where the zoom row is
+ * deliberately not: a zoom changes the picture it sits under and reads at its
+ * weight, while a title is a line laid over it. Five rows at the clips'
+ * height would be more timeline than footage. Tall enough for the handles'
+ * grips and a 10px label, and no more.
+ */
+const TEXT_H = 24;
+const TEXT_GAP = 4;
 
 /**
  * Zoom range, in pixels per second.
@@ -452,8 +474,74 @@ export function TimelineStrip({
   const [menu, setMenu] = useState<
     | { x: number; y: number; kind: "clip"; sliceId: string; at: MediaTime }
     | { x: number; y: number; kind: "zoom"; zoomId: string }
+    | { x: number; y: number; kind: "text"; textId: string }
     | null
   >(null);
+
+  /**
+   * Which rows of texts to show: every row that exists, and one spare above
+   * — the row a text goes on to sit over the ones below. Only while there is
+   * room for another, and rendered top-down so the spare is furthest from the
+   * clips and the first row is nearest.
+   */
+  const textRows = Math.min(state.project.texts.length + 1, MAX_TEXT_TRACKS);
+
+  /** The group of text rows, measured for a vertical drag. */
+  const textGroup = useRef<HTMLDivElement>(null);
+
+  /**
+   * Which row a client y is over, for a bar being dragged between rows.
+   *
+   * Measured live rather than held: the group grows by a row when a bar
+   * lands on the spare one, and the rows below it move down. Held to the
+   * rows that exist, so a drag past the top lands on the spare row and one
+   * past the bottom on the first.
+   */
+  /**
+   * The outline of the copy an option-drag would leave, and its words.
+   *
+   * Written straight to the elements, as the zoom ghost is: a drag is a
+   * stream of moves, and re-rendering the strip on each to move an outline
+   * would rebuild every clip and tick. Placed by `textCopySpan`, which is
+   * the rule the reducer applies, so the outline never promises a copy the
+   * drop then declines — over another text, or past the last row, nothing
+   * is drawn and nothing lands.
+   */
+  const copyGhost = useRef<HTMLDivElement>(null);
+  const copyGhostLabel = useRef<HTMLSpanElement>(null);
+
+  const showCopy = useCallback(
+    (copy: { textId: string; start: MediaTime; track: number; label: string } | null) => {
+      const element = copyGhost.current;
+      if (!element) return;
+
+      const span = copy && textCopySpan(state.project, copy.textId, copy.start, copy.track);
+      const from = span ? projectAt(span.start) : null;
+      const to = span ? projectAt(span.end) : null;
+      if (!copy || from === null || to === null) {
+        element.style.opacity = "0";
+        return;
+      }
+
+      element.style.top = `${String((textRows - 1 - copy.track) * (TEXT_H + TEXT_GAP))}px`;
+      element.style.left = `${String((from / Math.max(duration, 1)) * 100)}%`;
+      element.style.width = `${String(((to - from) / Math.max(duration, 1)) * 100)}%`;
+      element.style.opacity = "1";
+      if (copyGhostLabel.current) copyGhostLabel.current.textContent = copy.label;
+    },
+    [state.project, projectAt, duration, textRows],
+  );
+
+  const trackAt = useCallback(
+    (clientY: number): number => {
+      const element = textGroup.current;
+      if (!element) return 0;
+      const rect = element.getBoundingClientRect();
+      const row = Math.floor((clientY - rect.top) / (TEXT_H + TEXT_GAP));
+      return Math.max(0, Math.min(textRows - 1, textRows - 1 - row));
+    },
+    [textRows],
+  );
 
   const onClipPointerDown = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
@@ -516,6 +604,113 @@ export function TimelineStrip({
               media.playback.seek(timeAt(clientX));
             }}
           />
+
+          <div style={{ height: TRACK_GAP }} />
+
+          {/* Text rows, highest first, so the row nearest the clips is the
+              first and a text drawn on the spare row above lands over the
+              others in the frame too. The bars are not inside the rows: they
+              sit in one layer over the group, placed by row, so a bar dragged
+              onto another row moves rather than being torn down and remade
+              under a pointer that has captured it. */}
+          <div className="relative" ref={textGroup}>
+            {Array.from({ length: textRows }, (_, index) => textRows - 1 - index).map((track) => (
+              <Fragment key={track}>
+                <TextRow
+                  track={track}
+                  empty={(state.project.texts[track]?.slices.length ?? 0) === 0}
+                  spare={track === state.project.texts.length}
+                  invite={track === 0 || (state.project.texts[track - 1]?.slices.length ?? 0) > 0}
+                  width={width}
+                  duration={duration}
+                  spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
+                  sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                  projectAt={projectAt}
+                  onInteract={media.onInteract}
+                  dispatch={dispatch}
+                />
+                {track > 0 && <div style={{ height: TEXT_GAP }} />}
+              </Fragment>
+            ))}
+
+            <div className="pointer-events-none absolute inset-0">
+              <div
+                ref={copyGhost}
+                className={cn(
+                  "pointer-events-none absolute flex items-center overflow-hidden rounded-md px-2",
+                  "border border-dashed border-title-ring/80 bg-title-fill/20 opacity-0 transition-opacity duration-75",
+                )}
+                style={{ height: TEXT_H, borderWidth: ZOOM_EDGE }}
+              >
+                <span
+                  ref={copyGhostLabel}
+                  className="truncate text-[11px] font-medium text-white/80"
+                />
+              </div>
+
+              {state.project.texts.flatMap((row, track) =>
+                row.slices.map((text) => {
+                  const span = spanInProject(placed, text.source);
+                  if (span === null) return null;
+                  const { start: from, end: to } = span;
+
+                  return (
+                    <TextBar
+                      key={text.id}
+                      top={(textRows - 1 - track) * (TEXT_H + TEXT_GAP)}
+                      left={(from / Math.max(duration, 1)) * 100}
+                      width={((to - from) / Math.max(duration, 1)) * 100}
+                      pixels={((to - from) / Math.max(duration, 1)) * contentWidth}
+                      selected={text.id === state.selectedTextId}
+                      label={text.fields.map((field) => field.text).join(" — ")}
+                      start={text.source.start}
+                      sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                      trackAt={trackAt}
+                      onSelect={() => {
+                        media.onInteract();
+                        dispatch({ type: "selectText", textId: text.id });
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setMenu({
+                          x: event.clientX,
+                          y: event.clientY,
+                          kind: "text",
+                          textId: text.id,
+                        });
+                      }}
+                      onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                      onMove={(start, onto) =>
+                        dispatch({ type: "moveText", textId: text.id, start, track: onto })
+                      }
+                      onDrop={() => dispatch({ type: "tidyTexts" })}
+                      onCopyPreview={(over) =>
+                        showCopy(
+                          over && {
+                            textId: text.id,
+                            ...over,
+                            label: text.fields.map((field) => field.text).join(" — "),
+                          },
+                        )
+                      }
+                      onCopy={(start, onto) => {
+                        showCopy(null);
+                        dispatch({ type: "copyText", textId: text.id, start, track: onto });
+                      }}
+                      onTrim={(edge, clientX) =>
+                        dispatch({
+                          type: "trimText",
+                          textId: text.id,
+                          edge,
+                          source: sourceAt(timeAt(clientX)),
+                        })
+                      }
+                    />
+                  );
+                }),
+              )}
+            </div>
+          </div>
 
           <div style={{ height: TRACK_GAP }} />
 
@@ -733,7 +928,7 @@ export function TimelineStrip({
                   }}
                 />
               </>
-            ) : (
+            ) : menu.kind === "zoom" ? (
               <>
                 <MenuItem
                   label="Duplicate"
@@ -747,6 +942,24 @@ export function TimelineStrip({
                   label="Delete zoom"
                   onClick={() => {
                     dispatch({ type: "deleteZoom", zoomId: menu.zoomId });
+                    setMenu(null);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <MenuItem
+                  label="Duplicate"
+                  onClick={() => {
+                    dispatch({ type: "duplicateText", textId: menu.textId });
+                    setMenu(null);
+                  }}
+                />
+                <MenuItem
+                  danger
+                  label="Delete text"
+                  onClick={() => {
+                    dispatch({ type: "deleteText", textId: menu.textId });
                     setMenu(null);
                   }}
                 />
@@ -1376,6 +1589,318 @@ function Handle({
  * few pixels across and the words have to fall away rather than spill over
  * the zooms either side.
  */
+/**
+ * One row of texts.
+ *
+ * The zoom row's press-and-drag, with its own ghost and its own draw ref: the
+ * strip has one zoom row and several of these, and a ghost shared between
+ * rows would draw the outline on whichever row rendered last.
+ */
+function TextRow({
+  track,
+  empty,
+  spare,
+  invite,
+  width,
+  duration,
+  spanAt,
+  sourceAt,
+  projectAt,
+  onInteract,
+  dispatch,
+}: {
+  track: number;
+  /** Whether the row holds no text, so it can say what it is for. */
+  empty: boolean;
+  /** The row above every existing one, which a press makes real. */
+  spare: boolean;
+  /** Whether to say what the row is for when it is empty. The first row
+      always does; a spare row only once the row under it holds something,
+      or five invitations would stack up over an empty timeline. */
+  invite: boolean;
+  width: number;
+  duration: MediaTime;
+  spanAt: (at: MediaTime, to?: MediaTime) => { start: MediaTime; end: MediaTime } | null;
+  sourceAt: (clientX: number) => MediaTime;
+  projectAt: (source: MediaTime) => MediaTime | null;
+  onInteract: () => void;
+  dispatch: Dispatch<EditorAction>;
+}) {
+  const ghost = useRef<HTMLDivElement>(null);
+  const draw = useRef<{ at: MediaTime; x: number; drawn: boolean } | null>(null);
+
+  const showGhost = (clientX: number | null) => {
+    const element = ghost.current;
+    if (!element) return;
+
+    const drawing = draw.current;
+    const pointer = clientX === null ? null : sourceAt(clientX);
+    const span =
+      drawing === null
+        ? pointer === null
+          ? null
+          : spanAt(pointer)
+        : drawing.drawn && pointer !== null
+          ? spanAt(drawing.at, pointer)
+          : spanAt(drawing.at);
+    const from = span === null ? null : projectAt(span.start);
+    const to = span === null ? null : projectAt(span.end);
+
+    if (from === null || to === null) {
+      element.style.opacity = "0";
+      return;
+    }
+
+    element.style.left = `${String((from / Math.max(duration, 1)) * 100)}%`;
+    element.style.width = `${String(((to - from) / Math.max(duration, 1)) * 100)}%`;
+    element.style.opacity = "1";
+  };
+
+  return (
+    <div
+      className="relative"
+      style={{ height: TEXT_H }}
+      data-text-row={track}
+      onPointerMove={(event) => {
+        const drawing = draw.current;
+        if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
+          drawing.drawn = true;
+        }
+        showGhost(event.clientX);
+      }}
+      onPointerLeave={() => {
+        if (!draw.current) showGhost(null);
+      }}
+      onPointerDown={(event) => {
+        draw.current = { at: sourceAt(event.clientX), x: event.clientX, drawn: false };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerUp={(event) => {
+        const drawing = draw.current;
+        draw.current = null;
+        if (!drawing) return;
+
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        onInteract();
+        dispatch({
+          type: "addText",
+          track,
+          at: drawing.at,
+          ...(drawing.drawn ? { to: sourceAt(event.clientX) } : {}),
+        });
+        showGhost(null);
+      }}
+      onPointerCancel={() => {
+        draw.current = null;
+        showGhost(null);
+      }}
+    >
+      {empty && invite && (
+        <div
+          className="pointer-events-none sticky left-0 flex h-full items-center justify-center"
+          style={{ width }}
+        >
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border border-dashed border-white/15 px-2.5 py-0.5 text-[10px] text-editor-muted [&_svg]:size-3",
+              // The spare row is quieter than the first: it is an offer of
+              // a second layer, not the first thing to do.
+              spare && track > 0 && "opacity-60",
+            )}
+          >
+            <TextIcon />
+            {track === 0 ? "Click or drag to add text" : "Add a text over the others"}
+          </span>
+        </div>
+      )}
+
+      <div
+        ref={ghost}
+        className={cn(
+          "pointer-events-none absolute inset-y-0 flex items-center overflow-hidden rounded px-2.5",
+          "border border-dashed border-title-ring/70 bg-title-fill/15 opacity-0 transition-opacity duration-75",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
+          <TextIcon />
+          <span className="truncate">Add Text</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** One text on its row: `Zoom`, thinner, labelled with its first line. */
+function TextBar({
+  top,
+  left,
+  width,
+  pixels,
+  selected,
+  label,
+  start,
+  sourceAt,
+  trackAt,
+  onSelect,
+  onContextMenu,
+  onMove,
+  onDrop,
+  onCopyPreview,
+  onCopy,
+  onTrim,
+  onBeginEdit,
+}: {
+  /** Where the bar's row sits in the group, in pixels from its top. */
+  top: number;
+  left: number;
+  width: number;
+  /** How wide the bar is on screen, so the glyph can step aside for the
+      words when there is not room for both. */
+  pixels: number;
+  selected: boolean;
+  label: string;
+  start: MediaTime;
+  sourceAt: (clientX: number) => MediaTime;
+  /** The row under a client y, so a drag can carry the bar between rows. */
+  trackAt: (clientY: number) => number;
+  onSelect: () => void;
+  onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  /** Slid to `start`, and onto `track` where that differs from its own. */
+  onMove: (start: MediaTime, track: number) => void;
+  /** The drag ended, so the rows it emptied can go. */
+  onDrop: () => void;
+  /** An option-drag is over `start` on `track`; null when it has ended. */
+  onCopyPreview: (over: { start: MediaTime; track: number } | null) => void;
+  /** An option-drag let go: a copy lands there, or nowhere. */
+  onCopy: (start: MediaTime, track: number) => void;
+  onTrim: (edge: "start" | "end", clientX: number) => void;
+  onBeginEdit: () => void;
+}) {
+  const grab = useRef<MediaTime | null>(null);
+  /**
+   * Whether this drag is copying rather than moving.
+   *
+   * Decided at the press, as the preview decides an option-pan: the key
+   * held when the bar was picked up is what the gesture means, and a copy
+   * that turned into a move halfway would leave the original where the
+   * ghost had been.
+   */
+  const copying = useRef(false);
+  // The words are what tell two bars apart; the glyph only says "text", which
+  // the row's colour already does. So on a bar with room for one of the two,
+  // it is the words. Below ~10 px a second at a fitted minute a three-second
+  // text is sixty pixels, and that is a word and a half.
+  const roomy = pixels >= 110;
+
+  const grabEdge = () => (event: PointerEvent<HTMLSpanElement>) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onBeginEdit();
+  };
+
+  const moveEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    onTrim(edge, event.clientX);
+  };
+
+  return (
+    <div
+      className={cn(
+        // Tighter than a zoom's padding: the grip is a two-pixel line centred
+        // in its twelve, and the words can start just inside it.
+        //
+        // `pointer-events-auto`: the layer these sit in lets every press
+        // through to the rows beneath, and a bar has to catch its own.
+        "group pointer-events-auto absolute flex items-center overflow-hidden rounded-md border px-2",
+        "transition-[background-color,outline-color]",
+        // The zoom bar's wash-in-an-outline, in the row's own colour and for
+        // the same reasons.
+        "border-title-edge",
+        selected ? "bg-title-fill/45" : "bg-title-fill/25",
+        "outline-2 -outline-offset-2",
+        selected ? "outline-title-ring" : "outline-transparent hover:outline-title-ring/40",
+        "cursor-grab active:cursor-grabbing",
+      )}
+      style={{
+        top,
+        height: TEXT_H,
+        left: `${String(left)}%`,
+        width: `${String(width)}%`,
+        borderWidth: ZOOM_EDGE,
+      }}
+      onContextMenu={onContextMenu}
+      onPointerDown={(event) => {
+        // Stops the strip underneath seeking on a press meant for the bar.
+        event.stopPropagation();
+        onSelect();
+        grab.current = sourceAt(event.clientX) - start;
+        copying.current = event.altKey;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        // A copy is one step on its own when it lands; only a move streams.
+        if (!copying.current) onBeginEdit();
+        else event.currentTarget.style.cursor = "copy";
+      }}
+      onPointerMove={(event) => {
+        if (grab.current === null) return;
+        const at = sourceAt(event.clientX) - grab.current;
+        const onto = trackAt(event.clientY);
+        // With option held the bar stays put and the outline of the copy
+        // travels instead — where it would land, not where the pointer is.
+        if (copying.current) {
+          onCopyPreview({ start: at, track: onto });
+          return;
+        }
+        // Along the row and across them in one gesture: the row is read off
+        // the pointer's height, and the reducer declines a row with no room
+        // at that moment, so the bar stays on its own until one is found.
+        onMove(at, onto);
+      }}
+      onPointerUp={(event) => {
+        if (grab.current !== null) {
+          if (copying.current) {
+            onCopy(sourceAt(event.clientX) - grab.current, trackAt(event.clientY));
+            event.currentTarget.style.cursor = "";
+          } else {
+            onDrop();
+          }
+        }
+        grab.current = null;
+        copying.current = false;
+      }}
+      onPointerCancel={(event) => {
+        if (copying.current) onCopyPreview(null);
+        event.currentTarget.style.cursor = "";
+        grab.current = null;
+        copying.current = false;
+      }}
+    >
+      {/* The text itself, truncated: it is the one thing that tells two bars
+          on a row apart, and it degrades a letter at a time on a short bar
+          without changing the row's height. */}
+      <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-white/90 [&_svg]:size-3 [&_svg]:flex-none">
+        {roomy && <TextIcon />}
+        <span className="truncate">{label.replace(/\n+/g, " ")}</span>
+      </span>
+
+      <Handle
+        edge="start"
+        grip="bg-title-edge"
+        selected={selected}
+        onPointerDown={grabEdge()}
+        onPointerMove={moveEdge("start")}
+      />
+      <Handle
+        edge="end"
+        grip="bg-title-edge"
+        selected={selected}
+        onPointerDown={grabEdge()}
+        onPointerMove={moveEdge("end")}
+      />
+    </div>
+  );
+}
+
 function ZoomGhost({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
   return (
     <div

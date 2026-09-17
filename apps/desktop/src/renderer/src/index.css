@@ -93,6 +93,9 @@
   --color-zoom-fill: var(--zoom-fill);
   --color-zoom-edge: var(--zoom-edge);
   --color-zoom-ring: var(--zoom-ring);
+  --color-title-fill: var(--title-fill);
+  --color-title-edge: var(--title-edge);
+  --color-title-ring: var(--title-ring);
   --color-wave: var(--wave);
   --color-indicator: var(--indicator);
   --color-indicator-deep: var(--indicator-deep);
@@ -468,6 +471,15 @@ body {
      gradient it had to sit under; against 25% of that fill it disappeared. */
   --zoom-edge: #f0d06f;
   --zoom-ring: #ffe9a8;
+  /* The text rows, in the same three roles as a zoom's and for the same
+     reasons — a wash, an opaque edge, a ring — in a teal that is neither the
+     clips' purple nor the zooms' amber, so three kinds of bar on one strip
+     read as three kinds. Named `--title-*` rather than `--text-*`: a
+     `--color-text-fill` would generate `text-text-fill`, which is a colour
+     utility that reads like a typo, and `title` collides with nothing. */
+  --title-fill: #3cb8b0;
+  --title-edge: #7fdcd4;
+  --title-ring: #b8f1ec;
   /* An alignment guide in the preview, and the snap it stands for.
 
      Its own token rather than `--cut` below, which happens to be the same

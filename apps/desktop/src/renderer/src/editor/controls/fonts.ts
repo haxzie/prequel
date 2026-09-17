@@ -50,6 +50,11 @@ export function captionFont(id: string): CaptionFont {
   return CAPTION_FONTS.find((font) => font.id === id) ?? DEFAULT_FONT;
 }
 
+/** Whether an id names one of the faces macOS ships, which need no loading. */
+export function isSystemFont(id: string): boolean {
+  return CAPTION_FONTS.some((font) => font.id === id);
+}
+
 /**
  * Whether the engine can actually resolve a family.
  *

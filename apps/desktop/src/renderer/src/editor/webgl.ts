@@ -21,6 +21,7 @@
  */
 import {
   captionAt,
+  overlayAt,
   cropToFrame,
   cursorAt,
   rectAt,
@@ -837,6 +838,40 @@ export class WebGlCompositor {
           // cost the same whether they move or not.
           ...(streak >= 1
             ? { smear: { x: point.smearX / grown, y: point.smearY / grown, pad: pad / grown } }
+            : {}),
+        });
+        drawQuad(gl);
+        break;
+      }
+
+      case "overlay": {
+        const image = images.get(item.path);
+        const draw = image ? overlayAt(item, at) : null;
+        // No bitmap, off screen at this moment, or fully see-through — which
+        // every unit of a text still to arrive is. All draw nothing, and the
+        // exporter skips the same three.
+        if (!image || !draw || draw.opacity <= 0) break;
+
+        const texture = this.upload(gl, item.path, image, false);
+        if (!texture) break;
+
+        const size = sizeOf(image);
+
+        set(gl, p, {
+          rect: draw.dst,
+          shape: { radius: 0, exponent: 2 },
+          mode: MODE_IMAGE,
+          src: normalised(item.src, size.width, size.height),
+          alpha: draw.opacity,
+          // Both, or neither does anything — see the caption below.
+          ...(draw.blur > 0
+            ? {
+                soften: draw.blur,
+                texel: [1 / Math.max(size.width, 1), 1 / Math.max(size.height, 1)] as [
+                  number,
+                  number,
+                ],
+              }
             : {}),
         });
         drawQuad(gl);

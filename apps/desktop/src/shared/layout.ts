@@ -25,8 +25,11 @@ import type {
   LayoutPreset,
   LayoutSettings,
   SliceSettings,
+  TextSlice,
+  TextTrack,
   ZoomSlice,
 } from "./project.js";
+import { MAX_TEXT_BLUR, textKeys } from "./text-motion.js";
 
 export interface Size {
   width: number;
@@ -268,6 +271,30 @@ export type PlanItem =
       points: CursorPoint[];
     }
   | {
+      /**
+       * One unit of a text overlay: a crop out of a field's bitmap, drawn
+       * where its keys say at each moment.
+       *
+       * Its own kind rather than a `caption` with one word. A caption's box is
+       * fixed and its words come and go; a text unit is *placed* by its keys —
+       * it slides, swells and softens on its way in and out — and the keys are
+       * the only thing about it that varies. Like `motion` on a zoomed picture,
+       * the easing lives in where the editor put the keys, and the rasterisers
+       * only ever draw a straight line between two of them.
+       */
+      kind: "overlay";
+      /** Bitmap to draw, relative to the session directory. */
+      path: string;
+      /** The bitmap's own size in pixels, for the same reason a caption's is. */
+      bitmap: Size;
+      /** The crop, in bitmap pixels. */
+      src: Rect;
+      /** The source-time range the unit is on screen for. */
+      span: { start: number; end: number };
+      /** Where it is drawn over time, sorted by `at`. Held flat outside. */
+      keys: OverlayKey[];
+    }
+  | {
       kind: "caption";
       /** Bitmap to draw, relative to the session directory. */
       path: string;
@@ -392,6 +419,66 @@ export interface CaptionWord {
   blur: number;
 }
 
+/** One sampled moment of a text unit's motion. */
+export interface OverlayKey {
+  at: number;
+  /** Where the crop lands, in output pixels. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 0 to 1. */
+  opacity: number;
+  /** How far out of focus, in bitmap pixels. 0 is sharp. */
+  blur: number;
+}
+
+/**
+ * A text's fields as bitmaps, ready to place.
+ *
+ * Like `RenderedCue`, this is what the rasteriser hands back and what
+ * `textItems` needs: the pictures, and where the pieces of each one sit. The
+ * *position* of the text is deliberately not in here — moving a title across
+ * the frame re-places what is already on disk.
+ */
+export interface RenderedText {
+  /** One per field, in the text's own field order. */
+  fields: RenderedTextField[];
+}
+
+export interface RenderedTextField {
+  /** The bitmap, relative to the session directory. */
+  path: string;
+  /** The bitmap's own size in pixels. */
+  bitmap: Size;
+  /**
+   * The field as it reads, in bitmap pixels: the box the units place into.
+   * Smaller than the bitmap when the field is cut into padded cells.
+   */
+  extent: Size;
+  units: TextUnit[];
+  /** The font size the field was drawn at, in bitmap pixels — what a blur
+      radius is measured against. */
+  fontSize: number;
+  /**
+   * The frame these were measured against, and the `size` they were drawn at.
+   *
+   * Both for the reason `RenderedCue.drawnSize` exists: a bitmap drawn for
+   * one frame or one size stands in, scaled, for the one still being drawn.
+   */
+  drawnFrame: Size;
+  drawnSize: number;
+}
+
+/** One piece of a field: the crop, and where it belongs in the field. */
+export interface TextUnit {
+  /** The crop, in bitmap pixels. Padded, so a unit carries its own outline
+      and shadow and nothing of its neighbour's. */
+  cell: Rect;
+  /** Where the cell sits in the field's `extent`, in the same pixels. */
+  place: Rect;
+}
+
 export type Paint =
   | { kind: "solid"; color: string }
   | { kind: "gradient"; from: string; to: string; angle: number }
@@ -435,6 +522,8 @@ export function buildRenderPlan(
   zooms?: readonly ZoomSlice[],
   enter?: EnterTransition | null,
   cues?: readonly RenderedCue[],
+  texts?: readonly TextTrack[],
+  rendered?: ReadonlyMap<string, RenderedText>,
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -944,11 +1033,197 @@ export function buildRenderPlan(
     });
   }
 
+  // Over the pictures and the mark, under the captions: a title is placed on
+  // purpose and reads over anything, and the captions still have to be last
+  // for the backdrop they measure themselves against.
+  if (texts && rendered) items.push(...textItems(frame, texts, rendered));
+
   // Last, so captions sit over everything. A caption behind the camera bubble
   // is a caption nobody can read, and the bubble is the thing that moves.
   items.push(...captionItems(frame, settings.captions, cues));
 
   return { frame, items };
+}
+
+/**
+ * Places every rasterised text in the frame, and gives each unit its keys.
+ *
+ * Rows are walked from the first, so a text on a higher row draws over one on
+ * a lower row where the two overlap in time. Within a text the fields stack
+ * downwards, and every unit's resting rectangle is worked out here and only
+ * here — the motion then only ever moves it away from there and back.
+ */
+function textItems(
+  frame: Size,
+  tracks: readonly TextTrack[],
+  rendered: ReadonlyMap<string, RenderedText>,
+): PlanItem[] {
+  const items: PlanItem[] = [];
+
+  for (const track of tracks) {
+    for (const text of track.slices) {
+      const drawn = rendered.get(text.id);
+      if (!drawn) continue;
+
+      const placed = placeText(frame, text, drawn);
+      if (!placed) continue;
+
+      const span = { start: text.source.start, end: text.source.end };
+      const timing = {
+        enter: text.enter,
+        exit: text.exit,
+        enterMs: text.enterMs,
+        exitMs: text.exitMs,
+      };
+
+      placed.fields.forEach(({ field, rect, scale }) => {
+        // In bitmap pixels, because that is what both rasterisers blur in.
+        const blur = MAX_TEXT_BLUR * field.fontSize;
+
+        field.units.forEach((unit, index) => {
+          const rest: Rect = {
+            x: rect.x + unit.place.x * scale,
+            y: rect.y + unit.place.y * scale,
+            width: unit.cell.width * scale,
+            height: unit.cell.height * scale,
+          };
+          items.push({
+            kind: "overlay",
+            path: field.path,
+            bitmap: field.bitmap,
+            src: unit.cell,
+            span,
+            keys: textKeys(rest, { index, count: field.units.length }, timing, span, blur),
+          });
+        });
+      });
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Where a text's fields sit at rest, in output pixels.
+ *
+ * The one place the block is laid out — the plan, the preview's ring and its
+ * hit test all read this. Each field is scaled from the frame it was drawn
+ * against to this one, and by the ratio of the size it is set to over the one
+ * it was drawn at, so a size drag shows the old bitmap stretched rather than
+ * nothing until the new one lands (see `RenderedTextField.drawnSize`).
+ *
+ * The block is centred on the text's `x, y` and then held inside the frame:
+ * a title pushed past the edge is invisible until the export, which is the
+ * one time it cannot be fixed.
+ */
+function placeText(
+  frame: Size,
+  text: TextSlice,
+  drawn: RenderedText,
+): { block: Rect; fields: { field: RenderedTextField; rect: Rect; scale: number }[] } | null {
+  const unit = Math.min(frame.width, frame.height);
+
+  const sized = drawn.fields.flatMap((field, index) => {
+    const style = text.fields[index]?.style;
+    if (!style || field.extent.width <= 0 || field.extent.height <= 0) return [];
+    const drawnUnit = Math.min(field.drawnFrame.width, field.drawnFrame.height);
+    const stretch = field.drawnSize > 0 ? style.size / field.drawnSize : 1;
+    const scale = drawnUnit > 0 ? (unit / drawnUnit) * stretch : 0;
+    return [
+      { field, scale, width: field.extent.width * scale, height: field.extent.height * scale },
+    ];
+  });
+  if (sized.length === 0) return null;
+
+  const gap = text.gap * unit;
+  const width = Math.max(...sized.map((entry) => entry.width));
+  const height = sized.reduce((sum, entry) => sum + entry.height, 0) + gap * (sized.length - 1);
+
+  const left = clamp(text.x * frame.width - width / 2, 0, Math.max(0, frame.width - width));
+  const top = clamp(text.y * frame.height - height / 2, 0, Math.max(0, frame.height - height));
+
+  let y = top;
+  const fields = sized.map((entry) => {
+    const x =
+      text.align === "left"
+        ? left
+        : text.align === "right"
+          ? left + width - entry.width
+          : left + (width - entry.width) / 2;
+    const rect = { x, y, width: entry.width, height: entry.height };
+    y += entry.height + gap;
+    return { field: entry.field, rect, scale: entry.scale };
+  });
+
+  return { block: { x: left, y: top, width, height }, fields };
+}
+
+/**
+ * The box a text occupies at rest, in output pixels, or null while nothing
+ * has been drawn for it.
+ *
+ * For the preview's ring and hit test. It is the same `placeText` the plan
+ * is built from, so what the ring surrounds is what the exporter draws.
+ */
+export function textBlockRect(
+  frame: Size,
+  text: TextSlice,
+  rendered: ReadonlyMap<string, RenderedText>,
+): Rect | null {
+  const drawn = rendered.get(text.id);
+  if (!drawn) return null;
+  return placeText(frame, text, drawn)?.block ?? null;
+}
+
+/**
+ * Where an overlay unit is at a moment, or null when it is off screen.
+ *
+ * The third piece of arithmetic that exists on both sides, after `cursorAt`
+ * and `captionAt`, and for the same reason. `overlay_at` in
+ * `crates/prequel-render/src/plan.rs` mirrors it, pinned by identical
+ * fixtures. Held at the first key before it and the last after, like a zoom's
+ * motion track; a straight line between the two either side otherwise.
+ */
+export function overlayAt(
+  item: Extract<PlanItem, { kind: "overlay" }>,
+  at: number,
+): { dst: Rect; opacity: number; blur: number } | null {
+  const { span, keys } = item;
+  if (at < span.start || at >= span.end) return null;
+  const first = keys[0];
+  const last = keys[keys.length - 1];
+  if (!first || !last) return null;
+
+  if (at <= first.at) return moment(first);
+  if (at >= last.at) return moment(last);
+
+  let index = 1;
+  while (index < keys.length - 1 && keys[index]!.at <= at) index += 1;
+  const a = keys[index - 1]!;
+  const b = keys[index]!;
+  // Two keys on one nanosecond happen when a motion has no length; the lerp
+  // then lands on the earlier one rather than dividing by zero.
+  const length = b.at - a.at;
+  const t = length > 0 ? (at - a.at) / length : 0;
+
+  return {
+    dst: {
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      width: a.width + (b.width - a.width) * t,
+      height: a.height + (b.height - a.height) * t,
+    },
+    opacity: a.opacity + (b.opacity - a.opacity) * t,
+    blur: a.blur + (b.blur - a.blur) * t,
+  };
+}
+
+function moment(key: OverlayKey): { dst: Rect; opacity: number; blur: number } {
+  return {
+    dst: { x: key.x, y: key.y, width: key.width, height: key.height },
+    opacity: key.opacity,
+    blur: key.blur,
+  };
 }
 
 /**

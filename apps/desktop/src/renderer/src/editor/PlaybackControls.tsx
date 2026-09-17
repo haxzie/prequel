@@ -4,6 +4,7 @@ import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
 import {
+  AddTextIcon,
   AddZoomIcon,
   ScissorsIcon,
   PauseIcon,
@@ -52,10 +53,12 @@ const TRANSPORT =
 export function PlaybackControls({
   media,
   canAddZoom,
+  canAddText,
   canSplit,
   canDelete,
   canUndo,
   onAddZoom,
+  onAddText,
   onSplit,
   onDelete,
   onUndo,
@@ -64,6 +67,8 @@ export function PlaybackControls({
   media: EditorPlayback;
   /** Some gap in the zoom row is big enough to hold one. */
   canAddZoom: boolean;
+  /** Some row of texts has room for one. */
+  canAddText: boolean;
   /** A clip is selected, so there is something to cut. */
   canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
@@ -71,6 +76,7 @@ export function PlaybackControls({
   /** The timeline has been changed at least once, so there is a step back. */
   canUndo: boolean;
   onAddZoom: () => void;
+  onAddText: () => void;
   onSplit: () => void;
   onDelete: () => void;
   onUndo: () => void;
@@ -169,7 +175,7 @@ export function PlaybackControls({
             so putting it in the same box said it was a fourth of the same
             kind. It is also the one with a word on it: a bare magnifier next
             to a pair of scissors reads as a search box. */}
-        <div className="rounded-lg bg-white/5 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <Action
             label="Add Zoom"
             shortcut="Z"
@@ -181,6 +187,16 @@ export function PlaybackControls({
             // decide whether pressing it does something.
             disabled={!canAddZoom}
             onClick={onAddZoom}
+          />
+          {/* Beside Add Zoom, in the same pill: both act on the playhead and
+              both lay something on a row of its own. */}
+          <Action
+            label="Add Text"
+            shortcut="T"
+            Icon={AddTextIcon}
+            text
+            disabled={!canAddText}
+            onClick={onAddText}
           />
         </div>
 

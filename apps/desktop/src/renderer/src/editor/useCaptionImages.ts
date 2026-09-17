@@ -1,5 +1,6 @@
 /**
- * Keeping the caption bitmaps the playhead is near loaded, and no more.
+ * Keeping the caption and text bitmaps the playhead is near loaded, and no
+ * more.
  *
  * Deliberately not part of `useEditorImages`, which loads every path it is
  * given up front. That is right for backgrounds and pointer images — a handful
@@ -27,11 +28,21 @@ import type { Images } from "./canvas";
 const REACH_NS = 3_000_000_000;
 
 /** How many bitmaps to keep once they have fallen out of the window. */
-const KEEP = 12;
+const KEEP = 16;
+
+/** A stretch of source time and the bitmaps drawn during it. */
+export interface TimedBitmaps {
+  at: number;
+  end: number;
+  paths: readonly string[];
+}
 
 export function useCaptionImages(
   session: EditorSession | null,
   cues: ReadonlyMap<string, readonly RenderedCue[]>,
+  /** Text fields, by when their text is on screen. The same window, the same
+      cache: a title and a caption at one moment are both wanted now. */
+  overlays: readonly TimedBitmaps[],
   media: { sourceAt: (now: number) => number | null },
   setImages: (update: (images: Images) => Images) => void,
 ): void {
@@ -45,8 +56,8 @@ export function useCaptionImages(
   // redrawn, so either in the dependency array would tear this loop down and
   // rebuild it on almost every render — discarding whatever image was in flight
   // at the time, since the old run's cleanup marks itself cancelled.
-  const latest = useRef({ cues, media });
-  latest.current = { cues, media };
+  const latest = useRef({ cues, overlays, media });
+  latest.current = { cues, overlays, media };
 
   useEffect(() => {
     if (!session) return;
@@ -74,6 +85,10 @@ export function useCaptionImages(
           if (cue.end < at - REACH_NS || cue.at > at + REACH_NS) continue;
           for (const layer of cue.layers) wanted.add(layer.path);
         }
+      }
+      for (const text of latest.current.overlays) {
+        if (text.end < at - REACH_NS || text.at > at + REACH_NS) continue;
+        for (const path of text.paths) wanted.add(path);
       }
 
       for (const path of wanted) used.current.set(path, clock.current);

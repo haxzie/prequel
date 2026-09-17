@@ -6,7 +6,7 @@
  * correct range handling a `<video>` cannot seek — playback works until the
  * buffer runs out and then simply stops, with nothing to say why.
  */
-import { assetUrl, permissionIconUrl, scenePresetUrl } from "../shared/media-url.js";
+import { assetUrl, fontUrl, permissionIconUrl, scenePresetUrl } from "../shared/media-url.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -52,6 +52,19 @@ describe("a scene preset's card", () => {
 
   it("resolves a bare one to each store", () => {
     expect(resolveMediaPath(scenePresetUrl("kinetic"), ROOT)).toContain("kinetic");
+  });
+});
+
+describe("a hosted font", () => {
+  it("resolves a bare file name into the font cache, typed as a font", () => {
+    const path = resolveMediaPath(fontUrl("inter-700-italic.woff2"), ROOT);
+    expect(path).toContain(join("fonts", "files", "inter-700-italic.woff2"));
+  });
+
+  it("refuses anything that is not a bare font file name", () => {
+    expect(resolveMediaPath(fontUrl("../catalogue.json"), ROOT)).toBeNull();
+    expect(resolveMediaPath(fontUrl("inter.png"), ROOT)).toBeNull();
+    expect(resolveMediaPath("prequel-media://font/a/b.woff2", ROOT)).toBeNull();
   });
 });
 

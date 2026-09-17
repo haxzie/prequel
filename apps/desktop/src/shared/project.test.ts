@@ -12,7 +12,9 @@ import {
   clearSection,
   DEFAULT_LAYOUT,
   DEFAULT_SETTINGS,
+  DEFAULT_TEXT_STYLE,
   DEFAULT_ZOOM,
+  MAX_TEXT_TRACKS,
   hasOverrides,
   newProject,
   outputFrame,
@@ -22,6 +24,8 @@ import {
   sanitiseProject,
   setOverride,
   type SliceOverrides,
+  type TextSlice,
+  type TextTrack,
 } from "./project.js";
 import { AUTO_PRESET_ID } from "./presets.js";
 
@@ -594,5 +598,138 @@ describe("reading a project written before layouts", () => {
     const { overrides } = sanitiseProject(project, RECORDING, 10 * S)!.tracks[0]!.slices[0]!;
 
     expect(overrides.layout).toBeUndefined();
+  });
+});
+
+describe("sanitising texts", () => {
+  const stored = () =>
+    JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S))) as Record<string, unknown>;
+
+  const text = (id: string, start: number, end: number): TextSlice => ({
+    id,
+    source: { start, end },
+    templateId: "title",
+    fields: [{ role: "heading", text: id, style: { ...DEFAULT_TEXT_STYLE } }],
+    x: 0.5,
+    y: 0.5,
+    width: 0.8,
+    align: "center",
+    gap: 0.02,
+    enter: "rise",
+    exit: "fade",
+    enterMs: 500,
+    exitMs: 400,
+  });
+
+  const withTexts = (texts: unknown) => {
+    const project = stored();
+    project["texts"] = texts;
+    return sanitiseProject(project, RECORDING, 10 * S)!.texts;
+  };
+
+  it("reads a project written before texts existed as having none", () => {
+    const project = stored();
+    delete project["texts"];
+    expect(sanitiseProject(project, RECORDING, 10 * S)).toEqual(newProject(RECORDING, 10 * S));
+  });
+
+  it("reads back what it wrote", () => {
+    const tracks: TextTrack[] = [
+      { id: "row-0", slices: [text("a", S, 3 * S), text("b", 4 * S, 5 * S)] },
+    ];
+    expect(withTexts(JSON.parse(JSON.stringify(tracks)))).toEqual(tracks);
+  });
+
+  it("sorts a row and drops whatever overlaps what came before", () => {
+    const rows = withTexts([
+      {
+        id: "row-0",
+        slices: [text("late", 4 * S, 6 * S), text("early", S, 3 * S), text("over", 2 * S, 5 * S)],
+      },
+    ]);
+    expect(rows[0]!.slices.map((entry) => entry.id)).toEqual(["early", "late"]);
+  });
+
+  it("clamps to the recording and drops what that empties", () => {
+    const rows = withTexts([
+      { id: "row-0", slices: [text("past", 12 * S, 14 * S), text("long", 8 * S, 20 * S)] },
+    ]);
+    expect(rows[0]!.slices).toHaveLength(1);
+    expect(rows[0]!.slices[0]!.source).toEqual({ start: 8 * S, end: 10 * S });
+  });
+
+  it("drops trailing empty rows and caps the count", () => {
+    const rows = Array.from({ length: MAX_TEXT_TRACKS + 3 }, (_, index) => ({
+      id: `row-${index}`,
+      slices: index < 2 ? [text(`t${index}`, S, 2 * S)] : [],
+    }));
+    expect(withTexts(rows)).toHaveLength(2);
+
+    const full = rows.map((row, index) => ({ ...row, slices: [text(`t${index}`, S, 2 * S)] }));
+    expect(withTexts(full)).toHaveLength(MAX_TEXT_TRACKS);
+  });
+
+  it("keeps an empty row that sits under one with a text", () => {
+    expect(
+      withTexts([
+        { id: "row-0", slices: [] },
+        { id: "row-1", slices: [text("a", S, 2 * S)] },
+      ]),
+    ).toHaveLength(2);
+  });
+
+  it("never yields an overlap, a bad range or a bad style, whatever it is fed", () => {
+    // A deterministic scramble rather than a real generator: enough to cover
+    // out-of-range, reversed, overlapping and non-numeric input.
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const junk = () => {
+      const pick = random();
+      if (pick < 0.2) return "no";
+      if (pick < 0.4) return null;
+      return (random() - 0.2) * 14 * S;
+    };
+
+    for (let round = 0; round < 200; round += 1) {
+      const rows = Array.from({ length: Math.floor(random() * 8) }, (_, row) => ({
+        id: row,
+        slices: Array.from({ length: Math.floor(random() * 6) }, () => ({
+          source: { start: junk(), end: junk() },
+          fields: [
+            {
+              role: "heading",
+              text: "x",
+              style: { size: junk(), weight: junk(), tracking: junk() },
+            },
+          ],
+          x: junk(),
+          y: junk(),
+        })),
+      }));
+
+      const tracks = withTexts(rows);
+      expect(tracks.length).toBeLessThanOrEqual(MAX_TEXT_TRACKS);
+      if (tracks.length > 0) expect(tracks[tracks.length - 1]!.slices.length).toBeGreaterThan(0);
+
+      for (const track of tracks) {
+        for (const [index, slice] of track.slices.entries()) {
+          expect(slice.source.start).toBeGreaterThanOrEqual(0);
+          expect(slice.source.end).toBeLessThanOrEqual(10 * S);
+          expect(slice.source.end).toBeGreaterThan(slice.source.start);
+          if (index > 0)
+            expect(slice.source.start).toBeGreaterThanOrEqual(track.slices[index - 1]!.source.end);
+          expect(slice.x).toBeGreaterThanOrEqual(0);
+          expect(slice.x).toBeLessThanOrEqual(1);
+          const style = slice.fields[0]!.style;
+          expect(style.size).toBeGreaterThan(0);
+          expect(style.weight % 100).toBe(0);
+          expect(style.weight).toBeGreaterThanOrEqual(100);
+          expect(style.weight).toBeLessThanOrEqual(900);
+        }
+      }
+    }
   });
 });

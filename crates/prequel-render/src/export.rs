@@ -316,9 +316,10 @@ fn run(
             .and_then(|(reader, at)| reader.frame_at(at));
 
         // Immediately before the render and never inside it — see
-        // `load_captions`. Caption bitmaps are decoded on demand rather than
-        // preloaded, because there is one per cue rather than one per session.
-        compositor.load_captions(&request.session_dir, &slice.plan, source);
+        // `load_bitmaps`. Caption and text bitmaps are decoded on demand rather
+        // than preloaded, because there is one per cue rather than one per
+        // session.
+        compositor.load_bitmaps(&request.session_dir, &slice.plan, source);
         times.decode += decoding.elapsed();
 
         let rendering = std::time::Instant::now();
@@ -546,10 +547,11 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
                 // One per session like the background, not one per cue like a
                 // caption — so it is preloaded rather than fetched on demand.
                 crate::plan::PlanItem::Watermark { path, .. } => push(path, &mut paths),
-                // Captions are deliberately not here. They are decoded on
-                // demand by `Compositor::load_captions`, because there is one
-                // per cue rather than one per session and preloading a long
-                // take's worth at 4K is over a gigabyte of wired memory.
+                // Captions and text overlays are deliberately not here. They
+                // are decoded on demand by `Compositor::load_bitmaps`, because
+                // there is one per cue or field rather than one per session,
+                // and preloading a long take's worth at 4K is over a gigabyte
+                // of wired memory.
                 _ => {}
             }
         }

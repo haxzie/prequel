@@ -198,7 +198,12 @@ export function useCaptions(
               const drawn: CueLayer[] = [];
               for (const layer of layers) {
                 const path = cuePath(key, layer.name);
-                const wrote = await window.prequel.editor.captions.write(dir, path, layer.bytes);
+                const wrote = await window.prequel.editor.bitmaps.write(
+                  "captions",
+                  dir,
+                  path,
+                  layer.bytes,
+                );
                 // The layer underneath is the line itself, and every layer
                 // above it is a word cropped out of a picture that has to be
                 // there. So one that will not write takes the whole cue with
@@ -238,7 +243,7 @@ export function useCaptions(
 
         // After the new sets are live, so a sweep can never delete a bitmap the
         // plan is about to name.
-        void window.prequel.editor.captions.sweep(dir, written);
+        void window.prequel.editor.bitmaps.sweep("captions", dir, written);
       })();
     }, SETTLE_MS);
 

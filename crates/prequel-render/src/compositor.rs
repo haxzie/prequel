@@ -18,7 +18,7 @@ use prequel_session::MediaTime;
 
 use crate::plan::{
     Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, caption_at, crop_to_frame,
-    cursor_at, rect_at,
+    cursor_at, overlay_at, rect_at,
 };
 use crate::{Error, Result};
 
@@ -151,7 +151,7 @@ pub struct Compositor {
     backdrop: Option<arc::R<mtl::Texture>>,
 }
 
-/// How many caption bitmaps to keep decoded at once.
+/// How many caption and text bitmaps to keep decoded at once.
 ///
 /// Captions deliberately do *not* go through the preload that backgrounds and
 /// the pointer use. There are a handful of those and every slice names the same
@@ -159,7 +159,14 @@ pub struct Compositor {
 /// around 300 of them — about 1.2 GB of wired IOSurface memory if they were all
 /// decoded up front. Only one cue is on screen at a time, so a very small cache
 /// costs one decode per cue across the whole export and bounds the memory flat.
-const CAPTION_CACHE: usize = 4;
+///
+/// Text overlays take the same route for the same reason — one bitmap per
+/// field per text — and raised the number from four: a caption's layers and a
+/// couple of texts of two fields each can all be on screen in one frame, and
+/// a cache smaller than one frame's worth would decode every one of them
+/// every frame. A text bitmap is a line or two of glyphs, not a frame, so the
+/// extra entries cost little.
+const BITMAP_CACHE: usize = 12;
 
 impl Compositor {
     pub fn new(width: u32, height: u32) -> Result<Self> {
@@ -236,8 +243,8 @@ impl Compositor {
         Ok(())
     }
 
-    /// Makes sure every caption bitmap this plan needs at this moment is
-    /// decoded, and drops the ones it does not.
+    /// Makes sure every caption and text bitmap this plan needs at this
+    /// moment is decoded, and drops the ones it does not.
     ///
     /// Called immediately before `render`, never during it: `Held`'s wrapper
     /// must outlive the `MTLTexture`, and the texture is a *view* onto the
@@ -248,17 +255,19 @@ impl Compositor {
     /// A bitmap that will not decode is skipped, not fatal. The rest of the
     /// frame is still worth rendering, and a missing caption is a plainer video
     /// where a failed export is lost footage.
-    pub fn load_captions(&mut self, dir: &Path, plan: &RenderPlan, at: MediaTime) {
+    pub fn load_bitmaps(&mut self, dir: &Path, plan: &RenderPlan, at: MediaTime) {
         self.caption_clock += 1;
         let now = self.caption_clock;
         let at = at as i64;
 
         for item in &plan.items {
-            let PlanItem::Caption { path, span, .. } = item else {
+            let (PlanItem::Caption { path, span, .. } | PlanItem::Overlay { path, span, .. }) =
+                item
+            else {
                 continue;
             };
-            // The same half-open test `caption_at` makes, so a bitmap is never
-            // decoded for a frame that would not draw it.
+            // The same half-open test `caption_at` and `overlay_at` make, so a
+            // bitmap is never decoded for a frame that would not draw it.
             if path.is_empty() || at < span.start || at >= span.end {
                 continue;
             }
@@ -281,14 +290,15 @@ impl Compositor {
             match crate::image::decode(&dir.join(path))
                 .and_then(|buffer| self.add_image(path, buffer))
             {
-                Ok(()) => tracing::debug!("loaded caption {path}"),
-                Err(err) => tracing::warn!("could not load caption {path}: {err}"),
+                Ok(()) => tracing::debug!("loaded bitmap {path}"),
+                Err(err) => tracing::warn!("could not load bitmap {path}: {err}"),
             }
         }
 
-        // Only ever the caption entries: `caption_use` holds nothing else, so a
-        // background can never be evicted out from under a later frame.
-        while self.caption_use.len() > CAPTION_CACHE {
+        // Only ever the caption and text entries: `caption_use` holds nothing
+        // else, so a background can never be evicted out from under a later
+        // frame.
+        while self.caption_use.len() > BITMAP_CACHE {
             let Some(stalest) = self
                 .caption_use
                 .iter()
@@ -823,6 +833,46 @@ impl Compositor {
                             if streak >= 1.0 { 1.0 } else { 0.0 },
                         ],
                         mode: MODE_IMAGE,
+                        ..base
+                    },
+                    Some(held.texture.as_ref()),
+                ))
+            }
+
+            PlanItem::Overlay {
+                path,
+                src,
+                span,
+                keys,
+                ..
+            } => {
+                let Some(held) = self.images.get(path) else {
+                    // No bitmap loaded. Skipped rather than drawn as a black
+                    // rectangle, for the reason a caption is.
+                    return Ok(None);
+                };
+                let Some(draw) = overlay_at(*span, keys, at as i64) else {
+                    return Ok(None);
+                };
+                // Fully see-through draws nothing, and a quad's worth of taps
+                // over a frame for nothing is what every unit of a text still
+                // to arrive would cost.
+                if draw.opacity <= 0.0 {
+                    return Ok(None);
+                }
+
+                Some((
+                    Uniforms {
+                        rect: rect_of(&draw.dst),
+                        // Against the texture's real size, as a caption's is.
+                        src: normalised(src, held.texture.width(), held.texture.height()),
+                        mode: MODE_IMAGE,
+                        alpha: draw.opacity as f32,
+                        soften: draw.blur as f32,
+                        texel: [
+                            1.0 / held.texture.width().max(1) as f32,
+                            1.0 / held.texture.height().max(1) as f32,
+                        ],
                         ..base
                     },
                     Some(held.texture.as_ref()),

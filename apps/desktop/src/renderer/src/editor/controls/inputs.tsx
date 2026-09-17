@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { useEffect, useState } from "react";
 
@@ -761,4 +761,87 @@ export function ColorField({
 /** A percentage, which is how every fractional setting is shown. */
 export function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * One choice from a list, opened in the flow.
+ *
+ * In the flow rather than floating, for the reason the font picker is: the
+ * panel is `overflow-hidden` around a scrolling column, so a menu floating
+ * out of it would be clipped at the panel's edge unless it were portalled to
+ * the body and then kept in place against scroll and resize.
+ *
+ * A dropdown rather than a `Segmented` row for a list that is long, or whose
+ * labels are: seven weights in one row were seven abbreviations, and the row
+ * changed width with the family. Each row may carry its own `style`, so a
+ * list of weights can show each weight in itself, the way the font list
+ * shows each face.
+ */
+export function Dropdown<T extends string>({
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string; style?: CSSProperties }[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const chosen = options.find((option) => option.value === value) ?? options[0];
+
+  return (
+    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+      <button
+        type="button"
+        aria-expanded={open}
+        className={cn(
+          "flex items-center justify-between gap-2 rounded-md bg-white/5 px-2.5 text-left",
+          CONTROL_H,
+        )}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <span className="truncate text-[13px] text-white" style={chosen?.style}>
+          {chosen?.label ?? value}
+        </span>
+        <span
+          className={cn(
+            "flex-none text-editor-muted transition-transform [&_svg]:size-3",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        >
+          <ChevronDownIcon />
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-1 flex flex-col gap-0.5" role="radiogroup">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={option.value === value}
+              className={cn(
+                "flex items-center rounded-md px-2.5 text-left text-[13px] transition-colors",
+                CONTROL_H,
+                option.value === value
+                  ? "bg-white/12 text-editor-fg"
+                  : "text-editor-muted hover:bg-white/6 hover:text-editor-fg",
+              )}
+              style={option.style}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

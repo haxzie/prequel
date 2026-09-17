@@ -148,6 +148,29 @@ pub enum PlanItem {
         shadow: Option<CursorShadow>,
         points: Vec<CursorPoint>,
     },
+    /// One unit of a text overlay: a crop out of a field's bitmap, drawn
+    /// where its keys say at each moment.
+    ///
+    /// Its own variant rather than a `Caption` with one word: a caption's box
+    /// is fixed and its words come and go, while a text unit is *placed* by
+    /// its keys — it slides, swells and softens on its way in and out. Like
+    /// `motion` on a zoomed picture, the easing lives in where the editor put
+    /// the keys, and this side only ever draws a straight line between two.
+    ///
+    /// Every field is one word on purpose: nothing here converts case, and a
+    /// two-word name would need a rename on this side to be read at all.
+    Overlay {
+        /// Relative to the session directory, like a caption.
+        path: String,
+        /// The bitmap's own size in pixels, for the same reason a caption's.
+        bitmap: Size,
+        /// The crop, in bitmap pixels.
+        src: Rect,
+        /// The source-time range the unit is on screen for.
+        span: Span,
+        /// Where it is drawn over time, sorted by `at`. Held flat outside.
+        keys: Vec<OverlayKey>,
+    },
     /// One caption layer: a bitmap the editor rasterised, drawn whole or
     /// cropped to the word being spoken.
     ///
@@ -271,9 +294,13 @@ pub struct CursorPoint {
     ///
     /// Defaulted, so a plan written before motion blur existed loads and draws
     /// a sharp pointer rather than failing to parse.
-    #[serde(default)]
+    ///
+    /// Renamed explicitly: nothing on this side converts case, and `layout.ts`
+    /// writes `smearX`. Without the rename these silently read as 0, which is
+    /// a sharp pointer in every export and a smeared one in every preview.
+    #[serde(default, rename = "smearX")]
     pub smear_x: f64,
-    #[serde(default)]
+    #[serde(default, rename = "smearY")]
     pub smear_y: f64,
     /// The sprite's own four corners once the picture is tilted, as `x, y, w`
     /// each — the order and the divisor convention `RectKey::quad` uses.
@@ -621,6 +648,92 @@ pub struct CaptionDraw {
     pub dst: Rect,
     /// How far out of focus to draw it, in bitmap pixels. 0 is sharp.
     pub blur: f64,
+}
+
+/// One sampled moment of a text unit's motion, in output pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OverlayKey {
+    pub at: i64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// 0 to 1.
+    pub opacity: f64,
+    /// How far out of focus, in bitmap pixels. 0 is sharp.
+    pub blur: f64,
+}
+
+/// Where an overlay unit is at a moment, or `None` when it is off screen.
+///
+/// Mirrors `overlayAt` in `apps/desktop/src/shared/layout.ts`, pinned by
+/// fixtures that are deliberately identical. Held at the first key before it
+/// and the last after, like `rect_at`; a straight line between the two either
+/// side otherwise.
+pub fn overlay_at(span: Span, keys: &[OverlayKey], at: i64) -> Option<OverlayDraw> {
+    if at < span.start || at >= span.end {
+        return None;
+    }
+    let first = keys.first()?;
+    let last = keys.last()?;
+
+    if at <= first.at {
+        return Some(OverlayDraw::from(first));
+    }
+    if at >= last.at {
+        return Some(OverlayDraw::from(last));
+    }
+
+    let mut index = 1;
+    while index < keys.len() - 1 && keys[index].at <= at {
+        index += 1;
+    }
+    let a = &keys[index - 1];
+    let b = &keys[index];
+    // Two keys on one nanosecond happen when a motion has no length; the lerp
+    // then lands on the earlier one rather than dividing by zero.
+    let length = b.at - a.at;
+    let t = if length > 0 {
+        (at - a.at) as f64 / length as f64
+    } else {
+        0.0
+    };
+
+    Some(OverlayDraw {
+        dst: Rect {
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t,
+            width: a.width + (b.width - a.width) * t,
+            height: a.height + (b.height - a.height) * t,
+        },
+        opacity: a.opacity + (b.opacity - a.opacity) * t,
+        blur: a.blur + (b.blur - a.blur) * t,
+    })
+}
+
+/// Where one overlay unit is drawn at a moment.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayDraw {
+    /// In output pixels.
+    pub dst: Rect,
+    pub opacity: f64,
+    /// In bitmap pixels. 0 is sharp.
+    pub blur: f64,
+}
+
+impl From<&OverlayKey> for OverlayDraw {
+    fn from(key: &OverlayKey) -> Self {
+        OverlayDraw {
+            dst: Rect {
+                x: key.x,
+                y: key.y,
+                width: key.width,
+                height: key.height,
+            },
+            opacity: key.opacity,
+            blur: key.blur,
+        }
+    }
 }
 
 /// How long a word takes to come into focus.
@@ -1497,6 +1610,121 @@ mod tests {
             }
             other => panic!("parsed as {other:?}"),
         }
+    }
+
+    #[test]
+    fn reads_the_pointer_smear_the_editor_wrote() {
+        // `smearX`, as `layout.ts` spells it. This read as 0 for as long as the
+        // field had no rename, and nothing failed — the export just drew a
+        // sharp pointer.
+        let json =
+            r#"{ "at": 0, "x": 1.0, "y": 2.0, "visible": true, "smearX": 4.0, "smearY": -3.0 }"#;
+        let point: CursorPoint = serde_json::from_str(json).unwrap();
+        assert_eq!(point.smear_x, 4.0);
+        assert_eq!(point.smear_y, -3.0);
+    }
+
+    #[test]
+    fn reads_an_overlay_item_the_editor_wrote() {
+        let json = r#"{
+            "kind": "overlay",
+            "path": "texts/abc.png",
+            "bitmap": { "width": 400, "height": 100 },
+            "src": { "x": 10, "y": 0, "width": 80, "height": 100 },
+            "span": { "start": 1000, "end": 5000 },
+            "keys": [
+                { "at": 1000, "x": 0, "y": 40, "width": 80, "height": 100, "opacity": 0, "blur": 8 },
+                { "at": 2000, "x": 0, "y": 0, "width": 80, "height": 100, "opacity": 1, "blur": 0 }
+            ]
+        }"#;
+
+        let item: PlanItem = serde_json::from_str(json).unwrap();
+        match item {
+            PlanItem::Overlay {
+                path, keys, span, ..
+            } => {
+                assert_eq!(path, "texts/abc.png");
+                assert_eq!(span.start, 1000);
+                assert_eq!(keys.len(), 2);
+                assert_eq!(keys[0].blur, 8.0);
+            }
+            other => panic!("parsed as {other:?}"),
+        }
+    }
+
+    /// The same keys `overlayAt` is tested against in `layout.test.ts`.
+    fn overlay_keys() -> Vec<OverlayKey> {
+        let key = |at, y, opacity, blur| OverlayKey {
+            at,
+            x: 100.0,
+            y,
+            width: 200.0,
+            height: 50.0,
+            opacity,
+            blur,
+        };
+        vec![
+            key(1_000, 130.0, 0.0, 12.0),
+            key(2_000, 100.0, 1.0, 0.0),
+            key(4_000, 100.0, 1.0, 0.0),
+            key(5_000, 100.0, 0.0, 0.0),
+        ]
+    }
+
+    #[test]
+    fn an_overlay_is_held_flat_outside_its_keys_and_absent_outside_its_span() {
+        let span = Span {
+            start: 500,
+            end: 6_000,
+        };
+        let keys = overlay_keys();
+
+        assert!(overlay_at(span, &keys, 499).is_none());
+        assert!(overlay_at(span, &keys, 6_000).is_none());
+
+        let before = overlay_at(span, &keys, 500).unwrap();
+        assert_eq!(before.opacity, 0.0);
+        assert_eq!(before.dst.y, 130.0);
+
+        let after = overlay_at(span, &keys, 5_999).unwrap();
+        assert_eq!(after.opacity, 0.0);
+        assert_eq!(after.dst.y, 100.0);
+    }
+
+    #[test]
+    fn an_overlay_lerps_between_its_keys() {
+        let span = Span {
+            start: 0,
+            end: 10_000,
+        };
+        let keys = overlay_keys();
+
+        // Halfway through the entrance: halfway up, half opaque, half soft.
+        let draw = overlay_at(span, &keys, 1_500).unwrap();
+        assert!((draw.dst.y - 115.0).abs() < 1e-9);
+        assert!((draw.opacity - 0.5).abs() < 1e-9);
+        assert!((draw.blur - 6.0).abs() < 1e-9);
+
+        // On the hold.
+        let held = overlay_at(span, &keys, 3_000).unwrap();
+        assert_eq!(held.opacity, 1.0);
+        assert_eq!(held.dst.x, 100.0);
+    }
+
+    #[test]
+    fn two_overlay_keys_on_one_nanosecond_are_stepped_over() {
+        let span = Span {
+            start: 0,
+            end: 10_000,
+        };
+        let mut keys = overlay_keys();
+        keys[1].at = keys[2].at;
+        keys[1].opacity = 0.0;
+        // Exactly on the doubled moment: the later of the two is where the
+        // lerp starts from, and nothing divides by the zero between them.
+        let draw = overlay_at(span, &keys, 4_000).unwrap();
+        assert!(draw.opacity.is_finite());
+        assert_eq!(draw.opacity, 1.0);
     }
 
     /// A zoom's keys always open and close on the un-zoomed rectangle, which is

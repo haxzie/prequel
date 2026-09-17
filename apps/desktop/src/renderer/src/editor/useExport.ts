@@ -17,6 +17,7 @@ import {
   buildRenderPlan,
   withWholeTimes,
   type RenderedCue,
+  type RenderedText,
   type Size,
 } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
@@ -71,6 +72,7 @@ export function useExport(
   project: Project,
   output: OutputSettings,
   captions: { byLook: ReadonlyMap<string, readonly RenderedCue[]>; drawing: boolean },
+  texts: { rendered: ReadonlyMap<string, RenderedText>; drawing: boolean },
 ): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
@@ -83,8 +85,21 @@ export function useExport(
 
   // Read through a ref because `start` runs long after it was created, and the
   // bitmaps it has to wait for are still being written while it does.
-  const drawing = useRef(captions.drawing);
-  drawing.current = captions.drawing;
+  const drawing = useRef(captions.drawing || texts.drawing);
+  drawing.current = captions.drawing || texts.drawing;
+  /**
+   * The bitmaps, read at the moment the plan is built rather than captured.
+   *
+   * `start` is a callback with a dependency list, and the text bitmaps were
+   * left off it: the closure kept the map from the render it was made on,
+   * every later edit redrew the fields under new names and swept the old,
+   * and the export named files that were no longer there. The exporter
+   * skips a bitmap it cannot decode, so the video simply had no titles. A
+   * ref has no list to forget them from; `settled` above already waits on
+   * the same ref pattern for the same reason.
+   */
+  const bitmaps = useRef({ cues: captions.byLook, texts: texts.rendered });
+  bitmaps.current = { cues: captions.byLook, texts: texts.rendered };
 
   const start = useCallback(async () => {
     if (!session) return;
@@ -133,7 +148,7 @@ export function useExport(
       format: output.format,
       // The plan is laid out inside the *export's* frame, not the editor's, so
       // a scaled-down export is the same composition rather than a crop of it.
-      slices: buildSlices(session, project, size, captions.byLook),
+      slices: buildSlices(session, project, size, bitmaps.current.cues, bitmaps.current.texts),
       offsets: offsetsOf(session),
     });
 
@@ -146,7 +161,7 @@ export function useExport(
         error: { code: result.code, message: result.message },
       });
     }
-  }, [session, project, output, captions.byLook]);
+  }, [session, project, output]);
 
   const cancel = useCallback(() => void window.prequel.editor.export.cancel(), []);
 
@@ -210,6 +225,7 @@ function buildSlices(
   project: Project,
   frame: Size,
   cues: ReadonlyMap<string, readonly RenderedCue[]>,
+  texts: ReadonlyMap<string, RenderedText>,
 ): ExportSlice[] {
   const sources = sourceSizes(session);
 
@@ -269,6 +285,10 @@ function buildSlices(
           // be a second answer to a question `captionAt` already answers per
           // frame.
           cues.get(captionLook(settings.captions)),
+          // Every row of texts, like the zooms: a text whose span falls
+          // outside this clip never draws, for the reason a cue does not.
+          project.texts,
+          texts,
         ),
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,

@@ -103,9 +103,22 @@ export function Field({
  * window is one scroll of several groups, which is exactly the case a heading
  * is for — hence optional rather than gone.
  */
-export function Section({ title, children }: { title?: string; children: ReactNode }) {
+export function Section({
+  title,
+  id,
+  children,
+}: {
+  title?: string;
+  /** Named by attribute for the documentation screenshots, which scroll to
+      it — the same convention as `data-panel`. */
+  id?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="flex flex-col gap-3 border-b border-editor-line px-4 py-4 last:border-b-0">
+    <section
+      data-section={id}
+      className="flex flex-col gap-3 border-b border-editor-line px-4 py-4 last:border-b-0"
+    >
       {title && <h2 className="text-[11px] font-semibold tracking-wide uppercase">{title}</h2>}
       {children}
     </section>

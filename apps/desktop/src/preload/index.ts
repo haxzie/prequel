@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type {
   BackgroundsCatalogue,
+  FontsCatalogue,
   AppInfo,
   AuthState,
   BackgroundImage,
@@ -348,6 +349,18 @@ const api = {
         ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
     },
 
+    fonts: {
+      /** The hosted catalogue, or null when there is neither a cache nor a
+          network — the picker then offers the macOS faces alone. */
+      catalogue: (): Promise<IpcResult<FontsCatalogue | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.fontsCatalogue),
+
+      /** Caches one font file. Answers whether `prequel-media://font/` can
+          serve it now. */
+      ensure: (file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.fontsEnsure, file),
+    },
+
     scenePresets: {
       /** The looks saved on this machine, newest first. */
       list: (): Promise<IpcResult<ScenePreset[]>> =>
@@ -392,19 +405,24 @@ const api = {
         ipcRenderer.invoke(IPC_CHANNELS.scenePresetsApplyWatermark, id, dir, file),
     },
 
-    captions: {
+    bitmaps: {
       /**
-       * Hands main one cue's pixels to write into the recording.
+       * Hands main one cue's or one text field's pixels to write into the
+       * recording. `kind` is the folder: "captions" or "texts".
        *
        * Answers with the path it wrote, or null if it could not — a missing
-       * bitmap is a plainer video, and the rest of the cues are still worth
-       * drawing.
+       * bitmap is a plainer video, and the rest are still worth drawing.
        */
-      write: (dir: string, file: string, bytes: Uint8Array): Promise<IpcResult<string | null>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.editorWriteCaption, dir, file, bytes),
+      write: (
+        kind: "captions" | "texts",
+        dir: string,
+        file: string,
+        bytes: Uint8Array,
+      ): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorWriteBitmap, kind, dir, file, bytes),
 
-      sweep: (dir: string, keep: string[]): Promise<IpcResult<void>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.editorSweepCaptions, dir, keep),
+      sweep: (kind: "captions" | "texts", dir: string, keep: string[]): Promise<IpcResult<void>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorSweepBitmaps, kind, dir, keep),
     },
   },
 

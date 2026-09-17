@@ -15,8 +15,9 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat, Paint, PlanItem,
-    PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, export,
+    AudioMix, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat, OverlayKey,
+    Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, Span,
+    export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -1469,6 +1470,121 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
         (0, 0, 255),
         "right of the frame, still the source's left",
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_overlay_fades_in_where_its_keys_say_and_keeps_its_crop() {
+    // A text unit is a crop out of a bitmap drawn along a track of keys. Two
+    // things have to hold for the preview and the file to agree: the opacity
+    // at a moment is the one between the keys either side, and the crop is
+    // the crop — a unit cut from the left half of its bitmap draws the left
+    // half, not the whole picture squeezed into the box.
+    let dir = scratch("prequel-pixels-overlay");
+    let output = dir.join("export.mp4");
+
+    let source = solid(200, [0, 0, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+
+    // White on the left, blue on the right; the crop only ever asks for the
+    // white half.
+    std::fs::create_dir_all(dir.join("texts")).expect("texts dir");
+    write_png(
+        &dir.join("texts/field.png"),
+        &split_frame(100, 50, [255, 255, 255], [0, 0, 255]),
+    );
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    let dst = Rect {
+        x: 110.0,
+        y: 95.0,
+        width: 100.0,
+        height: 50.0,
+    };
+    let key = |at: i64, opacity: f64| OverlayKey {
+        at,
+        x: dst.x,
+        y: dst.y,
+        width: dst.width,
+        height: dst.height,
+        opacity,
+        blur: 0.0,
+    };
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "#ff0000".to_owned(),
+                },
+            },
+            PlanItem::Overlay {
+                path: "texts/field.png".to_owned(),
+                bitmap: Size {
+                    width: 100.0,
+                    height: 50.0,
+                },
+                src: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 50.0,
+                    height: 50.0,
+                },
+                span: Span {
+                    start: 0,
+                    end: S as i64,
+                },
+                // Invisible for the first four frames, fully there from the
+                // sixth; halfway between at the fifth.
+                keys: vec![
+                    key(3 * S as i64 / 10, 0.0),
+                    key(5 * S as i64 / 10, 1.0),
+                    key(9 * S as i64 / 10, 1.0),
+                ],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // Frame 0 is before the first key, which is held: nothing but the red.
+    near(
+        frame_at(&output, 0).at(160, 120),
+        (255, 0, 0),
+        "held at opacity 0",
+    );
+    // Frame 4 is halfway up the ramp: half white over red.
+    near(
+        frame_at(&output, 4).at(160, 120),
+        (255, 128, 128),
+        "halfway through the fade",
+    );
+    // Frame 7 is on the hold, and the whole box is the white half of the
+    // bitmap — the blue half was never asked for.
+    let held = frame_at(&output, 7);
+    near(held.at(120, 120), (255, 255, 255), "left of the crop, held");
+    near(
+        held.at(200, 120),
+        (255, 255, 255),
+        "right of the crop, held",
+    );
+    near(held.at(250, 120), (255, 0, 0), "beside the box");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

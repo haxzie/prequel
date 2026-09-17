@@ -16,15 +16,19 @@ import {
   type PlanSource,
   type Rect,
   type RenderedCue,
+  type RenderedText,
   type RenderPlan,
   type Size,
   type SourceSizes,
+  textBlockRect,
 } from "../../../shared/layout";
 import {
   captionLook,
   type LayoutSettings,
   type WatermarkSettings,
   type SliceSettings,
+  type TextSlice,
+  type TextTrack,
   type ZoomSlice,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
@@ -90,9 +94,14 @@ export function Preview({
   cursor,
   zooms,
   cues,
+  texts,
+  rendered,
+  selectedTextId,
   grab: grabRef,
   onPick,
+  onPickText,
   onDrag,
+  onDragText,
 }: {
   /**
    * Whether everything this draws with has arrived.
@@ -129,6 +138,18 @@ export function Preview({
    * the set drawn for one clip's style is not the set another wants.
    */
   cues: ReadonlyMap<string, readonly RenderedCue[]>;
+  /** The text rows, baked into the plan as overlays. */
+  texts: readonly TextTrack[];
+  /** Every text's fields as bitmaps, by text id — the same map the export
+      draws from. A text with no entry yet draws nothing. */
+  rendered: ReadonlyMap<string, RenderedText>;
+  /**
+   * Which text is ringed, or null.
+   *
+   * From the editor rather than local like `selected`: the inspector shows a
+   * selected text's panel, so the two have to agree on which one it is.
+   */
+  selectedTextId: string | null;
   /**
    * Filled in with a way to grab the current frame as a PNG data URL.
    *
@@ -162,6 +183,19 @@ export function Preview({
    * so it has to be told where each one goes.
    */
   onDrag: (section: "layout" | "watermark", patch: Record<string, unknown>) => void;
+  /** A text was clicked, so it becomes the selection and its panel shows. */
+  onPickText: (textId: string) => void;
+  /**
+   * A drag moved a text, or pulled a corner to change its size.
+   *
+   * `sizes` rather than a ratio: a ratio applied on every pointer move
+   * compounds, and the picture runs away from the pointer. Every field's
+   * size is worked out from where it was when the corner was grabbed.
+   */
+  onDragText: (
+    textId: string,
+    drag: { kind: "move"; x: number; y: number } | { kind: "size"; sizes: number[] },
+  ) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -234,8 +268,34 @@ export function Preview({
   // component, and a tilt dragged on a zoom stopped reaching the preview: the
   // plan was still being rebuilt, from the `zooms` the closure had captured on
   // the render it was created. Anything the loop reads goes through here.
-  const latest = useRef({ frame, settings, enter, images, fitted, selected, cursor, zooms, cues });
-  latest.current = { frame, settings, enter, images, fitted, selected, cursor, zooms, cues };
+  const latest = useRef({
+    frame,
+    settings,
+    enter,
+    images,
+    fitted,
+    selected,
+    cursor,
+    zooms,
+    cues,
+    texts,
+    rendered,
+    selectedTextId,
+  });
+  latest.current = {
+    frame,
+    settings,
+    enter,
+    images,
+    fitted,
+    selected,
+    cursor,
+    zooms,
+    cues,
+    texts,
+    rendered,
+    selectedTextId,
+  };
 
   // Fits the frame's aspect ratio into whatever space the window is giving
   // this pane, at any output size. `contentRect` is the padded box, so the
@@ -284,6 +344,9 @@ export function Preview({
         cursor: pointer,
         zooms: shots,
         cues: drawn,
+        texts: rows,
+        rendered: drawnTexts,
+        selectedTextId: ringedText,
       } = latest.current;
       const screen = media.getElement("screen");
       const camera = media.getElement("camera");
@@ -337,6 +400,8 @@ export function Preview({
         shots,
         arriving,
         shown,
+        rows,
+        drawnTexts,
       ] as const;
 
       const previous = cached.current;
@@ -365,6 +430,8 @@ export function Preview({
               // The set drawn for *this* clip's look. A clip whose captions are
               // off has no look and gets nothing, which draws nothing.
               shown,
+              rows,
+              drawnTexts,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };
@@ -378,7 +445,18 @@ export function Preview({
       // render, for the reason the picture itself is drawn here: the box moves
       // with the sources' own dimensions and with a drag in flight, and React
       // is told about neither on the frame it happens.
-      ring(outline.current, ringed, size, current, sizes, box, shots, at);
+      ring(
+        outline.current,
+        ringed,
+        size,
+        current,
+        sizes,
+        box,
+        shots,
+        at,
+        ringedText ? textAt(rows, ringedText, at) : null,
+        drawnTexts,
+      );
 
       // Read here and nowhere else. The context is created without
       // `preserveDrawingBuffer`, so the drawing buffer is cleared as soon as
@@ -584,10 +662,55 @@ export function Preview({
     if (guideY.current) guideY.current.style.display = "none";
   };
 
+  /**
+   * The texts on screen right now, topmost first, with their boxes.
+   *
+   * Only the ones whose span holds this moment: a title is only there for
+   * its own seconds, and hit testing every text's box would catch one that is
+   * not on screen. Highest row first, because that is the one drawn on top.
+   */
+  const textsUnder = (): { text: TextSlice; box: Rect }[] => {
+    const at = media.sourceAt() ?? 0;
+    const found: { text: TextSlice; box: Rect }[] = [];
+    for (let track = texts.length - 1; track >= 0; track -= 1) {
+      for (const text of texts[track]!.slices) {
+        if (at < text.source.start || at >= text.source.end) continue;
+        const box = textBlockRect(frame, text, rendered);
+        if (box) found.push({ text, box });
+      }
+    }
+    return found;
+  };
+
   /** What is under the pointer: a corner to pull, a picture to drag, or nothing. */
   const find = (point: Point): Grip | null => {
     const near = HANDLE * grain();
     const { screen, camera } = pictures();
+
+    // Texts before the pictures: they are drawn over everything but the
+    // captions, and the selected one's corners before its body, for the
+    // reason the ringed picture's are below.
+    const onScreen = textsUnder();
+    const held = onScreen.find((entry) => entry.text.id === selectedTextId);
+    if (held) {
+      const corner = cornerAt(held.box, point, near);
+      if (corner) {
+        return {
+          kind: "sizeText",
+          textId: held.text.id,
+          corner,
+          box: held.box,
+          from: point,
+          sizes: held.text.fields.map((field) => field.style.size),
+        };
+      }
+    }
+    for (const entry of onScreen) {
+      if (inside(entry.box, point)) {
+        return { kind: "moveText", textId: entry.text.id, box: entry.box, from: point };
+      }
+    }
+
     const boxes: Record<Grabbable, Rect | null> = {
       watermark: watermarkBox(),
       camera: camera?.dstRect ?? null,
@@ -669,7 +792,7 @@ export function Preview({
    * The screen deliberately has no inset lines. Its edges are what `padding`
    * already sets, and a drag that snapped to them would fight the slider.
    */
-  const guides = (target: Grabbable): { xs: number[]; ys: number[] } => {
+  const guides = (target: Grabbable | "text"): { xs: number[]; ys: number[] } => {
     const unit = Math.min(frame.width, frame.height);
     const middle = { xs: [frame.width / 2], ys: [frame.height / 2] };
     if (target === "screen") return middle;
@@ -694,7 +817,7 @@ export function Preview({
    */
   const pullToGuides = (
     box: Rect,
-    target: Grabbable,
+    target: Grabbable | "text",
   ): { box: Rect; hitX: number | null; hitY: number | null } => {
     const near = SNAP * grain();
     const { xs, ys } = guides(target);
@@ -733,8 +856,44 @@ export function Preview({
    */
   const caught = useRef<{ x: number | null; y: number | null }>({ x: null, y: null });
 
+  /**
+   * What a drag on a text asks for, from where the pointer has got to.
+   *
+   * A move is snapped like a picture's; a corner pull scales every field's
+   * size by how much bigger the box got, from the sizes held at the grab.
+   * Aspect is always kept — a text's box is its lines, and stretching one
+   * axis of it means nothing.
+   */
+  const textDragFor = (
+    grip: Extract<Grip, { kind: "moveText" | "sizeText" }>,
+    point: Point,
+  ): Parameters<typeof onDragText>[1] => {
+    if (grip.kind === "sizeText") {
+      caught.current = { x: null, y: null };
+      const box = pulled(grip.box, grip.corner, point, true);
+      const ratio = grip.box.width > 0 ? box.width / grip.box.width : 1;
+      return { kind: "size", sizes: grip.sizes.map((size) => size * ratio) };
+    }
+
+    const dragged = pullToGuides(
+      {
+        ...grip.box,
+        x: grip.box.x + (point.x - grip.from.x),
+        y: grip.box.y + (point.y - grip.from.y),
+      },
+      "text",
+    );
+    caught.current = { x: dragged.hitX, y: dragged.hitY };
+    const box = dragged.box;
+    return {
+      kind: "move",
+      x: (box.x + box.width / 2) / frame.width,
+      y: (box.y + box.height / 2) / frame.height,
+    };
+  };
+
   const patchFor = (
-    grip: Grip,
+    grip: Extract<Grip, { kind: "move" | "resize" | "pan" }>,
     point: Point,
     aspect: boolean,
   ): { section: "layout" | "watermark"; patch: Record<string, unknown> } => {
@@ -941,6 +1100,17 @@ export function Preview({
             }
 
             const found = find(point);
+
+            // A text: the ring is the editor's, not this component's, so the
+            // picture ring comes off and the editor is told which text.
+            if (found?.kind === "moveText" || found?.kind === "sizeText") {
+              setSelected(null);
+              onPickText(found.textId);
+              grab.current = found;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+
             // Empty background drops the selection, the same click that would
             // drop it on a canvas anywhere else.
             setSelected(found?.target ?? null);
@@ -981,11 +1151,18 @@ export function Preview({
               const found = find(point);
               event.currentTarget.style.cursor = !found
                 ? ""
-                : found.kind === "resize"
+                : found.kind === "resize" || found.kind === "sizeText"
                   ? CORNER_CURSOR[found.corner]
-                  : event.altKey
+                  : event.altKey && found.kind !== "moveText"
                     ? "move"
                     : "grab";
+              return;
+            }
+
+            if (grab.current.kind === "moveText" || grab.current.kind === "sizeText") {
+              if (grab.current.kind === "moveText") event.currentTarget.style.cursor = "grabbing";
+              onDragText(grab.current.textId, textDragFor(grab.current, point));
+              showGuides();
               return;
             }
 
@@ -1088,6 +1265,15 @@ export function watermarkRect(frame: Size, mark: SliceSettings["watermark"]): Re
   };
 }
 
+/** The text with this id, if its span holds the moment. */
+function textAt(tracks: readonly TextTrack[], textId: string, at: number): TextSlice | null {
+  for (const track of tracks) {
+    const found = track.slices.find((text) => text.id === textId);
+    if (found) return at >= found.source.start && at < found.source.end ? found : null;
+  }
+  return null;
+}
+
 /**
  * Puts the ring on the selected picture, or takes it away.
  *
@@ -1104,14 +1290,20 @@ function ring(
   fitted: Size,
   zooms: readonly ZoomSlice[],
   at: number,
+  /** The selected text, when it is on screen at this moment. */
+  text: TextSlice | null,
+  rendered: ReadonlyMap<string, RenderedText>,
 ): void {
   if (!element) return;
 
   // The logo's box comes from its own settings rather than from `placement`,
   // which answers for the two pictures the arrangement places. A watermark is
-  // placed by nothing but the four numbers below it.
-  const box =
-    selected === "watermark"
+  // placed by nothing but the four numbers below it. A text's comes from the
+  // same `placeText` the plan is built from, so the ring is around what the
+  // exporter draws.
+  const box = text
+    ? textBlockRect(frame, text, rendered)
+    : selected === "watermark"
       ? watermarkRect(frame, settings.watermark)
       : selected
         ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
@@ -1173,7 +1365,19 @@ type Grip =
   | { kind: "resize"; target: Grabbable; corner: Corner; box: Rect; from: Point }
   // Panning is the two video sources only: it slides a crop window over
   // footage, and a watermark has no crop — the whole file is the picture.
-  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number };
+  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number }
+  // A text is not a `Grabbable`: it has no settings section, and which one is
+  // held is the editor's selection rather than this component's.
+  | { kind: "moveText"; textId: string; box: Rect; from: Point }
+  | {
+      kind: "sizeText";
+      textId: string;
+      corner: Corner;
+      box: Rect;
+      from: Point;
+      /** Every field's size at the grab, which the ratio is applied to. */
+      sizes: number[];
+    };
 
 /** How close to a corner counts as grabbing it, in points on screen. */
 const HANDLE = 12;

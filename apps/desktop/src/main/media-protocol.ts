@@ -27,6 +27,7 @@ import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
 import { thumbnailPath } from "./backgrounds.js";
+import { fontPath } from "./fonts.js";
 import { cardPath } from "./scene-presets.js";
 import { SESSIONS_DIR } from "./session.js";
 
@@ -124,6 +125,14 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
   if (parsed.host === "background") {
     if (parts.length !== 1) return null;
     return thumbnailPath(parts[0]!);
+  }
+
+  // A hosted font file main has cached. One segment, checked against the
+  // pattern the API accepts, as a thumbnail is — `fontPath` answers null for
+  // anything else.
+  if (parsed.host === "font") {
+    if (parts.length !== 1) return null;
+    return fontPath(parts[0]!);
   }
 
   // A scene preset's card. Still two segments, though every preset is now the
@@ -251,6 +260,10 @@ function contentType(path: string): string {
   if (path.endsWith(".m4a")) return "audio/mp4";
   if (path.endsWith(".gif")) return "image/gif";
   if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".woff2")) return "font/woff2";
+  if (path.endsWith(".woff")) return "font/woff";
+  if (path.endsWith(".ttf")) return "font/ttf";
+  if (path.endsWith(".otf")) return "font/otf";
   return "image/jpeg";
 }
 

@@ -116,7 +116,9 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     permissions: {
       list: () => Promise.resolve(state.permissions),
       request: (id) => {
-        state.permissions = state.permissions.map((p) => (p.id === id ? { ...p, granted: true } : p));
+        state.permissions = state.permissions.map((p) =>
+          p.id === id ? { ...p, granted: true } : p,
+        );
         return Promise.resolve(state.permissions);
       },
       ensureDevice: () => Promise.resolve(true),
@@ -147,8 +149,7 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     dock: {
       state: () => Promise.resolve(state.dock),
       chooseMode: async (mode) => ({ ok: true, value: await dock({ activeMode: mode }) }),
-      updatePreferences: (patch) =>
-        dock({ preferences: { ...state.dock.preferences, ...patch } }),
+      updatePreferences: (patch) => dock({ preferences: { ...state.dock.preferences, ...patch } }),
       record: () => ok(state.dock),
       stop: () => ok(undefined),
       discard: () => ok(undefined),
@@ -259,13 +260,14 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         applyWatermark: () => ok(false),
       },
 
-      captions: {
+      bitmaps: {
         /**
          * Into the overlay directory, never the recording. The URL the
          * renderer then asks for is the same one main would serve, and the
-         * media middleware reads the overlay first.
+         * media middleware reads the overlay first. Captions and texts alike:
+         * the file name carries its own folder.
          */
-        write: async (_dir, file, bytes) => {
+        write: async (_kind, _dir, file, bytes) => {
           const name = encodeURIComponent(sessionName ?? "");
           await fetch(`/overlay/${name}/${encodeURIComponent(file)}`, {
             method: "PUT",
@@ -274,6 +276,13 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
           return { ok: true as const, value: file };
         },
         sweep: () => ok(undefined),
+      },
+
+      // No hosted faces in the gallery: the shots are set in the macOS list,
+      // which needs nothing fetched.
+      fonts: {
+        catalogue: () => ok(null),
+        ensure: () => ok(false),
       },
     },
 
@@ -288,7 +297,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     projects: {
       list: async (limit = 24, offset = 0) => {
         const all = (await json<ProjectSummary[]>("/fixture/recordings.json")) ?? [];
-        return { ok: true as const, value: { projects: all.slice(offset, offset + limit), total: all.length } };
+        return {
+          ok: true as const,
+          value: { projects: all.slice(offset, offset + limit), total: all.length },
+        };
       },
       rename: () => ok(undefined),
       delete: () => ok(false),

@@ -41,7 +41,9 @@ const OUT = resolve(flag("out") ?? join(PACKAGE, "../web/public/docs"));
 // Each shot's size in CSS pixels, for the site to draw it at life size rather
 // than stretched to the column. Written only on a full run, or a partial one
 // would drop every shot it did not take.
-const MANIFEST = flag("manifest") ?? (flag("out") || ONLY ? null : join(PACKAGE, "../web/src/content/docs/shots.json"));
+const MANIFEST =
+  flag("manifest") ??
+  (flag("out") || ONLY ? null : join(PACKAGE, "../web/src/content/docs/shots.json"));
 const KEEP_PNG = has("png");
 const ATTACH = has("attach");
 // The whole viewport instead of the clip, for working out why a crop is wrong.
@@ -49,7 +51,8 @@ const FULL = has("full");
 
 const PORT = 5199;
 const CDP_PORT = 9222;
-const RECORDINGS = process.env.PREQUEL_GALLERY_RECORDINGS ?? join(homedir(), "Movies/Prequel/.recordings");
+const RECORDINGS =
+  process.env.PREQUEL_GALLERY_RECORDINGS ?? join(homedir(), "Movies/Prequel/.recordings");
 const OVERLAY = join(tmpdir(), "prequel-gallery");
 const SCRATCH = join(tmpdir(), "prequel-shots");
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -69,7 +72,17 @@ if (!existsSync(join(recordingDir, "session.json"))) {
 try {
   const codec = execFileSync(
     "ffprobe",
-    ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", join(recordingDir, "screen.mp4")],
+    [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=codec_name",
+      "-of",
+      "csv=p=0",
+      join(recordingDir, "screen.mp4"),
+    ],
     { encoding: "utf8" },
   ).trim();
   if (codec !== "h264") {
@@ -145,7 +158,9 @@ if (!ATTACH) {
 
 // ── CDP ─────────────────────────────────────────────────────────────────────
 
-const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`)).json();
+const { webSocketDebuggerUrl } = await (
+  await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`)
+).json();
 const ws = new WebSocket(webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener("open", r, { once: true }));
 
@@ -165,7 +180,9 @@ function rpc(method, params = {}, sessionId) {
       const message = JSON.parse(event.data);
       if (message.id !== id) return;
       ws.removeEventListener("message", onMessage);
-      message.error ? reject(new Error(`${method}: ${message.error.message}`)) : resolvePromise(message.result);
+      message.error
+        ? reject(new Error(`${method}: ${message.error.message}`))
+        : resolvePromise(message.result);
     };
     ws.addEventListener("message", onMessage);
     ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
@@ -182,7 +199,8 @@ async function evaluate(sessionId, expression) {
     { expression, awaitPromise: true, returnByValue: true },
     sessionId,
   );
-  if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? "evaluate failed");
+  if (exceptionDetails)
+    throw new Error(exceptionDetails.exception?.description ?? "evaluate failed");
   return result.value;
 }
 
@@ -205,7 +223,11 @@ async function until(sessionId, expression, label, attempts = 200) {
 
 async function click(sessionId, x, y) {
   const base = { x, y, button: "left", clickCount: 1, pointerType: "mouse" };
-  await rpc("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, pointerType: "mouse" }, sessionId);
+  await rpc(
+    "Input.dispatchMouseEvent",
+    { type: "mouseMoved", x, y, pointerType: "mouse" },
+    sessionId,
+  );
   await rpc("Input.dispatchMouseEvent", { type: "mousePressed", ...base }, sessionId);
   await rpc("Input.dispatchMouseEvent", { type: "mouseReleased", ...base }, sessionId);
 }
@@ -213,16 +235,44 @@ async function click(sessionId, x, y) {
 async function key(sessionId, code) {
   // `key` and `text` matter as well as `code`: the editor's shortcuts read
   // `event.key`, and a key event with only a code reads as an unknown key.
-  const keyName = code.startsWith("Key") ? code.slice(3).toLowerCase() : code === "Space" ? " " : code;
-  const windowsVirtualKeyCode = code.startsWith("Key") ? code.charCodeAt(3) : code === "Space" ? 32 : code === "Escape" ? 27 : 0;
-  await rpc("Input.dispatchKeyEvent", { type: "keyDown", code, key: keyName, windowsVirtualKeyCode, text: keyName.length === 1 ? keyName : undefined }, sessionId);
-  await rpc("Input.dispatchKeyEvent", { type: "keyUp", code, key: keyName, windowsVirtualKeyCode }, sessionId);
+  const keyName = code.startsWith("Key")
+    ? code.slice(3).toLowerCase()
+    : code === "Space"
+      ? " "
+      : code;
+  const windowsVirtualKeyCode = code.startsWith("Key")
+    ? code.charCodeAt(3)
+    : code === "Space"
+      ? 32
+      : code === "Escape"
+        ? 27
+        : 0;
+  await rpc(
+    "Input.dispatchKeyEvent",
+    {
+      type: "keyDown",
+      code,
+      key: keyName,
+      windowsVirtualKeyCode,
+      text: keyName.length === 1 ? keyName : undefined,
+    },
+    sessionId,
+  );
+  await rpc(
+    "Input.dispatchKeyEvent",
+    { type: "keyUp", code, key: keyName, windowsVirtualKeyCode },
+    sessionId,
+  );
 }
 
 async function runStep(sessionId, step) {
   switch (step.kind) {
     case "click": {
-      await until(sessionId, `!!window.__gallery.rect(${JSON.stringify(step.selector)}, ${JSON.stringify(step.text)})`, step.selector);
+      await until(
+        sessionId,
+        `!!window.__gallery.rect(${JSON.stringify(step.selector)}, ${JSON.stringify(step.text)})`,
+        step.selector,
+      );
       const r = await rect(sessionId, step.selector, step.text);
       await click(sessionId, r.x + r.width / 2, r.y + r.height / 2);
       await sleep(150);
@@ -240,10 +290,29 @@ async function runStep(sessionId, step) {
       return;
     }
     case "wait":
-      await until(sessionId, `!!document.querySelector(${JSON.stringify(step.selector)})`, step.selector);
+      await until(
+        sessionId,
+        `!!document.querySelector(${JSON.stringify(step.selector)})`,
+        step.selector,
+      );
       return;
     case "settle":
       await sleep(step.ms);
+      return;
+    // Brings an element into view inside whatever scrolls around it, for a
+    // panel taller than the window: a shot of the controls at the bottom of
+    // one would otherwise be a shot of the top.
+    case "scrollTo":
+      await until(
+        sessionId,
+        `!!document.querySelector(${JSON.stringify(step.selector)})`,
+        step.selector,
+      );
+      await evaluate(
+        sessionId,
+        `document.querySelector(${JSON.stringify(step.selector)}).scrollIntoView({ block: "start" })`,
+      );
+      await sleep(150);
       return;
     default:
       throw new Error(`unknown step ${JSON.stringify(step)}`);
@@ -279,7 +348,9 @@ async function clipOf(sessionId, clip, pad = 0, maxWidth = null) {
 // ── Shots ───────────────────────────────────────────────────────────────────
 
 const probe = await rpc("Target.createTarget", { url: `http://127.0.0.1:${PORT}/#/` });
-const probeSession = (await rpc("Target.attachToTarget", { targetId: probe.targetId, flatten: true })).sessionId;
+const probeSession = (
+  await rpc("Target.attachToTarget", { targetId: probe.targetId, flatten: true })
+).sessionId;
 await rpc("Runtime.enable", {}, probeSession);
 await until(probeSession, "!!window.__gallery", "the gallery");
 const shots = await evaluate(probeSession, "window.__gallery.shots");
@@ -287,7 +358,8 @@ await rpc("Target.closeTarget", { targetId: probe.targetId });
 
 const wanted = ONLY ? shots.filter((shot) => ONLY.includes(shot.id)) : shots;
 if (ONLY) {
-  for (const id of ONLY) if (!shots.some((shot) => shot.id === id)) console.warn(`no shot called ${id}`);
+  for (const id of ONLY)
+    if (!shots.some((shot) => shot.id === id)) console.warn(`no shot called ${id}`);
 }
 
 let failed = 0;
@@ -327,11 +399,19 @@ for (const shot of wanted) {
       sessionId,
     );
     if (shot.frame === "dock-transparent") {
-      await rpc("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } }, sessionId);
+      await rpc(
+        "Emulation.setDefaultBackgroundColorOverride",
+        { color: { r: 0, g: 0, b: 0, a: 0 } },
+        sessionId,
+      );
     }
 
     await rpc("Page.navigate", { url: `http://127.0.0.1:${PORT}/#/shot/${shot.id}` }, sessionId);
-    await until(sessionId, "!!window.__gallery && !!document.querySelector('[data-shot-frame]')", "the frame");
+    await until(
+      sessionId,
+      "!!window.__gallery && !!document.querySelector('[data-shot-frame]')",
+      "the frame",
+    );
     await evaluate(sessionId, "window.__gallery.settle()");
 
     for (const step of shot.steps) await runStep(sessionId, step);

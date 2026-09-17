@@ -11,6 +11,7 @@
 import type { ExportFormat } from "./contract.js";
 import type { MediaTime } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
+import { textMotion, type TextMotionId } from "./text-motion.js";
 import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
 
 export const PROJECT_VERSION = 1;
@@ -648,6 +649,244 @@ export const DEFAULT_ZOOM_LOOK: ZoomDefaults = ZOOM_LOOK;
 /** How long a zoom is when it is first dropped on the timeline. */
 export const DEFAULT_ZOOM_LENGTH: Ns = 2_000_000_000;
 
+// ── Text overlays ───────────────────────────────────────────────────────────
+//
+// A text is a project-level list like a zoom, not a settings section: it is
+// content placed at a moment, not a look a clip inherits. So none of the
+// override machinery applies to it, and a scene preset does not carry one.
+
+export type TextRole = "overline" | "heading" | "subheading" | "body";
+export type TextAlign = "left" | "center" | "right";
+
+/**
+ * How one field of a text is set.
+ *
+ * Flat leaves for the reason every setting is. Every length is a fraction —
+ * of the frame's shorter edge for `size`, of the font size for the rest — so
+ * a look survives a change of frame the way captions do.
+ */
+export interface TextStyle {
+  /** A font id: one of the macOS faces in `controls/fonts.ts`, or a hosted
+      family's id from the catalogue. */
+  font: string;
+  /** 100 to 900. Only the weights the family really has are offered, so the
+      engine never has to fake one. */
+  weight: number;
+  italic: boolean;
+  /** Cap height as a fraction of the frame's shorter edge. */
+  size: number;
+  color: string;
+  caps: boolean;
+  /** Letter spacing as a fraction of the font size. */
+  tracking: number;
+  /** Baseline to baseline, as a multiple of the font size. */
+  lineHeight: number;
+  strokeColor: string;
+  /** As a fraction of the font size. 0 draws no outline. */
+  strokeWidth: number;
+  shadowColor: string;
+  /** Both as fractions of the font size. A blur of 0 draws no shadow. */
+  shadowBlur: number;
+  shadowDy: number;
+  /** Null draws no plate behind the field. */
+  plateColor: string | null;
+  /** As fractions of the font size. */
+  plateRadius: number;
+  platePadX: number;
+  platePadY: number;
+}
+
+export interface TextField {
+  role: TextRole;
+  text: string;
+  style: TextStyle;
+}
+
+/**
+ * One text on the timeline, in source time like a zoom.
+ *
+ * Pinned to the footage rather than to the output's clock: a title over a
+ * moment stays over that moment when the clips before it are trimmed, and
+ * goes with the footage when that stretch is cut.
+ */
+export interface TextSlice {
+  id: string;
+  source: { start: Ns; end: Ns };
+  /** Which template it was made from. Kept so the gallery can show it. */
+  templateId: string;
+  fields: TextField[];
+  /** The block's centre, as fractions of the frame's width and height. */
+  x: number;
+  y: number;
+  /** How wide a line may run before it wraps, as a fraction of the frame's
+      width. */
+  width: number;
+  align: TextAlign;
+  /** Between one field and the next, as a fraction of the shorter edge. */
+  gap: number;
+  enter: TextMotionId;
+  exit: TextMotionId;
+  enterMs: number;
+  exitMs: number;
+}
+
+/** One row of texts. Sorted by start, and never overlapping. */
+export interface TextTrack {
+  id: string;
+  slices: TextSlice[];
+}
+
+/**
+ * How many rows the timeline will stack.
+ *
+ * A row appears above the last one that holds a text, so the count only ever
+ * grows by being used — this is where it stops.
+ */
+export const MAX_TEXT_TRACKS = 5;
+
+/** How long a text is when it is first dropped on the timeline. */
+export const DEFAULT_TEXT_LENGTH: Ns = 3_000_000_000;
+
+export const DEFAULT_TEXT_STYLE: TextStyle = {
+  font: "system",
+  weight: 700,
+  italic: false,
+  size: 0.06,
+  color: "#ffffff",
+  caps: false,
+  tracking: 0,
+  lineHeight: 1.2,
+  strokeColor: "#000000",
+  strokeWidth: 0,
+  shadowColor: "rgba(0, 0, 0, 0.5)",
+  shadowBlur: 0,
+  shadowDy: 0,
+  plateColor: null,
+  plateRadius: 0.3,
+  platePadX: 0.6,
+  platePadY: 0.3,
+};
+
+/**
+ * Repairs one field's style.
+ *
+ * Every number is clamped to what its control can produce, so a hand-edited
+ * file cannot ask the rasteriser for a negative font size or a mile of
+ * tracking. Strings are taken as they are: a colour the parser cannot read
+ * draws transparent, which is visible and harmless.
+ */
+export function sanitiseTextStyle(stored: unknown, fallback: TextStyle): TextStyle {
+  const style = (stored ?? {}) as Record<string, unknown>;
+  const text = (key: string, or: string) =>
+    typeof style[key] === "string" ? (style[key] as string) : or;
+
+  return {
+    font: text("font", fallback.font),
+    weight: clamp(Math.round(number(style["weight"], fallback.weight) / 100) * 100, 100, 900),
+    italic: typeof style["italic"] === "boolean" ? style["italic"] : fallback.italic,
+    size: clamp(number(style["size"], fallback.size), 0.01, 0.5),
+    color: text("color", fallback.color),
+    caps: typeof style["caps"] === "boolean" ? style["caps"] : fallback.caps,
+    tracking: clamp(number(style["tracking"], fallback.tracking), -0.1, 0.5),
+    lineHeight: clamp(number(style["lineHeight"], fallback.lineHeight), 0.8, 2.5),
+    strokeColor: text("strokeColor", fallback.strokeColor),
+    strokeWidth: clamp(number(style["strokeWidth"], fallback.strokeWidth), 0, 0.2),
+    shadowColor: text("shadowColor", fallback.shadowColor),
+    shadowBlur: clamp(number(style["shadowBlur"], fallback.shadowBlur), 0, 0.5),
+    shadowDy: clamp(number(style["shadowDy"], fallback.shadowDy), -0.3, 0.3),
+    plateColor:
+      style["plateColor"] === null
+        ? null
+        : typeof style["plateColor"] === "string"
+          ? style["plateColor"]
+          : fallback.plateColor,
+    plateRadius: clamp(number(style["plateRadius"], fallback.plateRadius), 0, 2),
+    platePadX: clamp(number(style["platePadX"], fallback.platePadX), 0, 2),
+    platePadY: clamp(number(style["platePadY"], fallback.platePadY), 0, 2),
+  };
+}
+
+function textRole(stored: unknown): TextRole {
+  return stored === "overline" || stored === "subheading" || stored === "body" ? stored : "heading";
+}
+
+function textAlign(stored: unknown): TextAlign {
+  return stored === "left" || stored === "right" ? stored : "center";
+}
+
+/**
+ * Repairs a stored text.
+ *
+ * Null for one with nothing to draw: no fields, or a span clamping has
+ * emptied. Its fields are kept as stored rather than reconciled with the
+ * template, because the text in them is the user's — a template that has
+ * since gained a field must not overwrite what was typed.
+ */
+function sanitiseText(stored: unknown, duration: Ns, index: number): TextSlice | null {
+  const text = (stored ?? {}) as Record<string, unknown>;
+  const source = (text["source"] ?? {}) as Record<string, unknown>;
+
+  const fields = Array.isArray(text["fields"])
+    ? (text["fields"] as unknown[]).map((field): TextField => {
+        const entry = (field ?? {}) as Record<string, unknown>;
+        return {
+          role: textRole(entry["role"]),
+          text: typeof entry["text"] === "string" ? entry["text"] : "",
+          style: sanitiseTextStyle(entry["style"], DEFAULT_TEXT_STYLE),
+        };
+      })
+    : [];
+  if (fields.length === 0) return null;
+
+  const start = clamp(number(source["start"], 0), 0, duration);
+  const end = clamp(number(source["end"], 0), 0, duration);
+  if (end <= start) return null;
+
+  return {
+    id: typeof text["id"] === "string" ? text["id"] : `text-${index}`,
+    source: { start, end },
+    templateId: typeof text["templateId"] === "string" ? text["templateId"] : "title",
+    fields,
+    x: clamp(number(text["x"], 0.5), 0, 1),
+    y: clamp(number(text["y"], 0.5), 0, 1),
+    width: clamp(number(text["width"], 0.8), 0.1, 1),
+    align: textAlign(text["align"]),
+    gap: clamp(number(text["gap"], 0.02), 0, 0.2),
+    enter: textMotion(text["enter"]),
+    exit: textMotion(text["exit"]),
+    enterMs: clamp(number(text["enterMs"], 500), 0, 3000),
+    exitMs: clamp(number(text["exitMs"], 400), 0, 3000),
+  };
+}
+
+/**
+ * Repairs the stored rows of texts.
+ *
+ * The same rule as zooms within a row — sorted, and anything overlapping what
+ * came before it dropped — and two more across rows: never more than
+ * `MAX_TEXT_TRACKS`, and no empty row after the last one with something on
+ * it, because an empty row is what the timeline conjures for itself.
+ */
+function sanitiseTexts(stored: unknown, duration: Ns): TextTrack[] {
+  if (!Array.isArray(stored)) return [];
+
+  const tracks = (stored as unknown[]).slice(0, MAX_TEXT_TRACKS).map((entry, row): TextTrack => {
+    const track = (entry ?? {}) as Record<string, unknown>;
+    const slices = (Array.isArray(track["slices"]) ? (track["slices"] as unknown[]) : [])
+      .map((text, index) => sanitiseText(text, duration, row * 1000 + index))
+      .filter((text): text is TextSlice => text !== null)
+      .sort((a, b) => a.source.start - b.source.start);
+
+    return {
+      id: typeof track["id"] === "string" ? track["id"] : `texts-${row}`,
+      slices: nonOverlapping(slices),
+    };
+  });
+
+  while (tracks.length > 0 && tracks[tracks.length - 1]!.slices.length === 0) tracks.pop();
+  return tracks;
+}
+
 export interface OutputSettings {
   fps: number;
   format: ExportFormat;
@@ -735,6 +974,12 @@ export interface Project {
    * already saved plays back. There is nothing to protect.
    */
   zoomDefaults: ZoomDefaults;
+  /**
+   * Rows of text overlays, the first nearest the clips. Each row is sorted
+   * and never overlaps itself; rows may overlap each other freely — a higher
+   * row draws over a lower one.
+   */
+  texts: TextTrack[];
   output: OutputSettings;
   /**
    * The words as corrected in the captions panel, or null to caption from the
@@ -1024,9 +1269,24 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
     .filter((zoom) => zoom.source.end > zoom.source.start)
     .sort((a, b) => a.source.start - b.source.start);
 
-  return zooms.filter(
-    (zoom, index) => index === 0 || zoom.source.start >= zooms[index - 1]!.source.end,
-  );
+  return nonOverlapping(zooms);
+}
+
+/**
+ * A sorted list with everything that overlaps what was kept before it dropped.
+ *
+ * Against the last one *kept*, not the previous one in the list. Comparing
+ * neighbours threw away a span that only overlapped one already discarded —
+ * three zooms at 1–3, 2–5 and 4–6 lost the third, which touched nothing that
+ * survived.
+ */
+function nonOverlapping<T extends { source: { start: Ns; end: Ns } }>(sorted: T[]): T[] {
+  const kept: T[] = [];
+  for (const entry of sorted) {
+    const last = kept[kept.length - 1];
+    if (!last || entry.source.start >= last.source.end) kept.push(entry);
+  }
+  return kept;
 }
 
 /**
@@ -1066,6 +1326,7 @@ export function newProject(recordingId: string, duration: Ns, fullScreen = false
     frame: { width: 1920, height: 1080, presetId: DEFAULT_PRESET_ID },
     defaults,
     zooms: [],
+    texts: [],
     zoomDefaults: { ...DEFAULT_ZOOM_LOOK },
     tracks: [
       {
@@ -1214,6 +1475,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     frame: { width, height, presetId: stored.frame?.presetId ?? null },
     zooms: sanitiseZooms(stored.zooms, duration),
     zoomDefaults: sanitiseZoomLook(stored.zoomDefaults, DEFAULT_ZOOM),
+    texts: sanitiseTexts(stored.texts, duration),
     defaults: {
       layout: {
         ...DEFAULT_LAYOUT,

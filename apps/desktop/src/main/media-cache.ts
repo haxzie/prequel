@@ -38,14 +38,31 @@ export function isJpeg(head: Buffer): boolean {
 
 /** The same check against a file already on disk, for repairing a poisoned one. */
 export function fileIsJpeg(path: string): boolean {
+  return fileIs(path, isJpeg);
+}
+
+/**
+ * Whether these bytes are a font file the engine can load.
+ *
+ * `wOF2`, `wOFF`, the TrueType `00 01 00 00` and the CFF `OTTO`, which are
+ * every container the catalogue accepts. The same reason `isJpeg` exists: a
+ * page of HTML saved under a font's name would be "there" for ever and load
+ * as nothing.
+ */
+export function isFont(head: Buffer): boolean {
+  if (head.length < 4) return false;
+  const tag = head.subarray(0, 4).toString("latin1");
+  return tag === "wOF2" || tag === "wOFF" || tag === "OTTO" || tag === "\0\u0001\0\0";
+}
+
+/** The same check against a file already on disk. */
+export function fileIs(path: string, check: (head: Buffer) => boolean): boolean {
   let handle: number | undefined;
   try {
     handle = openSync(path, "r");
-    const head = Buffer.alloc(3);
-    // A file too short to hold the marker reads fewer bytes, and the slice is
-    // then shorter than three, which `isJpeg` refuses.
-    const read = readSync(handle, head, 0, 3, 0);
-    return isJpeg(head.subarray(0, read));
+    const head = Buffer.alloc(4);
+    const read = readSync(handle, head, 0, 4, 0);
+    return check(head.subarray(0, read));
   } catch {
     return false;
   } finally {
@@ -54,20 +71,26 @@ export function fileIsJpeg(path: string): boolean {
 }
 
 /**
- * Fetches one picture from the API into `destination`, unless it is there.
+ * Fetches one file from the API into `destination`, unless it is there.
  *
  * Written beside and renamed, so a process that dies mid-write leaves nothing
  * rather than a half-downloaded JPEG — which decodes to nothing and would be
  * cached as if it had worked.
  *
- * A file that is present but is not a JPEG is replaced rather than trusted. See
- * `isJpeg`: existence alone is how a page of HTML came to sit in a recording
- * under a picture's name, and nothing ever went back for it.
+ * A file that is present but does not pass `check` is replaced rather than
+ * trusted. See `isJpeg`: existence alone is how a page of HTML came to sit in
+ * a recording under a picture's name, and nothing ever went back for it.
+ * The check is a parameter because fonts take the same route as pictures and
+ * a JPEG sniff would refuse every one of them.
  */
-export async function fetchInto(path: string, destination: string): Promise<boolean> {
+export async function fetchInto(
+  path: string,
+  destination: string,
+  check: (head: Buffer) => boolean = isJpeg,
+): Promise<boolean> {
   if (existsSync(destination)) {
-    if (fileIsJpeg(destination)) return true;
-    console.warn(`[media-cache] ${destination} is not a picture; fetching it again`);
+    if (fileIs(destination, check)) return true;
+    console.warn(`[media-cache] ${destination} is not what it should be; fetching it again`);
   }
 
   try {
@@ -78,10 +101,10 @@ export async function fetchInto(path: string, destination: string): Promise<bool
 
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength === 0) throw new Error(`${path} was empty`);
-    if (!isJpeg(bytes)) {
+    if (!check(bytes)) {
       // Whatever answered, it was not the API. Refused rather than written,
       // because a bad file on disk outlives the mistake that produced it.
-      throw new Error(`${path} did not answer with a JPEG`);
+      throw new Error(`${path} did not answer with the file asked for`);
     }
 
     await mkdir(join(destination, ".."), { recursive: true });

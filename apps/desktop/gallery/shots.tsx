@@ -44,7 +44,9 @@ export type Step =
   /** Wait until `selector` matches something. */
   | { kind: "wait"; selector: string }
   /** Let animations finish. */
-  | { kind: "settle"; ms: number };
+  | { kind: "settle"; ms: number }
+  /** Scroll the first element matching `selector` to the top of its scroller. */
+  | { kind: "scrollTo"; selector: string };
 
 export interface Shot {
   id: string;
@@ -198,7 +200,11 @@ export const SHOTS: readonly Shot[] = [
     frame: "workspace",
     install: install(),
     render: () => <EditorRoute name={recording} />,
-    steps: [...EDITOR_READY, { kind: "click", selector: 'button[aria-label="Layout"]' }, { kind: "settle", ms: 400 }],
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Layout"]' },
+      { kind: "settle", ms: 400 },
+    ],
     clip: "frame",
   },
   inspector("inspector-presets", "Presets"),
@@ -245,6 +251,75 @@ export const SHOTS: readonly Shot[] = [
       { kind: "settle", ms: 400 },
     ],
     clip: "[data-panel='inspector']",
+  },
+  // `T` adds a text at the playhead and selects it, which swaps the panel to
+  // the text's own three tabs. The settle is longer than a zoom's: the field
+  // bitmaps are drawn after a 120 ms pause and then fetched.
+  {
+    id: "editor-text",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    // The click on the tab already showing is a no-op that takes the pointer
+    // off the ruler: paused and hovered, the preview follows the hover, which
+    // is the text's own first frame — the one frame it is not yet visible on.
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyT" },
+      { kind: "click", selector: 'button[aria-label="Text"]' },
+      { kind: "settle", ms: 1200 },
+    ],
+    clip: "frame",
+  },
+  {
+    id: "inspector-text",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [...EDITOR_READY, { kind: "key", code: "KeyT" }, { kind: "settle", ms: 800 }],
+    clip: "[data-panel='inspector']",
+  },
+  {
+    id: "inspector-text-style",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyT" },
+      { kind: "click", selector: 'button[aria-label="Style"]' },
+      { kind: "settle", ms: 800 },
+    ],
+    clip: "[data-panel='inspector']",
+  },
+  {
+    id: "inspector-text-motion",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyT" },
+      { kind: "click", selector: 'button[aria-label="Style"]' },
+      { kind: "scrollTo", selector: "[data-section='enter']" },
+      { kind: "settle", ms: 600 },
+    ],
+    clip: "[data-panel='inspector']",
+  },
+  {
+    id: "timeline-text",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    // Two, so the spare row above the first is on show with a text under it.
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyT" },
+      { kind: "key", code: "KeyT" },
+      { kind: "settle", ms: 800 },
+    ],
+    clip: "[data-panel='timeline']",
+    maxWidth: 720,
   },
   {
     id: "timeline-zoom",

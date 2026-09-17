@@ -391,6 +391,8 @@ export const IPC_CHANNELS = {
   backgroundsCatalogue: "backgrounds:catalogue",
   backgroundsThumbnail: "backgrounds:thumbnail",
   backgroundsEnsure: "backgrounds:ensure",
+  fontsCatalogue: "fonts:catalogue",
+  fontsEnsure: "fonts:ensure",
   /**
    * Workspace renderer → main: I am mounted, send me what I should show.
    *
@@ -407,8 +409,8 @@ export const IPC_CHANNELS = {
   scenePresetsDelete: "scenePresets:delete",
   scenePresetsApplyImage: "scenePresets:applyImage",
   scenePresetsApplyWatermark: "scenePresets:applyWatermark",
-  editorWriteCaption: "editor:writeCaption",
-  editorSweepCaptions: "editor:sweepCaptions",
+  editorWriteBitmap: "editor:writeBitmap",
+  editorSweepBitmaps: "editor:sweepBitmaps",
   /**
    * The local library.
    *
@@ -632,6 +634,40 @@ export interface BackgroundsCatalogue {
   updated: string;
   categories: { id: string; label: string }[];
   backgrounds: BackgroundListing[];
+}
+
+/**
+ * One hosted font family as the API describes it.
+ *
+ * Re-declared here rather than imported from `@prequel/api`, as the
+ * backgrounds are: the HTTP shape is the contract, and a shared package would
+ * be a second reason for either side to change.
+ */
+export interface FontVariantListing {
+  /** 100 to 900, in hundreds. Only the weights that really exist are listed. */
+  weight: number;
+  italic: boolean;
+  /** The file name, which is what the cache stores it under. */
+  file: string;
+  md5: string;
+  bytes: number;
+  /** A path on the API rather than a URL the renderer could use. */
+  url: string;
+}
+
+export interface FontFamilyListing {
+  /** What a project's `TextStyle.font` stores. */
+  id: string;
+  label: string;
+  category: string;
+  variants: FontVariantListing[];
+}
+
+export interface FontsCatalogue {
+  version: number;
+  updated: string;
+  categories: { id: string; label: string }[];
+  families: FontFamilyListing[];
 }
 
 /**

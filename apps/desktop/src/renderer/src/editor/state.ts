@@ -14,8 +14,10 @@
 import {
   clearOverride,
   clearSection,
+  DEFAULT_TEXT_LENGTH,
   DEFAULT_ZOOM,
   DEFAULT_ZOOM_LENGTH,
+  MAX_TEXT_TRACKS,
   resolveSettings,
   setOverride,
   type LayoutPreset,
@@ -23,8 +25,12 @@ import {
   type SettingsSection,
   type Slice,
   type SliceSettings,
+  type TextSlice,
+  type TextStyle,
+  type TextTrack,
   type ZoomSlice,
 } from "../../../shared/project";
+import { retemplated, textFromTemplate, textTemplate } from "../../../shared/text-templates";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
@@ -43,6 +49,9 @@ const MIN_SLICE_NS = 100_000_000;
  */
 const MIN_ZOOM_NS = 300_000_000;
 
+/** Shortest text worth having: the same floor as a zoom, for the same reason. */
+const MIN_TEXT_NS = 300_000_000;
+
 export interface EditorState {
   project: Project;
   /** Which slice the inspector is editing, or null for the project defaults. */
@@ -55,6 +64,8 @@ export interface EditorState {
    * what does it override, what does it inherit — has no answer for a zoom.
    */
   selectedZoomId: string | null;
+  /** Which text is selected, or null. Separate for the reason the zoom is. */
+  selectedTextId: string | null;
   /**
    * How much recording there actually is, in source time.
    *
@@ -170,6 +181,59 @@ export type EditorAction =
   | { type: "setZoom"; zoomId: string; patch: Partial<ZoomSlice> }
   | { type: "moveZoom"; zoomId: string; start: MediaTime }
   | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime }
+  /**
+   * Lays a text on a row. `track` may be one past the last row, which makes
+   * the row — that is how the spare row the timeline shows becomes real.
+   * `at` and `to` are source times, as `addZoom`'s are.
+   */
+  | { type: "addText"; track: number; at: MediaTime; to?: MediaTime; templateId?: string }
+  /** The transport's Add Text: project time, the first row with room. */
+  | { type: "addTextNear"; at: MediaTime; templateId?: string }
+  | { type: "selectText"; textId: string | null }
+  | { type: "deleteText"; textId: string }
+  /** Copies a text onto a fresh span in the first gap after it, on its row. */
+  | { type: "duplicateText"; textId: string }
+  /**
+   * Copies a text to where an option-drag let go of it: a source time and a
+   * row, which may be the spare one. Declined where nothing there will hold
+   * it, the way a move between rows is.
+   */
+  | { type: "copyText"; textId: string; start: MediaTime; track: number }
+  /** Position, timing and layout: everything but the fields. */
+  | { type: "setText"; textId: string; patch: Partial<Omit<TextSlice, "id" | "source" | "fields">> }
+  /** The words and the look of one field. */
+  | {
+      type: "setTextField";
+      textId: string;
+      index: number;
+      patch: { text?: string; style?: Partial<TextStyle> };
+    }
+  /**
+   * Every field's size at once — the corner drag in the preview.
+   *
+   * Absolute sizes rather than a ratio: a drag is a stream, and a ratio
+   * applied to what the last move left would compound on every one.
+   */
+  | { type: "sizeText"; textId: string; sizes: number[] }
+  | { type: "applyTextTemplate"; textId: string; templateId: string }
+  /**
+   * Slides a text along its row, or onto another one.
+   *
+   * `track` is the row the pointer is over, which may be the spare row one
+   * past the last; left out, the text stays on its own. A row with no room
+   * at that moment declines the move and the text stays where it was,
+   * which is what a drag that has not found a home should look like.
+   */
+  | { type: "moveText"; textId: string; start: MediaTime; track?: number }
+  /**
+   * Drops the empty rows above the last text, once a drag between rows has
+   * ended. Not part of `moveText` itself: a row pruned the moment it empties
+   * shifts every row under the pointer, so the next move lands the bar on
+   * the spare row that reappears, which adds the row back — and the bar
+   * flickers between two rows for as long as the pointer moves.
+   */
+  | { type: "tidyTexts" }
+  | { type: "trimText"; textId: string; edge: "start" | "end"; source: MediaTime }
   | { type: "undo" }
   /**
    * A new drag is starting, so it must not join the previous one's undo entry.
@@ -185,6 +249,7 @@ export function initialState(project: Project, duration: MediaTime = 0): EditorS
     project,
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
+    selectedTextId: null,
     // Zero until a recording is opened, which is the honest answer: the
     // placeholder project this starts on describes no media at all. Every trim
     // is clamped against it, and clamping to zero is harmless because there is
@@ -235,6 +300,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       selectedZoomId: previous.zooms.some((zoom) => zoom.id === state.selectedZoomId)
         ? state.selectedZoomId
         : null,
+      selectedTextId: findText(previous, state.selectedTextId) ? state.selectedTextId : null,
     };
   }
 
@@ -290,6 +356,13 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "deleteZoom":
     case "duplicateZoom":
     case "setZooms":
+    case "addText":
+    case "addTextNear":
+    case "deleteText":
+    case "duplicateText":
+    case "copyText":
+    // One click that rewrites every field's look, like a preset.
+    case "applyTextTemplate":
       return { coalesce: null };
 
     // The two appearance changes that are undoable, which is a deliberate
@@ -316,6 +389,14 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
       return { coalesce: `moveZoom:${action.zoomId}` };
     case "trimZoom":
       return { coalesce: `trimZoom:${action.zoomId}:${action.edge}` };
+    case "moveText":
+      return { coalesce: `moveText:${action.textId}` };
+    case "trimText":
+      return { coalesce: `trimText:${action.textId}:${action.edge}` };
+    // Typing into a field is a stream, like the transcript. Only the words:
+    // a style change through the same action is a slider, and is not banked.
+    case "setTextField":
+      return "text" in action.patch ? { coalesce: `text:${action.textId}:${action.index}` } : null;
     // Typed, which is a stream too: one keystroke per action, and a burst of
     // them is one thing the user did. The editor sends `beginEdit` when the
     // typing pauses, so a correction made a while later is its own step.
@@ -351,10 +432,28 @@ function apply(
       // Not a change worth persisting, so the revision stays put. Selecting a
       // clip drops the zoom selection: the inspector shows one thing at a time,
       // and leaving both set would make "what am I editing" unanswerable.
-      return { ...state, selectedSliceId: action.sliceId, selectedZoomId: null };
+      return {
+        ...state,
+        selectedSliceId: action.sliceId,
+        selectedZoomId: null,
+        selectedTextId: null,
+      };
 
     case "selectZoom":
-      return { ...state, selectedZoomId: action.zoomId, selectedSliceId: null };
+      return {
+        ...state,
+        selectedZoomId: action.zoomId,
+        selectedSliceId: null,
+        selectedTextId: null,
+      };
+
+    case "selectText":
+      return {
+        ...state,
+        selectedTextId: action.textId,
+        selectedSliceId: null,
+        selectedZoomId: null,
+      };
 
     case "setFrame":
       return edit(state, (project) => framed({ ...project, frame: action.frame }));
@@ -445,7 +544,394 @@ function apply(
 
     case "trimZoom":
       return trimZoom(state, action);
+
+    case "addText":
+      return addText(state, action.track, action.at, action.to, action.templateId);
+
+    case "addTextNear":
+      return addTextNear(state, action.at, action.templateId);
+
+    case "deleteText":
+      return deleteText(state, action.textId);
+
+    case "duplicateText":
+      return duplicateText(state, action.textId);
+
+    case "copyText":
+      return copyText(state, action);
+
+    case "setText":
+      return editText(state, action.textId, (text) => ({ ...text, ...action.patch }));
+
+    case "setTextField":
+      return editText(state, action.textId, (text) => ({
+        ...text,
+        fields: text.fields.map((field, index) =>
+          index === action.index
+            ? {
+                ...field,
+                ...action.patch,
+                style: { ...field.style, ...(action.patch.style ?? {}) },
+              }
+            : field,
+        ),
+      }));
+
+    case "sizeText":
+      return editText(state, action.textId, (text) => ({
+        ...text,
+        fields: text.fields.map((field, index) => ({
+          ...field,
+          // Held to what the style's own clamp allows, so a corner dragged
+          // off the frame cannot store a size the panel then cannot show.
+          style: {
+            ...field.style,
+            size: clampTo(action.sizes[index] ?? field.style.size, 0.01, 0.5),
+          },
+        })),
+      }));
+
+    case "applyTextTemplate":
+      return editText(state, action.textId, (text) =>
+        retemplated(text, textTemplate(action.templateId)),
+      );
+
+    case "moveText":
+      return moveText(state, action);
+
+    case "tidyTexts": {
+      const texts = withoutTrailingEmpty(state.project.texts);
+      // Nothing to tidy is not an edit, or every drop would bump the revision.
+      if (texts.length === state.project.texts.length) return state;
+      return edit(state, (project) => ({ ...project, texts }));
+    }
+
+    case "trimText":
+      return trimText(state, action);
   }
+}
+
+// ── Texts ───────────────────────────────────────────────────────────────────
+
+/** A text by id, wherever its row. */
+export function findText(project: Project, textId: string | null): TextSlice | undefined {
+  if (textId === null) return undefined;
+  for (const track of project.texts) {
+    const found = track.slices.find((text) => text.id === textId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** Which row holds a text, or -1. */
+function trackOf(project: Project, textId: string): number {
+  return project.texts.findIndex((track) => track.slices.some((text) => text.id === textId));
+}
+
+/**
+ * The span a text pressed at `at` on a row would occupy, or null if none would.
+ *
+ * `laneSpanAt` over that row. A row one past the last is empty by definition,
+ * which is what lets the timeline's spare row take a press.
+ */
+export function textSpanAt(
+  project: Project,
+  track: number,
+  at: MediaTime,
+  to?: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  // One past the last row is the spare row; further than that is nothing.
+  if (track < 0 || track > project.texts.length || track >= MAX_TEXT_TRACKS) return null;
+  const lane = project.texts[track]?.slices ?? [];
+  return laneSpanAt(lane, sourceEnd(project), MIN_TEXT_NS, DEFAULT_TEXT_LENGTH, at, to);
+}
+
+/**
+ * Where a text added at the playhead would go, in source time, or null.
+ *
+ * The first row that has room *at the playhead* — the spare row included,
+ * which is what the rows are for: a second title over the same moment goes
+ * above the first, not somewhere else on its row. Only when every row is
+ * taken at that moment does it look sideways, the way a zoom does, along the
+ * first row.
+ */
+export function textSpanNear(
+  project: Project,
+  at: MediaTime,
+): { track: number; span: { start: MediaTime; end: MediaTime } } | null {
+  const duration = sourceEnd(project);
+  const rows = Math.min(project.texts.length + 1, MAX_TEXT_TRACKS);
+  for (let track = 0; track < rows; track += 1) {
+    const lane = project.texts[track]?.slices ?? [];
+    const span = laneSpanAt(lane, duration, MIN_TEXT_NS, DEFAULT_TEXT_LENGTH, at);
+    if (span) return { track, span };
+  }
+
+  const span = laneSpanNear(
+    project.texts[0]?.slices ?? [],
+    duration,
+    MIN_TEXT_NS,
+    DEFAULT_TEXT_LENGTH,
+    at,
+  );
+  return span ? { track: 0, span } : null;
+}
+
+function addText(
+  state: EditorState,
+  track: number,
+  at: MediaTime,
+  to: MediaTime | undefined,
+  templateId: string | undefined,
+): EditorState {
+  const span = textSpanAt(state.project, track, at, to);
+  if (!span) return state;
+  return placeNewText(
+    state,
+    track,
+    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), span),
+  );
+}
+
+function addTextNear(
+  state: EditorState,
+  at: MediaTime,
+  templateId: string | undefined,
+): EditorState {
+  const source = toSourceTime(placedSlices(state.project), at);
+  if (source === null) return state;
+  const found = textSpanNear(state.project, source);
+  if (!found) return state;
+  return placeNewText(
+    state,
+    found.track,
+    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), found.span),
+  );
+}
+
+function nextTextId(state: EditorState): string {
+  const count = state.project.texts.reduce((sum, track) => sum + track.slices.length, 0);
+  return `text-${String(state.revision)}-${String(count)}`;
+}
+
+/** Lays a text on a row, making the row where it is one past the last. */
+function placeNewText(state: EditorState, track: number, text: TextSlice): EditorState {
+  return {
+    ...edit(state, (project) => {
+      const texts = project.texts.map((row) => ({ ...row, slices: [...row.slices] }));
+      while (texts.length <= track) texts.push({ id: `texts-${String(texts.length)}`, slices: [] });
+      const row = texts[track]!;
+      row.slices = [...row.slices, text].sort((a, b) => a.source.start - b.source.start);
+      return { ...project, texts };
+    }),
+    // Selected on the way in, as a zoom is: the point of adding one is to say
+    // what it should read.
+    selectedTextId: text.id,
+    selectedSliceId: null,
+    selectedZoomId: null,
+  };
+}
+
+/**
+ * Removes a text, and any empty rows left above the last one with a text.
+ *
+ * Rows below stay even when emptied: a row is where it is because of what is
+ * on the rows around it, and closing a gap would move every text above it
+ * down a row.
+ */
+function deleteText(state: EditorState, textId: string): EditorState {
+  if (!findText(state.project, textId)) return state;
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      texts: withoutTrailingEmpty(withoutText(project.texts, textId)),
+    })),
+    selectedTextId: state.selectedTextId === textId ? null : state.selectedTextId,
+  };
+}
+
+function withoutText(texts: TextTrack[], textId: string): TextTrack[] {
+  return texts.map((track) => ({
+    ...track,
+    slices: track.slices.filter((text) => text.id !== textId),
+  }));
+}
+
+function withoutTrailingEmpty(texts: TextTrack[]): TextTrack[] {
+  const kept = [...texts];
+  while (kept.length > 0 && kept[kept.length - 1]!.slices.length === 0) kept.pop();
+  return kept;
+}
+
+function duplicateText(state: EditorState, textId: string): EditorState {
+  const source = findText(state.project, textId);
+  if (!source) return state;
+  const track = trackOf(state.project, textId);
+
+  const length = source.source.end - source.source.start;
+  const span = textSpanAt(state.project, track, source.source.end, source.source.end + length);
+  if (!span) return state;
+
+  const copy: TextSlice = {
+    ...source,
+    id: nextTextId(state),
+    source: span,
+    fields: source.fields.map((field) => ({ ...field, style: { ...field.style } })),
+  };
+  return placeNewText(state, track, copy);
+}
+
+/**
+ * Where a copy of a text let go at `start` on `track` would land, or null.
+ *
+ * The one rule behind both the ghost an option-drag draws and the drop that
+ * ends it, so the outline never promises a copy the reducer then declines.
+ */
+export function textCopySpan(
+  project: Project,
+  textId: string,
+  start: MediaTime,
+  track: number,
+): { start: MediaTime; end: MediaTime } | null {
+  const text = findText(project, textId);
+  if (!text) return null;
+  if (track < 0 || track > project.texts.length || track >= MAX_TEXT_TRACKS) return null;
+  const lane = project.texts[track]?.slices ?? [];
+  return laneRoom(lane, text.source.end - text.source.start, start, sourceEnd(project));
+}
+
+function copyText(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "copyText" }>,
+): EditorState {
+  const source = findText(state.project, action.textId);
+  const span = textCopySpan(state.project, action.textId, action.start, action.track);
+  if (!source || !span) return state;
+
+  const copy: TextSlice = {
+    ...source,
+    id: nextTextId(state),
+    source: span,
+    fields: source.fields.map((field) => ({ ...field, style: { ...field.style } })),
+  };
+  return placeNewText(state, action.track, copy);
+}
+
+function editText(
+  state: EditorState,
+  textId: string,
+  change: (text: TextSlice) => TextSlice,
+): EditorState {
+  if (!findText(state.project, textId)) return state;
+  return edit(state, (project) => ({
+    ...project,
+    texts: project.texts.map((track) => ({
+      ...track,
+      slices: track.slices.map((text) => (text.id === textId ? change(text) : text)),
+    })),
+  }));
+}
+
+function moveText(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "moveText" }>,
+): EditorState {
+  const from = trackOf(state.project, action.textId);
+  const lane = state.project.texts[from]?.slices;
+  const text = lane?.find((entry) => entry.id === action.textId);
+  if (!lane || !text) return state;
+
+  const limit = Math.min(sourceEnd(state.project), state.duration);
+  const to = action.track ?? from;
+
+  if (to === from) {
+    const moved = laneMoved(lane, action.textId, action.start, limit);
+    if (!moved) return state;
+    return editText(state, action.textId, (entry) => ({ ...entry, source: moved }));
+  }
+
+  // Onto another row: the spare row is allowed, anything past it is not.
+  if (to < 0 || to > state.project.texts.length || to >= MAX_TEXT_TRACKS) return state;
+  const target = state.project.texts[to]?.slices ?? [];
+  const length = text.source.end - text.source.start;
+  const source = laneRoom(target, length, action.start, limit);
+  if (!source) return state;
+
+  const moved: TextSlice = { ...text, source };
+  return edit(state, (project) => {
+    const texts = project.texts.map((row) => ({
+      ...row,
+      slices: row.slices.filter((entry) => entry.id !== action.textId),
+    }));
+    while (texts.length <= to) texts.push({ id: `texts-${String(texts.length)}`, slices: [] });
+    const row = texts[to]!;
+    row.slices = [...row.slices, moved].sort((a, b) => a.source.start - b.source.start);
+    return { ...project, texts };
+  });
+}
+
+/**
+ * Where a span of `length` dropped at `start` lands in a lane it is not yet
+ * on, or null when nothing there will hold it.
+ *
+ * `laneMoved` for an entry that is arriving rather than already there: the
+ * gap the drop landed in bounds it, and a drop straight onto another entry
+ * has no gap to be held in and is declined.
+ */
+export function laneRoom(
+  lane: readonly Laned[],
+  length: MediaTime,
+  start: MediaTime,
+  limit: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  const at = clampTo(start, 0, limit);
+  if (lane.some((entry) => at >= entry.source.start && at < entry.source.end)) return null;
+
+  const floor = lane.reduce(
+    (edge, entry) => (entry.source.end <= at ? Math.max(edge, entry.source.end) : edge),
+    0,
+  );
+  const ceiling = lane.reduce(
+    (edge, entry) => (entry.source.start > at ? Math.min(edge, entry.source.start) : edge),
+    limit,
+  );
+  if (ceiling - floor < length) return null;
+
+  const from = clampTo(at, floor, ceiling - length);
+  return { start: from, end: from + length };
+}
+
+function trimText(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "trimText" }>,
+): EditorState {
+  const track = trackOf(state.project, action.textId);
+  const lane = state.project.texts[track]?.slices;
+  if (!lane) return state;
+
+  const trimmed = laneTrimmed(
+    lane,
+    action.textId,
+    action.edge,
+    action.source,
+    sourceEnd(state.project),
+    MIN_TEXT_NS,
+  );
+  if (!trimmed) return state;
+  return editText(state, action.textId, (text) => ({ ...text, source: trimmed }));
+}
+
+/**
+ * Where a text sits in project time, or null when the stretch was cut.
+ *
+ * `zoomInProject` for a text, and the same reasoning: stored in source time,
+ * mapped back through the slices to put the playhead on it.
+ */
+export function textInProject(
+  project: Project,
+  text: TextSlice,
+): { start: MediaTime; end: MediaTime } | null {
+  return zoomInProject(project, text);
 }
 
 /**
@@ -485,6 +971,7 @@ function addZoom(
     // where it should go.
     selectedZoomId: zoom.id,
     selectedSliceId: null,
+    selectedTextId: null,
   };
 }
 
@@ -515,22 +1002,7 @@ export function zoomSpanAt(
   at: MediaTime,
   to?: MediaTime,
 ): { start: MediaTime; end: MediaTime } | null {
-  const { zooms } = project;
-  const duration = sourceEnd(project);
-
-  const from = Math.max(0, Math.min(at, duration));
-  if (zooms.some((zoom) => from >= zoom.source.start && from < zoom.source.end)) return null;
-
-  // The gap the press landed in. `from` is inside it, so these two bound the
-  // whole of what may be drawn without touching a neighbour.
-  const floor = zooms.reduce((edge, zoom) => (zoom.source.end <= from ? zoom.source.end : edge), 0);
-  const ceiling = zooms.find((zoom) => zoom.source.start > from)?.source.start ?? duration;
-
-  const drawn = to === undefined ? from + DEFAULT_ZOOM_LENGTH : Math.max(0, Math.min(to, duration));
-  const start = Math.max(floor, Math.min(from, drawn));
-  const end = Math.min(ceiling, Math.max(from, drawn));
-
-  return end - start < MIN_ZOOM_NS ? null : { start, end };
+  return laneSpanAt(project.zooms, sourceEnd(project), MIN_ZOOM_NS, DEFAULT_ZOOM_LENGTH, at, to);
 }
 
 /**
@@ -557,29 +1029,113 @@ export function zoomSpanNear(
   project: Project,
   at: MediaTime,
 ): { start: MediaTime; end: MediaTime } | null {
-  const { zooms } = project;
-  const duration = sourceEnd(project);
+  return laneSpanNear(project.zooms, sourceEnd(project), MIN_ZOOM_NS, DEFAULT_ZOOM_LENGTH, at);
+}
 
-  // The empty stretches, in order: before the first zoom, between each pair,
-  // and after the last. Zooms are kept sorted by start, so consecutive pairs
-  // are neighbours.
-  const edges = [0, ...zooms.flatMap((zoom) => [zoom.source.start, zoom.source.end]), duration];
+// ── Lanes ───────────────────────────────────────────────────────────────────
+//
+// A zoom row and a text row are the same thing to the timeline: a sorted list
+// of spans in source time, none of which may cover the same moment. The rules
+// below are written once over that shape and both rows call them, so the two
+// cannot drift — a text that could be dragged over its neighbour while a zoom
+// could not would be a bug that looks like a design choice.
+
+/** What a lane holds: anything with a source span and an id. */
+interface Laned {
+  id: string;
+  source: { start: MediaTime; end: MediaTime };
+}
+
+/**
+ * The span a press at `at` would occupy in a lane, or null if none would.
+ *
+ * `to` is where a drag ended. Without it the span takes `length` forwards
+ * from the press, which is what a click asks for. With it the span is
+ * whatever was drawn out, in either direction — the press is one edge and
+ * the release is the other, and which of them is the start falls out of the
+ * two rather than out of a rule about dragging rightwards.
+ *
+ * Held inside the gap the press landed in, at both ends. Clamping only the far
+ * end was enough while the length was fixed and grew forwards; a drag can run
+ * back over the span behind it, and clamping the near end is what keeps "no
+ * two cover the same moment" true without asking the caller.
+ *
+ * Null where something already is, or where what is left is too small to
+ * grab afterwards.
+ */
+export function laneSpanAt(
+  lane: readonly Laned[],
+  duration: MediaTime,
+  minimum: MediaTime,
+  length: MediaTime,
+  at: MediaTime,
+  to?: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  const from = Math.max(0, Math.min(at, duration));
+  if (lane.some((entry) => from >= entry.source.start && from < entry.source.end)) return null;
+
+  // The gap the press landed in. `from` is inside it, so these two bound the
+  // whole of what may be drawn without touching a neighbour.
+  const floor = lane.reduce(
+    (edge, entry) => (entry.source.end <= from ? entry.source.end : edge),
+    0,
+  );
+  const ceiling = lane.find((entry) => entry.source.start > from)?.source.start ?? duration;
+
+  const drawn = to === undefined ? from + length : Math.max(0, Math.min(to, duration));
+  const start = Math.max(floor, Math.min(from, drawn));
+  const end = Math.min(ceiling, Math.max(from, drawn));
+
+  return end - start < minimum ? null : { start, end };
+}
+
+/**
+ * The span an entry added at the playhead would occupy, or null if none would.
+ *
+ * `laneSpanAt` answers for a pointer, which is always somewhere a span may or
+ * may not go and can move if it may not. A playhead cannot: it stops wherever
+ * playback was paused, and that is over an existing span as often as not. So
+ * where `laneSpanAt` declines, this looks sideways for the nearest gap that
+ * will hold one — the closest empty stretch beside whatever is in the way —
+ * and lays the span hard against the near end of it, so it sits next to the
+ * moment asked for rather than somewhere in the middle of the gap.
+ *
+ * Every gap is a candidate, not just the two beside the playhead: a run of
+ * back-to-back spans, or a gap between them too small to grab, is skipped
+ * over rather than stopping the search. The one chosen is the nearest, and on
+ * a tie the later one — playback runs forwards, so that is the one about to
+ * be seen.
+ *
+ * Null only when no gap anywhere is big enough, which is also the answer to
+ * "can one be added at all" — the same call from any `at` says so.
+ */
+export function laneSpanNear(
+  lane: readonly Laned[],
+  duration: MediaTime,
+  minimum: MediaTime,
+  length: MediaTime,
+  at: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  // The empty stretches, in order: before the first, between each pair, and
+  // after the last. Lanes are kept sorted by start, so consecutive pairs are
+  // neighbours.
+  const edges = [0, ...lane.flatMap((entry) => [entry.source.start, entry.source.end]), duration];
 
   let best: { span: { start: MediaTime; end: MediaTime }; distance: MediaTime } | null = null;
   for (let index = 0; index < edges.length; index += 2) {
     const floor = edges[index]!;
     const ceiling = edges[index + 1]!;
-    if (ceiling - floor < MIN_ZOOM_NS) continue;
+    if (ceiling - floor < minimum) continue;
 
     // The point in this gap closest to the playhead — the playhead itself when
     // it is inside. Forwards from there when there is room, the way a click
-    // grows; otherwise backwards from the gap's far end, so the zoom still
+    // grows; otherwise backwards from the gap's far end, so the span still
     // finishes hard against whatever stopped it growing.
     const anchor = Math.max(floor, Math.min(at, ceiling));
     const span =
-      ceiling - anchor >= MIN_ZOOM_NS
-        ? zoomSpanAt(project, anchor)
-        : zoomSpanAt(project, Math.max(floor, ceiling - DEFAULT_ZOOM_LENGTH), ceiling);
+      ceiling - anchor >= minimum
+        ? laneSpanAt(lane, duration, minimum, length, anchor)
+        : laneSpanAt(lane, duration, minimum, length, Math.max(floor, ceiling - length), ceiling);
     if (!span) continue;
 
     const distance = Math.abs(at - anchor);
@@ -587,6 +1143,58 @@ export function zoomSpanNear(
   }
 
   return best?.span ?? null;
+}
+
+/**
+ * Slides one entry of a lane so it starts at `start`, or as near as its
+ * neighbours allow.
+ *
+ * Its length is preserved and its neighbours are not: a move that would
+ * collide stops against them rather than pushing them along or overlapping,
+ * so the invariant that no two cover the same moment holds without the
+ * caller having to know about it. `limit` is the furthest the end may reach.
+ */
+export function laneMoved(
+  lane: readonly Laned[],
+  id: string,
+  start: MediaTime,
+  limit: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  const index = lane.findIndex((entry) => entry.id === id);
+  const entry = lane[index];
+  if (!entry) return null;
+
+  const length = entry.source.end - entry.source.start;
+  const floor = lane[index - 1]?.source.end ?? 0;
+  const ceiling = Math.min(lane[index + 1]?.source.start ?? limit, limit);
+
+  const from = clampTo(start, floor, Math.max(floor, ceiling - length));
+  return { start: from, end: from + length };
+}
+
+/** Moves one edge of an entry, without letting it cross its neighbours or
+    leave less than `minimum` behind. */
+export function laneTrimmed(
+  lane: readonly Laned[],
+  id: string,
+  edge: "start" | "end",
+  source: MediaTime,
+  limit: MediaTime,
+  minimum: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  const index = lane.findIndex((entry) => entry.id === id);
+  const entry = lane[index];
+  if (!entry) return null;
+
+  const floor = lane[index - 1]?.source.end ?? 0;
+  const ceiling = lane[index + 1]?.source.start ?? limit;
+
+  const span =
+    edge === "start"
+      ? { start: clampTo(source, floor, entry.source.end - minimum), end: entry.source.end }
+      : { start: entry.source.start, end: clampTo(source, entry.source.start + minimum, ceiling) };
+
+  return span.end - span.start < minimum ? null : span;
 }
 
 /**
@@ -601,31 +1209,19 @@ function moveZoom(
   state: EditorState,
   action: Extract<EditorAction, { type: "moveZoom" }>,
 ): EditorState {
-  const { zooms } = state.project;
-  const index = zooms.findIndex((zoom) => zoom.id === action.zoomId);
-  const zoom = zooms[index];
-  if (!zoom) return state;
-
-  const length = zoom.source.end - zoom.source.start;
-  const floor = zooms[index - 1]?.source.end ?? 0;
   // The next zoom, else the last frame of the edit — and never past the media
   // itself. `sourceEnd` is the furthest any *clip* reaches, so before clips
   // were bounded above it inherited their overrun and let a zoom follow them
   // off the end. Kept as the tighter of the two rather than replaced: a zoom
   // over a stretch no clip covers is a zoom that renders nothing.
-  const ceiling = Math.min(
-    zooms[index + 1]?.source.start ?? sourceEnd(state.project),
-    state.duration,
-  );
-
-  const start = clampTo(action.start, floor, Math.max(floor, ceiling - length));
+  const limit = Math.min(sourceEnd(state.project), state.duration);
+  const source = laneMoved(state.project.zooms, action.zoomId, action.start, limit);
+  if (!source) return state;
 
   return edit(state, (project) => ({
     ...project,
     zooms: project.zooms.map((candidate) =>
-      candidate.id === action.zoomId
-        ? { ...candidate, source: { start, end: start + length } }
-        : candidate,
+      candidate.id === action.zoomId ? { ...candidate, source } : candidate,
     ),
   }));
 }
@@ -635,26 +1231,15 @@ function trimZoom(
   state: EditorState,
   action: Extract<EditorAction, { type: "trimZoom" }>,
 ): EditorState {
-  const { zooms } = state.project;
-  const index = zooms.findIndex((zoom) => zoom.id === action.zoomId);
-  const zoom = zooms[index];
-  if (!zoom) return state;
-
-  const floor = zooms[index - 1]?.source.end ?? 0;
-  const ceiling = zooms[index + 1]?.source.start ?? sourceEnd(state.project);
-
-  const source =
-    action.edge === "start"
-      ? {
-          start: clampTo(action.source, floor, zoom.source.end - MIN_ZOOM_NS),
-          end: zoom.source.end,
-        }
-      : {
-          start: zoom.source.start,
-          end: clampTo(action.source, zoom.source.start + MIN_ZOOM_NS, ceiling),
-        };
-
-  if (source.end - source.start < MIN_ZOOM_NS) return state;
+  const source = laneTrimmed(
+    state.project.zooms,
+    action.zoomId,
+    action.edge,
+    action.source,
+    sourceEnd(state.project),
+    MIN_ZOOM_NS,
+  );
+  if (!source) return state;
 
   return edit(state, (project) => ({
     ...project,
@@ -700,7 +1285,7 @@ export function projectDuration(project: Project): MediaTime {
  */
 export function zoomInProject(
   project: Project,
-  zoom: ZoomSlice,
+  zoom: { source: { start: MediaTime; end: MediaTime } },
 ): { start: MediaTime; end: MediaTime } | null {
   const placed = placedSlices(project);
 
@@ -952,6 +1537,7 @@ function duplicateZoom(state: EditorState, zoomId: string): EditorState {
     // copying it is to put the copy somewhere.
     selectedZoomId: copy.id,
     selectedSliceId: null,
+    selectedTextId: null,
   };
 }
 

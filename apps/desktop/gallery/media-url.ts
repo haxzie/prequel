@@ -35,6 +35,10 @@ export function assetUrl(fileName: string): string {
   return `${ROOT}/asset/${encodeURIComponent(fileName)}`;
 }
 
+export function fontUrl(fileName: string): string {
+  return `${ROOT}/font/${encodeURIComponent(fileName)}`;
+}
+
 export function permissionIconUrl(id: PermissionId): string {
   return assetUrl(`permission-${id}.png`);
 }
@@ -50,6 +54,7 @@ const shape = {
   backgroundUrl,
   scenePresetUrl,
   assetUrl,
+  fontUrl,
   permissionIconUrl,
   recordingName,
 } as const;
