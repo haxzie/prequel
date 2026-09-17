@@ -159,6 +159,11 @@ export interface InspectorProps {
    * than one.
    */
   onPreviewZoom: () => void;
+  /**
+   * Play the selected text's entrance, exit or both, to show what a control
+   * just changed. Debounced by the caller, like `onPreviewZoom`.
+   */
+  onPreviewText: (part: "enter" | "exit" | "all") => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
   /** Opens the file picker for a logo, and copies it into the recording. */
@@ -370,11 +375,20 @@ export function Inspector(props: InspectorProps) {
       text,
       frame: props.frame,
       fonts: props.fonts,
-      onChange: (patch: TextPatch) => dispatch({ type: "setText", textId: text.id, patch }),
+      onChange: (patch: TextPatch) => {
+        dispatch({ type: "setText", textId: text.id, patch });
+        // Only the motions replay. Position and width are dragged with the
+        // eye on the text where it is, and playback under the hand would
+        // pull the text away from it.
+        if ("enter" in patch || "enterMs" in patch) props.onPreviewText("enter");
+        else if ("exit" in patch || "exitMs" in patch) props.onPreviewText("exit");
+      },
       onField: (index: number, patch: { text?: string; style?: Partial<TextStyle> }) =>
         dispatch({ type: "setTextField", textId: text.id, index, patch }),
-      onTemplate: (templateId: string) =>
-        dispatch({ type: "applyTextTemplate", textId: text.id, templateId }),
+      onTemplate: (templateId: string) => {
+        dispatch({ type: "applyTextTemplate", textId: text.id, templateId });
+        props.onPreviewText("all");
+      },
       onBeginEdit: () => dispatch({ type: "beginEdit" }),
     };
     const showingTextTab = TEXT_TABS.find((entry) => entry.id === textTab) ?? TEXT_TABS[0]!;

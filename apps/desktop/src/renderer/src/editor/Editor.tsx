@@ -11,7 +11,13 @@ import {
 import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
-import { newProject, outputFrame, type Project, type ZoomSlice } from "../../../shared/project";
+import {
+  newProject,
+  outputFrame,
+  type Project,
+  type TextSlice,
+  type ZoomSlice,
+} from "../../../shared/project";
 import {
   presetCarriesImage,
   presetNeedsBackground,
@@ -55,7 +61,7 @@ import {
   type EditorState,
 } from "./state";
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
-import { place, spanInProject, toProjectTime } from "./timeline";
+import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
 import { useEditorPlayback } from "./useEditorPlayback";
 import type { MediaKey } from "./useEditorPlayback";
 import { useExport } from "./useExport";
@@ -75,6 +81,12 @@ const SAVE_DEBOUNCE_MS = 600;
  * wait for it.
  */
 const ZOOM_PREVIEW_SETTLE_MS = 400;
+
+/** How much of the hold a text's replay shows either side of its motion. */
+const TEXT_PREVIEW_HOLD_NS = 700_000_000;
+
+/** A text no longer than this replays whole when its template changes. */
+const TEXT_PREVIEW_WHOLE_NS = 6_000_000_000;
 
 /**
  * The editor, one of the app window's two screens.
@@ -314,6 +326,53 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       if (span) media.playback.playRange(span.start, span.end);
     }, ZOOM_PREVIEW_SETTLE_MS);
   }, [state.project, media.playback]);
+
+  /**
+   * Plays the selected text's motion once, a moment after its controls settle.
+   *
+   * The zoom's replay for a text, debounced for the same reason. Not the whole
+   * span, though: a title can sit on screen for a minute, and what changed is
+   * how it arrives or how it leaves — so the entrance plays with a beat of the
+   * hold after it, or the exit with a beat before, whichever the control was
+   * about. A template changes both, and plays the whole text where it is
+   * short enough to sit through.
+   */
+  const textToPreview = useRef<TextSlice | null>(null);
+  textToPreview.current = findText(state.project, state.selectedTextId) ?? null;
+
+  const previewText = useCallback(
+    (part: "enter" | "exit" | "all") => {
+      if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+
+      previewTimer.current = window.setTimeout(() => {
+        previewTimer.current = null;
+
+        const text = textToPreview.current;
+        if (!text) return;
+        // Null where the text straddles a cut, and there is no one span to play.
+        const span = textInProject(state.project, text);
+        if (!span) return;
+
+        // The same halving `textKeys` applies, so a short text's entrance and
+        // exit are played as they are drawn.
+        const length = span.end - span.start;
+        const enter = Math.min(text.enterMs * 1_000_000, length / 2);
+        const exit = Math.min(text.exitMs * 1_000_000, length / 2);
+        const short = length <= TEXT_PREVIEW_WHOLE_NS;
+
+        const from =
+          part === "exit"
+            ? Math.max(span.start, span.end - exit - TEXT_PREVIEW_HOLD_NS)
+            : span.start;
+        const to =
+          part === "enter" || (part === "all" && !short)
+            ? Math.min(span.end, span.start + enter + TEXT_PREVIEW_HOLD_NS)
+            : span.end;
+        media.playback.playRange(from, to);
+      }, ZOOM_PREVIEW_SETTLE_MS);
+    },
+    [state.project, media.playback],
+  );
 
   // Or a preview fires against an editor that has already been left.
   useEffect(
@@ -614,15 +673,18 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   useEffect(() => {
     const text = findText(state.project, state.selectedTextId);
     if (!text) return;
-    // The hold, not the span: a text added at the playhead starts exactly
-    // there, and the first frame of an entrance is fully transparent — so
-    // "inside the span" left the preview on a text nobody could see. The
-    // same halving `textKeys` applies, so a short text still has a hold.
+    // The playhead, not `media.sourceAt()`, which answers the *hovered* moment
+    // while the pointer is on the strip: a text drawn out rightwards is
+    // released with the pointer on its end — outside a half-open span — so
+    // the hover said "not on it" and the head, already on the text's start,
+    // was moved anyway. And the whole span, not only the hold: a text added
+    // at the press starts exactly there, and moving the head off the moment
+    // just pressed read as the head jumping on its own. Press play and it
+    // arrives; scrub and it is there.
+    const at = toSourceTime(placed, media.playback.position());
+    if (at !== null && at >= text.source.start && at < text.source.end) return;
     const length = text.source.end - text.source.start;
     const enter = Math.min(text.enterMs * 1_000_000, length / 2);
-    const exit = Math.min(text.exitMs * 1_000_000, length / 2);
-    const at = media.sourceAt() ?? 0;
-    if (at >= text.source.start + enter && at < text.source.end - exit) return;
     const span = textInProject(state.project, text);
     if (span) media.playback.seek(Math.min(span.start + enter, span.end));
     // Only on the selection: the text's span moving under the playhead is a
@@ -955,6 +1017,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               }}
               fonts={fonts}
               onPreviewZoom={previewZoom}
+              onPreviewText={previewText}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing
               // the other is free where asking which is live is a branch that
