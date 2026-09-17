@@ -72,7 +72,7 @@ function Index() {
  * at the browser's size would show a shape the app never has.
  */
 const WINDOW: Record<
-  Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island">,
+  Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island" | "island-narrow">,
   { width: number; height: number }
 > = {
   workspace: { width: 1280, height: 820 },
@@ -116,7 +116,7 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
 
   const wallpaper = { backgroundImage: `url(${assetUrl("monterey.jpg")})` };
 
-  if (kind === "island") {
+  if (kind === "island" || kind === "island-narrow") {
     // The top of a 14" MacBook Pro display: the wallpaper, the menu bar's
     // band, and the notch cut out of the top edge — the bezel the island is
     // drawn to merge with. The column is the island's window, as main sizes
@@ -136,7 +136,8 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
           data-shot-frame
           className="absolute top-0 left-1/2 -translate-x-1/2"
           style={{
-            width: TELEPROMPTER_WIDTHS.normal + PANEL_INSET * 2,
+            width:
+              TELEPROMPTER_WIDTHS[kind === "island-narrow" ? "narrow" : "normal"] + PANEL_INSET * 2,
             height: teleprompterHeight("medium", notch.height) + PANEL_INSET,
           }}
         >

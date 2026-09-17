@@ -39,7 +39,14 @@ const Teleprompter = lazy(() =>
 );
 
 export type ShotFrameKind =
-  "workspace" | "welcome" | "script" | "dock" | "dock-transparent" | "island" | "bare";
+  | "workspace"
+  | "welcome"
+  | "script"
+  | "dock"
+  | "dock-transparent"
+  | "island"
+  | "island-narrow"
+  | "bare";
 
 /** One thing the capture script does before it takes the picture. */
 export type Step =
@@ -138,6 +145,21 @@ export const SHOTS: readonly Shot[] = [
     pad: 40,
   },
 
+  {
+    id: "teleprompter-narrow",
+    frame: "island-narrow",
+    install: install((base) => ({
+      dock: {
+        ...base.dock,
+        preferences: { ...base.dock.preferences, teleprompter: true, teleprompterWidth: "narrow" },
+      },
+      teleprompterPosition: { position: 0, lost: false, level: 0 },
+    })),
+    render: () => <Teleprompter />,
+    steps: [{ kind: "settle", ms: 500 }],
+    clip: "frame",
+    pad: 40,
+  },
   {
     id: "script-window",
     frame: "script",

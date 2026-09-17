@@ -273,15 +273,22 @@ export function Teleprompter() {
           }}
         >
           <Meter ref={meter} live={state.listening === "on" && !state.paused} />
-          <span ref={counter} className="tabular-nums">
+          {/* Unbreakable: flex would otherwise fold "0 / 68" into a column
+              the moment the status beside it wants the room. */}
+          <span ref={counter} className="flex-none whitespace-nowrap tabular-nums">
             0 / {words.length}
           </span>
-          <span ref={status} className="prompter-status truncate">
+          {/* The one line that gives: it takes what is left and truncates. */}
+          <span ref={status} className="prompter-status min-w-0 flex-1 truncate">
             {describe(mode, state, preferences.teleprompterSpeed, recording)}
           </span>
-          <span className="ml-auto flex-none whitespace-nowrap opacity-70">
-            ⌃⌥↑↓ sentence · ⌃⌥␣ pause
-          </span>
+          {/* Left off the narrow island: with the status truncated there is no
+              room for a hint, and Settings lists the keys anyway. */}
+          {preferences.teleprompterWidth !== "narrow" && (
+            <span className="flex-none whitespace-nowrap opacity-70">
+              ⌃⌥↑↓ sentence · ⌃⌥␣ pause
+            </span>
+          )}
         </footer>
       </div>
     </div>
