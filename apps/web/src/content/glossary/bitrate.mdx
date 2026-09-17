@@ -1,0 +1,33 @@
+Every second of a video is stored in some number of bits, and bitrate is that
+number. It is written in megabits per second, Mbps, and it is the setting that
+decides both how large the file is and how good it looks. Length times bitrate
+is the file size, near enough.
+
+## Why screen recordings need less than you think
+
+A camera sees a slightly different picture every frame: grain, tiny movements,
+light shifting. The encoder has to describe all of it, and that takes bits.
+
+A screen is the opposite. Between a click and the next one, most of the frame
+is pixel for pixel identical to the frame before, and the encoder stores that
+as "same as last time" for almost nothing. What costs bits is text, which is
+full of hard edges, and scrolling, which changes the whole frame at once. So a
+1080p screen recording that reads clearly at 8 to 12 Mbps would be a blocky
+mess as camera footage at the same rate.
+
+## When it is too low
+
+The tell is blocks and smearing around whatever moved: a scroll that turns to
+mush for a moment and then sharpens, or text that goes soft while the pointer
+crosses it. The still parts of the frame look fine. If the whole frame is soft
+all the time, the problem is [resolution](/glossary/resolution), and no amount
+of bitrate brings back detail that was never captured.
+
+## The upload trap
+
+Every video platform re-encodes what you upload at a bitrate of its choosing,
+and it is lower than yours. A file that looked clean on your Mac comes back
+softer, and there is nothing to be done about it except give the platform more
+to start from: a higher resolution puts the upload in a higher-bitrate tier,
+which is why a 4K upload of a 1080p recording often plays back cleaner than the
+1080p file did.

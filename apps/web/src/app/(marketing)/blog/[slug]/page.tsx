@@ -1,24 +1,13 @@
 import type { Metadata } from "next";
-import type { CSSProperties } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
-import { Logo } from "@/components/Logo";
-import { ButtonLink } from "@/components/Button";
-import { LinkedInIcon, XIcon } from "@/components/icons";
-import { AUTHOR } from "@/lib/site";
-import { TRIAL_DAYS } from "@/lib/pricing";
+import { Byline } from "@/components/blog/Byline";
+import { TryItAside } from "@/components/blog/TryItAside";
 import { clusterOf, findPost, formatDate, posts } from "@/content/posts";
 import { blogPostingJsonLd, breadcrumbJsonLd, faqPageJsonLd, pageMetadata } from "@/lib/seo";
-
-/**
- * The footer mark, as a variable so the button below it can indent to the text
- * rather than to the panel edge without the two sizes drifting apart.
- */
-const MARK_SIZE = 72;
 
 export function generateStaticParams() {
   return posts.map((post) => ({ slug: post.slug }));
@@ -81,56 +70,9 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
           </h1>
           <p className="mt-4 text-lg leading-relaxed text-pretty text-muted">{post.excerpt}</p>
 
-          {/* The byline sits under the excerpt rather than in the meta row
-              above the title, where the date and the reading time are. Those
-              two describe the post; this says who is talking, and it is the
-              last thing read before the prose starts.
-
-              `justify-between` rather than a gap: the links go to the right
-              edge of the measure at every width, so the row reads as a rule
-              under the header instead of as a third line of metadata. */}
-          <div className="mt-8 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {/* Sized in the markup as well as in CSS. `next/image` needs the
-                  intrinsic dimensions to reserve the box, and an avatar that
-                  arrives after the text has laid out shifts the header. */}
-              <Image
-                src={AUTHOR.avatar}
-                alt=""
-                width={40}
-                height={40}
-                className="size-10 rounded-full ring-1 ring-fg/10"
-              />
-              <div>
-                <p className="text-sm font-medium text-fg">{AUTHOR.name}</p>
-                <p className="text-xs text-muted">{AUTHOR.role}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {[
-                { href: AUTHOR.x, label: `${AUTHOR.name} on X`, Icon: XIcon },
-                { href: AUTHOR.linkedin, label: `${AUTHOR.name} on LinkedIn`, Icon: LinkedInIcon },
-              ].map(({ href, label, Icon }) => (
-                <a
-                  key={href}
-                  href={href}
-                  // Both leave the site and neither is a link we vouch for
-                  // being followed, which is what `rel` says here.
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  aria-label={label}
-                  className="flex size-9 items-center justify-center rounded-full border border-line bg-elevated text-muted transition-colors hover:text-fg"
-                >
-                  {/* The two marks are drawn at different weights at the same
-                      box size — X is a pair of thick strokes, the LinkedIn
-                      glyph sits inside a filled tile — so the icon size is set
-                      per link rather than shared. */}
-                  <Icon className={Icon === XIcon ? "size-3.5" : "size-4"} />
-                </a>
-              ))}
-            </div>
-          </div>
+          {/* Under the excerpt rather than in the meta row: the note in
+              `Byline.tsx` says why. */}
+          <Byline />
 
           {/* Up to the pillar. Inside the header rather than after the body,
               because a reader who arrived from a narrow search may want the
@@ -206,60 +148,7 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
           ])}
         />
 
-        <aside
-          className="relative mt-16 overflow-hidden rounded-2xl border border-line bg-surface p-7"
-          style={{ "--mark-size": `${MARK_SIZE}px` } as CSSProperties}
-        >
-          {/* A wash under the mark that is gone before the text ends, so the
-              colour reads as coming off the icon's own sun gradient rather
-              than as a tinted panel. Linear rather than radial: a radial
-              centred on the mark bleeds through the left border and thickens
-              it. `overflow-hidden` on the panel is what keeps the layer
-              inside the corner radius.
-
-              Weaker than it was, and doing the opposite job. Over a near-black
-              panel this was an additive lift and needed 18% to register at all;
-              on a light one the same figure is a peach block with a hard end to
-              it. Enough now to tint the corner the mark sits in. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              backgroundImage:
-                "linear-gradient(to right, rgb(225 75 21 / 0.09), rgb(225 75 21 / 0.03) 34%, transparent 68%)",
-            }}
-          />
-          {/* The mark centres on the heading and paragraph alone, so the row
-              is its own flex container and the button sits outside it. With
-              the button inside, the column it centres against is taller and
-              the mark drifts below the heading. */}
-          <div className="relative flex items-center gap-6">
-            {/* The same warm halo the hero mark carries, at the smaller size —
-                and lightened with it, for the reason written out there: a
-                70%-black drop shadow on a light panel is a smudge the eye reads
-                before the icon. */}
-            <Logo
-              size={MARK_SIZE}
-              radius={0.42}
-              className="shadow-[0_12px_24px_-12px_rgb(20_21_24_/_0.16),0_10px_30px_-10px_rgb(225_75_21_/_0.32)]"
-            />
-            <div>
-              <h2 className="text-base font-medium text-fg">Try it yourself</h2>
-              <p className="mt-2 text-sm text-muted">
-                Prequel records your screen and hands back a finished video. Free for {TRIAL_DAYS}{" "}
-                days, with no watermark on anything you export.
-              </p>
-            </div>
-          </div>
-          {/* Indented to the text above rather than the panel edge — the
-              mark's width plus the row's gap. */}
-          <ButtonLink
-            href="/download"
-            className="relative mt-5 ml-[calc(var(--mark-size)_+_1.5rem)]"
-          >
-            Download for Mac
-          </ButtonLink>
-        </aside>
+        <TryItAside />
       </article>
     </Container>
   );

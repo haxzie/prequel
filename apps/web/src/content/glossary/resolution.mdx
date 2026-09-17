@@ -1,0 +1,30 @@
+Resolution is the size of the picture in pixels, width by height. The names are
+shorthand for the height: 1080p is 1920 by 1080, 1440p is 2560 by 1440, and 4K
+is 3840 by 2160, which is four times as many pixels as 1080p rather than four
+times the height. 720p, 1280 by 720, is the floor for anything with text in it.
+
+## Where a screen recording's resolution comes from
+
+It starts as the display's. A Retina MacBook reports a resolution like 1440 by
+900 in System Settings, but the panel behind it has twice as many pixels in
+each direction, 2880 by 1800, and a recorder that captures every pixel records
+at that size. That is what you want: text drawn at full pixel density stays
+sharp, and it can be scaled down later. A recorder that captures at the
+reported size records a quarter of the detail and there is no getting it back.
+The [Retina and HiDPI](/glossary/retina-hidpi) entry has the rest.
+
+Recording one window rather than the whole display gives a recording the size
+of that window, which is often the better choice: a browser at 1400 pixels
+wide fills a 16:9 frame better than a whole desktop with a dock and a menu bar.
+
+## What to export at
+
+Full size if the file is going to YouTube or anywhere that re-encodes uploads,
+because a larger upload is put in a higher [bitrate](/glossary/bitrate) tier
+and comes out cleaner at every size it is served at. 1080p if it is going to a
+person, a chat or an email, where a quarter of the size and the same legibility
+is the better trade. Below 1080p only for a GIF, where every frame is stored in
+full and the size runs away quickly.
+
+Prequel [exports](/docs/export) at the frame's own size, or scales the shorter
+edge to 1080, 720 or 480.

@@ -1,0 +1,32 @@
+Raw video is enormous. A single 1080p frame is six megabytes uncompressed, and
+there are thirty or sixty of them a second. A codec is the method for squeezing
+that down to something a file can hold and a network can carry, and for
+unpacking it again on playback. The word is a contraction of coder-decoder.
+
+## The two you meet
+
+**H.264**, also called AVC, is the one everything plays. Every browser, every
+phone, every version of Windows, every video player. It is twenty years old and
+it is the safe choice for any file that is going somewhere you do not control.
+
+**HEVC**, also called H.265, is its successor. At the same picture quality the
+file is smaller, roughly a third to a half. The catch is playback: Apple devices
+handle it everywhere, but some Windows editions need a paid extension, and some
+older browsers and players do not read it at all.
+
+Both are what an [MP4](#containers) usually holds. AV1 is
+newer and smaller again, and is what the big platforms re-encode to on their
+side; almost no screen recorder writes it yet.
+
+## Containers
+
+The codec is not the file format. An MP4 or a MOV is a container, a wrapper
+that holds a video stream, one or more audio streams and sometimes subtitles,
+and says which codec each one uses. An MP4 can hold H.264 or HEVC. A file
+ending in `.mp4` tells you the container and nothing about what is inside.
+
+## What to pick
+
+H.264 in an MP4 for anything shared. HEVC if the file is yours to keep, or you
+know it is going to a Mac or an iPhone, and the size matters. Prequel's
+[export dialog](/docs/export) offers both under those names.

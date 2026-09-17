@@ -1,0 +1,28 @@
+System audio is whatever the Mac is playing: a video in a browser tab, a
+notification, the app being demonstrated making a sound, a call. It is
+distinct from the microphone, which hears the room, and a screen recording
+can carry either, both or neither.
+
+## Why it is awkward on a Mac
+
+For most of macOS's history there was no way for an app to hear what the Mac
+was playing. QuickTime Player and the Cmd+Shift+5 toolbar still cannot: they
+record the screen and a microphone, and the sound from the speakers is not on
+offer. The workaround was a virtual audio device such as BlackHole, routed
+through Audio MIDI Setup so the recorder could listen to it as though it were
+a microphone. It works, and it is fiddly, and it is how most guides on the
+subject still read.
+
+Since macOS 13 the screen capture API can hand an app the system's audio
+alongside the frames, and a recorder built on it can record the Mac's sound
+with nothing to install. Not every recorder asks for it. The post on
+[recording a Mac with internal audio](/blog/record-mac-screen-with-internal-audio)
+goes through which do.
+
+## Keep it on its own track
+
+The useful version of system audio is a separate track from the microphone.
+Mixed together at record time, a notification chime over your sentence is in
+the recording for good. Kept apart, it can be turned down or dropped
+afterwards while your voice stays. Prequel records the two separately, and the
+[Audio panel](/docs/audio) has an include switch and a level for each.

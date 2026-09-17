@@ -1,0 +1,89 @@
+You recorded a demo, played it back, and the text is soft. Not broken, not
+blocky, just slightly out of focus in a way the app on your screen never is.
+It is the commonest complaint about screen recordings and it has four causes,
+each with its own tell and its own fix. Work through them in order, because
+the first one is the usual culprit and the last one is out of your hands.
+
+## 1. It was captured at half the pixels
+
+Open the file and look at its dimensions. On a Mac, select it in Finder and
+press Cmd+I, or open it in QuickTime Player and press Cmd+I there.
+
+Now compare that with your display. System Settings shows a resolution like
+1512 by 982 or 1440 by 900. That is the size in points, the unit macOS lays the
+interface out in. A Retina display has two pixels per point in each direction,
+so the panel actually has 3024 by 1964 or 2880 by 1800 of them, and the
+interface is drawn with all of that detail. The
+[Retina and HiDPI](/glossary/retina-hidpi) entry has the longer version.
+
+If the file is the point size, the recorder captured one pixel per point and
+threw three quarters of the detail away. Text drawn that way and played back
+on a Retina display is soft everywhere, evenly, all the time. That is the tell:
+the stillest part of the frame is as blurry as the busiest.
+
+**The fix** is a recorder that captures at the display's full pixel size, or a
+setting on the one you have. Some call it "Retina", some "HiDPI", some
+"capture at 2x". The file should come out at 2880 by 1800 or whatever your
+panel is. Then, if you want a smaller file, scale it down on export: averaging
+four real pixels into one is sharper than capturing one.
+
+## 2. It was exported smaller than it was recorded
+
+The recording is fine and the export is soft. This happens when a 2880 by 1800
+capture goes out as 720p, or when an editor's default export preset is smaller
+than the source and nobody looked.
+
+The tell is the same even softness as above, in the exported file but not in
+the original. The check is the same too: compare the two files' dimensions.
+
+**The fix** is to export at the source size, or at 1080p at the least. 1080p
+holds text well at normal reading sizes; 720p does not. The
+[resolution](/glossary/resolution) entry goes through what to choose for where
+the file is going.
+
+## 3. The bitrate is too low
+
+This one looks different. The still parts of the frame are sharp. What goes
+wrong is around whatever moved: a scroll turns to mush for a moment and then
+snaps back, text goes soft while the pointer crosses it, a window drag leaves
+smears. That is the encoder running out of bits for the frames with the most
+change in them.
+
+[Bitrate](/glossary/bitrate) is how much data each second gets. Screen content
+needs less than camera footage, because most of each frame is identical to
+the last, but it still needs enough for the moments when the whole frame
+changes at once. For 1080p at 60 fps, somewhere around 8 to 12 Mbps keeps text
+clean through a scroll.
+
+**The fix** is a higher bitrate on export, or a quality setting a notch up if
+that is what the exporter exposes. The file gets larger in proportion. If the
+recorder does not expose it at all, exporting at a larger resolution usually
+raises it, because most encoders scale the bitrate with the frame size.
+
+## 4. The platform re-encoded it
+
+The file is perfect on your Mac and soft on YouTube, or in Slack, or on
+LinkedIn. Every platform re-encodes what you upload at its own bitrate, and
+that bitrate is chosen for its bandwidth bill, not your text. There is no
+setting that stops it.
+
+What you can do is give it more to work with. Platforms put larger uploads in
+higher bitrate tiers: a 4K upload to YouTube is served at a considerably
+higher bitrate at every size than a 1080p upload is, including the 1080p
+version most viewers watch. Scaling a 1080p recording up to 4K before
+uploading is a real technique and it works, for that reason. A recording
+captured at full Retina size is already most of the way there.
+
+For a chat or an email, where the file is played as sent, none of this
+applies: a good 1080p H.264 file arrives as it left.
+
+## The short version
+
+Check the file's dimensions against the display's pixel size. If it is half,
+the capture is the problem and nothing downstream will fix it. If the export is
+smaller than the recording, export larger. If only the moving parts smear,
+raise the bitrate. If it was fine until it was uploaded, upload bigger.
+
+Prequel records at the display's full pixel size, exports at that size or
+scaled to 1080p, 720p or 480p, and writes H.264 or HEVC at a bitrate that keeps
+text clean. The [export](/docs/export) page has the dialog.

@@ -69,7 +69,15 @@ const nextConfig: NextConfig = {
    * crawlers keep the dead URL in the index indefinitely.
    */
   async redirects() {
-    return [{ source: "/changelog", destination: "/docs/changelog", permanent: true }];
+    return [
+      { source: "/changelog", destination: "/docs/changelog", permanent: true },
+      // `/glossary` and `/articles` are prefixes, not pages: the index for
+      // both is `/content`, filtered. A reader who trims a term's URL back to
+      // the folder lands on the list of terms rather than a 404. Permanent,
+      // because there is no page to come back to.
+      { source: "/glossary", destination: "/content?type=glossary", permanent: true },
+      { source: "/articles", destination: "/content?type=article", permanent: true },
+    ];
   },
 };
 

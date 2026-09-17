@@ -1,0 +1,35 @@
+macOS does not let an app see the screen until you say so. Screen Recording is
+the grant that says so, listed under Privacy and Security in System Settings,
+and an app without it is handed the desktop wallpaper with every window
+removed. The app still records, the file still saves, and it is only on
+playback that the screen turns out to be empty.
+
+## What it covers
+
+Any pixel that belongs to another app or to the system. An app can always
+record its own windows; the moment it captures a browser, a menu bar or the
+desktop, it needs the grant. On macOS 15 and later the same switch covers
+[system audio](/glossary/system-audio), and the pane is named Screen &
+System Audio Recording to say so.
+
+## How it is granted
+
+The first time an app asks, macOS shows a dialog with a button that opens the
+right pane in System Settings. Turn the app on there, and then quit and reopen
+the app: the grant is read when the app starts, and one that asked before it
+was granted has to ask again. That restart is the step most guides leave out
+and the reason "I allowed it and it still records nothing" is so common.
+
+Since macOS 15, the system also re-confirms the grant every so often with a
+dialog that says the app can access this computer's screen and audio. It is a
+reminder that the grant exists; clicking Continue to Allow keeps things as
+they were.
+
+## The other three
+
+A recorder usually wants more than one grant. The microphone and the camera
+each have their own, asked for only when the device is turned on. Accessibility
+is the odd one: it lets an app see where you click and type, which is nothing
+to do with the picture and everything to do with placing
+[zooms](/glossary/zoom-and-pan) on the clicks afterwards. Prequel's
+[permissions](/docs/permissions) page lists all four and what each one is for.

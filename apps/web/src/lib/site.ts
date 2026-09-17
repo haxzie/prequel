@@ -60,6 +60,10 @@ export const NAV: { href: Route; label: string }[] = [
  */
 export const FOOTER_NAV: { href: Route; label: string }[] = [
   ...NAV,
+  // The glossary and the articles. Footer only, for the reason `/about` is:
+  // the header is full, and somebody reading a definition of bitrate has
+  // already found the site.
+  { href: "/content", label: "Content" },
   { href: "/about", label: "About" },
 ];
 

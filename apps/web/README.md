@@ -31,7 +31,8 @@ before touching a headline, a lede, a feature card or an FAQ answer.
 src/app/          routes, plus icon.svg, opengraph-image, sitemap, robots
 src/components/   the shell and the page furniture
 src/content/      posts.ts + blog/*.mdx, use-cases.ts + create/*.mdx,
-                  competitors.ts + alternatives/*.mdx
+                  competitors.ts + alternatives/*.mdx,
+                  glossary.ts + glossary/*.mdx, articles.ts + articles/*.mdx
                   (a registry for the metadata, MDX for the prose)
 src/components/dashboard/  the signed-in surfaces, all client components
 src/lib/          site.ts, pricing.ts, faq.ts, seo.ts, og.tsx,
@@ -105,6 +106,29 @@ and the 15-era `(components) => …` form silently drops the overrides.
 Remark and rehype plugins must be named as **strings** in `next.config.ts`.
 Turbopack runs them in Rust and cannot be handed a JavaScript function, which
 rules out most syntax highlighters.
+
+## Adding a glossary term or an article
+
+`/content` lists both, with a sidebar of filters. Terms live at
+`/glossary/<slug>` and articles at `/articles/<slug>`; the bare `/glossary` and
+`/articles` redirect to the filtered gallery. Same two-step shape as a post:
+
+1. Write `src/content/glossary/<slug>.mdx` or `src/content/articles/<slug>.mdx`.
+   Prose only, no `#` heading; the `<h1>` comes from the registry.
+2. Add an entry to `src/content/glossary.ts` or `src/content/articles.ts` with
+   that slug, one or two `topics` from `src/content/topics.ts`, and an FAQ.
+
+A term's `definition` is one sentence under 160 characters: it is the meta
+description, the lede under the heading and the card on `/content`. Related
+terms are derived from shared topics, so there is nothing to link by hand.
+
+An article is a post that is not on the blog. The blog index is for the pages
+that sell a recorder; a fix for one symptom or a checklist goes here instead.
+Articles carry the post's byline and FAQ and never appear at `/blog`.
+
+Add a topic to `topics.ts` only when three or more pages will be filed under
+it. The filters run in the browser over a list that is entirely in the HTML,
+so the page stays static and every card is crawled.
 
 ## Adding a docs page
 

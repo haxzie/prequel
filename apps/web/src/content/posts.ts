@@ -59,6 +59,48 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "screen-studio-vs-loom",
+    title: "Screen Studio vs Loom: which screen recorder should you use on a Mac?",
+    excerpt:
+      "Screen Studio makes the recording look good and Loom gets it in front of somebody, and they are priced for different buyers. We put the two head to head on what each does, what people say about each, and a feature table with Prequel in the third column.",
+    date: "2026-09-17",
+    tag: "Comparison",
+    readingMinutes: 11,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "Is Screen Studio better than Loom?",
+        answer:
+          "For the recording itself, yes: Screen Studio adds automatic zooms, a smoothed cursor, a background and a framed camera, and Loom records the take as performed with a trim. For sharing, Loom is better: the link, comments, view counts and integrations are the product. Prequel does the Screen Studio edit and gives you a share link, for $29 once or $9 a month.",
+      },
+      {
+        question: "How much does Screen Studio cost compared to Loom?",
+        answer:
+          "Screen Studio is $29 a month billed monthly or $9 a month billed yearly ($108 a year), with no free tier. Loom has a free Starter plan capped at five minutes a video, then $18 per user per month for Business and $24 with AI. Prequel is $29 once or $9 a month. Read off both pricing pages on 17 September 2026.",
+      },
+      {
+        question: "Does Loom have automatic zoom like Screen Studio?",
+        answer:
+          "No. Loom records the screen as it was, with the cursor and camera bubble where they were. Automatic zoom on clicks and typing, cursor smoothing and a background are what Screen Studio and Prequel add when the recording opens.",
+      },
+      {
+        question: "Does Screen Studio work on Windows?",
+        answer:
+          "No. Screen Studio is a macOS app. Loom runs on macOS, Windows, the web and Chrome. Prequel is also Mac only, on Apple Silicon with macOS 14 or later.",
+      },
+      {
+        question: "Does Loom's free plan have a time limit?",
+        answer:
+          "Yes. Every video on Loom's free Starter plan stops at five minutes, a cap Loom introduced in 2020. The paid Business plan at $18 per user per month removes it. Prequel has no cap on the length of a take on any plan or during the trial.",
+      },
+      {
+        question: "Can I get a Screen Studio lifetime licence?",
+        answer:
+          "Not any more. Screen Studio withdrew its one-time licence in October 2025 and sells subscriptions only. Prequel sells a $29 lifetime licence alongside the $9 monthly plan.",
+      },
+    ],
+  },
+  {
     slug: "screen-studio-alternatives",
     title: "The best Screen Studio alternatives for Mac",
     excerpt:

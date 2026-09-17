@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 
 import { env } from "@prequel/env";
 
+import type { Article } from "@/content/articles";
+import type { Term } from "@/content/glossary";
 import type { Post } from "@/content/posts";
 import type { FaqEntry } from "@/lib/faq";
 
@@ -191,6 +193,28 @@ export function blogJsonLd(entries: Post[]) {
   };
 }
 
+/**
+ * The author and publisher every long-form page names.
+ *
+ * A `Person`, matching the byline the page renders. It said `Organization`
+ * while the post showed no author at all; now that one is shown, the two
+ * disagreeing is the mismatch that gets a rich result dropped.
+ *
+ * One object for the blog and the articles, because they render the same
+ * byline: two copies of it is how an article would come to name a different
+ * author from the post beside it.
+ */
+function authorship() {
+  return {
+    author: { "@type": "Person", name: AUTHOR.name, url: AUTHOR.url },
+    publisher: {
+      "@type": "Organization",
+      name: SITE.name,
+      logo: { "@type": "ImageObject", url: absoluteUrl("/icon.svg") },
+    },
+  };
+}
+
 export function blogPostingJsonLd(post: Post) {
   const url = absoluteUrl(`/blog/${post.slug}`);
 
@@ -200,17 +224,49 @@ export function blogPostingJsonLd(post: Post) {
     headline: post.title,
     description: post.excerpt,
     datePublished: post.date,
-    // A `Person`, matching the byline the page renders. It said `Organization`
-    // while the post showed no author at all; now that one is shown, the two
-    // disagreeing is the mismatch that gets a rich result dropped.
-    author: { "@type": "Person", name: AUTHOR.name, url: AUTHOR.url },
-    publisher: {
-      "@type": "Organization",
-      name: SITE.name,
-      logo: { "@type": "ImageObject", url: absoluteUrl("/icon.svg") },
-    },
+    ...authorship(),
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
     image: `${url}/opengraph-image`,
+  };
+}
+
+/**
+ * An `Article` rather than a `BlogPosting`: the page is not in the blog, and
+ * `BlogPosting` on a page no `Blog` lists is the claim the index page makes
+ * for the posts, made for nothing.
+ */
+export function articleJsonLd(article: Article) {
+  const url = absoluteUrl(`/articles/${article.slug}`);
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: article.title,
+    description: article.excerpt,
+    datePublished: article.date,
+    ...authorship(),
+    mainEntityOfPage: { "@type": "WebPage", "@id": url },
+    image: `${url}/opengraph-image`,
+  };
+}
+
+/**
+ * A glossary entry, as the term it defines.
+ *
+ * `DefinedTerm` is what the vocabulary has for a word with a definition, and
+ * `inDefinedTermSet` points at `/content`, the page that lists every term,
+ * so a crawler that reads one entry knows where the rest are. The definition
+ * is the registry's one-sentence `definition`, the same string the page
+ * renders under the heading.
+ */
+export function definedTermJsonLd(term: Term) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "DefinedTerm",
+    name: term.title,
+    description: term.definition,
+    url: absoluteUrl(`/glossary/${term.slug}`),
+    inDefinedTermSet: absoluteUrl("/content"),
   };
 }
 

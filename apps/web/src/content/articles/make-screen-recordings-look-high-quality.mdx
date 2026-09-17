@@ -1,0 +1,129 @@
+import { FrameRateChart } from "@/components/articles/FileSizeCharts";
+
+The most upvoted screen recording question we found on Reddit this year has
+nothing to do with which app to use. It is somebody with a 4K monitor asking why
+their recordings never look as clean as the ones they see on YouTube, even
+after they zoom in.
+
+![A thread on r/VideoEditing asking how YouTubers make screen recordings look so high quality, 1,768 upvotes and 95 comments](/articles/quotes/high-quality-screen-recording.webp)
+
+[The thread on r/VideoEditing →](https://www.reddit.com/r/VideoEditing/comments/1oemqai/how_do_they_make_screen_recording_look_so_high/)
+
+The top answer, with 782 upvotes, is a trick: print the web page to a vector
+file, import it into After Effects, and animate the vector. That works, and it
+is why the recordings in question look the way they do. It is also a day's
+work per video, and it only works for a web page that holds still.
+
+The rest of this is how to get most of the way there with a recording. Six
+things decide whether a screen recording looks clean, and they are settled
+before the edit.
+
+## 1. Capture every pixel the display has
+
+This is the one that catches people with a 4K monitor. A Retina or HiDPI
+display draws the interface at two pixels per point, so a display that reads
+as 1440 by 900 in System Settings has 2880 by 1800 pixels in it. A recorder
+that captures at the point size records one pixel where the screen drew four,
+and every letter comes out soft.
+
+![The same paragraph of text captured at point size and at pixel size, both shown at Retina scale. The point-size capture is visibly blurred; the pixel-size capture is as sharp as the screen.](/articles/point-vs-pixel-capture.webp)
+
+The figure above is the same text captured both ways from the same page and
+shown at the same size. Check your own file: select it in Finder, press
+Cmd+I, and compare the dimensions with your display's pixel size. If the file
+is the point size, nothing downstream will fix it. The
+[Retina and HiDPI](/glossary/retina-hidpi) entry has the numbers for each Mac.
+
+A 4K monitor at its native 3840 by 2160 with no scaling is a different case:
+it is one pixel per point, and the text is small on screen and small in the
+recording. The fix there is to scale the display up in System Settings before
+recording, so the interface is drawn larger and the recording has more pixels
+per letter.
+
+## 2. Record the window, at a sensible size
+
+A recording of a whole 3024 by 1964 display, played in a 700 pixel wide box,
+shows every control at a few pixels tall. That is most of what "never looks
+clean" means. The interface was captured perfectly and then shrunk five times.
+
+Record the one window that matters, and size it before you start. A browser
+at around 1400 by 900 fills a 16:9 frame with the text large enough to read
+after the player scales it. If the app needs to be bigger than that, that is
+what the zooms are for.
+
+## 3. Zoom to the work
+
+The YouTube recordings in that thread are zoomed in on whatever is being
+clicked, and pulled back out when the presenter moves on. That is the move
+that makes a recording read as produced, because the viewer never has to
+find the pointer on a full screen.
+
+Done by hand, it is a keyframe pair per click in a video editor. Prequel
+places them for you: it records where you click and type while capturing,
+and the editor opens with a zoom on each one, which you can drag, resize or
+delete.
+
+![The timeline with a zoom selected in the zoom row](/docs/timeline-zoom.webp)
+
+The [zoom and pan](/glossary/zoom-and-pan) entry has the reasoning, and the
+[mouse zoom post](/blog/screen-recorder-mouse-zoom-mac) compares the tools
+that do it automatically.
+
+## 4. Record at 60 fps if anything moves
+
+Text, clicks and typing look the same at 30 and 60 frames a second. Scrolling,
+dragging, animation and a camera do not: at 30 they stutter next to the rest
+of the screen. The cost is file size, and it is not double.
+
+<FrameRateChart />
+
+| 1080p, H.264, x264             | MB per minute |
+| ------------------------------ | ------------- |
+| 30 fps, CRF 23                 | 1.2           |
+| 60 fps, CRF 23                 | 2.0           |
+| 60 fps, CRF 18, higher quality | 2.7           |
+| 60 fps, CRF 28, lower quality  | 1.4           |
+
+Measured on 60 seconds of a real take of an app being used, exported with
+ffmpeg 8 on 17 September 2026. Going from 30 to 60 fps added about 55 percent;
+a step of quality either way moved the size by about a third. For a demo that
+is going into a chat, 30 is fine. For anything with a camera or a scroll in
+it, 60 is worth the megabytes.
+
+## 5. Give the screen a frame
+
+The "blur and chromatic aberration around the edges with a subtle vignette"
+the thread describes is the recording sitting inside a frame: padding around
+the window, rounded corners, a shadow, a background behind it. It hides the
+hard edge of the capture and makes the recording look like a picture of a
+screen rather than the screen itself.
+
+In a video editor that is a background layer, a scale, a mask and a drop
+shadow. In Prequel the frame is applied when the recording opens, and the
+[background](/docs/background) and [frame](/docs/frame-and-presets) panels
+adjust it.
+
+![The Background panel: padding, corner radius, border, shadow and the picture behind the recording](/docs/inspector-background.webp)
+
+## 6. Export at the size you captured
+
+The last place quality goes is the export. Exporting a 2880 by 1800 recording
+at 720p throws away the pixels step one captured. Export at the frame's full
+size for YouTube, which re-encodes everything and serves a cleaner 1080p from
+a larger upload, and at 1080p for a file that is going straight to a person.
+Use H.264 for anything shared; HEVC is smaller but plays in fewer places. The
+[codec](/glossary/codec) and [resolution](/glossary/resolution) entries have
+the detail.
+
+![The export dialog: type, quality, frame rate and a summary line](/docs/export-dialog.webp)
+
+## The short version
+
+Capture at the display's pixel size. Record the window on its own, at about
+1400 wide. Zoom to what is being clicked. Use 60 fps if anything moves.
+Put the recording in a frame. Export at full size for a platform, 1080p for a
+person.
+
+Prequel does the capture, the zooms, the frame and the export from one
+recording, on Apple Silicon Macs running macOS 14 or later. The
+[first recording](/docs/first-recording) page walks through it.

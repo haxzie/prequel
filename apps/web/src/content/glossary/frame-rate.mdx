@@ -1,0 +1,28 @@
+A video is a stack of still pictures shown quickly enough that the eye reads
+motion. Frame rate is how many of those pictures there are per second, written
+as fps. Film is 24. Television is 25 or 30 depending on the country. Screens,
+games and most screen recordings are 30 or 60.
+
+## What it changes in a screen recording
+
+Most of a screen recording is still. A menu opens, the pointer moves, a page
+scrolls, and between those moments nothing on the frame changes at all. That is
+why 30 fps looks fine for a demo of a settings panel: there is not enough motion
+for the extra frames to show.
+
+Where 60 earns its keep is anything that moves continuously. Scrolling a long
+page, dragging a window, an animation in the app, and above all a camera feed
+of a person talking. At 30 those read as slightly stuttery next to the rest of
+the screen; at 60 they are smooth.
+
+## The cost
+
+More frames means more data. The file does not double when the frame rate
+does, because the encoder spends less on each of the extra frames, but it grows,
+and so does the time the export takes. For a recording going into a chat or an
+email, 30 is the sensible default. For YouTube or anything with a camera in it,
+60 is worth the size.
+
+The capture frame rate and the export frame rate are separate settings. A
+recorder that captures at 60 can [export](/docs/export) at 30 later, which
+keeps the option open; one that captured at 30 has nothing to add.

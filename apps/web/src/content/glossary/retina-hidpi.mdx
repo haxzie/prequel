@@ -1,0 +1,34 @@
+Retina is Apple's name for a display dense enough that you cannot see its
+pixels at a normal distance. HiDPI is the general term, and Windows says
+"scaling". They describe the same arrangement: the interface is laid out in
+points, the display has two pixels per point in each direction, and every
+button, letter and line is drawn with four times the detail it would have on
+an older screen.
+
+## Points and pixels
+
+A 14-inch MacBook Pro lays its interface out on a 1512 by 982 point canvas and
+draws it on a 3024 by 1964 pixel panel. System Settings shows the first number,
+because that is how big things look. The recorder should capture the second,
+because that is how much detail there is.
+
+## Why it matters for a recording
+
+A screen recorder that captures at the point size gets one pixel per point.
+Text that was drawn with four pixels per point is squashed into one, and the
+result played back on a Retina display is unmistakably soft. This is the
+commonest cause of a blurry screen recording, and it is invisible until
+playback because the recorder reports a perfectly reasonable resolution.
+
+The check is the file's dimensions. A recording of a 1512 by 982 display should
+be 3024 by 1964. If it is 1512 by 982, the recorder captured at points, and the
+fix is a different recorder or a setting on this one. The article on
+[why a recording looks blurry](/articles/why-your-screen-recording-looks-blurry)
+walks through the other causes.
+
+## The cost
+
+Four times the pixels is a larger file and a slower export. It is worth it. A
+full-pixel recording can be scaled down to 1080p on export and still be sharper
+than one captured at 1080p, because the scaling averages four real pixels into
+one rather than inventing three.
