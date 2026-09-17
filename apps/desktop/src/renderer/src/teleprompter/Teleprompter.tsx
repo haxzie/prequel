@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   TELEPROMPTER_FOOTER,
@@ -126,11 +126,28 @@ export function Teleprompter() {
   );
   useTeleprompterPosition(onPosition);
 
-  // A new script or a new size re-lays everything out from the position held.
+  // The island slides down when shown and up when hidden. The window stays
+  // mounted across both, so main says which; the counter restarts the enter
+  // animation on a second show, which the same class name would not.
+  const [motion, setMotion] = useState<{ phase: "in" | "out"; count: number }>({
+    phase: "in",
+    count: 0,
+  });
+  useEffect(
+    () =>
+      window.prequel.teleprompter.onVisible((visible) =>
+        setMotion((last) => ({ phase: visible ? "in" : "out", count: last.count + 1 })),
+      ),
+    [],
+  );
+
+  // A new script, a new size, or a fresh island — the enter animation remounts
+  // it, which resets every word to unread — re-lays everything out from the
+  // position held.
   useEffect(() => {
     paint(position.current);
     layout();
-  }, [words, paint, layout]);
+  }, [words, paint, layout, motion.count]);
 
   /**
    * Scrolling by hand.
@@ -168,10 +185,13 @@ export function Teleprompter() {
   return (
     <div className="prompter-theme relative h-full w-full">
       <div
+        key={motion.count}
         className={cn(
           "absolute inset-x-(--panel-inset) bottom-(--panel-inset) flex flex-col overflow-visible",
           "bg-prompter-bg text-prompter-fg shadow-[0_10px_28px_rgba(0,0,0,0.5)]",
           notch ? "top-0 rounded-b-[22px]" : "top-(--panel-inset) rounded-[18px]",
+          motion.phase === "in" ? "animate-island-in" : "animate-island-out",
+          "motion-reduce:animate-none",
         )}
         style={{ "--ear": `${String(EAR)}px` } as React.CSSProperties}
       >

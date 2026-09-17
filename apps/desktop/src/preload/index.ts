@@ -205,6 +205,13 @@ const api = {
       return () => ipcRenderer.off(IPC_CHANNELS.teleprompterChanged, handler);
     },
 
+    /** Whether the island is being shown or is about to be hidden — its cue to slide. */
+    onVisible: (listener: (visible: boolean) => void): (() => void) => {
+      const handler = (_event: unknown, visible: boolean) => listener(visible);
+      ipcRenderer.on(IPC_CHANNELS.teleprompterVisible, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterVisible, handler);
+    },
+
     /** Subscribes to the reader's position. Sent to the island alone, often. */
     onPosition: (listener: (position: TeleprompterPosition) => void): (() => void) => {
       const handler = (_event: unknown, position: TeleprompterPosition) => listener(position);

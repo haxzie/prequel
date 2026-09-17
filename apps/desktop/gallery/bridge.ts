@@ -198,6 +198,7 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         setTimeout(() => emit("teleprompterPosition", state.teleprompterPosition), 0);
       },
       onChange: subscribe<TeleprompterState>("teleprompter"),
+      onVisible: subscribe<boolean>("teleprompterVisible"),
       onPosition: subscribe<TeleprompterPosition>("teleprompterPosition"),
     },
 

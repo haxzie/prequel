@@ -12,7 +12,9 @@
 import { screen, type BrowserWindow, type Display, type Rectangle } from "electron";
 
 import {
+  IPC_CHANNELS,
   PANEL_INSET,
+  TELEPROMPTER_EXIT_MS,
   TELEPROMPTER_TOP_GAP,
   TELEPROMPTER_WIDTHS,
   teleprompterHeight,
@@ -54,6 +56,14 @@ export class TeleprompterWindow {
   /** The notch the island was last laid out around; null for a plain top edge. */
   private notch: Notch | null = null;
   private stopWatchingCursor: (() => void) | null = null;
+  /**
+   * The hide that is waiting for the slide up to finish, if one is.
+   *
+   * While it is pending the window is still on screen and `isVisible` says
+   * no: the island is on its way out, and a show in the meantime cancels the
+   * hide and slides it back down.
+   */
+  private exit: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: TeleprompterWindowOptions) {}
 
@@ -82,6 +92,10 @@ export class TeleprompterWindow {
   /** Shows the island, and says what notch it is drawn around. */
   show(): Notch | null {
     const window = this.prepare();
+    if (this.exit) {
+      clearTimeout(this.exit);
+      this.exit = null;
+    }
     // Re-placed on every show: the built-in display may have been closed or
     // opened since, and there is no user position to preserve.
     const bounds = this.bounds();
@@ -100,22 +114,38 @@ export class TeleprompterWindow {
     );
     // `showInactive`: the island must never take focus from what is being recorded.
     window.showInactive();
+    // After the window is up, so the slide down is seen from its first frame.
+    window.webContents.send(IPC_CHANNELS.teleprompterVisible, true);
     this.stopWatchingCursor ??= watchCursor(window, (bounds, point) =>
       this.overIsland(bounds, point),
     );
     return this.notch;
   }
 
+  /** Slides the island up, then hides the window. */
   hide(): void {
     this.stopWatchingCursor?.();
     this.stopWatchingCursor = null;
     // `?.` covers "never opened", not "already destroyed", which a quit leaves.
-    if (!this.window || this.window.isDestroyed()) return;
-    this.window.hide();
+    if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return;
+    if (this.exit) return;
+
+    const window = this.window;
+    window.webContents.send(IPC_CHANNELS.teleprompterVisible, false);
+    this.exit = setTimeout(() => {
+      this.exit = null;
+      if (!window.isDestroyed()) window.hide();
+    }, TELEPROMPTER_EXIT_MS);
   }
 
+  /** Whether the island is up, not counting one on its way out. */
   get isVisible(): boolean {
-    return this.window !== null && !this.window.isDestroyed() && this.window.isVisible();
+    return (
+      this.window !== null &&
+      !this.window.isDestroyed() &&
+      this.window.isVisible() &&
+      this.exit === null
+    );
   }
 
   /** Re-lays the island out for a new text size or width. */
@@ -133,6 +163,8 @@ export class TeleprompterWindow {
   destroy(): void {
     this.stopWatchingCursor?.();
     this.stopWatchingCursor = null;
+    if (this.exit) clearTimeout(this.exit);
+    this.exit = null;
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = null;
   }

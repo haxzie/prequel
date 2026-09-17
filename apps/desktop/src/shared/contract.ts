@@ -223,6 +223,15 @@ export const TELEPROMPTER_FOOTER = 22;
 /** Padding inside the island, around the text. */
 export const TELEPROMPTER_PADDING = 14;
 
+/**
+ * How long the island takes to slide up before its window is hidden.
+ *
+ * Main waits this long between telling the island and hiding the window;
+ * the renderer's exit animation is exactly this long. A longer animation
+ * would be cut off, a shorter one would leave a blank window on screen.
+ */
+export const TELEPROMPTER_EXIT_MS = 200;
+
 /** Gap between the menu bar and the island on a display with no notch. */
 export const TELEPROMPTER_TOP_GAP = 8;
 
@@ -520,6 +529,14 @@ export const IPC_CHANNELS = {
    * chunk that is not listening when the page finishes loading.
    */
   teleprompterReady: "teleprompter:ready",
+  /**
+   * Main → the island only: it is being shown, or is about to be hidden.
+   *
+   * The island slides down on show and up on hide, and the renderer stays
+   * mounted across both, so it has to be told. `false` arrives
+   * `TELEPROMPTER_EXIT_MS` before the window goes, which is the slide's length.
+   */
+  teleprompterVisible: "teleprompter:visible",
   /** Main → renderer broadcast. */
   sessionChanged: "session:changed",
   /**

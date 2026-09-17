@@ -114,6 +114,11 @@
      in over that keeps the swap from reading as one panel being replaced by
      another. */
   --animate-view-in: view-in 200ms ease-out;
+  /* The island drops out of the notch and draws back up into it. The exit
+     holds its end frame: the window is hidden `TELEPROMPTER_EXIT_MS` later,
+     and the island must not reappear for the tick in between. */
+  --animate-island-in: island-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-island-out: island-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
   /* A tooltip's entrance. No fill mode, on purpose: the bubble fades out
      through a transition on the same property, and a `forwards` fill would
@@ -125,6 +130,18 @@
   @keyframes view-in {
     from {
       opacity: 0;
+    }
+  }
+
+  @keyframes island-in {
+    from {
+      transform: translateY(-100%);
+    }
+  }
+
+  @keyframes island-out {
+    to {
+      transform: translateY(-100%);
     }
   }
 
