@@ -139,6 +139,19 @@ export interface RecordingPreferences {
   /** What happens when a recording stops. */
   afterRecording: AfterRecording;
   /**
+   * Whether the prompter shows while the panel is up.
+   *
+   * Five flat leaves rather than a `teleprompter: {…}` group, for the reason
+   * every setting here is flat: a group makes "is this set?" mean "is
+   * anything in this group set?", and every per-control reset goes wrong.
+   */
+  teleprompter: boolean;
+  teleprompterMode: TeleprompterMode;
+  teleprompterSize: TeleprompterSize;
+  teleprompterWidth: TeleprompterWidth;
+  /** Words per minute, for auto-scroll. Speech runs 120–160. */
+  teleprompterSpeed: number;
+  /**
    * Whether the welcome flow has been finished.
    *
    * Not recording setup, and the only thing in here that is not — but this file
@@ -164,8 +177,116 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   countdown: 3,
   saveDirectory: null,
   afterRecording: "editor",
+  teleprompter: false,
+  teleprompterMode: "voice",
+  teleprompterSize: "medium",
+  teleprompterWidth: "normal",
+  teleprompterSpeed: 140,
   welcomed: false,
 };
+
+/**
+ * How the prompter moves.
+ *
+ * `voice` follows what is said; `timed` scrolls at `teleprompterSpeed`;
+ * `manual` moves only on the keys. Voice is the default and falls back to
+ * timed on a machine with no on-device speech model — reported through
+ * `TeleprompterState.listening`, never by rewriting the preference.
+ */
+export type TeleprompterMode = "voice" | "timed" | "manual";
+export type TeleprompterSize = "small" | "medium" | "large";
+export type TeleprompterWidth = "narrow" | "normal" | "wide";
+
+/** Width of the island's visible panel, in points. */
+export const TELEPROMPTER_WIDTHS: Record<TeleprompterWidth, number> = {
+  narrow: 440,
+  normal: 560,
+  wide: 720,
+};
+
+/** Text size, in CSS pixels. Semibold, so it reads from arm's length. */
+export const TELEPROMPTER_SIZES: Record<TeleprompterSize, number> = {
+  small: 18,
+  medium: 20,
+  large: 24,
+};
+
+/** How many lines of script the island shows. */
+export const TELEPROMPTER_LINES = 4;
+
+/** Line height as a multiple of the text size. */
+export const TELEPROMPTER_LEADING = 1.35;
+
+/** Footer strip under the text: meter, progress, mode. */
+export const TELEPROMPTER_FOOTER = 22;
+
+/** Padding inside the island, around the text. */
+export const TELEPROMPTER_PADDING = 14;
+
+/** Gap between the menu bar and the island on a display with no notch. */
+export const TELEPROMPTER_TOP_GAP = 8;
+
+/**
+ * The island's visible height, in points.
+ *
+ * Main sizes the window with it and the island draws to it, so it lives here
+ * for the reason `PANEL_INSET` does: the two drifting apart clips the last
+ * line or leaves a dead band under the footer. `notchHeight` is the strip the
+ * island shares with the notch on a display that has one, and zero elsewhere.
+ */
+export function teleprompterHeight(size: TeleprompterSize, notchHeight: number): number {
+  const text = TELEPROMPTER_LINES * TELEPROMPTER_SIZES[size] * TELEPROMPTER_LEADING;
+  return Math.round(notchHeight + TELEPROMPTER_PADDING * 2 + text + TELEPROMPTER_FOOTER);
+}
+
+/**
+ * Where the microphone stands with the prompter.
+ *
+ * `unavailable` is a machine with no on-device model for the locale;
+ * `denied` is Speech recognition refused in System Settings. Both are shown
+ * in the island's footer and both mean auto-scroll is what happens instead.
+ */
+export type ListeningState = "off" | "starting" | "on" | "denied" | "unavailable" | "failed";
+
+/**
+ * What the island needs that `DockState` does not already carry.
+ *
+ * The preferences — mode, size, width, speed — stay in `DockState`, which
+ * every window already receives; copying them here would be two places to
+ * keep in step. The position is *not* here either: it moves several times a
+ * second and goes to the island alone on `teleprompter:position`.
+ */
+export interface TeleprompterState {
+  script: string;
+  /** Whether auto-scroll or listening is paused by the key. */
+  paused: boolean;
+  listening: ListeningState;
+  /**
+   * Which display the island is on, so the island can draw a notch or not.
+   * Null until it has been shown.
+   */
+  notch: { height: number; width: number } | null;
+}
+
+export const IDLE_TELEPROMPTER: TeleprompterState = {
+  script: "",
+  paused: false,
+  listening: "off",
+  notch: null,
+};
+
+/** The island's moving parts, sent to it alone. */
+export interface TeleprompterPosition {
+  /** Index of the next word to read. */
+  position: number;
+  /** The follower has not matched anything for a while. */
+  lost: boolean;
+  /** Microphone level, 0–1, for the footer meter. */
+  level: number;
+}
+
+/** How the keys move the position. */
+export type TeleprompterJump = { to: number } | { sentences: number } | { to: "top" };
 
 export interface MediaDevice {
   deviceId: string;
@@ -239,7 +360,13 @@ export type DockMenu =
       /** `null` means the device is switched off. */
       selectedId: string | null;
     }
-  | { kind: "permissions"; anchor: { x: number; y: number }; missing: PermissionId[] };
+  | { kind: "permissions"; anchor: { x: number; y: number }; missing: PermissionId[] }
+  | {
+      kind: "teleprompter";
+      anchor: { x: number; y: number };
+      mode: TeleprompterMode;
+      size: TeleprompterSize;
+    };
 
 /**
  * What was chosen in a drop-up.
@@ -254,7 +381,10 @@ export type DockMenu =
 export type DockMenuPick =
   | { kind: "camera" | "microphone"; device: MediaDevice | null }
   | { kind: "permission"; id: PermissionId }
-  | { kind: "relaunch" };
+  | { kind: "relaunch" }
+  | { kind: "teleprompterEdit" }
+  | { kind: "teleprompterMode"; mode: TeleprompterMode }
+  | { kind: "teleprompterSize"; size: TeleprompterSize };
 
 /** What the panel is currently showing. */
 export type DockView = "setup" | "recording";
@@ -347,6 +477,32 @@ export const IPC_CHANNELS = {
   cameraHover: "camera:hover",
   /** Main → renderer broadcast. */
   dockChanged: "dock:changed",
+  /** The prompter's script and listening state, on request. */
+  teleprompterState: "teleprompter:state",
+  /** Main → renderer broadcast: script, pause or listening changed. Rare. */
+  teleprompterChanged: "teleprompter:changed",
+  /**
+   * Main → the island only: where the reader is.
+   *
+   * Several times a second while someone reads, which is why it is not on the
+   * broadcast — every window would wake for a number only one of them draws.
+   */
+  teleprompterPosition: "teleprompter:position",
+  /** Script window → main: the text, on every edit. */
+  teleprompterSetScript: "teleprompter:setScript",
+  /** Renderer → main: bring up the script window. */
+  teleprompterOpenScript: "teleprompter:openScript",
+  /** Renderer → main: move the position — a word, a sentence, or the top. */
+  teleprompterJump: "teleprompter:jump",
+  teleprompterTogglePause: "teleprompter:togglePause",
+  /**
+   * Island → main, one-way: I have mounted, send me where the reader is.
+   *
+   * The position is pushed rather than fetched so it never has to live in the
+   * broadcast state — and, as with `workspaceReady`, the island is a `lazy()`
+   * chunk that is not listening when the page finishes loading.
+   */
+  teleprompterReady: "teleprompter:ready",
   /** Main → renderer broadcast. */
   sessionChanged: "session:changed",
   /**

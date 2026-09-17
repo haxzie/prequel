@@ -7,6 +7,7 @@
  * TCC — altogether.
  */
 import type {
+  DisplaySafeArea,
   ExportOptions,
   ExportProgress as NativeExportProgress,
   RecordingResult,
@@ -20,6 +21,7 @@ import type {
 import type { PermissionStatus, Target, TargetKind } from "../shared/contract.js";
 
 export type {
+  DisplaySafeArea,
   ExportOptions,
   NativeExportProgress,
   PermissionStatus,
@@ -85,6 +87,37 @@ export interface StartRecordingRequest {
   excludedWindowIds?: number[];
 }
 
+export interface ListenOptions {
+  /** BCP-47. The engine may resolve it to a near neighbour it does have. */
+  locale: string;
+  /**
+   * Words the engine should expect — the script's own vocabulary. Product
+   * names and proper nouns are what generic recognition gets wrong, and both
+   * engines take a list to favour.
+   */
+  vocabulary: string[];
+}
+
+export interface ListenUpdate {
+  /**
+   * `listening` once the microphone is open; `partial` and `final` carry a
+   * hypothesis; `failed` ends it with a code; `stopped` acknowledges the stop.
+   */
+  stage: "listening" | "partial" | "final" | "failed" | "stopped";
+  /** The whole of what the current session has heard, as text. */
+  text?: string;
+  /**
+   * Which session the hypothesis belongs to. The engine restarts itself now
+   * and then — `SFSpeechRecognizer` caps a request at about a minute — and
+   * each restart begins a new hypothesis from nothing.
+   */
+  session?: number;
+  /** Microphone level, 0–1, for the island's meter. */
+  level?: number;
+  code?: string;
+  message?: string;
+}
+
 export interface Recorder {
   /** Current Screen Recording grant. Does not prompt. */
   screenAccessStatus(): PermissionStatus;
@@ -94,6 +127,16 @@ export interface Recorder {
   listTargets(): Promise<Target[]>;
   /** Cameras as AVFoundation sees them. Does not prompt or open anything. */
   listCameras(): NativeCamera[];
+
+  /**
+   * The strip a display's notch and menu bar occupy, or null for an unknown id.
+   *
+   * Electron's `Display` has no safe area, and the teleprompter is drawn as
+   * the notch grown outwards, so it needs the notch's height and edges. Read
+   * from `NSScreen`, which is why this is synchronous: napi runs on the AppKit
+   * main thread already.
+   */
+  displaySafeArea(displayId: number): DisplaySafeArea | null;
 
   /**
    * Opens a camera before there is anything to record with it.
@@ -180,6 +223,22 @@ export interface Recorder {
 
   /** Asks the running transcription to stop. Safe when nothing is running. */
   cancelTranscribe(): void;
+
+  /**
+   * Starts listening to the microphone and reporting what is heard, live.
+   *
+   * For the teleprompter. The same on-device engines as `startTranscribe`,
+   * fed from the default input rather than a file, and reporting each
+   * hypothesis as it changes. `stopListening` is the only way it ends; a
+   * `failed` update says why it could not start or carry on.
+   */
+  startListening(
+    options: ListenOptions,
+    onUpdate: (error: Error | null, update: ListenUpdate) => void,
+  ): void;
+
+  /** Stops listening. Safe when nothing is listening. */
+  stopListening(): void;
 
   /**
    * Points the native side's diagnostics at the app's log file.

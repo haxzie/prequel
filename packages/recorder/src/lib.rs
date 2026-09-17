@@ -17,11 +17,13 @@ use prequel_capture as capture;
 mod export;
 mod logging;
 mod probe;
+mod screen;
 mod transcribe;
 
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
 pub use logging::set_log_file;
 pub use probe::{CaptureWallpaper, ProbeSession, TrackProbe, capture_wallpaper, probe_session};
+pub use screen::{DisplaySafeArea, display_safe_area};
 
 #[napi(string_enum)]
 #[derive(Debug, Clone, Copy)]

@@ -105,6 +105,20 @@ describe("Preferences", () => {
     expect(new Preferences(file).get().afterRecording).toBe(DEFAULT_PREFERENCES.afterRecording);
   });
 
+  it("rejects a prompter mode that no longer exists, and clamps its speed", () => {
+    const file = freshFile();
+    writeFileSync(
+      file,
+      JSON.stringify({ teleprompterMode: "telepathy", teleprompterSpeed: 9000 }),
+    );
+
+    const prefs = new Preferences(file).get();
+    expect(prefs.teleprompterMode).toBe(DEFAULT_PREFERENCES.teleprompterMode);
+    // Above three hundred nobody can read it; a hand-edited thousand would
+    // fling the script past before the countdown ends.
+    expect(prefs.teleprompterSpeed).toBe(300);
+  });
+
   it("keeps every new key across a write, rather than dropping it", () => {
     // `sanitise` is exhaustive by hand, so a key added to the type without a
     // line there saves fine and is gone on the next write. This is that check.

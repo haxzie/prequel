@@ -19,6 +19,8 @@ import type {
   RecordingPreferences,
   ScreenMode,
   SelectionResult,
+  TeleprompterJump,
+  TeleprompterState,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type {
@@ -31,6 +33,7 @@ import type {
 import type { Project } from "../shared/project.js";
 import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
+import type { Teleprompter } from "./teleprompter/index.js";
 import { saveProject } from "./editor-project.js";
 import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
@@ -99,9 +102,14 @@ export interface IpcDeps {
    * the object that owns the recording lifecycle would put the library in it.
    */
   workspace: WorkspaceWindow;
+  /**
+   * The prompter, reached directly for the same reason the workspace is:
+   * moving through a script is not a capture command.
+   */
+  teleprompter: Teleprompter;
 }
 
-export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
+export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     name: env.NEXT_PUBLIC_APP_NAME,
     url: env.NEXT_PUBLIC_APP_URL,
@@ -213,6 +221,25 @@ export function registerIpc({ flow, selection, workspace }: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.revealRecordings, (_event, path?: string) => revealRecordings(path));
 
   ipcMain.handle(IPC_CHANNELS.closePopover, () => flow.close());
+
+  // ── the teleprompter ─────────────────────────────────────────────────────
+  ipcMain.handle(IPC_CHANNELS.teleprompterState, () => teleprompter.snapshot());
+
+  ipcMain.handle(IPC_CHANNELS.teleprompterSetScript, (_event, text: string) =>
+    teleprompter.setScript(text),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.teleprompterOpenScript, () => flow.openScript());
+
+  ipcMain.handle(IPC_CHANNELS.teleprompterJump, (_event, jump: TeleprompterJump) =>
+    teleprompter.jump(jump),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.teleprompterTogglePause, () => teleprompter.togglePause());
+
+  // One-way: the island has mounted and wants its first position. Push, not
+  // pull, so the position is never in the broadcast state.
+  ipcMain.on(IPC_CHANNELS.teleprompterReady, () => teleprompter.ready());
 
   // ── the editor ───────────────────────────────────────────────────────────
   //
@@ -475,6 +502,13 @@ export function broadcastLoginItem(enabled: boolean | null): void {
 export function broadcastDockState(state: DockState): void {
   for (const contents of webContents.getAllWebContents()) {
     if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.dockChanged, state);
+  }
+}
+
+/** The prompter's rare changes: script, pause, listening. The position is not here. */
+export function broadcastTeleprompter(state: TeleprompterState): void {
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.teleprompterChanged, state);
   }
 }
 

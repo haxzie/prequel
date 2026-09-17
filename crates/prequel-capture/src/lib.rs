@@ -10,6 +10,7 @@ mod cursor;
 mod error;
 mod permission;
 mod recorder;
+mod screen;
 mod targets;
 mod typing;
 mod wallpaper;
@@ -22,6 +23,7 @@ pub use recorder::{
     MICROPHONE_FILE, RecordOptions, RecordingSummary, SCREEN_FILE, SYSTEM_AUDIO_FILE,
     ScreenRecorder,
 };
+pub use screen::{SafeArea, display_safe_area};
 pub use targets::{
     Bounds, Target, TargetKind, find_target, is_display_asleep, list_targets, main_display_asleep,
 };

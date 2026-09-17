@@ -38,7 +38,7 @@ interface NativeWord {
  * their Mac is set to. The engine resolves it to the nearest variant it has a
  * model for, and reports back what it actually used.
  */
-function systemLocale(): string {
+export function systemLocale(): string {
   return Intl.DateTimeFormat().resolvedOptions().locale || "en-US";
 }
 

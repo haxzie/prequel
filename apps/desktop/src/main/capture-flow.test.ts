@@ -37,6 +37,7 @@ afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
 /** Ids the fake windows report, so assertions can name them. */
 const DOCK_WINDOW_ID = 101;
 const CAMERA_WINDOW_ID = 202;
+const TELEPROMPTER_WINDOW_ID = 303;
 
 vi.mock("electron", () => ({
   screen: {
@@ -129,8 +130,30 @@ function makeFlow(
     },
   };
 
+  const teleprompter = {
+    /** What the flow last said the panel was doing, or null before it said. */
+    synced: null as boolean | null,
+    started: 0,
+    stopped: 0,
+    scripts: 0,
+    prepare: () => fakeWindow(TELEPROMPTER_WINDOW_ID),
+    sync(panelVisible: boolean) {
+      this.synced = panelVisible;
+    },
+    recordingStarted() {
+      this.started += 1;
+    },
+    recordingStopped() {
+      this.stopped += 1;
+    },
+    openScript() {
+      this.scripts += 1;
+    },
+  };
+
   const flow = new CaptureFlow({
     session: new RecordingSession(),
+    teleprompter,
     dock: {
       prepare: () => fakeWindow(DOCK_WINDOW_ID),
       openMenu: () => Promise.resolve(null),
@@ -173,6 +196,7 @@ function makeFlow(
   return {
     flow,
     camera,
+    teleprompter,
     selection,
     workspace,
     welcome,
@@ -306,6 +330,26 @@ describe("starting a recording", () => {
     );
   });
 
+  it("excludes the teleprompter even when it is switched off", async () => {
+    // The filter is fixed for the life of the stream, and the island can be
+    // switched on mid-take. Off is the default, so this is the common case.
+    const { flow } = makeFlow({ teleprompter: false });
+
+    await flow.record();
+
+    expect(requests[0]!.excludedWindowIds).toContain(TELEPROMPTER_WINDOW_ID);
+  });
+
+  it("tells the prompter a take has begun, so its script window can get out of the frame", async () => {
+    const { flow, teleprompter } = makeFlow();
+
+    await flow.record();
+    expect(teleprompter.started).toBe(1);
+
+    await flow.stop();
+    expect(teleprompter.stopped).toBe(1);
+  });
+
   it("prepares the camera window even when the bubble is hidden", async () => {
     // A window created after capture starts cannot be excluded, and the user
     // can switch the camera on mid-recording.
@@ -434,6 +478,32 @@ describe("the camera bubble", () => {
 
     flow.updatePreferences({ cameraId: null, cameraLabel: null });
     expect(camera.shown).toBe(false);
+  });
+});
+
+describe("the teleprompter island", () => {
+  it("is synced with the panel: shown with it, hidden with it", () => {
+    const { flow, teleprompter } = makeFlow();
+    expect(teleprompter.synced).toBeNull();
+
+    flow.showDock();
+    expect(teleprompter.synced).toBe(true);
+
+    flow.close();
+    expect(teleprompter.synced).toBe(false);
+  });
+
+  it("is re-synced when a preference changes, with the panel's real state", () => {
+    // The island decides for itself whether it should show; the flow only
+    // has to say whether the panel is up, and say so truthfully.
+    const { flow, teleprompter } = makeFlow();
+
+    flow.updatePreferences({ teleprompter: true });
+    expect(teleprompter.synced).toBe(false);
+
+    flow.showDock();
+    flow.updatePreferences({ teleprompterSize: "large" });
+    expect(teleprompter.synced).toBe(true);
   });
 });
 

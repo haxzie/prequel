@@ -81,10 +81,28 @@ async function windowIcons(targets: Target[]): Promise<Map<number, string>> {
   return icons;
 }
 
+/**
+ * The prompter, as the flow needs it.
+ *
+ * A structural type rather than the `Teleprompter` class, so the flow — and
+ * its tests, which mock `electron` down to four names — never import the
+ * controller and everything it drags in.
+ */
+export interface TeleprompterDeps {
+  /** Creates the island without showing it, so its id exists to be excluded. */
+  prepare: () => BrowserWindow;
+  /** Shows or hides the island to match the panel and the preference. */
+  sync: (panelVisible: boolean) => void;
+  recordingStarted: () => void;
+  recordingStopped: () => void;
+  openScript: () => void;
+}
+
 export interface CaptureFlowOptions {
   session: RecordingSession;
   dock: DockWindow;
   camera: CameraWindow;
+  teleprompter: TeleprompterDeps;
   selection: SelectionOverlay;
   preferences: Preferences;
   onChange: (state: DockState) => void;
@@ -254,6 +272,7 @@ export class CaptureFlow {
 
     this.deps.dock.show();
     this.syncCamera();
+    this.deps.teleprompter.sync(true);
     this.emit();
 
     // After the panel is up and the state is out. Nothing here is awaited, so
@@ -310,6 +329,7 @@ export class CaptureFlow {
     this.deps.selection.cancel();
     this.deps.dock.hide();
     this.deps.camera.hide();
+    this.deps.teleprompter.sync(false);
     // Emitted because hiding is exactly when the renderers have to be told to
     // let the devices go — without this they keep them for the whole session.
     this.emit();
@@ -341,7 +361,13 @@ export class CaptureFlow {
     // when its window appears.
     this.emit();
     this.syncCamera();
+    this.deps.teleprompter.sync(this.deps.dock.isVisible);
     return this.state();
+  }
+
+  /** Brings up the script window, for the tray and the island. */
+  openScript(): void {
+    this.deps.teleprompter.openScript();
   }
 
   /**
@@ -525,6 +551,9 @@ export class CaptureFlow {
     // Prepared even when hidden: a window created after capture starts cannot
     // be excluded, and the user may switch the camera on mid-recording.
     const camera = this.deps.camera.prepare();
+    // The island likewise. It is the one window here whose whole purpose is
+    // to be on screen and not in the file.
+    const teleprompter = this.deps.teleprompter.prepare();
 
     log("info", "starting capture", {
       target: `${selection.target.kind} ${String(selection.target.id)}`,
@@ -548,6 +577,8 @@ export class CaptureFlow {
       system_audio: preferences.systemAudio,
       bake_cursor: preferences.bakeCursor,
       countdown: preferences.countdown,
+      teleprompter: preferences.teleprompter,
+      teleprompter_mode: preferences.teleprompter ? preferences.teleprompterMode : null,
     });
 
     try {
@@ -559,7 +590,7 @@ export class CaptureFlow {
         microphone: preferences.micId !== null,
         // The bubble is only a preview; this is what writes `camera.mp4`.
         camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
-        excludedWindowIds: this.excludedIds([dock, camera]),
+        excludedWindowIds: this.excludedIds([dock, camera, teleprompter]),
       });
     } catch (cause) {
       // Said out loud, and the panel put back. A start that fails silently
@@ -579,6 +610,7 @@ export class CaptureFlow {
 
     this.deps.dock.setView("recording");
     this.deps.dock.show();
+    this.deps.teleprompter.recordingStarted();
     this.emit();
     this.watchFirstFrames();
     return this.state();
@@ -691,6 +723,7 @@ export class CaptureFlow {
     this.deps.selection.cancel();
     this.deps.dock.hide();
     this.deps.camera.hide();
+    this.deps.teleprompter.sync(false);
     this.emit();
   }
 
@@ -702,6 +735,7 @@ export class CaptureFlow {
 
     await this.deps.session.stop();
     this.deps.dock.setView("setup");
+    this.deps.teleprompter.recordingStopped();
     this.emit();
 
     track("recording_stopped", { duration_ms: Math.round(elapsedMs) });
@@ -743,6 +777,7 @@ export class CaptureFlow {
     await this.deps.session.stop();
     this.deps.session.forgetLastResult();
     this.deps.dock.setView("setup");
+    this.deps.teleprompter.recordingStopped();
     this.emit();
 
     if (!path) return;

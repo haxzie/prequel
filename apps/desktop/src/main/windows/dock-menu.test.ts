@@ -69,6 +69,39 @@ beforeEach(() => {
   closed.length = 0;
 });
 
+describe("the teleprompter menu", () => {
+  const PROMPTER: DockMenu = { kind: "teleprompter", anchor: { x: 0, y: 0 }, mode: "voice", size: "medium" };
+
+  it("offers the script first, then the mode and size with the current ones ticked", () => {
+    const template = dockMenuTemplate(PROMPTER, () => undefined);
+
+    expect(template.map((item) => item.label ?? item.type)).toEqual([
+      "Edit Script…",
+      "separator",
+      "Follow My Voice",
+      "Auto-scroll",
+      "Manual",
+      "separator",
+      "Small Text",
+      "Medium Text",
+      "Large Text",
+    ]);
+    expect(template.filter((item) => item.checked).map((item) => item.label)).toEqual([
+      "Follow My Voice",
+      "Medium Text",
+    ]);
+  });
+
+  it("resolves with the mode or size that was picked", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(PROMPTER, WINDOW);
+
+    pickItem(3);
+
+    await expect(picked).resolves.toEqual({ kind: "teleprompterMode", mode: "timed" });
+  });
+});
+
 describe("a device menu", () => {
   it("lists every device, then Off, with the chosen one ticked", () => {
     const template = dockMenuTemplate(CAMERAS, () => undefined);

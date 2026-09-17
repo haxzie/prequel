@@ -17,7 +17,12 @@
  */
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 
-import type { DockMenu, DockMenuPick } from "../../shared/contract.js";
+import type {
+  DockMenu,
+  DockMenuPick,
+  TeleprompterMode,
+  TeleprompterSize,
+} from "../../shared/contract.js";
 import {
   NEEDS_RESTART,
   PERMISSION_CONSEQUENCE,
@@ -77,6 +82,35 @@ export function dockMenuTemplate(
       );
     }
     return items;
+  }
+
+  if (menu.kind === "teleprompter") {
+    const mode = (value: TeleprompterMode, label: string): MenuItemConstructorOptions => ({
+      label,
+      type: "checkbox",
+      checked: menu.mode === value,
+      click: () => pick({ kind: "teleprompterMode", mode: value }),
+    });
+    const size = (value: TeleprompterSize, label: string): MenuItemConstructorOptions => ({
+      label,
+      type: "checkbox",
+      checked: menu.size === value,
+      click: () => pick({ kind: "teleprompterSize", size: value }),
+    });
+
+    // Edit first: it is what the chevron is reached for. The choices under it
+    // are checkboxes for the reason the device lists are — see below.
+    return [
+      { label: "Edit Script…", click: () => pick({ kind: "teleprompterEdit" }) },
+      { type: "separator" },
+      mode("voice", "Follow My Voice"),
+      mode("timed", "Auto-scroll"),
+      mode("manual", "Manual"),
+      { type: "separator" },
+      size("small", "Small Text"),
+      size("medium", "Medium Text"),
+      size("large", "Large Text"),
+    ];
   }
 
   const { kind, selectedId } = menu;

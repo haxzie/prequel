@@ -234,6 +234,8 @@ export function createFakeRecorder(): Recorder {
     // Named as AVFoundation would, without Chromium's trailing USB ids, so the
     // name-matching the real flow depends on is exercised rather than bypassed.
     listCameras: () => [{ id: "fake-camera-0", name: "FaceTime HD Camera" }],
+    // No AppKit to ask, and null is what an external display answers too.
+    displaySafeArea: () => null,
     // No device to warm, and nothing that could fail: the fake exists so the
     // whole flow runs on a machine with no camera at all.
     prepareCamera: () => Promise.resolve(),
@@ -378,6 +380,22 @@ export function createFakeRecorder(): Recorder {
     },
 
     cancelTranscribe: () => undefined,
+
+    // No microphone behind the fake. Reported as no model rather than as a
+    // silent success, so the island says auto-scroll is what it will do.
+    startListening: (_options, onUpdate) => {
+      setTimeout(
+        () =>
+          onUpdate(null, {
+            stage: "failed",
+            code: "NO_LOCAL_MODEL",
+            message: "the fake recorder cannot listen",
+          }),
+        0,
+      );
+    },
+
+    stopListening: () => undefined,
 
     // Nothing native to route; the fake's own warnings go through console.
     setLogFile: () => undefined,

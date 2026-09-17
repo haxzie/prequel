@@ -13,6 +13,7 @@ import {
   broadcastEntitlement,
   broadcastDockState,
   broadcastLoginItem,
+  broadcastTeleprompter,
   broadcastUpdateState,
   registerIpc,
 } from "./ipc.js";
@@ -21,17 +22,26 @@ import { initLogging, log, logPath } from "./log.js";
 import { loginItemState, seedLoginItem, startedByItself, wasOpenedAtLogin } from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
-import { getRecorder } from "./recorder.js";
+import { getRecorder, type Recorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
 import { Preferences } from "./preferences.js";
 import { RecordingSession } from "./session.js";
-import { applyShortcuts, teardownShortcuts } from "./shortcuts.js";
+import {
+  applyShortcuts,
+  bindTeleprompterKeys,
+  teardownShortcuts,
+  unbindTeleprompterKeys,
+} from "./shortcuts.js";
+import { Teleprompter } from "./teleprompter/index.js";
+import { ScriptStore } from "./teleprompter/script.js";
 import { AppTray } from "./tray.js";
 import { checkForUpdates, checkForUpdatesIfDue, onUpdateChanged } from "./update.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
 import { WorkspaceWindow } from "./windows/workspace.js";
+import { ScriptWindow } from "./windows/script.js";
 import { SelectionOverlay } from "./windows/selection.js";
+import { TeleprompterWindow } from "./windows/teleprompter.js";
 import { UpdateWindow } from "./windows/update.js";
 import { WelcomeWindow } from "./windows/welcome.js";
 
@@ -79,9 +89,14 @@ const session = new RecordingSession();
 const dock = new DockWindow();
 const camera = new CameraWindow();
 const selection = new SelectionOverlay();
+// Reads `NSScreen` through the addon, which is loaded lazily; until it is, the
+// island falls back to inferring the notch from the menu bar's height.
+const island = new TeleprompterWindow({ safeArea: (id) => nativeRecorder?.displaySafeArea(id) ?? null });
+let nativeRecorder: Recorder | null = null;
 
 let tray: AppTray | null = null;
 let flow: CaptureFlow | null = null;
+let prompter: Teleprompter | null = null;
 
 /**
  * True from `before-quit` onwards, so teardown is not mistaken for ordinary use.
@@ -104,8 +119,11 @@ let quitting = false;
  * any of them is open and hidden only once none is.
  */
 function syncDockIcon(): void {
-  if (workspace.isOpen || welcome.isOpen || updates.isOpen) void app.dock?.show();
-  else app.dock?.hide();
+  if (workspace.isOpen || welcome.isOpen || updates.isOpen || script.isOpen) {
+    void app.dock?.show();
+  } else {
+    app.dock?.hide();
+  }
 }
 
 const welcome = new WelcomeWindow({
@@ -114,6 +132,11 @@ const welcome = new WelcomeWindow({
 });
 
 const updates = new UpdateWindow({
+  onOpen: () => syncDockIcon(),
+  onClose: () => syncDockIcon(),
+});
+
+const script = new ScriptWindow({
   onOpen: () => syncDockIcon(),
   onClose: () => syncDockIcon(),
 });
@@ -173,16 +196,29 @@ void app.whenReady().then(() => {
   // Routes the addon's `tracing` output into the same file, so a Rust-side
   // warning during an export is not silently dropped.
   void getRecorder()
-    .then((recorder) => recorder.setLogFile(logPath()))
+    .then((recorder) => {
+      nativeRecorder = recorder;
+      recorder.setLogFile(logPath());
+    })
     .catch((cause) => console.warn("[log] could not route native logs:", cause));
 
   // Constructed here: `Preferences` reads `app.getPath`, which throws earlier.
   const preferences = new Preferences();
 
+  prompter = new Teleprompter({
+    island,
+    script,
+    store: new ScriptStore(),
+    preferences: () => preferences.get(),
+    onChange: broadcastTeleprompter,
+    keys: { bind: bindTeleprompterKeys, unbind: unbindTeleprompterKeys },
+  });
+
   flow = new CaptureFlow({
     session,
     dock,
     camera,
+    teleprompter: prompter,
     selection,
     preferences,
     onChange: broadcastDockState,
@@ -195,7 +231,7 @@ void app.whenReady().then(() => {
     checkForUpdates: checkForUpdatesIfDue,
   });
 
-  registerIpc({ flow, selection, workspace });
+  registerIpc({ flow, selection, workspace, teleprompter: prompter });
   tray = new AppTray(session, flow);
 
   // Several surfaces show the account, so they hear about it rather than each
@@ -369,12 +405,17 @@ app.on("will-quit", () => {
 
   for (const [name, teardown] of [
     ["shortcuts", () => teardownShortcuts()],
+    // First among the windows: it holds the microphone, and the engine must
+    // let go before the island it reports to is gone.
+    ["listening", () => prompter?.stopListening()],
     ["selection", () => selection.close()],
     ["camera", () => camera.destroy()],
+    ["teleprompter", () => island.destroy()],
     ["dock", () => dock.destroy()],
     ["workspace", () => workspace.close()],
     ["welcome", () => welcome.close()],
     ["updates", () => updates.close()],
+    ["script", () => script.close()],
     ["tray", () => tray?.destroy()],
   ] as const) {
     try {

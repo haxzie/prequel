@@ -27,6 +27,9 @@ import type {
   ShareProgress,
   ShareRequest,
   Target,
+  TeleprompterJump,
+  TeleprompterPosition,
+  TeleprompterState,
   TranscribeProgress,
   UpdateState,
   WorkspaceSection,
@@ -56,6 +59,9 @@ export type {
   SelectionResult,
   SelectionSetup,
   Target,
+  TeleprompterJump,
+  TeleprompterPosition,
+  TeleprompterState,
   TranscribeProgress,
   UpdateState,
   WorkspaceSection,
@@ -177,6 +183,33 @@ const api = {
       const handler = (_event: unknown, state: DockState) => listener(state);
       ipcRenderer.on(IPC_CHANNELS.dockChanged, handler);
       return () => ipcRenderer.off(IPC_CHANNELS.dockChanged, handler);
+    },
+  },
+
+  teleprompter: {
+    state: (): Promise<TeleprompterState> => ipcRenderer.invoke(IPC_CHANNELS.teleprompterState),
+    /** The whole script, on every edit. Main debounces nothing; the store is cheap. */
+    setScript: (text: string): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.teleprompterSetScript, text),
+    openScript: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.teleprompterOpenScript),
+    jump: (jump: TeleprompterJump): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.teleprompterJump, jump),
+    togglePause: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.teleprompterTogglePause),
+    /** One-way: the island has mounted and wants its first position. */
+    ready: (): void => ipcRenderer.send(IPC_CHANNELS.teleprompterReady),
+
+    /** Subscribes to the script, pause and listening state. Returns an unsubscribe function. */
+    onChange: (listener: (state: TeleprompterState) => void): (() => void) => {
+      const handler = (_event: unknown, state: TeleprompterState) => listener(state);
+      ipcRenderer.on(IPC_CHANNELS.teleprompterChanged, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterChanged, handler);
+    },
+
+    /** Subscribes to the reader's position. Sent to the island alone, often. */
+    onPosition: (listener: (position: TeleprompterPosition) => void): (() => void) => {
+      const handler = (_event: unknown, position: TeleprompterPosition) => listener(position);
+      ipcRenderer.on(IPC_CHANNELS.teleprompterPosition, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterPosition, handler);
     },
   },
 
