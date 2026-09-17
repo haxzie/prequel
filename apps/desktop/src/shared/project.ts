@@ -9,7 +9,8 @@
  * renderer edits it, and the exporter is handed what it resolves to.
  */
 import type { ExportFormat } from "./contract.js";
-import type { MediaTime } from "./manifest.js";
+import { placement } from "./layout.js";
+import type { MediaTime, SourceInfo } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
 import { textMotion, type TextMotionId } from "./text-motion.js";
 import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
@@ -1290,6 +1291,55 @@ function nonOverlapping<T extends { source: { start: Ns; end: Ns } }>(sorted: T[
 }
 
 /**
+ * What was recorded, as far as a fresh project's defaults care.
+ *
+ * Only consulted by `newProject`: a project on disk already has its answers.
+ */
+export interface SourceShape {
+  /** A whole display, which opens full-bleed — see `newProject`. */
+  fullScreen: boolean;
+  /**
+   * A recorded window's screen track and its own corner radius, all in the
+   * track's pixels. Null for a display, an area, and a window whose radius the
+   * recorder could not read — the manifest leaves `corner_radius` out for all
+   * three, and "not known" keeps the stock radius rather than squaring it off.
+   */
+  window: { width: number; height: number; cornerRadius: number } | null;
+}
+
+/**
+ * What a fresh project should know about a recording, from its manifest.
+ *
+ * `area` and `window` both keep the card; only a whole screen drops it. A
+ * window brings its corner radius along with the screen track's size, in the
+ * same pixels, because the radius is meaningless without the picture it is a
+ * fraction of. `screen` is the track as the editor will measure it — probed
+ * where main can probe, the manifest's own numbers where it cannot — and it
+ * has to be the same size the automatic frame is filled from, or the radius
+ * is worked out for a picture of the wrong size.
+ *
+ * Here rather than beside either caller because two of them read a session
+ * — main, and the gallery that cannot import `electron` — and "what shape is
+ * the source" answered twice is answered differently eventually.
+ */
+export function sourceShape(
+  source: SourceInfo,
+  screen: { width: number | null; height: number | null } | undefined,
+): SourceShape {
+  const radius = source.corner_radius;
+  const window =
+    source.kind === "window" &&
+    screen?.width != null &&
+    screen.height != null &&
+    typeof radius === "number" &&
+    Number.isFinite(radius) &&
+    radius >= 0
+      ? { width: screen.width, height: screen.height, cornerRadius: radius }
+      : null;
+  return { fullScreen: source.kind === "display", window };
+}
+
+/**
  * A fresh project for a recording that has never been edited.
  *
  * The frame opens on `auto`, which carries no size of its own — the editor
@@ -1305,8 +1355,19 @@ function nonOverlapping<T extends { source: { start: Ns; end: Ns } }>(sorted: T[
  * the padding rather than staying behind — kept on a full-bleed picture it cuts
  * four notches out of the corners with the background showing through, which
  * looks like a bug rather than like a choice.
+ *
+ * A window opens rounded to its own corners. The capture leaves them
+ * transparent and the file has them black, so a picture rounded less than the
+ * window is shows a black wedge between its border and its edge — a pixel or
+ * two on most windows at the stock radius, and more on a Tahoe window or at a
+ * narrow padding, and either way the first thing anyone sees. Rounded to
+ * match, the border hugs the window.
  */
-export function newProject(recordingId: string, duration: Ns, fullScreen = false): Project {
+export function newProject(
+  recordingId: string,
+  duration: Ns,
+  source: SourceShape = { fullScreen: false, window: null },
+): Project {
   const defaults = structuredClone(DEFAULT_SETTINGS);
   // New projects get a restrained lift from the recording without turning the
   // pointer into a sticker. Existing project files do not pass through this
@@ -1314,10 +1375,12 @@ export function newProject(recordingId: string, duration: Ns, fullScreen = false
   defaults.layout.cursorShadowOpacity = 0.2;
   defaults.layout.cursorShadowBlur = 0.01;
   defaults.layout.cursorShadowY = 0.01;
-  if (fullScreen) {
+  if (source.fullScreen) {
     defaults.layout.preset = "over-full";
     defaults.background.padding = 0;
     defaults.background.cornerRadius = 0;
+  } else if (source.window) {
+    defaults.background.cornerRadius = windowCornerRadius(defaults, source.window);
   }
 
   return {
@@ -1338,6 +1401,48 @@ export function newProject(recordingId: string, duration: Ns, fullScreen = false
     output: { fps: 60, format: "h264", shortEdge: null },
     transcript: null,
   };
+}
+
+/**
+ * The window's corner radius as the fraction the background setting stores.
+ *
+ * Worked out through `placement`, the same arithmetic the plan draws with,
+ * against the frame the editor is about to fill in — the recording's own size,
+ * which is what `auto` resolves to. The picture is scaled into that frame by
+ * the padding, so the radius scales with it, and the setting is that many
+ * output pixels over the frame's shorter edge. Deriving it any other way is a
+ * second answer to "how big is the picture", which is what the plan exists to
+ * prevent.
+ *
+ * One source pixel is added before scaling. The measured radius is a whole
+ * number of pixels and the window's edge is antialiased across one, so a mask
+ * at exactly the radius leaves the blended hairline showing dark along the
+ * arc; a pixel inside it does not.
+ *
+ * Only the default is set. Change the padding afterwards and the picture is a
+ * different size while the fraction stays put — more rounding than the window
+ * at a wider padding, which is harmless, and slightly less at a narrower one.
+ * A slider that could not go below the window's radius would be the other
+ * answer, and is not this one.
+ */
+function windowCornerRadius(
+  defaults: SliceSettings,
+  window: { width: number; height: number; cornerRadius: number },
+): number {
+  const frame = { width: evenSize(window.width), height: evenSize(window.height) };
+  const placed = placement(
+    frame,
+    defaults.layout,
+    defaults.background,
+    { screen: window, camera: null },
+    "screen",
+  );
+  if (!placed || placed.srcRect.width <= 0) return defaults.background.cornerRadius;
+
+  const scale = placed.dstRect.width / placed.srcRect.width;
+  const unit = Math.min(frame.width, frame.height);
+  // Held to the slider's range, so the control reads the number in use.
+  return clamp(((window.cornerRadius + 1) * scale) / unit, 0, 0.1);
 }
 
 // ── Inheritance ─────────────────────────────────────────────────────────────

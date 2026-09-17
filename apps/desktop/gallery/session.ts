@@ -15,7 +15,12 @@ import type { CursorLayer, EditorSession, TrackMedia } from "../src/shared/contr
 import type { Manifest } from "../src/shared/manifest";
 import { parseManifest } from "../src/shared/manifest";
 import type { Project } from "../src/shared/project";
-import { FALLBACK_BACKGROUND, newProject, sanitiseProject } from "../src/shared/project";
+import {
+  FALLBACK_BACKGROUND,
+  newProject,
+  sanitiseProject,
+  sourceShape,
+} from "../src/shared/project";
 import type { Transcript } from "../src/shared/transcript";
 import { parseTranscript } from "../src/shared/transcript";
 import { mediaUrl } from "./media-url";
@@ -60,7 +65,6 @@ export async function loadSession(
     matteUrl: track.matte ? mediaUrl(name, track.matte.file_name) : null,
   }));
 
-  const fullScreen = manifest.source.kind === "display";
   const projectText = saved ? await text(`${base}/project.json`) : null;
   let project: Project | null = null;
   if (projectText) {
@@ -70,7 +74,14 @@ export async function loadSession(
       project = null;
     }
   }
-  project ??= newProject(manifest.id, manifest.duration, fullScreen);
+  project ??= newProject(
+    manifest.id,
+    manifest.duration,
+    sourceShape(
+      manifest.source,
+      media.find((track) => track.kind === "screen"),
+    ),
+  );
 
   const transcriptText = await text(`${base}/transcript.json`);
   let transcript: Transcript | null = null;

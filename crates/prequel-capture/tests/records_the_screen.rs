@@ -369,3 +369,73 @@ fn an_area_recording_is_cropped_to_the_requested_region() {
 
     let _ = std::fs::remove_dir_all(&path);
 }
+
+/// The corner radius rides on a window recording and on nothing else.
+///
+/// The number itself is the window's business — a Tahoe window, an Electron
+/// one and a Terminal all differ — so this pins what is knowable: that a
+/// window on screen measures as *something* in a believable range, and that a
+/// display, which has no corners, is never given one.
+#[test]
+fn a_window_recording_carries_its_corner_radius() {
+    if cannot_capture() {
+        return;
+    }
+
+    let targets = list_targets().expect("list targets");
+    let Some(window) = targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Window && t.bounds.width >= 400.0)
+        .cloned()
+    else {
+        eprintln!("SKIP: no window large enough to record");
+        return;
+    };
+
+    let path = session_dir("window-corner");
+    let mut options = RecordOptions::new(window.clone(), &path);
+    options.fps = FPS;
+
+    let recorder = ScreenRecorder::start(&options, SharedClock::new()).expect("start");
+    std::thread::sleep(Duration::from_secs(1));
+    let summary = recorder.stop().expect("stop");
+
+    println!(
+        "window {:?} by {:?}: corner radius {:?}px at {}×",
+        window.title, window.app_name, summary.window_corner_radius, window.scale_factor
+    );
+    let radius = summary
+        .window_corner_radius
+        .expect("a window on screen has a measurable corner");
+    // Square corners are legitimate; a radius the size of a title bar is not.
+    assert!(
+        (0.0..=64.0 * window.scale_factor).contains(&radius),
+        "implausible radius {radius}px"
+    );
+
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn a_display_recording_has_no_corner_radius() {
+    if cannot_capture() {
+        return;
+    }
+
+    let targets = list_targets().expect("list targets");
+    let display = targets
+        .into_iter()
+        .find(|t| t.kind == TargetKind::Display)
+        .expect("a display");
+
+    let path = session_dir("display-corner");
+    let mut options = RecordOptions::new(display, &path);
+    options.fps = FPS;
+
+    let recorder = ScreenRecorder::start(&options, SharedClock::new()).expect("start");
+    std::thread::sleep(Duration::from_millis(500));
+    let summary = recorder.stop().expect("stop");
+    assert_eq!(summary.window_corner_radius, None);
+
+    let _ = std::fs::remove_dir_all(&path);
+}

@@ -101,6 +101,17 @@ export interface SourceInfo {
   title: string;
   app_name?: string;
   scale_factor: number;
+  /**
+   * A recorded window's own corner radius, in pixels of the screen track.
+   *
+   * The capture leaves a window's rounded corners transparent and the file
+   * has them black, so a picture rounded less than this shows a wedge between
+   * its border and its edge. Measured at record time; absent for a display,
+   * for a window it could not be read from, and on every recording made
+   * before it was measured. Absent is "not known", never "square" — the
+   * project keeps its stock radius rather than dropping to zero.
+   */
+  corner_radius?: number;
 }
 
 /**

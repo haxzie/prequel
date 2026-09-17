@@ -127,6 +127,13 @@ pub struct RecordingSummary {
     /// Stretches somebody was typing through — no key, no count, no fine
     /// timing. See `clicks::KeySpan`.
     pub keys: Vec<KeySpan>,
+    /// The recorded window's corner radius, in pixels of the frame.
+    ///
+    /// Only for a window capture, and only when it could be read — see
+    /// `corner.rs` for how and why. `None` for a display, and for a window
+    /// whose corners could not be told from its content, which the editor
+    /// treats as "not known" rather than as square.
+    pub window_corner_radius: Option<f64>,
 }
 
 impl RecordingSummary {
@@ -342,6 +349,13 @@ pub struct ScreenRecorder {
     /// thread for the same reason typing is: `NSCursor` is AppKit, and the
     /// capture callback is no place to call into it sixty times a second.
     shape_thread: Option<std::thread::JoinHandle<()>>,
+    /// Measuring the window's corner radius, for a window capture.
+    ///
+    /// Its own thread because it takes a second screenshot through
+    /// ScreenCaptureKit, and doing that before `start` returned would hold the
+    /// recording back by however long that takes. Joined by `stop`, which is
+    /// the first moment anything needs the answer.
+    corner_thread: Option<std::thread::JoinHandle<Option<f64>>>,
 }
 
 impl ScreenRecorder {
@@ -525,6 +539,14 @@ impl ScreenRecorder {
 
         block_on_stream(|ch| stream.start_with_ch(ch))?;
 
+        // After the stream is up rather than before, so the screenshot's round
+        // trip is never on the path to the first frame. A display has no
+        // corners to measure and is not asked.
+        let corner_thread = match options.target.kind {
+            TargetKind::Window => Some(spawn_corner(&filter, width, height)),
+            TargetKind::Display => None,
+        };
+
         Ok(Self {
             stream,
             sink,
@@ -539,6 +561,7 @@ impl ScreenRecorder {
             typing_thread,
             cursor_thread,
             shape_thread,
+            corner_thread,
             sampled,
         })
     }
@@ -575,6 +598,14 @@ impl ScreenRecorder {
         if let Some(thread) = self.shape_thread.take() {
             let _ = thread.join();
         }
+        // Joined before the stream stops: the screenshot goes through the same
+        // ScreenCaptureKit session, and a recording stopped within a second of
+        // starting would otherwise race it against the teardown.
+        let window_corner_radius = self
+            .corner_thread
+            .take()
+            .and_then(|thread| thread.join().ok())
+            .flatten();
 
         block_on_stream(|ch| self.stream.stop_with_ch(ch))?;
 
@@ -649,6 +680,7 @@ impl ScreenRecorder {
                     track.take_samples()
                 })
                 .unwrap_or_default(),
+            window_corner_radius,
         })
     }
 }
@@ -667,6 +699,38 @@ const TYPING_INTERVAL: Duration = Duration::from_millis(200);
 /// hover at all. One look costs about 50µs, so this is a rounding error on one
 /// core.
 const SHAPE_INTERVAL: Duration = Duration::from_millis(40);
+
+/// Measures the recorded window's corner radius on a thread of its own.
+///
+/// Returns `None` — a recording with no radius on record, which the editor
+/// falls back from — rather than failing the recording for anything that goes
+/// wrong here. The radius is a nicety; the frames are the recording.
+fn spawn_corner(
+    filter: &arc::R<sc::ContentFilter>,
+    width: u32,
+    height: u32,
+) -> std::thread::JoinHandle<Option<f64>> {
+    // The filter crosses to the thread as a retain on an Objective-C object,
+    // which is atomically refcounted and is exactly how ScreenCaptureKit
+    // itself hands these around. The wrapper says so to the compiler.
+    struct Sendable(arc::R<sc::ContentFilter>);
+    unsafe impl Send for Sendable {}
+    let filter = Sendable(filter.clone());
+
+    std::thread::spawn(move || {
+        // Named whole before its field is touched. A 2021 closure captures the
+        // narrowest path it uses — `filter.0`, which is not `Send` — and the
+        // wrapper only does its job if the closure captures the wrapper.
+        let filter = filter;
+        match crate::corner::measure(&filter.0, width, height) {
+            Ok(radius) => radius,
+            Err(e) => {
+                tracing::warn!("could not measure the window's corner radius: {e}");
+                None
+            }
+        }
+    })
+}
 
 /// Starts sampling where text is being typed, if the app is allowed to look.
 ///

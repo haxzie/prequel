@@ -12,7 +12,7 @@
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Ns, Project } from "../shared/project.js";
+import type { Ns, Project, SourceShape } from "../shared/project.js";
 import { newProject, PROJECT_FILE_NAME, sanitiseProject } from "../shared/project.js";
 
 /** Projects received but not yet on disk, keyed by session directory. */
@@ -34,9 +34,9 @@ export function loadProject(
   dir: string,
   recordingId: string,
   duration: Ns,
-  /** Whether the recording is of a whole screen — see `newProject`. Only
-      consulted when there is no project file yet. */
-  fullScreen = false,
+  /** What was recorded — see `newProject`. Only consulted when there is no
+      project file yet. */
+  source?: SourceShape,
 ): Project {
   const held = pending.get(dir);
   if (held) return held;
@@ -47,17 +47,17 @@ export function loadProject(
   } catch {
     // Never edited. Not written yet either — an untouched recording folder
     // stays as the recorder left it.
-    return newProject(recordingId, duration, fullScreen);
+    return newProject(recordingId, duration, source);
   }
 
   try {
     return (
       sanitiseProject(JSON.parse(raw), recordingId, duration) ??
-      newProject(recordingId, duration, fullScreen)
+      newProject(recordingId, duration, source)
     );
   } catch (cause) {
     console.warn(`[editor] ignoring unreadable ${PROJECT_FILE_NAME} in ${dir}:`, cause);
-    return newProject(recordingId, duration, fullScreen);
+    return newProject(recordingId, duration, source);
   }
 }
 

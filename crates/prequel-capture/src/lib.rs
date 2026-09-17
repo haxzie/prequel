@@ -5,6 +5,7 @@
 //! paths are deprecated and make modern macOS show the user a security warning.
 
 mod clicks;
+mod corner;
 mod cursor;
 mod error;
 mod permission;

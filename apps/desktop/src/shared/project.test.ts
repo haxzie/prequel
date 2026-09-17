@@ -27,6 +27,7 @@ import {
   type TextSlice,
   type TextTrack,
 } from "./project.js";
+import { placement } from "./layout.js";
 import { AUTO_PRESET_ID } from "./presets.js";
 
 const S = 1_000_000_000;
@@ -204,7 +205,7 @@ describe("newProject", () => {
     // inset on a background. A whole screen already fills the frame it was
     // recorded in, and insetting it puts a border of desktop picture around a
     // picture of a desktop while shrinking the thing being demonstrated.
-    const project = newProject(RECORDING, S, true);
+    const project = newProject(RECORDING, S, { fullScreen: true, window: null });
 
     expect(project.defaults.background.padding).toBe(0);
     // The radius goes with it. Kept on a full-bleed picture it cuts four
@@ -214,10 +215,49 @@ describe("newProject", () => {
   });
 
   it("still frames anything else on a background", () => {
-    const project = newProject(RECORDING, S, false);
+    const project = newProject(RECORDING, S, { fullScreen: false, window: null });
 
     expect(project.defaults.background.padding).toBeGreaterThan(0);
     expect(project.defaults.background.cornerRadius).toBeGreaterThan(0);
+  });
+
+  it("rounds a window to its own corners", () => {
+    // The capture leaves a window's corners transparent and the file has them
+    // black. Rounded less than the window, the picture shows a black wedge
+    // between its border and its edge — so the picture's radius, in the plan
+    // the editor draws from, has to be the window's scaled into the frame.
+    const window = { width: 2560, height: 1640, cornerRadius: 36 };
+    const project = newProject(RECORDING, S, { fullScreen: false, window });
+    const { layout, background } = project.defaults;
+
+    const frame = { width: window.width, height: window.height };
+    const placed = placement(frame, layout, background, { screen: window, camera: null }, "screen");
+    if (!placed) throw new Error("the screen has a place in the default layout");
+
+    const drawn = background.cornerRadius * Math.min(frame.width, frame.height);
+    const scale = placed.dstRect.width / window.width;
+    // A pixel inside the window's edge, so its antialiased hairline is under
+    // the mask rather than showing dark along the arc.
+    expect(drawn).toBeCloseTo((window.cornerRadius + 1) * scale, 6);
+    expect(drawn).toBeGreaterThan(window.cornerRadius * scale);
+  });
+
+  it("keeps the stock radius for a window whose corners are not known", () => {
+    // Absent from the manifest means not measured, never square: a recording
+    // made before the radius was recorded still opens on the default.
+    const stock = newProject(RECORDING, S).defaults.background.cornerRadius;
+    const project = newProject(RECORDING, S, { fullScreen: false, window: null });
+
+    expect(project.defaults.background.cornerRadius).toBe(stock);
+  });
+
+  it("holds a window's radius within the slider", () => {
+    // A radius that ran past the control's range would show the control at
+    // its stop while the picture used a number nobody can see.
+    const window = { width: 200, height: 200, cornerRadius: 100 };
+    const project = newProject(RECORDING, S, { fullScreen: false, window });
+
+    expect(project.defaults.background.cornerRadius).toBeLessThanOrEqual(0.1);
   });
 
   it("starts newer projects with a restrained cursor shadow", () => {

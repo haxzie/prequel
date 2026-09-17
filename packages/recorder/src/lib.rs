@@ -206,6 +206,9 @@ fn write_manifest(
             title: String::new(),
             app_name: String::new(),
             scale_factor: plan.scale_factor,
+            // Only a window measures as anything; a display's is `None` before
+            // it gets here, and so is a failed screen track's.
+            corner_radius: screen.and_then(|s| s.window_corner_radius),
         },
         tracks,
         cursor_baked: plan.cursor_baked,

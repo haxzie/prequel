@@ -18,7 +18,7 @@ import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
 import type { CursorLayer } from "../shared/contract.js";
 import { CURSOR_FILES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
-import { FALLBACK_BACKGROUND } from "../shared/project.js";
+import { FALLBACK_BACKGROUND, sourceShape } from "../shared/project.js";
 import type { Transcript } from "../shared/transcript.js";
 import { TRANSCRIPT_FILE_NAME, parseTranscript } from "../shared/transcript.js";
 import { loadProject } from "./editor-project.js";
@@ -80,8 +80,15 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     cursor: cursorLayer(dir, manifest),
     project: await withBackground(
       dir,
-      // `area` and `window` both keep the card; only a whole screen drops it.
-      loadProject(dir, manifest.id, manifest.duration, manifest.source.kind === "display"),
+      loadProject(
+        dir,
+        manifest.id,
+        manifest.duration,
+        sourceShape(
+          manifest.source,
+          media.find((track) => track.kind === "screen"),
+        ),
+      ),
     ),
     transcript: readTranscript(dir, manifest.id),
   };

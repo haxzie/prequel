@@ -106,6 +106,17 @@ pub struct SourceInfo {
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub app_name: String,
     pub scale_factor: f64,
+    /// A recorded window's own corner radius, in pixels of the screen track.
+    ///
+    /// The capture leaves the window's rounded corners transparent and the
+    /// 4:2:0 file turns them black, so the editor needs to round the picture
+    /// at least this much or the wedge shows. Measured off the window at
+    /// record time — see `prequel-capture`'s `corner.rs` — and absent for a
+    /// display, for a window it could not be read from, and on every
+    /// recording made before it was measured. Absent means "not known", never
+    /// "square": a reader falls back to its default rather than to zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_radius: Option<f64>,
 }
 
 /// A cursor position sampled during the recording.
@@ -264,6 +275,7 @@ mod tests {
                 title: "Display 3456×2234".to_owned(),
                 app_name: String::new(),
                 scale_factor: 2.0,
+                corner_radius: None,
             },
             tracks: vec![
                 Track {
