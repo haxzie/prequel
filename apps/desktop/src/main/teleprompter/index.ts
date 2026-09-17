@@ -93,7 +93,10 @@ export class Teleprompter {
    */
   sync(panelVisible: boolean): void {
     const preferences = this.deps.preferences();
-    if (!panelVisible || !preferences.teleprompter) {
+    // With a microphone only: the panel offers the prompter beside the
+    // microphone and only while one is chosen, and the island follows the
+    // control rather than outliving it.
+    if (!panelVisible || !preferences.teleprompter || preferences.micId === null) {
       this.hide();
       return;
     }

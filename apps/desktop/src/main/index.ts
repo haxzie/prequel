@@ -141,6 +141,9 @@ const updates = new UpdateWindow({
 const script = new ScriptWindow({
   onOpen: () => syncDockIcon(),
   onClose: () => syncDockIcon(),
+  // An Escape meant for the picker, which this window took because it had
+  // the keyboard. A no-op when no picker is open.
+  onEscape: () => flow?.cancelSelection(),
 });
 
 const workspace = new WorkspaceWindow({

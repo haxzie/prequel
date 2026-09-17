@@ -173,7 +173,10 @@ beforeEach(() => {
 function openMenu(flow: object = {}): MenuTemplate {
   // The menu reads the preferences for the prompter's tick, so every fake
   // flow answers with the defaults unless a test says otherwise.
-  const withState = { state: () => ({ preferences: DEFAULT_PREFERENCES }), ...flow };
+  const withState = {
+    state: () => ({ preferences: { ...DEFAULT_PREFERENCES, micId: "mic-1" } }),
+    ...flow,
+  };
   const tray = new AppTray(fakeSession({ ...IDLE_SESSION }) as never, withState as never);
   (tray as unknown as { tray: { handlers: Record<string, () => void> } }).tray.handlers[
     "right-click"
@@ -383,13 +386,20 @@ describe("the teleprompter items", () => {
   it("shows the switch as the preference has it, and flips it through the flow", () => {
     const patches: object[] = [];
     const menu = openMenu({
-      state: () => ({ preferences: { ...DEFAULT_PREFERENCES, teleprompter: true } }),
+      state: () => ({
+        preferences: { ...DEFAULT_PREFERENCES, micId: "mic-1", teleprompter: true },
+      }),
       updatePreferences: (patch: object) => patches.push(patch),
     });
 
     expect(item(menu, "Teleprompter")).toMatchObject({ type: "checkbox", checked: true });
     item(menu, "Teleprompter").click?.();
     expect(patches).toEqual([{ teleprompter: false }]);
+  });
+
+  it("is not offered without a microphone", () => {
+    const menu = openMenu({ state: () => ({ preferences: DEFAULT_PREFERENCES }) });
+    expect(menu.find((entry) => entry.label === "Teleprompter")).toBeUndefined();
   });
 
   it("opens the script through the flow, never a window class", () => {

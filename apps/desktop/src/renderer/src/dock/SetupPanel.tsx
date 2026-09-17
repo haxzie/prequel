@@ -186,13 +186,19 @@ export function SetupPanel({ state }: { state: DockState }) {
           OffIcon={MicOffIcon}
         />
 
-        <TeleprompterMenu
-          enabled={preferences.teleprompter}
-          mode={preferences.teleprompterMode}
-          open={open === "teleprompter"}
-          onToggle={togglePrompter}
-          onOpen={(anchor) => void openMenu("teleprompter", anchor)}
-        />
+        {/* Only with a microphone: the prompter follows a voice, and a panel
+            with no microphone chosen is not about to record one. Auto-scroll
+            and manual would work without, but the control's whole reason to
+            sit beside the microphone is that it belongs to it. */}
+        {preferences.micId !== null && (
+          <TeleprompterMenu
+            enabled={preferences.teleprompter}
+            mode={preferences.teleprompterMode}
+            open={open === "teleprompter"}
+            onToggle={togglePrompter}
+            onOpen={(anchor) => void openMenu("teleprompter", anchor)}
+          />
+        )}
       </div>
 
       {/* Last, and absent entirely when there is nothing wrong. At the end

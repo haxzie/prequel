@@ -99,7 +99,7 @@ function make(preferences: Partial<RecordingPreferences> = {}, recorder?: Record
     join(SCRATCH, `script-${String((counter += 1))}-${String(Date.now())}.json`),
   );
   store.set(SCRIPT);
-  const prefs = { ...DEFAULT_PREFERENCES, teleprompter: true, ...preferences };
+  const prefs = { ...DEFAULT_PREFERENCES, teleprompter: true, micId: "mic-1", ...preferences };
 
   const prompter = new Teleprompter({
     island: island as never,
@@ -139,6 +139,16 @@ describe("showing", () => {
 
   it("stays hidden when the preference is off, whatever the panel does", () => {
     const { prompter, island } = make({ teleprompter: false });
+    prompter.sync(true);
+    expect(island.visible).toBe(false);
+  });
+
+  it("goes with the microphone: no microphone, no island", () => {
+    const { prompter, island, prefs } = make({ teleprompterMode: "manual" });
+    prompter.sync(true);
+    expect(island.visible).toBe(true);
+
+    prefs.micId = null;
     prompter.sync(true);
     expect(island.visible).toBe(false);
   });

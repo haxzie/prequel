@@ -266,10 +266,15 @@ export class AppTray {
               icon: symbol("crop"),
               click: () => this.flow.openMode("area"),
             },
+          ] satisfies MenuItemConstructorOptions[])),
+      // The prompter's switch and its script, one click from anywhere — with
+      // a microphone chosen, as on the panel. A checkbox for the switch
+      // because the tick is the only place outside the panel that says
+      // whether the island will come up.
+      ...(active || this.flow.state().preferences.micId === null
+        ? []
+        : ([
             { type: "separator" },
-            // The prompter's switch and its script, one click from anywhere.
-            // A checkbox for the switch because the tick is the only place
-            // outside the panel that says whether the island will come up.
             {
               label: "Teleprompter",
               type: "checkbox",

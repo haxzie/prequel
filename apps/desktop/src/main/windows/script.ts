@@ -20,6 +20,17 @@ const MIN_HEIGHT = 280;
 export interface ScriptWindowOptions {
   onOpen?: () => void;
   onClose?: () => void;
+  /**
+   * Escape was pressed while this window had the keyboard.
+   *
+   * The source picker listens for Escape on its own overlays, which only
+   * hear it while one of them is the key window. This window is focusable
+   * and often open when the picker comes up — switching the prompter on with
+   * no script opens it — so an Escape meant for the picker landed here and
+   * did nothing. Handed up rather than acted on: this window knows nothing
+   * about pickers.
+   */
+  onEscape?: () => void;
 }
 
 export class ScriptWindow {
@@ -62,6 +73,12 @@ export class ScriptWindow {
     window.on("closed", () => {
       this.window = null;
       this.options.onClose?.();
+    });
+
+    // `before-input-event` rather than a DOM listener: it fires whatever the
+    // textarea is doing with the key, and before it.
+    window.webContents.on("before-input-event", (_event, input) => {
+      if (input.type === "keyDown" && input.key === "Escape") this.options.onEscape?.();
     });
 
     void loadRoute(window, "/script");
