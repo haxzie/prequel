@@ -14,6 +14,7 @@ import type {
   PermissionState,
   RecordingPreferences,
   Target,
+  TeleprompterState,
   UpdateState,
 } from "../src/shared/contract";
 import { DEFAULT_PREFERENCES, IDLE_SESSION, IDLE_UPDATE } from "../src/shared/contract";
@@ -47,6 +48,23 @@ export const PREFERENCES: RecordingPreferences = {
   micLabel: "MacBook Pro Microphone",
   welcomed: true,
 };
+
+/** A script, with the follower a sentence in; the island's usual state. */
+export const TELEPROMPTER: TeleprompterState = {
+  script:
+    "Welcome to Prequel, a screen recorder for the Mac.\n" +
+    "Today we are going to record a short demo of the new teleprompter.\n" +
+    "[smile at the camera]\n" +
+    "It sits in the notch, right under the lens, so your eyes stay on the camera.\n" +
+    "Type your script, press record, and read. The words light up as you say them.",
+  paused: false,
+  listening: "on",
+  // The 14" MacBook Pro's notch: 37 points tall, 200 wide.
+  notch: { height: 37, width: 200 },
+};
+
+/** How far in the reader is, for a shot to light the words up to. */
+export const TELEPROMPTER_POSITION = { position: 14, lost: false, level: 0.6 };
 
 export const DOCK: DockState = {
   view: "setup",

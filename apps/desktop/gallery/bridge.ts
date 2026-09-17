@@ -27,6 +27,8 @@ import type {
   IpcResult,
   PermissionState,
   ProjectSummary,
+  TeleprompterPosition,
+  TeleprompterState,
   UpdateState,
 } from "../src/shared/contract";
 import type { ScenePreset } from "../src/shared/scene-presets";
@@ -38,6 +40,9 @@ import { loadSession } from "./session";
 
 export interface Fixtures {
   dock: DockState;
+  teleprompter: TeleprompterState;
+  /** What the island is told when it asks where the reader is. */
+  teleprompterPosition: TeleprompterPosition;
   permissions: PermissionState[];
   auth: AuthState;
   licence: Entitlement;
@@ -50,6 +55,8 @@ export interface Fixtures {
 
 export const DEFAULT_FIXTURES: Fixtures = {
   dock: fixtures.DOCK,
+  teleprompter: fixtures.TELEPROMPTER,
+  teleprompterPosition: fixtures.TELEPROMPTER_POSITION,
   permissions: fixtures.permissions(),
   auth: fixtures.AUTH,
   licence: fixtures.TRIAL,
@@ -162,6 +169,36 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       reportCameraError: (message) => dock({ cameraError: message }),
       onCameraHover: subscribe<boolean>("cameraHover"),
       onChange: subscribe<DockState>("dock"),
+    },
+
+    teleprompter: {
+      state: () => Promise.resolve(state.teleprompter),
+      setScript: (text) => {
+        state.teleprompter = { ...state.teleprompter, script: text };
+        emit("teleprompter", state.teleprompter);
+        return Promise.resolve();
+      },
+      openScript: noop("teleprompter.openScript"),
+      // A click on a word: the reader saying where they are.
+      jump: (jump) => {
+        if ("to" in jump && typeof jump.to === "number") {
+          state.teleprompterPosition = { ...state.teleprompterPosition, position: jump.to };
+          emit("teleprompterPosition", state.teleprompterPosition);
+        }
+        return Promise.resolve();
+      },
+      togglePause: () => {
+        state.teleprompter = { ...state.teleprompter, paused: !state.teleprompter.paused };
+        emit("teleprompter", state.teleprompter);
+        return Promise.resolve();
+      },
+      // Answered on the next tick, as main's push would be: the island
+      // subscribes and then asks, in that order.
+      ready: () => {
+        setTimeout(() => emit("teleprompterPosition", state.teleprompterPosition), 0);
+      },
+      onChange: subscribe<TeleprompterState>("teleprompter"),
+      onPosition: subscribe<TeleprompterPosition>("teleprompterPosition"),
     },
 
     selection: {

@@ -29,8 +29,11 @@ const Library = lazy(() =>
 const EditorRoute = lazy(() =>
   import("../src/renderer/src/editor/EditorRoute").then((m) => ({ default: m.EditorRoute })),
 );
+const Teleprompter = lazy(() =>
+  import("../src/renderer/src/teleprompter/Teleprompter").then((m) => ({ default: m.Teleprompter })),
+);
 
-export type ShotFrameKind = "workspace" | "welcome" | "dock" | "dock-transparent" | "bare";
+export type ShotFrameKind = "workspace" | "welcome" | "dock" | "dock-transparent" | "island" | "bare";
 
 /** One thing the capture script does before it takes the picture. */
 export type Step =
@@ -116,6 +119,31 @@ const EDITOR_READY: Step[] = [
 ];
 
 export const SHOTS: readonly Shot[] = [
+  // ── The teleprompter ──────────────────────────────────────────────────────
+  {
+    id: "teleprompter",
+    frame: "island",
+    install: install((base) => ({
+      dock: { ...base.dock, preferences: { ...base.dock.preferences, teleprompter: true } },
+    })),
+    render: () => <Teleprompter />,
+    steps: [{ kind: "settle", ms: 500 }],
+    clip: "frame",
+    pad: 40,
+  },
+
+  {
+    id: "dock-teleprompter",
+    frame: "dock",
+    install: install((base) => ({
+      dock: { ...base.dock, preferences: { ...base.dock.preferences, teleprompter: true } },
+    })),
+    render: () => <Dock />,
+    steps: [],
+    clip: "[data-view='setup']",
+    pad: 28,
+  },
+
   // ── The dock ──────────────────────────────────────────────────────────────
   {
     id: "dock-setup",

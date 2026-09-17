@@ -19,6 +19,7 @@ import {
   type TeleprompterSize,
   type TeleprompterWidth,
 } from "../../shared/contract.js";
+import { log } from "../log.js";
 import type { DisplaySafeArea } from "../recorder.js";
 import { createPanel, loadRoute } from "./base.js";
 import { watchCursor } from "./cursor.js";
@@ -83,7 +84,13 @@ export class TeleprompterWindow {
     const window = this.prepare();
     // Re-placed on every show: the built-in display may have been closed or
     // opened since, and there is no user position to preserve.
-    window.setBounds(this.bounds());
+    const bounds = this.bounds();
+    window.setBounds(bounds);
+    log(
+      "info",
+      `island placed at ${String(bounds.x)},${String(bounds.y)} ${String(bounds.width)}×${String(bounds.height)}` +
+        (this.notch ? ` under a ${String(this.notch.width)}×${String(this.notch.height)} notch` : " with no notch"),
+    );
     // `showInactive`: the island must never take focus from what is being recorded.
     window.showInactive();
     this.stopWatchingCursor ??= watchCursor(window, (bounds, point) =>

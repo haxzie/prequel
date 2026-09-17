@@ -1,6 +1,12 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 
-import { DOCK_HEADROOM, PANEL_HEIGHT, PANEL_INSET } from "../src/shared/contract";
+import {
+  DOCK_HEADROOM,
+  PANEL_HEIGHT,
+  PANEL_INSET,
+  TELEPROMPTER_WIDTHS,
+  teleprompterHeight,
+} from "../src/shared/contract";
 import { TooltipLayer } from "../src/renderer/src/components/Tooltip";
 import { assetUrl } from "./media-url";
 import { SHOTS, type Shot, type ShotFrameKind } from "./shots";
@@ -65,7 +71,7 @@ function Index() {
  * editor lays out its panel and timeline for these numbers, and a shot taken
  * at the browser's size would show a shape the app never has.
  */
-const WINDOW: Record<Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare">, { width: number; height: number }> = {
+const WINDOW: Record<Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island">, { width: number; height: number }> = {
   workspace: { width: 1280, height: 820 },
   welcome: { width: 720, height: 520 },
 };
@@ -105,6 +111,33 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
   }
 
   const wallpaper = { backgroundImage: `url(${assetUrl("monterey.jpg")})` };
+
+  if (kind === "island") {
+    // The top of a 14" MacBook Pro display: the wallpaper, the menu bar's
+    // band, and the notch cut out of the top edge — the bezel the island is
+    // drawn to merge with. The column is the island's window, as main sizes
+    // it: the panel plus its inset on the sides and the bottom, flush at the
+    // top.
+    const notch = { height: 37, width: 200 };
+    return (
+      <div className="relative overflow-hidden bg-cover bg-top" style={{ ...wallpaper, width: 900, height: 300 }}>
+        <div
+          className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-[10px] bg-black"
+          style={{ width: notch.width, height: notch.height }}
+        />
+        <div
+          data-shot-frame
+          className="absolute top-0 left-1/2 -translate-x-1/2"
+          style={{
+            width: TELEPROMPTER_WIDTHS.normal + PANEL_INSET * 2,
+            height: teleprompterHeight("medium", notch.height) + PANEL_INSET,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    );
+  }
 
   if (kind === "dock" || kind === "dock-transparent") {
     return (

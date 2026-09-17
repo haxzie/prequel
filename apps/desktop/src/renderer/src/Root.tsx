@@ -24,6 +24,10 @@ const Selection = lazy(() =>
   import("./selection/Selection").then((m) => ({ default: m.Selection })),
 );
 const Update = lazy(() => import("./update/Update").then((m) => ({ default: m.Update })));
+const Teleprompter = lazy(() =>
+  import("./teleprompter/Teleprompter").then((m) => ({ default: m.Teleprompter })),
+);
+const Script = lazy(() => import("./script/Script").then((m) => ({ default: m.Script })));
 const Welcome = lazy(() => import("./welcome/Welcome").then((m) => ({ default: m.Welcome })));
 const Workspace = lazy(() =>
   import("./workspace/Workspace").then((m) => ({ default: m.Workspace })),
@@ -60,6 +64,10 @@ function view(route: string) {
       return <Welcome startAt="permissions" />;
     case "/update":
       return <Update />;
+    case "/teleprompter":
+      return <Teleprompter />;
+    case "/script":
+      return <Script />;
     default:
       return <p className="p-6 text-muted">Unknown route: {route}</p>;
   }

@@ -280,3 +280,42 @@ export function UpdateIcon() {
     </svg>
   );
 }
+
+/**
+ * The island itself: a tab hung from the top edge, with lines of script in it.
+ * A screen with a notch was tried first and at 18px read as a crossed box.
+ */
+export function PrompterIcon() {
+  return (
+    <svg {...box}>
+      <path
+        d="M2 3h16M5 3v6.5A2.5 2.5 0 0 0 7.5 12h5A2.5 2.5 0 0 0 15 9.5V3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M8 6.5h4M8 9h2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 16h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.45" />
+    </svg>
+  );
+}
+
+export function PrompterOffIcon() {
+  return (
+    <svg {...box}>
+      <path
+        d="M2 3h16M5 3v6.5A2.5 2.5 0 0 0 7.5 12h5A2.5 2.5 0 0 0 15 9.5V3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.6"
+      />
+      <path d="M5 16h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.3" />
+      <path d="M4.5 15.5 15.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}

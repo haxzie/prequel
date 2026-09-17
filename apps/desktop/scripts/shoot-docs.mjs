@@ -49,8 +49,10 @@ const ATTACH = has("attach");
 // The whole viewport instead of the clip, for working out why a crop is wrong.
 const FULL = has("full");
 
-const PORT = 5199;
-const CDP_PORT = 9222;
+// Overridable so two worktrees can shoot at once: the gallery's port is
+// hard-wired into `gallery/vite.config.ts` only as a default too.
+const PORT = Number(process.env.PREQUEL_GALLERY_PORT ?? 5199);
+const CDP_PORT = Number(process.env.PREQUEL_GALLERY_CDP_PORT ?? 9222);
 const RECORDINGS =
   process.env.PREQUEL_GALLERY_RECORDINGS ?? join(homedir(), "Movies/Prequel/.recordings");
 const OVERLAY = join(tmpdir(), "prequel-gallery");
@@ -122,7 +124,7 @@ async function waitFor(url, label, attempts = 60) {
   throw new Error(`${label} did not come up at ${url}`);
 }
 
-const vite = spawn("pnpm", ["exec", "vite", "--config", "gallery/vite.config.ts"], {
+const vite = spawn("pnpm", ["exec", "vite", "--config", "gallery/vite.config.ts", "--port", String(PORT), "--strictPort"], {
   cwd: PACKAGE,
   env: { ...process.env, PREQUEL_GALLERY_RECORDING: RECORDING, PREQUEL_GALLERY_OVERLAY: OVERLAY },
   stdio: ["ignore", "pipe", "pipe"],

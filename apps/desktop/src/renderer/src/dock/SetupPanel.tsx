@@ -10,6 +10,7 @@ import type {
 import { missingPermissions } from "../../../shared/permissions";
 import { useMediaDevices } from "../hooks/useMediaDevices";
 import { usePermissions } from "../hooks/usePermissions";
+import { useTeleprompter } from "../hooks/useTeleprompter";
 import {
   AreaIcon,
   CameraIcon,
@@ -23,6 +24,7 @@ import {
 import { DeviceMenu } from "./DeviceMenu";
 import { IconButton } from "./IconButton";
 import { PermissionMenu } from "./PermissionMenu";
+import { TeleprompterMenu } from "./TeleprompterMenu";
 import { UpdateButton } from "./UpdateButton";
 
 /** Short, centred: a full-height rule would meet the panel's border at both
@@ -52,6 +54,7 @@ export function SetupPanel({ state }: { state: DockState }) {
   // couple of seconds for the life of a menu-bar app. Mount, window focus and
   // the answer a request returns are the three moments this can change.
   const permissions = usePermissions(null);
+  const hasScript = useTeleprompter().script.trim() !== "";
 
   // What a recording started *now* would be missing, which is not the same as
   // what is ungranted: a camera nobody has switched on needs no camera grant.
@@ -81,7 +84,26 @@ export function SetupPanel({ state }: { state: DockState }) {
       case "relaunch":
         void window.prequel.welcome.relaunch();
         return;
+      case "teleprompterEdit":
+        void window.prequel.teleprompter.openScript();
+        return;
+      case "teleprompterMode":
+        void window.prequel.dock.updatePreferences({ teleprompterMode: pick.mode });
+        return;
+      case "teleprompterSize":
+        void window.prequel.dock.updatePreferences({ teleprompterSize: pick.size });
+        return;
     }
+  };
+
+  /**
+   * Switching the prompter on with nothing to show opens the script window
+   * as well, so the first press does not put an empty island on screen and
+   * leave the user to find where the words go.
+   */
+  const togglePrompter = (enabled: boolean) => {
+    void window.prequel.dock.updatePreferences({ teleprompter: enabled });
+    if (enabled && !hasScript) void window.prequel.teleprompter.openScript();
   };
 
   /**
@@ -163,6 +185,14 @@ export function SetupPanel({ state }: { state: DockState }) {
           OnIcon={MicIcon}
           OffIcon={MicOffIcon}
         />
+
+        <TeleprompterMenu
+          enabled={preferences.teleprompter}
+          mode={preferences.teleprompterMode}
+          open={open === "teleprompter"}
+          onToggle={togglePrompter}
+          onOpen={(anchor) => void openMenu("teleprompter", anchor)}
+        />
       </div>
 
       {/* Last, and absent entirely when there is nothing wrong. At the end
@@ -205,6 +235,14 @@ function buildMenu(
   },
 ): DockMenu {
   if (kind === "permissions") return { kind, anchor, missing: from.missing };
+  if (kind === "teleprompter") {
+    return {
+      kind,
+      anchor,
+      mode: from.preferences.teleprompterMode,
+      size: from.preferences.teleprompterSize,
+    };
+  }
 
   const camera = kind === "camera";
   return {
