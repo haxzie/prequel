@@ -265,6 +265,12 @@ export interface LayoutSettings {
    * much of that speed is allowed to show. 0 draws it as sharp as it ever was.
    */
   cursorMotionBlur: number;
+  /** How opaque the pointer's drop shadow is, from 0 to 1. */
+  cursorShadowOpacity: number;
+  /** Pointer shadow blur, as a fraction of the frame's shorter edge. */
+  cursorShadowBlur: number;
+  /** Pointer shadow's vertical drop, as a fraction of the frame's shorter edge. */
+  cursorShadowY: number;
   /**
    * Which pointer to draw. See `CURSOR_STYLES`.
    *
@@ -813,6 +819,11 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // on screen a viewer is actively following, and a streak long enough to
   // notice is a streak long enough to lose it in.
   cursorMotionBlur: 0.4,
+  // Off in the shared fallback so projects written before cursor shadows stay
+  // unchanged. `newProject` opts newer projects into the restrained default.
+  cursorShadowOpacity: 0,
+  cursorShadowBlur: 0.012,
+  cursorShadowY: 0.006,
   // Only what a *new* project starts with. An existing `project.json` names its
   // own style and keeps it, so nobody's edit changes shape underneath them.
   cursorStyle: "modern-black",
@@ -1037,6 +1048,12 @@ function sanitiseZooms(stored: unknown, duration: Ns): ZoomSlice[] {
  */
 export function newProject(recordingId: string, duration: Ns, fullScreen = false): Project {
   const defaults = structuredClone(DEFAULT_SETTINGS);
+  // New projects get a restrained lift from the recording without turning the
+  // pointer into a sticker. Existing project files do not pass through this
+  // factory, so their missing shadow fields remain off in `sanitiseProject`.
+  defaults.layout.cursorShadowOpacity = 0.2;
+  defaults.layout.cursorShadowBlur = 0.01;
+  defaults.layout.cursorShadowY = 0.01;
   if (fullScreen) {
     defaults.layout.preset = "over-full";
     defaults.background.padding = 0;
@@ -1203,6 +1220,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         ...beforeShrinking(stored.defaults?.layout),
         ...beforeSmoothing(stored.defaults?.layout),
         ...beforeMotionBlur(stored.defaults?.layout),
+        ...beforeCursorShadow(stored.defaults?.layout),
         ...beforeCameraRadius(stored.defaults?.layout),
         ...migrateLayout(stored.defaults?.layout),
       },
@@ -1295,6 +1313,22 @@ function beforeMotionBlur(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cursorMotionBlur" in stored) return undefined;
   return { cursorMotionBlur: 0 };
+}
+
+/**
+ * Leaves the pointer shadow off in a project written before cursor shadows
+ * existed.
+ *
+ * New projects start with a restrained shadow, but spreading a new default
+ * over an old project would change every existing export without anybody
+ * touching the cursor panel. The opacity is the switch, so only it needs a
+ * hold; the new blur and offset are harmless while that switch is zero.
+ */
+function beforeCursorShadow(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cursorShadowOpacity" in stored) return undefined;
+  return { cursorShadowOpacity: 0 };
 }
 
 /**

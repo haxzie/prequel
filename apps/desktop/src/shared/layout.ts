@@ -263,6 +263,8 @@ export type PlanItem =
       size: number;
       /** Point of the image that lands on the position, as a fraction of it. */
       hotspot: { x: number; y: number };
+      /** Optional shadow drawn from the pointer image's alpha. */
+      shadow?: { opacity: number; blur: number; dy: number };
       points: CursorPoint[];
     }
   | {
@@ -562,6 +564,9 @@ export function buildRenderPlan(
           motion,
           layout.cursorSmoothing,
           layout.cursorMotionBlur,
+          layout.cursorShadowOpacity,
+          layout.cursorShadowBlur,
+          layout.cursorShadowY,
         ),
       );
     }
@@ -1671,9 +1676,7 @@ function shotTrack(
   const aims: Aim[] = at.map((when) => {
     const field = zoom.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
-      zoom.target === "region"
-        ? { x: zoom.x, y: zoom.y }
-        : (field ?? cursorFraction(cursor, when));
+      zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorFraction(cursor, when));
 
     return {
       x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
@@ -2131,7 +2134,10 @@ function typingCentre(
   // field is the answer only while keys are going down; between runs the
   // pointer is, and a click is always where the person meant to look.
   const typed = cursor?.typed;
-  if (typed && !typed.some((run) => at >= run.start - TYPED_SLACK_NS && at <= run.end + TYPED_SLACK_NS)) {
+  if (
+    typed &&
+    !typed.some((run) => at >= run.start - TYPED_SLACK_NS && at <= run.end + TYPED_SLACK_NS)
+  ) {
     return null;
   }
 
@@ -3016,6 +3022,9 @@ function cursorItems(
   motion: readonly RectKey[],
   smoothing: number,
   motionBlur: number,
+  shadowOpacity: number,
+  shadowBlur: number,
+  shadowY: number,
 ): PlanItem[] {
   // Smoothed once, up front, and read as the track from here down: the points
   // are written at the smoothed path's own moments, and nothing below this line
@@ -3118,6 +3127,18 @@ function cursorItems(
   const quiet = withTypingGaps(points, path.keys, unit);
   const timed = path.hideAfter === null ? quiet : withIdleGaps(quiet, path.hideAfter);
   const size = Math.max(1, path.size * unit);
+  const shadow =
+    shadowOpacity > 0
+      ? {
+          opacity: shadowOpacity,
+          blur: Math.max(0, shadowBlur * unit),
+          dy: shadowY * unit,
+        }
+      : undefined;
+  // The outer box has to include the whole soft tail and the drop. Without
+  // this extra room the shader can sample the pointer correctly but the GPU
+  // quad clips its shadow at the cursor's own edge.
+  const shadowPad = shadow ? shadow.blur * (SHADOW_SPREAD / 2) + Math.abs(shadow.dy) : 0;
   // Last, so it measures the list that is actually drawn — see `withSmear`.
   const smeared = withSmear(timed, motionBlur, size);
 
@@ -3131,11 +3152,14 @@ function cursorItems(
     path: shape.path,
     size,
     hotspot: shape.hotspot,
+    ...(shadow ? { shadow } : {}),
     // Laid on the picture per track rather than once over `smeared`, because
     // the marker `splitByShape` writes at a shape change is drawn with the
     // *outgoing* pointer's hotspot — a quad built from the incoming one would
     // offset that marker by the difference between two tips.
-    points: drawn.map((point) => onSprite(point, planeAt(point.at), shape.hotspot, size)),
+    points: drawn.map((point) =>
+      onSprite(point, planeAt(point.at), shape.hotspot, size, shadowPad),
+    ),
   }));
 }
 
@@ -3174,6 +3198,7 @@ function onSprite(
   plane: Plane,
   hotspot: { x: number; y: number },
   size: number,
+  extraPad = 0,
 ): CursorPoint {
   const quad = plane.quad;
   if (!quad || plane.rect.width <= 0 || plane.rect.height <= 0) return point;
@@ -3192,9 +3217,14 @@ function onSprite(
   // wrong width, which draws the blur at the wrong length.
   const side = (size * point.scale) / magnify;
   const pad = Math.hypot(alongX, alongY) / 2;
-  const grown = side + pad * 2;
-  const left = plane.flat.x - hotspot.x * side - pad;
-  const top = plane.flat.y - hotspot.y * side - pad;
+  // Shadow padding is measured in output pixels like the setting's resolved
+  // offset. Put it back on the picture's surface before projecting it, or a
+  // tilted pointer gets a larger shadow on the near edge because magnification
+  // is applied twice.
+  const surfaceExtraPad = extraPad / magnify;
+  const grown = side + (pad + surfaceExtraPad) * 2;
+  const left = plane.flat.x - hotspot.x * side - pad - surfaceExtraPad;
+  const top = plane.flat.y - hotspot.y * side - pad - surfaceExtraPad;
 
   const corners: number[] = [];
 

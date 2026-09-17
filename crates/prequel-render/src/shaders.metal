@@ -33,6 +33,11 @@ struct Uniforms {
     // compiles, runs, and renders the wrong colour. See the note on `_align`
     // in `compositor.rs`.
     float4 smear;
+    // The cursor's motion-blur box inside the larger shadow box, as x, y,
+    // width, height in outer-quad uv.
+    float4 cursor_box;
+    // Cursor shadow drop x/y, blur radius and opacity, in outer-quad units.
+    float4 cursor_shadow;
     // One texel of the sampled image, so a blur is measured in its own pixels.
     float2 texel;
     // Superellipse: x = radius, y = exponent.
@@ -286,6 +291,33 @@ static float4 sample_smeared(texture2d<float> image, sampler smp, constant Unifo
     return total / 9.0;
 }
 
+/// Alpha of the pointer silhouette, softened in source uv space.
+static float cursor_shadow_alpha(texture2d<float> image, sampler smp,
+                                 constant Uniforms &u, float2 uv) {
+    // The cursor quad is larger than the source sprite. Clamped sampling is
+    // useful for crops, but outside this silhouette it turns the edge texel
+    // into a solid rectangle — exactly the static-pointer artefact the moving
+    // smear path hid by rejecting its own outside taps.
+    if (any(uv < 0.0) || any(uv > 1.0)) {
+        return 0.0;
+    }
+    float radius = u.cursor_shadow.z / max(u.cursor_box.z, 0.0001);
+    if (radius <= 0.0) {
+        return image.sample(smp, u.src.xy + uv * u.src.zw).a;
+    }
+
+    float total = 0.0;
+    for (int tap = 0; tap < 9; tap++) {
+        float turn = float(tap) * 2.399963;
+        float reach = sqrt(float(tap) + 0.5) / 3.0;
+        float2 offset = float2(cos(turn), sin(turn)) * reach * radius;
+        float2 sample_uv = uv + offset;
+        if (any(sample_uv < 0.0) || any(sample_uv > 1.0)) continue;
+        total += image.sample(smp, u.src.xy + sample_uv * u.src.zw).a;
+    }
+    return total / 9.0;
+}
+
 // Source-over blending is configured for premultiplied colour, so every return
 // carries its alpha folded into the RGB. Verbatim from `premultiplied` in
 // `apps/desktop/src/renderer/src/editor/webgl.ts`.
@@ -374,22 +406,40 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // A moving pointer, which maps its own uv — the quad it is drawn in is
         // larger than the sprite, so the shared mapping below would stretch it.
         float4 sampled;
+        float2 cursor_uv = (uv - u.cursor_box.xy) / u.cursor_box.zw;
         if (u.smear.w != 0.0) {
-            sampled = sample_smeared(image, smp, u, uv);
+            sampled = sample_smeared(image, smp, u, cursor_uv);
         } else {
-            // Mapped into the source rect, so a crop is honoured rather than the
-            // whole texture being stretched across the destination. Mirroring is
-            // applied first, so it flips the crop rather than moving it.
-            uv = u.src.xy + uv * u.src.zw;
-            sampled = sample_focused(image, smp, u, uv, in.screen);
-            // The mask is a separate, smaller stream sampled at the *same*
-            // uv as the picture, so mirror and crop reach it for free and its
-            // size need not match. Multiplied through every channel: the
-            // picture is premultiplied, and colour has to scale with alpha
-            // or the edge of the person glows.
-            if (u.matte != 0) {
-                sampled *= matte.sample(smp, uv).r;
+            // The shadow grows the quad beyond the pointer. Do not let the
+            // sampler's clamp-to-edge turn that padding into a copy of the
+            // PNG's outer pixel — a static pointer then becomes a black
+            // rectangle while a moving one, whose smear path already rejects
+            // outside samples, looks fine.
+            bool inside_cursor = all(cursor_uv >= 0.0) && all(cursor_uv <= 1.0);
+            if (!inside_cursor) {
+                sampled = float4(0.0);
+            } else {
+                // Mapped into the source rect, so a crop is honoured rather
+                // than the whole texture being stretched across the
+                // destination. Mirroring is applied first, so it flips the
+                // crop rather than moving it.
+                uv = u.src.xy + cursor_uv * u.src.zw;
+                sampled = sample_focused(image, smp, u, uv, in.screen);
+                // The mask is a separate, smaller stream sampled at the same
+                // uv as the picture, so mirror and crop reach it for free and
+                // its size need not match. Multiplied through every channel:
+                // the picture is premultiplied, and colour has to scale with
+                // alpha or the edge of the person glows.
+                if (u.matte != 0) {
+                    sampled *= matte.sample(smp, uv).r;
+                }
             }
+        }
+        if (u.cursor_shadow.w > 0.0) {
+            float2 shadow_uv = cursor_uv - u.cursor_shadow.xy / u.cursor_box.zw;
+            float shadow_alpha = cursor_shadow_alpha(image, smp, u, shadow_uv);
+            float under = shadow_alpha * u.cursor_shadow.w * (1.0 - sampled.a);
+            sampled = float4(sampled.rgb, sampled.a + under);
         }
         // Recoloured against what is behind, for a look whose words stand on
         // the footage with nothing under them. The bitmap is white where it is

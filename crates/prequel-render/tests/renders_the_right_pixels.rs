@@ -15,8 +15,8 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, CursorPoint, ExportRequest, OutputFormat, Paint, PlanItem, PlanSource,
-    Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, export,
+    AudioMix, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat, Paint, PlanItem,
+    PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, export,
 };
 
 const S: u64 = 1_000_000_000;
@@ -497,6 +497,48 @@ fn solid(size: u32, colour: [u8; 3]) -> arc::R<cv::PixelBuf> {
     split_frame(size, size, colour, colour)
 }
 
+/// A small opaque mark in a transparent texture, so a cursor shadow test can
+/// distinguish the sprite's silhouette from the padded quad around it.
+fn transparent_cursor(size: u32) -> arc::R<cv::PixelBuf> {
+    let mut buf = cv::PixelBuf::new(
+        size as usize,
+        size as usize,
+        cv::PixelFormat::_32_BGRA,
+        None,
+    )
+    .expect("allocate the transparent cursor");
+
+    unsafe {
+        buf.lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("lock");
+        let stride = buf.bytes_per_row();
+        let base = buf.base_address_mut().cast::<u8>();
+        let inset = size / 4;
+        for y in 0..size as usize {
+            for x in 0..size as usize {
+                let at = y * stride + x * 4;
+                let marked = x >= inset as usize
+                    && x < (size - inset) as usize
+                    && y >= inset as usize
+                    && y < (size - inset) as usize;
+                let edge_probe = x == 0 && y == 0;
+                // BGRA. Transparent pixels must also be black, or premultiplied
+                // alpha leaves a coloured fringe when Metal samples their edge.
+                *base.add(at) = 0;
+                *base.add(at + 1) = 0;
+                *base.add(at + 2) = if marked { 255 } else { 0 };
+                *base.add(at + 3) = if marked || edge_probe { 255 } else { 0 };
+            }
+        }
+        buf.unlock_lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("unlock");
+    }
+
+    buf
+}
+
 #[test]
 fn swaps_the_pointer_image_partway_through() {
     // The pointer becomes a hand over a link, which the plan expresses as two
@@ -563,6 +605,7 @@ fn swaps_the_pointer_image_partway_through() {
                 path: "arrow.png".to_owned(),
                 size: 80.0,
                 hotspot: centre,
+                shadow: None,
                 // Hands over a nanosecond before the swap, the way
                 // `splitByShape` writes it.
                 points: vec![
@@ -576,6 +619,7 @@ fn swaps_the_pointer_image_partway_through() {
                 path: "hand.png".to_owned(),
                 size: 80.0,
                 hotspot: centre,
+                shadow: None,
                 points: vec![
                     point(0, false),
                     point(swap as i64 - 1, false),
@@ -603,6 +647,94 @@ fn swaps_the_pointer_image_partway_through() {
         frame_at(&output, 8).at(OUT_W / 2, OUT_H / 2),
         (0, 0, 255),
         "the hand after the swap",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
+    // The moving cursor path rejects samples outside its sprite. The static
+    // path used to let Metal's clamp-to-edge sampler copy the texture edge over
+    // the shadow padding, which rendered a dark rectangle only when the pointer
+    // stopped. This checks the export pixels where the padding must stay white.
+    let dir = scratch("prequel-pixels-cursor-shadow");
+    let source = solid(200, [255, 255, 255]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+    write_png_with_alpha(&dir.join("cursor.png"), &transparent_cursor(64));
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                motion: Vec::new(),
+            },
+            PlanItem::Cursor {
+                path: "cursor.png".to_owned(),
+                size: 80.0,
+                hotspot: Point { x: 0.5, y: 0.5 },
+                shadow: Some(CursorShadow {
+                    opacity: 0.2,
+                    // Zero blur exercises the sampler's no-tap path: if it
+                    // clamps an outside shadow coordinate, the opaque corner
+                    // probe above becomes a rectangle around the pointer.
+                    blur: 0.0,
+                    dy: 4.0,
+                }),
+                points: vec![CursorPoint {
+                    at: 0,
+                    x: (OUT_W / 2) as f64,
+                    y: (OUT_H / 2) as f64,
+                    scale: 1.0,
+                    visible: true,
+                    quad: None,
+                    smear_x: 0.0,
+                    smear_y: 0.0,
+                }],
+            },
+        ],
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = frame_at(&output, 0);
+    near(
+        frame.at(116, 76),
+        (255, 255, 255),
+        "the static cursor shadow padding",
+    );
+    near(
+        frame.at(OUT_W / 2, OUT_H / 2),
+        (255, 0, 0),
+        "the static cursor itself",
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -692,6 +824,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 path: "arrow.png".to_owned(),
                 size: SPRITE,
                 hotspot: centre,
+                shadow: None,
                 points: vec![point(0), point(S as i64)],
             },
         ],
@@ -799,6 +932,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 path: "arrow.png".to_owned(),
                 size: SPRITE,
                 hotspot: centre,
+                shadow: None,
                 points: vec![point(0), point(S as i64)],
             },
         ],
@@ -892,6 +1026,57 @@ fn write_png(path: &Path, buffer: &arc::R<cv::PixelBuf>) {
         .expect("ffmpeg must be installed to build the background fixture");
 
     assert!(status.success(), "could not write the background PNG");
+    let _ = std::fs::remove_file(&raw);
+}
+
+/// Writes a BGRA PNG without discarding alpha, which is needed for cursor
+/// fixtures: flattening it to RGB would make the shadow test assert a full
+/// rectangle rather than the pointer's actual silhouette.
+fn write_png_with_alpha(path: &Path, buffer: &arc::R<cv::PixelBuf>) {
+    let raw = path.with_extension("bgra");
+    let width = buffer.width();
+    let height = buffer.height();
+    let mut bytes = Vec::with_capacity(width * height * 4);
+
+    unsafe {
+        let mut buffer = buffer.clone();
+        buffer
+            .lock_base_addr(cv::pixel_buffer::LockFlags::READ_ONLY)
+            .result()
+            .expect("lock");
+        let stride = buffer.bytes_per_row();
+        let base = buffer.base_address().cast::<u8>();
+        for y in 0..height {
+            for x in 0..width {
+                let at = y * stride + x * 4;
+                bytes.extend_from_slice(std::slice::from_raw_parts(base.add(at), 4));
+            }
+        }
+        buffer
+            .unlock_lock_base_addr(cv::pixel_buffer::LockFlags::READ_ONLY)
+            .result()
+            .expect("unlock");
+    }
+
+    std::fs::write(&raw, &bytes).expect("write the raw cursor");
+    let status = Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgra",
+            "-s",
+            &format!("{width}x{height}"),
+            "-i",
+        ])
+        .arg(&raw)
+        .args(["-frames:v", "1", "-y"])
+        .arg(path)
+        .status()
+        .expect("ffmpeg must be installed to build the cursor PNG");
+    assert!(status.success(), "could not write the cursor PNG");
     let _ = std::fs::remove_file(&raw);
 }
 

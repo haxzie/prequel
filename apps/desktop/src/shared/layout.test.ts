@@ -1021,6 +1021,27 @@ describe("the pointer changing shape", () => {
     expect(items).toHaveLength(1);
   });
 
+  it("carries cursor shadow controls into every pointer shape", () => {
+    const items = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cursorShadowOpacity: 0.5,
+          cursorShadowBlur: 0.01,
+          cursorShadowY: 0.006,
+        },
+      }),
+      { ...TONE, samples: HOVER },
+    ).items.filter((item) => item.kind === "cursor");
+
+    for (const item of items) {
+      if (item.kind !== "cursor") throw new Error("wrong item");
+      expect(item.shadow).toEqual({ opacity: 0.5, blur: 10.8, dy: 6.48 });
+    }
+  });
+
   it("draws the I-beam for the span the system showed one", () => {
     // The whole point of a pointer per kind. An arrow parked in a text field
     // while somebody types is the tell that the pointer was drawn in

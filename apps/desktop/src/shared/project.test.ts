@@ -215,6 +215,14 @@ describe("newProject", () => {
     expect(project.defaults.background.padding).toBeGreaterThan(0);
     expect(project.defaults.background.cornerRadius).toBeGreaterThan(0);
   });
+
+  it("starts newer projects with a restrained cursor shadow", () => {
+    expect(newProject(RECORDING, S).defaults.layout).toMatchObject({
+      cursorShadowOpacity: 0.2,
+      cursorShadowBlur: 0.01,
+      cursorShadowY: 0.01,
+    });
+  });
 });
 
 describe("sanitiseProject", () => {
@@ -222,6 +230,17 @@ describe("sanitiseProject", () => {
 
   it("reads back what it wrote", () => {
     expect(sanitiseProject(stored(), RECORDING, 10 * S)).toEqual(newProject(RECORDING, 10 * S));
+  });
+
+  it("keeps cursor shadows off in projects written before they existed", () => {
+    const project = stored() as { defaults: { layout: Record<string, unknown> } };
+    delete project.defaults.layout.cursorShadowOpacity;
+    delete project.defaults.layout.cursorShadowBlur;
+    delete project.defaults.layout.cursorShadowY;
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.defaults.layout.cursorShadowOpacity).toBe(
+      0,
+    );
   });
 
   it("refuses a project from an incompatible version", () => {

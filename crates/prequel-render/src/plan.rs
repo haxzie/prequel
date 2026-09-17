@@ -143,6 +143,9 @@ pub enum PlanItem {
         /// Drawn size in output pixels, square.
         size: f64,
         hotspot: Point,
+        /// Shadow cast by the pointer texture, already resolved to pixels.
+        #[serde(default)]
+        shadow: Option<CursorShadow>,
         points: Vec<CursorPoint>,
     },
     /// One caption layer: a bitmap the editor rasterised, drawn whole or
@@ -184,6 +187,16 @@ pub enum PlanItem {
         #[serde(default)]
         tint: Option<Tint>,
     },
+}
+
+/// A cursor shadow is part of the cursor item rather than a rectangle shadow:
+/// the pointer's alpha is the silhouette, and a rounded rectangle would leave
+/// a dark square around every arrow.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CursorShadow {
+    pub opacity: f64,
+    pub blur: f64,
+    pub dy: f64,
 }
 
 /// The two colours an adaptive caption chooses between.
@@ -1473,11 +1486,13 @@ mod tests {
                 path,
                 size,
                 hotspot,
+                shadow,
                 points,
             } => {
                 assert_eq!(path, "cursor.png");
                 assert_eq!(size, 38.0);
                 assert_eq!(hotspot.x, 0.055);
+                assert!(shadow.is_none());
                 assert_eq!(points.len(), 1);
             }
             other => panic!("parsed as {other:?}"),

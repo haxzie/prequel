@@ -1717,6 +1717,44 @@ function CursorPanel({
         />
       </Section>
 
+      <Section title="Shadow">
+        <Slider
+          icon={<ShadowIcon />}
+          label="Opacity"
+          {...field("layout", "cursorShadowOpacity")}
+          value={layout.cursorShadowOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("layout", "cursorShadowOpacity", value)}
+        />
+
+        <Slider
+          icon={<BlurIcon />}
+          label="Blur"
+          {...field("layout", "cursorShadowBlur")}
+          value={layout.cursorShadowBlur}
+          min={0}
+          max={0.05}
+          format={percent}
+          disabled={off || layout.cursorShadowOpacity === 0}
+          onChange={(value) => set("layout", "cursorShadowBlur", value)}
+        />
+
+        <Slider
+          icon={<ShadowOffsetIcon />}
+          label="Offset"
+          {...field("layout", "cursorShadowY")}
+          value={layout.cursorShadowY}
+          min={0}
+          max={0.03}
+          format={percent}
+          disabled={off || layout.cursorShadowOpacity === 0}
+          onChange={(value) => set("layout", "cursorShadowY", value)}
+        />
+      </Section>
+
       <Section title="Hiding">
         <ToggleField
           icon={<TypingIcon />}

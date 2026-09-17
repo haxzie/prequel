@@ -853,6 +853,7 @@ mod tests {
                 path: "cursor.png".to_owned(),
                 size: 38.0,
                 hotspot: Point { x: 0.055, y: 0.055 },
+                shadow: None,
                 points: Vec::new(),
             },
         ])]);
@@ -872,6 +873,7 @@ mod tests {
                 path: "cursor-black.png".to_owned(),
                 size: 38.0,
                 hotspot: Point { x: 0.055, y: 0.055 },
+                shadow: None,
                 points: Vec::new(),
             },
             PlanItem::Cursor {
@@ -881,6 +883,7 @@ mod tests {
                     x: 0.3754,
                     y: 0.055,
                 },
+                shadow: None,
                 points: Vec::new(),
             },
         ])]);
@@ -902,6 +905,7 @@ mod tests {
             path: "cursor.png".to_owned(),
             size: 38.0,
             hotspot: Point { x: 0.0, y: 0.0 },
+            shadow: None,
             points: Vec::new(),
         };
 

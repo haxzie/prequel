@@ -50,6 +50,11 @@ struct Uniforms {
     /// naturally aligned. Appending it after the `u32`s would silently shift
     /// the whole tail.
     smear: [f32; 4],
+    /// The cursor's motion-blur box inside the larger box that leaves room for
+    /// its shadow, as x, y, width, height in outer-quad uv.
+    cursor_box: [f32; 4],
+    /// Cursor shadow drop x/y, blur radius and opacity, in outer-quad units.
+    cursor_shadow: [f32; 4],
     /// One texel of the sampled image, so a blur is measured in its own pixels.
     texel: [f32; 2],
     shape: [f32; 2],
@@ -69,39 +74,31 @@ struct Uniforms {
     mirror: u32,
     /// How hard the frame darkens towards its edges, 0 to 1. 0 darkens nothing.
     ///
-    /// In place of the tail padding this struct already carried, so the layout
-    /// is byte-for-byte what it was and the MSL side needs no re-alignment.
+    /// Kept with the other tail values so the fields above remain in the same
+    /// order as the Metal block.
     vignette: f32,
     /// A flat blur across the whole quad, in the sampled image's own texels.
     ///
     /// Unlike `focus` it does not vary across the quad — a caption word
-    /// arriving out of focus is uniformly soft. In the last four bytes of the
-    /// tail padding, for the reason `vignette` above is: the struct is 16-byte
-    /// aligned and both sides round its size up to the same 224 either way, so
-    /// no field moves.
+    /// arriving out of focus is uniformly soft. Kept beside the other scalar
+    /// flags so the fields above remain in the same order as the Metal block.
     soften: f32,
     /// Non-zero to colour the quad against what is already drawn under it.
     ///
     /// After `soften`, because that is the order `shaders.metal` declares them
-    /// in and the two layouts have to agree field for field. The pair fills the
-    /// eight bytes of tail padding the struct already carried, so nothing above
-    /// moved and both sides are 224 long.
+    /// in and the two layouts have to agree field for field.
     adapt: f32,
     /// How opaque a still image is drawn, 0 to 1. Everything else passes 1.
     ///
-    /// The first field to need the struct to *grow*: the eight bytes `vignette`
-    /// and `soften` were fitted into are spent, and `adapt` took the last four.
-    /// MSL rounds a struct up to its largest member's alignment, so one more
-    /// `float` takes both sides from 224 to 240 — and Rust aligns `[f32; 4]` to
-    /// 4 rather than 16, so it will not add that itself. Hence the padding
-    /// below, written out for the reason `_align` above is.
+    /// The scalar tail follows the Metal declaration exactly. Rust aligns
+    /// arrays to 4 bytes rather than 16, so the explicit tail below keeps the
+    /// 272-byte block the same size on both sides.
     alpha: f32,
     /// Non-zero to multiply the sampled picture by the matte at slot 2.
     ///
-    /// The second field to use the tail `alpha` opened: both sides are still
-    /// 240, and nothing above it moves. Only the camera ever sets it.
+    /// Follows `alpha` in the Metal block. Only the camera ever sets it.
     matte: u32,
-    /// Padding to 240, which is where MSL puts the end of this struct.
+    /// Padding to 272, which is where MSL puts the end of this struct.
     _tail: [f32; 2],
 }
 
@@ -487,6 +484,8 @@ impl Compositor {
             focus: [0.0, 0.0, 1.0, 0.0],
             // Off. Only the pointer ever turns it on.
             smear: [0.0; 4],
+            cursor_box: [0.0, 0.0, 1.0, 1.0],
+            cursor_shadow: [0.0; 4],
             texel: [0.0; 2],
             // Opaque unless a watermark says otherwise — the one item that
             // draws a picture at less than its own alpha.
@@ -743,6 +742,7 @@ impl Compositor {
                 path,
                 size,
                 hotspot,
+                shadow,
                 points,
             } => {
                 let Some(held) = self.images.get(path) else {
@@ -766,7 +766,14 @@ impl Compositor {
                 // position. Mirrors the same three lines in `webgl.ts`.
                 let streak = point.smear_x.hypot(point.smear_y);
                 let pad = streak * 0.5;
-                let grown = size + pad * 2.0;
+                let shadow_pad = shadow.map_or(0.0, |shadow| {
+                    // Keep the same three-sigma room as rectangle shadows, and
+                    // include the drop itself so a positive offset is not cut
+                    // off at the bottom of the cursor quad.
+                    shadow.blur * 1.5 + shadow.dy.abs()
+                });
+                let motion_grown = size + pad * 2.0;
+                let grown = motion_grown + shadow_pad * 2.0;
 
                 Some((
                     Uniforms {
@@ -786,19 +793,33 @@ impl Compositor {
                         // size, and `layout.ts` builds those corners from
                         // exactly this box divided back onto the picture.
                         rect: [
-                            (point.x - hotspot.x * size - pad) as f32,
-                            (point.y - hotspot.y * size - pad) as f32,
+                            (point.x - hotspot.x * size - pad - shadow_pad) as f32,
+                            (point.y - hotspot.y * size - pad - shadow_pad) as f32,
                             grown as f32,
                             grown as f32,
                         ],
+                        cursor_box: [
+                            (shadow_pad / grown) as f32,
+                            (shadow_pad / grown) as f32,
+                            (motion_grown / grown) as f32,
+                            (motion_grown / grown) as f32,
+                        ],
+                        cursor_shadow: shadow.map_or([0.0; 4], |shadow| {
+                            [
+                                0.0,
+                                (shadow.dy / grown) as f32,
+                                (shadow.blur / grown) as f32,
+                                shadow.opacity as f32,
+                            ]
+                        }),
                         // In the grown quad's own uv, which is what the shader
                         // works in. Off entirely below a pixel: a streak that
                         // short is not visible, and the taps cost the same
                         // whether they move or not.
                         smear: [
-                            (point.smear_x / grown) as f32,
-                            (point.smear_y / grown) as f32,
-                            (pad / grown) as f32,
+                            (point.smear_x / motion_grown) as f32,
+                            (point.smear_y / motion_grown) as f32,
+                            (pad / motion_grown) as f32,
                             if streak >= 1.0 { 1.0 } else { 0.0 },
                         ],
                         mode: MODE_IMAGE,
@@ -1094,36 +1115,36 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, quad), 0);
         assert_eq!(offset_of!(Uniforms, rect), 64);
         assert_eq!(offset_of!(Uniforms, src), 80);
-        // `focus` and `smear` are `float4`s, so both go on 16-byte boundaries
-        // and the three `float2`s follow them. `smear` was added here rather
-        // than at the end precisely so this block stays readable: every offset
-        // below it moved by exactly 16, and none of them changed shape.
+        // `focus`, `smear`, `cursor_box` and `cursor_shadow` are `float4`s, so
+        // each goes on a 16-byte boundary. The cursor fields sit beside the
+        // smear rather than in the tail so their uv units stay next to the
+        // other cursor uniform.
         assert_eq!(offset_of!(Uniforms, focus), 96);
         assert_eq!(offset_of!(Uniforms, smear), 112);
-        assert_eq!(offset_of!(Uniforms, texel), 128);
-        assert_eq!(offset_of!(Uniforms, shape), 136);
-        assert_eq!(offset_of!(Uniforms, frame), 144);
-        assert_eq!(offset_of!(Uniforms, color_a), 160);
-        assert_eq!(offset_of!(Uniforms, color_b), 176);
-        assert_eq!(offset_of!(Uniforms, gradient), 192);
-        assert_eq!(offset_of!(Uniforms, mode), 200);
-        assert_eq!(offset_of!(Uniforms, weight), 204);
-        assert_eq!(offset_of!(Uniforms, mirror), 208);
-        // The tail. Both are plain `float`s on 4-byte boundaries, and both sit
-        // in padding the struct already carried — MSL rounds the whole thing up
-        // to 224 either way, so adding one moved nothing above it.
-        assert_eq!(offset_of!(Uniforms, vignette), 212);
-        assert_eq!(offset_of!(Uniforms, soften), 216);
-        assert_eq!(offset_of!(Uniforms, adapt), 220);
+        assert_eq!(offset_of!(Uniforms, cursor_box), 128);
+        assert_eq!(offset_of!(Uniforms, cursor_shadow), 144);
+        assert_eq!(offset_of!(Uniforms, texel), 160);
+        assert_eq!(offset_of!(Uniforms, shape), 168);
+        assert_eq!(offset_of!(Uniforms, frame), 176);
+        assert_eq!(offset_of!(Uniforms, color_a), 192);
+        assert_eq!(offset_of!(Uniforms, color_b), 208);
+        assert_eq!(offset_of!(Uniforms, gradient), 224);
+        assert_eq!(offset_of!(Uniforms, mode), 232);
+        assert_eq!(offset_of!(Uniforms, weight), 236);
+        assert_eq!(offset_of!(Uniforms, mirror), 240);
+        // The tail. These are plain scalars on 4-byte boundaries; the explicit
+        // layout remains in lockstep with the Metal declaration.
+        assert_eq!(offset_of!(Uniforms, vignette), 244);
+        assert_eq!(offset_of!(Uniforms, soften), 248);
+        assert_eq!(offset_of!(Uniforms, adapt), 252);
 
-        // The first field that made the struct grow rather than filling padding
-        // it already carried. MSL rounds to the next 16, so both sides are 240
-        // and the tail is written out here because Rust would not add it.
-        assert_eq!(offset_of!(Uniforms, alpha), 224);
-        // In the tail `alpha` opened, so the size is unchanged.
-        assert_eq!(offset_of!(Uniforms, matte), 228);
+        // MSL rounds the block to the next 16, so both sides are 272 and the
+        // tail is written out here because Rust would not add it.
+        assert_eq!(offset_of!(Uniforms, alpha), 256);
+        // `matte` follows `alpha` without changing the field order.
+        assert_eq!(offset_of!(Uniforms, matte), 260);
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 240);
+        assert_eq!(size_of::<Uniforms>(), 272);
     }
 
     #[test]

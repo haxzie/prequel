@@ -138,6 +138,11 @@ uniform vec4 u_focus;
 // uv, z how much of the quad on each side is padding the streak may run into,
 // w non-zero to enable it at all.
 uniform vec4 u_smear;
+// The cursor's motion-blur box inside the larger shadow box, as x, y, width,
+// height in outer-quad uv.
+uniform vec4 u_cursorBox;
+// Cursor shadow drop x/y, blur radius and opacity, in outer-quad units.
+uniform vec4 u_cursorShadow;
 // A flat blur across the whole quad, in the sampled image's own texels. Unlike
 // \`u_focus\` it does not vary with where the pixel is — a caption word arriving
 // out of focus is uniformly soft, and it is the only thing that uses this. 0
@@ -321,6 +326,27 @@ vec4 sampleSmeared(vec2 uv) {
   return total / 9.0;
 }
 
+/** Alpha of the pointer silhouette, softened in source uv space. */
+float cursorShadowAlpha(vec2 uv) {
+  // The cursor quad is larger than the source sprite. Clamp-to-edge is useful
+  // for crops, but outside this silhouette it turns the edge texel into a
+  // solid rectangle — exactly the static-pointer artefact the moving smear
+  // path hid by rejecting its own outside taps.
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+  float radius = u_cursorShadow.z / max(u_cursorBox.z, 0.0001);
+  if (radius <= 0.0) return texture(u_image, u_src.xy + uv * u_src.zw).a;
+
+  float total = 0.0;
+  for (int tap = 0; tap < 9; tap++) {
+    float turn = float(tap) * 2.399963;
+    float reach = sqrt(float(tap) + 0.5) / 3.0;
+    vec2 sampleUv = uv + vec2(cos(turn), sin(turn)) * reach * radius;
+    if (any(lessThan(sampleUv, vec2(0.0))) || any(greaterThan(sampleUv, vec2(1.0)))) continue;
+    total += texture(u_image, u_src.xy + sampleUv * u_src.zw).a;
+  }
+  return total / 9.0;
+}
+
 // Both compositors blend premultiplied source-over, so every return folds its
 // alpha into the RGB. Verbatim from premultiplied in
 // crates/prequel-render/src/shaders.metal.
@@ -398,18 +424,35 @@ void main() {
     // A moving pointer, which maps its own uv: the quad it is drawn in is
     // larger than the sprite, so the shared mapping below would stretch it.
     vec4 sampled;
+    vec2 cursorUv = (uv - u_cursorBox.xy) / u_cursorBox.zw;
     if (u_smear.w != 0.0) {
-      sampled = sampleSmeared(uv);
+      sampled = sampleSmeared(cursorUv);
     } else {
-      // Mirroring first, so it flips the crop rather than moving it.
-      uv = u_src.xy + uv * u_src.zw;
-      sampled = sampleFocused(uv);
-      // The mask is a separate, smaller stream sampled at the *same* uv as the
-      // picture, so mirror and crop reach it for free and its size need not
-      // match. Multiplied through every channel: the picture is premultiplied,
-      // and colour has to scale with alpha or the edge of the person glows.
-      // Mirrors the Metal side in shaders.metal.
-      if (u_useMatte != 0) sampled *= texture(u_matte, uv).r;
+      // The shadow grows the quad beyond the pointer. Do not let the sampler's
+      // clamp-to-edge turn that padding into a copy of the PNG's outer pixel —
+      // a static pointer then becomes a black rectangle while a moving one,
+      // whose smear path already rejects outside samples, looks fine.
+      bool insideCursor =
+        all(greaterThanEqual(cursorUv, vec2(0.0))) &&
+        all(lessThanEqual(cursorUv, vec2(1.0)));
+      if (!insideCursor) {
+        sampled = vec4(0.0);
+      } else {
+        // Mirroring first, so it flips the crop rather than moving it.
+        uv = u_src.xy + cursorUv * u_src.zw;
+        sampled = sampleFocused(uv);
+        // The mask is a separate, smaller stream sampled at the *same* uv as
+        // the picture, so mirror and crop reach it for free and its size need
+        // not match. Multiplied through every channel: the picture is
+        // premultiplied, and colour has to scale with alpha or the edge of the
+        // person glows. Mirrors the Metal side in shaders.metal.
+        if (u_useMatte != 0) sampled *= texture(u_matte, uv).r;
+      }
+    }
+    if (u_cursorShadow.w > 0.0) {
+      vec2 shadowUv = cursorUv - u_cursorShadow.xy / u_cursorBox.zw;
+      float shadowAlpha = cursorShadowAlpha(shadowUv);
+      sampled.a += shadowAlpha * u_cursorShadow.w * (1.0 - sampled.a);
     }
     // Recoloured against what is behind, for a look whose words stand on the
     // footage with nothing under them. The bitmap is white where it is opaque,
@@ -456,6 +499,8 @@ interface Program {
   quad: WebGLUniformLocation | null;
   focus: WebGLUniformLocation | null;
   smear: WebGLUniformLocation | null;
+  cursorBox: WebGLUniformLocation | null;
+  cursorShadow: WebGLUniformLocation | null;
   soften: WebGLUniformLocation | null;
   backdrop: WebGLUniformLocation | null;
   onDark: WebGLUniformLocation | null;
@@ -750,7 +795,9 @@ export class WebGlCompositor {
         // `compositor.rs`.
         const streak = Math.hypot(point.smearX, point.smearY);
         const pad = streak * 0.5;
-        const grown = size + pad * 2;
+        const shadowPad = item.shadow ? item.shadow.blur * 1.5 + Math.abs(item.shadow.dy) : 0;
+        const motionGrown = size + pad * 2;
+        const grown = motionGrown + shadowPad * 2;
 
         set(gl, p, {
           // Still the drawn box even when the corners below replace it as the
@@ -760,8 +807,8 @@ export class WebGlCompositor {
           // place. `layout.ts` builds the corners from exactly this box,
           // divided back onto the picture's surface.
           rect: {
-            x: point.x - item.hotspot.x * size - pad,
-            y: point.y - item.hotspot.y * size - pad,
+            x: point.x - item.hotspot.x * size - pad - shadowPad,
+            y: point.y - item.hotspot.y * size - pad - shadowPad,
             width: grown,
             height: grown,
           },
@@ -772,6 +819,20 @@ export class WebGlCompositor {
           // nothing is tilted, and `set` falls back to `FLAT` — the same line
           // `moving` uses for every other item.
           ...(point.quad ? { quad: point.quad } : {}),
+          cursorBox: {
+            x: shadowPad / grown,
+            y: shadowPad / grown,
+            width: motionGrown / grown,
+            height: motionGrown / grown,
+          },
+          cursorShadow: item.shadow
+            ? {
+                x: 0,
+                y: item.shadow.dy / grown,
+                blur: item.shadow.blur / grown,
+                opacity: item.shadow.opacity,
+              }
+            : undefined,
           // Off below a pixel: a streak that short is not visible, and the taps
           // cost the same whether they move or not.
           ...(streak >= 1
@@ -1075,6 +1136,10 @@ interface Draw {
   /** The pointer's streak, in the quad's own uv, with the padding it may run
       into. Only the cursor ever sets it. */
   smear?: { x: number; y: number; pad: number };
+  /** The cursor's motion-blur box inside its larger shadow box. */
+  cursorBox?: { x: number; y: number; width: number; height: number };
+  /** Cursor shadow drop x/y, blur radius and opacity in outer-quad units. */
+  cursorShadow?: { x: number; y: number; blur: number; opacity: number };
   /** How hard the frame darkens towards its edges, 0 to 1. */
   vignette?: number;
   /** One texel of the sampled image, so a blur is measured in its own pixels. */
@@ -1118,6 +1183,22 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   gl.uniform4f(p.focus, focus?.x ?? 0, focus?.y ?? 0, focus?.safe ?? 1, focus?.strength ?? 0);
   const smear = draw.smear;
   gl.uniform4f(p.smear, smear?.x ?? 0, smear?.y ?? 0, smear?.pad ?? 0, smear ? 1 : 0);
+  const cursorBox = draw.cursorBox;
+  gl.uniform4f(
+    p.cursorBox,
+    cursorBox?.x ?? 0,
+    cursorBox?.y ?? 0,
+    cursorBox?.width ?? 1,
+    cursorBox?.height ?? 1,
+  );
+  const cursorShadow = draw.cursorShadow;
+  gl.uniform4f(
+    p.cursorShadow,
+    cursorShadow?.x ?? 0,
+    cursorShadow?.y ?? 0,
+    cursorShadow?.blur ?? 0,
+    cursorShadow?.opacity ?? 0,
+  );
   gl.uniform2f(p.texel, draw.texel?.[0] ?? 0, draw.texel?.[1] ?? 0);
   // Opaque unless asked otherwise, so every draw that predates the watermark
   // keeps drawing exactly as it did.
@@ -1277,6 +1358,8 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     quad: at("u_quad"),
     focus: at("u_focus"),
     smear: at("u_smear"),
+    cursorBox: at("u_cursorBox"),
+    cursorShadow: at("u_cursorShadow"),
     soften: at("u_soften"),
     backdrop: at("u_backdrop"),
     onDark: at("u_onDark"),
