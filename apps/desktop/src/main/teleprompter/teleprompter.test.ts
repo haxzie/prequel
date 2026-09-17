@@ -154,6 +154,7 @@ describe("auto-scroll", () => {
   it("advances a word per tick at the chosen speed, and holds while paused", async () => {
     const { prompter, island } = make({ teleprompterMode: "timed", teleprompterSpeed: 120 });
     prompter.sync(true);
+    prompter.recordingStarted();
 
     await vi.advanceTimersByTimeAsync(500 * 3 + 10);
     expect(island.sent.at(-1)?.position).toBe(3);
@@ -171,6 +172,7 @@ describe("auto-scroll", () => {
     const prefs = { teleprompterMode: "timed" as const, teleprompterSpeed: 60 };
     const { prompter, island, prefs: live } = make(prefs);
     prompter.sync(true);
+    prompter.recordingStarted();
 
     await vi.advanceTimersByTimeAsync(1010);
     expect(island.sent.at(-1)?.position).toBe(1);
@@ -184,6 +186,7 @@ describe("auto-scroll", () => {
   it("does not try the microphone again on a size change once it has failed", async () => {
     const { prompter, changes, prefs } = make({ teleprompterMode: "voice" });
     prompter.sync(true);
+    prompter.recordingStarted();
     await settle();
     expect(changes.filter((c) => c === "starting")).toHaveLength(1);
 
@@ -192,9 +195,9 @@ describe("auto-scroll", () => {
     await settle();
     expect(changes.filter((c) => c === "starting")).toHaveLength(1);
 
-    // A fresh show is a fresh try: the model may have been installed since.
-    prompter.sync(false);
-    prompter.sync(true);
+    // A fresh take is a fresh try: the model may have been installed since.
+    prompter.recordingStopped();
+    prompter.recordingStarted();
     await settle();
     expect(changes.filter((c) => c === "starting")).toHaveLength(2);
   });
@@ -202,6 +205,7 @@ describe("auto-scroll", () => {
   it("stops at the end of the script", async () => {
     const { prompter, island } = make({ teleprompterMode: "timed", teleprompterSpeed: 300 });
     prompter.sync(true);
+    prompter.recordingStarted();
 
     await vi.advanceTimersByTimeAsync(200 * 40);
     expect(island.sent.at(-1)?.position).toBe(13);
@@ -213,6 +217,7 @@ describe("voice follow", () => {
     const heard = scriptedRecorder();
     const { prompter, island, changes } = make({ teleprompterMode: "voice" }, heard.recorder);
     prompter.sync(true);
+    prompter.recordingStarted();
     await settle();
     expect(changes.at(-1)).toBe("on");
 
@@ -220,8 +225,24 @@ describe("voice follow", () => {
     heard.hear({ stage: "partial", text: "welcome to prequel today", session: 0 });
     expect(island.sent.at(-1)?.position).toBe(4);
 
-    prompter.sync(false);
+    prompter.recordingStopped();
     expect(heard.stops).toBe(1);
+  });
+
+  it("does not open the microphone until a take begins, and closes it when the take ends", async () => {
+    const heard = scriptedRecorder();
+    const { prompter, changes } = make({ teleprompterMode: "voice" }, heard.recorder);
+    prompter.sync(true);
+    await settle();
+    expect(changes).not.toContain("starting");
+
+    prompter.recordingStarted();
+    await settle();
+    expect(changes.at(-1)).toBe("on");
+
+    prompter.recordingStopped();
+    expect(heard.stops).toBe(1);
+    expect(changes.at(-1)).toBe("off");
   });
 
   it("falls back to auto-scroll when there is no model, and says so", async () => {
@@ -231,6 +252,7 @@ describe("voice follow", () => {
       teleprompterSpeed: 300,
     });
     prompter.sync(true);
+    prompter.recordingStarted();
     await settle();
 
     expect(changes.at(-1)).toBe("unavailable");

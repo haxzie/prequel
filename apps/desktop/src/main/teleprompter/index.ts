@@ -71,6 +71,8 @@ export class Teleprompter {
   private level = 0;
   private notch: Notch | null = null;
   private engine: Engine | null = null;
+  /** Between `recordingStarted` and `recordingStopped`: the only time an engine runs. */
+  private recording = false;
   private readonly recorder: () => Promise<Recorder>;
 
   constructor(private readonly deps: TeleprompterDeps) {
@@ -111,7 +113,9 @@ export class Teleprompter {
         onTop: () => this.jump({ to: "top" }),
       });
 
-    this.runEngine(preferences.teleprompterMode);
+    // The engine runs only for the length of a take — see `recordingStarted`
+    // — so this is for a mode changed mid-take, not for a fresh show.
+    if (this.recording) this.runEngine(preferences.teleprompterMode);
   }
 
   hide(): void {
@@ -123,14 +127,23 @@ export class Teleprompter {
 
   /**
    * A take has begun. The script window would be in it, so it goes; the
-   * island stays, and carries on from wherever the rehearsal left it.
+   * island stays, and whatever moves the words starts now.
+   *
+   * Now and not when the island appears: the microphone stays closed — and
+   * its menu-bar light off — while the panel is merely open, and auto-scroll
+   * does not run the script off the screen before the countdown ends. The
+   * keys and a click still move it beforehand, for reading it over.
    */
   recordingStarted(): void {
     this.deps.script.close();
+    this.recording = true;
+    if (this.deps.island.isVisible) this.runEngine(this.deps.preferences().teleprompterMode);
   }
 
-  /** A take has ended. Back to the top for the next one. */
+  /** A take has ended. The engine stops, and it is back to the top for the next one. */
   recordingStopped(): void {
+    this.recording = false;
+    this.stopEngine();
     this.state = { ...INITIAL_FOLLOW, session: this.state.session };
     this.sendPosition();
   }

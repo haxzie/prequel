@@ -50,8 +50,9 @@ const EAR = 14;
  * and re-rendering a few hundred spans for each would be absurd.
  */
 export function Teleprompter() {
-  const { preferences } = useDock();
+  const { preferences, session } = useDock();
   const state = useTeleprompter();
+  const recording = session.status !== "idle";
   const words = useMemo(() => tokenise(state.script), [state.script]);
 
   const viewport = useRef<HTMLDivElement>(null);
@@ -71,18 +72,27 @@ export function Teleprompter() {
   const settleMs =
     mode === "timed" ? Math.min(600, 60_000 / preferences.teleprompterSpeed) : FOLLOW_MS;
 
-  /** Puts the current word's line on the reading line. */
+  /**
+   * Puts the current word's line on the reading line.
+   *
+   * Clamped to the text: never above the first line, never past the last.
+   * The opening of a script has nothing to show above it, and the end has
+   * nothing below, so a blank band either side reads as the text having
+   * slipped rather than as room. The wheel's offset is clamped with it, so a
+   * long scroll past the end does not have to be scrolled all the way back.
+   */
   const layout = useCallback(() => {
     const track = scroller.current;
     if (!track) return;
     const current = track.querySelector<HTMLElement>(`[data-i="${String(position.current)}"]`);
     // Past the end: hold on the last word rather than scrolling into nothing.
     const anchor = current ?? track.querySelector<HTMLElement>("[data-i]:last-of-type");
-    // Never above the first line: the opening of a script has nothing to show
-    // above it, and a blank line there reads as the text having slipped.
-    const top = anchor ? Math.max(anchor.offsetTop - lineHeight * READING_LINE, 0) : 0;
-    track.style.transform = `translateY(${String(Math.round(wheel.current - top))}px)`;
-  }, [lineHeight]);
+    const wanted = anchor ? anchor.offsetTop - lineHeight * READING_LINE : 0;
+    const furthest = Math.max(0, track.offsetHeight - viewportHeight);
+    const scroll = Math.min(Math.max(wanted - wheel.current, 0), furthest);
+    wheel.current = wanted - scroll;
+    track.style.transform = `translateY(${String(-Math.round(scroll))}px)`;
+  }, [lineHeight, viewportHeight]);
 
   /** Lights the words up to the position. */
   const paint = useCallback(
@@ -224,7 +234,7 @@ export function Teleprompter() {
             0 / {words.length}
           </span>
           <span ref={status} className="prompter-status truncate">
-            {describe(mode, state, preferences.teleprompterSpeed)}
+            {describe(mode, state, preferences.teleprompterSpeed, recording)}
           </span>
           <span className="ml-auto flex-none whitespace-nowrap opacity-70">
             ⌃⌥↑↓ sentence · ⌃⌥␣ pause
@@ -304,9 +314,27 @@ function Meter({ ref, live }: { ref: React.Ref<HTMLSpanElement>; live: boolean }
   );
 }
 
-/** What the footer says about how the text is moving. */
-function describe(mode: TeleprompterMode, state: TeleprompterState, wpm: number): string {
+/** What the footer says about how the text is moving, or will. */
+function describe(
+  mode: TeleprompterMode,
+  state: TeleprompterState,
+  wpm: number,
+  recording: boolean,
+): string {
   if (state.paused) return "Paused";
+  // Nothing moves the words until the take begins — the microphone stays
+  // closed while the panel is merely open — so say what will, rather than
+  // claiming to be doing it.
+  if (!recording) {
+    switch (mode) {
+      case "voice":
+        return "Follows your voice once you record";
+      case "timed":
+        return `Scrolls at ${String(wpm)} words a minute once you record`;
+      case "manual":
+        return "Manual";
+    }
+  }
   switch (state.listening) {
     case "unavailable":
       return "No on-device speech model — auto-scrolling. Add the language under Keyboard › Dictation.";

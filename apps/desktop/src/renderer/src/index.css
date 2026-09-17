@@ -520,6 +520,10 @@ body {
   --prompter-bg: #000;
   --prompter-fg: #fff;
   --prompter-muted: rgba(255, 255, 255, 0.55);
+  /* The word being read: the app's own blue, the same one the dock draws a
+     chosen mode in, so the island and the panel agree about what "current"
+     looks like. */
+  --prompter-current: var(--selected);
 }
 
 /* A concave corner where the island meets the bezel: a square outside the
@@ -541,7 +545,7 @@ body {
 /* The lines above and below the reading line fall away rather than stopping
    at the edge of the viewport. */
 @utility prompter-fade {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 93%, transparent 100%);
 }
 
 @utility dock-theme {
@@ -594,7 +598,7 @@ body {
 }
 .prompter-word[data-state="current"] {
   opacity: 1;
-  background-color: rgba(255, 255, 255, 0.16);
+  background-color: var(--prompter-current);
 }
 /* A note to the reader, never spoken: set apart from the words that are, and
    never lit, since the follower steps over it. */
