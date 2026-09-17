@@ -91,7 +91,9 @@ const camera = new CameraWindow();
 const selection = new SelectionOverlay();
 // Reads `NSScreen` through the addon, which is loaded lazily; until it is, the
 // island falls back to inferring the notch from the menu bar's height.
-const island = new TeleprompterWindow({ safeArea: (id) => nativeRecorder?.displaySafeArea(id) ?? null });
+const island = new TeleprompterWindow({
+  safeArea: (id) => nativeRecorder?.displaySafeArea(id) ?? null,
+});
 let nativeRecorder: Recorder | null = null;
 
 let tray: AppTray | null = null;

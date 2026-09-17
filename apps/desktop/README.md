@@ -32,12 +32,20 @@ Every window loads the same bundle and picks its view from the location hash —
 one entry point keeps electron-vite's dev server and HMR working identically
 for all four.
 
-| Route        | Window                                                           |
-| ------------ | ---------------------------------------------------------------- |
-| `/dock`      | The floating recorder panel. Main owns its state.                |
-| `/selection` | One transparent overlay per display, for picking what to record. |
-| `/camera`    | The webcam bubble, shown while recording.                        |
-| `/editor`    | The editor. One window per recording directory.                  |
+| Route           | Window                                                                       |
+| --------------- | ---------------------------------------------------------------------------- |
+| `/dock`         | The floating recorder panel. Main owns its state.                            |
+| `/selection`    | One transparent overlay per display, for picking what to record.             |
+| `/camera`       | The webcam bubble, shown while recording.                                    |
+| `/teleprompter` | The island: the script, hung from the notch. Never in the recording.         |
+| `/script`       | Where the script is written — a focusable window, closed when a take starts. |
+| `/editor`       | The editor. One window per recording directory.                              |
+
+The island, the dock and the bubble are kept out of the capture by handing their
+`CGWindowID`s to the content filter — `setContentProtection` sets
+`NSWindowSharingNone`, which ScreenCaptureKit ignores on current macOS. Every
+one of them is created before capture starts, shown or not, because the filter
+is fixed for the life of the stream.
 
 `LSUIElement: true` — no Dock icon and no app menu while only the recorder is
 open, and `window-all-closed` is deliberately empty. **The tray is the only

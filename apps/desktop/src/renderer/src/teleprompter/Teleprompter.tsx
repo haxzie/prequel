@@ -68,7 +68,8 @@ export function Teleprompter() {
   const lineHeight = size * TELEPROMPTER_LEADING;
   const viewportHeight = TELEPROMPTER_LINES * lineHeight;
   const mode = preferences.teleprompterMode;
-  const settleMs = mode === "timed" ? Math.min(600, 60_000 / preferences.teleprompterSpeed) : FOLLOW_MS;
+  const settleMs =
+    mode === "timed" ? Math.min(600, 60_000 / preferences.teleprompterSpeed) : FOLLOW_MS;
 
   /** Puts the current word's line on the reading line. */
   const layout = useCallback(() => {
@@ -84,15 +85,19 @@ export function Teleprompter() {
   }, [lineHeight]);
 
   /** Lights the words up to the position. */
-  const paint = useCallback((at: number) => {
-    const track = scroller.current;
-    if (!track) return;
-    for (const span of track.querySelectorAll<HTMLElement>("[data-i]")) {
-      const index = Number(span.dataset["i"]);
-      span.dataset["state"] = index < at ? "read" : index === at ? "current" : "next";
-    }
-    if (counter.current) counter.current.textContent = `${String(Math.min(at, words.length))} / ${String(words.length)}`;
-  }, [words.length]);
+  const paint = useCallback(
+    (at: number) => {
+      const track = scroller.current;
+      if (!track) return;
+      for (const span of track.querySelectorAll<HTMLElement>("[data-i]")) {
+        const index = Number(span.dataset["i"]);
+        span.dataset["state"] = index < at ? "read" : index === at ? "current" : "next";
+      }
+      if (counter.current)
+        counter.current.textContent = `${String(Math.min(at, words.length))} / ${String(words.length)}`;
+    },
+    [words.length],
+  );
 
   const onPosition = useCallback(
     (next: TeleprompterPosition) => {
@@ -166,7 +171,10 @@ export function Teleprompter() {
                 the way the notch's own do, so the whole thing reads as one
                 shape grown from it rather than a panel stuck under it. */}
             <span className="notch-ear left-[calc(var(--ear)*-1)]" aria-hidden="true" />
-            <span className="notch-ear right-[calc(var(--ear)*-1)] -scale-x-100" aria-hidden="true" />
+            <span
+              className="notch-ear right-[calc(var(--ear)*-1)] -scale-x-100"
+              aria-hidden="true"
+            />
             <div className="flex-none" style={{ height: notch.height }} />
           </>
         )}
@@ -206,7 +214,10 @@ export function Teleprompter() {
 
         <footer
           className="flex flex-none items-center gap-3 px-4 text-[11px] text-prompter-muted"
-          style={{ height: TELEPROMPTER_FOOTER + TELEPROMPTER_PADDING, paddingBottom: TELEPROMPTER_PADDING / 2 }}
+          style={{
+            height: TELEPROMPTER_FOOTER + TELEPROMPTER_PADDING,
+            paddingBottom: TELEPROMPTER_PADDING / 2,
+          }}
         >
           <Meter ref={meter} live={state.listening === "on" && !state.paused} />
           <span ref={counter} className="tabular-nums">
@@ -215,7 +226,9 @@ export function Teleprompter() {
           <span ref={status} className="prompter-status truncate">
             {describe(mode, state, preferences.teleprompterSpeed)}
           </span>
-          <span className="ml-auto flex-none whitespace-nowrap opacity-70">⌃⌥↑↓ sentence · ⌃⌥␣ pause</span>
+          <span className="ml-auto flex-none whitespace-nowrap opacity-70">
+            ⌃⌥↑↓ sentence · ⌃⌥␣ pause
+          </span>
         </footer>
       </div>
     </div>

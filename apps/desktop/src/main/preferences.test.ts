@@ -107,10 +107,7 @@ describe("Preferences", () => {
 
   it("rejects a prompter mode that no longer exists, and clamps its speed", () => {
     const file = freshFile();
-    writeFileSync(
-      file,
-      JSON.stringify({ teleprompterMode: "telepathy", teleprompterSpeed: 9000 }),
-    );
+    writeFileSync(file, JSON.stringify({ teleprompterMode: "telepathy", teleprompterSpeed: 9000 }));
 
     const prefs = new Preferences(file).get();
     expect(prefs.teleprompterMode).toBe(DEFAULT_PREFERENCES.teleprompterMode);

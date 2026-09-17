@@ -100,11 +100,12 @@ export class Teleprompter {
       this.emit();
     }
 
-    if (!wasVisible) this.deps.keys.bind({
-      onStep: (sentences) => this.jump({ sentences }),
-      onPause: () => this.togglePause(),
-      onTop: () => this.jump({ to: "top" }),
-    });
+    if (!wasVisible)
+      this.deps.keys.bind({
+        onStep: (sentences) => this.jump({ sentences }),
+        onPause: () => this.togglePause(),
+        onTop: () => this.jump({ to: "top" }),
+      });
 
     this.runEngine(preferences.teleprompterMode);
   }

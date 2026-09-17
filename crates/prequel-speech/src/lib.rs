@@ -225,7 +225,9 @@ fn take(raw: *mut c_char) -> Option<String> {
         return None;
     }
 
-    let text = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+    let text = unsafe { CStr::from_ptr(raw) }
+        .to_string_lossy()
+        .into_owned();
     unsafe { prequel_speech_free(raw) };
     Some(text)
 }

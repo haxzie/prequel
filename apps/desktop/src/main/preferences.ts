@@ -114,8 +114,16 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
       ? (value.afterRecording as AfterRecording)
       : DEFAULT_PREFERENCES.afterRecording,
     teleprompter: value.teleprompter ?? DEFAULT_PREFERENCES.teleprompter,
-    teleprompterMode: oneOf(TELEPROMPTER_MODES, value.teleprompterMode, DEFAULT_PREFERENCES.teleprompterMode),
-    teleprompterSize: oneOf(TELEPROMPTER_SIZES, value.teleprompterSize, DEFAULT_PREFERENCES.teleprompterSize),
+    teleprompterMode: oneOf(
+      TELEPROMPTER_MODES,
+      value.teleprompterMode,
+      DEFAULT_PREFERENCES.teleprompterMode,
+    ),
+    teleprompterSize: oneOf(
+      TELEPROMPTER_SIZES,
+      value.teleprompterSize,
+      DEFAULT_PREFERENCES.teleprompterSize,
+    ),
     teleprompterWidth: oneOf(
       TELEPROMPTER_WIDTHS,
       value.teleprompterWidth,

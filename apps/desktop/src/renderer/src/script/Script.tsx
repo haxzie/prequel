@@ -77,7 +77,9 @@ export function Script() {
             "text-[15px] leading-relaxed text-editor-fg outline-none placeholder:text-editor-muted " +
             "focus:border-white/25"
           }
-          placeholder={"Type or paste what you want to say.\n\nOne thought per line. [Notes in brackets] show dimmed and are never read for."}
+          placeholder={
+            "Type or paste what you want to say.\n\nOne thought per line. [Notes in brackets] show dimmed and are never read for."
+          }
           spellCheck
           value={text ?? ""}
           onChange={(event) => edit(event.target.value)}

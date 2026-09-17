@@ -531,7 +531,11 @@ body {
   top: 0;
   width: var(--ear);
   height: var(--ear);
-  background: radial-gradient(circle at 0 100%, transparent var(--ear), var(--prompter-bg) calc(var(--ear) + 0.5px));
+  background: radial-gradient(
+    circle at 0 100%,
+    transparent var(--ear),
+    var(--prompter-bg) calc(var(--ear) + 0.5px)
+  );
 }
 
 /* The lines above and below the reading line fall away rather than stopping
@@ -578,7 +582,9 @@ body {
    Read words fall back rather than vanish, so a reader who looks up can find
    where they were; the current one is lit on a soft pill. */
 .prompter-word {
-  transition: opacity 160ms ease-out, background-color 160ms ease-out;
+  transition:
+    opacity 160ms ease-out,
+    background-color 160ms ease-out;
 }
 .prompter-word[data-state="read"] {
   opacity: 0.35;
@@ -615,4 +621,3 @@ body {
 .prompter-status[data-lost="true"] {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
-

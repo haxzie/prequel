@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { AfterRecording, UpdateStatus } from "../../../shared/contract";
+import { TELEPROMPTER_SHORTCUTS } from "../../../shared/contract";
 import { Field, Section } from "../editor/controls/Field";
 import { PermissionList } from "../components/PermissionList";
 import { usePermissions } from "../hooks/usePermissions";
 import { Segmented, Toggle } from "../editor/controls/inputs";
 import { useDock } from "../hooks/useDock";
+import { Keycaps } from "./Keycaps";
 import { ShortcutField } from "./ShortcutField";
 import { useUpdate } from "../update/useUpdate";
 
@@ -241,6 +243,27 @@ function Shortcuts({ accelerator }: { accelerator: string }) {
         Works while any application is focused. One key does both jobs: it begins a recording, and
         stops the one already running.
       </p>
+
+      {/* Read-only: these are taken from the app in front only while the
+          island is showing, and a chord that moves a prompter is not one
+          anybody rebinds. Listed so they can be found at all — the island's
+          footer has room for a hint, not a table. */}
+      <div className="mt-2 flex flex-col gap-2">
+        <span className="text-[11px] text-editor-muted">While the teleprompter is showing</span>
+        {PROMPTER_KEYS.map(({ chord, label }) => (
+          <div key={chord} className="flex items-center justify-between gap-4">
+            <span className="text-[11px] text-editor-muted">{label}</span>
+            <Keycaps accelerator={chord} />
+          </div>
+        ))}
+      </div>
     </Section>
   );
 }
+
+const PROMPTER_KEYS: { chord: string; label: string }[] = [
+  { chord: TELEPROMPTER_SHORTCUTS.previous, label: "Back a sentence" },
+  { chord: TELEPROMPTER_SHORTCUTS.next, label: "On a sentence" },
+  { chord: TELEPROMPTER_SHORTCUTS.pause, label: "Pause and resume" },
+  { chord: TELEPROMPTER_SHORTCUTS.top, label: "Back to the top" },
+];

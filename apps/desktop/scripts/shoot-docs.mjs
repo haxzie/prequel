@@ -124,11 +124,15 @@ async function waitFor(url, label, attempts = 60) {
   throw new Error(`${label} did not come up at ${url}`);
 }
 
-const vite = spawn("pnpm", ["exec", "vite", "--config", "gallery/vite.config.ts", "--port", String(PORT), "--strictPort"], {
-  cwd: PACKAGE,
-  env: { ...process.env, PREQUEL_GALLERY_RECORDING: RECORDING, PREQUEL_GALLERY_OVERLAY: OVERLAY },
-  stdio: ["ignore", "pipe", "pipe"],
-});
+const vite = spawn(
+  "pnpm",
+  ["exec", "vite", "--config", "gallery/vite.config.ts", "--port", String(PORT), "--strictPort"],
+  {
+    cwd: PACKAGE,
+    env: { ...process.env, PREQUEL_GALLERY_RECORDING: RECORDING, PREQUEL_GALLERY_OVERLAY: OVERLAY },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
 children.push(vite);
 vite.stderr.on("data", (chunk) => process.stderr.write(`[vite] ${chunk}`));
 await waitFor(`http://127.0.0.1:${PORT}/fixture/config.json`, "the gallery");

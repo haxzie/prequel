@@ -81,7 +81,9 @@ export const DOCK: DockState = {
   devicesLive: false,
 };
 
-export function permissions(granted: Partial<Record<PermissionState["id"], boolean>> = {}): PermissionState[] {
+export function permissions(
+  granted: Partial<Record<PermissionState["id"], boolean>> = {},
+): PermissionState[] {
   return (["screen", "camera", "microphone", "accessibility"] as const).map((id) => ({
     id,
     granted: granted[id] ?? true,

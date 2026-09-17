@@ -13,6 +13,7 @@
 import { globalShortcut } from "electron";
 
 import { isBindable, normaliseAccelerator } from "../shared/accelerator.js";
+import { TELEPROMPTER_SHORTCUTS } from "../shared/contract.js";
 import { log } from "./log.js";
 
 /** Pause stays a constant: only the start/stop toggle is rebindable. */
@@ -68,23 +69,6 @@ export function setToggleShortcut(accelerator: string): boolean {
   return false;
 }
 
-/**
- * The prompter's keys, bound only while the island is up.
- *
- * Global rather than window-level because the island is a non-activating
- * panel and never has the keyboard — anything it responds to has to be taken
- * from the app being recorded. Which is why they are bound for exactly as
- * long as the island shows, and why every one carries Control and Option:
- * plain arrows, and Option-arrows, are how text is moved through in the very
- * editor the reader is likely to be recording.
- */
-export const TELEPROMPTER_SHORTCUTS = {
-  previous: "Ctrl+Alt+Up",
-  next: "Ctrl+Alt+Down",
-  pause: "Ctrl+Alt+Space",
-  top: "Ctrl+Alt+0",
-} as const;
-
 export interface TeleprompterKeys {
   onStep: (sentences: -1 | 1) => void;
   onPause: () => void;
@@ -92,8 +76,13 @@ export interface TeleprompterKeys {
 }
 
 /**
- * Binds the prompter's keys. Each one that another app already owns is logged
- * and left unbound rather than substituted, as the toggle is.
+ * Binds the prompter's keys, for as long as the island shows.
+ *
+ * Global rather than window-level because the island is a non-activating
+ * panel and never has the keyboard — anything it responds to has to be taken
+ * from the app being recorded, which is why they are bound for exactly that
+ * long and no longer. Each one that another app already owns is logged and
+ * left unbound rather than substituted, as the toggle is.
  */
 export function bindTeleprompterKeys(keys: TeleprompterKeys): void {
   const chords: [string, () => void][] = [

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SessionState, UpdateState } from "../shared/contract.js";
-import { IDLE_SESSION, IDLE_UPDATE } from "../shared/contract.js";
+import { DEFAULT_PREFERENCES, IDLE_SESSION, IDLE_UPDATE } from "../shared/contract.js";
 
 const titles: string[] = [];
 const images: string[] = [];
@@ -170,8 +170,11 @@ beforeEach(() => {
  * right-click precisely so it can read live state, and going through the event
  * is what proves that path still exists.
  */
-function openMenu(flow: unknown = {}): MenuTemplate {
-  const tray = new AppTray(fakeSession({ ...IDLE_SESSION }) as never, flow as never);
+function openMenu(flow: object = {}): MenuTemplate {
+  // The menu reads the preferences for the prompter's tick, so every fake
+  // flow answers with the defaults unless a test says otherwise.
+  const withState = { state: () => ({ preferences: DEFAULT_PREFERENCES }), ...flow };
+  const tray = new AppTray(fakeSession({ ...IDLE_SESSION }) as never, withState as never);
   (tray as unknown as { tray: { handlers: Record<string, () => void> } }).tray.handlers[
     "right-click"
   ]!();
@@ -371,6 +374,28 @@ describe("the menu icons", () => {
     }
 
     expect(errors.some((args) => String(args[0]).includes("no SF Symbol named"))).toBe(true);
+  });
+});
+
+describe("the teleprompter items", () => {
+  const item = (menu: MenuTemplate, label: string) => menu.find((entry) => entry.label === label)!;
+
+  it("shows the switch as the preference has it, and flips it through the flow", () => {
+    const patches: object[] = [];
+    const menu = openMenu({
+      state: () => ({ preferences: { ...DEFAULT_PREFERENCES, teleprompter: true } }),
+      updatePreferences: (patch: object) => patches.push(patch),
+    });
+
+    expect(item(menu, "Teleprompter")).toMatchObject({ type: "checkbox", checked: true });
+    item(menu, "Teleprompter").click?.();
+    expect(patches).toEqual([{ teleprompter: false }]);
+  });
+
+  it("opens the script through the flow, never a window class", () => {
+    let opened = false;
+    item(openMenu({ openScript: () => (opened = true) }), "Edit Teleprompter Script…").click?.();
+    expect(opened).toBe(true);
   });
 });
 

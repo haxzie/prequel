@@ -89,7 +89,9 @@ export class TeleprompterWindow {
     log(
       "info",
       `island placed at ${String(bounds.x)},${String(bounds.y)} ${String(bounds.width)}×${String(bounds.height)}` +
-        (this.notch ? ` under a ${String(this.notch.width)}×${String(this.notch.height)} notch` : " with no notch"),
+        (this.notch
+          ? ` under a ${String(this.notch.width)}×${String(this.notch.height)} notch`
+          : " with no notch"),
     );
     // `showInactive`: the island must never take focus from what is being recorded.
     window.showInactive();
@@ -148,9 +150,7 @@ export class TeleprompterWindow {
 
     return {
       x: Math.round(display.bounds.x + (display.bounds.width - width) / 2),
-      y: this.notch
-        ? display.bounds.y
-        : display.workArea.y + TELEPROMPTER_TOP_GAP - PANEL_INSET,
+      y: this.notch ? display.bounds.y : display.workArea.y + TELEPROMPTER_TOP_GAP - PANEL_INSET,
       width,
       height: island + top + PANEL_INSET,
     };

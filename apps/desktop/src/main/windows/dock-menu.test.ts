@@ -70,7 +70,12 @@ beforeEach(() => {
 });
 
 describe("the teleprompter menu", () => {
-  const PROMPTER: DockMenu = { kind: "teleprompter", anchor: { x: 0, y: 0 }, mode: "voice", size: "medium" };
+  const PROMPTER: DockMenu = {
+    kind: "teleprompter",
+    anchor: { x: 0, y: 0 },
+    mode: "voice",
+    size: "medium",
+  };
 
   it("offers the script first, then the mode and size with the current ones ticked", () => {
     const template = dockMenuTemplate(PROMPTER, () => undefined);

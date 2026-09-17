@@ -71,7 +71,10 @@ function Index() {
  * editor lays out its panel and timeline for these numbers, and a shot taken
  * at the browser's size would show a shape the app never has.
  */
-const WINDOW: Record<Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island">, { width: number; height: number }> = {
+const WINDOW: Record<
+  Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island">,
+  { width: number; height: number }
+> = {
   workspace: { width: 1280, height: 820 },
   welcome: { width: 720, height: 520 },
 };
@@ -120,7 +123,10 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
     // top.
     const notch = { height: 37, width: 200 };
     return (
-      <div className="relative overflow-hidden bg-cover bg-top" style={{ ...wallpaper, width: 900, height: 300 }}>
+      <div
+        className="relative overflow-hidden bg-cover bg-top"
+        style={{ ...wallpaper, width: 900, height: 300 }}
+      >
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-[10px] bg-black"
           style={{ width: notch.width, height: notch.height }}
@@ -142,7 +148,11 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
   if (kind === "dock" || kind === "dock-transparent") {
     return (
       <div
-        className={kind === "dock" ? "grid min-h-full place-items-center bg-cover bg-center p-16" : "grid place-items-start"}
+        className={
+          kind === "dock"
+            ? "grid min-h-full place-items-center bg-cover bg-center p-16"
+            : "grid place-items-start"
+        }
         style={kind === "dock" ? wallpaper : undefined}
       >
         {/* `#root` in the app is a flex column the panel takes `flex-1` of;

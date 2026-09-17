@@ -30,10 +30,13 @@ const EditorRoute = lazy(() =>
   import("../src/renderer/src/editor/EditorRoute").then((m) => ({ default: m.EditorRoute })),
 );
 const Teleprompter = lazy(() =>
-  import("../src/renderer/src/teleprompter/Teleprompter").then((m) => ({ default: m.Teleprompter })),
+  import("../src/renderer/src/teleprompter/Teleprompter").then((m) => ({
+    default: m.Teleprompter,
+  })),
 );
 
-export type ShotFrameKind = "workspace" | "welcome" | "dock" | "dock-transparent" | "island" | "bare";
+export type ShotFrameKind =
+  "workspace" | "welcome" | "dock" | "dock-transparent" | "island" | "bare";
 
 /** One thing the capture script does before it takes the picture. */
 export type Step =

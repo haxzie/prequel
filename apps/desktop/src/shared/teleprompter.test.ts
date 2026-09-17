@@ -85,16 +85,7 @@ describe("tokenise", () => {
 
   it("starts a sentence after terminal punctuation and at every line", () => {
     const starts = words.filter((word) => word.sentenceStart).map((word) => word.text);
-    expect(starts).toEqual([
-      "Welcome",
-      "Today",
-      "It",
-      "Type",
-      "The",
-      "In",
-      "That's",
-      "Thanks",
-    ]);
+    expect(starts).toEqual(["Welcome", "Today", "It", "Type", "The", "In", "That's", "Thanks"]);
   });
 });
 

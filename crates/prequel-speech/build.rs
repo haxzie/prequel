@@ -90,7 +90,10 @@ fn main() {
         .status()
         .expect("swiftc is part of the Xcode command line tools and has to be on PATH");
 
-    assert!(status.success(), "swiftc failed to build the Swift in crates/prequel-speech/swift");
+    assert!(
+        status.success(),
+        "swiftc failed to build the Swift in crates/prequel-speech/swift"
+    );
 
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=prequelspeech");
@@ -99,7 +102,13 @@ fn main() {
     println!("cargo:rustc-link-search=native=/usr/lib/swift");
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
 
-    for framework in ["Speech", "AVFAudio", "AVFoundation", "Foundation", "CoreMedia"] {
+    for framework in [
+        "Speech",
+        "AVFAudio",
+        "AVFoundation",
+        "Foundation",
+        "CoreMedia",
+    ] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
 }

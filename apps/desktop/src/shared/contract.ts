@@ -288,6 +288,23 @@ export interface TeleprompterPosition {
 /** How the keys move the position. */
 export type TeleprompterJump = { to: number } | { sentences: number } | { to: "top" };
 
+/**
+ * The prompter's keys, bound only while the island is up.
+ *
+ * Fixed rather than rebindable, and here rather than in `main/shortcuts.ts`
+ * because the settings pane draws them. Every one carries Control and Option:
+ * plain arrows, and Option-arrows, are how text is moved through in the very
+ * editor the reader is likely to be recording, and the island — a
+ * non-activating panel that never has the keyboard — can only take keys from
+ * the app in front.
+ */
+export const TELEPROMPTER_SHORTCUTS = {
+  previous: "Ctrl+Alt+Up",
+  next: "Ctrl+Alt+Down",
+  pause: "Ctrl+Alt+Space",
+  top: "Ctrl+Alt+0",
+} as const;
+
 export interface MediaDevice {
   deviceId: string;
   label: string;

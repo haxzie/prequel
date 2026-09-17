@@ -297,7 +297,13 @@ export function PrompterIcon() {
         strokeLinejoin="round"
       />
       <path d="M8 6.5h4M8 9h2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M5 16h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.45" />
+      <path
+        d="M5 16h10"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
     </svg>
   );
 }
@@ -314,7 +320,13 @@ export function PrompterOffIcon() {
         strokeLinejoin="round"
         opacity="0.6"
       />
-      <path d="M5 16h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.3" />
+      <path
+        d="M5 16h10"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.3"
+      />
       <path d="M4.5 15.5 15.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );

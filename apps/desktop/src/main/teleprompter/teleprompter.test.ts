@@ -31,7 +31,11 @@ vi.mock("electron", () => ({
 const SCRIPT = "Welcome to Prequel. Today we record a demo.\nIt sits in the notch.";
 
 /** A listener whose updates the test feeds by hand. */
-function scriptedRecorder(): { recorder: Recorder; hear: (update: ListenUpdate) => void; stops: number } {
+function scriptedRecorder(): {
+  recorder: Recorder;
+  hear: (update: ListenUpdate) => void;
+  stops: number;
+} {
   let onUpdate: ((error: Error | null, update: ListenUpdate) => void) | null = null;
   const handle = {
     stops: 0,
@@ -79,10 +83,21 @@ function make(preferences: Partial<RecordingPreferences> = {}, recorder?: Record
       },
     }),
   };
-  const script = { opened: 0, closed: 0, open: () => (script.opened += 1), close: () => (script.closed += 1) };
-  const keys = { bound: null as TeleprompterKeys | null, bind: (k: TeleprompterKeys) => (keys.bound = k), unbind: () => (keys.bound = null) };
+  const script = {
+    opened: 0,
+    closed: 0,
+    open: () => (script.opened += 1),
+    close: () => (script.closed += 1),
+  };
+  const keys = {
+    bound: null as TeleprompterKeys | null,
+    bind: (k: TeleprompterKeys) => (keys.bound = k),
+    unbind: () => (keys.bound = null),
+  };
   const changes: string[] = [];
-  const store = new ScriptStore(join(SCRATCH, `script-${String((counter += 1))}-${String(Date.now())}.json`));
+  const store = new ScriptStore(
+    join(SCRATCH, `script-${String((counter += 1))}-${String(Date.now())}.json`),
+  );
   store.set(SCRIPT);
   const prefs = { ...DEFAULT_PREFERENCES, teleprompter: true, ...preferences };
 
@@ -179,7 +194,10 @@ describe("voice follow", () => {
 
   it("falls back to auto-scroll when there is no model, and says so", async () => {
     // The fake recorder fails every listen with NO_LOCAL_MODEL.
-    const { prompter, island, changes } = make({ teleprompterMode: "voice", teleprompterSpeed: 300 });
+    const { prompter, island, changes } = make({
+      teleprompterMode: "voice",
+      teleprompterSpeed: 300,
+    });
     prompter.sync(true);
     await settle();
 

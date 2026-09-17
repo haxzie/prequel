@@ -266,6 +266,24 @@ export class AppTray {
               icon: symbol("crop"),
               click: () => this.flow.openMode("area"),
             },
+            { type: "separator" },
+            // The prompter's switch and its script, one click from anywhere.
+            // A checkbox for the switch because the tick is the only place
+            // outside the panel that says whether the island will come up.
+            {
+              label: "Teleprompter",
+              type: "checkbox",
+              checked: this.flow.state().preferences.teleprompter,
+              click: () =>
+                this.flow.updatePreferences({
+                  teleprompter: !this.flow.state().preferences.teleprompter,
+                }),
+            },
+            {
+              label: "Edit Teleprompter Script…",
+              icon: symbol("text.alignleft"),
+              click: () => this.flow.openScript(),
+            },
           ] satisfies MenuItemConstructorOptions[])),
       {
         label: state.status === "paused" ? "Resume" : "Pause",
