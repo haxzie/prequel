@@ -75,11 +75,13 @@ export function Teleprompter() {
   /**
    * Puts the current word's line on the reading line.
    *
-   * Clamped to the text: never above the first line, never past the last.
-   * The opening of a script has nothing to show above it, and the end has
-   * nothing below, so a blank band either side reads as the text having
-   * slipped rather than as room. The wheel's offset is clamped with it, so a
-   * long scroll past the end does not have to be scrolled all the way back.
+   * Clamped to the text, which is padded by a row above and two below — see
+   * the scroller — so the first line and the last can each reach the reading
+   * row and no further. Without the padding the first line sat on the top
+   * row, and a wheel scrolled to the top landed on the second line's words
+   * because those were the ones on the reading row. The wheel's offset is
+   * clamped with it, so a long scroll past the end does not have to be
+   * scrolled all the way back.
    */
   const layout = useCallback(() => {
     const track = scroller.current;
@@ -245,6 +247,10 @@ export function Teleprompter() {
               style={{
                 fontSize: size,
                 lineHeight: `${String(lineHeight)}px`,
+                // Room for the first line to sit on the reading row, and the
+                // last — so every line can be the one being read.
+                paddingTop: lineHeight * READING_LINE,
+                paddingBottom: lineHeight * (TELEPROMPTER_LINES - 1 - READING_LINE),
                 transition: `transform ${String(settleMs)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
               }}
             >
