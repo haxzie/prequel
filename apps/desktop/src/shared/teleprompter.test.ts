@@ -183,12 +183,12 @@ describe("follow", () => {
     const first = speak(words, INITIAL_FOLLOW, passage(words, 0, 12));
     // Jump two lines on: from word 12 to the sentence starting "Type".
     const skipTo = words.find((word) => word.text === "Type")!.index;
-    const { positions, state } = speak(words, first.state, passage(words, skipTo, skipTo + 6));
+    // Caught up by the third word at the latest.
+    const early = speak(words, first.state, passage(words, skipTo, skipTo + 3));
+    expect(early.state.position).toBeGreaterThanOrEqual(skipTo + 2);
 
+    const { state } = speak(words, first.state, passage(words, skipTo, skipTo + 6));
     expect(state.position).toBe(skipTo + 6);
-    // Caught up by the third whole word at the latest.
-    const wholeWords = positions.filter((_, i) => i % 2 === 1 || positions.length < 6);
-    expect(wholeWords[2]).toBeGreaterThanOrEqual(skipTo + 2);
   });
 
   it("follows the reader back when they re-read a sentence", () => {
