@@ -304,6 +304,7 @@ export class Teleprompter {
   private onListenUpdate(update: ListenUpdate): void {
     switch (update.stage) {
       case "listening":
+        log("info", "teleprompter: listening");
         this.listening = "on";
         this.emit();
         return;

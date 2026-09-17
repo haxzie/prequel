@@ -86,9 +86,14 @@ export class TeleprompterWindow {
     // opened since, and there is no user position to preserve.
     const bounds = this.bounds();
     window.setBounds(bounds);
+    // Read back rather than trusted: AppKit may constrain a frame it dislikes,
+    // and a panel pushed under the menu bar would look like a bad number here
+    // rather than like AppKit.
+    const kept = window.getBounds();
     log(
       "info",
-      `island placed at ${String(bounds.x)},${String(bounds.y)} ${String(bounds.width)}×${String(bounds.height)}` +
+      `island placed at ${String(kept.x)},${String(kept.y)} ${String(kept.width)}×${String(kept.height)}` +
+        (kept.y === bounds.y ? "" : ` (asked for y=${String(bounds.y)})`) +
         (this.notch
           ? ` under a ${String(this.notch.width)}×${String(this.notch.height)} notch`
           : " with no notch"),
