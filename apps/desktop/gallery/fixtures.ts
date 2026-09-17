@@ -52,11 +52,13 @@ export const PREFERENCES: RecordingPreferences = {
 /** A script, with the follower a sentence in; the island's usual state. */
 export const TELEPROMPTER: TeleprompterState = {
   script:
-    "Welcome to Prequel, a screen recorder for the Mac.\n" +
-    "Today we are going to record a short demo of the new teleprompter.\n" +
-    "[smile at the camera]\n" +
-    "It sits in the notch, right under the lens, so your eyes stay on the camera.\n" +
-    "Type your script, press record, and read. The words light up as you say them.",
+    "Hi, I'm Musthaq, and this is Prequel.\n" +
+    "Prequel is a screen recorder for the Mac.\n" +
+    "[smile]\n" +
+    "You pick a screen, a window, or drag out an area, and press record.\n" +
+    "Your camera is recorded as its own track, so you can move it afterwards.\n" +
+    "What you're looking at right now is the teleprompter.\n" +
+    "It lives in the notch, right under the camera, so my eyes stay on you.",
   paused: false,
   listening: "on",
   // The 14" MacBook Pro's notch: 37 points tall, 200 wide.

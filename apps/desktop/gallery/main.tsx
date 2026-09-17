@@ -22,7 +22,14 @@ document.documentElement.style.setProperty("--dock-headroom", `${DOCK_HEADROOM}p
 declare global {
   interface Window {
     __gallery: {
-      shots: { id: string; frame: string; steps: unknown[]; clip: string | string[]; pad: number; maxWidth: number | null }[];
+      shots: {
+        id: string;
+        frame: string;
+        steps: unknown[];
+        clip: string | string[];
+        pad: number;
+        maxWidth: number | null;
+      }[];
       rect: (selector: string, text?: string) => DOMRect | null;
       settle: () => Promise<void>;
     };

@@ -77,6 +77,7 @@ const WINDOW: Record<
 > = {
   workspace: { width: 1280, height: 820 },
   welcome: { width: 720, height: 520 },
+  script: { width: 520, height: 440 },
 };
 
 function ShotView({ shot }: { shot: Shot }) {

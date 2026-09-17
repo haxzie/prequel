@@ -29,6 +29,9 @@ const Library = lazy(() =>
 const EditorRoute = lazy(() =>
   import("../src/renderer/src/editor/EditorRoute").then((m) => ({ default: m.EditorRoute })),
 );
+const Script = lazy(() =>
+  import("../src/renderer/src/script/Script").then((m) => ({ default: m.Script })),
+);
 const Teleprompter = lazy(() =>
   import("../src/renderer/src/teleprompter/Teleprompter").then((m) => ({
     default: m.Teleprompter,
@@ -36,7 +39,7 @@ const Teleprompter = lazy(() =>
 );
 
 export type ShotFrameKind =
-  "workspace" | "welcome" | "dock" | "dock-transparent" | "island" | "bare";
+  "workspace" | "welcome" | "script" | "dock" | "dock-transparent" | "island" | "bare";
 
 /** One thing the capture script does before it takes the picture. */
 export type Step =
@@ -135,6 +138,17 @@ export const SHOTS: readonly Shot[] = [
     pad: 40,
   },
 
+  {
+    id: "script-window",
+    frame: "script",
+    install: install((base) => ({
+      dock: { ...base.dock, preferences: { ...base.dock.preferences, teleprompter: true } },
+    })),
+    render: () => <Script />,
+    steps: [{ kind: "settle", ms: 300 }],
+    clip: "frame",
+    pad: 40,
+  },
   {
     id: "dock-teleprompter",
     frame: "dock",

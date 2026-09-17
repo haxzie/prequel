@@ -50,7 +50,13 @@ export const DOCS = [
   {
     id: "recording",
     title: "Recording",
-    pages: ["sources", "camera-and-microphone", "shortcuts-and-countdown", "tray-menu"],
+    pages: [
+      "sources",
+      "camera-and-microphone",
+      "teleprompter",
+      "shortcuts-and-countdown",
+      "tray-menu",
+    ],
   },
   {
     id: "editing",

@@ -1,14 +1,26 @@
 {
+  "teleprompter": {
+    "width": 676,
+    "height": 253
+  },
+  "script-window": {
+    "width": 600,
+    "height": 520
+  },
+  "dock-teleprompter": {
+    "width": 716,
+    "height": 100
+  },
   "dock-setup": {
-    "width": 622,
+    "width": 716,
     "height": 100
   },
   "dock-setup-window": {
-    "width": 622,
+    "width": 716,
     "height": 100
   },
   "dock-permissions": {
-    "width": 666,
+    "width": 760,
     "height": 100
   },
   "dock-recording": {
@@ -33,55 +45,75 @@
   },
   "inspector-presets": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-layout": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-background": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-recording": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-camera": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-audio": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-cursor": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-captions": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-logo": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-zoom": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-angle": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "inspector-focus": {
     "width": 384,
-    "height": 577
+    "height": 543
+  },
+  "editor-text": {
+    "width": 1280,
+    "height": 820
+  },
+  "inspector-text": {
+    "width": 384,
+    "height": 515
+  },
+  "inspector-text-style": {
+    "width": 384,
+    "height": 515
+  },
+  "inspector-text-motion": {
+    "width": 384,
+    "height": 515
+  },
+  "timeline-text": {
+    "width": 720,
+    "height": 246
   },
   "timeline-zoom": {
     "width": 720,
-    "height": 156
+    "height": 190
   },
   "playback-controls": {
     "width": 1280,
@@ -93,7 +125,7 @@
   },
   "caption-editor": {
     "width": 384,
-    "height": 577
+    "height": 543
   },
   "export-dialog": {
     "width": 460,

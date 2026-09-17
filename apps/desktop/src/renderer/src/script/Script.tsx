@@ -5,6 +5,7 @@ import type {
   TeleprompterSize,
   TeleprompterWidth,
 } from "../../../shared/contract";
+import { IDLE_TELEPROMPTER } from "../../../shared/contract";
 import { Field } from "../editor/controls/Field";
 import { Segmented, Slider, Toggle } from "../editor/controls/inputs";
 import { useDock } from "../hooks/useDock";
@@ -48,10 +49,14 @@ export function Script() {
   // Seeded from main once, then the textarea is the truth. Re-seeding on every
   // broadcast would put the cursor back at the end mid-sentence, because the
   // broadcast is this window's own keystrokes coming back round.
+  //
+  // "Once" means once main has answered, not on the first render: the hook
+  // starts from `IDLE_TELEPROMPTER`, and seeding from that left the window
+  // empty with the real script arriving a tick later and being ignored.
   useEffect(() => {
-    if (text === null) setText(state.script);
+    if (text === null && state !== IDLE_TELEPROMPTER) setText(state.script);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.script]);
+  }, [state]);
 
   const edit = (next: string) => {
     setText(next);

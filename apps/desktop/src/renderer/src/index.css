@@ -560,9 +560,18 @@ body {
 }
 
 /* The lines above and below the reading line fall away rather than stopping
-   at the edge of the viewport. */
+   at the edge of the viewport — but only where there is a line to fall away
+   to. `--fade-top` and `--fade-bottom` are 0 or 1, written by the island as it
+   scrolls: at the top of the script the first line is shown whole, and at the
+   end the last. */
 @utility prompter-fade {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 93%, transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(12% * var(--fade-top, 0)),
+    #000 calc(100% - 7% * var(--fade-bottom, 0)),
+    transparent 100%
+  );
 }
 
 @utility dock-theme {

@@ -92,6 +92,14 @@ export function Teleprompter() {
     const scroll = Math.min(Math.max(wanted - wheel.current, 0), furthest);
     wheel.current = wanted - scroll;
     track.style.transform = `translateY(${String(-Math.round(scroll))}px)`;
+    // The edges fade only where there is text behind them. A fade over the
+    // first line at the top of the script, or the last at its end, dims words
+    // that nothing is hiding.
+    const view = viewport.current;
+    if (view) {
+      view.style.setProperty("--fade-top", scroll > 0.5 ? "1" : "0");
+      view.style.setProperty("--fade-bottom", scroll < furthest - 0.5 ? "1" : "0");
+    }
   }, [lineHeight, viewportHeight]);
 
   /** Lights the words up to the position. */
