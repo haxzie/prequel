@@ -167,6 +167,38 @@ describe("auto-scroll", () => {
     expect(island.sent.at(-1)?.position).toBe(4);
   });
 
+  it("changes pace when the speed does", async () => {
+    const prefs = { teleprompterMode: "timed" as const, teleprompterSpeed: 60 };
+    const { prompter, island, prefs: live } = make(prefs);
+    prompter.sync(true);
+
+    await vi.advanceTimersByTimeAsync(1010);
+    expect(island.sent.at(-1)?.position).toBe(1);
+
+    live.teleprompterSpeed = 300;
+    prompter.sync(true);
+    await vi.advanceTimersByTimeAsync(1010);
+    expect(island.sent.at(-1)?.position).toBe(6);
+  });
+
+  it("does not try the microphone again on a size change once it has failed", async () => {
+    const { prompter, changes, prefs } = make({ teleprompterMode: "voice" });
+    prompter.sync(true);
+    await settle();
+    expect(changes.filter((c) => c === "starting")).toHaveLength(1);
+
+    prefs.teleprompterSize = "large";
+    prompter.sync(true);
+    await settle();
+    expect(changes.filter((c) => c === "starting")).toHaveLength(1);
+
+    // A fresh show is a fresh try: the model may have been installed since.
+    prompter.sync(false);
+    prompter.sync(true);
+    await settle();
+    expect(changes.filter((c) => c === "starting")).toHaveLength(2);
+  });
+
   it("stops at the end of the script", async () => {
     const { prompter, island } = make({ teleprompterMode: "timed", teleprompterSpeed: 300 });
     prompter.sync(true);

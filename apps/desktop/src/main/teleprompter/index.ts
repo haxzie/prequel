@@ -55,9 +55,13 @@ export interface TeleprompterDeps {
 
 /**
  * Something moving the position: the recogniser, or the auto-scroll clock.
- * Exactly one runs while the island shows, chosen by the mode.
+ * Exactly one runs while the island shows, chosen by the mode. `kind` is the
+ * mode it serves rather than what it is doing — a voice engine that fell back
+ * to scrolling still answers for voice, so a size change does not send it back
+ * to a microphone it already knows it cannot use. `speed` is the clock's rate,
+ * so a change of pace restarts it.
  */
-type Engine = { kind: "voice" | "timed"; stop: () => void };
+type Engine = { kind: "voice" | "timed"; speed?: number; stop: () => void };
 
 export class Teleprompter {
   private words: ScriptWord[] = [];
@@ -216,11 +220,14 @@ export class Teleprompter {
    */
   private runEngine(mode: RecordingPreferences["teleprompterMode"], force = false): void {
     const wanted = mode === "voice" ? "voice" : mode === "timed" ? "timed" : null;
-    if (!force && this.engine?.kind === wanted) return;
+    const speed = this.deps.preferences().teleprompterSpeed;
+    const same =
+      this.engine?.kind === wanted && (wanted !== "timed" || this.engine?.speed === speed);
+    if (!force && same) return;
 
     this.stopEngine();
     if (wanted === "voice") this.engine = this.listen();
-    else if (wanted === "timed") this.engine = this.scroll();
+    else if (wanted === "timed") this.engine = this.scroll("timed");
   }
 
   private stopEngine(): void {
@@ -239,14 +246,14 @@ export class Teleprompter {
    * Main keeps the clock rather than the island so the position has one owner
    * whatever moves it; the island eases between ticks.
    */
-  private scroll(): Engine {
-    const interval = 60_000 / this.deps.preferences().teleprompterSpeed;
+  private scroll(kind: Engine["kind"]): Engine {
+    const speed = this.deps.preferences().teleprompterSpeed;
     const timer = setInterval(() => {
       if (this.paused || this.state.position >= this.words.length) return;
       this.state = { ...this.state, position: jumpTo(this.words, this.state.position + 1) };
       this.sendPosition();
-    }, interval);
-    return { kind: "timed", stop: () => clearInterval(timer) };
+    }, 60_000 / speed);
+    return { kind, speed, stop: () => clearInterval(timer) };
   }
 
   /**
@@ -332,8 +339,9 @@ export class Teleprompter {
     this.emit();
     // Nothing to follow, so the words scroll instead. The engine is swapped
     // rather than the preference rewritten: a model installed tomorrow should
-    // find voice still chosen.
+    // find voice still chosen. It answers for voice — see `Engine` — so the
+    // microphone is tried again on the next show, not on the next size change.
     this.engine?.stop();
-    this.engine = this.scroll();
+    this.engine = this.scroll("voice");
   }
 }
