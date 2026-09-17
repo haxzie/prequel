@@ -126,6 +126,15 @@ export function Teleprompter() {
   );
   useTeleprompterPosition(onPosition);
 
+  // A wheel settle still pending when the island goes would jump a position
+  // on a window that is no longer showing.
+  useEffect(
+    () => () => {
+      if (wheelTimer.current) clearTimeout(wheelTimer.current);
+    },
+    [],
+  );
+
   // The island slides down when shown and up when hidden. The window stays
   // mounted across both, so main says which; the counter restarts the enter
   // animation on a second show, which the same class name would not.
