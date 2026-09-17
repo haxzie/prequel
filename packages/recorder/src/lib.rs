@@ -15,12 +15,14 @@ use prequel_camera as camera;
 use prequel_capture as capture;
 
 mod export;
+mod listen;
 mod logging;
 mod probe;
 mod screen;
 mod transcribe;
 
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
+pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};
 pub use logging::set_log_file;
 pub use probe::{CaptureWallpaper, ProbeSession, TrackProbe, capture_wallpaper, probe_session};
 pub use screen::{DisplaySafeArea, display_safe_area};

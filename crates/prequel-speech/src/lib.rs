@@ -24,7 +24,10 @@ use std::{
 
 use serde::Deserialize;
 
+pub mod listen;
 pub mod stitch;
+
+pub use listen::{ListenOptions, ListenUpdate, Listener};
 
 unsafe extern "C" {
     fn prequel_speech_probe(locale: *const c_char) -> *mut c_char;

@@ -299,6 +299,12 @@ export class Teleprompter {
         this.listening = "on";
         this.emit();
         return;
+      case "level":
+        // Ten a second, to the island alone: the meter is the one thing that
+        // shows the microphone is live before a word has been said.
+        this.level = update.level ?? 0;
+        this.sendPosition();
+        return;
       case "partial":
       case "final": {
         if (this.paused) return;
@@ -307,8 +313,7 @@ export class Teleprompter {
         const next = follow(this.words, this.state, heard, session);
         const moved = next.position !== this.state.position || next.lost !== this.state.lost;
         this.state = next;
-        this.level = update.level ?? this.level;
-        if (moved || update.level !== undefined) this.sendPosition();
+        if (moved) this.sendPosition();
         return;
       }
       case "failed":

@@ -100,10 +100,11 @@ export interface ListenOptions {
 
 export interface ListenUpdate {
   /**
-   * `listening` once the microphone is open; `partial` and `final` carry a
-   * hypothesis; `failed` ends it with a code; `stopped` acknowledges the stop.
+   * `listening` once the microphone is open; `level` ten times a second while
+   * it is; `partial` and `final` carry a hypothesis; `failed` ends it with a
+   * code; `stopped` acknowledges the stop.
    */
-  stage: "listening" | "partial" | "final" | "failed" | "stopped";
+  stage: "listening" | "level" | "partial" | "final" | "failed" | "stopped";
   /** The whole of what the current session has heard, as text. */
   text?: string;
   /**

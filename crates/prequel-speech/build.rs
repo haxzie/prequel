@@ -57,14 +57,19 @@ fn require_modern_sdk() {
     }
 }
 
+/// The Swift, as separate files for separate jobs: `speech.swift` transcribes
+/// a finished file, `listen.swift` follows a live microphone. One library.
+const SOURCES: [&str; 2] = ["speech.swift", "listen.swift"];
+
 fn main() {
-    let source = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("swift")
-        .join("speech.swift");
+    let swift = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("swift");
+    let sources: Vec<PathBuf> = SOURCES.iter().map(|name| swift.join(name)).collect();
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let library = out.join("libprequelspeech.a");
 
-    println!("cargo:rerun-if-changed={}", source.display());
+    for source in &sources {
+        println!("cargo:rerun-if-changed={}", source.display());
+    }
 
     require_modern_sdk();
 
@@ -76,13 +81,16 @@ fn main() {
         // the semaphore bridge is exactly the thing strict checking forbids.
         // The bridge is the point, so the mode is the one that matches it.
         .args(["-swift-version", "5"])
+        // Several inputs default the module to `main`, which is a name the
+        // linker then finds twice.
+        .args(["-module-name", "prequelspeech"])
         .arg("-o")
         .arg(&library)
-        .arg(&source)
+        .args(&sources)
         .status()
         .expect("swiftc is part of the Xcode command line tools and has to be on PATH");
 
-    assert!(status.success(), "swiftc failed to build speech.swift");
+    assert!(status.success(), "swiftc failed to build the Swift in crates/prequel-speech/swift");
 
     println!("cargo:rustc-link-search=native={}", out.display());
     println!("cargo:rustc-link-lib=static=prequelspeech");

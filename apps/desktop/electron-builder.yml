@@ -101,7 +101,7 @@ mac:
     #
     # Only the macOS 14-25 path ever asks. `SpeechAnalyzer`, which is what runs
     # on macOS 26 and up, needs no authorisation at all.
-    NSSpeechRecognitionUsageDescription: Prequel transcribes your recording on this Mac to make captions. The audio never leaves your machine.
+    NSSpeechRecognitionUsageDescription: Prequel recognises speech on this Mac to make captions, and to follow your script in the teleprompter as you read. The audio never leaves your machine.
     # Claims prequel:// so the browser can hand a finished sign-in back to the
     # app. `app.setAsDefaultProtocolClient` alone is not enough for a packaged
     # build — Launch Services reads the scheme out of Info.plist, and without
