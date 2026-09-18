@@ -297,7 +297,14 @@ export class Teleprompter {
         if (stopped) return;
         active = recorder;
         recorder.startListening(
-          { locale: systemLocale(), vocabulary: vocabulary(this.words) },
+          {
+            locale: systemLocale(),
+            vocabulary: vocabulary(this.words),
+            // The chosen microphone, by label. Without it the listener opens
+            // the default input, which is the built-in mic while a headset or
+            // USB mic is the one in front of the reader.
+            microphone: this.deps.preferences().micLabel ?? undefined,
+          },
           (error, update) => {
             if (stopped) return;
             if (error) {

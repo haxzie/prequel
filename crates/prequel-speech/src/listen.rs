@@ -15,6 +15,7 @@ unsafe extern "C" {
     fn prequel_speech_listen_start(
         locale: *const c_char,
         contextual: *const c_char,
+        microphone: *const c_char,
         ctx: *mut c_void,
         on_update: extern "C" fn(*mut c_void, *const c_char),
     ) -> *mut c_void;
@@ -48,6 +49,9 @@ pub struct ListenOptions<'a> {
     pub locale: &'a str,
     /// Words to favour: the script's own vocabulary.
     pub contextual: &'a [String],
+    /// The microphone to open, by the name AVFoundation gives it, or `None`
+    /// for the system default. See `listen.swift`.
+    pub microphone: Option<&'a str>,
 }
 
 type Callback = Box<dyn FnMut(ListenUpdate) + Send>;
@@ -75,6 +79,10 @@ impl Listener {
             .map_err(|cause| SpeechError::Decode(cause.to_string()))?;
         let contextual = CString::new(contextual)
             .map_err(|_| SpeechError::Path("a contextual string has a nul in it".into()))?;
+        // Empty means the default; Swift reads it that way rather than being
+        // handed a null it would have to check for.
+        let microphone = CString::new(options.microphone.unwrap_or(""))
+            .map_err(|_| SpeechError::Path("the microphone name has a nul in it".into()))?;
 
         let callback: *mut Callback = Box::into_raw(Box::new(Box::new(on_update)));
 
@@ -82,6 +90,7 @@ impl Listener {
             prequel_speech_listen_start(
                 locale.as_ptr(),
                 contextual.as_ptr(),
+                microphone.as_ptr(),
                 callback.cast(),
                 on_update_trampoline,
             )

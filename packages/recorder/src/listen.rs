@@ -24,6 +24,9 @@ pub struct ListenOptions {
     pub locale: String,
     /// Words the engine should expect — the script's own vocabulary.
     pub vocabulary: Vec<String>,
+    /// The microphone to listen with, by `localizedName`. Omit for the
+    /// system default.
+    pub microphone: Option<String>,
 }
 
 #[napi(object)]
@@ -60,6 +63,7 @@ pub fn start_listening(
         Options {
             locale: &options.locale,
             contextual: &options.vocabulary,
+            microphone: options.microphone.as_deref(),
         },
         move |update| {
             // Non-blocking: a slow renderer must not stall the engine, and a

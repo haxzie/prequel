@@ -135,6 +135,35 @@ describe("follow", () => {
     expect(state.lost).toBe(false);
   });
 
+  it("moves on the word just said, not the one after it", () => {
+    // The whole of the prompter's felt lag. Once the reader is placed, each
+    // expected word moves the highlight on the update that carries it — the
+    // alignment alone needed the *next* word too, so it sat a word behind
+    // the voice all the way down the script.
+    const said: string[] = [];
+    let state = INITIAL_FOLLOW;
+    spoken.forEach((word, i) => {
+      said.push(word.text);
+      state = follow(words, state, said, 0);
+      // The first word is the one exception: one word places nobody.
+      if (i < 1) return;
+      expect(state.position).toBe(skipDirections(words, word.index + 1));
+    });
+  });
+
+  it("does not move on a stop word said out of turn", () => {
+    // "the" is the next word of the script, and "the" is what a riff is made
+    // of. Alone it must not count; after the word before it, it does.
+    const at = words.findIndex((word, i) => i > 2 && word.keys[0] === "the");
+    expect(at).toBeGreaterThan(0);
+    const placed = { ...INITIAL_FOLLOW, position: at };
+    expect(follow(words, placed, ["anyway", "so", "the"], 0).position).toBe(at);
+    const before = words[at - 1]!.text;
+    expect(follow(words, placed, ["anyway", before, "the"], 0).position).toBe(
+      skipDirections(words, at + 1),
+    );
+  });
+
   it("stays within a word of the reader throughout", () => {
     // After each whole word, the position should be at most one word behind
     // where the reader is — the first word of a session is the one exception,
@@ -217,11 +246,13 @@ describe("follow", () => {
   it("does not regress when the engine starts a new session", () => {
     const first = speak(words, INITIAL_FOLLOW, passage(words, 0, 20));
 
-    // A fresh session hands over an empty, then a one-word, hypothesis.
+    // A fresh session hands over an empty, then a one-word, hypothesis. The
+    // empty one moves nothing; the one word is the expected word, so it
+    // moves on by exactly that word and no further.
     let state = follow(words, first.state, [], 1);
     expect(state.position).toBe(20);
     state = follow(words, state, [words[20]!.text], 1);
-    expect(state.position).toBe(20);
+    expect(state.position).toBe(21);
 
     const { state: after } = speak(words, state, passage(words, 20, 26), 1);
     expect(after.position).toBe(26);

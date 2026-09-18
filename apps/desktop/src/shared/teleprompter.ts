@@ -385,6 +385,18 @@ export function follow(
 
   if (heard.length === 0 || state.position >= words.length) return next;
 
+  // The word the reader was expected to say next, said. Nothing to align: the
+  // highlight moves the instant the engine reports it, rather than one word
+  // later when the alignment has a second word to score. This is where the
+  // prompter's lag was — the alignment needs two words of evidence to move
+  // at all, so it was structurally a word behind the voice at every word.
+  if (saidExpected(words, state.position, heard)) {
+    next.position = skipDirections(words, state.position + 1);
+    next.missed = 0;
+    next.lost = false;
+    return next;
+  }
+
   const cells = window(words, state.position);
   const found = align(heard, cells);
   const accepted = found !== null && acceptable(found, state.position);
@@ -399,6 +411,38 @@ export function follow(
   next.missed = 0;
   next.lost = false;
   return next;
+}
+
+/**
+ * Whether the tail of what was heard is exactly the word at `position`.
+ *
+ * Exact only — a fuzzy match on a single word is guesswork, and the alignment
+ * is there for guesses. A stop word on its own is not enough either: "the" is
+ * said mid-riff too, so it also has to follow the word before it in the
+ * script, which the alignment will already have placed. A number is several
+ * keys and must be said whole.
+ */
+function saidExpected(
+  words: readonly ScriptWord[],
+  position: number,
+  heard: readonly string[],
+): boolean {
+  const word = words[position];
+  if (!word || word.keys.length === 0) return false;
+  if (heard.length < word.keys.length) return false;
+
+  const tail = heard.slice(-word.keys.length);
+  if (!tail.every((key, i) => key === word.keys[i])) return false;
+
+  const trivial = word.keys.length === 1 && STOP_WORDS.has(word.keys[0]!);
+  if (!trivial) return true;
+
+  const previous = words[position - 1];
+  if (!previous || previous.keys.length === 0) return false;
+  const before = heard.slice(-word.keys.length - previous.keys.length, -word.keys.length);
+  return (
+    before.length === previous.keys.length && before.every((key, i) => key === previous.keys[i])
+  );
 }
 
 /** The best alignment of the heard tail against the window, or null. */
@@ -436,7 +480,8 @@ function align(heard: readonly string[], cells: readonly Cell[]): Alignment | nu
       const left = h[i * cols + j - 1]! + GAP;
       const best = Math.max(0, diagonal, up, left);
       h[i * cols + j] = best;
-      run[i * cols + j] = best > 0 && best === diagonal && s > 0 ? run[(i - 1) * cols + j - 1]! + 1 : 0;
+      run[i * cols + j] =
+        best > 0 && best === diagonal && s > 0 ? run[(i - 1) * cols + j - 1]! + 1 : 0;
     }
   }
 

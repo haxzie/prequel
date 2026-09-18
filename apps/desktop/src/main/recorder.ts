@@ -104,6 +104,12 @@ export interface ListenOptions {
    * engines take a list to favour.
    */
   vocabulary: string[];
+  /**
+   * The microphone to listen with, by label — the same `localizedName` the
+   * recorder is handed. Omitted, the listener opens the system default, which
+   * is the wrong microphone whenever the user chose another.
+   */
+  microphone?: string;
 }
 
 export interface ListenUpdate {

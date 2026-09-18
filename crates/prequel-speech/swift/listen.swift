@@ -19,6 +19,7 @@
 //      and the buffers go to a serial queue, and the engines and the callback
 //      are only ever touched from there.
 import AVFoundation
+import CoreAudio
 import Foundation
 import Speech
 
@@ -43,13 +44,21 @@ private struct Update: Encodable {
 public func prequel_speech_listen_start(
     _ locale: UnsafePointer<CChar>,
     _ contextual: UnsafePointer<CChar>,
+    _ microphone: UnsafePointer<CChar>,
     _ ctx: UnsafeMutableRawPointer?,
     _ onUpdate: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void
 ) -> UnsafeMutableRawPointer? {
     let identifier = String(cString: locale)
     let words = (try? JSONDecoder().decode([String].self, from: Data(String(cString: contextual).utf8))) ?? []
+    let device = String(cString: microphone)
 
-    let session = ListenSession(locale: identifier, contextual: words, ctx: ctx, onUpdate: onUpdate)
+    let session = ListenSession(
+        locale: identifier,
+        contextual: words,
+        microphone: device.isEmpty ? nil : device,
+        ctx: ctx,
+        onUpdate: onUpdate
+    )
     session.start()
     return Unmanaged.passRetained(session).toOpaque()
 }
@@ -89,6 +98,9 @@ private let QUIET_SECONDS = 0.3
 private final class ListenSession: @unchecked Sendable {
     private let locale: String
     private let contextual: [String]
+    /// The microphone's name, as AVFoundation and CoreAudio both report it,
+    /// or nil for whichever is the system default.
+    private let microphone: String?
     private let ctx: UnsafeMutableRawPointer?
     private let onUpdate: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void
 
@@ -126,11 +138,13 @@ private final class ListenSession: @unchecked Sendable {
     init(
         locale: String,
         contextual: [String],
+        microphone: String?,
         ctx: UnsafeMutableRawPointer?,
         onUpdate: @escaping @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void
     ) {
         self.locale = locale
         self.contextual = contextual
+        self.microphone = microphone
         self.ctx = ctx
         self.onUpdate = onUpdate
     }
@@ -191,6 +205,32 @@ private final class ListenSession: @unchecked Sendable {
     /// Opens the default input and hands every buffer to `sink`, on the queue.
     private func openMicrophone(sink: @escaping (AVAudioPCMBuffer) -> Void) -> Bool {
         let input = engine.inputNode
+
+        // The microphone the user chose, not the system default. The two are
+        // the same on a laptop with nothing plugged in, and different the
+        // moment a USB or headset mic is chosen in the panel while the
+        // built-in one is still the default — at which point the prompter
+        // was hearing the room from across the desk while the take recorded
+        // the mic in front of the reader. Set before the format is read: the
+        // format is the device's.
+        if let microphone, let device = inputDevice(named: microphone), let unit = input.audioUnit {
+            var id = device
+            let status = AudioUnitSetProperty(
+                unit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &id,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            // A device that cannot be selected falls back to the default
+            // rather than to silence; the reader would rather be followed
+            // from the wrong microphone than not at all.
+            if status != noErr { NSLog("prequel: could not select microphone \(microphone): \(status)") }
+        } else if let microphone {
+            NSLog("prequel: no input device named \(microphone); listening on the default")
+        }
+
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             fail("NO_MICROPHONE", "No microphone is available to listen with.")
@@ -499,6 +539,60 @@ private final class ListenSession: @unchecked Sendable {
             request.endAudio()
         }
     }
+}
+
+// MARK: - Devices
+
+/// The CoreAudio device with input channels and this name, if any.
+///
+/// By name because a name is the one handle every side has: Chromium's
+/// `label`, AVFoundation's `localizedName` and CoreAudio's
+/// `kAudioObjectPropertyName` all report the same string for a device, and
+/// the panel stores the label for exactly this reason. An id would have to
+/// be looked up from the name anyway.
+private func inputDevice(named name: String) -> AudioDeviceID? {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return nil }
+    var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &devices) == noErr else { return nil }
+
+    for device in devices where hasInput(device) {
+        var nameAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: Unmanaged<CFString>? = nil
+        var valueSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &nameAddress, 0, nil, &valueSize, &value) == noErr,
+              let found = value?.takeRetainedValue() as String?
+        else { continue }
+        if found == name { return device }
+    }
+    return nil
+}
+
+/// Whether a device has any input channels. Every output-only device — the
+/// speakers, a display — is in the same list.
+private func hasInput(_ device: AudioDeviceID) -> Bool {
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyStreamConfiguration,
+        mScope: kAudioDevicePropertyScopeInput,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return false }
+    let list = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+    defer { list.deallocate() }
+    guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, list) == noErr else { return false }
+    let buffers = UnsafeMutableAudioBufferListPointer(list.assumingMemoryBound(to: AudioBufferList.self))
+    return buffers.reduce(0) { $0 + Int($1.mNumberChannels) } > 0
 }
 
 // MARK: - Level
