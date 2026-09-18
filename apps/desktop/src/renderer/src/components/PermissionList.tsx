@@ -33,7 +33,7 @@ export const PERMISSIONS: {
   {
     id: "input",
     label: "Input Monitoring",
-    detail: "Lets Prequel notice typing, for typing sounds. Never what you type.",
+    detail: "Lets Prequel notice typing, for typing sounds.",
   },
   {
     id: "camera",
