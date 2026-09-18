@@ -312,6 +312,29 @@ export function UndoIcon() {
  * the keyboard, and a shortcut is easier to find by matching the symbol than by
  * translating a word back into one.
  */
+/**
+ * Streamline `arrow-cursor-2`, CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+ *
+ * The mouse whose click is chosen. Its own box of 14 rather than `STROKE`'s
+ * 24, with the stroke scaled to match, because the glyph is drawn to that box
+ * and restating its path at 24 would be a transcription nobody could check.
+ */
+export function MouseIcon() {
+  return (
+    <svg
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.25}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12.753 4.67L1.83 1.106a.564.564 0 0 0-.704.732l4.04 10.932a.35.35 0 0 0 .663-.015l1.53-4.81a1 1 0 0 1 .575-.623l4.845-1.982a.358.358 0 0 0-.025-.672" />
+    </svg>
+  );
+}
+
 /** Lucide `keyboard`. The keyboard whose sound is chosen, not a shortcut. */
 export function KeyboardIcon() {
   return (

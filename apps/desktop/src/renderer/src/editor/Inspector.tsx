@@ -57,6 +57,7 @@ import {
   CursorIcon,
   CutoutIcon,
   KeyboardIcon,
+  MouseIcon,
   PersonIcon,
   DepthIcon,
   DropletIcon,
@@ -2592,7 +2593,7 @@ function AudioPanel({
             disabled={keySound === SOUND_OFF}
             onChange={(value) => set("audio", "keySoundVolume", value)}
           />
-          <Field icon={<CursorIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
+          <Field icon={<MouseIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
             <Dropdown
               value={clickSound}
               options={[
