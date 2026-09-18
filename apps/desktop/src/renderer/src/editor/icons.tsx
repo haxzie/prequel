@@ -312,6 +312,16 @@ export function UndoIcon() {
  * the keyboard, and a shortcut is easier to find by matching the symbol than by
  * translating a word back into one.
  */
+/** Lucide `keyboard`. The keyboard whose sound is chosen, not a shortcut. */
+export function KeyboardIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="20" height="16" x="2" y="4" rx="2" />
+      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" />
+    </svg>
+  );
+}
+
 export function CommandIcon() {
   return (
     <svg

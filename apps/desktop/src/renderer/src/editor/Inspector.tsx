@@ -54,9 +54,9 @@ import {
   CircleIcon,
   ClockIcon,
   CloseIcon,
-  CommandIcon,
   CursorIcon,
   CutoutIcon,
+  KeyboardIcon,
   PersonIcon,
   DepthIcon,
   DropletIcon,
@@ -2566,9 +2566,9 @@ function AudioPanel({
       {hasSounds && (
         <Section title="Sounds">
           <p className="text-[11px] leading-relaxed text-editor-muted">
-            Typing and clicks, played back in the keyboard you choose.
+            Synthetic sounds for clicks.
           </p>
-          <Field icon={<CommandIcon />} label="Keyboard" {...field("audio", "keySound")}>
+          <Field icon={<KeyboardIcon />} label="Keyboard" {...field("audio", "keySound")}>
             <Dropdown
               value={keySound}
               options={[
