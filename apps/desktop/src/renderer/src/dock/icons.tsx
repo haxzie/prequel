@@ -184,6 +184,22 @@ export function CloseIcon() {
   );
 }
 
+/** A pencil: opens the script to edit. Lucide's, on the dock's grid. */
+export function PencilIcon() {
+  return (
+    <svg {...box}>
+      <path
+        d="M14.3 3.7a1.6 1.6 0 0 1 2.3 2.3l-9.4 9.4-3.4.9.9-3.4z M12.2 5.8l2.3 2.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Opens a device chooser. Points down because the menu comes up. */
 export function ChevronIcon() {
   return (
