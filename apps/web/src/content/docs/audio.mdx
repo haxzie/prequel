@@ -1,5 +1,5 @@
 export const title = "Audio";
-export const description = "Which sound goes into the export, and how loud.";
+export const description = "Which sound goes into the export, how loud, and the typing and click sounds Prequel makes for you.";
 export const faq = [
   {
     question: "Can I mute the system audio but keep my voice?",
@@ -9,7 +9,12 @@ export const faq = [
   {
     question: "Why is the Audio panel missing?",
     answer:
-      "The recording has no audio tracks. The microphone was off and Record system audio was off when it was made.",
+      "The recording has nothing to mix: the microphone and Record system audio were both off when it was made, and it noted no key presses or clicks.",
+  },
+  {
+    question: "Are the typing sounds recorded from my keyboard?",
+    answer:
+      "No. They are made by Prequel from the moments you pressed keys, in the keyboard you pick. Nothing about them came through a microphone, and the recording never stores which keys they were.",
   },
   {
     question: "Does a GIF have sound?",
@@ -29,7 +34,23 @@ For each source:
 - **Include** puts it in the export or leaves it out.
 - **Volume** sets its level.
 
-The panel is only offered for recordings that have at least one audio track, and it says so when there is none.
+The panel is offered for recordings that have an audio track or something to make sound from, and it says so when there is neither.
+
+## Typing and click sounds
+
+A screen recording of typing is usually silent, or has a room microphone making the keyboard sound worse than it does. Prequel can make the sounds instead, from the moments you typed and clicked, so they land on the keystrokes you see.
+
+Under **Sounds** in the Audio panel:
+
+- **Keyboard** picks the switch you hear — **Tactile**, **Linear**, **Clicky** or **Thock** — or **Off**. Choosing one plays it.
+- **Mouse clicks** picks **Soft** or **Mechanical**, or **Off**.
+- **Volume** sets each, like the tracks above.
+
+New projects start with Tactile and Soft on. Like every setting in the panel, a choice applies to the whole edit or to one clip, so a clip can have a different keyboard or none.
+
+The sounds are synthesised, not recorded: there is no sample library, and the preview and the export make the same sounds from the same plan. The space bar, Return and Delete sound bigger than a letter, as they do on a real board, and no two presses sound quite the same.
+
+What the recording keeps to make this possible is the moment of each press and one of five classes — letter, space, Return, Delete, modifier — and never which letter. The switch for it is **Note when keys are pressed** in [Settings](/docs/settings), on by default. Passwords are never noted: macOS keeps them from every app while you type one. A take made with the switch off, or before it existed, offers click sounds alone.
 
 ## Recording system audio
 

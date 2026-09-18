@@ -83,7 +83,7 @@ const SECTIONS: LegalSection[] = [
       "On the site: the pages visited, where you arrived from, and whether the download button was pressed, against a first-party cookie.",
       "In the app: events such as a launch, a recording started, a transcription finished, an export completed, along with the app version and the macOS version. These are keyed to a random install id, and to your account id once you have signed in.",
       "When something fails, the app reports the failure: where in the app it happened, the kind of error and its message. Any file path inside that message is replaced before it is sent, because a path carries your account name and the name of what you recorded.",
-      "Never collected, on either side: screen contents, keystrokes, window titles, the names of your files, audio, or anything out of a transcript. The zooms are placed by reading your clicks and your typing, and that reading happens on your Mac and stays there.",
+      "Never collected, on either side: screen contents, keystrokes, window titles, the names of your files, audio, or anything out of a transcript. The zooms are placed by reading your clicks and your typing, and the typing sounds by the moments you pressed keys — a time and whether it was a letter, the space bar, Return, Delete or a modifier, never which letter. That reading happens on your Mac, is written only into the recording's own folder, and stays there.",
       "Signed into the dashboard, your account id, email and name are attached to your own events, so a support question can be answered by the person who builds the app.",
     ],
   },
