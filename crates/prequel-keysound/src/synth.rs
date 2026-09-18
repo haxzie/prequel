@@ -590,12 +590,14 @@ mod tests {
                 db(held, early)
             );
 
-            // And the space bar is a letter, not a note: the same low tick.
+            // And the space bar is a lower letter, not a note: a tick, under
+            // the letter's pitch.
             let space = render_voice(table, CueKind::Space, seed, SAMPLE_RATE);
             let centroid = brightness(&space);
+            let letter_centroid = brightness(&letter);
             assert!(
-                (300.0..500.0).contains(&centroid),
-                "space {seed}: {centroid} Hz"
+                centroid < letter_centroid,
+                "space {seed}: {centroid} vs letter {letter_centroid}"
             );
             let first = rms(&space.samples[space.onset..space.onset + ms(5)]);
             let later = rms(&space.samples[space.onset + ms(20)..space.onset + ms(25)]);

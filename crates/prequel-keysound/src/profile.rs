@@ -361,14 +361,16 @@ static PHONE: Profile = Profile {
             }),
             trim_db: -2.5,
         },
-        // The space bar is deliberately absent: it is the normal sound, and
-        // with `long_key_ratio` at 1.0 it is the letter's exactly. Its
-        // scheduler boost is undone by the trim below.
+        // The space bar. On the phone it plays the letter's file; here it is
+        // the letter dropped to seven tenths of its pitch with more of the
+        // low ring, because a space bar that sounds like a letter reads as a
+        // letter, and the bar's own weight is the one thing a listener misses
+        // from the real board. The scheduler's long-key boost is left in.
         ClassSound {
             kind: CueKind::Space,
-            modes: &NORMAL,
+            modes: &SPACE,
             gate: None,
-            trim_db: -2.5,
+            trim_db: 0.0,
         },
         ClassSound {
             kind: CueKind::Enter,
@@ -385,7 +387,15 @@ static PHONE: Profile = Profile {
     ],
 };
 
-/// The phone's letter — and its space bar.
+/// The phone's space bar: the letter, lower and heavier.
+static SPACE: [Mode; 4] = [
+    mode(245.0, 18.0, 1.0),
+    mode(700.0, 10.0, 1.4),
+    mode(238.0, 190.0, 0.5),
+    mode(690.0, 120.0, 0.15),
+];
+
+/// The phone's letter.
 static NORMAL: [Mode; 4] = [
     mode(350.0, 16.0, 1.0),
     mode(1_000.0, 10.0, 2.2),
