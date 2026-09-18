@@ -457,21 +457,26 @@ const api = {
 
     bitmaps: {
       /**
-       * Hands main one cue's or one text field's pixels to write into the
-       * recording. `kind` is the folder: "captions" or "texts".
+       * Hands main one cue's, one text field's or one pointer tag's pixels to
+       * write into the recording. `kind` is the folder: "captions", "texts"
+       * or "cursor".
        *
        * Answers with the path it wrote, or null if it could not — a missing
        * bitmap is a plainer video, and the rest are still worth drawing.
        */
       write: (
-        kind: "captions" | "texts",
+        kind: "captions" | "texts" | "cursor",
         dir: string,
         file: string,
         bytes: Uint8Array,
       ): Promise<IpcResult<string | null>> =>
         ipcRenderer.invoke(IPC_CHANNELS.editorWriteBitmap, kind, dir, file, bytes),
 
-      sweep: (kind: "captions" | "texts", dir: string, keep: string[]): Promise<IpcResult<void>> =>
+      sweep: (
+        kind: "captions" | "texts" | "cursor",
+        dir: string,
+        keep: string[],
+      ): Promise<IpcResult<void>> =>
         ipcRenderer.invoke(IPC_CHANNELS.editorSweepBitmaps, kind, dir, keep),
     },
   },

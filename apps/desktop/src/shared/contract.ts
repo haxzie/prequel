@@ -1363,6 +1363,57 @@ export const CURSOR_STYLES = [
       arrow: { file: "cursor-football.png", hotspot: { x: 0.5, y: 0.5 } },
     },
   },
+
+  // ── The named set ─────────────────────────────────────────────────────────
+  //
+  // A collaborator's cursor, as a multiplayer canvas draws one: the modern
+  // pointer in a colour, and a tag beside it with a name in it. `tag` is the
+  // colour, and is what tells the editor a style takes a name at all — the
+  // panel shows the name field for a style that has one, and the plan carries
+  // a second pointer image, the tag, drawn at the same points.
+  //
+  // One image each, like the emoji: the tag says who is pointing, and a hand
+  // or an I-beam in a colour would be a different thing to read.
+  {
+    id: "tag-blue",
+    label: "Blue name tag",
+    tag: "#0d99ff",
+    shapes: {
+      arrow: { file: "cursor-tag-blue.png", hotspot: { x: 0.0696, y: 0.0752 } },
+    },
+  },
+  {
+    id: "tag-purple",
+    label: "Purple name tag",
+    tag: "#9747ff",
+    shapes: {
+      arrow: { file: "cursor-tag-purple.png", hotspot: { x: 0.0696, y: 0.0752 } },
+    },
+  },
+  {
+    id: "tag-pink",
+    label: "Pink name tag",
+    tag: "#ff24bd",
+    shapes: {
+      arrow: { file: "cursor-tag-pink.png", hotspot: { x: 0.0696, y: 0.0752 } },
+    },
+  },
+  {
+    id: "tag-orange",
+    label: "Orange name tag",
+    tag: "#ff7a00",
+    shapes: {
+      arrow: { file: "cursor-tag-orange.png", hotspot: { x: 0.0696, y: 0.0752 } },
+    },
+  },
+  {
+    id: "tag-green",
+    label: "Green name tag",
+    tag: "#14ae5c",
+    shapes: {
+      arrow: { file: "cursor-tag-green.png", hotspot: { x: 0.0696, y: 0.0752 } },
+    },
+  },
 ] as const;
 
 export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
@@ -1381,6 +1432,18 @@ export interface CursorShape {
  */
 export function cursorStyle(id: string): (typeof CURSOR_STYLES)[number] {
   return CURSOR_STYLES.find((style) => style.id === id) ?? CURSOR_STYLES[0];
+}
+
+/**
+ * The colour of a style's name tag, or null for a style that has none.
+ *
+ * The one question three places ask — the panel, to show the name field; the
+ * preview and the export, to draw the tag — so it is answered here rather
+ * than by each reading `tag` off the style and agreeing on what absent means.
+ */
+export function cursorTag(id: string): string | null {
+  const style = cursorStyle(id);
+  return "tag" in style ? style.tag : null;
 }
 
 /** Every image any style may ask for, which is what has to reach a recording. */

@@ -47,6 +47,7 @@ import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
 import { useTextBitmaps } from "./useTextBitmaps";
+import { useCursorTags } from "./useCursorTags";
 import { useTranscription } from "./useTranscription";
 import { transcriptForShare } from "./shareTranscript";
 import {
@@ -618,6 +619,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   );
   const fonts = useFonts();
   const textBitmaps = useTextBitmaps(session, state.project, captionFrame, fonts);
+  const cursorTags = useCursorTags(session, state.project, setImages);
   /**
    * Every text's bitmaps by when it is on screen, for the image cache.
    *
@@ -768,6 +770,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     state.project.output,
     captions,
     textBitmaps,
+    cursorTags,
   );
 
   /**
@@ -959,6 +962,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               cues={captions.byLook}
               texts={state.project.texts}
               rendered={textBitmaps.rendered}
+              tags={cursorTags}
               selectedTextId={state.selectedTextId}
               grab={grab}
               onPick={showPanelFor}

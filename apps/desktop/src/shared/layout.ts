@@ -2966,6 +2966,17 @@ export interface CursorTrack {
    * is every kind but the hand, for a style that ships only those two.
    */
   shapes: { arrow: CursorShape } & Partial<Record<CursorKind, CursorShape>>;
+  /**
+   * A name tag drawn beside the pointer, for a style that has one.
+   *
+   * A second image at the same points, which is all a tag is to the
+   * rasterisers: `cursorItems` emits it as one more `cursor` item, so neither
+   * of them learns a new shape. The bitmap is the renderer's — text is drawn
+   * in Chromium and nowhere else — and `scale` and `hotspot` are worked out
+   * where it was drawn, from how much bigger than the pointer it came out and
+   * where the pointer's tip should sit against it. See `editor/cursorTag.ts`.
+   */
+  tag?: CursorTag;
   /** Press times, in source time, for the click animation. */
   clicks?: readonly number[];
   /**
@@ -3422,7 +3433,7 @@ function cursorItems(
   // belong to the arrow rather than to an item with no texture behind it.
   const shapeFor = (kind: CursorKind): CursorShape => path.shapes[kind] ?? path.shapes.arrow;
 
-  return splitByShape(smeared, shapeFor).map(({ shape, points: drawn }) => ({
+  const items: PlanItem[] = splitByShape(smeared, shapeFor).map(({ shape, points: drawn }) => ({
     kind: "cursor" as const,
     path: shape.path,
     size,
@@ -3436,6 +3447,38 @@ function cursorItems(
       onSprite(point, planeAt(point.at), shape.hotspot, size, shadowPad),
     ),
   }));
+
+  // The name tag, after the pointers so it draws over them, at every point
+  // the pointer has: it hides when the pointer hides, dips with a press and
+  // streaks with a fast move, because it is the same points. No shadow — a
+  // tag is a flat label, and a drop under it would read as a second card.
+  if (path.tag) {
+    const tag = path.tag;
+    const tagSize = size * tag.scale;
+    items.push({
+      kind: "cursor",
+      path: tag.path,
+      size: tagSize,
+      hotspot: tag.hotspot,
+      points: smeared.map((point) => onSprite(point, planeAt(point.at), tag.hotspot, tagSize, 0)),
+    });
+  }
+
+  return items;
+}
+
+/** A name tag's bitmap, and how it sits against the pointer. */
+export interface CursorTag {
+  /** Bitmap to draw, relative to the session directory. Square. */
+  path: string;
+  /** The bitmap's drawn size as a multiple of the pointer's. */
+  scale: number;
+  /**
+   * The point of the bitmap that lands on the pointer's position, as a
+   * fraction of it — negative, since the tag sits below and to the right of
+   * the tip rather than on it.
+   */
+  hotspot: { x: number; y: number };
 }
 
 /** A moment's picture, and where on it the pointer sits. */

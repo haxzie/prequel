@@ -56,6 +56,8 @@ export type Step =
   | { kind: "click"; selector: string; text?: string }
   /** A key press, by `KeyboardEvent.code`. */
   | { kind: "key"; code: string }
+  /** Text typed into whatever has focus. */
+  | { kind: "type"; text: string }
   /** A click on the timeline ruler, `fraction` of the way along it. */
   | { kind: "seek"; fraction: number }
   /** Wait until `selector` matches something. */
@@ -294,6 +296,26 @@ export const SHOTS: readonly Shot[] = [
   inspector("inspector-camera", "Camera"),
   inspector("inspector-audio", "Audio"),
   inspector("inspector-cursor", "Cursor"),
+  // A named pointer: the blue tag chosen and a name typed, with the tag
+  // drawn beside the pointer in the preview. The whole frame, since the
+  // point of the shot is the preview and the panel together.
+  {
+    id: "cursor-tag",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Cursor"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label="Blue name tag"]' },
+      { kind: "click", selector: 'input[placeholder="Who is pointing"]' },
+      { kind: "type", text: "Musthaq" },
+      // Past the name's settle and the draw.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
   inspector("inspector-captions", "Captions"),
   inspector("inspector-logo", "Logo"),
   // `Z` adds a zoom at the playhead and selects it, which is what swaps the

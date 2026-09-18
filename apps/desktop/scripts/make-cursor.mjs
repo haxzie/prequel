@@ -58,7 +58,23 @@ const STYLES = [
   // nothing round it disappears into anything of its own tone, which is how the
   // one option with no outline became the one nobody could see.
   { id: "circle", shape: "dot", fill: 0, stroke: 255, alpha: 200 },
+  // The named pointers: the modern shape in a colour, outlined in white, the
+  // way a collaborator's cursor is drawn in a multiplayer canvas. A fill is a
+  // grey level everywhere else in this table and a colour here; `draw` takes
+  // either. Five, each far enough from the others to be told apart at a
+  // glance, and each with a white name tag legible on it — which is why there
+  // is no yellow.
+  { id: "tag-blue", shape: "pointer", fill: [13, 153, 255], stroke: 255, alpha: 255 },
+  { id: "tag-purple", shape: "pointer", fill: [151, 71, 255], stroke: 255, alpha: 255 },
+  { id: "tag-pink", shape: "pointer", fill: [255, 36, 189], stroke: 255, alpha: 255 },
+  { id: "tag-orange", shape: "pointer", fill: [255, 122, 0], stroke: 255, alpha: 255 },
+  { id: "tag-green", shape: "pointer", fill: [20, 174, 92], stroke: 255, alpha: 255 },
 ];
+
+/** A fill or stroke as `[r, g, b]`, whether it was written as a grey or a colour. */
+function channels(tone) {
+  return Array.isArray(tone) ? tone : [tone, tone, tone];
+}
 
 /** Black outline, in image pixels. What keeps a white arrow visible on white. */
 const OUTLINE = SIZE * 0.055;
@@ -497,13 +513,16 @@ function draw(style) {
 
       // Colour is the average of the samples that landed on something, so an
       // edge pixel is part fill and part outline rather than part fill and part
-      // nothing — which would read as a gap in the outline.
-      const shade =
-        covered === 0 ? 0 : Math.round((white * style.fill + black * style.stroke) / covered);
-
-      rgba[at] = shade;
-      rgba[at + 1] = shade;
-      rgba[at + 2] = shade;
+      // nothing — which would read as a gap in the outline. Per channel, so a
+      // coloured fill and a white outline mix to the right tint at the edge.
+      const fill = channels(style.fill);
+      const stroke = channels(style.stroke);
+      for (let channel = 0; channel < 3; channel++) {
+        rgba[at + channel] =
+          covered === 0
+            ? 0
+            : Math.round((white * fill[channel] + black * stroke[channel]) / covered);
+      }
       rgba[at + 3] = Math.round((covered / total) * style.alpha);
     }
   }

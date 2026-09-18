@@ -288,6 +288,14 @@ async function runStep(sessionId, step) {
       await key(sessionId, step.code);
       await sleep(150);
       return;
+    case "type": {
+      // Into the focused field, as pasted text rather than key by key: a
+      // name is not a chord, and `insertText` fires the same input event a
+      // keystroke does.
+      await rpc("Input.insertText", { text: step.text }, sessionId);
+      await sleep(150);
+      return;
+    }
     case "seek": {
       // The ruler is the first child of the timeline's scroller.
       const r = await rect(sessionId, "[data-panel='timeline'] > div > div");

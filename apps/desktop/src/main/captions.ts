@@ -21,7 +21,7 @@ import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 /** The directories bitmaps live in, relative to the recording. */
-export const BITMAP_DIRS = ["captions", "texts"] as const;
+export const BITMAP_DIRS = ["captions", "texts", "cursor"] as const;
 export type BitmapKind = (typeof BITMAP_DIRS)[number];
 
 /** Narrows a kind that came over IPC, which is a string from a window. */

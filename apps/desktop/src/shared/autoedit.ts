@@ -140,7 +140,9 @@ export function whileTyping(
   if (keys === undefined) return [...samples];
 
   return samples.filter((sample) =>
-    keys.some((span) => sample.at >= span.start - TYPED_SLACK && sample.at <= span.end + TYPED_SLACK),
+    keys.some(
+      (span) => sample.at >= span.start - TYPED_SLACK && sample.at <= span.end + TYPED_SLACK,
+    ),
   );
 }
 

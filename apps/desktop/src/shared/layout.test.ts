@@ -897,6 +897,41 @@ describe("the pointer layer", () => {
     expect(plan.items.some((item) => item.kind === "cursor")).toBe(false);
   });
 
+  it("draws a name tag as a second pointer, after the first, at the same moments", () => {
+    // The whole design of the tag: one more `cursor` item, so neither
+    // rasteriser learns a shape. It comes after the pointer — so it draws over
+    // it — is the pointer's size times the tag's scale, keeps the tag's own
+    // hotspot, and has a point wherever the pointer does, so it hides, dips
+    // and moves with it.
+    const tag = { path: "cursor/abc.png", scale: 3.5, hotspot: { x: -0.17, y: -0.21 } };
+    const plan = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      { ...TRACK, tag },
+    );
+    const cursors = plan.items.filter((item) => item.kind === "cursor");
+    expect(cursors).toHaveLength(2);
+    const [pointer, label] = cursors;
+    if (pointer?.kind !== "cursor" || label?.kind !== "cursor") throw new Error("wrong item");
+
+    expect(pointer.path).toBe("cursor.png");
+    expect(label.path).toBe("cursor/abc.png");
+    expect(label.size).toBeCloseTo(pointer.size * 3.5);
+    expect(label.hotspot).toEqual(tag.hotspot);
+    expect(label.shadow).toBeUndefined();
+    expect(label.points.map((point) => point.at)).toEqual(pointer.points.map((point) => point.at));
+    expect(label.points.map((point) => point.visible)).toEqual(
+      pointer.points.map((point) => point.visible),
+    );
+    // The same place, before either's hotspot is applied.
+    const at = 1_000_000_000;
+    const a = pointer.points.find((point) => point.at === at)!;
+    const b = label.points.find((point) => point.at === at)!;
+    expect(b.x).toBeCloseTo(a.x);
+    expect(b.y).toBeCloseTo(a.y);
+  });
+
   it("is left out when the recording has no track", () => {
     const plan = buildRenderPlan(
       { width: 1920, height: 1080 },

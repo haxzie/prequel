@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 
 import { captionStyle } from "../../../shared/captions";
-import { cursorStyle } from "../../../shared/contract";
+import { cursorStyle, cursorTag } from "../../../shared/contract";
+import { MAX_NAME } from "./cursorTag";
 import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
@@ -56,6 +57,7 @@ import {
   CommandIcon,
   CursorIcon,
   CutoutIcon,
+  PersonIcon,
   DepthIcon,
   DropletIcon,
   EyeIcon,
@@ -1788,6 +1790,32 @@ function CursorPanel({
             onChange={(value) => set("layout", "cursorStyle", value)}
           />
         </Field>
+
+        {/* Only under a style that wears one. The name is kept when the style
+            changes — see `cursorName` — so this comes back filled in. */}
+        {cursorTag(layout.cursorStyle) !== null && (
+          <Field icon={<PersonIcon />} label="Name on the tag" {...field("layout", "cursorName")}>
+            <input
+              value={layout.cursorName}
+              placeholder="Who is pointing"
+              maxLength={MAX_NAME}
+              disabled={off}
+              spellCheck={false}
+              className={cn(
+                "w-full rounded-md bg-white/5 px-2 text-xs outline-none",
+                CONTROL_H,
+                "placeholder:text-editor-muted focus:bg-white/10 disabled:opacity-40",
+              )}
+              onChange={(event) => set("layout", "cursorName", event.target.value)}
+              // Return leaves the field; the value is already saved on every
+              // keystroke. The editor's shortcuts already stand down for an
+              // `INPUT`, so nothing typed here is read as a command.
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+          </Field>
+        )}
 
         <Slider
           icon={<SizeIcon />}

@@ -22,6 +22,7 @@ import {
 } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
+import { tagFor, type CursorTags } from "./useCursorTags";
 import {
   captionLook,
   clickSoundId,
@@ -75,6 +76,7 @@ export function useExport(
   output: OutputSettings,
   captions: { byLook: ReadonlyMap<string, readonly RenderedCue[]>; drawing: boolean },
   texts: { rendered: ReadonlyMap<string, RenderedText>; drawing: boolean },
+  tags: CursorTags,
 ): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
@@ -100,8 +102,8 @@ export function useExport(
    * ref has no list to forget them from; `settled` above already waits on
    * the same ref pattern for the same reason.
    */
-  const bitmaps = useRef({ cues: captions.byLook, texts: texts.rendered });
-  bitmaps.current = { cues: captions.byLook, texts: texts.rendered };
+  const bitmaps = useRef({ cues: captions.byLook, texts: texts.rendered, tags });
+  bitmaps.current = { cues: captions.byLook, texts: texts.rendered, tags };
 
   const start = useCallback(async () => {
     if (!session) return;
@@ -150,7 +152,14 @@ export function useExport(
       format: output.format,
       // The plan is laid out inside the *export's* frame, not the editor's, so
       // a scaled-down export is the same composition rather than a crop of it.
-      slices: buildSlices(session, project, size, bitmaps.current.cues, bitmaps.current.texts),
+      slices: buildSlices(
+        session,
+        project,
+        size,
+        bitmaps.current.cues,
+        bitmaps.current.texts,
+        bitmaps.current.tags,
+      ),
       offsets: offsetsOf(session),
       sound: session.sound,
     });
@@ -229,6 +238,7 @@ function buildSlices(
   frame: Size,
   cues: ReadonlyMap<string, readonly RenderedCue[]>,
   texts: ReadonlyMap<string, RenderedText>,
+  tags: CursorTags,
 ): ExportSlice[] {
   const sources = sourceSizes(session);
 
@@ -262,6 +272,7 @@ function buildSlices(
           session.cursor && {
             ...session.cursor,
             ...cursorImages(settings.layout.cursorStyle),
+            tag: tagFor(settings.layout, tags),
             size: settings.layout.cursorSize,
             hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
             // Resolved here rather than in the plan, like `hideAfter`: a track

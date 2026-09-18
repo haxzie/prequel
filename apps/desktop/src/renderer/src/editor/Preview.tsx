@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
+import { tagFor, type CursorTags } from "./useCursorTags";
 import {
   buildRenderPlan,
   captionAt,
@@ -96,6 +97,7 @@ export function Preview({
   cues,
   texts,
   rendered,
+  tags,
   selectedTextId,
   grab: grabRef,
   onPick,
@@ -143,6 +145,8 @@ export function Preview({
   /** Every text's fields as bitmaps, by text id — the same map the export
       draws from. A text with no entry yet draws nothing. */
   rendered: ReadonlyMap<string, RenderedText>;
+  /** The pointer name tags drawn so far — the same map the export draws from. */
+  tags: CursorTags;
   /**
    * Which text is ringed, or null.
    *
@@ -280,6 +284,7 @@ export function Preview({
     cues,
     texts,
     rendered,
+    tags,
     selectedTextId,
   });
   latest.current = {
@@ -294,6 +299,7 @@ export function Preview({
     cues,
     texts,
     rendered,
+    tags,
     selectedTextId,
   };
 
@@ -346,6 +352,7 @@ export function Preview({
         cues: drawn,
         texts: rows,
         rendered: drawnTexts,
+        tags: drawnTags,
         selectedTextId: ringedText,
       } = latest.current;
       const screen = media.getElement("screen");
@@ -402,6 +409,7 @@ export function Preview({
         shown,
         rows,
         drawnTexts,
+        drawnTags,
       ] as const;
 
       const previous = cached.current;
@@ -415,6 +423,7 @@ export function Preview({
               pointer && {
                 ...pointer,
                 ...cursorImages(current.layout.cursorStyle),
+                tag: tagFor(current.layout, drawnTags),
                 size: current.layout.cursorSize,
                 hideAfter: current.layout.cursorAutoHide ? current.layout.cursorHideAfter : null,
                 // Resolved here rather than in the plan, like `hideAfter`: a

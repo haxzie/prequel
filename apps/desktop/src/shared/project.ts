@@ -284,6 +284,13 @@ export interface LayoutSettings {
    */
   cursorStyle: string;
   /**
+   * The name on the pointer's tag, for a style that has one — see
+   * `cursorTag`. Kept whatever the style, so switching to a plain pointer
+   * and back does not lose it. Empty draws no tag: a coloured pointer with
+   * an empty label beside it would say something was missing.
+   */
+  cursorName: string;
+  /**
    * Hide the pointer once it has been still for a while.
    *
    * A pointer parked in the middle of a slide for thirty seconds is the thing
@@ -1122,6 +1129,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // Only what a *new* project starts with. An existing `project.json` names its
   // own style and keeps it, so nobody's edit changes shape underneath them.
   cursorStyle: "modern-black",
+  cursorName: "",
   cursorAutoHide: false,
   cursorHideAfter: 2,
   cursorHideWhileTyping: true,
