@@ -30,6 +30,9 @@ import { PERMISSION_IDS, type PermissionId, type PermissionState } from "./contr
 export const NEEDS_RESTART: Record<PermissionId, boolean> = {
   screen: true,
   accessibility: true,
+  // An event tap made before the grant is never handed a key, and every
+  // recording's tap is made by the same process.
+  input: true,
   camera: false,
   microphone: false,
 };
@@ -38,6 +41,7 @@ export const NEEDS_RESTART: Record<PermissionId, boolean> = {
 export const PERMISSION_LABEL: Record<PermissionId, string> = {
   screen: "Screen Recording",
   accessibility: "Accessibility",
+  input: "Input Monitoring",
   camera: "Camera",
   microphone: "Microphone",
 };
@@ -57,7 +61,9 @@ export const PERMISSION_LABEL: Record<PermissionId, string> = {
  */
 export const PERMISSION_CONSEQUENCE: Record<PermissionId, string> = {
   screen: "Nothing can be recorded at all.",
-  accessibility: "Clicks and typing aren't captured, so automatic zooms have nothing to find.",
+  accessibility: "Clicks aren't captured, so automatic zooms have nothing to find.",
+  input:
+    "Typing isn't noticed, so there are no typing sounds and the pointer stays over what you type.",
   camera: "Your camera is switched on but won't appear in the recording.",
   microphone: "Your microphone is switched on but won't be heard.",
 };
@@ -71,16 +77,20 @@ export interface DevicesInUse {
 /**
  * Whether a missing permission would spoil a recording started now.
  *
- * `screen` and `accessibility` always count. Screen Recording is the recording;
- * Accessibility is the one that fails *quietly* — without it the click tap in
- * `clicks.rs` receives only events aimed at Prequel itself and typing is not
- * sampled at all, so a take comes back with one click in it, the automatic
- * zooms have nothing to work from, and nothing anywhere says why.
+ * `screen`, `accessibility` and `input` always count. Screen Recording is the
+ * recording; the other two are the ones that fail *quietly*. Without
+ * Accessibility the tap in `clicks.rs` receives only events aimed at Prequel
+ * itself, so a take comes back with one click in it and the automatic zooms
+ * have nothing to work from. Without Input Monitoring the same tap receives
+ * every click and no key at all — macOS hands a listen-only tap keyboard
+ * events under that grant alone — so typing spans and typing sounds are
+ * simply absent, and nothing anywhere says why.
  */
 function counts(id: PermissionId, devices: DevicesInUse): boolean {
   switch (id) {
     case "screen":
     case "accessibility":
+    case "input":
       return true;
     case "camera":
       return devices.camera;

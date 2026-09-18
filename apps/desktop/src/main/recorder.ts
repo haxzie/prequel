@@ -138,6 +138,10 @@ export interface Recorder {
   screenAccessStatus(): PermissionStatus;
   /** Shows the macOS Screen Recording prompt. Only ever fires once per app. */
   requestScreenAccess(): PermissionStatus;
+  /** The Input Monitoring grant — what lets the tap see keys. See `permission.rs`. */
+  inputMonitoringStatus(): PermissionStatus;
+  /** Shows the Input Monitoring prompt, once per app, and lists the app in the pane. */
+  requestInputMonitoring(): PermissionStatus;
   /** Displays and on-screen windows available to record. */
   listTargets(): Promise<Target[]>;
   /** Cameras as AVFoundation sees them. Does not prompt or open anything. */

@@ -256,6 +256,8 @@ export function createFakeRecorder(): Recorder {
   return {
     screenAccessStatus: () => "Granted",
     requestScreenAccess: () => "Granted",
+    inputMonitoringStatus: () => "Granted",
+    requestInputMonitoring: () => "Granted",
 
     listTargets: async () =>
       FAKE_TARGETS.map((target) => ({ ...target, bounds: { ...target.bounds } })),

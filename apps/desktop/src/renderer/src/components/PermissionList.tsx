@@ -28,7 +28,12 @@ export const PERMISSIONS: {
   {
     id: "accessibility",
     label: "Accessibility",
-    detail: "Lets the automatic zooms find your clicks and typing.",
+    detail: "Lets the automatic zooms find your clicks.",
+  },
+  {
+    id: "input",
+    label: "Input Monitoring",
+    detail: "Lets Prequel notice typing, for typing sounds. Never what you type.",
   },
   {
     id: "camera",

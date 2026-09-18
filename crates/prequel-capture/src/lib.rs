@@ -18,7 +18,10 @@ mod wallpaper;
 pub use clicks::{ClickSample, KeyClass, KeyPress, KeySpan};
 pub use cursor::CursorSample;
 pub use error::{Error, Result};
-pub use permission::{PermissionStatus, request_screen_access, screen_access_status};
+pub use permission::{
+    PermissionStatus, input_monitoring_status, request_input_monitoring, request_screen_access,
+    screen_access_status,
+};
 pub use recorder::{
     MICROPHONE_FILE, RecordOptions, RecordingSummary, SCREEN_FILE, SYSTEM_AUDIO_FILE,
     ScreenRecorder,

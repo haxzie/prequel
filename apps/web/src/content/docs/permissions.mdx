@@ -4,7 +4,7 @@ export const faq = [
   {
     question: "I allowed Screen Recording but Prequel still says it is missing. Why?",
     answer:
-      "macOS reports Screen Recording and Accessibility to an app only when it launches. Quit Prequel and open it again, or use Restart Prequel in the dock's warning menu, and the grant is picked up.",
+      "macOS reports Screen Recording, Accessibility and Input Monitoring to an app only when it launches. Quit Prequel and open it again, or use Restart Prequel in the dock's warning menu, and the grant is picked up.",
   },
   {
     question: "Do I have to grant the camera and microphone?",
@@ -14,7 +14,12 @@ export const faq = [
   {
     question: "What does Accessibility do for a screen recorder?",
     answer:
-      "It lets Prequel see where you clicked and typed while recording, which is what the automatic zooms are built from. Without it the recording still works, but the first pass has nothing to place zooms on.",
+      "It lets Prequel see where you clicked while recording, which is what the automatic zooms are built from. Without it the recording still works, but the first pass has nothing to place zooms on.",
+  },
+  {
+    question: "Why does Prequel ask for Input Monitoring as well?",
+    answer:
+      "macOS hands an app your clicks under Accessibility but your keys only under Input Monitoring. Prequel keeps a moment per key and roughly what kind of key it was — never which letter — so the editor can play typing sounds on the right beats and keep the pointer out of the way while you type. Passwords never reach it: macOS withholds every key from every app while a password field has focus.",
   },
 ];
 
@@ -27,7 +32,8 @@ macOS asks for each of these separately, and Prequel asks only for what you are 
 | Permission | What it is for | Without it |
 | --- | --- | --- |
 | Screen Recording | Everything Prequel records comes through it. | Nothing can be recorded at all. |
-| Accessibility | Lets the automatic zooms find your clicks and typing, and gives the typing and click sounds their timing. | Clicks and typing are not captured, so automatic zooms have nothing to find and there are no sounds to make. |
+| Accessibility | Lets the automatic zooms find your clicks, and gives the click sounds their timing. | Clicks are not captured, so automatic zooms have nothing to find and there are no click sounds. |
+| Input Monitoring | Lets Prequel notice when a key is pressed — a moment and whether it was a letter, the space bar, Return, Delete or a modifier, never which letter. This is what typing sounds are made from, and what hides the pointer while you type. | Typing is not noticed, so there are no typing sounds and the pointer stays over what you type. |
 | Camera | The webcam bubble, only when you turn the camera on. | Your camera is switched on but does not appear in the recording. |
 | Microphone | Your voice, only when you turn the microphone on. | Your microphone is switched on but is not heard. |
 

@@ -86,6 +86,23 @@ pub fn request_screen_access() -> PermissionStatus {
     capture::request_screen_access().into()
 }
 
+/// Whether the app may observe keyboard events — the Input Monitoring grant.
+///
+/// Without it the event tap is created, receives every click, and is handed
+/// no key at all; nothing on the way reports it. See `permission.rs`.
+#[napi]
+pub fn input_monitoring_status() -> PermissionStatus {
+    capture::input_monitoring_status().into()
+}
+
+/// Triggers the macOS Input Monitoring prompt, which also lists the app in
+/// the pane. Shown at most once; a `Denied` result means System Settings and a
+/// restart, as with Screen Recording.
+#[napi]
+pub fn request_input_monitoring() -> PermissionStatus {
+    capture::request_input_monitoring().into()
+}
+
 /// Lists displays and on-screen windows that can be recorded.
 ///
 /// Returns a Promise. The work runs on the libuv thread pool because

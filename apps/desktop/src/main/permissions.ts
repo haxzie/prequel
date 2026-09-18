@@ -30,6 +30,7 @@ const SETTINGS_PANE: Record<PermissionId, string> = {
   camera: "Privacy_Camera",
   microphone: "Privacy_Microphone",
   accessibility: "Privacy_Accessibility",
+  input: "Privacy_ListenEvent",
 };
 
 export async function permissionStates(): Promise<PermissionState[]> {
@@ -42,6 +43,7 @@ export async function permissionStates(): Promise<PermissionState[]> {
     },
     // `false` asks without prompting. The prompting form is in `request`.
     { id: "accessibility", granted: systemPreferences.isTrustedAccessibilityClient(false) },
+    { id: "input", granted: await inputMonitoringGranted() },
   ];
 }
 
@@ -69,6 +71,10 @@ export async function requestPermission(id: PermissionId): Promise<PermissionSta
         // the *current* answer, which is always false the first time — the user
         // has not been to Settings yet — so nothing is read from it.
         systemPreferences.isTrustedAccessibilityClient(true);
+        break;
+
+      case "input":
+        await requestInputMonitoring();
         break;
     }
   } catch (cause) {
@@ -115,6 +121,23 @@ async function screenGranted(): Promise<boolean> {
     console.warn("[permissions] could not read screen access:", cause);
     return false;
   }
+}
+
+async function inputMonitoringGranted(): Promise<boolean> {
+  try {
+    return (await getRecorder()).inputMonitoringStatus() === "Granted";
+  } catch (cause) {
+    console.warn("[permissions] could not read input monitoring:", cause);
+    return false;
+  }
+}
+
+async function requestInputMonitoring(): Promise<void> {
+  const status = (await getRecorder()).requestInputMonitoring();
+  // As with Screen Recording: one prompt per app, ever. After it the call
+  // answers `Denied` and shows nothing, so the press opens the pane instead —
+  // where the app is now listed, because asking is what lists it.
+  if (status !== "Granted") openPrivacySettings("input");
 }
 
 async function requestScreen(): Promise<void> {

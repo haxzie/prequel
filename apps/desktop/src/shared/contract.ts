@@ -52,7 +52,7 @@ export type PermissionStatus = "Granted" | "Denied";
  * outright. Both feed the automatic zoom pass, which is why it is asked for
  * here rather than left to be discovered.
  */
-export const PERMISSION_IDS = ["screen", "camera", "microphone", "accessibility"] as const;
+export const PERMISSION_IDS = ["screen", "camera", "microphone", "accessibility", "input"] as const;
 
 // A value rather than only a type, because main has to check a
 // renderer-supplied string against the set at runtime — `media-protocol.ts`
