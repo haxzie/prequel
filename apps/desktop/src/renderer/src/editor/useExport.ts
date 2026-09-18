@@ -24,6 +24,8 @@ import type { TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
 import {
   captionLook,
+  clickSoundId,
+  keySoundId,
   outputFrame,
   resolveSettings,
   type OutputSettings,
@@ -150,6 +152,7 @@ export function useExport(
       // a scaled-down export is the same composition rather than a crop of it.
       slices: buildSlices(session, project, size, bitmaps.current.cues, bitmaps.current.texts),
       offsets: offsetsOf(session),
+      sound: session.sound,
     });
 
     if (!result.ok) {
@@ -293,6 +296,13 @@ function buildSlices(
       ),
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,
+      // Through the same fallback the preview uses, so a keyboard this build
+      // does not know exports as silence rather than as whatever the addon
+      // makes of an unknown id.
+      keySound: keySoundId(settings.audio.keySound),
+      keySoundVolume: settings.audio.keySoundVolume,
+      clickSound: clickSoundId(settings.audio.clickSound),
+      clickSoundVolume: settings.audio.clickSoundVolume,
     };
   });
 }

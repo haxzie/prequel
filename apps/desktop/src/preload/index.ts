@@ -26,6 +26,7 @@ import type {
   SelectionSetup,
   ShareProgress,
   ShareRequest,
+  SoundBank,
   Target,
   TeleprompterJump,
   TeleprompterPosition,
@@ -265,6 +266,15 @@ const api = {
      * different one in its place. Main flushes the edit on the strength of it.
      */
     leave: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.editorLeave),
+
+    /**
+     * The voices of one keyboard or mouse, by id, for the preview to place.
+     *
+     * The renderer asks for banks and places cues; it never plans a sound
+     * itself. See `EditorSession.sound`.
+     */
+    soundBank: (profile: string): Promise<IpcResult<SoundBank>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorSoundBank, profile),
 
     /** Persists the edit. Debounced by the renderer, which owns it. */
     saveProject: (dir: string, project: Project): Promise<IpcResult<void>> =>

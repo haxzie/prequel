@@ -16,6 +16,7 @@ use prequel_session::{CAMERA_MATTE_FILE, MediaTime, TrackKind};
 use crate::compositor::Compositor;
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::reader::{AudioReader, VideoReader};
+use crate::sound::{SoundPlan, SoundTrack};
 use crate::timeline::{SliceRender, Timeline};
 use crate::{Error, Result};
 
@@ -143,6 +144,11 @@ pub struct ExportRequest {
     pub camera_offset: MediaTime,
     pub mic_offset: MediaTime,
     pub system_offset: MediaTime,
+    /// The typing and click sounds, if the recording has any to place.
+    ///
+    /// Planned once, outside this crate, and the same plan the preview played
+    /// — see `sound.rs`. `None` for a recording with no presses and no clicks.
+    pub sound: Option<SoundPlan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -646,6 +652,9 @@ struct AudioStream<'a> {
     slot: usize,
     readers: [Option<AudioReader>; 2],
     gains: [Gain; 2],
+    /// The synthesised sounds, and which of their cues fall in this slice.
+    sound: Option<SoundTrack>,
+    cue_range: std::ops::Range<usize>,
     /// Samples this slice owes, and how many of them have been mixed.
     owed: usize,
     done: usize,
@@ -681,7 +690,14 @@ impl<'a> AudioStream<'a> {
             path.exists().then_some((path, offset))
         });
 
-        if sources.iter().all(Option::is_none) {
+        let sound = SoundTrack::prepare(request.sound.as_ref(), &request.slices, SAMPLE_RATE);
+
+        // A recording with no microphone and no system audio still gets a
+        // sound track if there is typing to hear. Before the sounds existed
+        // "no files" meant "no audio", and keeping that rule would have
+        // dropped every synthesised press from a silent take without a word —
+        // the writer is created without an audio input and never asks again.
+        if sources.iter().all(Option::is_none) && sound.is_none() {
             return None;
         }
 
@@ -701,6 +717,8 @@ impl<'a> AudioStream<'a> {
             slot: 0,
             readers: [None, None],
             gains: [Gain(0.0), Gain(0.0)],
+            sound,
+            cue_range: 0..0,
             owed: 0,
             done: 0,
             produced: 0,
@@ -730,6 +748,11 @@ impl<'a> AudioStream<'a> {
         self.owed = mixer::frames_for(slice.duration(), SAMPLE_RATE) * CHANNELS;
         self.done = 0;
         self.gains = [Gain(slice.audio.mic), Gain(slice.audio.system)];
+        self.cue_range = self
+            .sound
+            .as_ref()
+            .map(|sound| sound.range_for(slice))
+            .unwrap_or(0..0);
 
         for (index, source) in self.sources.iter().enumerate() {
             let Some((path, offset)) = source else {
@@ -796,6 +819,19 @@ impl<'a> AudioStream<'a> {
             mixer::mix_into(chunk, &scratch[..got], self.gains[index]);
         }
 
+        // The sounds go in after the tracks and before the clip, as one more
+        // source. `done` and `run` are interleaved samples; the track thinks
+        // in frames.
+        if let Some(sound) = &self.sound {
+            sound.fill(
+                &self.slices[self.slot],
+                self.cue_range.clone(),
+                self.done / CHANNELS,
+                run / CHANNELS,
+                chunk,
+            );
+        }
+
         // Per chunk rather than once over the whole mix, which is the same
         // thing: `clip` is a per-sample clamp, and every source that
         // contributes to a sample has already been summed into it by here.
@@ -825,10 +861,7 @@ mod tests {
                 },
                 items,
             },
-            audio: AudioMix {
-                mic: 1.0,
-                system: 1.0,
-            },
+            audio: AudioMix::tracks(1.0, 1.0),
         }
     }
 

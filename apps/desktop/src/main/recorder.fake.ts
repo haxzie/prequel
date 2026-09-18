@@ -429,6 +429,39 @@ export function createFakeRecorder(): Recorder {
     // Nothing native to route; the fake's own warnings go through console.
     setLogFile: () => undefined,
 
+    // A plan with the right shape and no variety: every press is variant 0 at
+    // unity, centred. The real scheduler lives in `prequel-keysound` and this
+    // is deliberately not a second one — the fake exists so the Sounds section
+    // renders and the export request carries cues, not so anyone listens.
+    soundCues: (events) => {
+      const count = events.pressAt.length + events.clickAt.length;
+      const at = new Float64Array(count);
+      const kind = new Uint8Array(count);
+      at.set(events.pressAt);
+      kind.set(events.pressClass);
+      at.set(events.clickAt, events.pressAt.length);
+      kind.fill(5, events.pressAt.length);
+      return {
+        at,
+        kind,
+        variant: new Uint8Array(count),
+        gain: new Float32Array(count).fill(1),
+        pan: new Float32Array(count),
+      };
+    },
+
+    // No voices at all: a bank with no kinds, which the preview plays as
+    // silence. Nothing here can synthesise, and a stand-in tone would be a
+    // second opinion about what a keystroke sounds like.
+    soundBank: () => ({
+      sampleRate: 48_000,
+      onset: 0,
+      kinds: new Uint8Array(0),
+      variants: 0,
+      offsets: new Uint32Array([0]),
+      samples: new Float32Array(0),
+    }),
+
     // Reads the manifest the fake itself wrote, so the shape the editor
     // receives matches the native probe's without needing real media.
     probeSession: async (dir) => {

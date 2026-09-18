@@ -5,7 +5,7 @@
  * share it — the preload in particular must not pull main-process code in just
  * to learn a channel name.
  */
-import type { RecordingResult } from "@prequel/recorder";
+import type { RecordingResult, SoundBank, SoundCues, SoundEvents } from "@prequel/recorder";
 
 import type {
   CursorSample,
@@ -20,6 +20,15 @@ import type { Project } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
 export type { RecordingResult };
+/**
+ * The sound plan and its voices, in the addon's own shapes.
+ *
+ * Re-exported rather than mirrored: the arrays are exactly what the addon
+ * builds and exactly what the export hands back to it, and a copy of the
+ * interface here would be a second place for a field to go missing. Typed
+ * arrays survive the structured clone IPC uses, so the shapes cross unchanged.
+ */
+export type { SoundBank, SoundCues, SoundEvents };
 
 /**
  * Structural mirrors of the addon's types.
@@ -589,6 +598,14 @@ export const IPC_CHANNELS = {
    */
   editorSession: "editor:session",
   /**
+   * Renders the voices of one keyboard or mouse, by id.
+   *
+   * A separate call from the session because a bank is a few megabytes and
+   * a project may name any of six; the editor asks for the ones it needs,
+   * when it needs them, and main caches each.
+   */
+  editorSoundBank: "editor:soundBank",
+  /**
    * Editor renderer → main: I have left the recording I was showing.
    *
    * Called from the route's own cleanup. Main flushes the held project and
@@ -759,6 +776,12 @@ export interface ExportSlice {
   plan: RenderPlan;
   micVolume: number;
   systemVolume: number;
+  /** A keyboard id from `KEY_SOUNDS`, or `"off"`. */
+  keySound: string;
+  keySoundVolume: number;
+  /** A mouse id from `CLICK_SOUNDS`, or `"off"`. */
+  clickSound: string;
+  clickSoundVolume: number;
 }
 
 /**
@@ -793,6 +816,13 @@ export interface ExportRequest {
    * zero-based, so the media cannot say when its own track began.
    */
   offsets: Record<TrackKind, MediaTime>;
+  /**
+   * The recording's sound plan — `EditorSession.sound`, passed straight back.
+   *
+   * The same cues the preview played, so the export places the same voices
+   * at the same moments. Null for a recording with nothing to play.
+   */
+  sound: SoundCues | null;
 }
 
 export interface ExportProgress {
@@ -1430,6 +1460,16 @@ export interface EditorSession {
    * which is that it has no words to offer and should ask for some.
    */
   transcript: Transcript | null;
+  /**
+   * The typing and click sounds, planned, or null when the recording noted
+   * neither a press nor a click.
+   *
+   * Planned in main by the addon — see `main/editor-session.ts` — and never
+   * by the renderer, which only places the voices. Built from the manifest
+   * rather than from `cursor`, which is null when the pointer is baked and
+   * would take the clicks with it.
+   */
+  sound: SoundCues | null;
 }
 
 /** One track, as the renderer plays it. */

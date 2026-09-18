@@ -219,6 +219,14 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         return sessionCache.then((value) => ({ ok: true as const, value }));
       },
       leave: () => ok(undefined),
+      // No addon to render one. The preview schedules nothing for a bank it
+      // never received, which is the right picture for a gallery to take.
+      soundBank: () =>
+        Promise.resolve({
+          ok: false as const,
+          code: "NO_ADDON",
+          message: "the gallery has no addon to render a sound bank",
+        }),
       // The edit is not saved anywhere: the fixture recording's `project.json`
       // must come out of a run exactly as it went in.
       saveProject: () => ok(undefined),

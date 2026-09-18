@@ -12,6 +12,7 @@
 //!
 //! Pure arithmetic, so it is testable without a GPU or a file.
 
+use prequel_keysound::{ClickProfile, KeyProfile};
 use prequel_session::MediaTime;
 
 use crate::plan::RenderPlan;
@@ -37,6 +38,32 @@ pub struct SliceRender {
 pub struct AudioMix {
     pub mic: f32,
     pub system: f32,
+    /// Typing sounds: the level, and which keyboard. `None` is off, and so is
+    /// a level of zero — two switches, because the level survives the
+    /// keyboard being switched off and back on.
+    pub keys: f32,
+    pub key_profile: Option<KeyProfile>,
+    /// Click sounds, likewise.
+    pub clicks: f32,
+    pub click_profile: Option<ClickProfile>,
+}
+
+impl AudioMix {
+    /// The recorded tracks alone, with no synthesised sound.
+    ///
+    /// What every export was before there were sounds, and what a test that is
+    /// about the picture wants: the fields it does not care about stay out of
+    /// its way.
+    pub fn tracks(mic: f32, system: f32) -> Self {
+        Self {
+            mic,
+            system,
+            keys: 0.0,
+            key_profile: None,
+            clicks: 0.0,
+            click_profile: None,
+        }
+    }
 }
 
 impl SliceRender {
@@ -142,10 +169,7 @@ mod tests {
                 },
                 items: vec![],
             },
-            audio: AudioMix {
-                mic: 1.0,
-                system: 1.0,
-            },
+            audio: AudioMix::tracks(1.0, 1.0),
         }
     }
 

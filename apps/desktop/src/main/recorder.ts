@@ -12,6 +12,9 @@ import type {
   ExportProgress as NativeExportProgress,
   RecordingResult,
   RecordingState,
+  SoundBank,
+  SoundCues,
+  SoundEvents,
   SpeechAvailability,
   TrackProbe,
   TranscribeOptions,
@@ -27,6 +30,9 @@ export type {
   PermissionStatus,
   RecordingResult,
   RecordingState,
+  SoundBank,
+  SoundCues,
+  SoundEvents,
   SpeechAvailability,
   Target,
   TrackProbe,
@@ -180,6 +186,23 @@ export interface Recorder {
    * a normal recording.
    */
   probeSession(dir: string): Promise<TrackProbe[]>;
+
+  /**
+   * Plans a recording's typing and click sounds from what it noted.
+   *
+   * Synchronous and cheap — a pass over the presses. The plan is drawn from
+   * the seed, so the same recording plans the same sounds every time it is
+   * opened, and the export given these cues places the same voices.
+   */
+  soundCues(events: SoundEvents): SoundCues;
+
+  /**
+   * Renders every voice of one keyboard or mouse, by id.
+   *
+   * A few milliseconds and a few megabytes per bank; main caches them. Throws
+   * for an id the addon does not know.
+   */
+  soundBank(profile: string): SoundBank;
 
   /**
    * Screenshots the current desktop picture to `path`, as a PNG.

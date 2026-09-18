@@ -187,11 +187,16 @@ export async function startExport(request: ExportRequest): Promise<void> {
           plan: JSON.stringify(slice.plan),
           micVolume: slice.micVolume,
           systemVolume: slice.systemVolume,
+          keySound: slice.keySound,
+          keySoundVolume: slice.keySoundVolume,
+          clickSound: slice.clickSound,
+          clickSoundVolume: slice.clickSoundVolume,
         })),
         screenOffset: request.offsets.screen,
         cameraOffset: request.offsets.camera,
         micOffset: request.offsets.microphone,
         systemOffset: request.offsets.system_audio,
+        sound: request.sound ?? undefined,
       },
       (error, progress) => {
         if (error) {

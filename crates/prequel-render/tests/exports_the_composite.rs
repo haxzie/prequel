@@ -14,10 +14,13 @@ use std::process::Command;
 
 use cidre::{arc, cv};
 use prequel_encode::{AudioWriter, AudioWriterConfig, VideoWriter, VideoWriterConfig};
+use prequel_keysound::{ClickProfile, KeyProfile, cues};
+use prequel_render::sound::SoundPlan;
 use prequel_render::{
     AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan, Shape,
     SliceRender, export,
 };
+use prequel_session::{KeyClass, KeyPress};
 
 const S: u64 = 1_000_000_000;
 const SOURCE_W: u32 = 640;
@@ -165,10 +168,7 @@ fn slice(start: u64, end: u64) -> SliceRender {
         start,
         end,
         plan: plan(),
-        audio: AudioMix {
-            mic: 1.0,
-            system: 1.0,
-        },
+        audio: AudioMix::tracks(1.0, 1.0),
     }
 }
 
@@ -245,6 +245,7 @@ fn exports_only_the_slices_that_were_kept() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -295,6 +296,7 @@ fn the_whole_take_exports_at_its_full_length() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -331,6 +333,7 @@ fn reports_progress_as_it_goes() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     let mut stages = Vec::new();
@@ -365,6 +368,7 @@ fn cancelling_leaves_no_output_behind() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     // Cancelled before a single frame is rendered.
@@ -399,6 +403,7 @@ fn refuses_an_edit_with_nothing_in_it() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     assert!(matches!(
@@ -435,6 +440,7 @@ fn re_exporting_replaces_the_previous_file() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("first export");
@@ -479,6 +485,7 @@ fn a_failed_export_leaves_nothing_behind() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     assert!(export(&request, &CancelFlag::new(), &mut |_| {}).is_err());
@@ -513,6 +520,7 @@ fn exports_the_sound_inside_the_video_file() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with audio");
@@ -594,6 +602,190 @@ fn exports_the_sound_inside_the_video_file() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A slice with the typing and click sounds switched on.
+fn sounding(start: u64, end: u64) -> SliceRender {
+    SliceRender {
+        audio: AudioMix {
+            keys: 1.0,
+            key_profile: Some(KeyProfile::Tactile),
+            clicks: 1.0,
+            click_profile: Some(ClickProfile::Mechanical),
+            ..AudioMix::tracks(1.0, 1.0)
+        },
+        ..slice(start, end)
+    }
+}
+
+/// RMS of the left channel over a window of seconds, in an interleaved decode.
+fn loudness(heard: &[f32], from: f64, to: f64) -> f32 {
+    let frames: Vec<f32> = heard.iter().step_by(2).copied().collect();
+    let range = (from * 48_000.0) as usize..(to * 48_000.0) as usize;
+    let window = &frames[range];
+    (window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32).sqrt()
+}
+
+#[test]
+fn typing_is_heard_in_a_recording_with_no_audio_track() {
+    // No `record_audio`: a take with neither microphone nor system audio. The
+    // one way this fails silently is `AudioStream::open` answering "no files,
+    // so no sound track" and the writer being created without an audio input
+    // — every synthesised press is then thrown away, and the export looks
+    // exactly like one where the sounds were off.
+    let dir = scratch("prequel-export-typing");
+    record(&dir);
+
+    let presses = [
+        KeyPress {
+            at: S / 2,
+            class: KeyClass::Letter,
+        },
+        KeyPress {
+            at: 3 * S / 2,
+            class: KeyClass::Space,
+        },
+    ];
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![sounding(0, 2 * S)],
+        screen_offset: 0,
+        camera_offset: 0,
+        mic_offset: 0,
+        system_offset: 0,
+        sound: Some(SoundPlan {
+            cues: cues(&presses, &[], "typing-test"),
+        }),
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with typing");
+
+    let audio = probe_stream(&output, "a:0", "stream=codec_type");
+    assert!(
+        audio.contains("codec_type=audio"),
+        "a silent take with typing must still get a sound track, got: {audio:?}"
+    );
+
+    let heard = decode_audio(&output);
+    assert!(heard.len() >= 2 * 48_000 * 2 - 4_800);
+    // Sound where the presses were, and nothing between them. Ten times is
+    // well past the encoder's noise floor and well short of anything a sound
+    // in the wrong place could pass.
+    let first = loudness(&heard, 0.49, 0.56);
+    let second = loudness(&heard, 1.49, 1.56);
+    let between = loudness(&heard, 1.0, 1.3);
+    assert!(
+        first > 10.0 * between,
+        "first press {first} vs silence {between}"
+    );
+    assert!(
+        second > 10.0 * between,
+        "second press {second} vs silence {between}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn sounds_switched_off_write_no_audio_track_for_a_silent_take() {
+    // The guard on the change above: a take with no audio and the sounds off
+    // must export as it always did, with no audio stream at all — not an
+    // empty one, which some players show as a muted speaker.
+    let dir = scratch("prequel-export-silent");
+    record(&dir);
+
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![slice(0, S)],
+        screen_offset: 0,
+        camera_offset: 0,
+        mic_offset: 0,
+        system_offset: 0,
+        sound: Some(SoundPlan {
+            cues: cues(
+                &[KeyPress {
+                    at: S / 2,
+                    class: KeyClass::Letter,
+                }],
+                &[],
+                "off",
+            ),
+        }),
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
+
+    let audio = probe_stream(&output, "a:0", "stream=codec_type");
+    assert!(audio.is_empty(), "expected no audio stream, got: {audio:?}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_press_in_a_cut_is_not_heard() {
+    // Two slices with a second cut out between them, and a press in the gap.
+    // The output's second second is the source's third; the press at 1.5 s of
+    // source is in nobody's slice and must not turn up on either side of the
+    // join.
+    let dir = scratch("prequel-export-cut-press");
+    record(&dir);
+
+    let presses = [
+        KeyPress {
+            at: S / 2,
+            class: KeyClass::Letter,
+        },
+        KeyPress {
+            at: 3 * S / 2,
+            class: KeyClass::Enter,
+        },
+        KeyPress {
+            at: 5 * S / 2,
+            class: KeyClass::Letter,
+        },
+    ];
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![sounding(0, S), sounding(2 * S, 3 * S)],
+        screen_offset: 0,
+        camera_offset: 0,
+        mic_offset: 0,
+        system_offset: 0,
+        sound: Some(SoundPlan {
+            cues: cues(&presses, &[], "cut"),
+        }),
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
+
+    let heard = decode_audio(&output);
+    let first = loudness(&heard, 0.49, 0.56);
+    let third = loudness(&heard, 1.49, 1.56);
+    // The join is at 1.0 s of output. Nothing from 0.7 s to 1.4 s: the Enter
+    // press is in the cut, and neither of the kept presses reaches there.
+    let join = loudness(&heard, 0.7, 1.4);
+    assert!(first > 10.0 * join, "kept press {first} vs the join {join}");
+    assert!(third > 10.0 * join, "kept press {third} vs the join {join}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn exports_a_gif_that_loops_and_carries_no_audio() {
     // GIF is the one format not written by an Apple encoder, so nothing about
@@ -615,6 +807,7 @@ fn exports_a_gif_that_loops_and_carries_no_audio() {
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");

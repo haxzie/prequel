@@ -22,6 +22,7 @@
 
 pub mod mixer;
 pub mod plan;
+pub mod sound;
 pub mod timeline;
 
 // Private, except to the GPUI spike. The `spike` feature is off by default, so

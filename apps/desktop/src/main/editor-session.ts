@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { EditorSession, TrackMedia } from "../shared/contract.js";
+import type { EditorSession, SoundBank, SoundCues, TrackMedia } from "../shared/contract.js";
 import { dialog, shell, type BrowserWindow } from "electron";
 
 import type { Manifest, TrackKind } from "../shared/manifest.js";
@@ -91,7 +91,61 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
       ),
     ),
     transcript: readTranscript(dir, manifest.id),
+    sound: await soundPlan(manifest),
   };
+}
+
+/**
+ * Banks by profile id. A bank is a pure function of its id and a few
+ * megabytes, so the second editor to ask for "tactile" gets the first one's.
+ */
+const banks = new Map<string, SoundBank>();
+
+/** The voices of one keyboard or mouse. Throws for an id the addon does not know. */
+export async function readSoundBank(profile: string): Promise<SoundBank> {
+  const cached = banks.get(profile);
+  if (cached) return cached;
+
+  const bank = (await getRecorder()).soundBank(profile);
+  banks.set(profile, bank);
+  return bank;
+}
+
+/**
+ * The classes a press can be, in the index order the addon's `KeyClass::ALL`
+ * declares them. A class this build does not know is skipped rather than
+ * mis-filed: an index past the end is a press the addon drops.
+ */
+const KEY_CLASSES = ["letter", "space", "enter", "backspace", "modifier"] as const;
+
+/**
+ * Plans the recording's sounds, or null when there is nothing to plan.
+ *
+ * Best effort, like the probe: a recording whose plan cannot be made is a
+ * recording that opens silent, not one that fails to open. Built from the
+ * manifest's own `key_presses` and `clicks` rather than from `CursorLayer`,
+ * which is null when the pointer is baked and would take the clicks with it.
+ */
+async function soundPlan(manifest: Manifest): Promise<SoundCues | null> {
+  const presses = manifest.key_presses ?? [];
+  const clicks = manifest.clicks ?? [];
+  if (presses.length === 0 && clicks.length === 0) return null;
+
+  try {
+    const recorder = await getRecorder();
+    return recorder.soundCues({
+      pressAt: Float64Array.from(presses, (press) => press.at),
+      pressClass: Uint8Array.from(presses, (press) => {
+        const index = KEY_CLASSES.indexOf(press.class);
+        return index < 0 ? 255 : index;
+      }),
+      clickAt: Float64Array.from(clicks, (click) => click.at),
+      seed: manifest.id,
+    });
+  } catch (cause) {
+    console.warn(`[editor] could not plan the sounds for ${manifest.id}:`, cause);
+    return null;
+  }
 }
 
 /**

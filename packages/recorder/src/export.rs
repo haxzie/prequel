@@ -16,7 +16,11 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
+use prequel_keysound::{ClickProfile, KeyProfile};
+use prequel_render::sound::SoundPlan;
 use prequel_render::{AudioMix, CancelFlag, ExportRequest, OutputFormat, RenderPlan, SliceRender};
+
+use crate::sound::SoundCues;
 
 /// One kept span of the recording, as the editor describes it.
 #[napi(object)]
@@ -31,6 +35,12 @@ pub struct ExportSlice {
     pub plan: String,
     pub mic_volume: f64,
     pub system_volume: f64,
+    /// Which keyboard the typing sounds are of — a `KeyProfile` id, or `"off"`.
+    pub key_sound: String,
+    pub key_sound_volume: f64,
+    /// Which mouse the click sounds are of — a `ClickProfile` id, or `"off"`.
+    pub click_sound: String,
+    pub click_sound_volume: f64,
 }
 
 #[napi(object)]
@@ -50,6 +60,9 @@ pub struct ExportOptions {
     pub camera_offset: f64,
     pub mic_offset: f64,
     pub system_offset: f64,
+    /// The recording's sound plan, exactly as `sound_cues` handed it to the
+    /// editor. Omit for a recording with no presses and no clicks.
+    pub sound: Option<SoundCues>,
 }
 
 #[napi(object)]
@@ -170,6 +183,13 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
             audio: AudioMix {
                 mic: slice.mic_volume as f32,
                 system: slice.system_volume as f32,
+                keys: slice.key_sound_volume as f32,
+                // An id this build does not know is off, not an error: a
+                // keyboard is a preference, and refusing to export over one
+                // is the wrong failure. `"off"` is simply not a known id.
+                key_profile: KeyProfile::from_id(&slice.key_sound),
+                clicks: slice.click_sound_volume as f32,
+                click_profile: ClickProfile::from_id(&slice.click_sound),
             },
         });
     }
@@ -193,6 +213,9 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
         camera_offset: options.camera_offset.max(0.0) as u64,
         mic_offset: options.mic_offset.max(0.0) as u64,
         system_offset: options.system_offset.max(0.0) as u64,
+        sound: options.sound.map(|cues| SoundPlan {
+            cues: cues.to_cues(),
+        }),
     })
 }
 

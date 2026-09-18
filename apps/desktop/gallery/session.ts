@@ -103,6 +103,10 @@ export async function loadSession(
     cursor: cursorLayer(manifest),
     project: await withBackground(name, project),
     transcript,
+    // No addon in the browser to plan them, and nothing here plays sound: a
+    // gallery shot is a picture of the panel, and the panel is offered on the
+    // strength of the manifest's presses, not the plan.
+    sound: null,
   };
 }
 

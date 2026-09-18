@@ -19,6 +19,7 @@ mod listen;
 mod logging;
 mod probe;
 mod screen;
+mod sound;
 mod transcribe;
 
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
@@ -26,6 +27,7 @@ pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};
 pub use logging::set_log_file;
 pub use probe::{CaptureWallpaper, ProbeSession, TrackProbe, capture_wallpaper, probe_session};
 pub use screen::{DisplaySafeArea, display_safe_area};
+pub use sound::{SoundBank, SoundCues, SoundEvents, sound_bank, sound_cues};
 
 #[napi(string_enum)]
 #[derive(Debug, Clone, Copy)]

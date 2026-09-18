@@ -358,6 +358,7 @@ dependencies = [
  "prequel-camera",
  "prequel-capture",
  "prequel-encode",
+ "prequel-keysound",
  "prequel-render",
  "prequel-session",
  "prequel-speech",
@@ -373,6 +374,7 @@ version = "0.1.0"
 dependencies = [
  "cidre",
  "prequel-encode",
+ "prequel-keysound",
  "prequel-session",
  "serde",
  "serde_json",

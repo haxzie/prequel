@@ -168,10 +168,7 @@ fn slice(plan: RenderPlan) -> SliceRender {
         start: 0,
         end: S,
         plan,
-        audio: AudioMix {
-            mic: 1.0,
-            system: 1.0,
-        },
+        audio: AudioMix::tracks(1.0, 1.0),
     }
 }
 
@@ -188,6 +185,7 @@ fn request(dir: &Path, output: &Path, slices: Vec<SliceRender>) -> ExportRequest
         camera_offset: 0,
         mic_offset: 0,
         system_offset: 0,
+        sound: None,
     }
 }
 
