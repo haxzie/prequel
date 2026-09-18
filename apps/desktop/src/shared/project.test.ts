@@ -14,6 +14,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_TEXT_STYLE,
   DEFAULT_ZOOM,
+  keySoundId,
+  clickSoundId,
   MAX_TEXT_TRACKS,
   hasOverrides,
   newProject,
@@ -285,6 +287,33 @@ describe("sanitiseProject", () => {
     expect(sanitiseProject(project, RECORDING, 10 * S)!.defaults.layout.cursorShadowOpacity).toBe(
       0,
     );
+  });
+
+  it("keeps sounds off in projects written before they existed, and on in new ones", () => {
+    const fresh = sanitiseProject(stored(), RECORDING, 10 * S)!.defaults.audio;
+    expect(fresh.keySound).not.toBe("off");
+    expect(fresh.clickSound).not.toBe("off");
+
+    const project = stored() as { defaults: { audio: Record<string, unknown> } };
+    delete project.defaults.audio.keySound;
+    delete project.defaults.audio.keySoundVolume;
+    delete project.defaults.audio.clickSound;
+    delete project.defaults.audio.clickSoundVolume;
+
+    const old = sanitiseProject(project, RECORDING, 10 * S)!.defaults.audio;
+    expect(old.keySound).toBe("off");
+    expect(old.clickSound).toBe("off");
+    // The volumes fall through to their defaults, ready for the switch.
+    expect(old.keySoundVolume).toBe(fresh.keySoundVolume);
+  });
+
+  it("plays nothing for a keyboard this build does not know", () => {
+    // A project from a newer build names a profile; rather than refuse the
+    // project or throw at the mixer, the choice reads as off.
+    expect(keySoundId("box-white")).toBe("off");
+    expect(keySoundId("thock")).toBe("thock");
+    expect(clickSoundId("trackpad")).toBe("off");
+    expect(clickSoundId("soft")).toBe("soft");
   });
 
   it("refuses a project from an incompatible version", () => {

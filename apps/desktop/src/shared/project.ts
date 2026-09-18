@@ -351,6 +351,52 @@ export interface AudioSettings {
   micMuted: boolean;
   systemVolume: number;
   systemMuted: boolean;
+  /**
+   * Which keyboard the typing sounds are of, or `"off"`. See `KEY_SOUNDS`.
+   *
+   * A string rather than the union, for the reason `cursorStyle` is one: a
+   * project written by a build with keyboards this one does not have still
+   * opens, and `keySoundId()` falls back rather than throwing. `"off"` lives
+   * in the same field rather than beside it as a `muted` flag because, unlike
+   * a microphone, there is nothing to "include" — no keyboard is silence.
+   */
+  keySound: string;
+  /** Typing sound level, 0 to 2, like the track volumes. */
+  keySoundVolume: number;
+  /** Which mouse the click sounds are of, or `"off"`. See `CLICK_SOUNDS`. */
+  clickSound: string;
+  clickSoundVolume: number;
+}
+
+/** No sound at all — the value both `keySound` and `clickSound` use for it. */
+export const SOUND_OFF = "off";
+
+/**
+ * The keyboards the editor offers, in the order the menu shows them.
+ *
+ * The ids are the profile names in `crates/prequel-keysound`; the addon
+ * renders a bank by id and the exporter selects one by id, so this list and
+ * that crate's `KeyProfile::from_id` agree or a choice here plays nothing.
+ */
+export const KEY_SOUNDS = [
+  { id: "tactile", label: "Tactile" },
+  { id: "linear", label: "Linear" },
+  { id: "clicky", label: "Clicky" },
+  { id: "thock", label: "Thock" },
+] as const;
+
+export const CLICK_SOUNDS = [
+  { id: "soft", label: "Soft" },
+  { id: "mechanical", label: "Mechanical" },
+] as const;
+
+/** A stored keyboard id, or `"off"` for one this build does not know. */
+export function keySoundId(value: string): string {
+  return KEY_SOUNDS.some((sound) => sound.id === value) ? value : SOUND_OFF;
+}
+
+export function clickSoundId(value: string): string {
+  return CLICK_SOUNDS.some((sound) => sound.id === value) ? value : SOUND_OFF;
 }
 
 /** Where a cue sits against the frame. */
@@ -1148,6 +1194,14 @@ export const DEFAULT_AUDIO: AudioSettings = {
   micMuted: false,
   systemVolume: 1,
   systemMuted: false,
+  // On for a new project, and the quietest of the four: a recording that
+  // opens with its typing audible shows the feature exists, and a tactile at
+  // 60 % sits under a voice rather than over it. Projects saved before the
+  // field existed stay silent — see `beforeSounds`.
+  keySound: "tactile",
+  keySoundVolume: 0.6,
+  clickSound: "soft",
+  clickSoundVolume: 0.5,
 };
 
 export const DEFAULT_CAPTIONS: CaptionSettings = {
@@ -1595,7 +1649,11 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
       // No `before*` guard: the default is no mark at all, which is exactly
       // what every project saved before this existed drew.
       watermark: { ...DEFAULT_WATERMARK, ...stored.defaults?.watermark },
-      audio: { ...DEFAULT_AUDIO, ...stored.defaults?.audio },
+      audio: {
+        ...DEFAULT_AUDIO,
+        ...beforeSounds(stored.defaults?.audio),
+        ...stored.defaults?.audio,
+      },
       captions: { ...DEFAULT_CAPTIONS, ...stored.defaults?.captions },
     },
     tracks: [
@@ -1696,6 +1754,22 @@ function beforeCursorShadow(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cursorShadowOpacity" in stored) return undefined;
   return { cursorShadowOpacity: 0 };
+}
+
+/**
+ * Keeps typing and click sounds off in projects written before they existed.
+ *
+ * `beforeCursorShadow`'s rule: the default is on for a *new* project, and
+ * spreading that over an old one would put keystrokes into the next export of
+ * every recording somebody had already finished, without them touching the
+ * Audio panel. The two profile fields are the switches, so only they need a
+ * hold; the volumes are harmless while the switches are off.
+ */
+function beforeSounds(
+  stored: Partial<AudioSettings> | undefined,
+): Partial<AudioSettings> | undefined {
+  if (!stored || "keySound" in stored) return undefined;
+  return { keySound: SOUND_OFF, clickSound: SOUND_OFF };
 }
 
 /**
