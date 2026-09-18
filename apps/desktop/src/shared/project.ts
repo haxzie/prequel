@@ -383,14 +383,11 @@ export const KEY_SOUNDS = [
   { id: "linear", label: "Linear" },
   { id: "clicky", label: "Clicky" },
   { id: "thock", label: "Thock" },
-  // Not a keyboard: a rising sine per press. Last, after the four that are.
-  { id: "bubble", label: "Bubble" },
 ] as const;
 
 export const CLICK_SOUNDS = [
   { id: "soft", label: "Soft" },
   { id: "mechanical", label: "Mechanical" },
-  { id: "pop", label: "Pop" },
 ] as const;
 
 /** A stored keyboard id, or `"off"` for one this build does not know. */
