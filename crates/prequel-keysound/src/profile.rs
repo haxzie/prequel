@@ -328,9 +328,11 @@ static THOCK: Profile = Profile {
 /// decibels quieter, a 340 Hz ring that fades over 150 ms: nothing above
 /// 1.5 kHz, 95 % of the energy below 500 Hz. Delete is a 440 Hz tone — A4 —
 /// with a brighter 5 ms attack, held 80 ms and released with a 4 ms time
-/// constant. The "clear" sound, which UIKit plays for its modifier keys and,
-/// as best as could be told, for the space bar and Return, is the same tone
-/// with a 1.32 kHz partial 20 dB under it, held 85 ms. (The clear file also
+/// constant. The "clear" sound, which UIKit plays for its modifier keys —
+/// shift, 123, and Return — is the same tone with a 1.32 kHz partial 13 dB
+/// under it, held 85 ms. The space bar is a letter: it plays the normal
+/// sound, which is easy to hear on the phone and was got wrong here once.
+/// (The clear file also
 /// carries two quieter lead-in steps up to 190 ms before its loud part; they
 /// are left out, since a sound that lands 190 ms after the key would read as
 /// late.) None of these is the 2–3 kHz "Tock" of iOS 6 and earlier, which is
@@ -342,12 +344,7 @@ static PHONE: Profile = Profile {
     mechanism: Mechanism::Tap,
     excite_tau_ms: 1.0,
     contact_lowpass_hz: 2_500.0,
-    modes: &[
-        mode(350.0, 16.0, 1.0),
-        mode(1_000.0, 10.0, 2.2),
-        mode(340.0, 170.0, 0.32),
-        mode(980.0, 120.0, 0.2),
-    ],
+    modes: &NORMAL,
     ping: None,
     jacket: None,
     touch_db: 0.0,
@@ -364,10 +361,13 @@ static PHONE: Profile = Profile {
             }),
             trim_db: -2.5,
         },
+        // The space bar is deliberately absent: it is the normal sound, and
+        // with `long_key_ratio` at 1.0 it is the letter's exactly. Its
+        // scheduler boost is undone by the trim below.
         ClassSound {
             kind: CueKind::Space,
-            modes: &CLEAR,
-            gate: Some(CLEAR_GATE),
+            modes: &NORMAL,
+            gate: None,
             trim_db: -2.5,
         },
         ClassSound {
@@ -385,11 +385,21 @@ static PHONE: Profile = Profile {
     ],
 };
 
-/// The phone's "clear" sound: the Delete tone with a partial, held a little longer.
+/// The phone's letter — and its space bar.
+static NORMAL: [Mode; 4] = [
+    mode(350.0, 16.0, 1.0),
+    mode(1_000.0, 10.0, 2.2),
+    mode(340.0, 170.0, 0.32),
+    mode(980.0, 120.0, 0.2),
+];
+
+/// The phone's "clear" sound: the Delete tone with a partial, held a little
+/// longer. The partial's gain looks large against the tone's because the
+/// contact pulse hands a 1.3 kHz mode a tenth of what it hands 440 Hz.
 static CLEAR: [Mode; 3] = [
     mode(460.0, 8.0, 1.6),
     mode(440.0, 3_000.0, 0.56),
-    mode(1_320.0, 60.0, 1.5),
+    mode(1_320.0, 150.0, 5.0),
 ];
 const CLEAR_GATE: Gate = Gate {
     hold_ms: 85.0,

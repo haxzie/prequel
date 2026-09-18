@@ -578,15 +578,28 @@ mod tests {
             let tone = brightness(&delete);
             assert!((400.0..500.0).contains(&tone), "delete {seed}: {tone} Hz");
 
-            // Clear: the same note, held, for the space bar.
-            let space = render_voice(table, CueKind::Space, seed, SAMPLE_RATE);
-            let held = rms(&space.samples[space.onset + ms(55)..space.onset + ms(75)]);
-            let early = rms(&space.samples[space.onset + ms(10)..space.onset + ms(30)]);
+            // Clear: the same note, held, for Return and the modifiers.
+            let enter = render_voice(table, CueKind::Enter, seed, SAMPLE_RATE);
+            let held = rms(&enter.samples[enter.onset + ms(55)..enter.onset + ms(75)]);
+            let early = rms(&enter.samples[enter.onset + ms(10)..enter.onset + ms(30)]);
+            // Five rather than three: the partial fades under the held note,
+            // and Apple's own file drops 3 dB between these windows.
             assert!(
-                db(held, early).abs() < 3.0,
-                "space {seed}: sustain drifted {} dB",
+                db(held, early).abs() < 5.0,
+                "enter {seed}: sustain drifted {} dB",
                 db(held, early)
             );
+
+            // And the space bar is a letter, not a note: the same low tick.
+            let space = render_voice(table, CueKind::Space, seed, SAMPLE_RATE);
+            let centroid = brightness(&space);
+            assert!(
+                (300.0..500.0).contains(&centroid),
+                "space {seed}: {centroid} Hz"
+            );
+            let first = rms(&space.samples[space.onset..space.onset + ms(5)]);
+            let later = rms(&space.samples[space.onset + ms(20)..space.onset + ms(25)]);
+            assert!(db(later, first) < -12.0, "space {seed}: held like a note");
         }
 
         // And the phone's variants barely differ in pitch — one file, many
