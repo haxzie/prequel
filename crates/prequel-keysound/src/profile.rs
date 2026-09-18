@@ -95,6 +95,34 @@ pub enum Mechanism {
     Tap,
 }
 
+/// A held tone's end: it sustains until `hold_ms` past the press, then dies
+/// with time constant `release_ms`. What a sample-based sound has and a
+/// struck body does not — the phone's Delete is a note, not a knock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Gate {
+    pub hold_ms: f32,
+    pub release_ms: f32,
+}
+
+/// A different sound for one class of key.
+///
+/// Where a mechanical board's long keys are the same switch under a bigger
+/// cap — `long_key_ratio` — a phone plays a *different file* for Delete and
+/// for the modifiers. An override replaces the body wholesale for its kind;
+/// nothing is scaled.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClassSound {
+    pub kind: CueKind,
+    pub modes: &'static [Mode],
+    pub gate: Option<Gate>,
+    /// Level against the letter, in dB, after the scheduler has had its say.
+    ///
+    /// The plan gives a long key +2.5 dB and a modifier −4 dB, which is right
+    /// for a board and is decided before the keyboard is known. A phone's
+    /// three files peak alike, so its overrides undo that here.
+    pub trim_db: f32,
+}
+
 /// The table for one keyboard or mouse.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Profile {
@@ -125,6 +153,9 @@ pub struct Profile {
     pub release_delay_ms: (f32, f32),
     /// How much lower a long key's body rings than a letter's.
     pub long_key_ratio: f32,
+    /// Classes that are a different sound altogether. Empty for a board where
+    /// every key is the same switch.
+    pub overrides: &'static [ClassSound],
 }
 
 /// Keyboards the editor offers.
@@ -219,6 +250,7 @@ static LINEAR: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
+    overrides: &[],
 };
 
 /// A tactile — MX Brown, Holy Panda. The bump slows the stem before it lands,
@@ -239,6 +271,7 @@ static TACTILE: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
+    overrides: &[],
 };
 
 /// A clicky — MX Blue. The click jacket collapsing is its own impact, bright
@@ -263,6 +296,7 @@ static CLICKY: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
+    overrides: &[],
 };
 
 /// Lubed linears in a foam-filled aluminium case under thick PBT. Everything
@@ -284,37 +318,82 @@ static THOCK: Profile = Profile {
     release_db: -9.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
+    overrides: &[],
 };
 
-/// The iPhone's keyboard click: a woody tock from a small speaker.
+/// The iPhone's keyboard, iOS 10 onwards — three sounds, measured from the
+/// system's own files (`keyboard_press_normal`, `_delete`, `_clear`).
 ///
-/// Fitted to a recording of the real thing, which is the same sample every
-/// press: energy at 2.05 kHz, with 1.85 kHz 3 dB under it, 2.7 kHz 5 dB,
-/// 3.3 kHz 4 dB and 3.95 kHz 8 dB under, almost nothing below 1 kHz, and a
-/// decay of 20 dB in 6 ms, 40 dB in 21 ms and 60 dB in about 55 ms. The
-/// gains below are set for those *energy* ratios — a mode's energy over the
-/// strike goes as gain² × T60, not as gain — which is why the long-ringing
-/// low pair sits at less than the peak. One strike, no touch and no release:
-/// glass does none of that. Delete and the space bar are a shade lower, which
-/// is roughly how iOS tells them apart.
+/// A letter is a 4 ms tick at 350 Hz with a partial at 1 kHz, then, fifteen
+/// decibels quieter, a 340 Hz ring that fades over 150 ms: nothing above
+/// 1.5 kHz, 95 % of the energy below 500 Hz. Delete is a 440 Hz tone — A4 —
+/// with a brighter 5 ms attack, held 80 ms and released with a 4 ms time
+/// constant. The "clear" sound, which UIKit plays for its modifier keys and,
+/// as best as could be told, for the space bar and Return, is the same tone
+/// with a 1.32 kHz partial 20 dB under it, held 85 ms. (The clear file also
+/// carries two quieter lead-in steps up to 190 ms before its loud part; they
+/// are left out, since a sound that lands 190 ms after the key would read as
+/// late.) None of these is the 2–3 kHz "Tock" of iOS 6 and earlier, which is
+/// what most recordings labelled "iPhone click" on the internet are.
+///
+/// The low, soft character is the point: this is what people mean when they
+/// call a phone's keyboard "bubbly".
 static PHONE: Profile = Profile {
     mechanism: Mechanism::Tap,
-    excite_tau_ms: 0.8,
-    contact_lowpass_hz: 6_000.0,
+    excite_tau_ms: 1.0,
+    contact_lowpass_hz: 2_500.0,
     modes: &[
-        mode(1_000.0, 12.0, 0.2),
-        mode(1_850.0, 28.0, 0.75),
-        mode(2_050.0, 28.0, 1.0),
-        mode(2_700.0, 26.0, 0.9),
-        mode(3_300.0, 26.0, 0.85),
-        mode(3_950.0, 24.0, 0.6),
+        mode(350.0, 16.0, 1.0),
+        mode(1_000.0, 10.0, 2.2),
+        mode(340.0, 170.0, 0.32),
+        mode(980.0, 120.0, 0.2),
     ],
     ping: None,
     jacket: None,
     touch_db: 0.0,
     release_db: 0.0,
     release_delay_ms: (0.0, 0.0),
-    long_key_ratio: 0.88,
+    long_key_ratio: 1.0,
+    overrides: &[
+        ClassSound {
+            kind: CueKind::Backspace,
+            modes: &[mode(450.0, 10.0, 1.6), mode(440.0, 3_000.0, 0.63)],
+            gate: Some(Gate {
+                hold_ms: 80.0,
+                release_ms: 4.0,
+            }),
+            trim_db: -2.5,
+        },
+        ClassSound {
+            kind: CueKind::Space,
+            modes: &CLEAR,
+            gate: Some(CLEAR_GATE),
+            trim_db: -2.5,
+        },
+        ClassSound {
+            kind: CueKind::Enter,
+            modes: &CLEAR,
+            gate: Some(CLEAR_GATE),
+            trim_db: -2.5,
+        },
+        ClassSound {
+            kind: CueKind::Modifier,
+            modes: &CLEAR,
+            gate: Some(CLEAR_GATE),
+            trim_db: 4.0,
+        },
+    ],
+};
+
+/// The phone's "clear" sound: the Delete tone with a partial, held a little longer.
+static CLEAR: [Mode; 3] = [
+    mode(460.0, 8.0, 1.6),
+    mode(440.0, 3_000.0, 0.56),
+    mode(1_320.0, 60.0, 1.5),
+];
+const CLEAR_GATE: Gate = Gate {
+    hold_ms: 85.0,
+    release_ms: 4.0,
 };
 
 /// A crisp microswitch under a hard shell.
@@ -333,6 +412,7 @@ static CLICK_MECHANICAL: Profile = Profile {
     release_db: -4.0,
     release_delay_ms: (70.0, 90.0),
     long_key_ratio: 1.0,
+    overrides: &[],
 };
 
 /// A dull tap — a silent-switch mouse, or a trackpad.
@@ -347,6 +427,7 @@ static CLICK_SOFT: Profile = Profile {
     release_db: -4.0,
     release_delay_ms: (70.0, 90.0),
     long_key_ratio: 1.0,
+    overrides: &[],
 };
 
 #[cfg(test)]

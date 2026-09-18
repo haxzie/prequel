@@ -11,7 +11,7 @@
 //! order, so a variant is a pure function of its seed. That is what lets the
 //! preview and the export each render the bank and get the same samples.
 
-use crate::profile::{CueKind, Mechanism, Mode, Profile};
+use crate::profile::{CueKind, Gate, Mechanism, Mode, Profile};
 use crate::rng::Rng;
 
 /// A rendered press: mono samples and where the press itself sits in them.
@@ -54,6 +54,9 @@ const DETUNE: f32 = 0.06;
 /// Spread on the contact time per variant.
 const TAU_SPREAD: f32 = 0.2;
 
+/// Spread on a phone's pitch per variant. See `render_voice`.
+const TAP_DETUNE: f32 = 0.012;
+
 /// The stabiliser rattle lands this long after the hit.
 const STABILISER_DELAY_MS: (f32, f32) = (2.0, 6.0);
 const STABILISER_DB: f32 = -10.0;
@@ -71,11 +74,18 @@ const TOUCH_LOWPASS_HZ: f32 = 1_000.0;
 /// noise floor, and well below the -60 dB the tests require of the last 5 ms.
 const TRIM_FLOOR: f32 = 1e-4;
 
-/// The contact noise of one impact.
+/// The contact of one impact.
 #[derive(Debug, Clone, Copy)]
 struct Excite {
     tau_ms: f32,
     lowpass_hz: f32,
+    /// Noise, or a clean pulse. A real switch's contact is a scrape and no
+    /// two are alike, which is what noise gives; a phone plays one file, and
+    /// a random burst would ring its two low modes in a different balance on
+    /// every variant. A half-sine pulse `tau_ms` long — the impact force of
+    /// the contact literature — excites each mode by a known amount, so the
+    /// table's gains mean what they say and only the detune varies.
+    noisy: bool,
 }
 
 /// Renders one press of `kind` on `profile`.
@@ -92,18 +102,29 @@ pub fn render_voice(
     let mut out = vec![0.0f32; ms(MAX_MS)];
     let onset = ms(ONSET_MS);
 
-    // The body is detuned once per variant and then struck several times, so
-    // the touch, the hit and the release all ring the same keycap.
-    let ratio = if kind.is_long_key() {
+    // A class with its own sound uses it whole; otherwise the board's body,
+    // lower for a long key.
+    let custom = profile.overrides.iter().find(|sound| sound.kind == kind);
+    let ratio = if custom.is_none() && kind.is_long_key() {
         profile.long_key_ratio
     } else {
         1.0
     };
-    let body: Vec<Mode> = profile
-        .modes
+    // A phone plays the same file every time, so its variants are barely
+    // detuned — a tone that wandered a semitone between presses would sound
+    // like a different instrument, not a different finger.
+    let detune = match profile.mechanism {
+        Mechanism::Tap => TAP_DETUNE,
+        Mechanism::Keyboard | Mechanism::Mouse => DETUNE,
+    };
+    // The body is detuned once per variant and then struck several times, so
+    // the touch, the hit and the release all ring the same keycap.
+    let body: Vec<Mode> = custom
+        .map(|sound| sound.modes)
+        .unwrap_or(profile.modes)
         .iter()
         .map(|mode| Mode {
-            hz: mode.hz * ratio * rng.around(DETUNE),
+            hz: mode.hz * ratio * rng.around(detune),
             ..*mode
         })
         .collect();
@@ -111,7 +132,10 @@ pub fn render_voice(
     let contact = Excite {
         tau_ms: tau,
         lowpass_hz: profile.contact_lowpass_hz,
+        noisy: !matches!(profile.mechanism, Mechanism::Tap),
     };
+
+    let trim = custom.map_or(0.0, |sound| sound.trim_db);
 
     match profile.mechanism {
         Mechanism::Keyboard => {
@@ -123,6 +147,7 @@ pub fn render_voice(
                 Excite {
                     tau_ms: tau * 2.0,
                     lowpass_hz: TOUCH_LOWPASS_HZ.min(profile.contact_lowpass_hz),
+                    noisy: true,
                 },
                 &body,
                 rate,
@@ -144,6 +169,7 @@ pub fn render_voice(
                     Excite {
                         tau_ms: JACKET_TAU_MS,
                         lowpass_hz: JACKET_LOWPASS_HZ,
+                        noisy: true,
                     },
                     &jacket,
                     rate,
@@ -198,6 +224,9 @@ pub fn render_voice(
         }
         Mechanism::Tap => {
             strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
+            if let Some(gate) = custom.and_then(|sound| sound.gate) {
+                release(&mut out, onset, gate, rate);
+            }
         }
         Mechanism::Mouse => {
             strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
@@ -220,7 +249,15 @@ pub fn render_voice(
     }
 
     normalise(&mut out);
-    trim(&mut out, onset);
+    // After the normalise, so a class's trim is against the letter's peak
+    // and not against whatever level its own body happened to sum to.
+    if trim != 0.0 {
+        let scale = db(trim);
+        for sample in out.iter_mut() {
+            *sample *= scale;
+        }
+    }
+    cut_tail(&mut out, onset);
 
     Voice {
         samples: out,
@@ -246,16 +283,24 @@ fn strike(
         return;
     }
 
-    // Eight time constants: the burst is at -70 dB by then.
     let tau_samples = excite.tau_ms * rate / 1_000.0;
-    let burst_len = ((tau_samples * 8.0).ceil() as usize).max(2);
+    // Noise: eight time constants, by when the burst is at -70 dB. A pulse:
+    // one half-sine, `tau` long.
+    let burst_len = if excite.noisy {
+        ((tau_samples * 8.0).ceil() as usize).max(2)
+    } else {
+        (tau_samples.ceil() as usize).max(2)
+    };
     let lowpass = 1.0 - (-2.0 * std::f32::consts::PI * excite.lowpass_hz / rate).exp();
 
     let mut burst = Vec::with_capacity(burst_len);
     let mut smoothed = 0.0f32;
     for n in 0..burst_len {
-        let white = rng.next_f32() * 2.0 - 1.0;
-        let shaped = white * (-(n as f32) / tau_samples).exp();
+        let shaped = if excite.noisy {
+            (rng.next_f32() * 2.0 - 1.0) * (-(n as f32) / tau_samples).exp()
+        } else {
+            (std::f32::consts::PI * n as f32 / burst_len as f32).sin()
+        };
         smoothed += lowpass * (shaped - smoothed);
         burst.push(smoothed);
     }
@@ -288,6 +333,17 @@ fn strike(
     }
 }
 
+/// Ends a held tone: everything past `hold_ms` after the press fades with the
+/// gate's time constant. A resonator with a three-second T60 is flat over
+/// 80 ms, which is the sustain; this is what stops it.
+fn release(out: &mut [f32], onset: usize, gate: Gate, rate: f32) {
+    let hold = onset + (gate.hold_ms * rate / 1_000.0) as usize;
+    let tau = gate.release_ms * rate / 1_000.0;
+    for (n, sample) in out.iter_mut().enumerate().skip(hold) {
+        *sample *= (-((n - hold) as f32) / tau).exp();
+    }
+}
+
 fn db(value: f32) -> f32 {
     10f32.powf(value / 20.0)
 }
@@ -305,7 +361,7 @@ fn normalise(out: &mut [f32]) {
 }
 
 /// Cuts the silent tail, but never into the onset.
-fn trim(out: &mut Vec<f32>, onset: usize) {
+fn cut_tail(out: &mut Vec<f32>, onset: usize) {
     let last = out
         .iter()
         .rposition(|sample| sample.abs() >= TRIM_FLOOR)
@@ -375,10 +431,20 @@ mod tests {
                         .samples
                         .iter()
                         .fold(0.0f32, |peak, s| peak.max(s.abs()));
+                    // A class with its own sound may sit a few dB off the
+                    // target, by its trim; nothing may be louder than the
+                    // scheduler's headroom allows.
+                    let trim = profile
+                        .overrides
+                        .iter()
+                        .find(|sound| sound.kind == kind)
+                        .map_or(0.0, |sound| sound.trim_db);
+                    let expected = TARGET_PEAK * db(trim);
                     assert!(
-                        (peak - TARGET_PEAK).abs() < 1e-3,
-                        "{name}/{kind:?}/{seed} peaks at {peak}"
+                        (peak - expected).abs() < 1e-3,
+                        "{name}/{kind:?}/{seed} peaks at {peak}, expected {expected}"
                     );
+                    assert!(peak < 0.9, "{name}/{kind:?}/{seed} leaves no headroom");
                 }
             }
         }
@@ -432,7 +498,12 @@ mod tests {
 
     #[test]
     fn a_long_key_rings_lower_than_a_letter() {
-        for profile in KeyProfile::ALL {
+        // Every mechanical board. Not the phone, whose space bar is a
+        // different sound rather than a bigger cap on the same switch.
+        for profile in KeyProfile::ALL
+            .into_iter()
+            .filter(|p| *p != KeyProfile::Phone)
+        {
             let letter = mean_brightness(profile.table(), CueKind::Letter);
             let space = mean_brightness(profile.table(), CueKind::Space);
             assert!(
@@ -456,42 +527,72 @@ mod tests {
         let mouse = render_voice(ClickProfile::Soft.table(), CueKind::Click, 1, SAMPLE_RATE);
         assert_eq!(energy(&mouse.samples[..mouse.onset]), 0.0);
 
-        // And a phone is one strike: nothing before, and nothing after the
-        // strike has died — no release 60 ms on.
+        // And a phone is one strike with nothing before it: glass has no
+        // travel for a finger to land on first.
         let phone = render_voice(KeyProfile::Phone.table(), CueKind::Letter, 1, SAMPLE_RATE);
         assert_eq!(energy(&phone.samples[..phone.onset]), 0.0);
-        assert!(phone.samples.len() < phone.onset + (SAMPLE_RATE as usize * 60) / 1_000);
     }
 
     #[test]
-    fn the_phone_sounds_where_the_recording_did() {
-        // The fingerprint the table was fitted to: a centroid in the low
-        // 2 kHz range — the measured band ratios put it near 2.35 kHz — and
-        // 40 dB down within about 25 ms. Wide bands, because the point is
-        // that tuning does not drift it into a clack or a thud.
-        for seed in 0..6 {
-            let voice = render_voice(
-                KeyProfile::Phone.table(),
-                CueKind::Letter,
-                seed,
-                SAMPLE_RATE,
-            );
-            let centroid = brightness(&voice);
+    fn the_phone_sounds_like_its_files() {
+        // Fitted to iOS's own `keyboard_press_normal`, `_delete` and `_clear`,
+        // and pinned by what makes each one itself. Wide tolerances: the point
+        // is that tuning does not turn a letter back into the 3 kHz Tock of
+        // iOS 6, or Delete into a knock.
+        let ms = |value: usize| (SAMPLE_RATE as usize * value) / 1_000;
+        let rms = |samples: &[f32]| {
+            (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+        };
+        let db = |a: f32, b: f32| 20.0 * (a / b).log10();
+        let table = KeyProfile::Phone.table();
+
+        for seed in 0..4 {
+            // A letter: low, and mostly over in 20 ms.
+            let letter = render_voice(table, CueKind::Letter, seed, SAMPLE_RATE);
+            let centroid = brightness(&letter);
             assert!(
-                (2_000.0..2_900.0).contains(&centroid),
-                "seed {seed}: {centroid} Hz"
+                (300.0..500.0).contains(&centroid),
+                "letter {seed}: {centroid} Hz"
+            );
+            let first = rms(&letter.samples[letter.onset..letter.onset + ms(5)]);
+            let later = rms(&letter.samples[letter.onset + ms(20)..letter.onset + ms(25)]);
+            assert!(
+                db(later, first) < -12.0,
+                "letter {seed}: tail only {} dB down",
+                db(later, first)
             );
 
-            let peak = voice.samples.iter().fold(0.0f32, |p, s| p.max(s.abs()));
-            let at_25ms = voice.onset + (SAMPLE_RATE as usize * 25) / 1_000;
-            let after: f32 = voice.samples[at_25ms..]
-                .iter()
-                .fold(0.0f32, |p, s| p.max(s.abs()));
+            // Delete: a tone that holds for 80 ms and is gone by 130.
+            let delete = render_voice(table, CueKind::Backspace, seed, SAMPLE_RATE);
+            let early = rms(&delete.samples[delete.onset + ms(10)..delete.onset + ms(30)]);
+            let held = rms(&delete.samples[delete.onset + ms(55)..delete.onset + ms(75)]);
             assert!(
-                after < peak * 0.02,
-                "seed {seed}: {} of peak after 25 ms",
-                after / peak
+                db(held, early).abs() < 3.0,
+                "delete {seed}: sustain drifted {} dB",
+                db(held, early)
+            );
+            assert!(
+                delete.samples.len() < delete.onset + ms(140),
+                "delete {seed} rings on"
+            );
+            let tone = brightness(&delete);
+            assert!((400.0..500.0).contains(&tone), "delete {seed}: {tone} Hz");
+
+            // Clear: the same note, held, for the space bar.
+            let space = render_voice(table, CueKind::Space, seed, SAMPLE_RATE);
+            let held = rms(&space.samples[space.onset + ms(55)..space.onset + ms(75)]);
+            let early = rms(&space.samples[space.onset + ms(10)..space.onset + ms(30)]);
+            assert!(
+                db(held, early).abs() < 3.0,
+                "space {seed}: sustain drifted {} dB",
+                db(held, early)
             );
         }
+
+        // And the phone's variants barely differ in pitch — one file, many
+        // presses — where a mechanical board's may wander a semitone.
+        let a = brightness(&render_voice(table, CueKind::Backspace, 0, SAMPLE_RATE));
+        let b = brightness(&render_voice(table, CueKind::Backspace, 1, SAMPLE_RATE));
+        assert!((a - b).abs() < 20.0, "delete pitch wandered {a} vs {b}");
     }
 }
