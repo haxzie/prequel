@@ -14,6 +14,7 @@ import { tokenise, type ScriptWord } from "../../../shared/teleprompter";
 import { useDock } from "../hooks/useDock";
 import { useTeleprompter, useTeleprompterPosition } from "../hooks/useTeleprompter";
 import { cn } from "../lib/cn";
+import { CloseIcon } from "../dock/icons";
 
 /**
  * Which of the visible lines the word being read sits on, from the top.
@@ -39,6 +40,9 @@ const WHEEL_SETTLE_MS = 250;
 
 /** Radius of the concave corners where the island meets the screen edge. */
 const EAR = 14;
+
+/** Width the text leaves free on the right for the close button. */
+const CLOSE_ROOM = 22;
 
 /**
  * The island.
@@ -241,13 +245,31 @@ export function Teleprompter() {
           </>
         )}
 
+        {/* Switches the prompter off — the panel's switch, reachable from the
+            island itself. Below the notch band on a notch display, so it is
+            never over the menu bar. The text keeps clear of it on the right. */}
+        <button
+          type="button"
+          aria-label="Hide the teleprompter"
+          className={cn(
+            "no-drag absolute right-2 grid size-6 place-items-center rounded-full",
+            "text-prompter-muted hover:bg-white/12 hover:text-prompter-fg [&_svg]:size-4",
+          )}
+          style={{ top: (notch?.height ?? 0) + 6 }}
+          onClick={() => void window.prequel.dock.updatePreferences({ teleprompter: false })}
+        >
+          <CloseIcon />
+        </button>
+
         <div
           ref={viewport}
           className="prompter-fade relative overflow-hidden"
           style={{
             height: viewportHeight,
             marginTop: TELEPROMPTER_PADDING,
-            marginInline: TELEPROMPTER_PADDING,
+            marginLeft: TELEPROMPTER_PADDING,
+            // Room for the close button, so a long line never runs under it.
+            marginRight: TELEPROMPTER_PADDING + CLOSE_ROOM,
           }}
           onWheel={onWheel}
         >
