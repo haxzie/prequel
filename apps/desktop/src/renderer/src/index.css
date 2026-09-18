@@ -541,6 +541,11 @@ body {
      chosen mode in, so the island and the panel agree about what "current"
      looks like. */
   --prompter-current: var(--selected);
+  /* The footer's dot. The dock's green, so "live" is one colour across the
+     app; the off state is a faint white rather than the dock's grey, which
+     vanishes on black. */
+  --dot-on: #34c759;
+  --dot-off: rgba(255, 255, 255, 0.3);
 }
 
 /* A concave corner where the island meets the bezel: a square outside the
@@ -634,17 +639,6 @@ body {
   opacity: 0.45;
 }
 
-/* One bar of the island's meter: filled from the bottom by `--level`, each bar
-   at its own gain so the three do not rise as one block. */
-.prompter-bar {
-  width: 3px;
-  height: 100%;
-  border-radius: 2px;
-  background: currentColor;
-  transform-origin: bottom;
-  transform: scaleY(calc(0.15 + var(--level, 0) * var(--gain, 1) * 0.85));
-  transition: transform 80ms ease-out;
-}
 
 /* The follower has lost the reader: the status line breathes until it finds
    them again. */

@@ -58,7 +58,6 @@ export function Teleprompter() {
   const viewport = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const counter = useRef<HTMLSpanElement>(null);
-  const meter = useRef<HTMLSpanElement>(null);
   const status = useRef<HTMLSpanElement>(null);
   const position = useRef(0);
   /** The reader's own scrolling, in pixels, on top of where the position puts the text. */
@@ -129,7 +128,6 @@ export function Teleprompter() {
         paint(next.position);
         layout();
       }
-      meter.current?.style.setProperty("--level", next.level.toFixed(3));
       if (status.current) status.current.dataset["lost"] = next.lost ? "true" : "false";
     },
     [paint, layout],
@@ -200,6 +198,18 @@ export function Teleprompter() {
 
   const notch = state.notch;
   const paragraphs = useMemo(() => byParagraph(words), [words]);
+
+  // Whether anything is moving the words right now. Voice is active once the
+  // microphone is open; auto-scroll, and the fallback to it, once the take is
+  // running. Manual is never active: nothing moves it but the reader.
+  const active =
+    recording &&
+    !state.paused &&
+    (state.listening === "on" ||
+      mode === "timed" ||
+      state.listening === "unavailable" ||
+      state.listening === "denied" ||
+      state.listening === "failed");
 
   return (
     <div className="prompter-theme relative h-full w-full">
@@ -272,7 +282,7 @@ export function Teleprompter() {
             paddingBottom: TELEPROMPTER_PADDING / 2,
           }}
         >
-          <Meter ref={meter} live={state.listening === "on" && !state.paused} />
+          <Dot active={active} />
           {/* Unbreakable: flex would otherwise fold "0 / 68" into a column
               the moment the status beside it wants the room. */}
           <span ref={counter} className="flex-none whitespace-nowrap tabular-nums">
@@ -280,7 +290,7 @@ export function Teleprompter() {
           </span>
           {/* The one line that gives: it takes what is left and truncates. */}
           <span ref={status} className="prompter-status min-w-0 flex-1 truncate">
-            {describe(mode, state, preferences.teleprompterSpeed, recording)}
+            {describe(mode, state, preferences.teleprompterSpeed)}
           </span>
           {/* Left off the narrow island: with the status truncated there is no
               room for a hint, and Settings lists the keys anyway. */}
@@ -344,47 +354,34 @@ function Empty() {
 }
 
 /**
- * The microphone, as three bars.
+ * Whether the words are being moved: grey and still when nothing is, green
+ * and breathing when something is.
  *
- * Driven by `--level`, written straight to the element by the position
- * handler. Still when nothing is listening, so a silent meter never claims
- * to be hearing.
+ * The one thing in the footer that changes with the take. The words beside
+ * it say *how* the text moves, and stay the same before and during, so the
+ * dot is what says whether it is happening yet.
  */
-function Meter({ ref, live }: { ref: React.Ref<HTMLSpanElement>; live: boolean }) {
+function Dot({ active }: { active: boolean }) {
   return (
     <span
-      ref={ref}
-      className={cn("flex h-3 flex-none items-end gap-[2px]", !live && "opacity-40")}
+      className={cn(
+        "size-1.5 flex-none rounded-full",
+        active ? "animate-pulse-dot bg-dot-on" : "bg-dot-off",
+      )}
       aria-hidden="true"
-    >
-      <span className="prompter-bar" style={{ "--gain": 0.6 } as React.CSSProperties} />
-      <span className="prompter-bar" style={{ "--gain": 1 } as React.CSSProperties} />
-      <span className="prompter-bar" style={{ "--gain": 0.8 } as React.CSSProperties} />
-    </span>
+    />
   );
 }
 
-/** What the footer says about how the text is moving, or will. */
-function describe(
-  mode: TeleprompterMode,
-  state: TeleprompterState,
-  wpm: number,
-  recording: boolean,
-): string {
+/**
+ * What the footer says about how the text moves.
+ *
+ * The same words before and during a take — "Follows your voice" is what the
+ * prompter does, whether or not it is doing it this second; the dot beside
+ * it says which. Only a microphone that could not be used changes the line.
+ */
+function describe(mode: TeleprompterMode, state: TeleprompterState, wpm: number): string {
   if (state.paused) return "Paused";
-  // Nothing moves the words until the take begins — the microphone stays
-  // closed while the panel is merely open — so say what will, rather than
-  // claiming to be doing it.
-  if (!recording) {
-    switch (mode) {
-      case "voice":
-        return "Follows your voice once you record";
-      case "timed":
-        return `Scrolls at ${String(wpm)} words a minute once you record`;
-      case "manual":
-        return "Manual";
-    }
-  }
   switch (state.listening) {
     case "unavailable":
       return "No on-device speech model — auto-scrolling. Add the language under Keyboard › Dictation.";
@@ -399,9 +396,9 @@ function describe(
   }
   switch (mode) {
     case "voice":
-      return "Following your voice";
+      return "Follows your voice";
     case "timed":
-      return `Auto-scrolling at ${String(wpm)} words a minute`;
+      return `Scrolls at ${String(wpm)} words a minute`;
     case "manual":
       return "Manual";
   }

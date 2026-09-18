@@ -290,7 +290,13 @@ export interface TeleprompterPosition {
   position: number;
   /** The follower has not matched anything for a while. */
   lost: boolean;
-  /** Microphone level, 0–1, for the footer meter. */
+  /**
+   * Microphone level, 0–1.
+   *
+   * Not drawn: the footer showed it as three bars, and a breathing dot said
+   * "listening" more plainly than a meter did. Still reported, because the
+   * engine measures it for nothing and a meter is a cheap thing to bring back.
+   */
   level: number;
 }
 
