@@ -531,10 +531,14 @@ body {
 }
 
 /* The teleprompter island.
-   Black, not the dock's blue-grey, and fully opaque: it hangs from the notch
-   and has to be the notch's own colour or the seam between the two shows. */
+   Black, not the dock's blue-grey: it hangs from the notch and has to read as
+   the notch's own colour. A shade short of opaque, so the screen shows through
+   it faintly — not frosted, because a blur on macOS is an `NSVisualEffectView`
+   behind the whole window rectangle and cannot be cut to this shape. One
+   surface throughout: a solid strip against the notch over a translucent body
+   drew a hard line between the two, which is the seam the shape exists to hide. */
 @utility prompter-theme {
-  --prompter-bg: #000;
+  --prompter-bg: rgba(0, 0, 0, 0.9);
   --prompter-fg: #fff;
   --prompter-muted: rgba(255, 255, 255, 0.55);
   /* The word being read: the app's own blue, the same one the dock draws a

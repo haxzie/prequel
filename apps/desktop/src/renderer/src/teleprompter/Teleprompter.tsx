@@ -217,7 +217,10 @@ export function Teleprompter() {
         key={motion.count}
         className={cn(
           "absolute inset-x-(--panel-inset) bottom-(--panel-inset) flex flex-col overflow-visible",
-          "bg-prompter-bg text-prompter-fg shadow-[0_10px_28px_rgba(0,0,0,0.5)]",
+          // The same shadow as the dock, for the same margin: it is cast into
+          // `PANEL_INSET` of transparent window, and one that reaches further
+          // than that is sliced off at the window's edge in a hard line.
+          "bg-prompter-bg text-prompter-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]",
           notch ? "top-0 rounded-b-[22px]" : "top-(--panel-inset) rounded-[18px]",
           motion.phase === "in" ? "animate-island-in" : "animate-island-out",
           "motion-reduce:animate-none",
