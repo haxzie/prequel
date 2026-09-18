@@ -97,6 +97,12 @@ on either side. Two implementations of "where does the camera sit" is how a
 preview and an export come to disagree, and it is only ever noticed after the
 file is written.
 
+**The sound plan is computed once, in Rust.** `prequel-keysound` decides which
+voice a press gets, when, and how loud; the WebAudio preview and the export
+mixer only place those samples. The renderer never synthesises and never picks a
+variant. Same rule as geometry, same failure: a preview and an export that
+disagree, noticed after the file is written.
+
 **Settings are flat leaves.** `cameraShape`, `cameraHeight` — never a nested
 `camera: {…}`. "Is this overridden?" is `key in overrides[section]`, and a
 nested group would make that mean "something in this group", so every
@@ -175,8 +181,9 @@ that equal timestamps produce equal steps, that a cached layer's signature is
 stable across frames.
 
 Pure logic lives apart from Apple frameworks and React precisely so it can be
-tested without them — `prequel-session`, `prequel-render`'s `plan`/`timeline`/
-`mixer`, and the editor's `state`/`timeline`/`layout`/`fit`.
+tested without them — `prequel-session`, `prequel-keysound`, `prequel-render`'s
+`plan`/`timeline`/`mixer`/`sound`, and the editor's `state`/`timeline`/`layout`/
+`fit`/`keysound`.
 
 For anything visual, assert pixels. Shape assertions — duration, frame count,
 dimensions — pass happily on output that looks wrong. See
