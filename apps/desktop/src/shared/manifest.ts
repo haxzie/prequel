@@ -166,15 +166,34 @@ export interface ClickSample {
 /**
  * A stretch of the recording somebody was typing through.
  *
- * Deliberately the least that could be useful: when typing started and when it
- * stopped, rounded to a tenth of a second, with runs of fewer than three
- * presses left out entirely. No key, no count, and nothing fine enough to read
- * the timing between presses back out of. The pointer is hidden through these
- * and nothing else reads them.
+ * The coarse record: when typing started and when it stopped, rounded to a
+ * tenth of a second, with runs of fewer than three presses left out entirely.
+ * No key, no count. The pointer is hidden through these, and still is when
+ * `key_presses` are present — so a recording made with presses switched off
+ * behaves the same.
  */
 export interface KeySpan {
   start: MediaTime;
   end: MediaTime;
+}
+
+/**
+ * The kind of key a press was, as coarsely as a sound needs.
+ *
+ * Five classes, chosen by what sounds different on a real board: the space
+ * bar, Return and Delete sit on stabilisers and sound bigger than a letter; a
+ * modifier is pressed softer. Everything else — letters, digits, punctuation,
+ * arrows, function keys — is `letter`.
+ */
+export type KeyClass = "letter" | "space" | "enter" | "backspace" | "modifier";
+
+/**
+ * One key press: when, and which class of key. Never a key code, never a
+ * character, never the release. See `Manifest.key_presses`.
+ */
+export interface KeyPress {
+  at: MediaTime;
+  class: KeyClass;
 }
 
 /** A focused text area, sampled during the recording. */
@@ -229,6 +248,16 @@ export interface Manifest {
    * typed" rather than "this recording does not say".
    */
   keys?: KeySpan[];
+  /**
+   * The moment of each key press and roughly what kind of key it was — what
+   * the editor's typing sounds are made from.
+   *
+   * Absent when the Keyboard switch in Settings was off, and on every
+   * recording made before it existed; absent means "not recorded", not
+   * "nobody typed". Passwords are absent regardless: macOS withholds key
+   * events from every event tap while a secure text field has focus.
+   */
+  key_presses?: KeyPress[];
 }
 
 export class ManifestError extends Error {}

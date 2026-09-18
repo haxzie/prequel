@@ -220,6 +220,21 @@ function Recording({ preferences, set }: PaneProps) {
           undone.
         </p>
       </Section>
+
+      <Section title="Keyboard">
+        <Field label="Note when keys are pressed" inline>
+          <Toggle
+            value={preferences.captureKeys}
+            onChange={(captureKeys) => set({ captureKeys })}
+          />
+        </Field>
+        <p className="text-[11px] leading-relaxed text-editor-muted">
+          Each press is kept as a moment and whether it was a letter, the space bar, Return, Delete
+          or a modifier — never which letter. This is what the editor's typing sounds are made from.
+          Off keeps only the rough stretches of typing the pointer hides behind. Passwords are never
+          seen either way: macOS keeps them from every app while you type one.
+        </p>
+      </Section>
     </>
   );
 }

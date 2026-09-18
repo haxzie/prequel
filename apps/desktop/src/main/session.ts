@@ -122,6 +122,7 @@ export class RecordingSession {
       // Off by default: the pointer is sampled and drawn by the editor,
       // and baking it into the frames cannot be undone.
       showCursor: options.showCursor ?? false,
+      captureKeys: options.captureKeys ?? true,
       systemAudio: options.systemAudio ?? false,
       microphone: options.microphone ?? false,
       camera: options.camera ?? undefined,

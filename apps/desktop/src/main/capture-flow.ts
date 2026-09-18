@@ -581,6 +581,7 @@ export class CaptureFlow {
       microphone: preferences.micId !== null,
       system_audio: preferences.systemAudio,
       bake_cursor: preferences.bakeCursor,
+      capture_keys: preferences.captureKeys,
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
       teleprompter_mode: preferences.teleprompter ? preferences.teleprompterMode : null,
@@ -591,6 +592,7 @@ export class CaptureFlow {
         target: selection.target,
         crop: selection.crop,
         showCursor: preferences.bakeCursor,
+        captureKeys: preferences.captureKeys,
         systemAudio: preferences.systemAudio,
         microphone: preferences.micId !== null,
         // The bubble is only a preview; this is what writes `camera.mp4`.

@@ -116,6 +116,20 @@ describe("Preferences", () => {
     expect(prefs.teleprompterSpeed).toBe(300);
   });
 
+  it("reads a file written before the keyboard switch existed as switched on", () => {
+    // Every existing preferences file lacks the key. Absent has to mean the
+    // default, not off — or an update would silently stop typing sounds
+    // working for everyone who already had the app.
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ countdown: 3 }));
+
+    expect(new Preferences(file).get().captureKeys).toBe(true);
+
+    const prefs = new Preferences(file);
+    prefs.update({ captureKeys: false });
+    expect(new Preferences(file).get().captureKeys).toBe(false);
+  });
+
   it("keeps every new key across a write, rather than dropping it", () => {
     // `sanitise` is exhaustive by hand, so a key added to the type without a
     // line there saves fine and is gone on the next write. This is that check.

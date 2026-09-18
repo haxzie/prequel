@@ -61,6 +61,8 @@ export interface StartRecordingRequest {
   /** `"h264"` or `"hevc"`. */
   codec?: string;
   showCursor?: boolean;
+  /** Keep the moment and class of each key press. Defaults to true in the addon. */
+  captureKeys?: boolean;
   /** Sub-region of the target to capture, in points relative to its origin. */
   crop?: { x: number; y: number; width: number; height: number };
   systemAudio?: boolean;

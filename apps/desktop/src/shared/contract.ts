@@ -110,6 +110,16 @@ export interface RecordingPreferences {
    */
   bakeCursor: boolean;
   /**
+   * Note the moment and the class of each key press, for typing sounds.
+   *
+   * On by default. What a recording keeps of a key is a time and one of five
+   * classes — letter, space, Return, Delete, modifier — never which letter;
+   * `shared/manifest.ts` `KeyPress` is the whole of it. Off leaves only the
+   * coarse typing spans the pointer hides behind, and the editor's Sounds
+   * section then offers clicks alone.
+   */
+  captureKeys: boolean;
+  /**
    * Where the user last put the camera bubble, as the *centre* of the circle
    * in screen points.
    *
@@ -182,6 +192,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   micLabel: null,
   systemAudio: true,
   bakeCursor: false,
+  captureKeys: true,
   cameraPosition: null,
   toggleShortcut: "Shift+Cmd+R",
   countdown: 3,
@@ -1039,6 +1050,8 @@ export interface StartOptions {
   /** Camera to record as its own track, by `localizedName`. */
   camera?: string | null;
   showCursor?: boolean;
+  /** Keep per-press key timing for typing sounds. See `RecordingPreferences`. */
+  captureKeys?: boolean;
   /** `CGWindowID`s of our own windows, so they stay out of the recording. */
   excludedWindowIds?: number[];
 }

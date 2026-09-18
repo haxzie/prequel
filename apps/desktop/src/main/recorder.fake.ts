@@ -13,7 +13,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { CursorSample, Manifest, Track } from "../shared/manifest.js";
+import type { CursorSample, KeyPress, Manifest, Track } from "../shared/manifest.js";
 import {
   CAMERA_MATTE_FILE_NAME,
   MANIFEST_FILE_NAME,
@@ -189,6 +189,10 @@ function writeManifest(
     // it exists to drive.
     cursor_baked: false,
     cursor: fakeCursor(summary.durationMs),
+    // A click and some typing, so the Sounds section has something to play.
+    // Omitted when the switch was off, exactly as the addon omits them.
+    clicks: [{ at: Math.round(summary.durationMs * 0.2) * NS_PER_MS, x: 0.3, y: 0.3 }],
+    ...(request.captureKeys === false ? {} : { key_presses: fakeTyping(summary.durationMs) }),
   };
 
   writeFileSync(join(request.outputPath, MANIFEST_FILE_NAME), JSON.stringify(manifest, null, 2));
@@ -214,6 +218,31 @@ function fakeCursor(durationMs: number): CursorSample[] {
       y: 0.15 + through * 0.7,
       hand: through > 1 / 3 && through < 2 / 3,
     };
+  });
+}
+
+/**
+ * A short sentence typed through the middle of the take.
+ *
+ * A word, a space, a word, Return — enough that every class the sounds tell
+ * apart is heard once, at a cadence a real typist has, and nothing longer: the
+ * fake exists to drive the panel, not to be listened to.
+ */
+function fakeTyping(durationMs: number): KeyPress[] {
+  const classes: KeyPress["class"][] = [
+    ...Array<KeyPress["class"]>(5).fill("letter"),
+    "space",
+    ...Array<KeyPress["class"]>(4).fill("letter"),
+    "backspace",
+    "letter",
+    "enter",
+  ];
+  let at = Math.round(durationMs * 0.4);
+
+  return classes.map((cls, index) => {
+    const press = { at: at * NS_PER_MS, class: cls };
+    at += 90 + (index % 3) * 25;
+    return press;
   });
 }
 
