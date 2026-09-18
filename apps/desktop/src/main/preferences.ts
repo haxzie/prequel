@@ -130,6 +130,8 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
       DEFAULT_PREFERENCES.teleprompterWidth,
     ),
     teleprompterSpeed: speed(value.teleprompterSpeed),
+    teleprompterDisplay:
+      typeof value.teleprompterDisplay === "string" ? value.teleprompterDisplay : null,
     welcomed: value.welcomed ?? DEFAULT_PREFERENCES.welcomed,
   };
 }

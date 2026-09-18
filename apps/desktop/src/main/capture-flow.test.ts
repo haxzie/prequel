@@ -41,6 +41,7 @@ const TELEPROMPTER_WINDOW_ID = 303;
 
 vi.mock("electron", () => ({
   screen: {
+    getAllDisplays: () => [{ id: 1, label: "Built-in Retina Display" }],
     getCursorScreenPoint: () => ({ x: 0, y: 0 }),
     getDisplayNearestPoint: () => ({
       id: 1,

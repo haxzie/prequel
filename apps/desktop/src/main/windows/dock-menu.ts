@@ -98,8 +98,17 @@ export function dockMenuTemplate(
       click: () => pick({ kind: "teleprompterSize", size: value }),
     });
 
+    const display = (value: string | null, label: string): MenuItemConstructorOptions => ({
+      label,
+      type: "checkbox",
+      checked: menu.display === value,
+      click: () => pick({ kind: "teleprompterDisplay", display: value }),
+    });
+
     // Edit first: it is what the chevron is reached for. The choices under it
-    // are checkboxes for the reason the device lists are — see below.
+    // are checkboxes for the reason the device lists are — see below. The
+    // displays come last and only when there is a choice to make: one display
+    // is where the island goes whatever is ticked.
     return [
       { label: "Edit Script…", click: () => pick({ kind: "teleprompterEdit" }) },
       { type: "separator" },
@@ -110,6 +119,13 @@ export function dockMenuTemplate(
       size("small", "Small Text"),
       size("medium", "Medium Text"),
       size("large", "Large Text"),
+      ...(menu.displays.length > 1
+        ? [
+            { type: "separator" } as MenuItemConstructorOptions,
+            display(null, "Follow the Camera"),
+            ...menu.displays.map((name) => display(name, `On ${name}`)),
+          ]
+        : []),
     ];
   }
 

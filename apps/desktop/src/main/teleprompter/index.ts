@@ -101,7 +101,11 @@ export class Teleprompter {
       return;
     }
 
-    this.deps.island.setShape(preferences.teleprompterSize, preferences.teleprompterWidth);
+    this.deps.island.setShape(
+      preferences.teleprompterSize,
+      preferences.teleprompterWidth,
+      preferences.teleprompterDisplay,
+    );
     const wasVisible = this.deps.island.isVisible;
     const notch = this.deps.island.show();
     if (notch?.height !== this.notch?.height || notch?.width !== this.notch?.width) {

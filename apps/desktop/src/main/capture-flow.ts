@@ -396,6 +396,11 @@ export class CaptureFlow {
    * for exactly as long as the menu is up — see `openMenu` on `DockState`.
    */
   async openMenu(menu: DockMenu): Promise<DockMenuPick | null> {
+    // The renderer builds the menu but cannot see the displays, so the
+    // prompter's list is filled in here on the way past.
+    if (menu.kind === "teleprompter") {
+      menu = { ...menu, displays: screen.getAllDisplays().map((display) => display.label) };
+    }
     const picked = this.deps.dock.openMenu(menu);
     this.emit();
     const pick = await picked;

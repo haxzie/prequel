@@ -152,6 +152,16 @@ export interface RecordingPreferences {
   /** Words per minute, for auto-scroll. Speech runs 120–160. */
   teleprompterSpeed: number;
   /**
+   * The display the island goes on, by macOS's name for it, or null to
+   * follow the camera — the built-in display while the lid is open.
+   *
+   * The name rather than the id, for the reason the camera is stored by
+   * label: ids are handed out per connection, and a stored one stops matching
+   * the next time the monitor is plugged in. A name that no longer matches
+   * falls back to following the camera.
+   */
+  teleprompterDisplay: string | null;
+  /**
    * Whether the welcome flow has been finished.
    *
    * Not recording setup, and the only thing in here that is not — but this file
@@ -182,6 +192,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   teleprompterSize: "medium",
   teleprompterWidth: "normal",
   teleprompterSpeed: 140,
+  teleprompterDisplay: null,
   welcomed: false,
 };
 
@@ -398,6 +409,13 @@ export type DockMenu =
       anchor: { x: number; y: number };
       mode: TeleprompterMode;
       size: TeleprompterSize;
+      /**
+       * The displays to offer, by name, and which is chosen (null: follow
+       * the camera). Filled in by main on the way to the menu — the renderer
+       * sends the list empty, since only main can see the displays.
+       */
+      displays: string[];
+      display: string | null;
     };
 
 /**
@@ -416,7 +434,8 @@ export type DockMenuPick =
   | { kind: "relaunch" }
   | { kind: "teleprompterEdit" }
   | { kind: "teleprompterMode"; mode: TeleprompterMode }
-  | { kind: "teleprompterSize"; size: TeleprompterSize };
+  | { kind: "teleprompterSize"; size: TeleprompterSize }
+  | { kind: "teleprompterDisplay"; display: string | null };
 
 /** What the panel is currently showing. */
 export type DockView = "setup" | "recording";

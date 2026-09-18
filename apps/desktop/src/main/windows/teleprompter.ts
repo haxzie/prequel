@@ -55,6 +55,8 @@ export class TeleprompterWindow {
   private width: TeleprompterWidth = "normal";
   /** The notch the island was last laid out around; null for a plain top edge. */
   private notch: Notch | null = null;
+  /** The display asked for by name, or null to follow the camera. */
+  private chosen: string | null = null;
   private stopWatchingCursor: (() => void) | null = null;
   /**
    * The hide that is waiting for the slide up to finish, if one is.
@@ -148,11 +150,12 @@ export class TeleprompterWindow {
     );
   }
 
-  /** Re-lays the island out for a new text size or width. */
-  setShape(size: TeleprompterSize, width: TeleprompterWidth): void {
-    if (this.size === size && this.width === width) return;
+  /** Re-lays the island out for a new text size, width or display. */
+  setShape(size: TeleprompterSize, width: TeleprompterWidth, display: string | null): void {
+    if (this.size === size && this.width === width && this.chosen === display) return;
     this.size = size;
     this.width = width;
+    this.chosen = display;
     if (this.isVisible) this.window!.setBounds(this.bounds());
   }
 
@@ -194,14 +197,17 @@ export class TeleprompterWindow {
   }
 
   /**
-   * The display with the camera: the built-in one when the lid is open,
-   * otherwise the one the cursor is on. A closed MacBook drops its display
-   * from the list, so an external webcam on a desk setup gets the same
-   * top-centre placement on whatever the user is looking at.
+   * The display asked for, if it is connected; otherwise the one with the
+   * camera: the built-in display when the lid is open, else the one the
+   * cursor is on. A closed MacBook drops its display from the list, so an
+   * external webcam on a desk setup gets the same top-centre placement on
+   * whatever the user is looking at.
    */
   private display(): Display {
+    const displays = screen.getAllDisplays();
     return (
-      screen.getAllDisplays().find((display) => display.internal) ??
+      displays.find((display) => this.chosen !== null && display.label === this.chosen) ??
+      displays.find((display) => display.internal) ??
       screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
     );
   }

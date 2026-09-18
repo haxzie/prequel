@@ -75,6 +75,8 @@ describe("the teleprompter menu", () => {
     anchor: { x: 0, y: 0 },
     mode: "voice",
     size: "medium",
+    displays: ["Built-in Retina Display"],
+    display: null,
   };
 
   it("offers the script first, then the mode and size with the current ones ticked", () => {
@@ -94,6 +96,25 @@ describe("the teleprompter menu", () => {
     expect(template.filter((item) => item.checked).map((item) => item.label)).toEqual([
       "Follow My Voice",
       "Medium Text",
+    ]);
+  });
+
+  it("offers the displays only when there is more than one to choose from", () => {
+    const one = dockMenuTemplate(PROMPTER, () => undefined);
+    expect(one.some((item) => item.label?.startsWith("On "))).toBe(false);
+
+    const two = dockMenuTemplate(
+      {
+        ...PROMPTER,
+        displays: ["Built-in Retina Display", "Studio Display"],
+        display: "Studio Display",
+      },
+      () => undefined,
+    );
+    expect(two.slice(-3).map((item) => [item.label, item.checked])).toEqual([
+      ["Follow the Camera", false],
+      ["On Built-in Retina Display", false],
+      ["On Studio Display", true],
     ]);
   });
 

@@ -93,6 +93,9 @@ export function SetupPanel({ state }: { state: DockState }) {
       case "teleprompterSize":
         void window.prequel.dock.updatePreferences({ teleprompterSize: pick.size });
         return;
+      case "teleprompterDisplay":
+        void window.prequel.dock.updatePreferences({ teleprompterDisplay: pick.display });
+        return;
     }
   };
 
@@ -247,6 +250,9 @@ function buildMenu(
       anchor,
       mode: from.preferences.teleprompterMode,
       size: from.preferences.teleprompterSize,
+      // Main fills the list in: a renderer cannot see the displays.
+      displays: [],
+      display: from.preferences.teleprompterDisplay,
     };
   }
 
