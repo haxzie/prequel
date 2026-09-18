@@ -342,6 +342,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "prequel-keysound"
+version = "0.1.0"
+dependencies = [
+ "prequel-session",
+]
+
+[[package]]
 name = "prequel-napi"
 version = "0.1.0"
 dependencies = [

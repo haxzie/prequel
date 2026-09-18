@@ -1,0 +1,16 @@
+[package]
+name = "prequel-keysound"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+# Deliberately free of Apple framework dependencies, like `prequel-session`:
+# a keystroke is arithmetic, and arithmetic can be tested on any machine. No
+# `rand` either — the generator has to be the same one on every build forever,
+# because a re-export must sound identical to the last one, and a crate's
+# algorithm is not a promise its changelog makes.
+
+[dependencies]
+prequel-session = { workspace = true }

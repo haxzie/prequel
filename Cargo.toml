@@ -16,6 +16,7 @@ prequel-camera = { path = "crates/prequel-camera" }
 prequel-capture = { path = "crates/prequel-capture" }
 prequel-session = { path = "crates/prequel-session" }
 prequel-encode = { path = "crates/prequel-encode" }
+prequel-keysound = { path = "crates/prequel-keysound" }
 prequel-render = { path = "crates/prequel-render" }
 prequel-speech = { path = "crates/prequel-speech" }
 

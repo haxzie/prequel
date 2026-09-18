@@ -188,15 +188,29 @@ pub struct Manifest {
     pub typing: Vec<TypingSample>,
     /// Stretches of the recording somebody was typing through.
     ///
-    /// The one thing here that comes from the keyboard, and it is deliberately
-    /// the least that could be useful: when typing started and when it stopped,
-    /// rounded to a tenth of a second, with runs of fewer than three presses
-    /// left out entirely. No key code, no modifiers, no count, and nothing fine
-    /// enough to read the timing between presses back out of — which is itself
-    /// enough to narrow down what was typed. The editor hides the pointer
-    /// through these, and that is all they are for.
+    /// The coarse record of the keyboard, and the one that is always kept: when
+    /// typing started and when it stopped, rounded to a tenth of a second, with
+    /// runs of fewer than three presses left out entirely. No key code, no
+    /// modifiers, no count. The editor hides the pointer through these, and
+    /// they are still what it uses for that even when `key_presses` is there,
+    /// so a recording made with presses switched off behaves the same.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<KeySpan>,
+    /// The moment of each key press, and roughly what kind of key it was.
+    ///
+    /// What the editor's typing sounds are made from: a sound has to land on
+    /// the press it belongs to, and a span rounded to a tenth of a second
+    /// cannot place one. Each entry is a time and one of five classes — see
+    /// `KeyClass` — and nothing else. Never a key code, never a character, and
+    /// never the release: how long a key was held is as personal as a
+    /// signature, and no sound needs it.
+    ///
+    /// Empty when the switch in Settings is off, and for every recording made
+    /// before it existed. Absent means "not recorded", not "nobody typed".
+    /// Passwords are absent regardless: macOS withholds keyboard events from
+    /// every event tap while a secure text field has focus.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_presses: Vec<KeyPress>,
 }
 
 /// A stretch somebody was typing through. See `Manifest::keys`.
@@ -204,6 +218,55 @@ pub struct Manifest {
 pub struct KeySpan {
     pub start: MediaTime,
     pub end: MediaTime,
+}
+
+/// The kind of key a press was, as coarsely as a sound needs.
+///
+/// Five classes and no more, chosen by what sounds different on a real board:
+/// the space bar, Return and Delete sit on stabilisers and sound bigger than a
+/// letter; a modifier is pressed softer and held. Tab, arrows, digits and
+/// punctuation are all `Letter` — telling them apart would say more about what
+/// was typed than any sound could use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyClass {
+    Letter,
+    Space,
+    Enter,
+    Backspace,
+    Modifier,
+}
+
+impl KeyClass {
+    pub const ALL: [KeyClass; 5] = [
+        KeyClass::Letter,
+        KeyClass::Space,
+        KeyClass::Enter,
+        KeyClass::Backspace,
+        KeyClass::Modifier,
+    ];
+
+    /// The manifest spelling — what `serde` writes, and what the editor reads.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KeyClass::Letter => "letter",
+            KeyClass::Space => "space",
+            KeyClass::Enter => "enter",
+            KeyClass::Backspace => "backspace",
+            KeyClass::Modifier => "modifier",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|class| class.as_str() == value)
+    }
+}
+
+/// One key press: when, and which class of key. See `Manifest::key_presses`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct KeyPress {
+    pub at: MediaTime,
+    pub class: KeyClass,
 }
 
 /// A press, sampled during the recording.
@@ -322,6 +385,7 @@ mod tests {
             cursor_baked: false,
             clicks: Vec::new(),
             keys: Vec::new(),
+            key_presses: Vec::new(),
             typing: Vec::new(),
             cursor: vec![CursorSample {
                 at: 0,
@@ -376,6 +440,24 @@ mod tests {
         // The matte belongs to the camera alone; the other tracks must not
         // carry a null for it.
         assert_eq!(json.matches("\"matte\"").count(), 1);
+        // Nothing typed, nothing recorded: an empty list would read as "the
+        // switch was on and nobody typed", which is not what happened.
+        assert!(!json.contains("key_presses"));
+    }
+
+    #[test]
+    fn a_key_press_carries_a_moment_and_a_class_and_nothing_else() {
+        let press = KeyPress {
+            at: 1_500_000_000,
+            class: KeyClass::Space,
+        };
+        let json = serde_json::to_string(&press).unwrap();
+        assert_eq!(json, r#"{"at":1500000000,"class":"space"}"#);
+        assert_eq!(serde_json::from_str::<KeyPress>(&json).unwrap(), press);
+        for class in KeyClass::ALL {
+            assert_eq!(KeyClass::parse(class.as_str()), Some(class));
+        }
+        assert_eq!(KeyClass::parse("keycode"), None);
     }
 
     #[test]
