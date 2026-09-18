@@ -92,8 +92,20 @@ pub enum Mechanism {
 }
 
 /// The table for one keyboard or mouse.
+///
+/// Two kinds of table, because two kinds of sound: an impact — the real
+/// thing, a struck body — and a bubble, which is nothing a keyboard does and
+/// is offered because it is pleasant. The synth reads the variant and the
+/// table's own numbers; nothing downstream knows which kind it is playing.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Profile {
+pub enum Profile {
+    Impact(Impact),
+    Bubble(Bubble),
+}
+
+/// A struck body: contact noise ringing a few resonances.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Impact {
     pub mechanism: Mechanism,
     /// How long the contact noise lasts, in milliseconds. A harder contact is
     /// a shorter burst and a brighter sound; this is the "manner of contact"
@@ -123,6 +135,36 @@ pub struct Profile {
     pub long_key_ratio: f32,
 }
 
+/// A bubble: a sine whose pitch climbs as it fades.
+///
+/// Farnell's model of a bubble under water — the sound a rising bubble makes
+/// as it shrinks — and, at a keyboard's cadence, the most agreeable of the
+/// deliberately artificial sounds. No noise, no resonances: a pure tone with
+/// a soft attack, a rise in pitch over its decay, and a very small pop at the
+/// onset so it lands on the press rather than swelling up to it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bubble {
+    /// Starting pitch of a letter, in Hz. Lower is a bigger bubble.
+    pub hz: f32,
+    /// How far the pitch climbs over one decay time, as a fraction. A third is
+    /// a clear "bloop"; nothing at all is a plain sine ping.
+    pub rise: f32,
+    /// Amplitude time constant, in milliseconds.
+    pub decay_ms: f32,
+    /// A raised-cosine fade in, in milliseconds. A sine that starts at full
+    /// level clicks; a bubble does not.
+    pub attack_ms: f32,
+    /// The pop at the onset, relative to the tone; `None` for a pure tone.
+    pub pop_db: Option<f32>,
+    /// A smaller, higher bubble at the release, relative to the press.
+    pub release_db: f32,
+    pub release_delay_ms: (f32, f32),
+    /// Pitch of the release bubble as a ratio of the press.
+    pub release_ratio: f32,
+    /// How much lower a long key's bubble is than a letter's.
+    pub long_key_ratio: f32,
+}
+
 /// Keyboards the editor offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyProfile {
@@ -130,14 +172,16 @@ pub enum KeyProfile {
     Tactile,
     Clicky,
     Thock,
+    Bubble,
 }
 
 impl KeyProfile {
-    pub const ALL: [KeyProfile; 4] = [
+    pub const ALL: [KeyProfile; 5] = [
         KeyProfile::Linear,
         KeyProfile::Tactile,
         KeyProfile::Clicky,
         KeyProfile::Thock,
+        KeyProfile::Bubble,
     ];
 
     /// The id a project stores and the napi boundary carries.
@@ -147,6 +191,7 @@ impl KeyProfile {
             KeyProfile::Tactile => "tactile",
             KeyProfile::Clicky => "clicky",
             KeyProfile::Thock => "thock",
+            KeyProfile::Bubble => "bubble",
         }
     }
 
@@ -160,6 +205,7 @@ impl KeyProfile {
             KeyProfile::Tactile => &TACTILE,
             KeyProfile::Clicky => &CLICKY,
             KeyProfile::Thock => &THOCK,
+            KeyProfile::Bubble => &BUBBLE,
         }
     }
 }
@@ -169,15 +215,21 @@ impl KeyProfile {
 pub enum ClickProfile {
     Soft,
     Mechanical,
+    Pop,
 }
 
 impl ClickProfile {
-    pub const ALL: [ClickProfile; 2] = [ClickProfile::Soft, ClickProfile::Mechanical];
+    pub const ALL: [ClickProfile; 3] = [
+        ClickProfile::Soft,
+        ClickProfile::Mechanical,
+        ClickProfile::Pop,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             ClickProfile::Soft => "soft",
             ClickProfile::Mechanical => "mechanical",
+            ClickProfile::Pop => "pop",
         }
     }
 
@@ -189,13 +241,14 @@ impl ClickProfile {
         match self {
             ClickProfile::Soft => &CLICK_SOFT,
             ClickProfile::Mechanical => &CLICK_MECHANICAL,
+            ClickProfile::Pop => &CLICK_POP,
         }
     }
 }
 
 /// A stock linear — MX Red, Gateron Yellow — in a plastic case. Mid-bright
 /// plastic, and a faint spring ping on the way back up.
-static LINEAR: Profile = Profile {
+static LINEAR: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Keyboard,
     excite_tau_ms: 1.2,
     contact_lowpass_hz: 8_000.0,
@@ -211,11 +264,11 @@ static LINEAR: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
-};
+});
 
 /// A tactile — MX Brown, Holy Panda. The bump slows the stem before it lands,
 /// so the hit is a little duller and the body a little fuller.
-static TACTILE: Profile = Profile {
+static TACTILE: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Keyboard,
     excite_tau_ms: 1.6,
     contact_lowpass_hz: 6_500.0,
@@ -231,11 +284,11 @@ static TACTILE: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
-};
+});
 
 /// A clicky — MX Blue. The click jacket collapsing is its own impact, bright
 /// and very short, on top of an ordinary plastic bottom-out.
-static CLICKY: Profile = Profile {
+static CLICKY: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Keyboard,
     excite_tau_ms: 1.0,
     contact_lowpass_hz: 9_000.0,
@@ -255,12 +308,12 @@ static CLICKY: Profile = Profile {
     release_db: -8.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
-};
+});
 
 /// Lubed linears in a foam-filled aluminium case under thick PBT. Everything
 /// above 3 kHz is gone, the case rings low and long, and there is no spring
 /// to ping.
-static THOCK: Profile = Profile {
+static THOCK: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Keyboard,
     excite_tau_ms: 2.5,
     contact_lowpass_hz: 3_200.0,
@@ -276,10 +329,10 @@ static THOCK: Profile = Profile {
     release_db: -9.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
-};
+});
 
 /// A crisp microswitch under a hard shell.
-static CLICK_MECHANICAL: Profile = Profile {
+static CLICK_MECHANICAL: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Mouse,
     excite_tau_ms: 0.6,
     contact_lowpass_hz: 10_000.0,
@@ -294,10 +347,10 @@ static CLICK_MECHANICAL: Profile = Profile {
     release_db: -4.0,
     release_delay_ms: (70.0, 90.0),
     long_key_ratio: 1.0,
-};
+});
 
 /// A dull tap — a silent-switch mouse, or a trackpad.
-static CLICK_SOFT: Profile = Profile {
+static CLICK_SOFT: Profile = Profile::Impact(Impact {
     mechanism: Mechanism::Mouse,
     excite_tau_ms: 1.4,
     contact_lowpass_hz: 5_000.0,
@@ -308,7 +361,34 @@ static CLICK_SOFT: Profile = Profile {
     release_db: -4.0,
     release_delay_ms: (70.0, 90.0),
     long_key_ratio: 1.0,
-};
+});
+
+/// Not a keyboard at all. A small bubble per letter, a bigger one for the
+/// space bar, and a smaller, higher one as the key comes back up.
+static BUBBLE: Profile = Profile::Bubble(Bubble {
+    hz: 620.0,
+    rise: 0.35,
+    decay_ms: 28.0,
+    attack_ms: 1.5,
+    pop_db: Some(-22.0),
+    release_db: -14.0,
+    release_delay_ms: (70.0, 130.0),
+    release_ratio: 1.5,
+    long_key_ratio: 0.7,
+});
+
+/// The bubble's mouse: a quick, bright pop with a faint tail.
+static CLICK_POP: Profile = Profile::Bubble(Bubble {
+    hz: 900.0,
+    rise: 0.5,
+    decay_ms: 14.0,
+    attack_ms: 0.8,
+    pop_db: Some(-16.0),
+    release_db: -12.0,
+    release_delay_ms: (70.0, 90.0),
+    release_ratio: 1.3,
+    long_key_ratio: 1.0,
+});
 
 #[cfg(test)]
 mod tests {

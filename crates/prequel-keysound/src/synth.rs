@@ -11,7 +11,7 @@
 //! order, so a variant is a pure function of its seed. That is what lets the
 //! preview and the export each render the bank and get the same samples.
 
-use crate::profile::{CueKind, Mechanism, Mode, Profile};
+use crate::profile::{Bubble, CueKind, Impact, Mechanism, Mode, Profile};
 use crate::rng::Rng;
 
 /// A rendered press: mono samples and where the press itself sits in them.
@@ -92,6 +92,32 @@ pub fn render_voice(
     let mut out = vec![0.0f32; ms(MAX_MS)];
     let onset = ms(ONSET_MS);
 
+    match profile {
+        Profile::Impact(impact) => render_impact(impact, kind, &mut out, onset, rate, &mut rng),
+        Profile::Bubble(bubble) => render_bubble(bubble, kind, &mut out, onset, rate, &mut rng),
+    }
+
+    normalise(&mut out);
+    trim(&mut out, onset);
+
+    Voice {
+        samples: out,
+        onset,
+    }
+}
+
+/// A struck body: the touch, the hit and the release, each a burst through
+/// the profile's resonators.
+fn render_impact(
+    profile: &Impact,
+    kind: CueKind,
+    out: &mut [f32],
+    onset: usize,
+    rate: f32,
+    rng: &mut Rng,
+) {
+    let ms = |value: f32| (value * rate / 1_000.0).round() as usize;
+
     // The body is detuned once per variant and then struck several times, so
     // the touch, the hit and the release all ring the same keycap.
     let ratio = if kind.is_long_key() {
@@ -117,7 +143,7 @@ pub fn render_voice(
         Mechanism::Keyboard => {
             let touch_at = onset.saturating_sub(ms(TOUCH_LEAD_MS * rng.around(TIMING_JITTER)));
             strike(
-                &mut out,
+                out,
                 touch_at,
                 db(profile.touch_db),
                 Excite {
@@ -126,7 +152,7 @@ pub fn render_voice(
                 },
                 &body,
                 rate,
-                &mut rng,
+                rng,
             );
 
             if let Some(jacket) = profile.jacket {
@@ -138,7 +164,7 @@ pub fn render_voice(
                     })
                     .collect();
                 strike(
-                    &mut out,
+                    out,
                     onset,
                     db(JACKET_DB),
                     Excite {
@@ -147,18 +173,18 @@ pub fn render_voice(
                     },
                     &jacket,
                     rate,
-                    &mut rng,
+                    rng,
                 );
             }
 
             let hit_at = onset + ms(HIT_DELAY_MS * rng.around(TIMING_JITTER));
-            strike(&mut out, hit_at, 1.0, contact, &body, rate, &mut rng);
+            strike(out, hit_at, 1.0, contact, &body, rate, rng);
 
             if kind.is_long_key() {
                 let (low, high) = STABILISER_DELAY_MS;
                 let tick_at = hit_at + ms(rng.range(low, high));
                 strike(
-                    &mut out,
+                    out,
                     tick_at,
                     db(STABILISER_DB),
                     Excite {
@@ -167,7 +193,7 @@ pub fn render_voice(
                     },
                     &body,
                     rate,
-                    &mut rng,
+                    rng,
                 );
             }
 
@@ -184,7 +210,7 @@ pub fn render_voice(
                 });
             }
             strike(
-                &mut out,
+                out,
                 release_at,
                 db(profile.release_db),
                 Excite {
@@ -193,16 +219,16 @@ pub fn render_voice(
                 },
                 &release_body,
                 rate,
-                &mut rng,
+                rng,
             );
         }
         Mechanism::Mouse => {
-            strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
+            strike(out, onset, 1.0, contact, &body, rate, rng);
 
             let (low, high) = profile.release_delay_ms;
             let release_at = onset + ms(rng.range(low, high));
             strike(
-                &mut out,
+                out,
                 release_at,
                 db(profile.release_db),
                 Excite {
@@ -211,17 +237,112 @@ pub fn render_voice(
                 },
                 &body,
                 rate,
-                &mut rng,
+                rng,
             );
         }
     }
+}
 
-    normalise(&mut out);
-    trim(&mut out, onset);
+/// A bubble: a rising sine at the press, a smaller one at the release.
+fn render_bubble(
+    profile: &Bubble,
+    kind: CueKind,
+    out: &mut [f32],
+    onset: usize,
+    rate: f32,
+    rng: &mut Rng,
+) {
+    let ms = |value: f32| (value * rate / 1_000.0).round() as usize;
 
-    Voice {
-        samples: out,
-        onset,
+    let ratio = if kind.is_long_key() {
+        profile.long_key_ratio
+    } else {
+        1.0
+    };
+    // Wider than an impact's detune: a bubble has no body to stay in tune
+    // with, and a run of them at slightly different pitches is the charm.
+    let hz = profile.hz * ratio * rng.around(BUBBLE_DETUNE);
+    let rise = profile.rise * rng.around(0.25);
+    let decay_ms = profile.decay_ms * rng.around(TAU_SPREAD);
+
+    if let Some(pop_db) = profile.pop_db {
+        pop(out, onset, db(pop_db), rate, rng);
+    }
+    blip(out, onset, 1.0, hz, rise, decay_ms, profile.attack_ms, rate);
+
+    let (low, high) = profile.release_delay_ms;
+    let release_at = onset + ms(rng.range(low, high));
+    blip(
+        out,
+        release_at,
+        db(profile.release_db),
+        hz * profile.release_ratio,
+        rise,
+        decay_ms * 0.7,
+        profile.attack_ms,
+        rate,
+    );
+}
+
+/// Spread on a bubble's pitch per variant.
+const BUBBLE_DETUNE: f32 = 0.08;
+
+/// The pop is over in a moment; softer than any impact's contact.
+const POP_TAU_MS: f32 = 0.6;
+const POP_LOWPASS_HZ: f32 = 4_000.0;
+
+/// Adds a sine that fades as it climbs.
+///
+/// The frequency is integrated sample by sample rather than evaluated from
+/// `t`, so the phase is continuous whatever the sweep — a sine written as
+/// `sin(2π f(t) t)` with a moving `f` chirps far faster than the table says.
+#[allow(clippy::too_many_arguments)]
+fn blip(
+    out: &mut [f32],
+    start: usize,
+    level: f32,
+    hz: f32,
+    rise: f32,
+    decay_ms: f32,
+    attack_ms: f32,
+    rate: f32,
+) {
+    if start >= out.len() {
+        return;
+    }
+    let decay = decay_ms * rate / 1_000.0;
+    let attack = (attack_ms * rate / 1_000.0).max(1.0);
+    // -80 dB, past which the trim would cut it anyway.
+    let run = ((decay * 80.0 / 20.0 * 10f32.ln()) as usize).min(out.len() - start);
+
+    let mut phase = 0.0f32;
+    for (n, sample) in out[start..start + run].iter_mut().enumerate() {
+        let t = n as f32;
+        let frequency = hz * (1.0 + rise * t / decay);
+        phase += 2.0 * std::f32::consts::PI * frequency / rate;
+        let fade = (-t / decay).exp();
+        let onset = if t < attack {
+            0.5 - 0.5 * (std::f32::consts::PI * t / attack).cos()
+        } else {
+            1.0
+        };
+        *sample += level * fade * onset * phase.sin();
+    }
+}
+
+/// A tiny soft click at the onset of a bubble, so it starts on the press.
+fn pop(out: &mut [f32], start: usize, level: f32, rate: f32, rng: &mut Rng) {
+    if start >= out.len() {
+        return;
+    }
+    let tau = POP_TAU_MS * rate / 1_000.0;
+    let run = ((tau * 8.0).ceil() as usize).min(out.len() - start);
+    let lowpass = 1.0 - (-2.0 * std::f32::consts::PI * POP_LOWPASS_HZ / rate).exp();
+    let mut smoothed = 0.0f32;
+    for (n, sample) in out[start..start + run].iter_mut().enumerate() {
+        let white = rng.next_f32() * 2.0 - 1.0;
+        smoothed += lowpass * (white * (-(n as f32) / tau).exp() - smoothed);
+        *sample += level * smoothed;
     }
 }
 
@@ -438,6 +559,38 @@ mod tests {
                 profile.id()
             );
         }
+    }
+
+    #[test]
+    fn a_bubble_rises_in_pitch_as_it_fades() {
+        // The one thing that makes it a bubble rather than a ping. Zero
+        // crossings in the first 8 ms after the onset against the 8 ms
+        // starting 16 ms later: the later window must cross more often.
+        let crossings = |samples: &[f32]| {
+            samples
+                .windows(2)
+                .filter(|pair| (pair[0] >= 0.0) != (pair[1] >= 0.0))
+                .count()
+        };
+        let window = (SAMPLE_RATE as usize * 8) / 1_000;
+        for seed in 0..6 {
+            let voice = render_voice(
+                KeyProfile::Bubble.table(),
+                CueKind::Letter,
+                seed,
+                SAMPLE_RATE,
+            );
+            // Past the pop, which is noise and would count as anything.
+            let early = voice.onset + window / 2;
+            let late = early + 2 * window;
+            let first = crossings(&voice.samples[early..early + window]);
+            let then = crossings(&voice.samples[late..late + window]);
+            assert!(then > first, "seed {seed}: {first} crossings then {then}");
+        }
+        // And the space bar is a bigger bubble.
+        let letter = mean_brightness(KeyProfile::Bubble.table(), CueKind::Letter);
+        let space = mean_brightness(KeyProfile::Bubble.table(), CueKind::Space);
+        assert!(space < letter);
     }
 
     #[test]

@@ -116,10 +116,17 @@ fn writes_an_audition_of_every_profile() {
     std::fs::create_dir_all(&dir).unwrap();
     let soft = Bank::clicks(ClickProfile::Soft);
     let mechanical = Bank::clicks(ClickProfile::Mechanical);
+    let pop = Bank::clicks(ClickProfile::Pop);
     for profile in KeyProfile::ALL {
         let keys = Bank::keys(profile);
         let path = dir.join(format!("{}.wav", profile.id()));
-        write_wav(&path, &render(&keys, &soft));
+        // The bubble with its own mouse; every real keyboard with the soft one.
+        let clicks = if profile == KeyProfile::Bubble {
+            &pop
+        } else {
+            &soft
+        };
+        write_wav(&path, &render(&keys, clicks));
         eprintln!("wrote {}", path.display());
     }
     let path = dir.join("clicks-mechanical.wav");
