@@ -6,6 +6,8 @@ import {
   TELEPROMPTER_LINES,
   TELEPROMPTER_PADDING,
   TELEPROMPTER_SIZES,
+  TELEPROMPTER_WIDTHS,
+  teleprompterHeight,
   type TeleprompterMode,
   type TeleprompterPosition,
   type TeleprompterState,
@@ -43,6 +45,15 @@ const EAR = 14;
 
 /** Width the text leaves free on the right for the edit and close buttons. */
 const CLOSE_ROOM = 50;
+
+/**
+ * How long the island takes to change width or size, in milliseconds.
+ *
+ * The window behind it is already the largest it can be, so the change is a
+ * CSS transition rather than a window resize — see `bounds()` in main. The
+ * same curve and length as the slide-in, so the two read as one material.
+ */
+const RESHAPE_MS = 260;
 
 /**
  * The island.
@@ -164,11 +175,14 @@ export function Teleprompter() {
 
   // A new script, a new size, or a fresh island — the enter animation remounts
   // it, which resets every word to unread — re-lays everything out from the
-  // position held.
+  // position held. A new width reflows the lines too, over the length of the
+  // transition; the layout is redone at its start and again when it ends,
+  // which is where the reading line matters.
+  const islandWidth = TELEPROMPTER_WIDTHS[preferences.teleprompterWidth];
   useEffect(() => {
     paint(position.current);
     layout();
-  }, [words, paint, layout, motion.count]);
+  }, [words, paint, layout, motion.count, islandWidth]);
 
   /**
    * Scrolling by hand.
@@ -220,16 +234,29 @@ export function Teleprompter() {
       <div
         key={motion.count}
         className={cn(
-          "absolute inset-x-(--panel-inset) bottom-(--panel-inset) flex flex-col overflow-visible",
+          "absolute inset-x-0 mx-auto flex flex-col overflow-visible",
           // The same shadow as the dock, for the same margin: it is cast into
           // `PANEL_INSET` of transparent window, and one that reaches further
           // than that is sliced off at the window's edge in a hard line.
           "bg-prompter-bg text-prompter-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]",
           notch ? "top-0 rounded-b-[22px]" : "top-(--panel-inset) rounded-[18px]",
           motion.phase === "in" ? "animate-island-in" : "animate-island-out",
-          "motion-reduce:animate-none",
+          "motion-reduce:animate-none motion-reduce:transition-none",
         )}
-        style={{ "--ear": `${String(EAR)}px` } as React.CSSProperties}
+        style={
+          {
+            "--ear": `${String(EAR)}px`,
+            // Its own width and height, centred in a window built for the
+            // largest, so a change of either is a transition and not a
+            // window resize. Main's hit-test uses the same two numbers.
+            width: islandWidth,
+            height: teleprompterHeight(preferences.teleprompterSize, notch?.height ?? 0),
+            transition: `width ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1), height ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
+          } as React.CSSProperties
+        }
+        onTransitionEnd={(event) => {
+          if (event.target === event.currentTarget) layout();
+        }}
       >
         {notch && (
           <>

@@ -94,6 +94,12 @@ export class TeleprompterWindow {
   /** Shows the island, and says what notch it is drawn around. */
   show(): Notch | null {
     const window = this.prepare();
+    // Whether the island is already up. Only a fresh show — or one that
+    // catches an exit on its way out — is announced to the renderer: the
+    // announcement restarts the slide-in, and `sync` calls this for every
+    // change of width, size or display, which used to replay the entrance
+    // each time a width was picked.
+    const wasUp = this.isVisible;
     if (this.exit) {
       clearTimeout(this.exit);
       this.exit = null;
@@ -117,7 +123,7 @@ export class TeleprompterWindow {
     // `showInactive`: the island must never take focus from what is being recorded.
     window.showInactive();
     // After the window is up, so the slide down is seen from its first frame.
-    window.webContents.send(IPC_CHANNELS.teleprompterVisible, true);
+    if (!wasUp) window.webContents.send(IPC_CHANNELS.teleprompterVisible, true);
     this.stopWatchingCursor ??= watchCursor(window, (bounds, point) =>
       this.overIsland(bounds, point),
     );
@@ -150,13 +156,11 @@ export class TeleprompterWindow {
     );
   }
 
-  /** Re-lays the island out for a new text size, width or display. */
+  /** Notes a new text size, width or display; `show` re-places the window. */
   setShape(size: TeleprompterSize, width: TeleprompterWidth, display: string | null): void {
-    if (this.size === size && this.width === width && this.chosen === display) return;
     this.size = size;
     this.width = width;
     this.chosen = display;
-    if (this.isVisible) this.window!.setBounds(this.bounds());
   }
 
   browserWindow(): BrowserWindow | null {
@@ -173,19 +177,26 @@ export class TeleprompterWindow {
   }
 
   /**
-   * Where the island goes, and how big it is.
+   * Where the window goes, and how big it is.
    *
    * Also decides `notch`, since both depend on the same display. The window
    * carries `PANEL_INSET` of transparent margin for the CSS shadow on the
    * sides and the bottom; on a notch display the top is flush with the screen
    * edge, because the island is meant to read as part of the bezel.
+   *
+   * Sized for the *widest and tallest* island, whatever is chosen. The island
+   * draws itself at the chosen width and size inside, centred, and eases
+   * between them in CSS — a window resized to fit would snap, and a window
+   * resized with AppKit's animation reflows the web contents on every frame
+   * of it. The extra transparent margin costs nothing: the window is
+   * click-through everywhere the island is not — see `overIsland`.
    */
   private bounds(): Rectangle {
     const display = this.display();
     this.notch = this.notchOf(display);
 
-    const width = TELEPROMPTER_WIDTHS[this.width] + PANEL_INSET * 2;
-    const island = teleprompterHeight(this.size, this.notch?.height ?? 0);
+    const width = TELEPROMPTER_WIDTHS.wide + PANEL_INSET * 2;
+    const island = teleprompterHeight("large", this.notch?.height ?? 0);
     const top = this.notch ? 0 : PANEL_INSET;
 
     return {
@@ -225,14 +236,22 @@ export class TeleprompterWindow {
     return menuBar > CLASSIC_MENU_BAR ? { height: menuBar, width: ASSUMED_NOTCH_WIDTH } : null;
   }
 
-  /** Whether a point is over the island, not merely the window. */
+  /**
+   * Whether a point is over the island, not merely the window.
+   *
+   * The island is the chosen width and size, centred in a window built for
+   * the largest; the window's own edges say nothing about where it is.
+   */
   private overIsland(bounds: Rectangle, point: { x: number; y: number }): boolean {
     const top = this.notch ? 0 : PANEL_INSET;
+    const width = TELEPROMPTER_WIDTHS[this.width];
+    const height = teleprompterHeight(this.size, this.notch?.height ?? 0);
+    const left = bounds.x + (bounds.width - width) / 2;
     return (
-      point.x >= bounds.x + PANEL_INSET &&
-      point.x < bounds.x + bounds.width - PANEL_INSET &&
+      point.x >= left &&
+      point.x < left + width &&
       point.y >= bounds.y + top &&
-      point.y < bounds.y + bounds.height - PANEL_INSET
+      point.y < bounds.y + top + height
     );
   }
 }
