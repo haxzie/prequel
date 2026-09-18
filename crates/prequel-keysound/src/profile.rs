@@ -89,6 +89,10 @@ pub enum Mechanism {
     Keyboard,
     /// Press and release, nothing else. A microswitch has no travel to speak of.
     Mouse,
+    /// One strike and nothing else: glass has no travel and no release, and a
+    /// phone plays one sound per key. No stabiliser tick on long keys either;
+    /// a long key is only a slightly lower strike.
+    Tap,
 }
 
 /// The table for one keyboard or mouse.
@@ -130,14 +134,16 @@ pub enum KeyProfile {
     Tactile,
     Clicky,
     Thock,
+    Phone,
 }
 
 impl KeyProfile {
-    pub const ALL: [KeyProfile; 4] = [
+    pub const ALL: [KeyProfile; 5] = [
         KeyProfile::Linear,
         KeyProfile::Tactile,
         KeyProfile::Clicky,
         KeyProfile::Thock,
+        KeyProfile::Phone,
     ];
 
     /// The id a project stores and the napi boundary carries.
@@ -147,6 +153,7 @@ impl KeyProfile {
             KeyProfile::Tactile => "tactile",
             KeyProfile::Clicky => "clicky",
             KeyProfile::Thock => "thock",
+            KeyProfile::Phone => "phone",
         }
     }
 
@@ -160,6 +167,7 @@ impl KeyProfile {
             KeyProfile::Tactile => &TACTILE,
             KeyProfile::Clicky => &CLICKY,
             KeyProfile::Thock => &THOCK,
+            KeyProfile::Phone => &PHONE,
         }
     }
 }
@@ -276,6 +284,37 @@ static THOCK: Profile = Profile {
     release_db: -9.0,
     release_delay_ms: (60.0, 140.0),
     long_key_ratio: 0.75,
+};
+
+/// The iPhone's keyboard click: a woody tock from a small speaker.
+///
+/// Fitted to a recording of the real thing, which is the same sample every
+/// press: energy at 2.05 kHz, with 1.85 kHz 3 dB under it, 2.7 kHz 5 dB,
+/// 3.3 kHz 4 dB and 3.95 kHz 8 dB under, almost nothing below 1 kHz, and a
+/// decay of 20 dB in 6 ms, 40 dB in 21 ms and 60 dB in about 55 ms. The
+/// gains below are set for those *energy* ratios — a mode's energy over the
+/// strike goes as gain² × T60, not as gain — which is why the long-ringing
+/// low pair sits at less than the peak. One strike, no touch and no release:
+/// glass does none of that. Delete and the space bar are a shade lower, which
+/// is roughly how iOS tells them apart.
+static PHONE: Profile = Profile {
+    mechanism: Mechanism::Tap,
+    excite_tau_ms: 0.8,
+    contact_lowpass_hz: 6_000.0,
+    modes: &[
+        mode(1_000.0, 12.0, 0.2),
+        mode(1_850.0, 28.0, 0.75),
+        mode(2_050.0, 28.0, 1.0),
+        mode(2_700.0, 26.0, 0.9),
+        mode(3_300.0, 26.0, 0.85),
+        mode(3_950.0, 24.0, 0.6),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: 0.0,
+    release_delay_ms: (0.0, 0.0),
+    long_key_ratio: 0.88,
 };
 
 /// A crisp microswitch under a hard shell.

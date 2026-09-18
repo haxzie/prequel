@@ -196,6 +196,9 @@ pub fn render_voice(
                 &mut rng,
             );
         }
+        Mechanism::Tap => {
+            strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
+        }
         Mechanism::Mouse => {
             strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
 
@@ -452,5 +455,43 @@ mod tests {
 
         let mouse = render_voice(ClickProfile::Soft.table(), CueKind::Click, 1, SAMPLE_RATE);
         assert_eq!(energy(&mouse.samples[..mouse.onset]), 0.0);
+
+        // And a phone is one strike: nothing before, and nothing after the
+        // strike has died — no release 60 ms on.
+        let phone = render_voice(KeyProfile::Phone.table(), CueKind::Letter, 1, SAMPLE_RATE);
+        assert_eq!(energy(&phone.samples[..phone.onset]), 0.0);
+        assert!(phone.samples.len() < phone.onset + (SAMPLE_RATE as usize * 60) / 1_000);
+    }
+
+    #[test]
+    fn the_phone_sounds_where_the_recording_did() {
+        // The fingerprint the table was fitted to: a centroid in the low
+        // 2 kHz range — the measured band ratios put it near 2.35 kHz — and
+        // 40 dB down within about 25 ms. Wide bands, because the point is
+        // that tuning does not drift it into a clack or a thud.
+        for seed in 0..6 {
+            let voice = render_voice(
+                KeyProfile::Phone.table(),
+                CueKind::Letter,
+                seed,
+                SAMPLE_RATE,
+            );
+            let centroid = brightness(&voice);
+            assert!(
+                (2_000.0..2_900.0).contains(&centroid),
+                "seed {seed}: {centroid} Hz"
+            );
+
+            let peak = voice.samples.iter().fold(0.0f32, |p, s| p.max(s.abs()));
+            let at_25ms = voice.onset + (SAMPLE_RATE as usize * 25) / 1_000;
+            let after: f32 = voice.samples[at_25ms..]
+                .iter()
+                .fold(0.0f32, |p, s| p.max(s.abs()));
+            assert!(
+                after < peak * 0.02,
+                "seed {seed}: {} of peak after 25 ms",
+                after / peak
+            );
+        }
     }
 }

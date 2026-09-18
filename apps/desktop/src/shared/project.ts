@@ -383,6 +383,9 @@ export const KEY_SOUNDS = [
   { id: "linear", label: "Linear" },
   { id: "clicky", label: "Clicky" },
   { id: "thock", label: "Thock" },
+  // Not a mechanical keyboard: the iPhone's own click, fitted to a recording
+  // of it. Last, after the four that are.
+  { id: "phone", label: "iPhone" },
 ] as const;
 
 export const CLICK_SOUNDS = [
