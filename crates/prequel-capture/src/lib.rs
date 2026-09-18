@@ -15,7 +15,7 @@ mod targets;
 mod typing;
 mod wallpaper;
 
-pub use clicks::ClickSample;
+pub use clicks::{ClickSample, KeyClass, KeyPress, KeySpan};
 pub use cursor::CursorSample;
 pub use error::{Error, Result};
 pub use permission::{PermissionStatus, request_screen_access, screen_access_status};

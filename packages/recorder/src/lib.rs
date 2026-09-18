@@ -216,8 +216,8 @@ fn write_manifest(
         },
         tracks,
         cursor_baked: plan.cursor_baked,
-        // Buttons only, never keys — the editor's automatic zooms are built
-        // from when and where, not from what.
+        // Buttons and where — the editor's automatic zooms are built from when
+        // and where, not from what.
         clicks: screen
             .map(|s| s.clicks.as_slice())
             .unwrap_or_default()
@@ -228,9 +228,8 @@ fn write_manifest(
                 y: click.y,
             })
             .collect(),
-        // When typing was happening, to the nearest tenth of a second and no
-        // finer — never a key, and never enough timing to infer one. The editor
-        // hides the pointer through these and nothing else reads them.
+        // When typing was happening, to the nearest tenth of a second. The
+        // editor hides the pointer through these.
         keys: screen
             .map(|s| s.keys.as_slice())
             .unwrap_or_default()
@@ -240,6 +239,10 @@ fn write_manifest(
                 end: span.end,
             })
             .collect(),
+        // Each press as a moment and a class, for the editor's typing sounds.
+        // The same type on both sides of the crate boundary, so it passes
+        // straight through; empty when the switch was off.
+        key_presses: screen.map(|s| s.key_presses.clone()).unwrap_or_default(),
         // Bounds of whatever field had keyboard focus, never a keystroke.
         // Empty without the Accessibility grant.
         typing: screen
@@ -586,6 +589,12 @@ pub struct RecordRequest {
     /// that works. Read them from `BrowserWindow.getMediaSourceId()`, which
     /// returns `"window:<id>:0"`.
     pub excluded_window_ids: Option<Vec<u32>>,
+    /// Keep the moment and the class of each key press, for typing sounds.
+    ///
+    /// Defaults to true. What is and is not kept is spelled out on
+    /// `prequel-capture`'s `clicks.rs`; the typing spans that hide the pointer
+    /// are recorded whatever this says.
+    pub capture_keys: Option<bool>,
 }
 
 #[napi(object)]
@@ -696,6 +705,7 @@ impl Task for StartRecording {
         options.capture_system_audio = request.system_audio.unwrap_or(false);
         options.capture_microphone = request.microphone.unwrap_or(false);
         options.excluded_windows = request.excluded_window_ids.clone().unwrap_or_default();
+        options.capture_keys = request.capture_keys.unwrap_or(true);
 
         // One clock, handed to both pipelines. Two clocks would produce two
         // files that cannot be lined up, which is the entire failure mode

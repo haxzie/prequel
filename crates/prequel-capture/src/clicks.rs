@@ -1,16 +1,27 @@
-//! Where the pointer was pressed, sampled alongside the video.
+//! Where the pointer was pressed, and when a key was, sampled alongside the
+//! video.
 //!
 //! A click is the strongest signal a screen recording gives about what mattered
 //! and when — far stronger than where the pointer merely was, which is mostly
-//! travel. It is what the editor's automatic zooms are built from.
+//! travel. It is what the editor's automatic zooms are built from. A key press
+//! is what its typing sounds are built from.
 //!
-//! **Buttons only.** A listen-only tap on mouse-down carries no key codes and
-//! no modifiers, and nothing here reads what was pressed beyond *that* it was
-//! and where. A keyboard tap would be a different thing entirely — and would
-//! need Input Monitoring, which this does not.
+//! **What is kept of a key, and what is not.** A press is recorded as a moment
+//! and one of five coarse classes — a letter, the space bar, Return, Delete, a
+//! modifier — and nothing else. The key code is read off the event only to
+//! pick the class and is not stored; the character is never read at all; and
+//! key-*up* is not in the tap's mask, because how long a key is held is as
+//! personal as a signature and no sound needs it. Presses are kept only while
+//! the switch in Settings is on. Typing spans — the coarse record the pointer
+//! hides behind — are kept regardless, from the same events.
+//!
+//! Passwords never arrive. macOS turns on Secure Event Input while a secure
+//! text field has focus, and withholds keyboard events from every event tap in
+//! the system for the duration — which is also why the sound simply stops
+//! there, as a viewer would expect it to.
 //!
 //! Raw `extern "C"`, matching `cursor.rs` and `typing.rs`: cidre binds none of
-//! Quartz's event API, and this needs six functions.
+//! Quartz's event API, and this needs seven functions.
 //!
 //! The tap runs its own run loop on its own thread. An event tap is delivered
 //! by the window server into a run loop source, so there has to be a run loop
@@ -19,10 +30,11 @@
 
 use std::ffi::c_void;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 
 use prequel_encode::host_now;
 use prequel_session::MediaTime;
+pub use prequel_session::{KeyClass, KeyPress};
 
 use crate::cursor::Region;
 
@@ -47,17 +59,33 @@ struct RawClick {
 
 /// A stretch of the recording somebody was typing through.
 ///
-/// A span rather than the keystrokes it was made of, and that is the whole
-/// design. What every layer of this manifest promises is that a recording never
-/// carries what was typed, and per-keystroke timing is a weaker promise than it
-/// sounds: the gaps between presses are enough to narrow down what the presses
-/// were. Coalesced and rounded here, at the point of capture, so the finer
-/// timing never reaches a file at all — what survives is "typing, from about
-/// here to about here", which is exactly what hiding the pointer needs.
+/// A span rather than the keystrokes it was made of. This is the coarse record
+/// — "typing, from about here to about here" — and it is what hiding the
+/// pointer needs, so it is built from every key-down whether or not presses
+/// are being kept. Coalesced and rounded here, at the point of capture, so a
+/// recording made with presses switched off carries nothing finer than this.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KeySpan {
     pub start: MediaTime,
     pub end: MediaTime,
+}
+
+/// Both records of the keyboard, drained together. See `key_tracks`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct KeyTracks {
+    pub spans: Vec<KeySpan>,
+    pub presses: Vec<KeyPress>,
+}
+
+/// One key-down as the tap saw it: host time, and which kind of key.
+///
+/// The class and never the code. `on_event` reads the code, classifies it and
+/// drops it in the same expression, so a key code exists for as long as it
+/// takes to compare against a dozen constants.
+#[derive(Debug, Clone, Copy)]
+struct RawKey {
+    host: u64,
+    class: KeyClass,
 }
 
 /// Longest quiet stretch inside one span.
@@ -87,12 +115,18 @@ const KEYS_PER_SPAN: usize = 3;
 /// callback that outlives the frame it was created in.
 static CLICKS: Mutex<Vec<RawClick>> = Mutex::new(Vec::new());
 
-/// Host times of key presses since the tap started.
+/// Key presses since the tap started: a host time and a class each.
 ///
-/// Times and nothing else — no key code, no modifiers, and never the character.
-/// Even these do not outlive the recording: `key_spans` coalesces them on the
-/// way out and only the spans are written.
-static KEYS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// Every key-down lands here, because the spans need all of them. Whether the
+/// presses themselves leave this buffer as anything but spans is `KEEP_PRESSES`.
+static KEYS: Mutex<Vec<RawKey>> = Mutex::new(Vec::new());
+
+/// Whether `key_tracks` hands back the presses, or only the spans.
+///
+/// The switch in Settings. Checked on the way *out* rather than in the
+/// callback, so the callback does the same work whatever the setting and
+/// timing between the two paths cannot differ.
+static KEEP_PRESSES: AtomicBool = AtomicBool::new(true);
 
 /// The tap thread's run loop, so it can be stopped from the outside.
 static RUN_LOOP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -120,6 +154,9 @@ static DISABLES: AtomicU32 = AtomicU32::new(0);
 
 /// Starts listening for presses. Returns false if the tap could not be made.
 ///
+/// `capture_keys` is whether individual key presses are kept — see
+/// `KEEP_PRESSES`. Typing spans are kept either way.
+///
 /// **A successful return does not mean presses will arrive.** `CGEventTapCreate`
 /// hands back a working tap to a process that has not been permitted to observe
 /// input, and that tap then receives only events aimed at this process — which
@@ -130,13 +167,14 @@ static DISABLES: AtomicU32 = AtomicU32::new(0);
 /// counter in `stop` is what makes the difference visible: a recording whose
 /// `pressed` count is far below what the user actually did has not lost the
 /// presses, it never saw them.
-pub fn start() -> bool {
+pub fn start(capture_keys: bool) -> bool {
     if let Ok(mut clicks) = CLICKS.lock() {
         clicks.clear();
     }
     if let Ok(mut keys) = KEYS.lock() {
         keys.clear();
     }
+    KEEP_PRESSES.store(capture_keys, Ordering::Relaxed);
     DISABLES.store(0, Ordering::Relaxed);
 
     let (started, ready) = std::sync::mpsc::channel();
@@ -233,31 +271,86 @@ pub fn stop(region: Region, to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<
     samples
 }
 
-/// Stretches of the recording somebody was typing through, on the session
-/// timeline.
+/// What the keyboard did, on the session timeline: the typing spans, and the
+/// presses if they were being kept.
 ///
 /// Drained separately from `stop` rather than returned beside the clicks, so
 /// the two tracks stay two things: one is where the pointer was pressed, and
-/// this one deliberately has no position in it at all.
-pub fn key_spans(to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<KeySpan> {
+/// this one deliberately has no position in it at all. Spans and presses come
+/// out of one drain because they come from one buffer — two draining
+/// functions would each get whatever the other had left, depending on which
+/// was called first.
+pub fn key_tracks(to_media: impl Fn(u64) -> Option<MediaTime>) -> KeyTracks {
     // Drained whatever happens, or the next recording inherits this one's.
     let raw = KEYS
         .lock()
         .map(|mut keys| std::mem::take(&mut *keys))
         .unwrap_or_default();
 
-    let spans = coalesce(&raw, to_media);
-    tracing::info!("captured {} typing spans", spans.len());
+    let hosts: Vec<u64> = raw.iter().map(|key| key.host).collect();
+    let spans = coalesce(&hosts, &to_media);
+    let presses = if KEEP_PRESSES.load(Ordering::Relaxed) {
+        presses(&raw, &to_media)
+    } else {
+        Vec::new()
+    };
+    tracing::info!(
+        "captured {} typing spans, {} key presses",
+        spans.len(),
+        presses.len()
+    );
 
-    spans
+    KeyTracks { spans, presses }
+}
+
+/// Puts raw presses in the recording's terms, in order.
+///
+/// Sorted for the reason `coalesce` sorts: a host time inside a pause is
+/// subtracted from, and two presses either side of one can come out the other
+/// way round.
+fn presses(raw: &[RawKey], to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<KeyPress> {
+    let mut presses: Vec<KeyPress> = raw
+        .iter()
+        .filter_map(|key| {
+            Some(KeyPress {
+                at: to_media(key.host)?,
+                class: key.class,
+            })
+        })
+        .collect();
+    presses.sort_by_key(|press| press.at);
+    presses
+}
+
+/// The class of a key, from its virtual key code.
+///
+/// The codes are the `kVK_*` constants from `Carbon/HIToolbox/Events.h`,
+/// which are positional and the same on every layout — the key to the right
+/// of L is `kVK_ANSI_Semicolon` on an AZERTY board too. Only the keys that
+/// *sound* different are told apart; the letters, digits, punctuation, arrows
+/// and function keys are all one class, which is the point.
+fn classify(keycode: i64) -> KeyClass {
+    match keycode {
+        // kVK_Space
+        49 => KeyClass::Space,
+        // kVK_Return, kVK_ANSI_KeypadEnter
+        36 | 76 => KeyClass::Enter,
+        // kVK_Delete, kVK_ForwardDelete
+        51 | 117 => KeyClass::Backspace,
+        // kVK_RightCommand, kVK_Command, kVK_Shift, kVK_CapsLock, kVK_Option,
+        // kVK_Control, kVK_RightShift, kVK_RightOption, kVK_RightControl,
+        // kVK_Function
+        54..=63 => KeyClass::Modifier,
+        _ => KeyClass::Letter,
+    }
 }
 
 /// Turns key press times into the spans the manifest carries.
 ///
-/// Split out from `key_spans` for the reason `convert` is split out of `stop`,
-/// and tested harder than it looks like it needs to be: this function is the
-/// only thing standing between a recording and a usable record of somebody's
-/// keystroke timing.
+/// Split out from `key_tracks` for the reason `convert` is split out of
+/// `stop`, and tested harder than it looks like it needs to be: for a
+/// recording made with presses switched off, this function is the only thing
+/// standing between it and a usable record of somebody's keystroke timing.
 fn coalesce(raw: &[u64], to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<KeySpan> {
     // A press during a paused stretch belongs to no moment of the recording.
     let mut times: Vec<MediaTime> = raw.iter().filter_map(|host| to_media(*host)).collect();
@@ -356,12 +449,27 @@ extern "C" fn on_event(
         return event;
     }
 
-    // A key, which is recorded as a moment and nothing else. The event is not
-    // read at all — not the code, not the modifiers — so there is nothing here
-    // that could become what somebody typed.
+    // A key: a moment and a class. The code is read to pick the class and
+    // goes no further; the modifier flags and the character are never read.
     if kind == EVENT_KEY_DOWN {
+        // Safety: the event is owned by the caller and only read here.
+        let (repeat, keycode) = unsafe {
+            (
+                CGEventGetIntegerValueField(event, KEYBOARD_EVENT_AUTOREPEAT),
+                CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE),
+            )
+        };
+        // A held key reports itself thirty times a second, and a real board
+        // makes one sound for it. Dropped here rather than de-duplicated
+        // later, because later cannot tell a repeat from fast typing.
+        if repeat != 0 {
+            return event;
+        }
         if let Ok(mut keys) = KEYS.lock() {
-            keys.push(host_now());
+            keys.push(RawKey {
+                host: host_now(),
+                class: classify(keycode),
+            });
         }
         return event;
     }
@@ -402,8 +510,15 @@ const LISTEN_ONLY: u32 = 1;
 const EVENT_LEFT_MOUSE_DOWN: u32 = 1;
 const EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
 /// `kCGEventKeyDown`. Key *up* is deliberately not in the mask: a press is a
-/// moment, and two events per key would only be twice as much to throw away.
+/// moment, and the time until its release is a hold — a measure of the typist,
+/// not of the typing, and nothing here needs it.
 const EVENT_KEY_DOWN: u32 = 10;
+
+/// `kCGKeyboardEventAutorepeat` and `kCGKeyboardEventKeycode`, the two fields
+/// of a keyboard event this reads. The flags field, which would carry the
+/// modifiers, and the unicode string are deliberately not among them.
+const KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
+const KEYBOARD_EVENT_KEYCODE: u32 = 9;
 
 /// `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput`.
 ///
@@ -424,6 +539,7 @@ unsafe extern "C" {
     ) -> *const c_void;
     fn CGEventTapEnable(tap: *const c_void, enable: bool);
     fn CGEventGetLocation(event: *const c_void) -> CGPoint;
+    fn CGEventGetIntegerValueField(event: *const c_void, field: u32) -> i64;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -494,6 +610,57 @@ mod tests {
     #[test]
     fn stopping_without_starting_is_harmless() {
         assert_eq!(stop(REGION, |_| Some(0)), vec![]);
+        assert_eq!(key_tracks(|_| Some(0)), KeyTracks::default());
+    }
+
+    #[test]
+    fn only_the_keys_that_sound_different_are_told_apart() {
+        assert_eq!(classify(49), KeyClass::Space);
+        assert_eq!(classify(36), KeyClass::Enter);
+        assert_eq!(classify(76), KeyClass::Enter);
+        assert_eq!(classify(51), KeyClass::Backspace);
+        assert_eq!(classify(117), KeyClass::Backspace);
+        for modifier in [54, 55, 56, 57, 58, 59, 60, 61, 62, 63] {
+            assert_eq!(classify(modifier), KeyClass::Modifier);
+        }
+        // A, the digit 1, Tab, Escape, the left arrow, F5: all one class. Told
+        // apart they would spell things.
+        for letter in [0, 18, 48, 53, 123, 96] {
+            assert_eq!(classify(letter), KeyClass::Letter);
+        }
+    }
+
+    #[test]
+    fn presses_come_out_in_order_and_never_from_a_pause() {
+        let raw = [
+            RawKey {
+                host: 300,
+                class: KeyClass::Letter,
+            },
+            RawKey {
+                host: 100,
+                class: KeyClass::Space,
+            },
+            RawKey {
+                host: 200,
+                class: KeyClass::Letter,
+            },
+        ];
+        // 200 falls in a pause: it happened, but not in the recording.
+        let kept = presses(&raw, |host| (host != 200).then_some(host * 2));
+        assert_eq!(
+            kept,
+            vec![
+                KeyPress {
+                    at: 200,
+                    class: KeyClass::Space
+                },
+                KeyPress {
+                    at: 600,
+                    class: KeyClass::Letter
+                },
+            ]
+        );
     }
 
     /// Presses at these moments, in milliseconds, through an identity clock.

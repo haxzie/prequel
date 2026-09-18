@@ -19,7 +19,7 @@ use prequel_encode::{
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
-use crate::clicks::{ClickSample, KeySpan};
+use crate::clicks::{ClickSample, KeyPress, KeySpan};
 use crate::cursor::{CursorSample, CursorTrack, Region};
 use crate::error::{Error, Result};
 use crate::targets::{Bounds, Target, TargetKind};
@@ -67,6 +67,10 @@ pub struct RecordOptions {
     /// current macOS. Because we build the filter ourselves, excluding by
     /// window id is ours to get right.
     pub excluded_windows: Vec<u32>,
+    /// Keep the moment and the class of each key press — see `clicks.rs` for
+    /// exactly what that is and is not. The editor's typing sounds need it;
+    /// the typing spans that hide the pointer are kept either way.
+    pub capture_keys: bool,
 }
 
 impl RecordOptions {
@@ -81,6 +85,7 @@ impl RecordOptions {
             capture_system_audio: false,
             capture_microphone: false,
             excluded_windows: Vec::new(),
+            capture_keys: true,
         }
     }
 }
@@ -127,6 +132,9 @@ pub struct RecordingSummary {
     /// Stretches somebody was typing through — no key, no count, no fine
     /// timing. See `clicks::KeySpan`.
     pub keys: Vec<KeySpan>,
+    /// Each key press, as a moment and a coarse class. Empty when
+    /// `RecordOptions::capture_keys` was off. See `clicks.rs`.
+    pub key_presses: Vec<KeyPress>,
     /// The recorded window's corner radius, in pixels of the frame.
     ///
     /// Only for a window capture, and only when it could be read — see
@@ -497,7 +505,7 @@ impl ScreenRecorder {
 
         // A tap that cannot be made is logged and the recording carries on
         // without clicks.
-        if !crate::clicks::start() {
+        if !crate::clicks::start(options.capture_keys) {
             tracing::warn!("could not tap mouse events; no clicks will be recorded");
         } else if !crate::accessibility_trusted() {
             // The tap exists and will still deliver nothing worth having. Said
@@ -648,6 +656,8 @@ impl ScreenRecorder {
         let microphone = finish_audio(microphone)?;
         drop(self.queue);
 
+        let keyboard = crate::clicks::key_tracks(|host| self.clock.media_time(host).ok());
+
         Ok(RecordingSummary {
             frames: summary.frames,
             duration: summary.duration(),
@@ -671,7 +681,8 @@ impl ScreenRecorder {
                 })
                 .unwrap_or_default(),
             clicks: crate::clicks::stop(self.sampled, |host| self.clock.media_time(host).ok()),
-            keys: crate::clicks::key_spans(|host| self.clock.media_time(host).ok()),
+            keys: keyboard.spans,
+            key_presses: keyboard.presses,
             typing: self
                 .typing
                 .lock()

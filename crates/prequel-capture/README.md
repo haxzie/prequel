@@ -22,7 +22,7 @@ against, which is what makes the four files reassemblable afterwards.
 
 ## The sample tracks
 
-Three things are sampled alongside the video and end up in `session.json`
+Five things are sampled alongside the video and end up in `session.json`
 rather than burnt into a frame.
 
 **`cursor`** — where the pointer was, as fractions of the captured frame. The
@@ -31,9 +31,20 @@ size, style and visibility stay editable and a zoom can follow it.
 
 **`clicks`** — where it was pressed. The strongest signal a screen recording
 gives about what mattered and when, and what the editor's automatic zooms are
-built from. A listen-only CGEventTap on mouse-down only: it carries no key
-codes and no modifiers, and **needs no permission at all**, unlike a keyboard
-tap, which would need Input Monitoring.
+built from. A listen-only CGEventTap on mouse-down and key-down. The tap can be
+*made* without any grant, but then receives only events aimed at Prequel
+itself — which during a recording is almost none of them — so it needs the
+Accessibility grant to see anything, and says so in the log when it does not.
+
+**`keys`** and **`key_presses`** — the same tap, on key-down. `keys` is the
+coarse record: stretches of typing, rounded to a tenth of a second, with runs
+of fewer than three presses left out; the editor hides the pointer through
+these. `key_presses` is the moment of each press and one of five classes —
+letter, space, enter, backspace, modifier — and nothing else: the key code is
+read only to pick the class and is not kept, the character is never read, and
+key-up is not in the mask. It is what the editor's typing sounds are made from,
+and it is kept only while the switch in Settings is on. macOS withholds key
+events from every tap while a password field has focus, so those never arrive.
 
 The tap runs its own run loop on its own thread. An event tap is delivered by
 the window server into a run loop source, so there has to be a run loop for it

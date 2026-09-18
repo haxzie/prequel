@@ -192,7 +192,10 @@ fn failed(code: &str, message: &str) -> TranscribeUpdate {
 struct Words<'a>(&'a [prequel_speech::Word]);
 
 impl serde::Serialize for Words<'_> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         use serde::ser::SerializeSeq;
 
         let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
