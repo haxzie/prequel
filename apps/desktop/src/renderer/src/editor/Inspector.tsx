@@ -2566,8 +2566,7 @@ function AudioPanel({
       {hasSounds && (
         <Section title="Sounds">
           <p className="text-[11px] leading-relaxed text-editor-muted">
-            Made from the moments you typed and clicked, in the keyboard you choose. Nothing was
-            recorded from a microphone for these.
+            Typing and clicks, played back in the keyboard you choose.
           </p>
           <Field icon={<CommandIcon />} label="Keyboard" {...field("audio", "keySound")}>
             <Dropdown
