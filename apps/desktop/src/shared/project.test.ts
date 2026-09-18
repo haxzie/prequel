@@ -289,9 +289,9 @@ describe("sanitiseProject", () => {
     );
   });
 
-  it("keeps sounds off in projects written before they existed, and on in new ones", () => {
+  it("keeps sounds off in projects written before they existed, and clicks on in new ones", () => {
     const fresh = sanitiseProject(stored(), RECORDING, 10 * S)!.defaults.audio;
-    expect(fresh.keySound).not.toBe("off");
+    expect(fresh.keySound).toBe("off");
     expect(fresh.clickSound).not.toBe("off");
 
     const project = stored() as { defaults: { audio: Record<string, unknown> } };

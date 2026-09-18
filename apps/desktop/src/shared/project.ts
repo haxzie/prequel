@@ -1205,11 +1205,12 @@ export const DEFAULT_AUDIO: AudioSettings = {
   micMuted: false,
   systemVolume: 1,
   systemMuted: false,
-  // On for a new project, and the quietest of the four: a recording that
-  // opens with its typing audible shows the feature exists, and a tactile at
-  // 60 % sits under a voice rather than over it. Projects saved before the
-  // field existed stay silent — see `beforeSounds`.
-  keySound: "tactile",
+  // Clicks on, typing off, for a new project. A click sound is a small thing
+  // under a voice and shows the feature exists; a whole take of typing is a
+  // choice of keyboard nobody has made yet, so it waits to be chosen. The
+  // volume is kept at the level the switch will want when it is. Projects
+  // saved before the fields existed stay silent — see `beforeSounds`.
+  keySound: SOUND_OFF,
   keySoundVolume: 0.6,
   clickSound: "soft",
   clickSoundVolume: 0.5,
