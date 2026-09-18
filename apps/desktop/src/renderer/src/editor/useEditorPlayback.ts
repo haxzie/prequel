@@ -192,6 +192,15 @@ export function useEditorPlayback(
   const metrics = useRef({ content: 0, view: 0 });
   /** Where the last tick landed in source time, so a jump can be told from playing on. */
   const lastSource = useRef<MediaTime | null>(null);
+  /**
+   * Where the last tick landed in *project* time, for the sounds.
+   *
+   * A different question from `lastSource`'s. A cut that drops footage is a
+   * jump in source time — the decoder has to seek — but the edit plays
+   * straight through it, and the sounds armed past the cut are exactly where
+   * they should be. Only a move of the playhead itself throws them away.
+   */
+  const lastProject = useRef<MediaTime | null>(null);
   /** Project time the pointer is over, or null. See `setHover`. */
   const hover = useRef<MediaTime | null>(null);
 
@@ -283,6 +292,8 @@ export function useEditorPlayback(
       // that need no seek at all — see `hasJumped`.
       const jumped = hasJumped(lastSource.current, source);
       lastSource.current = source;
+      const projectJumped = hasJumped(lastProject.current, at);
+      lastProject.current = at;
 
       const nowVisible = new Set<TrackKind>();
 
@@ -303,7 +314,7 @@ export function useEditorPlayback(
         projectNow: at,
         contextNow: mixer.currentTime,
         playing: playback.isPlaying,
-        jumped,
+        jumped: projectJumped,
         placed,
         cues,
         lookaheadNs: SOUND_LOOKAHEAD_NS,
