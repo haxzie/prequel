@@ -4,6 +4,7 @@ import {
   DOCK_HEADROOM,
   PANEL_HEIGHT,
   PANEL_INSET,
+  TELEPROMPTER_TOP_GAP,
   TELEPROMPTER_WIDTHS,
   teleprompterHeight,
 } from "../src/shared/contract";
@@ -72,7 +73,10 @@ function Index() {
  * at the browser's size would show a shape the app never has.
  */
 const WINDOW: Record<
-  Exclude<ShotFrameKind, "dock" | "dock-transparent" | "bare" | "island" | "island-narrow">,
+  Exclude<
+    ShotFrameKind,
+    "dock" | "dock-transparent" | "bare" | "island" | "island-narrow" | "island-plain"
+  >,
   { width: number; height: number }
 > = {
   workspace: { width: 1280, height: 820 },
@@ -116,29 +120,40 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
 
   const wallpaper = { backgroundImage: `url(${assetUrl("monterey.jpg")})` };
 
-  if (kind === "island" || kind === "island-narrow") {
-    // The top of a 14" MacBook Pro display: the wallpaper, the menu bar's
-    // band, and the notch cut out of the top edge — the bezel the island is
-    // drawn to merge with. The column is the island's window, as main sizes
-    // it: the panel plus its inset on the sides and the bottom, flush at the
-    // top.
-    const notch = { height: 37, width: 200 };
+  if (kind === "island" || kind === "island-narrow" || kind === "island-plain") {
+    // The top of a display: the wallpaper and the menu bar's band. For the
+    // two notch kinds, a 14" MacBook Pro's notch cut out of the top edge — the
+    // bezel the island is drawn to merge with; for the plain kind, a display
+    // with no notch and a 24pt menu bar, where the island hangs a gap below
+    // it. The column is the island's window, as main sizes it: the panel plus
+    // its inset on the sides and the bottom, and on the top only when there is
+    // no notch to be flush with.
+    const plain = kind === "island-plain";
+    const notch = plain ? null : { height: 37, width: 200 };
+    const menuBar = notch?.height ?? 24;
     return (
       <div
         className="relative overflow-hidden bg-cover bg-top"
         style={{ ...wallpaper, width: 900, height: 300 }}
       >
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-[10px] bg-black"
-          style={{ width: notch.width, height: notch.height }}
-        />
+        <div className="absolute inset-x-0 top-0 bg-black/25" style={{ height: menuBar }} />
+        {notch && (
+          <div
+            className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-[10px] bg-black"
+            style={{ width: notch.width, height: notch.height }}
+          />
+        )}
         <div
           data-shot-frame
-          className="absolute top-0 left-1/2 -translate-x-1/2"
+          className="absolute left-1/2 -translate-x-1/2"
           style={{
+            top: notch ? 0 : menuBar + TELEPROMPTER_TOP_GAP - PANEL_INSET,
             width:
               TELEPROMPTER_WIDTHS[kind === "island-narrow" ? "narrow" : "normal"] + PANEL_INSET * 2,
-            height: teleprompterHeight("medium", notch.height) + PANEL_INSET,
+            height:
+              teleprompterHeight("medium", notch?.height ?? 0) +
+              PANEL_INSET +
+              (notch ? 0 : PANEL_INSET),
           }}
         >
           {children}

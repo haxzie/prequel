@@ -138,5 +138,9 @@
   "upgrade-dialog": {
     "width": 460,
     "height": 612
+  },
+  "teleprompter-plain": {
+    "width": 676,
+    "height": 248
   }
 }

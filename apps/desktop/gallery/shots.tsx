@@ -46,6 +46,7 @@ export type ShotFrameKind =
   | "dock-transparent"
   | "island"
   | "island-narrow"
+  | "island-plain"
   | "bare";
 
 /** One thing the capture script does before it takes the picture. */
@@ -154,6 +155,18 @@ export const SHOTS: readonly Shot[] = [
         preferences: { ...base.dock.preferences, teleprompter: true, teleprompterWidth: "narrow" },
       },
       teleprompterPosition: { position: 0, lost: false, level: 0 },
+    })),
+    render: () => <Teleprompter />,
+    steps: [{ kind: "settle", ms: 500 }],
+    clip: "frame",
+    pad: 40,
+  },
+  {
+    id: "teleprompter-plain",
+    frame: "island-plain",
+    install: install((base) => ({
+      dock: { ...base.dock, preferences: { ...base.dock.preferences, teleprompter: true } },
+      teleprompter: { ...base.teleprompter, notch: null },
     })),
     render: () => <Teleprompter />,
     steps: [{ kind: "settle", ms: 500 }],
