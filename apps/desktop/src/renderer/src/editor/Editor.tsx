@@ -237,6 +237,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [session],
   );
 
+  // Off the manifest rather than off `session.sound`: the panel is offered on
+  // the strength of what the recording noted, and a plan that failed to be
+  // made — the addon still loading — is a warning in the log, not a missing
+  // section. The gallery, which has no addon, gets the section the same way.
+  const hasSounds =
+    (session.manifest.key_presses?.length ?? 0) > 0 || (session.manifest.clicks?.length ?? 0) > 0;
+
   // The settings the playhead is currently under, which is not necessarily the
   // ones the inspector is showing — the preview follows the video, the panel
   // follows the selection.
@@ -999,6 +1006,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               dispatch={dispatch}
               present={present}
               hasCursor={session.cursor !== null}
+              hasSounds={hasSounds}
+              onAudition={media.audition}
               captions={transcription}
               editing={editing}
               backgrounds={backgrounds}

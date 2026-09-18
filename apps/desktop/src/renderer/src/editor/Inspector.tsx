@@ -5,8 +5,13 @@ import { cursorStyle } from "../../../shared/contract";
 import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
+  CLICK_SOUNDS,
+  clickSoundId,
   DEFAULT_LAYOUT,
+  KEY_SOUNDS,
+  keySoundId,
   SHAPE_RADIUS,
+  SOUND_OFF,
   overriddenKeys,
   type Background,
   type BackgroundSettings,
@@ -48,6 +53,7 @@ import {
   CircleIcon,
   ClockIcon,
   CloseIcon,
+  CommandIcon,
   CursorIcon,
   CutoutIcon,
   DepthIcon,
@@ -99,6 +105,7 @@ import {
 import {
   ColorField,
   CONTROL_H,
+  Dropdown,
   percent,
   Segmented,
   Slider,
@@ -137,6 +144,17 @@ export interface InspectorProps {
   present: Set<TrackKind>;
   /** Whether the pointer is a layer here, or already part of the picture. */
   hasCursor: boolean;
+  /**
+   * Whether the recording noted any presses or clicks, so there are sounds to
+   * offer. False for a take made with the Keyboard switch off and no clicks,
+   * and for every take made before presses were noted.
+   */
+  hasSounds: boolean;
+  /**
+   * Plays one voice of a profile, so a keyboard can be heard as it is chosen
+   * rather than only once the edit is playing.
+   */
+  onAudition: (bus: "keys" | "clicks", profile: string) => void;
   /** How the transcript is doing, so the captions panel can offer to make one. */
   captions: CaptionsState;
   /** The hosted background catalogue, or the shipped presets as a fallback. */
@@ -445,7 +463,9 @@ export function Inspector(props: InspectorProps) {
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
-    ...(props.present.has("microphone") || props.present.has("system_audio")
+    // Or sounds to synthesise: a silent take with typing in it has an Audio
+    // panel's worth of choices even with no track to fade.
+    ...(props.present.has("microphone") || props.present.has("system_audio") || props.hasSounds
       ? [{ id: "audio" as const, label: "Audio", Icon: AudioIcon }]
       : []),
     ...(props.hasCursor ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }] : []),
@@ -685,7 +705,14 @@ export function Inspector(props: InspectorProps) {
               )}
 
               {active === "audio" && (
-                <AudioPanel settings={settings} present={props.present} field={field} set={set} />
+                <AudioPanel
+                  settings={settings}
+                  present={props.present}
+                  hasSounds={props.hasSounds}
+                  field={field}
+                  set={set}
+                  onAudition={props.onAudition}
+                />
               )}
 
               {active === "cursor" && (
@@ -2424,25 +2451,36 @@ const FRAME_KEYS: (keyof BackgroundSettings)[] = [
 function AudioPanel({
   settings,
   present,
+  hasSounds,
   field,
   set,
+  onAudition,
 }: {
   settings: SliceSettings;
   present: Set<TrackKind>;
+  hasSounds: boolean;
   field: FieldProps;
   set: Setter;
+  onAudition: (bus: "keys" | "clicks", profile: string) => void;
 }) {
   const { audio } = settings;
+  const hasTracks = present.has("microphone") || present.has("system_audio");
 
   // A silent track writes no file and no manifest entry, so its absence is the
   // honest answer to "was the mic on?" — and a fader for it would be a lie.
-  if (!present.has("microphone") && !present.has("system_audio")) {
+  if (!hasTracks && !hasSounds) {
     return (
       <Section>
         <p className="text-[11px] text-editor-muted">This recording has no audio tracks.</p>
       </Section>
     );
   }
+
+  // Stored values pass through the same fallback the preview and the export
+  // use, so a keyboard this build does not know shows as Off rather than as a
+  // blank menu — and a choice made here is always one the addon can render.
+  const keySound = keySoundId(audio.keySound);
+  const clickSound = clickSoundId(audio.clickSound);
 
   // A group per source. The two used to be one list of four, where each row had
   // to name its own track — "Microphone volume" under a switch called
@@ -2493,6 +2531,63 @@ function AudioPanel({
             max={2}
             format={percent}
             onChange={(value) => set("audio", "systemVolume", value)}
+          />
+        </Section>
+      )}
+
+      {hasSounds && (
+        <Section title="Sounds">
+          <p className="text-[11px] leading-relaxed text-editor-muted">
+            Made from the moments you typed and clicked, in the keyboard you choose. Nothing was
+            recorded from a microphone for these.
+          </p>
+          <Field icon={<CommandIcon />} label="Keyboard" {...field("audio", "keySound")}>
+            <Dropdown
+              value={keySound}
+              options={[
+                { value: SOUND_OFF, label: "Off" },
+                ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+              ]}
+              onChange={(value) => {
+                set("audio", "keySound", value);
+                if (value !== SOUND_OFF) onAudition("keys", value);
+              }}
+            />
+          </Field>
+          <Slider
+            icon={<SpeakerIcon />}
+            label="Volume"
+            {...field("audio", "keySoundVolume")}
+            value={audio.keySoundVolume}
+            min={0}
+            max={2}
+            format={percent}
+            disabled={keySound === SOUND_OFF}
+            onChange={(value) => set("audio", "keySoundVolume", value)}
+          />
+          <Field icon={<CursorIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
+            <Dropdown
+              value={clickSound}
+              options={[
+                { value: SOUND_OFF, label: "Off" },
+                ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+              ]}
+              onChange={(value) => {
+                set("audio", "clickSound", value);
+                if (value !== SOUND_OFF) onAudition("clicks", value);
+              }}
+            />
+          </Field>
+          <Slider
+            icon={<SpeakerIcon />}
+            label="Volume"
+            {...field("audio", "clickSoundVolume")}
+            value={audio.clickSoundVolume}
+            min={0}
+            max={2}
+            format={percent}
+            disabled={clickSound === SOUND_OFF}
+            onChange={(value) => set("audio", "clickSoundVolume", value)}
           />
         </Section>
       )}
