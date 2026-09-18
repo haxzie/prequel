@@ -608,7 +608,9 @@ export class CaptureFlow {
       throw cause;
     }
 
-    this.deps.dock.setView("recording");
+    // The pill carries the prompter's switch when there is a microphone —
+    // the same rule as the setup row's control — and is sized for it.
+    this.deps.dock.setView("recording", { prompterControl: preferences.micId !== null });
     this.deps.dock.show();
     this.deps.teleprompter.recordingStarted();
     this.emit();

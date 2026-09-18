@@ -34,6 +34,14 @@ const SIZES: Record<DockView, { width: number; height: number }> = {
 };
 
 /**
+ * What the recording pill grows by for the prompter's switch: one of its
+ * 30pt buttons and the gap before it. Only when a microphone is chosen, since
+ * that is when the switch is drawn — otherwise the pill would carry a dead
+ * slot for the length of every take.
+ */
+const PROMPTER_CONTROL_WIDTH = 34;
+
+/**
  * Bounds on a reported width.
  *
  * A measurement taken mid-layout can be nonsense, and a window sized from it
@@ -65,6 +73,8 @@ const FRAME_MS = 16;
 export class DockWindow {
   private window: BrowserWindow | null = null;
   private view: DockView = "setup";
+  /** Whether the recording pill carries the prompter's switch — see `PROMPTER_CONTROL_WIDTH`. */
+  private prompterControl = false;
   private animation: ReturnType<typeof setInterval> | null = null;
   /** The setup panel's measured width, once the renderer has reported one. */
   private contentWidth: number | null = null;
@@ -154,9 +164,11 @@ export class DockWindow {
   }
 
   /** Resizes the panel between its setup and recording shapes. */
-  setView(view: DockView): void {
-    if (this.view === view) return;
+  setView(view: DockView, options: { prompterControl?: boolean } = {}): void {
+    const prompterControl = options.prompterControl ?? false;
+    if (this.view === view && this.prompterControl === prompterControl) return;
     this.view = view;
+    this.prompterControl = prompterControl;
     // The recording view has none of the controls a menu belongs to, so a menu
     // left open would be a list floating over the screen with nothing
     // underneath it.
@@ -266,7 +278,10 @@ export class DockWindow {
    */
   private windowSize(): { width: number; height: number } {
     const { width, height } = SIZES[this.view];
-    const panel = this.view === "setup" ? (this.contentWidth ?? width) : width;
+    const panel =
+      this.view === "setup"
+        ? (this.contentWidth ?? width)
+        : width + (this.prompterControl ? PROMPTER_CONTROL_WIDTH : 0);
     return { width: panel + PANEL_INSET * 2, height: height + DOCK_HEADROOM + PANEL_INSET };
   }
 

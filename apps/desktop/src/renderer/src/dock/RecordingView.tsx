@@ -4,7 +4,7 @@ import type { DockState } from "../../../shared/contract";
 import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import { formatElapsed } from "../lib/format";
-import { PauseIcon, PlayIcon, StopIcon, TrashIcon } from "./icons";
+import { PauseIcon, PlayIcon, PrompterIcon, PrompterOffIcon, StopIcon, TrashIcon } from "./icons";
 
 /** Smaller than the setup panel's 18px: this view is a pill, not a toolbar. */
 const BUTTON = "grid size-[30px] place-items-center rounded-lg text-dock-fg [&_svg]:size-[14px]";
@@ -12,6 +12,7 @@ const BUTTON = "grid size-[30px] place-items-center rounded-lg text-dock-fg [&_s
 /** What the panel collapses into once recording starts. */
 export function RecordingView({ state }: { state: DockState }) {
   const paused = state.session.status === "paused";
+  const { teleprompter, micId } = state.preferences;
 
   return (
     <div className="drag flex h-full animate-view-in items-center gap-1.5 pr-1.5 pl-3">
@@ -29,6 +30,21 @@ export function RecordingView({ state }: { state: DockState }) {
       </div>
 
       <div className="no-drag flex gap-1">
+        {/* The prompter's switch, as on the setup row and for the same
+            microphone rule. Hiding keeps the reader's place: the island comes
+            back where it was, with the microphone reopened. Main sizes the
+            pill for this button only when it is drawn. */}
+        {micId !== null && (
+          <Control
+            label={teleprompter ? "Hide the teleprompter" : "Show the teleprompter"}
+            className={cn("hover:bg-dock-hover", !teleprompter && "text-dock-muted")}
+            onClick={() =>
+              void window.prequel.dock.updatePreferences({ teleprompter: !teleprompter })
+            }
+          >
+            {teleprompter ? <PrompterIcon /> : <PrompterOffIcon />}
+          </Control>
+        )}
         {/* Before Pause, and away from Stop: the two destructive-looking
             buttons are the ones that end the take, and putting Discard next to
             Stop is how a hurried click loses a recording. */}
