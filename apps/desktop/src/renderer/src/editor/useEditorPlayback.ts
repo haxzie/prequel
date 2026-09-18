@@ -9,9 +9,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { EditorSession, TrackMedia } from "../../../shared/contract";
+import type { EditorSession, SoundBank, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
-import { AudioMixer, type TrackGain } from "./audio";
+import { AudioMixer, type MixBus, type TrackGain } from "./audio";
+import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
 import { writeTicker } from "../lib/ticker";
 import { Playback, followElement, syncElement } from "./playback";
 import {
@@ -39,6 +40,22 @@ export const HEAD_LABEL_W = 54;
 
 /** Tracks that carry sound, and therefore need a gain of their own. */
 const AUDIO_KINDS: TrackKind[] = ["microphone", "system_audio"];
+
+/**
+ * How far ahead of the playhead sounds are armed, in nanoseconds.
+ *
+ * Four hundred milliseconds: long enough that a frame which runs late — a
+ * heavy composite, a garbage collection — still has its sounds in the graph
+ * before their moment, short enough that a pause throws away little and a
+ * volume change reaches the next press soon.
+ */
+const SOUND_LOOKAHEAD_NS: MediaTime = 400_000_000;
+
+/** Which keyboard and mouse a clip's sounds are of, or null for off. */
+export interface SoundChoice {
+  keys: string | null;
+  clicks: string | null;
+}
 
 /**
  * What a media element can stand for: a track, or the camera's person matte.
@@ -129,7 +146,25 @@ export interface EditorPlayback {
   setHover: (at: MediaTime | null) => void;
   /** Called on every user-driven change so the audio context can resume. */
   onInteract: () => void;
-  setGain: (kind: TrackKind, gain: TrackGain) => void;
+  setGain: (bus: MixBus, gain: TrackGain) => void;
+  /**
+   * Hands the mixer a keyboard's or mouse's voices, by profile id.
+   *
+   * The renderer never makes these; it asks main for them and passes them
+   * through. A cue whose profile has no bank yet is skipped, and arrives on a
+   * later tick once the bank does.
+   */
+  setSoundBank: (profile: string, bank: SoundBank | null) => void;
+  /**
+   * Tells the loop which profiles a clip uses, so a cue in that clip plays
+   * the right keyboard. Read per cue at arming time, never stored per cue.
+   */
+  setSoundChoice: (choose: (sliceId: string) => SoundChoice) => void;
+  /**
+   * Plays one voice now — a letter, or a click — so a profile can be heard
+   * while paused, the moment it is chosen.
+   */
+  audition: (bus: "keys" | "clicks", profile: string) => void;
   /** Which tracks currently have a frame to show. */
   visible: Set<TrackKind>;
 }
@@ -140,6 +175,14 @@ export function useEditorPlayback(
 ): EditorPlayback {
   const playback = useMemo(() => new Playback(), []);
   const mixer = useMemo(() => new AudioMixer(), []);
+  const scheduler = useMemo(() => new CueScheduler(), []);
+  /** The plan, unpacked once per session. */
+  const cues = useMemo(() => (session?.sound ? decodeCues(session.sound) : []), [session]);
+  /** Which profiles a clip plays. A ref: read inside the loop, set from React. */
+  const soundChoice = useRef<(sliceId: string) => SoundChoice>(() => ({
+    keys: null,
+    clicks: null,
+  }));
 
   const elements = useRef(new Map<MediaKey, HTMLMediaElement>());
   const timecode = useRef<HTMLElement | null>(null);
@@ -177,6 +220,31 @@ export function useEditorPlayback(
     // Only rewritten when it changes, which is only near the two ends. The
     // playhead's own transform moves every frame; this one almost never does.
     let nudged: number | null = null;
+
+    // Where armed cues go. Which keyboard is looked up per cue, at arming
+    // time, from the clip the cue falls in — a cue armed 400 ms ahead in the
+    // next clip plays that clip's keyboard, not this one's.
+    const sink = {
+      schedule(placedCue: PlacedCue, when: number, stopAt: number | null) {
+        const choice = soundChoice.current(placedCue.sliceId);
+        const click = placedCue.cue.kind === CLICK_KIND;
+        const profile = click ? choice.clicks : choice.keys;
+        if (!profile) return;
+        mixer.schedule(
+          click ? "clicks" : "keys",
+          profile,
+          placedCue.cue.kind,
+          placedCue.cue.variant,
+          when,
+          stopAt,
+          placedCue.cue.gain,
+          placedCue.cue.pan,
+        );
+      },
+      cancel() {
+        mixer.cancelScheduled();
+      },
+    };
 
     // The frame's presentation time, not the moment this callback ran. See
     // `Playback.position` for why the difference is the whole of the jitter.
@@ -227,6 +295,20 @@ export function useEditorPlayback(
 
         syncElement(element, fileTime, playback.isPlaying, { seek: jumped });
       }
+
+      // The sounds, armed a little ahead. `at` is on the frame clock and
+      // `currentTime` on the audio clock; both are read here, in the same
+      // tick, and the scheduler re-anchors one to the other every time.
+      scheduler.tick({
+        projectNow: at,
+        contextNow: mixer.currentTime,
+        playing: playback.isPlaying,
+        jumped,
+        placed,
+        cues,
+        lookaheadNs: SOUND_LOOKAHEAD_NS,
+        sink,
+      });
 
       // The matte follows the camera *element* rather than the clock: it has
       // to show the mask for the picture the camera is showing, and two
@@ -308,8 +390,14 @@ export function useEditorPlayback(
     };
 
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [session, placed, duration, playback, tracks]);
+    return () => {
+      cancelAnimationFrame(frame);
+      // The slices changed under the armed cues — a split, a reorder, a
+      // trim. Their project times are stale; the next tick arms afresh.
+      mixer.cancelScheduled();
+      scheduler.reset();
+    };
+  }, [session, placed, duration, playback, tracks, mixer, scheduler, cues]);
 
   const register = useCallback(
     (key: MediaKey) => (element: HTMLMediaElement | null) => {
@@ -368,7 +456,33 @@ export function useEditorPlayback(
   }, []);
 
   const onInteract = useCallback(() => mixer.resume(), [mixer]);
-  const setGain = useCallback((kind: TrackKind, gain: TrackGain) => mixer.set(kind, gain), [mixer]);
+  const setGain = useCallback((bus: MixBus, gain: TrackGain) => mixer.set(bus, gain), [mixer]);
+  const setSoundBank = useCallback(
+    (profile: string, bank: SoundBank | null) => mixer.setBank(profile, bank),
+    [mixer],
+  );
+  const setSoundChoice = useCallback((choose: (sliceId: string) => SoundChoice) => {
+    soundChoice.current = choose;
+  }, []);
+  const audition = useCallback(
+    (bus: "keys" | "clicks", profile: string) => {
+      mixer.resume();
+      // A letter, or the click: kind 0 in a keyboard bank is Letter, and a
+      // mouse bank has only the click. Variant 0, centred, at unity — the
+      // bus gain is the clip's volume, as it would be in playback.
+      mixer.schedule(
+        bus,
+        profile,
+        bus === "keys" ? 0 : CLICK_KIND,
+        0,
+        mixer.currentTime,
+        null,
+        1,
+        0,
+      );
+    },
+    [mixer],
+  );
 
   // Memoised for the same reason the ref callbacks above are stable, one level
   // up: this object is the dependency of every rAF loop in the editor — the
@@ -398,6 +512,9 @@ export function useEditorPlayback(
       setHover,
       onInteract,
       setGain,
+      setSoundBank,
+      setSoundChoice,
+      audition,
       visible,
     }),
     [
@@ -416,6 +533,9 @@ export function useEditorPlayback(
       setHover,
       onInteract,
       setGain,
+      setSoundBank,
+      setSoundChoice,
+      audition,
       visible,
     ],
   );

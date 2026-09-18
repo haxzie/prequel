@@ -12,8 +12,11 @@ import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/con
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
+  clickSoundId,
+  keySoundId,
   newProject,
   outputFrame,
+  SOUND_OFF,
   type Project,
   type TextSlice,
   type ZoomSlice,
@@ -855,6 +858,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   useFirstCut(session, state, dispatch);
   usePersistence(session, state.project, state.revision);
   useAudioMix(media, state, session);
+  useSoundBanks(media, state.project);
   useEditorImages(session, state.project, setImages);
   useShortcuts(media, dispatch, state);
 
@@ -1455,7 +1459,100 @@ function useAudioMix(
 
     media.setGain("microphone", { volume: audio.micVolume, muted: audio.micMuted });
     media.setGain("system_audio", { volume: audio.systemVolume, muted: audio.systemMuted });
-  }, [media, session, audio.micVolume, audio.micMuted, audio.systemVolume, audio.systemMuted]);
+    // The sounds' volume is a bus gain like the tracks', and for the same
+    // reason: a fader dragged while a press is already armed has to be heard,
+    // and the bus is the one thing a slider can still reach by then. Which
+    // keyboard plays is decided per cue instead — see `useSoundBanks`.
+    media.setGain("keys", {
+      volume: audio.keySoundVolume,
+      muted: keySoundId(audio.keySound) === SOUND_OFF,
+    });
+    media.setGain("clicks", {
+      volume: audio.clickSoundVolume,
+      muted: clickSoundId(audio.clickSound) === SOUND_OFF,
+    });
+  }, [
+    media,
+    session,
+    audio.micVolume,
+    audio.micMuted,
+    audio.systemVolume,
+    audio.systemMuted,
+    audio.keySound,
+    audio.keySoundVolume,
+    audio.clickSound,
+    audio.clickSoundVolume,
+  ]);
+}
+
+/**
+ * Keeps the mixer holding a bank for every keyboard and mouse the edit names.
+ *
+ * The project's defaults and every clip's overrides can each name a profile,
+ * so the set is collected across all of them rather than read off the clip
+ * under the playhead — a cue is armed up to 400 ms ahead, in a clip that may
+ * use a different keyboard. Banks are asked of main once each and kept for
+ * the editor's life; switching back to a keyboard already heard is free.
+ *
+ * The resolver handed to the loop reads `settingsOf` for the cue's clip, so
+ * changing a clip's keyboard takes effect on the next press without anything
+ * being re-planned.
+ */
+function useSoundBanks(media: ReturnType<typeof useEditorPlayback>, project: Project) {
+  const loaded = useRef(new Set<string>());
+
+  const wanted = useMemo(() => {
+    const ids = new Set<string>();
+    const add = (audio: { keySound?: string; clickSound?: string } | undefined) => {
+      if (!audio) return;
+      if (audio.keySound !== undefined) ids.add(keySoundId(audio.keySound));
+      if (audio.clickSound !== undefined) ids.add(clickSoundId(audio.clickSound));
+    };
+    add(project.defaults.audio);
+    for (const slice of slicesOf(project)) add(slice.overrides.audio);
+    ids.delete(SOUND_OFF);
+    // A stable key, so the effect below runs when the set changes and not
+    // when the project object does.
+    return [...ids].sort().join(",");
+  }, [project]);
+
+  useEffect(() => {
+    if (!wanted) return;
+    let cancelled = false;
+
+    for (const profile of wanted.split(",")) {
+      if (loaded.current.has(profile)) continue;
+      loaded.current.add(profile);
+
+      void window.prequel.editor.soundBank(profile).then((result) => {
+        if (cancelled) return;
+        if (result.ok) {
+          media.setSoundBank(profile, result.value);
+        } else {
+          // Forgotten so a later render asks again; a bank that failed once
+          // — the addon still loading — is not a bank that always will.
+          loaded.current.delete(profile);
+          console.warn(`[editor] could not load the sound bank ${profile}:`, result.message);
+        }
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [media, wanted]);
+
+  useEffect(() => {
+    media.setSoundChoice((sliceId) => {
+      const { audio } = settingsOf(project, sliceId);
+      const keys = keySoundId(audio.keySound);
+      const clicks = clickSoundId(audio.clickSound);
+      return {
+        keys: keys === SOUND_OFF ? null : keys,
+        clicks: clicks === SOUND_OFF ? null : clicks,
+      };
+    });
+  }, [media, project]);
 }
 
 /**
