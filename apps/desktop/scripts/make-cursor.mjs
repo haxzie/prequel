@@ -58,17 +58,55 @@ const STYLES = [
   // nothing round it disappears into anything of its own tone, which is how the
   // one option with no outline became the one nobody could see.
   { id: "circle", shape: "dot", fill: 0, stroke: 255, alpha: 200 },
-  // The named pointers: the modern shape in a colour, outlined in white, the
-  // way a collaborator's cursor is drawn in a multiplayer canvas. A fill is a
+  // The named pointers: the modern shape in a solid colour and nothing round
+  // it, the way a collaborator's cursor is drawn in a multiplayer canvas. No
+  // outline, on purpose: the colour is the outline's job — it is what keeps
+  // the pointer visible against its own tone — and a white ring would make
+  // five coloured pointers read as five white ones with a fill. A fill is a
   // grey level everywhere else in this table and a colour here; `draw` takes
   // either. Five, each far enough from the others to be told apart at a
-  // glance, and each with a white name tag legible on it — which is why there
+  // glance, and each with white text legible on its tag — which is why there
   // is no yellow.
-  { id: "tag-blue", shape: "pointer", fill: [13, 153, 255], stroke: 255, alpha: 255 },
-  { id: "tag-purple", shape: "pointer", fill: [151, 71, 255], stroke: 255, alpha: 255 },
-  { id: "tag-pink", shape: "pointer", fill: [255, 36, 189], stroke: 255, alpha: 255 },
-  { id: "tag-orange", shape: "pointer", fill: [255, 122, 0], stroke: 255, alpha: 255 },
-  { id: "tag-green", shape: "pointer", fill: [20, 174, 92], stroke: 255, alpha: 255 },
+  {
+    id: "tag-blue",
+    shape: "pointer",
+    fill: [13, 153, 255],
+    stroke: 255,
+    alpha: 255,
+    outline: false,
+  },
+  {
+    id: "tag-purple",
+    shape: "pointer",
+    fill: [151, 71, 255],
+    stroke: 255,
+    alpha: 255,
+    outline: false,
+  },
+  {
+    id: "tag-pink",
+    shape: "pointer",
+    fill: [255, 36, 189],
+    stroke: 255,
+    alpha: 255,
+    outline: false,
+  },
+  {
+    id: "tag-orange",
+    shape: "pointer",
+    fill: [255, 122, 0],
+    stroke: 255,
+    alpha: 255,
+    outline: false,
+  },
+  {
+    id: "tag-green",
+    shape: "pointer",
+    fill: [20, 174, 92],
+    stroke: 255,
+    alpha: 255,
+    outline: false,
+  },
 ];
 
 /** A fill or stroke as `[r, g, b]`, whether it was written as a grey or a colour. */
@@ -500,10 +538,12 @@ function draw(style) {
           }
 
           const within = inside(shape, px, py);
-          const d = distance(shape, px, py);
 
           if (within) white++;
-          else if (d <= OUTLINE) black++;
+          // The glyph is fitted one outline in from the edge whether or not
+          // the outline is drawn — see `fitted()` — so a style without one is
+          // the same shape at the same place, with the ring left transparent.
+          else if (style.outline !== false && distance(shape, px, py) <= OUTLINE) black++;
         }
       }
 

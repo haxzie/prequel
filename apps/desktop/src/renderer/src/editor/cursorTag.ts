@@ -27,8 +27,9 @@ const OFFSET_X = 0.58;
 const OFFSET_Y = 0.75;
 const TAG_HEIGHT = 0.92;
 const FONT_SIZE = 0.5;
-const PAD_X = 0.38;
-const RADIUS = 0.25;
+const PAD_X = 0.46;
+/** A full pill: half the height, so the ends are semicircles at any length. */
+const RADIUS = TAG_HEIGHT / 2;
 
 /**
  * The pointer's size in the bitmap's own pixels.
@@ -50,7 +51,7 @@ export const MAX_NAME = 24;
 const FAMILY = "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif";
 
 /** Bumped when the drawing changes, so an old bitmap on disk is not reused. */
-const RASTERISER = "tag-1";
+const RASTERISER = "tag-2";
 
 /**
  * A stable name for a tag's bitmap: everything the pixels depend on and

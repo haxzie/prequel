@@ -932,6 +932,26 @@ describe("the pointer layer", () => {
     expect(b.y).toBeCloseTo(a.y);
   });
 
+  it("keeps the name tag still while the pointer dips for a click", () => {
+    // The press is the pointer's gesture. At the bottom of the dip the pointer
+    // is drawn smaller; the tag beside it is not.
+    const tag = { path: "cursor/abc.png", scale: 3.5, hotspot: { x: -0.17, y: -0.21 } };
+    const click = 1_000_000_000;
+    const plan = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      unsmoothed(),
+      { ...TRACK, tag, clicks: [click] },
+    );
+    const [pointer, label] = plan.items.filter((item) => item.kind === "cursor");
+    if (pointer?.kind !== "cursor" || label?.kind !== "cursor") throw new Error("wrong item");
+
+    const deepest = pointer.points.reduce((low, point) => (point.scale < low.scale ? point : low));
+    expect(deepest.scale).toBeLessThan(1);
+    const still = label.points.find((point) => point.at === deepest.at)!;
+    expect(still.scale).toBeCloseTo(1);
+  });
+
   it("is left out when the recording has no track", () => {
     const plan = buildRenderPlan(
       { width: 1920, height: 1080 },

@@ -3449,8 +3449,11 @@ function cursorItems(
   }));
 
   // The name tag, after the pointers so it draws over them, at every point
-  // the pointer has: it hides when the pointer hides, dips with a press and
-  // streaks with a fast move, because it is the same points. No shadow — a
+  // the pointer has: it hides when the pointer hides and streaks with a fast
+  // move, because it is the same points. It does not dip with a press — the
+  // press is the pointer's gesture, and a label that bobbed with it would
+  // read as the whole thing being pushed — so the press is divided back out
+  // of the scale, leaving only the tilt's magnification in it. No shadow: a
   // tag is a flat label, and a drop under it would read as a second card.
   if (path.tag) {
     const tag = path.tag;
@@ -3460,7 +3463,15 @@ function cursorItems(
       path: tag.path,
       size: tagSize,
       hotspot: tag.hotspot,
-      points: smeared.map((point) => onSprite(point, planeAt(point.at), tag.hotspot, tagSize, 0)),
+      points: smeared.map((point) =>
+        onSprite(
+          { ...point, scale: point.scale / pressScale(path.clicks, point.at) },
+          planeAt(point.at),
+          tag.hotspot,
+          tagSize,
+          0,
+        ),
+      ),
     });
   }
 
