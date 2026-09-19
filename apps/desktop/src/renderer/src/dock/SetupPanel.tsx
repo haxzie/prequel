@@ -65,12 +65,25 @@ export function SetupPanel({ state }: { state: DockState }) {
 
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
 
-  const choose = (kind: "camera" | "microphone", device: MediaDevice | null) =>
-    void window.prequel.dock.updatePreferences(
+  const choose = (kind: "camera" | "microphone", device: MediaDevice | null) => {
+    const patch: Partial<RecordingPreferences> =
       kind === "camera"
         ? { cameraId: device?.deviceId ?? null, cameraLabel: device?.label ?? null }
-        : { micId: device?.deviceId ?? null, micLabel: device?.label ?? null },
-    );
+        : { micId: device?.deviceId ?? null, micLabel: device?.label ?? null };
+
+    // Turning the camera on with no microphone chosen picks one, in the same
+    // patch: a camera bubble with no narration is the exception, and leaving
+    // it off would mean a second trip to this panel just to get sound.
+    if (kind === "camera" && device !== null && preferences.micId === null) {
+      const mic = microphones[0];
+      if (mic) {
+        patch.micId = mic.deviceId;
+        patch.micLabel = mic.label;
+      }
+    }
+
+    void window.prequel.dock.updatePreferences(patch);
+  };
 
   const act = (pick: DockMenuPick) => {
     switch (pick.kind) {
