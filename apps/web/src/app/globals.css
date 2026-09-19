@@ -504,6 +504,28 @@
   --animate-captions-playhead: demo-playhead 30s linear infinite;
 
   /*
+    The teleprompter demo, last of the four. One 18s period and no separate
+    "look" cycle the way the captions demo above it has: the picture never
+    swaps what it is showing, only which word of the reading line is lit, so
+    there is nothing to fade in and out beyond the footer note.
+
+    Four shapes rather than one. The captions demo's words all keep the same
+    beat, so one keyframe shifted by a per-word delay covers every one of
+    them. These do not: three read in turn and hand off on a fixed clock,
+    the fourth holds through the whole off-script wait instead of handing off
+    on its turn, two are skipped outright, and the last is where the catch-up
+    lands. A word that behaves differently from its neighbours needs its own
+    keyframe, and here most of them do.
+  */
+  --animate-teleprompter-early: teleprompter-early 18s steps(1, end) infinite;
+  --animate-teleprompter-hold: teleprompter-hold 18s steps(1, end) infinite;
+  --animate-teleprompter-skipped: teleprompter-skipped 18s steps(1, end) infinite;
+  --animate-teleprompter-caught-up: teleprompter-caught-up 18s steps(1, end) infinite;
+  --animate-teleprompter-footer: teleprompter-footer 18s ease-in-out infinite;
+  --animate-teleprompter-slice: teleprompter-slice 18s linear infinite backwards;
+  --animate-teleprompter-playhead: demo-playhead 18s linear infinite;
+
+  /*
     The picture, pushed in. Every keyframe lists the same functions in the same
     order — CSS interpolates two transforms component-wise only while the
     function lists match, and falls back to a matrix blend the moment they do
@@ -1382,6 +1404,126 @@
       color: var(--muted);
     }
   }
+
+  /*
+    The teleprompter's reading line: six words across four shapes, because —
+    unlike the captions demo's words, which all keep the same beat — these do
+    not hand off on a fixed clock. They hand off from wherever the take
+    actually left off, which is the whole of what the feature does.
+
+    Every keyframe is `steps(1, end)`, so a word's colour holds at one value
+    for the whole of an interval and jumps at its far edge rather than fading
+    across it — the app switches a word's colour on its own moment, and a
+    fade would show two colours at once for part of every step. One jump per
+    interval is also why none of these need the captions demo's paired stops
+    close together: with a single step there is nothing near the first stop
+    for a second one to buy.
+  */
+
+  /* "I", "want", "to": read in turn, 1.5s apart via a delay at each use site,
+     then left the colour a spoken word settles into. */
+  @keyframes teleprompter-early {
+    0%,
+    8.3333% {
+      color: #ffd60a;
+    }
+    8.3334%,
+    100% {
+      color: rgb(255 255 255 / 0.92);
+    }
+  }
+
+  /* "show": the word the take actually trails off on. It lights at its turn
+     like the three before it, but holds — through the whole of the next
+     third, the wait the footer note is showing — because nothing said after
+     it matches the script until the catch-up below finds a word that does. */
+  @keyframes teleprompter-hold {
+    0%,
+    41.6667% {
+      color: #ffd60a;
+    }
+    41.6668%,
+    100% {
+      color: rgb(255 255 255 / 0.92);
+    }
+  }
+
+  /* "you", "something": never said. The catch-up passes over them rather
+     than landing on them, so they go straight to the colour a spoken word
+     settles into without ever lighting first — which is the whole of what
+     "catches up within a couple of words" costs. */
+  @keyframes teleprompter-skipped {
+    0%,
+    33.3333% {
+      color: rgb(255 255 255 / 0.92);
+    }
+    33.3334%,
+    100% {
+      color: rgb(255 255 255 / 0.35);
+    }
+  }
+
+  /* "cool": where the catch-up actually lands, and where the reading line
+     holds until the take loops and the first word lights again. */
+  @keyframes teleprompter-caught-up {
+    0%,
+    33.3333% {
+      color: #ffd60a;
+    }
+    33.3334%,
+    100% {
+      color: rgb(255 255 255 / 0.35);
+    }
+  }
+
+  /* "Still listening…", under the reading line only while the take is
+     off-script. Two soft pulses rather than a held opacity, because a note
+     that simply appeared and sat there reads as a label instead of as
+     something still working. */
+  @keyframes teleprompter-footer {
+    0%,
+    27% {
+      opacity: 0;
+    }
+    31%,
+    36% {
+      opacity: 0.85;
+    }
+    41%,
+    47% {
+      opacity: 0.3;
+    }
+    52%,
+    58% {
+      opacity: 0.85;
+    }
+    64%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* Three slices rather than the captions demo's five, so a slice holds the
+     track's colour for a third of the period instead of a fifth. */
+  @keyframes teleprompter-slice {
+    0% {
+      background-color: var(--elevated);
+      border-color: var(--line);
+      color: var(--muted);
+    }
+    1%,
+    32.3333% {
+      background-color: var(--track-accent);
+      border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+      color: #fff;
+    }
+    33.3333%,
+    100% {
+      background-color: var(--elevated);
+      border-color: var(--line);
+      color: var(--muted);
+    }
+  }
 }
 
 /*
@@ -1545,6 +1687,29 @@
 }
 
 /*
+  The teleprompter demo, stopped. Every word rests dim until its own
+  animation lights it, so `animation: none` alone would freeze the whole
+  reading line unlit — a picture with nothing playing and nothing paused on,
+  either. The first word is lit by hand instead, which is what a paused demo
+  on its first beat looks like everywhere else on this page.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-teleprompter-demo] * {
+    animation: none;
+  }
+
+  [data-teleprompter-demo] [data-teleprompter-word="0"] {
+    color: #ffd60a;
+  }
+
+  [data-teleprompter-demo] [data-demo-slice="0"] {
+    background-color: var(--track-accent);
+    border-color: color-mix(in oklab, var(--track-accent) 58%, #fff);
+    color: #fff;
+  }
+}
+
+/*
   The captions track is green where the zoom track is blue and the layouts one
   purple. Three demos in a run need three, or the second and third read as the
   same control repeated — and this is the one whose subject is words rather than
@@ -1587,6 +1752,16 @@
 */
 [data-zoom-demo] {
   --track-accent: color-mix(in oklab, var(--accent) 82%, var(--fg));
+}
+
+/*
+  The teleprompter's track is `--iris` — the fourth of the app's own accents,
+  and the one none of the three demos above it have taken. A fourth track in
+  the blue, purple or green one of them already owns would read as that demo
+  carrying on rather than as its own.
+*/
+[data-teleprompter-demo] {
+  --track-accent: var(--iris);
 }
 
 /*

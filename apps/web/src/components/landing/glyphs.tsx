@@ -108,6 +108,52 @@ export function PencilGlyph() {
   );
 }
 
+/** A waveform: the take being read normally. */
+export function VoiceGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-3.5 shrink-0" aria-hidden>
+      <g fill="currentColor">
+        <rect x="2" y="6.5" width="1.8" height="3" rx="0.9" />
+        <rect x="5.1" y="4" width="1.8" height="8" rx="0.9" />
+        <rect x="8.2" y="2.5" width="1.8" height="11" rx="0.9" />
+        <rect x="11.3" y="5" width="1.8" height="6" rx="0.9" />
+      </g>
+    </svg>
+  );
+}
+
+/** Three dots, the last one soft: the footer note pulsing while it waits. */
+export function WaitGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-3.5 shrink-0" aria-hidden>
+      <g fill="currentColor">
+        <circle cx="3.2" cy="8" r="1.5" />
+        <circle cx="8" cy="8" r="1.5" />
+        <circle cx="12.8" cy="8" r="1.5" fillOpacity="0.4" />
+      </g>
+    </svg>
+  );
+}
+
+/** Two chevrons: the highlight skipping ahead to find where the take is. */
+export function CatchUpGlyph() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="size-3.5 shrink-0"
+      aria-hidden
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 4l4.5 4L3 12" />
+      <path d="M8.5 4 13 8l-4.5 4" />
+    </svg>
+  );
+}
+
 /** The cut the delete makes. */
 export function CutGlyph() {
   return (

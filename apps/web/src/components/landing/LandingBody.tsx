@@ -21,6 +21,7 @@ import {
 } from "@/components/editor-illustrations";
 import { CaptionsDemo } from "@/components/landing/CaptionsDemo";
 import { LayoutDemo } from "@/components/landing/LayoutDemo";
+import { TeleprompterDemo } from "@/components/landing/TeleprompterDemo";
 import { ZoomDemo } from "@/components/landing/ZoomDemo";
 import { CaptureStep, PlayerStep, TimelineStep } from "@/components/landing/step-visuals";
 import { Container, Eyebrow, SectionHeading } from "@/components/Section";
@@ -155,9 +156,10 @@ const PRESETS = [
 export function LandingBody({ faq }: { faq: FaqEntry[] }) {
   return (
     <>
-      {/* Before the demos rather than after them. The three below are each a
-          close look at one step, and a visitor who has not been told there are
-          only three steps reads them as three separate features. It is also the
+      {/* Before the demos rather than after them. Each demo below is a close
+          look at something one of these steps named, and a visitor who has not
+          been told there are only three steps reads the demos as unrelated
+          features rather than as the same three made concrete. It is also the
           shortest thing on the page, so it costs a skimmer nothing. */}
       <section className="pt-16 pb-8">
         <Container>
@@ -207,12 +209,22 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           prose they read as two unrelated animations. */}
       <LayoutDemo />
 
-      {/* And a third, on the words rather than the picture. It comes last of
-          the three because it is the only one that needs the other two to have
-          landed first: a visitor who has not yet accepted that the frame is
-          composed after the fact has no reason to care that the sentence under
-          it is editable. */}
+      {/* And a third, on the words rather than the picture. It comes after the
+          two above rather than before them because it is the only one that
+          needs them to have landed first: a visitor who has not yet accepted
+          that the frame is composed after the fact has no reason to care that
+          the sentence under it is editable. */}
       <CaptionsDemo />
+
+      {/* A fourth, and the one that stands apart from the argument the three
+          above build together. Those are all about what happens to a take
+          after it is recorded — the frame it is composed into, the words
+          pulled out of it. This one is about the moment of recording itself,
+          which is why it comes last rather than between any of them: dropped
+          in the middle it would read as a change of subject, where at the end
+          it reads as one more thing Prequel does while the camera is
+          rolling. */}
+      <TeleprompterDemo />
 
       <section className="py-24">
         <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">

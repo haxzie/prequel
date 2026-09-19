@@ -76,6 +76,9 @@ const ZOOM_TONE = "bg-accent";
 const LAYOUT_TONE = "bg-lilac";
 /** The subtitles are green, which is what their own track is lit in. */
 const CAPTION_TONE = "bg-positive";
+/** The teleprompter is `--iris` — the fourth of the app's own accents, and the
+    one none of the three chips above have taken. */
+const SCRIPT_TONE = "bg-iris";
 
 /** A magnifier with a plus in it: zoom, rather than search. */
 export function ZoomWord({ children }: { children: string }) {
@@ -172,6 +175,26 @@ export function TextWord({ children }: { children: string }) {
         <svg {...STROKE}>
           <path d="M12 4.5v15" />
           <path d="M8.5 4.5h7M8.5 19.5h7" />
+        </svg>
+      }
+    >
+      {children}
+    </Chip>
+  );
+}
+
+/** The island itself — a notch with a line of script in it — rather than a
+    page or a document. The product's own words for this are "the notch" and
+    "the island", and the mark should be recognisable as the thing on screen
+    rather than as the paper it replaces. */
+export function ScriptWord({ children }: { children: string }) {
+  return (
+    <Chip
+      tone={SCRIPT_TONE}
+      mark={
+        <svg {...STROKE}>
+          <path d="M6 4h12a2 2 0 0 1 2 2v2a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6V6a2 2 0 0 1 2-2Z" />
+          <path d="M9.5 9h5" />
         </svg>
       }
     >
