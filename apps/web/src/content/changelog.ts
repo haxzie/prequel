@@ -47,6 +47,16 @@ export interface Release {
   /** ISO, rendered with `toLocaleDateString`. */
   date: string;
   /**
+   * The release in one short line — "Text over the recording".
+   *
+   * What the home page's badge says beside the version, and what the timeline
+   * puts at the head of each release. A sentence fragment rather than a
+   * sentence: it sits in a pill, and a full stop in a pill reads as a typo.
+   * Every release has one, so a badge never has to fall back to a version
+   * number alone.
+   */
+  highlight: string;
+  /**
    * Written but not shipped.
    *
    * A release is described while the work is fresh and tagged some days later,
@@ -96,14 +106,16 @@ export async function releases(): Promise<Release[]> {
       const {
         default: Body,
         date,
+        highlight,
         draft = false,
       } = (await import(`./changelog/${version}.mdx`)) as {
         default: () => React.JSX.Element;
         date: string;
+        highlight: string;
         draft?: boolean;
       };
 
-      return { version, date, draft, Body };
+      return { version, date, highlight, draft, Body };
     }),
   );
 }
@@ -120,4 +132,17 @@ export async function releases(): Promise<Release[]> {
 export async function published(): Promise<Release[]> {
   const all = await releases();
   return process.env.NODE_ENV === "production" ? all.filter((r) => !r.draft) : all;
+}
+
+/**
+ * The newest release a visitor can see, for the home page's badge.
+ *
+ * `published`'s first entry, which is one import in the ordinary case and two
+ * while a draft sits at the top of the list. Undefined only when nothing has
+ * shipped, which is never, but the badge is a small thing to lose and a home
+ * page that fails to build over it is not.
+ */
+export async function latest(): Promise<Pick<Release, "version" | "highlight"> | undefined> {
+  const [newest] = await published();
+  return newest && { version: newest.version, highlight: newest.highlight };
 }

@@ -64,6 +64,9 @@ export const FOOTER_NAV: { href: Route; label: string }[] = [
   // the header is full, and somebody reading a definition of bitrate has
   // already found the site.
   { href: "/content", label: "Content" },
+  // Directly, though it lives under the docs: "what changed" is the question a
+  // returning visitor has, and two clicks to it through Docs is one too many.
+  { href: "/docs/changelog", label: "Changelog" },
   { href: "/about", label: "About" },
 ];
 

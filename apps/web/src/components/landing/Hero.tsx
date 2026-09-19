@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/Logo";
@@ -13,6 +14,14 @@ type HeroProps = {
   lede: string;
   /** Small caps line above the heading. The home page passes none. */
   eyebrow?: string;
+  /**
+   * The newest release, as a pill above the mark that opens the changelog.
+   *
+   * The home page passes it; the use-case pages do not, for the reason they
+   * carry an eyebrow instead: a visitor who arrived at "record a demo" came
+   * for that, and what shipped last week is the home page's news to tell.
+   */
+  release?: { version: string; highlight: string };
 };
 
 /**
@@ -79,9 +88,7 @@ const ECHO_OPACITY = [0.5, 0.3, 0.1];
 function Echoes() {
   // Outwards from the mark: the first sits a gap beyond its edge, and each one
   // after that a whole shape and a gap further out.
-  const offsets = ECHO_OPACITY.map(
-    (_, i) => MARK_SIZE / 2 + ECHO_GAP + i * (MARK_SIZE + ECHO_GAP),
-  );
+  const offsets = ECHO_OPACITY.map((_, i) => MARK_SIZE / 2 + ECHO_GAP + i * (MARK_SIZE + ECHO_GAP));
 
   return (
     <span aria-hidden className="pointer-events-none absolute inset-0">
@@ -123,7 +130,7 @@ function Echoes() {
  * the shadows, the form — is the same block, so it is one component rather
  * than a shape each page reproduces and slowly diverges from.
  */
-export function Hero({ title, lede, eyebrow }: HeroProps) {
+export function Hero({ title, lede, eyebrow, release }: HeroProps) {
   // Delays handed out in source order as the rows are written, rather than a
   // fixed step per role. The eyebrow is conditional — the home page passes none
   // — and a fixed table leaves its slot empty there, opening a gap twice the
@@ -157,6 +164,32 @@ export function Hero({ title, lede, eyebrow }: HeroProps) {
               Both are far lighter than the pair this replaced. At 80% black over
               a dark field a drop shadow is depth; on paper it is a grey bruise
               under the mark, and the eye reads the smudge before the icon. */}
+          {/* The release badge, first in the wave and above the mark. A link
+              and not an announcement: the whole pill goes to the changelog, so
+              the version is a way in rather than a label. The highlight is one
+              short line — the `.mdx` promises that — and is allowed to wrap
+              on a phone rather than truncate, because a badge that ends in an
+              ellipsis says less than no badge. */}
+          {release ? (
+            <div
+              data-hero-enter
+              className="animate-hero-rise mb-6 flex justify-center"
+              style={rise()}
+            >
+              <Link
+                href="/docs/changelog"
+                className="group inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-elevated py-1 pr-3.5 pl-1.5 text-sm text-muted transition-colors hover:border-fg/20 hover:text-fg"
+              >
+                <span className="rounded-full bg-brand-from px-2 py-0.5 font-mono text-xs font-medium text-white">
+                  v{release.version}
+                </span>
+                <span className="text-pretty">{release.highlight}</span>
+                <span aria-hidden className="transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
+              </Link>
+            </div>
+          ) : null}
           <div className="relative mb-8 flex justify-center">
             <Echoes />
             <div data-hero-enter className="animate-hero-rise" style={rise()}>

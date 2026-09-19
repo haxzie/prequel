@@ -77,6 +77,12 @@ export default async function Changelog() {
               </time>
             </div>
 
+            {/* The one line the release is remembered by — the same one the
+                home page's badge shows for the newest. At the head of the
+                list so somebody scanning the rail can read the releases as a
+                column of headlines before reading any of them. */}
+            <p className="mt-2 text-lg font-medium tracking-tight text-fg">{release.highlight}</p>
+
             {/* Discs rather than bare lines. Without a marker the entries
                 read as loose sentences under a date, and a release with
                 four of them reads as a paragraph that has lost its joins.

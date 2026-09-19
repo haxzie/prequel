@@ -4,6 +4,7 @@ import { Hero } from "@/components/landing/Hero";
 import { HeroCard, HeroClip, HeroPlatform } from "@/components/landing/HeroWords";
 import { AppPreview } from "@/components/landing/AppPreview";
 import { LandingBody } from "@/components/landing/LandingBody";
+import { latest } from "@/content/changelog";
 import { PRODUCT_FAQ } from "@/lib/faq";
 import { pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
@@ -13,7 +14,9 @@ export const metadata: Metadata = pageMetadata({
   description: SITE.description,
 });
 
-export default function Home() {
+export default async function Home() {
+  const release = await latest();
+
   return (
     <>
       {/* The heading and `SITE.tagline` no longer say the same thing, and that
@@ -30,6 +33,7 @@ export default function Home() {
           </>
         }
         lede="Record on macOS and get an auto-edited video with smart zooms, a framed camera and a polished background, ready to fine-tune."
+        release={release}
       />
       {/* The editor itself, under the hero. Here rather than inside
           `LandingBody` because that component is shared with all sixteen
