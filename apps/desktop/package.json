@@ -21,7 +21,6 @@
     "cursor:emoji": "swift scripts/make-emoji-cursors.swift",
     "permission-icon": "swift scripts/make-permission-icon.swift",
     "app-icon": "node scripts/make-app-icon.mjs",
-    "dmg": "swift scripts/make-dmg-background.swift",
     "backgrounds": "node scripts/sync-backgrounds.mjs"
   },
   "dependencies": {
