@@ -5,7 +5,7 @@ import { useState } from "react";
 import { formatQuota } from "@/lib/format";
 import { Button } from "@/components/Button";
 import { api, ApiError } from "@/lib/api";
-import { PRICE_LIFETIME, PRICE_MONTHLY } from "@/lib/pricing";
+import { PRICE_LIFETIME, PRICE_MONTHLY, RETENTION_LIFETIME } from "@/lib/pricing";
 import type { Trial } from "@/lib/session";
 
 /** What `GET /v1/billing` answers with. The page reads it; this draws it. */
@@ -135,10 +135,13 @@ export function BillingPanel({
           ) : lifetime ? (
             // What they own, and the one thing it does not do. Somebody on this
             // plan who fills it up should not have to find out from a refused
-            // upload that there was a way to keep going.
+            // upload that there was a way to keep going. The retention line sits
+            // beside it for the same reason: better read here than discovered
+            // when a link somebody shared months ago stops working.
             <p className="mt-3 text-sm text-muted">
-              Bought once, with nothing to renew. Subscribe to Pro for unlimited storage if you need
-              the room.
+              Bought once, with nothing to renew. Each shared recording is kept for{" "}
+              {RETENTION_LIFETIME}, then removed. Subscribe to Pro for unlimited storage with no
+              clock on it if you need the room.
             </p>
           ) : null}
         </>

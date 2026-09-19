@@ -62,6 +62,14 @@ export const TRIAL_DAYS = 7;
 export const STORAGE_PRO = "Unlimited";
 export const STORAGE_LIFETIME = "5 GB";
 
+/**
+ * How long a shared recording lasts on the lifetime licence before it is
+ * removed. Pro has no such limit: a recording stays shared for as long as the
+ * subscription does, which is a renewal date rather than a clock on the file
+ * itself.
+ */
+export const RETENTION_LIFETIME = "3 months";
+
 export type Plan = {
   name: string;
   price: string;
@@ -108,7 +116,10 @@ export const LIFETIME_PLAN: Plan = {
   cadence: "once",
   billing: `One payment · ${TRIAL_DAYS} days free`,
   summary: `Buy it once. Best if you record now and then.`,
-  features: [...EVERYTHING, `${STORAGE_LIFETIME} of shared recordings`],
+  features: [
+    ...EVERYTHING,
+    `${STORAGE_LIFETIME} of shared recordings, kept for ${RETENTION_LIFETIME}`,
+  ],
   featured: true,
   badge: "Recommended",
 };
@@ -163,13 +174,13 @@ export const INCLUDED: [string, string][] = [
   ["Transcripts", "Included"],
   ["Sharing", "Uploads and shareable links"],
   ["Rendering", "On your Mac, never uploaded"],
-  ["Storage", `Unlimited on Pro, ${STORAGE_LIFETIME} on Lifetime`],
+  ["Storage", `Unlimited on Pro, ${STORAGE_LIFETIME} on Lifetime for ${RETENTION_LIFETIME}`],
 ];
 
 export const FAQ: { question: string; answer: string }[] = [
   {
     question: "What is the difference between the two plans?",
-    answer: `Storage, and nothing else. Both are the whole app — 4K at 120 frames per second, every preset, transcripts, no watermark and no limit on a take — and both export the same file. Buy the lifetime licence once for ${PRICE_LIFETIME} and you keep ${STORAGE_LIFETIME} of shared recordings, which is plenty if you make a video now and then. Pro is ${PRICE_MONTHLY} a month with unlimited storage, which is the one to pick if you are sharing recordings for work every week. Storage only counts recordings you upload for a shareable link — what you export to your own Mac is never counted and has no limit.`,
+    answer: `Storage, and nothing else. Both are the whole app — 4K at 120 frames per second, every preset, transcripts, no watermark and no limit on a take — and both export the same file. Buy the lifetime licence once for ${PRICE_LIFETIME} and you keep ${STORAGE_LIFETIME} of shared recordings, each one kept for ${RETENTION_LIFETIME} before it is removed, which is plenty if you make a video now and then. Pro is ${PRICE_MONTHLY} a month with unlimited storage for as long as you are subscribed, which is the one to pick if you are sharing recordings for work every week. Storage only counts recordings you upload for a shareable link — what you export to your own Mac is never counted, never expires and has no limit.`,
   },
   {
     question: "Will the price go up?",
@@ -177,7 +188,11 @@ export const FAQ: { question: string; answer: string }[] = [
   },
   {
     question: "Is the lifetime licence really for life?",
-    answer: `It is one payment for the app, with no renewal and nothing to cancel. What it does not do is grow: it comes with ${STORAGE_LIFETIME} of shared recordings and stays there. If you outgrow that — which usually means you have started recording for work rather than occasionally — you can subscribe to Pro at ${PRICE_MONTHLY} a month for unlimited storage, and stopping that subscription later puts you back on the ${STORAGE_LIFETIME} you already own rather than on nothing.`,
+    answer: `It is one payment for the app, with no renewal and nothing to cancel: recording, editing and export are yours for as long as you use Prequel. What it does not do is grow: the ${STORAGE_LIFETIME} allowance it comes with is fixed, not a starting point. If you outgrow that — which usually means you have started recording for work rather than occasionally — you can subscribe to Pro at ${PRICE_MONTHLY} a month for unlimited storage, and stopping that subscription later puts you back on the ${STORAGE_LIFETIME} you already own rather than on nothing.`,
+  },
+  {
+    question: "How long are shared recordings kept on the lifetime licence?",
+    answer: `${RETENTION_LIFETIME} from the day you upload each one, then it is removed and its link stops working. That applies only to a recording you have shared for a link, and only on the lifetime licence. An export to your own Mac never expires, and Pro keeps a shared recording for as long as the subscription is active rather than on a clock. Export a copy before the ${RETENTION_LIFETIME} is up if you want to keep sharing it, or subscribe to Pro for storage with no clock on it.`,
   },
   {
     question: "Is there a free plan?",
