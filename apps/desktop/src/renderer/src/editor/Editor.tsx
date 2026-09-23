@@ -41,6 +41,7 @@ import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { Preview, type Grab, type Picked } from "./Preview";
 import { asCard } from "./poster";
+import { previewReady } from "./ready";
 import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
@@ -126,12 +127,45 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * are new and have decoded nothing.
    */
   const [decoded, setDecoded] = useState<Set<MediaKey>>(new Set());
+  /**
+   * Image paths that have finished trying — loaded, or failed for good.
+   *
+   * Apart from `images` because the two answer different questions. The canvas
+   * draws from `images` and a picture that would not decode must never reach
+   * it; `ready` asks only whether there is still something worth waiting for,
+   * and a file that is never going to arrive is not. Gating the reveal on
+   * `images` instead meant one missing background held the preview behind the
+   * loading screen for the life of the editor.
+   */
+  const [settledImages, setSettledImages] = useState<Set<string>>(new Set());
 
-  useEffect(() => setDecoded(new Set()), [session.dir]);
+  useEffect(() => {
+    setDecoded(new Set());
+    setSettledImages(new Set());
+  }, [session.dir]);
 
   const markDecoded = useCallback((key: MediaKey) => {
     setDecoded((current) => (current.has(key) ? current : new Set(current).add(key)));
   }, []);
+
+  const markImageSettled = useCallback((path: string) => {
+    setSettledImages((current) => (current.has(path) ? current : new Set(current).add(path)));
+  }, []);
+
+  /**
+   * The pointer images to load, which is none at all without a pointer layer.
+   *
+   * The same condition `cursorLayer` uses in main, and it has to be: that is
+   * what decides whether the files are ever copied into the recording. A take
+   * with the pointer baked into its frames, or one where the pointer never
+   * moved, gets none of them — and asking for all 28 anyway meant 28 requests
+   * that could only 404, 28 warnings in the log, and a preview that waited for
+   * every one of them.
+   */
+  const cursorFiles = useMemo(
+    () => (session.cursor === null ? [] : CURSOR_FILES),
+    [session.cursor],
+  );
 
   /** The camera's person matte, or null on a recording made without one. */
   const matteUrl = useMemo(
@@ -276,19 +310,23 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    *
    * The images are checked against what this project actually asks for, so a
    * composition on a solid colour is ready the moment its video is: there is no
-   * background file to wait for.
+   * background file to wait for. Settled rather than loaded — see
+   * `settledImages`, and note that every clause here has to be able to finish
+   * badly, or the reveal never happens at all.
    */
-  const ready = useMemo(() => {
-    const videos = session.media.filter(
-      (track) => track.kind === "screen" || track.kind === "camera",
-    );
-    if (!videos.every((track) => decoded.has(track.kind))) return false;
-    // The matte too, when there is one: revealed before the mask has decoded,
-    // a cutout shows one frame of the person as a bare rectangle.
-    if (matteUrl && !decoded.has("camera_matte")) return false;
-
-    return imagePaths(state.project, CURSOR_FILES).every((path) => images.has(path));
-  }, [session.media, matteUrl, decoded, state.project, images]);
+  const ready = useMemo(
+    () =>
+      previewReady({
+        videoKinds: session.media
+          .filter((track) => track.kind === "screen" || track.kind === "camera")
+          .map((track) => track.kind),
+        matte: matteUrl !== null,
+        decoded,
+        wanted: imagePaths(state.project, cursorFiles),
+        settled: settledImages,
+      }),
+    [session.media, matteUrl, decoded, state.project, settledImages, cursorFiles],
+  );
 
   /**
    * What the slice under the playhead is arriving from.
@@ -869,7 +907,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   usePersistence(session, state.project, state.revision);
   useAudioMix(media, state, session);
   useSoundBanks(media, state.project);
-  useEditorImages(session, state.project, setImages);
+  useEditorImages(session, state.project, cursorFiles, setImages, markImageSettled);
   useShortcuts(media, dispatch, state);
 
   useEffect(() => {
@@ -1183,6 +1221,22 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // draw. Compositing then paints a background with nothing on it,
               // which is the flash this reports away.
               onLoadedData={() => markDecoded(track.kind)}
+              // Counted as decoded on failure too, for the reason the matte
+              // below is: `ready` waits for every video track, and a track
+              // that will not open never sends `loadeddata`. Without this the
+              // editor sits on "Loading the recording…" for ever — the
+              // timeline, the panel and the export all work, and the one thing
+              // the user came for never appears, with nothing anywhere to say
+              // why. Revealing a composition with a track missing from it is
+              // the lesser fault, and the warning names which one.
+              onError={(event) => {
+                const failure = event.currentTarget.error;
+                console.error(
+                  `[editor] the ${track.kind} track would not open:`,
+                  failure ? `${failure.code}: ${failure.message}` : "no reason given",
+                );
+                markDecoded(track.kind);
+              }}
             />
           ) : (
             <audio
@@ -1592,11 +1646,15 @@ function useSoundBanks(media: ReturnType<typeof useEditorPlayback>, project: Pro
 function useEditorImages(
   session: EditorSession | null,
   project: ReturnType<typeof newProject>,
+  /** The same list `ready` waits on, or the two would disagree about the wait. */
+  cursors: readonly string[],
   setImages: (update: (images: Images) => Images) => void,
+  /** Called once a path has finished trying, whether or not it arrived. */
+  onSettled: (path: string) => void,
 ) {
   // Joined so the effect re-runs when the set changes rather than on every
   // edit — a project object is new on each keystroke.
-  const paths = imagePaths(project, CURSOR_FILES).join("\u0000");
+  const paths = imagePaths(project, cursors).join("\u0000");
 
   useEffect(() => {
     if (!session || !paths) return;
@@ -1634,12 +1692,17 @@ function useEditorImages(
           for (const [file, picture] of loaded) next.set(file, picture);
           return next;
         });
+        onSettled(path);
       };
 
       image.onerror = () => {
         if (cancelled) return;
         if (attempt >= RETRY_DELAYS.length) {
           console.warn(`[editor] could not load ${path}`);
+          // Settled, not loaded: the picture is missing from the composition
+          // either way, and the preview has to reveal without it rather than
+          // wait for a file the ladder has just proved is not coming.
+          onSettled(path);
           return;
         }
         timers.push(setTimeout(() => load(path, attempt + 1), RETRY_DELAYS[attempt]!));
@@ -1652,7 +1715,7 @@ function useEditorImages(
       cancelled = true;
       for (const timer of timers) clearTimeout(timer);
     };
-  }, [session, paths, setImages]);
+  }, [session, paths, setImages, onSettled]);
 }
 
 /**
