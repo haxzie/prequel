@@ -645,15 +645,22 @@ impl ScreenRecorder {
             return Err(Error::ScreenCaptureKit(failure));
         }
 
-        let writer = inner
-            .writer
-            .take()
+        // Every writer is finalised before any failure is propagated. These are
+        // three separate `AVAssetWriter`s and none of them implements `Drop`, so
+        // a `?` between two `finish` calls leaves the rest never finalised — a
+        // file whose moov atom was never written, which probes as "holds no
+        // readable video or audio track" and will never decode. A screen track
+        // that failed to close used to take a healthy microphone recording with
+        // it, and the pair reached the editor as a recording that would not open
+        // and had no thumbnail.
+        let screen = inner.writer.take().map(VideoWriter::finish).transpose();
+        let system_audio = finish_audio(system_audio);
+        let microphone = finish_audio(microphone);
+
+        let summary = screen?
             .ok_or_else(|| Error::ScreenCaptureKit("recorder already stopped".to_owned()))?;
-
-        let summary = writer.finish()?;
-
-        let system_audio = finish_audio(system_audio)?;
-        let microphone = finish_audio(microphone)?;
+        let system_audio = system_audio?;
+        let microphone = microphone?;
         drop(self.queue);
 
         let keyboard = crate::clicks::key_tracks(|host| self.clock.media_time(host).ok());

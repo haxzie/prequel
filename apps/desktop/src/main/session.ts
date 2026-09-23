@@ -15,6 +15,7 @@ import { shell } from "electron";
 import type { SessionState, SessionStatus, StartOptions, Target } from "../shared/contract.js";
 import type { Recorder, RecordingResult, StartRecordingRequest } from "./recorder.js";
 import { log } from "./log.js";
+import { reportError } from "./errors.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 
 export type { SessionState, SessionStatus, StartOptions };
@@ -203,6 +204,14 @@ export class RecordingSession {
       return result;
     } catch (cause) {
       this.error = describeRecorderError(cause);
+      // Logged and reported, not only recorded. A stop that fails leaves tracks
+      // that were never finalised: the recording is still in the library and
+      // still opens, and the first thing to notice is the editor, by failing to
+      // decode it. Routing this only into `this.error` meant the one failure
+      // that explains a recording with no preview was also the one failure that
+      // reached no log and no report.
+      console.error("[session] could not stop cleanly:", cause);
+      reportError("capture.stop", cause);
       return null;
     } finally {
       this.status = "idle";
