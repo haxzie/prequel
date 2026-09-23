@@ -16,5 +16,11 @@ fn main() {
     // emits it and does not reach a dependent. The speech crate's own test
     // binaries link fine from its copy, which is exactly why this was invisible
     // until the `.node` was loaded.
-    println!("cargo:rustc-link-arg-cdylib=-Wl,-rpath,/usr/lib/swift");
+    // Not `-cdylib`: that covers the addon and nothing else, so `cargo test`
+    // built this crate's test binary against the same `@rpath` reference with
+    // no rpath to resolve it and the binary aborted before it ran a line. The
+    // packaged app worked throughout, which is why the workspace test run was
+    // the only place it showed — red on every commit, for a fault in neither
+    // the tests nor the code they cover.
+    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
 }
