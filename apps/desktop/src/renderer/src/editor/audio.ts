@@ -170,9 +170,9 @@ export class AudioMixer {
   /**
    * Plays a picker's demo once, at `gain`, straight to the output.
    *
-   * Not a bank voice: the addon hands back the whole five seconds already
-   * mixed and panned, so this decodes and starts it outright rather than
-   * going through `schedule`, which places a cue against an `onset`.
+   * Not a bank voice: the addon hands back the whole demo already mixed and
+   * panned, so this decodes and starts it outright rather than going through
+   * `schedule`, which places a cue against an `onset`.
    *
    * Deliberately *not* on the sound bus. A bus is muted while its sound is
    * Off, and Off is exactly what someone has selected when they open the
@@ -184,7 +184,7 @@ export class AudioMixer {
     const context = this.ensureContext();
 
     // One demo at a time. The buttons sit in a list meant to be tried a row at
-    // a time, and five-second samples left to overlap stop being comparable.
+    // a time, and demos left to overlap stop being comparable.
     this.stopSample();
 
     const frames = sample.samples.length / sample.channels;

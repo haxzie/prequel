@@ -163,8 +163,8 @@ export interface InspectorProps {
    */
   onAudition: (bus: "keys" | "clicks", profile: string) => void;
   /**
-   * Plays a whole five-second demo of a profile at `volume` — the play button
-   * on each row of a sound picker, for hearing a keyboard without choosing it.
+   * Plays a profile's whole demo at `volume` — the play button on each row of
+   * a sound picker, for hearing a keyboard without choosing it.
    */
   onPlaySample: (profile: string, volume: number) => void;
   /** How the transcript is doing, so the captions panel can offer to make one. */
@@ -2570,8 +2570,8 @@ const FRAME_KEYS: (keyof BackgroundSettings)[] = [
 ];
 
 /**
- * The play button on a sound picker's row: five seconds of that keyboard,
- * without choosing it.
+ * The play button on a sound picker's row: that sound, without choosing it —
+ * a few seconds of typing for a keyboard, a single click for a mouse.
  *
  * Its own button beside the row's radio rather than part of it, so pressing it
  * neither selects the row nor closes the list — a list of keyboards is meant

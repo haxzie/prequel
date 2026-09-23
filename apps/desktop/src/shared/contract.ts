@@ -597,7 +597,7 @@ export const IPC_CHANNELS = {
    */
   editorSoundBank: "editor:soundBank",
   /**
-   * A ready-mixed five-second listen of one keyboard or mouse, by id.
+   * A ready-mixed listen of one keyboard or mouse, by id.
    *
    * Separate from `editorSoundBank` because the picker's play button wants a
    * whole demo to start playing, not a bank of voices to place cues against.

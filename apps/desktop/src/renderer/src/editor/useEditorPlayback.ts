@@ -166,7 +166,7 @@ export interface EditorPlayback {
    */
   audition: (bus: "keys" | "clicks", profile: string) => void;
   /**
-   * Plays a whole five-second demo now, at `gain` — the picker's play button,
+   * Plays a profile's whole demo now, at `gain` — the picker's play button,
    * as distinct from `audition`'s single note on choosing a profile.
    */
   playSample: (sample: SoundSample, gain: number) => void;

@@ -278,8 +278,8 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.editorSoundBank, profile),
 
     /**
-     * A ready-mixed five-second listen of one keyboard or mouse, by id, for
-     * the picker's play button.
+     * A ready-mixed listen of one keyboard or mouse, by id, for the picker's
+     * play button.
      */
     soundSample: (profile: string): Promise<IpcResult<SoundSample>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorSoundSample, profile),

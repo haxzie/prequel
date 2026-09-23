@@ -217,10 +217,11 @@ export interface Recorder {
   soundBank(profile: string): SoundBank;
 
   /**
-   * A ready-mixed five-second listen of one keyboard or mouse, by id.
+   * A ready-mixed listen of one keyboard or mouse, by id.
    *
    * For the picker's play button, before a profile has recorded anything of
-   * its own to preview. Throws for an id the addon does not know.
+   * its own to preview: a few seconds of typing for a keyboard, one click for
+   * a mouse. Throws for an id the addon does not know.
    */
   soundSample(profile: string): SoundSample;
 

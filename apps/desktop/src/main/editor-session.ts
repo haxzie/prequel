@@ -118,7 +118,7 @@ export async function readSoundBank(profile: string): Promise<SoundBank> {
 }
 
 /**
- * Five-second demos by profile id. A demo is a pure function of its id too,
+ * Demos by profile id. A demo is a pure function of its id too,
  * so the same caching pays off the same way `banks` does.
  */
 const samples = new Map<string, SoundSample>();

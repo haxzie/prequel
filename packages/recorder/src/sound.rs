@@ -113,10 +113,11 @@ pub fn sound_bank(profile: String) -> Result<SoundBank> {
     })
 }
 
-/// A ready-mixed five-second listen, for a picker's play button.
+/// A ready-mixed listen, for a picker's play button.
 ///
 /// Not a bank: there is no cue to place, so the renderer decodes and starts
-/// this outright rather than scheduling a voice against a plan.
+/// this outright rather than scheduling a voice against a plan. Its length is
+/// whatever the profile needs — see `prequel_keysound::demo`.
 #[napi(object)]
 pub struct SoundSample {
     pub sample_rate: u32,
@@ -126,8 +127,9 @@ pub struct SoundSample {
     pub samples: Float32Array,
 }
 
-/// Five seconds of a fixed phrase or click pattern, for a keyboard or a mouse
-/// by id — the picker's preview before a profile has ever recorded anything.
+/// The demo for a keyboard or a mouse by id — the picker's preview before a
+/// profile has ever recorded anything. A phrase for a keyboard, one click for
+/// a mouse.
 #[napi]
 pub fn sound_sample(profile: String) -> Result<SoundSample> {
     let samples = if let Some(keys) = KeyProfile::from_id(&profile) {
