@@ -4,7 +4,7 @@ export const faq = [
   {
     question: "Why is there no Cursor panel on my recording?",
     answer:
-      "The pointer was baked into the frames, because Bake the pointer into the recording was on in Settings when the take was made. Recordings made with it off carry the pointer as a layer that can be restyled.",
+      "The pointer was baked into the frames when that take was made, so it is already part of the picture and there is nothing to restyle. Prequel no longer bakes the pointer: every recording carries it as a layer.",
   },
   {
     question: "Can I hide the pointer?",
@@ -20,7 +20,7 @@ export const faq = [
 
 ## When the panel appears
 
-Prequel records the pointer as its own layer rather than baking it into the frames, so it can be changed afterwards. The Cursor panel appears for those recordings. If **Bake the pointer into the recording** was on in Settings when the take was made, the pointer is already in the picture and there is nothing to restyle.
+Prequel records the pointer as its own layer rather than baking it into the frames, so it can be changed afterwards. The panel appears for every recording made with a current version. An older take made while Prequel could still bake the pointer has it in the picture already, and there is nothing to restyle.
 
 ![The Cursor panel: pointer style, size, smoothing, motion blur and hiding](/docs/inspector-cursor.webp)
 

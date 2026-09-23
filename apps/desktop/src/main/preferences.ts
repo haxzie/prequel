@@ -99,7 +99,6 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     micId: typeof value.micId === "string" ? value.micId : null,
     micLabel: typeof value.micLabel === "string" ? value.micLabel : null,
     systemAudio: value.systemAudio ?? DEFAULT_PREFERENCES.systemAudio,
-    bakeCursor: value.bakeCursor ?? DEFAULT_PREFERENCES.bakeCursor,
     captureKeys: value.captureKeys ?? DEFAULT_PREFERENCES.captureKeys,
     cameraPosition: point(value.cameraPosition),
     // Normalised on the way in as well as the way out: a hand-edited

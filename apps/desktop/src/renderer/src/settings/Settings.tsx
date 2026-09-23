@@ -210,17 +210,6 @@ function Recording({ preferences, set }: PaneProps) {
         </Field>
       </Section>
 
-      <Section title="Cursor">
-        <Field label="Bake the pointer into the recording" inline>
-          <Toggle value={preferences.bakeCursor} onChange={(bakeCursor) => set({ bakeCursor })} />
-        </Field>
-        <p className="text-[11px] leading-relaxed text-editor-muted">
-          Off means the pointer is sampled during capture and drawn by the editor instead, which is
-          what makes it possible to hide, resize or zoom to it afterwards. Baking it in cannot be
-          undone.
-        </p>
-      </Section>
-
       <Section title="Keyboard">
         <Field label="Note when keys are pressed" inline>
           <Toggle

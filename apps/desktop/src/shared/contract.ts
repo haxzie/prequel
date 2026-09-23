@@ -111,20 +111,6 @@ export interface RecordingPreferences {
   micLabel: string | null;
   systemAudio: boolean;
   /**
-   * Draw the system pointer into the recording itself.
-   *
-   * Off by default, which is not the same as hiding the pointer: it is sampled
-   * during capture and composited by the editor instead, which is what makes
-   * it possible to hide, resize or zoom to it afterwards. Baking it in is
-   * irreversible, so the choice defaults to the one that can be undone.
-   *
-   * Renamed from `showCursor` rather than repurposed — an existing preferences
-   * file has `showCursor: true` in it, and reusing the key would have kept
-   * every current user baking the pointer while the editor drew a second one
-   * on top.
-   */
-  bakeCursor: boolean;
-  /**
    * Note the moment and the class of each key press, for typing sounds.
    *
    * On by default. What a recording keeps of a key is a time and one of five
@@ -206,7 +192,6 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   micId: null,
   micLabel: null,
   systemAudio: true,
-  bakeCursor: false,
   captureKeys: true,
   cameraPosition: null,
   toggleShortcut: "Shift+Cmd+R",
