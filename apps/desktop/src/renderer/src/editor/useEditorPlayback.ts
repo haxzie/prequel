@@ -278,10 +278,11 @@ export function useEditorPlayback(
       // Which slice is on screen, on the same clock the picture is resolved
       // against — so hovering the timeline previews the layout of the moment
       // under the pointer as well as the frame.
-      //
+      const activeSlice = sliceAt(placed, showing);
+
       // React bails out of an identical value, so this is only a render when
       // the playhead actually crosses a cut.
-      setSliceId(sliceAt(placed, showing)?.id ?? null);
+      setSliceId(activeSlice?.id ?? null);
 
       // Running off the end stops the clock rather than leaving it counting
       // past media that is no longer there.
@@ -304,7 +305,13 @@ export function useEditorPlayback(
         const fileTime = source === null ? null : toFileTime(track, source);
         if (fileTime !== null) nowVisible.add(kind);
 
-        syncElement(element, fileTime, playback.isPlaying, { seek: jumped });
+        const speed = activeSlice?.speed ?? 1;
+        // Pitch-corrected playback would disagree with the naive resample the
+        // exporter applies (there is no time-stretch DSP on either side of
+        // this codebase) — matched here so the preview never sounds different
+        // from the file it is standing in for.
+        if (element.preservesPitch !== (speed === 1)) element.preservesPitch = speed === 1;
+        syncElement(element, fileTime, playback.isPlaying, { seek: jumped, baseRate: speed });
       }
 
       // The sounds, armed a little ahead. `at` is on the frame clock and

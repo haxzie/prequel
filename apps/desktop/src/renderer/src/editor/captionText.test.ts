@@ -198,8 +198,8 @@ describe("survivingWords", () => {
 
   it("hides a word whose start was cut away, and keeps every word somewhere", () => {
     const placed = place([
-      { id: "a", source: { start: 0, end: 1.5 * S } },
-      { id: "b", source: { start: 3.5 * S, end: 5 * S } },
+      { id: "a", source: { start: 0, end: 1.5 * S }, speed: 1 },
+      { id: "b", source: { start: 3.5 * S, end: 5 * S }, speed: 1 },
     ]);
     const { visible, hidden } = survivingWords(words, placed);
 
@@ -212,8 +212,8 @@ describe("survivingWords", () => {
 
   it("gives a word beginning exactly on a cut to the later clip", () => {
     const placed = place([
-      { id: "a", source: { start: 0, end: S } },
-      { id: "b", source: { start: 2 * S, end: 5 * S } },
+      { id: "a", source: { start: 0, end: S }, speed: 1 },
+      { id: "b", source: { start: 2 * S, end: 5 * S }, speed: 1 },
     ]);
     const { visible } = survivingWords(words, placed);
 

@@ -169,6 +169,7 @@ fn slice(start: u64, end: u64) -> SliceRender {
         end,
         plan: plan(),
         audio: AudioMix::tracks(1.0, 1.0),
+        speed: 1.0,
     }
 }
 

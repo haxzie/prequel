@@ -174,12 +174,19 @@ export function syncElement(
   element: HTMLMediaElement,
   expected: MediaTime | null,
   playing: boolean,
-  options: { seek?: boolean } = {},
+  options: { seek?: boolean; baseRate?: number } = {},
 ): void {
   if (expected === null) {
     if (!element.paused) element.pause();
     return;
   }
+
+  // The rate a slice's own speed asks for, before drift correction. The
+  // active slice's `fileTime` already advances at this rate, so nudging back
+  // toward a hardcoded 1 here would make the element fall permanently behind
+  // (or race ahead of) `expected` and thrash the hard-seek branch below every
+  // frame.
+  const baseRate = options.baseRate ?? 1;
 
   const target = expected / 1_000_000_000;
   const drift = (element.currentTime - target) * 1000 * NS_PER_MS;
@@ -195,12 +202,12 @@ export function syncElement(
   // the playhead is. Paused, any drift worth noticing has to be a real seek.
   if (options.seek || magnitude > HARD_SEEK_NS || (!playing && magnitude > IN_SYNC_NS)) {
     element.currentTime = target;
-    setRate(element, 1);
+    setRate(element, baseRate);
   } else if (magnitude > IN_SYNC_NS) {
     // Behind the clock speeds up, ahead of it slows down.
-    setRate(element, drift < 0 ? 1 + NUDGE_RATE : 1 - NUDGE_RATE);
+    setRate(element, drift < 0 ? baseRate + NUDGE_RATE : baseRate - NUDGE_RATE);
   } else {
-    setRate(element, 1);
+    setRate(element, baseRate);
   }
 
   if (playing && element.paused) {

@@ -25,8 +25,8 @@ function cue(at: number, kind = 0): SoundCue {
 
 /** Two clips: source 0–1 s and 2–3 s, laid end to end. */
 const cutEdit = place([
-  { id: "a", source: { start: 0, end: S } },
-  { id: "b", source: { start: 2 * S, end: 3 * S } },
+  { id: "a", source: { start: 0, end: S }, speed: 1 },
+  { id: "b", source: { start: 2 * S, end: 3 * S }, speed: 1 },
 ]);
 
 class Recorder {

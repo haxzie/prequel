@@ -17,7 +17,7 @@ use crate::compositor::Compositor;
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::reader::{AudioReader, VideoReader};
 use crate::sound::{SoundPlan, SoundTrack};
-use crate::timeline::{SliceRender, Timeline};
+use crate::timeline::{MAX_SPEED, MIN_SPEED, SliceRender, Timeline};
 use crate::{Error, Result};
 
 /// What the exporter writes audio at. Every source is resampled to it on read,
@@ -639,6 +639,20 @@ fn samples_upto(at: MediaTime, len: usize) -> usize {
 /// `startWriting`. That is a question about which files exist, and answering it
 /// costs nothing — see `open`.
 ///
+/// The target rate to decode a slice's audio at.
+///
+/// Decoding to a scaled rate is the naive way to change speed: it asks for the
+/// same source span but a different sample count, which changes both how long
+/// the slice plays and its pitch — there is no time-stretch DSP in this
+/// codebase to do the two independently. `AudioStream::open_slot`'s `owed`
+/// (from `slice.duration()`, which already divides by speed) expects the
+/// sample count this produces; get the ratio backwards — `base * speed`
+/// instead of `base / speed` — and the mix runs short or long against `owed`
+/// while still looking like it decoded fine, since nothing errors.
+fn audio_decode_rate(base: f64, speed: f64) -> f64 {
+    base / speed.clamp(MIN_SPEED, MAX_SPEED)
+}
+
 /// The audio runs ahead of the picture, so this keeps its own slice cursor
 /// rather than following the one driving the readers: by the time the last
 /// frame of a slice is drawn, the sound of the next one has already been
@@ -775,7 +789,8 @@ impl<'a> AudioStream<'a> {
                 continue;
             }
 
-            self.readers[index] = match AudioReader::open(path, start, end, SAMPLE_RATE) {
+            let rate = audio_decode_rate(SAMPLE_RATE, slice.speed);
+            self.readers[index] = match AudioReader::open(path, start, end, rate) {
                 Ok(reader) => Some(reader),
                 Err(err) => {
                     tracing::warn!("could not read {}: {err}", path.display());
@@ -862,7 +877,29 @@ mod tests {
                 items,
             },
             audio: AudioMix::tracks(1.0, 1.0),
+            speed: 1.0,
         }
+    }
+
+    #[test]
+    fn decodes_a_sped_up_slice_at_a_lower_rate() {
+        // Fewer samples over the same source span play back in less time at the
+        // nominal rate — faster and higher-pitched, which is what "2x" should
+        // sound like. Getting the ratio inverted still compiles and still
+        // decodes something, so this pins the direction explicitly.
+        assert!(audio_decode_rate(48_000.0, 2.0) < 48_000.0);
+        assert_eq!(audio_decode_rate(48_000.0, 2.0), 24_000.0);
+    }
+
+    #[test]
+    fn decodes_a_slowed_down_slice_at_a_higher_rate() {
+        assert!(audio_decode_rate(48_000.0, 0.5) > 48_000.0);
+        assert_eq!(audio_decode_rate(48_000.0, 0.5), 96_000.0);
+    }
+
+    #[test]
+    fn leaves_ordinary_speed_alone() {
+        assert_eq!(audio_decode_rate(48_000.0, 1.0), 48_000.0);
     }
 
     #[test]

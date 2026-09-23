@@ -11,6 +11,8 @@ import {
   DEFAULT_LAYOUT,
   KEY_SOUNDS,
   keySoundId,
+  MAX_SPEED,
+  MIN_SPEED,
   SHAPE_RADIUS,
   SOUND_OFF,
   overriddenKeys,
@@ -684,7 +686,23 @@ export function Inspector(props: InspectorProps) {
               )}
 
               {active === "recording" && (
-                <RecordingPanel settings={settings} field={field} set={set} />
+                <RecordingPanel
+                  settings={settings}
+                  field={field}
+                  set={set}
+                  // A direct `Slice` field rather than one of `settings`'
+                  // sections — speed moves where everything else on the
+                  // timeline sits, which `set`'s overrides machinery does not
+                  // expect of anything it writes. Undefined with nothing
+                  // selected: there is no "every clip's speed" the way there
+                  // is a default padding, so the control disables rather than
+                  // inventing one.
+                  speed={selectedSlice(state)?.speed}
+                  onChangeSpeed={(speed) => {
+                    const slice = selectedSlice(state);
+                    if (slice) dispatch({ type: "setSliceSpeed", sliceId: slice.id, speed });
+                  }}
+                />
               )}
 
               {active === "watermark" && (
@@ -2338,19 +2356,32 @@ function BackgroundPanel({
  * Every value here is a fraction of the frame's shorter edge, so a look
  * survives 16:9 becoming 9:16.
  */
+/** Quick-select stops under the speed slider. */
+const SPEED_PRESETS = [0.25, 0.5, 1, 2, 4] as const;
+
+/** Drops the trailing zeros `toFixed` leaves — `1.00×` reads as a typo, `1×` doesn't. */
+function formatSpeed(value: number): string {
+  return `${String(Number(value.toFixed(2)))}×`;
+}
+
 function RecordingPanel({
   settings,
   field,
   set,
+  speed,
+  onChangeSpeed,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   set: Setter;
+  /** The selected clip's playback rate, or undefined with nothing selected. */
+  speed: number | undefined;
+  onChangeSpeed: (speed: number) => void;
 }) {
   const { background } = settings;
 
   return (
-    // Three groups rather than one column of eight. The panel is the frame
+    // Four groups rather than one column of eight. The panel is the frame
     // around the picture, and half of what is in here belongs to the border or
     // the shadow rather than to the frame itself — read as a flat list, "Blur"
     // sitting under "Border opacity" is anyone's guess as to what it blurs.
@@ -2358,6 +2389,44 @@ function RecordingPanel({
     // Headings earn their place here for the reason they do not on the panels
     // with one group: these name something the panel header does not.
     <>
+      <Section title="Speed">
+        <Slider
+          icon={<SpeedIcon />}
+          label="Speed"
+          value={speed ?? 1}
+          min={MIN_SPEED}
+          max={MAX_SPEED}
+          step={0.05}
+          format={formatSpeed}
+          disabled={speed === undefined}
+          onChange={onChangeSpeed}
+        />
+
+        {/* Stops for the common cases, so reaching for 2x is a click rather
+            than a drag landing near enough. Highlighted only on an exact
+            match — a value the slider carried to, say, 0.73x is not "close
+            to 0.5x", and a preset lit for it would say otherwise. */}
+        <div className="grid grid-cols-5 gap-1">
+          {SPEED_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              disabled={speed === undefined}
+              className={cn(
+                "rounded-md px-1 py-1.5 text-center text-[11px] tabular-nums transition-colors",
+                "disabled:pointer-events-none disabled:opacity-40",
+                preset === speed
+                  ? "bg-white/15 text-white"
+                  : "text-editor-muted hover:bg-white/10",
+              )}
+              onClick={() => onChangeSpeed(preset)}
+            >
+              {formatSpeed(preset)}
+            </button>
+          ))}
+        </div>
+      </Section>
+
       <Section>
         <Slider
           icon={<PaddingIcon />}

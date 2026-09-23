@@ -774,6 +774,8 @@ export interface ExportSlice {
    * disagree.
    */
   plan: RenderPlan;
+  /** Playback rate. 1 is unchanged; the exporter mirrors `timeline.ts`'s scaling. */
+  speed: number;
   micVolume: number;
   systemVolume: number;
   /** A keyboard id from `KEY_SOUNDS`, or `"off"`. */

@@ -223,6 +223,7 @@ mod tests {
                 items: Vec::new(),
             },
             audio,
+            speed: 1.0,
         }
     }
 

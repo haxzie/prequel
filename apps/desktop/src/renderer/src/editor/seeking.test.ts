@@ -83,7 +83,7 @@ describe("a video element mid-seek", () => {
 describe("crossing a cut", () => {
   /** Two slices from one, exactly as the editor's split produces them. */
   const split = splitAt(
-    [{ id: "a", source: { start: 0, end: 10_000_000_000 } }],
+    [{ id: "a", source: { start: 0, end: 10_000_000_000 }, speed: 1 }],
     4_000_000_000,
     () => "b",
   );

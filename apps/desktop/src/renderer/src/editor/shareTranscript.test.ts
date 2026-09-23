@@ -25,13 +25,15 @@ function spoken(text: string): Transcript {
 
 describe("transcriptForShare", () => {
   it("is null with no transcript", () => {
-    expect(transcriptForShare(null, place([{ id: "a", source: { start: 0, end: S } }]))).toBeNull();
+    expect(
+      transcriptForShare(null, place([{ id: "a", source: { start: 0, end: S }, speed: 1 }])),
+    ).toBeNull();
   });
 
   it("converts to milliseconds into the file", () => {
     const shared = transcriptForShare(
       spoken("one two three"),
-      place([{ id: "a", source: { start: 0, end: 3 * S } }]),
+      place([{ id: "a", source: { start: 0, end: 3 * S }, speed: 1 }]),
     );
 
     expect(shared).toEqual({
@@ -50,8 +52,8 @@ describe("transcriptForShare", () => {
     const shared = transcriptForShare(
       spoken("one two three four five"),
       place([
-        { id: "a", source: { start: 0, end: 1 * S } },
-        { id: "b", source: { start: 3 * S, end: 5 * S } },
+        { id: "a", source: { start: 0, end: 1 * S }, speed: 1 },
+        { id: "b", source: { start: 3 * S, end: 5 * S }, speed: 1 },
       ]),
     );
 
@@ -66,7 +68,7 @@ describe("transcriptForShare", () => {
     const shared = transcriptForShare(
       spoken("one two"),
       // The clip ends half a second into "one", before the word does.
-      place([{ id: "a", source: { start: 0, end: 0.5 * S } }]),
+      place([{ id: "a", source: { start: 0, end: 0.5 * S }, speed: 1 }]),
     );
 
     expect(shared?.words).toEqual([{ at: 0, end: 500, text: "one" }]);
@@ -79,8 +81,8 @@ describe("transcriptForShare", () => {
     const shared = transcriptForShare(
       spoken("one two"),
       place([
-        { id: "a", source: { start: 0, end: 0.5 * S } },
-        { id: "b", source: { start: 0.6 * S, end: 2 * S } },
+        { id: "a", source: { start: 0, end: 0.5 * S }, speed: 1 },
+        { id: "b", source: { start: 0.6 * S, end: 2 * S }, speed: 1 },
       ]),
     );
 
@@ -90,7 +92,7 @@ describe("transcriptForShare", () => {
   it("is null when nothing was said in what survived", () => {
     const shared = transcriptForShare(
       spoken("one two"),
-      place([{ id: "a", source: { start: 5 * S, end: 6 * S } }]),
+      place([{ id: "a", source: { start: 5 * S, end: 6 * S }, speed: 1 }]),
     );
 
     expect(shared).toBeNull();

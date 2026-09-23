@@ -539,10 +539,21 @@ export type SliceOverrides = {
 
 // ── Project ─────────────────────────────────────────────────────────────────
 
+/** Bounds a slice's speed is clamped to — wide enough for slow-mo and a fast montage. */
+export const MIN_SPEED = 0.25;
+export const MAX_SPEED = 4;
+
 export interface Slice {
   id: string;
   /** Half-open range of source time, on the manifest's clock. */
   source: { start: Ns; end: Ns };
+  /**
+   * Playback rate. 1 is unchanged. Not a `SliceOverrides` section: every
+   * section there is cosmetic and can change without moving anything else on
+   * the timeline, but speed changes how much project time the slice's source
+   * span takes up — the same kind of field `source` is, not a setting.
+   */
+  speed: number;
   overrides: SliceOverrides;
 }
 
@@ -1477,7 +1488,7 @@ export function newProject(
       {
         id: "composite",
         kind: "composite",
-        slices: [{ id: "take", source: { start: 0, end: duration }, overrides: {} }],
+        slices: [{ id: "take", source: { start: 0, end: duration }, speed: 1, overrides: {} }],
       },
     ],
     output: { fps: 60, format: "h264", shortEdge: null },
@@ -1645,6 +1656,9 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         start: clamp(number(slice.source?.start, 0), 0, duration),
         end: clamp(number(slice.source?.end, duration), 0, duration),
       },
+      // Absent on every project saved before speed existed, which must read
+      // back at the rate it was recorded rather than silently sped up.
+      speed: clamp(number(slice.speed, 1), MIN_SPEED, MAX_SPEED),
       overrides: migrateOverrides((slice.overrides ?? {}) as SliceOverrides),
     }))
     // A slice that survived clamping as empty cannot be drawn or rendered.

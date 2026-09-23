@@ -19,6 +19,13 @@ use crate::plan::RenderPlan;
 
 const NS_PER_SECOND: u64 = 1_000_000_000;
 
+/// Bounds a slice's speed is clamped to before it is divided by or multiplied
+/// with, mirroring `MIN_SPEED`/`MAX_SPEED` in the desktop app's
+/// `shared/project.ts`. `pub` so `export.rs`'s audio decode — the other place
+/// a slice's speed is divided by — clamps to the same range.
+pub const MIN_SPEED: f64 = 0.25;
+pub const MAX_SPEED: f64 = 4.0;
+
 /// One kept span of the recording, and how it should look and sound.
 #[derive(Debug, Clone)]
 pub struct SliceRender {
@@ -27,6 +34,8 @@ pub struct SliceRender {
     pub end: MediaTime,
     pub plan: RenderPlan,
     pub audio: AudioMix,
+    /// Playback rate. 1 is unchanged; output duration is `(end - start) / speed`.
+    pub speed: f64,
 }
 
 /// Per-source gain, applied as a plain multiply.
@@ -68,7 +77,11 @@ impl AudioMix {
 
 impl SliceRender {
     pub fn duration(&self) -> MediaTime {
-        self.end.saturating_sub(self.start)
+        // Output (project-time) duration: the source span divided by speed,
+        // matching `place()` in the desktop app's `timeline.ts`. Twice the
+        // rate covers the same source span in half the output time.
+        let source = self.end.saturating_sub(self.start) as f64;
+        (source / self.speed.clamp(MIN_SPEED, MAX_SPEED)) as MediaTime
     }
 }
 
@@ -143,10 +156,15 @@ impl Timeline {
         let into = at - self.starts[slot];
         let slice = &slices[slot];
 
+        // Project time advances at `speed`x the rate source time does, so the
+        // offset into the slice's output span covers that much more source
+        // ground than it looks like — mirrors `toSourceTime` in `timeline.ts`.
+        let scaled_into = (into as f64 * slice.speed.clamp(MIN_SPEED, MAX_SPEED)) as MediaTime;
+
         // Clamped: rounding at the frame boundary can otherwise ask for a
         // moment a hair past the end of the slice, which reads as a frame from
         // the wrong side of a cut.
-        let source = (slice.start + into).min(slice.end.saturating_sub(1));
+        let source = (slice.start + scaled_into).min(slice.end.saturating_sub(1));
         Some((slot, source))
     }
 }
@@ -159,6 +177,10 @@ mod tests {
     const S: MediaTime = 1_000_000_000;
 
     fn slice(start: MediaTime, end: MediaTime) -> SliceRender {
+        sped_slice(start, end, 1.0)
+    }
+
+    fn sped_slice(start: MediaTime, end: MediaTime, speed: f64) -> SliceRender {
         SliceRender {
             start,
             end,
@@ -170,6 +192,7 @@ mod tests {
                 items: vec![],
             },
             audio: AudioMix::tracks(1.0, 1.0),
+            speed,
         }
     }
 
@@ -253,6 +276,44 @@ mod tests {
         assert!(timeline.locate(29, &slices).is_some());
         assert!(timeline.locate(30, &slices).is_none());
         assert!(timeline.locate(999, &slices).is_none());
+    }
+
+    #[test]
+    fn halves_the_output_duration_of_a_slice_played_at_double_speed() {
+        let slices = [sped_slice(0, 10 * S, 2.0)];
+        assert_eq!(slices[0].duration(), 5 * S);
+    }
+
+    #[test]
+    fn doubles_the_output_duration_of_a_slice_played_at_half_speed() {
+        let slices = [sped_slice(0, 10 * S, 0.5)];
+        assert_eq!(slices[0].duration(), 20 * S);
+    }
+
+    #[test]
+    fn locates_twice_as_far_into_a_sped_up_slice() {
+        // The naive thing — treating `into` as source time directly — looks
+        // right and is off by exactly the speed factor.
+        let slices = [sped_slice(0, 10 * S, 2.0)];
+        let timeline = Timeline::new(&slices, 30);
+
+        // 1s of output at 2x is 2s into the source.
+        assert_eq!(timeline.locate(30, &slices).unwrap(), (0, 2 * S));
+    }
+
+    #[test]
+    fn combines_a_cut_with_a_speed_change_on_the_following_slice() {
+        // `starts` must be built from each slice's own (already speed-scaled)
+        // duration, or a speed change on one slice would shift every later
+        // slice's project-time start by the wrong amount.
+        let slices = [slice(0, 2 * S), sped_slice(4 * S, 10 * S, 2.0)];
+        let timeline = Timeline::new(&slices, 30);
+
+        // The cut slice is unaffected: 2s of output.
+        assert_eq!(timeline.duration(), 2 * S + 3 * S);
+        // The second slice starts at 2s of output; 1s further in is 2s of
+        // source into it, landing at 4s + 2s = 6s.
+        assert_eq!(timeline.locate(90, &slices).unwrap(), (1, 6 * S));
     }
 
     #[test]

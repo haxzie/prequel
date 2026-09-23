@@ -305,6 +305,7 @@ function buildSlices(
           texts,
         ),
       ),
+      speed: slice.speed,
       micVolume: settings.audio.micMuted ? 0 : settings.audio.micVolume,
       systemVolume: settings.audio.systemMuted ? 0 : settings.audio.systemVolume,
       // Through the same fallback the preview uses, so a keyboard this build

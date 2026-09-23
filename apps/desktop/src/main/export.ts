@@ -185,6 +185,7 @@ export async function startExport(request: ExportRequest): Promise<void> {
           // discriminated union several levels deep, and JSON is the one
           // representation both sides already agree on.
           plan: JSON.stringify(slice.plan),
+          speed: slice.speed,
           micVolume: slice.micVolume,
           systemVolume: slice.systemVolume,
           keySound: slice.keySound,

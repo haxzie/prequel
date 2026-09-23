@@ -16,6 +16,7 @@ import {
   DEFAULT_ZOOM,
   keySoundId,
   clickSoundId,
+  MAX_SPEED,
   MAX_TEXT_TRACKS,
   hasOverrides,
   newProject,
@@ -420,8 +421,8 @@ describe("sanitiseProject", () => {
   it("drops slices that clamp to nothing", () => {
     const project = stored() as { tracks: { slices: unknown[] }[] };
     project.tracks[0]!.slices = [
-      { id: "empty", source: { start: 5 * S, end: 5 * S }, overrides: {} },
-      { id: "real", source: { start: 0, end: 4 * S }, overrides: {} },
+      { id: "empty", source: { start: 5 * S, end: 5 * S }, speed: 1, overrides: {} },
+      { id: "real", source: { start: 0, end: 4 * S }, speed: 1, overrides: {} },
     ];
 
     const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
@@ -439,6 +440,26 @@ describe("sanitiseProject", () => {
 
     expect(repaired.tracks[0]!.slices).toHaveLength(1);
     expect(repaired.tracks[0]!.slices[0]!.source).toEqual({ start: 0, end: 10 * S });
+  });
+
+  it("reads a slice saved before speed existed at its recorded rate", () => {
+    const project = stored() as { tracks: { slices: unknown[] }[] };
+    project.tracks[0]!.slices = [{ id: "a", source: { start: 0, end: 4 * S }, overrides: {} }];
+
+    const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
+
+    expect(repaired.tracks[0]!.slices[0]!.speed).toBe(1);
+  });
+
+  it("clamps a slice speed outside the range the editor offers", () => {
+    const project = stored() as { tracks: { slices: unknown[] }[] };
+    project.tracks[0]!.slices = [
+      { id: "a", source: { start: 0, end: 4 * S }, speed: 100, overrides: {} },
+    ];
+
+    const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
+
+    expect(repaired.tracks[0]!.slices[0]!.speed).toBe(MAX_SPEED);
   });
 
   it("fills in settings a partial file is missing", () => {

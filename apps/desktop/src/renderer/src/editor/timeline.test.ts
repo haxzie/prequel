@@ -25,12 +25,12 @@ import {
 const S = 1_000_000_000;
 
 /** One 10-second take, uncut. */
-const WHOLE: Slice[] = [{ id: "a", source: { start: 0, end: 10 * S } }];
+const WHOLE: Slice[] = [{ id: "a", source: { start: 0, end: 10 * S }, speed: 1 }];
 
 /** The same take with 2s–4s removed. */
 const CUT: Slice[] = [
-  { id: "a", source: { start: 0, end: 2 * S } },
-  { id: "b", source: { start: 4 * S, end: 10 * S } },
+  { id: "a", source: { start: 0, end: 2 * S }, speed: 1 },
+  { id: "b", source: { start: 4 * S, end: 10 * S }, speed: 1 },
 ];
 
 function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
@@ -66,6 +66,16 @@ describe("place", () => {
   it("survives an empty edit", () => {
     expect(place([])).toEqual([]);
     expect(totalDuration([])).toBe(0);
+  });
+
+  it("halves the project-time span of a slice played at double speed", () => {
+    const placed = place([{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }]);
+    expect(placed[0]!.duration).toBe(5 * S);
+  });
+
+  it("doubles the project-time span of a slice played at half speed", () => {
+    const placed = place([{ id: "a", source: { start: 0, end: 10 * S }, speed: 0.5 }]);
+    expect(placed[0]!.duration).toBe(20 * S);
   });
 });
 
@@ -167,6 +177,26 @@ describe("project ↔ source", () => {
   it("has no source time for an empty edit", () => {
     expect(toSourceTime([], 0)).toBeNull();
   });
+
+  it("round-trips at double speed", () => {
+    // A speed slice is the same shape of bug as a cut: the two directions scale
+    // oppositely, and getting only one of them right still round-trips wrong.
+    const placed = place([{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }]);
+
+    for (const time of [0, 1 * S, 4 * S - 1]) {
+      const source = toSourceTime(placed, time)!;
+      expect(toProjectTime(placed, source)).toBe(time);
+    }
+  });
+
+  it("reports a shorter project-time span for a span on a sped-up slice", () => {
+    const placed = place([{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }]);
+    // 4s of source at 2x covers 2s of project time.
+    expect(spanInProject(placed, { start: 2 * S, end: 6 * S })).toEqual({
+      start: 1 * S,
+      end: 3 * S,
+    });
+  });
 });
 
 describe("toFileTime", () => {
@@ -249,6 +279,24 @@ describe("splitAt", () => {
   it("declines to cut past the end of the edit", () => {
     expect(splitAt(CUT, 8 * S, id)).toHaveLength(2);
     expect(splitAt(CUT, 20 * S, id)).toHaveLength(2);
+  });
+
+  it("carries a slice's speed onto both halves", () => {
+    const sped: Slice[] = [{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }];
+    const split = splitAt(sped, 4 * S, id);
+
+    expect(split[0]!.speed).toBe(2);
+    expect(split[1]!.speed).toBe(2);
+  });
+
+  it("cuts at the project-time point the pointer landed on, not the source-time one", () => {
+    // At 2x speed, 2s of project time is 4s of source — a cut that used the
+    // project-time offset directly would land at 2s of source instead.
+    const sped: Slice[] = [{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }];
+    const split = splitAt(sped, 2 * S, id);
+
+    expect(split[0]!.source).toEqual({ start: 0, end: 4 * S });
+    expect(split[1]!.source).toEqual({ start: 4 * S, end: 10 * S });
   });
 });
 

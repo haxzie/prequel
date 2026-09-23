@@ -33,6 +33,8 @@ pub struct ExportSlice {
     /// The drawing plan, serialised. Built by `shared/layout.ts`, which owns
     /// the geometry — nothing here recomputes a position.
     pub plan: String,
+    /// Playback rate. 1 is unchanged.
+    pub speed: f64,
     pub mic_volume: f64,
     pub system_volume: f64,
     /// Which keyboard the typing sounds are of — a `KeyProfile` id, or `"off"`.
@@ -180,6 +182,7 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
             start: slice.start.max(0.0) as u64,
             end: slice.end.max(0.0) as u64,
             plan,
+            speed: slice.speed,
             audio: AudioMix {
                 mic: slice.mic_volume as f32,
                 system: slice.system_volume as f32,

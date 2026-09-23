@@ -17,7 +17,9 @@ import {
   DEFAULT_TEXT_LENGTH,
   DEFAULT_ZOOM,
   DEFAULT_ZOOM_LENGTH,
+  MAX_SPEED,
   MAX_TEXT_TRACKS,
+  MIN_SPEED,
   resolveSettings,
   setOverride,
   type LayoutPreset,
@@ -116,6 +118,7 @@ export type EditorAction =
    */
   | { type: "deleteRange"; source: { start: MediaTime; end: MediaTime } }
   | { type: "trimSlice"; sliceId: string; edge: "start" | "end"; source: MediaTime }
+  | { type: "setSliceSpeed"; sliceId: string; speed: number }
   /** The words as corrected, or null to go back to the generated transcript. */
   | { type: "setTranscript"; words: TranscriptWord[] | null }
   | {
@@ -385,6 +388,8 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     // dragged and which end of it.
     case "trimSlice":
       return { coalesce: `trimSlice:${action.sliceId}:${action.edge}` };
+    case "setSliceSpeed":
+      return { coalesce: `setSliceSpeed:${action.sliceId}` };
     case "moveZoom":
       return { coalesce: `moveZoom:${action.zoomId}` };
     case "trimZoom":
@@ -476,6 +481,9 @@ function apply(
 
     case "trimSlice":
       return trimSlice(state, action);
+
+    case "setSliceSpeed":
+      return setSliceSpeed(state, action);
 
     case "setTranscript":
       // Clearing what is already clear is not an edit: it would bank an undo
@@ -1679,6 +1687,7 @@ function splitSlices(state: EditorState, at: MediaTime): EditorState {
               {
                 id: created,
                 source: { start: source, end: slice.source.end },
+                speed: slice.speed,
                 // Structurally cloned: sharing the object would make editing
                 // one half silently edit the other.
                 overrides: structuredClone(slice.overrides),
@@ -1766,6 +1775,7 @@ function deleteRange(
               // silently edit the other.
               id: `${slice.id}-${state.revision + 1}`,
               source: { start: to, end: slice.source.end },
+              speed: slice.speed,
               overrides: structuredClone(slice.overrides),
             }
           : // A slice that only lost its front is still that slice.
@@ -1825,6 +1835,33 @@ function trimSlice(
         candidate.id === action.sliceId
           ? { ...candidate, source: { ...candidate.source, [action.edge]: bounded } }
           : candidate,
+      ),
+    ),
+  );
+}
+
+/**
+ * Sets a slice's playback rate.
+ *
+ * A direct field, not a `writeSetting` call: speed moves where every later
+ * slice, zoom and caption sits on the timeline, which the settings/overrides
+ * system does not expect of anything it resolves.
+ */
+function setSliceSpeed(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "setSliceSpeed" }>,
+): EditorState {
+  const slice = slicesOf(state.project).find((candidate) => candidate.id === action.sliceId);
+  if (!slice) return state;
+
+  const speed = clampTo(action.speed, MIN_SPEED, MAX_SPEED);
+  if (speed === slice.speed) return state;
+
+  return edit(state, (project) =>
+    withSlices(
+      project,
+      slicesOf(project).map((candidate) =>
+        candidate.id === action.sliceId ? { ...candidate, speed } : candidate,
       ),
     ),
   );

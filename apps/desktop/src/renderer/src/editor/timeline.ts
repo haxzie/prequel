@@ -14,12 +14,15 @@
  */
 import type { TrackMedia } from "../../../shared/contract";
 import type { MediaTime } from "../../../shared/manifest";
+import { MIN_SPEED, MAX_SPEED } from "../../../shared/project";
 
 /** A contiguous span of the source recording, kept in the edit. */
 export interface Slice {
   id: string;
   /** Half-open range of source time: `start` is included, `end` is not. */
   source: { start: MediaTime; end: MediaTime };
+  /** Playback rate. 1 is unchanged; project time covers `1 / speed` as much source. */
+  speed: number;
 }
 
 /** A slice with its position in the edit worked out. */
@@ -39,7 +42,10 @@ export interface PlacedSlice extends Slice {
 export function place(slices: readonly Slice[]): PlacedSlice[] {
   let at = 0;
   return slices.map((slice) => {
-    const duration = Math.max(0, slice.source.end - slice.source.start);
+    const sourceDuration = Math.max(0, slice.source.end - slice.source.start);
+    // Output duration shrinks as speed rises: twice the rate covers the same
+    // source span in half the project time.
+    const duration = sourceDuration / Math.min(Math.max(slice.speed, MIN_SPEED), MAX_SPEED);
     const placed = { ...slice, timelineStart: at, duration };
     at += duration;
     return placed;
@@ -78,7 +84,9 @@ export function toSourceTime(placed: readonly PlacedSlice[], time: MediaTime): M
   if (!slice) return null;
 
   const into = Math.min(Math.max(0, time - slice.timelineStart), slice.duration);
-  return slice.source.start + into;
+  // Project time advances at `speed`x the rate source time does, so the offset
+  // into the slice covers that much more source ground than it looks like.
+  return slice.source.start + into * slice.speed;
 }
 
 /**
@@ -111,8 +119,10 @@ export function spanInProject(
     // one: `to === from` is a clip that merely touches the span at a boundary.
     if (to <= from) continue;
 
-    start ??= slice.timelineStart + (from - slice.source.start);
-    end = slice.timelineStart + (to - slice.source.start);
+    // Inverse of `toSourceTime`'s scaling: a source-time span covers `1 / speed`
+    // as much project time.
+    start ??= slice.timelineStart + (from - slice.source.start) / slice.speed;
+    end = slice.timelineStart + (to - slice.source.start) / slice.speed;
   }
 
   return start === null || end === null ? null : { start, end };
@@ -122,7 +132,7 @@ export function spanInProject(
 export function toProjectTime(placed: readonly PlacedSlice[], source: MediaTime): MediaTime | null {
   for (const slice of placed) {
     if (source >= slice.source.start && source < slice.source.end) {
-      return slice.timelineStart + (source - slice.source.start);
+      return slice.timelineStart + (source - slice.source.start) / slice.speed;
     }
   }
   return null;
@@ -220,15 +230,21 @@ export function splitAt(slices: readonly Slice[], time: MediaTime, id: () => str
   );
   if (!slice) return [...slices];
 
-  const source = slice.source.start + (time - slice.timelineStart);
+  // Same scaling as `toSourceTime`: the cut lands `time - timelineStart` into
+  // the slice's *project* time, which covers that much times `speed` of source.
+  const source = slice.source.start + (time - slice.timelineStart) * slice.speed;
 
   return placed.flatMap((candidate): Slice[] =>
     candidate.id === slice.id
       ? [
-          { id: candidate.id, source: { start: candidate.source.start, end: source } },
-          { id: id(), source: { start: source, end: candidate.source.end } },
+          {
+            id: candidate.id,
+            source: { start: candidate.source.start, end: source },
+            speed: candidate.speed,
+          },
+          { id: id(), source: { start: source, end: candidate.source.end }, speed: candidate.speed },
         ]
-      : [{ id: candidate.id, source: { ...candidate.source } }],
+      : [{ id: candidate.id, source: { ...candidate.source }, speed: candidate.speed }],
   );
 }
 
