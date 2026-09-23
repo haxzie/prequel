@@ -119,9 +119,15 @@ export class RecordingSession {
       crop: options.crop ?? undefined,
       outputPath,
       fps: options.fps ?? 60,
-      // Off by default: the pointer is sampled and drawn by the editor,
-      // and baking it into the frames cannot be undone.
-      showCursor: options.showCursor ?? false,
+      // Never. The pointer is sampled during capture and drawn by the
+      // editor, which is what makes it possible to restyle, hide, smooth or
+      // zoom to it afterwards — and baking it into the frames cannot be undone.
+      // This was a setting until the two halves of it disagreed: main declines
+      // to copy the pointer images into a recording whose pointer is baked, and
+      // the editor asked for them anyway and waited for ever on files that were
+      // never coming. Hardcoded rather than defaulted, so there is no path back
+      // to that state for a preferences file or a caller to find.
+      showCursor: false,
       captureKeys: options.captureKeys ?? true,
       systemAudio: options.systemAudio ?? false,
       microphone: options.microphone ?? false,

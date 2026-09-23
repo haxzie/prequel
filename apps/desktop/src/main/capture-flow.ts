@@ -580,7 +580,6 @@ export class CaptureFlow {
       camera: preferences.cameraId !== null,
       microphone: preferences.micId !== null,
       system_audio: preferences.systemAudio,
-      bake_cursor: preferences.bakeCursor,
       capture_keys: preferences.captureKeys,
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
@@ -591,7 +590,6 @@ export class CaptureFlow {
       await this.deps.session.start({
         target: selection.target,
         crop: selection.crop,
-        showCursor: preferences.bakeCursor,
         captureKeys: preferences.captureKeys,
         systemAudio: preferences.systemAudio,
         microphone: preferences.micId !== null,
