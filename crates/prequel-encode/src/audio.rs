@@ -15,6 +15,22 @@ const MIN_SAMPLE_RATE: f64 = 8_000.0;
 
 const DEFAULT_BIT_RATE: i32 = 128_000;
 
+/// The bit rates AAC-LC will take, smallest first.
+///
+/// Not a range: the encoder accepts this set and rejects everything between,
+/// so a computed rate has to be snapped down to one of these rather than used
+/// as it comes out of the arithmetic. 22.05 kHz mono takes 64 kbps and refuses
+/// 66.
+const BIT_RATE_STEPS: [i32; 10] = [
+    24_000, 32_000, 40_000, 48_000, 56_000, 64_000, 80_000, 96_000, 112_000, 128_000,
+];
+
+/// The most AAC will spend per sample, per channel.
+///
+/// Measured against the encoder rather than read off a spec — three bits is the
+/// highest multiple every rate from 8 kHz up accepts.
+const MAX_BITS_PER_SAMPLE: f64 = 3.0;
+
 /// How long an offline append waits for the encoder before giving up.
 const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const READY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2);
@@ -39,12 +55,15 @@ pub struct AudioWriterConfig {
 
 impl AudioWriterConfig {
     pub fn new(sample_rate: f64, channels: i32) -> Self {
+        // ScreenCaptureKit hands back 48 kHz by default, but a mic can be
+        // higher; clamp rather than let the encoder reject the settings.
+        let sample_rate = sample_rate.clamp(MIN_SAMPLE_RATE, MAX_SAMPLE_RATE);
+        let channels = channels.clamp(1, 2);
+
         Self {
-            // ScreenCaptureKit hands back 48 kHz by default, but a mic can be
-            // higher; clamp rather than let the encoder reject the settings.
-            sample_rate: sample_rate.clamp(MIN_SAMPLE_RATE, MAX_SAMPLE_RATE),
-            channels: channels.clamp(1, 2),
-            bit_rate: DEFAULT_BIT_RATE,
+            sample_rate,
+            channels,
+            bit_rate: bit_rate_for(sample_rate, channels),
             realtime: true,
         }
     }
@@ -362,6 +381,28 @@ pub(crate) fn pcm_asbd(sample_rate: f64, channels: i32) -> cat::audio::StreamBas
     }
 }
 
+/// The highest bit rate AAC will take for this format.
+///
+/// A flat 128 kbps is only valid near 44.1/48 kHz. A Bluetooth headset in
+/// hands-free mode records at 16 kHz mono, where the encoder's ceiling is 48
+/// kbps, and asking for 128 fails as AVFoundation -11861 "Cannot Encode Media —
+/// the encoding parameters are not supported". That failure does not arrive at
+/// configuration time: the writer starts, accepts the settings, and rejects the
+/// first buffer, which capture only reports when the take is stopped. The whole
+/// recording is thrown away at that point, so the user loses the take and the
+/// message names neither the microphone nor the rate.
+fn bit_rate_for(sample_rate: f64, channels: i32) -> i32 {
+    let ceiling =
+        DEFAULT_BIT_RATE.min((sample_rate * f64::from(channels) * MAX_BITS_PER_SAMPLE) as i32);
+
+    BIT_RATE_STEPS
+        .iter()
+        .copied()
+        .rfind(|step| *step <= ceiling)
+        // 8 kHz mono lands here: its ceiling is 24 kbps, the smallest step.
+        .unwrap_or(BIT_RATE_STEPS[0])
+}
+
 pub(crate) fn audio_settings(
     config: &AudioWriterConfig,
 ) -> arc::R<ns::Dictionary<ns::String, ns::Id>> {
@@ -409,6 +450,33 @@ mod tests {
         assert_eq!(AudioWriterConfig::new(96_000.0, 2).sample_rate, 48_000.0);
         assert_eq!(AudioWriterConfig::new(44_100.0, 2).sample_rate, 44_100.0);
         assert_eq!(AudioWriterConfig::new(0.0, 2).sample_rate, 8_000.0);
+    }
+
+    #[test]
+    fn the_bit_rate_follows_the_format() {
+        // A Bluetooth headset in hands-free mode. 128 kbps here is what the
+        // encoder rejects as -11861, and it does so at the first buffer rather
+        // than when the settings are handed over.
+        assert_eq!(AudioWriterConfig::new(16_000.0, 1).bit_rate, 48_000);
+
+        // Unchanged where it was already valid, which is every built-in mic and
+        // everything ScreenCaptureKit produces.
+        assert_eq!(
+            AudioWriterConfig::new(48_000.0, 2).bit_rate,
+            DEFAULT_BIT_RATE
+        );
+        assert_eq!(
+            AudioWriterConfig::new(44_100.0, 1).bit_rate,
+            DEFAULT_BIT_RATE
+        );
+
+        // Snapped down to a rate AAC takes rather than to the arithmetic: three
+        // bits a sample is 66 kbps here, and 66 is refused where 64 is not.
+        assert_eq!(AudioWriterConfig::new(22_050.0, 1).bit_rate, 64_000);
+
+        // The floor. 8 kHz mono allows less than the smallest step, so it gets
+        // the smallest step.
+        assert_eq!(AudioWriterConfig::new(8_000.0, 1).bit_rate, 24_000);
     }
 
     #[test]
