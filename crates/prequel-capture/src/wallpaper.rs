@@ -13,10 +13,11 @@
 //! dynamic and video wallpapers, where there is no still file to find — what
 //! you get is what is on screen.
 //!
-//! The screenshot takes the display and excludes every window, rather than
-//! hunting for the window the wallpaper is drawn in. Which window that is has
-//! moved between releases, and a guess that stops matching does not degrade —
-//! it fails outright, and every recording quietly falls back to a gradient.
+//! The screenshot takes the display and excludes every *normal* window, rather
+//! than hunting for the window the wallpaper is drawn in. Which window that is
+//! has moved between releases, and a guess that stops matching does not
+//! degrade — it fails outright, and every recording quietly falls back to a
+//! gradient.
 
 use std::path::Path;
 use std::sync::mpsc;
@@ -43,21 +44,41 @@ pub fn capture_wallpaper(display_id: u32, path: &Path) -> Result<()> {
         .or_else(|| displays.iter().next())
         .ok_or(Error::DisplayNotFound(display_id))?;
 
-    // The display with every window taken off it. What is left is the desktop
-    // picture, whatever is drawing it.
+    // The display with every *normal* window taken off it — not literally every
+    // window. The desktop picture is drawn by a real on-screen window too — on
+    // this release it is one the Dock process owns, named "Wallpaper-" — sitting
+    // at a window layer far below `kCGNormalWindowLevel` (0); it is a member of
+    // `content.windows()` exactly like Finder's or Safari's. Excluding the whole
+    // list therefore excludes the very thing this function is trying to capture,
+    // and what ScreenCaptureKit hands back is the display with nothing left to
+    // draw it: solid black, with only the cursor showing, since that is
+    // composited separately. Pinned by
+    // `crates/prequel-capture/tests/captures_the_wallpaper_not_black.rs`.
     //
-    // This used to hunt for the wallpaper's own window — by the agent's bundle
-    // id, then by the furthest-back window layer — and hand that to
+    // This used to hunt for the wallpaper's own window instead — by the agent's
+    // bundle id, then by the furthest-back window layer — and hand that to
     // `with_desktop_independent_window`. Both tests are guesses about how
     // WindowServer happens to be arranged, and on macOS 26 neither matches: the
     // capture failed with "no wallpaper window on screen" and every recording
     // fell back to a gradient with a blank swatch in the picker.
     //
-    // Excluding windows asks the question the other way round and needs to know
-    // nothing about who draws the desktop. It is also still right for dynamic
-    // and video wallpapers, where there is no still file to find — what comes
-    // back is what is actually on screen behind everything.
-    let filter = sc::ContentFilter::with_display_excluding_windows(display, &content.windows());
+    // The layer is the one thing here that is not a guess: it is a stable, public
+    // distinction between the desktop and everything a user can bring to front,
+    // not an identity or an owning process that shifts between releases.
+    // Excluding only windows at `kCGNormalWindowLevel` or above keeps every
+    // ordinary app window off the shot while leaving the desktop's own layer —
+    // the wallpaper, the desktop icons, and nothing else lives that low — in it.
+    let excluded: Vec<_> = content
+        .windows()
+        .iter()
+        .filter(|window| window.window_layer() >= 0)
+        .map(|window| window.retained())
+        .collect();
+
+    let filter = sc::ContentFilter::with_display_excluding_windows(
+        display,
+        &ns::Array::from_slice_retained(&excluded),
+    );
 
     let mut cfg = sc::StreamCfg::new();
     cfg.set_width(display.width() as usize);
