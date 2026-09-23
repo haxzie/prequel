@@ -5,7 +5,13 @@
  * share it — the preload in particular must not pull main-process code in just
  * to learn a channel name.
  */
-import type { RecordingResult, SoundBank, SoundCues, SoundEvents } from "@prequel/recorder";
+import type {
+  RecordingResult,
+  SoundBank,
+  SoundCues,
+  SoundEvents,
+  SoundSample,
+} from "@prequel/recorder";
 
 import type {
   CursorSample,
@@ -28,7 +34,7 @@ export type { RecordingResult };
  * interface here would be a second place for a field to go missing. Typed
  * arrays survive the structured clone IPC uses, so the shapes cross unchanged.
  */
-export type { SoundBank, SoundCues, SoundEvents };
+export type { SoundBank, SoundCues, SoundEvents, SoundSample };
 
 /**
  * Structural mirrors of the addon's types.
@@ -605,6 +611,13 @@ export const IPC_CHANNELS = {
    * when it needs them, and main caches each.
    */
   editorSoundBank: "editor:soundBank",
+  /**
+   * A ready-mixed five-second listen of one keyboard or mouse, by id.
+   *
+   * Separate from `editorSoundBank` because the picker's play button wants a
+   * whole demo to start playing, not a bank of voices to place cues against.
+   */
+  editorSoundSample: "editor:soundSample",
   /**
    * Editor renderer → main: I have left the recording I was showing.
    *

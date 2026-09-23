@@ -13,7 +13,7 @@
  * a keystroke sounds like or which one plays, for the reason nothing in it
  * decides where the camera sits.
  */
-import type { SoundBank } from "../../../shared/contract";
+import type { SoundBank, SoundSample } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
 
 /**
@@ -162,6 +162,42 @@ export class AudioMixer {
       source.disconnect();
       panner.disconnect();
       level.disconnect();
+    };
+  }
+
+  /**
+   * Plays a picker's demo once, through a bus's gain.
+   *
+   * Not a bank voice: the addon hands back the whole five seconds already
+   * mixed and panned, so this decodes and starts it outright rather than
+   * going through `schedule`, which places a cue against an `onset`. Routed
+   * through the bus gain regardless, so the preview matches the volume slider
+   * a user is looking at while they press it.
+   */
+  playSample(bus: "keys" | "clicks", sample: SoundSample): void {
+    const context = this.ensureContext();
+    const out = this.gains.get(bus);
+    if (!out) return;
+
+    const frames = sample.samples.length / sample.channels;
+    const buffer = context.createBuffer(sample.channels, frames, sample.sampleRate);
+    for (let channel = 0; channel < sample.channels; channel++) {
+      const data = new Float32Array(frames);
+      for (let frame = 0; frame < frames; frame++) {
+        data[frame] = sample.samples[frame * sample.channels + channel] ?? 0;
+      }
+      buffer.copyToChannel(data, channel);
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(out);
+    source.start();
+
+    this.live.add(source);
+    source.onended = () => {
+      this.live.delete(source);
+      source.disconnect();
     };
   }
 

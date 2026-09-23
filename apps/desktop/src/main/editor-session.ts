@@ -10,7 +10,13 @@ import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { EditorSession, SoundBank, SoundCues, TrackMedia } from "../shared/contract.js";
+import type {
+  EditorSession,
+  SoundBank,
+  SoundCues,
+  SoundSample,
+  TrackMedia,
+} from "../shared/contract.js";
 import { dialog, shell, type BrowserWindow } from "electron";
 
 import type { Manifest, TrackKind } from "../shared/manifest.js";
@@ -109,6 +115,22 @@ export async function readSoundBank(profile: string): Promise<SoundBank> {
   const bank = (await getRecorder()).soundBank(profile);
   banks.set(profile, bank);
   return bank;
+}
+
+/**
+ * Five-second demos by profile id. A demo is a pure function of its id too,
+ * so the same caching pays off the same way `banks` does.
+ */
+const samples = new Map<string, SoundSample>();
+
+/** A ready-mixed demo of one keyboard or mouse, for the picker's play button. */
+export async function readSoundSample(profile: string): Promise<SoundSample> {
+  const cached = samples.get(profile);
+  if (cached) return cached;
+
+  const sample = (await getRecorder()).soundSample(profile);
+  samples.set(profile, sample);
+  return sample;
 }
 
 /**

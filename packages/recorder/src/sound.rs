@@ -14,7 +14,9 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use prequel_keysound::{Bank, ClickProfile, Cue, CueKind, KeyProfile, cues};
+use prequel_keysound::{
+    Bank, ClickProfile, Cue, CueKind, KeyProfile, SAMPLE_RATE, cues, demo_clicks, demo_keys,
+};
 use prequel_session::{KeyClass, KeyPress};
 
 /// What a recording noted about its input, as the manifest carries it.
@@ -108,6 +110,40 @@ pub fn sound_bank(profile: String) -> Result<SoundBank> {
         variants: flat.variants,
         offsets: Uint32Array::new(flat.offsets),
         samples: Float32Array::new(flat.samples),
+    })
+}
+
+/// A ready-mixed five-second listen, for a picker's play button.
+///
+/// Not a bank: there is no cue to place, so the renderer decodes and starts
+/// this outright rather than scheduling a voice against a plan.
+#[napi(object)]
+pub struct SoundSample {
+    pub sample_rate: u32,
+    /// Always 2. Stated rather than assumed, the way `SoundBank::variants` is.
+    pub channels: u32,
+    /// Interleaved, channel-minor: `samples[frame * channels + channel]`.
+    pub samples: Float32Array,
+}
+
+/// Five seconds of a fixed phrase or click pattern, for a keyboard or a mouse
+/// by id — the picker's preview before a profile has ever recorded anything.
+#[napi]
+pub fn sound_sample(profile: String) -> Result<SoundSample> {
+    let samples = if let Some(keys) = KeyProfile::from_id(&profile) {
+        demo_keys(keys)
+    } else if let Some(clicks) = ClickProfile::from_id(&profile) {
+        demo_clicks(clicks)
+    } else {
+        return Err(Error::from_reason(format!(
+            "UNKNOWN_SOUND: no keyboard or mouse is called {profile:?}"
+        )));
+    };
+
+    Ok(SoundSample {
+        sample_rate: SAMPLE_RATE,
+        channels: 2,
+        samples: Float32Array::new(samples),
     })
 }
 

@@ -464,6 +464,14 @@ export function createFakeRecorder(): Recorder {
       samples: new Float32Array(0),
     }),
 
+    // Silence, for the same reason `soundBank` is: the fake exists so the
+    // play button has something to call, not so anyone listens to it.
+    soundSample: () => ({
+      sampleRate: 48_000,
+      channels: 2,
+      samples: new Float32Array(0),
+    }),
+
     // Reads the manifest the fake itself wrote, so the shape the editor
     // receives matches the native probe's without needing real media.
     probeSession: async (dir) => {

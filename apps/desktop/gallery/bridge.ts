@@ -227,6 +227,14 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
           code: "NO_ADDON",
           message: "the gallery has no addon to render a sound bank",
         }),
+      // Same reasoning as `soundBank`: the play button has nothing to play,
+      // which is the right picture for a gallery to take.
+      soundSample: () =>
+        Promise.resolve({
+          ok: false as const,
+          code: "NO_ADDON",
+          message: "the gallery has no addon to render a sound sample",
+        }),
       // The edit is not saved anywhere: the fixture recording's `project.json`
       // must come out of a run exactly as it went in.
       saveProject: () => ok(undefined),

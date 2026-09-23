@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { EditorSession, SoundBank, TrackMedia } from "../../../shared/contract";
+import type { EditorSession, SoundBank, SoundSample, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type MixBus, type TrackGain } from "./audio";
 import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
@@ -165,6 +165,11 @@ export interface EditorPlayback {
    * while paused, the moment it is chosen.
    */
   audition: (bus: "keys" | "clicks", profile: string) => void;
+  /**
+   * Plays a whole five-second demo now — the picker's play button, as
+   * distinct from `audition`'s single note on choosing a profile.
+   */
+  playSample: (bus: "keys" | "clicks", sample: SoundSample) => void;
   /** Which tracks currently have a frame to show. */
   visible: Set<TrackKind>;
 }
@@ -501,6 +506,13 @@ export function useEditorPlayback(
     },
     [mixer],
   );
+  const playSample = useCallback(
+    (bus: "keys" | "clicks", sample: SoundSample) => {
+      mixer.resume();
+      mixer.playSample(bus, sample);
+    },
+    [mixer],
+  );
 
   // Memoised for the same reason the ref callbacks above are stable, one level
   // up: this object is the dependency of every rAF loop in the editor — the
@@ -533,6 +545,7 @@ export function useEditorPlayback(
       setSoundBank,
       setSoundChoice,
       audition,
+      playSample,
       visible,
     }),
     [
@@ -554,6 +567,7 @@ export function useEditorPlayback(
       setSoundBank,
       setSoundChoice,
       audition,
+      playSample,
       visible,
     ],
   );

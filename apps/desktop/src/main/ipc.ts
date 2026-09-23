@@ -70,7 +70,12 @@ import {
   pickBackgroundImage,
   pickWatermarkImage,
 } from "./wallpaper.js";
-import { deleteRecording, readEditorSession, readSoundBank } from "./editor-session.js";
+import {
+  deleteRecording,
+  readEditorSession,
+  readSoundBank,
+  readSoundSample,
+} from "./editor-session.js";
 import type { SelectionOverlay } from "./windows/selection.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
@@ -372,6 +377,10 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
 
   ipcMain.handle(IPC_CHANNELS.editorSoundBank, (_event, profile: string) =>
     attempt(() => readSoundBank(profile)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.editorSoundSample, (_event, profile: string) =>
+    attempt(() => readSoundSample(profile)),
   );
 
   ipcMain.handle(IPC_CHANNELS.projectsRename, (_event, dir: string, name: string) =>

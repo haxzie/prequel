@@ -907,6 +907,22 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   usePersistence(session, state.project, state.revision);
   useAudioMix(media, state, session);
   useSoundBanks(media, state.project);
+  const playSample = useCallback(
+    (bus: "keys" | "clicks", profile: string) => {
+      // Fetched on demand rather than preloaded like the banks `useSoundBanks`
+      // keeps: a demo is only ever wanted the moment someone presses play, and
+      // main caches it the same way, so a second press of the same profile is
+      // free.
+      void window.prequel.editor.soundSample(profile).then((result) => {
+        if (result.ok) {
+          media.playSample(bus, result.value);
+        } else {
+          console.warn(`[editor] could not load the sound sample ${profile}:`, result.message);
+        }
+      });
+    },
+    [media],
+  );
   useEditorImages(session, state.project, cursorFiles, setImages, markImageSettled);
   useShortcuts(media, dispatch, state);
 
@@ -1050,6 +1066,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               hasCursor={session.cursor !== null}
               hasSounds={hasSounds}
               onAudition={media.audition}
+              onPlaySample={playSample}
               captions={transcription}
               editing={editing}
               backgrounds={backgrounds}

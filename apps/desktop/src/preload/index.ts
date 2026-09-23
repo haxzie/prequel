@@ -27,6 +27,7 @@ import type {
   ShareProgress,
   ShareRequest,
   SoundBank,
+  SoundSample,
   Target,
   TeleprompterJump,
   TeleprompterPosition,
@@ -275,6 +276,13 @@ const api = {
      */
     soundBank: (profile: string): Promise<IpcResult<SoundBank>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorSoundBank, profile),
+
+    /**
+     * A ready-mixed five-second listen of one keyboard or mouse, by id, for
+     * the picker's play button.
+     */
+    soundSample: (profile: string): Promise<IpcResult<SoundSample>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorSoundSample, profile),
 
     /** Persists the edit. Debounced by the renderer, which owns it. */
     saveProject: (dir: string, project: Project): Promise<IpcResult<void>> =>

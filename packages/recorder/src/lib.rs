@@ -27,7 +27,9 @@ pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};
 pub use logging::set_log_file;
 pub use probe::{CaptureWallpaper, ProbeSession, TrackProbe, capture_wallpaper, probe_session};
 pub use screen::{DisplaySafeArea, display_safe_area};
-pub use sound::{SoundBank, SoundCues, SoundEvents, sound_bank, sound_cues};
+pub use sound::{
+    SoundBank, SoundCues, SoundEvents, SoundSample, sound_bank, sound_cues, sound_sample,
+};
 
 #[napi(string_enum)]
 #[derive(Debug, Clone, Copy)]

@@ -28,12 +28,14 @@
 //! `profile.rs` is those observations as a table.
 
 mod bank;
+mod demo;
 mod profile;
 mod rng;
 mod schedule;
 mod synth;
 
 pub use bank::{Bank, Flat, VARIANTS};
+pub use demo::{demo_clicks, demo_keys};
 pub use profile::{ClickProfile, CueKind, KeyProfile, Mode, Profile};
 pub use schedule::{Cue, MIN_SAME_KIND_GAP, cues};
 pub use synth::{Voice, render_voice};

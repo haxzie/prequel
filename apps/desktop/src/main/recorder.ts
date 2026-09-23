@@ -15,6 +15,7 @@ import type {
   SoundBank,
   SoundCues,
   SoundEvents,
+  SoundSample,
   SpeechAvailability,
   TrackProbe,
   TranscribeOptions,
@@ -33,6 +34,7 @@ export type {
   SoundBank,
   SoundCues,
   SoundEvents,
+  SoundSample,
   SpeechAvailability,
   Target,
   TrackProbe,
@@ -213,6 +215,14 @@ export interface Recorder {
    * for an id the addon does not know.
    */
   soundBank(profile: string): SoundBank;
+
+  /**
+   * A ready-mixed five-second listen of one keyboard or mouse, by id.
+   *
+   * For the picker's play button, before a profile has recorded anything of
+   * its own to preview. Throws for an id the addon does not know.
+   */
+  soundSample(profile: string): SoundSample;
 
   /**
    * Screenshots the current desktop picture to `path`, as a PNG.
