@@ -53,6 +53,24 @@ let sent = 0;
 const seen = new Set<string>();
 
 /**
+ * A second place to send a failure, or nothing.
+ *
+ * Handed in rather than imported, the way the recorder is: `@sentry/electron`
+ * reaches for the real `electron` module the moment it is loaded, and this file
+ * is imported by nearly everything in main — including tests that have no
+ * Electron to give it. Registered by `initSentry`, which is a no-op outside a
+ * packaged build, so development and the test suite have no sink at all and
+ * this stays one branch rather than a mock everybody has to remember.
+ */
+type ErrorSink = (scope: string, cause: unknown, extra?: Record<string, unknown>) => void;
+
+let sink: ErrorSink | null = null;
+
+export function setErrorSink(next: ErrorSink | null): void {
+  sink = next;
+}
+
+/**
  * Whether a report is already being built.
  *
  * `track` cannot throw, but everything around it can, and the handler this file
@@ -90,17 +108,25 @@ export function reportError(scope: string, cause: unknown, extra?: Record<string
     seen.add(signature);
     sent += 1;
 
+    const properties = safe(extra);
+
     track("app_error", {
       // First, so a caller's own property cannot replace one of the redacted
       // fields below with an unredacted one of the same name — `extra` holding
       // a `message` used to win over the message that had just been through
       // `redact`.
-      ...safe(extra),
+      ...properties,
       scope,
       name,
       message,
       ...(error?.stack ? { stack: redact(error.stack).slice(0, MAX_STACK) } : {}),
     });
+
+    // The same failure to the other sink, when there is one. Behind the cap
+    // and the dedupe above rather than beside them: a render loop throwing
+    // sixty times a second is one fact wherever it is sent, and Sentry's own
+    // rate limiting would spend the quota discovering that for itself.
+    sink?.(scope, cause, properties);
   } catch {
     // Reporting a failure must never become one.
   } finally {

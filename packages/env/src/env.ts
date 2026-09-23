@@ -97,6 +97,26 @@ export const client = {
    * carries, so development traffic has to be *absent* rather than filterable.
    */
   NEXT_PUBLIC_GA_MEASUREMENT_ID: z.string().default("G-V0CDLY5XCP"),
+
+  /**
+   * Sentry's DSN for the desktop app.
+   *
+   * Public by construction, like PostHog's token above: a DSN is write-only
+   * ingest and reads nothing back out of the project. Unlike that token it is
+   * defaulted to the real value rather than to empty, and the difference is
+   * deliberate — PostHog's silence-when-forgotten protects a *number*, and the
+   * cost of a release built without it is a gap in a funnel. This reports
+   * crashes, where the cost of a build that forgot is believing the app is
+   * healthy because nothing is arriving. The dashboard going quiet has to mean
+   * "nothing broke", never "nobody was told".
+   *
+   * Fixed for the life of the project and the same in every build, so there is
+   * nothing per-deployment for an env file to say. What keeps development out
+   * of it is `app.isPackaged`, not this value — see `main/sentry.ts`.
+   */
+  NEXT_PUBLIC_SENTRY_DSN: z
+    .string()
+    .default("https://8e674474b20967bde834331f07c9a0e0@o4512135762149376.ingest.us.sentry.io/4512135763394560"),
 };
 
 function build() {
@@ -114,6 +134,7 @@ function build() {
       NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
       NEXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+      NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     },
     skipValidation: process.env.SKIP_ENV_VALIDATION === "1",
   });

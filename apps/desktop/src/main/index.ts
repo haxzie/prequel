@@ -18,6 +18,7 @@ import {
   registerIpc,
 } from "./ipc.js";
 import { watchForErrors } from "./errors.js";
+import { initSentry } from "./sentry.js";
 import { initLogging, log, logPath } from "./log.js";
 import { loginItemState, seedLoginItem, startedByItself, wasOpenedAtLogin } from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
@@ -54,6 +55,11 @@ app.setName("Prequel");
 // Before anything that can fail, so a startup crash lands in the log rather
 // than in a console no packaged build has.
 initLogging();
+
+// Before the handlers below, not after: `initSentry` installs the native crash
+// reporter, and a process that dies before that is one nothing can report —
+// which is precisely the class of failure most worth having.
+initSentry();
 
 // Straight after, and for the other half of the same job: the log is what one
 // user can send us, and this is what tells us forty of them hit the same thing

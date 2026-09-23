@@ -1,9 +1,24 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import * as Sentry from "@sentry/electron/renderer";
+
 import { DOCK_HEADROOM, PANEL_INSET } from "../../shared/contract";
 import { Root } from "./Root";
 import "./index.css";
+
+// No DSN, and that is the whole point: this window's CSP is
+// `connect-src 'self' prequel-media:`, so it cannot reach `ingest.sentry.io`
+// and must not be given a reason to try. Events go to main over IPC and are
+// sent from there, which also means they pass through the one `beforeSend`
+// that redacts them — see `main/sentry.ts`.
+//
+// Every window runs this file. Without it the whole renderer is a blind spot:
+// `render-process-gone` fires only when the process actually *dies*, and a
+// component that throws does not die — React unmounts the tree and leaves a
+// blank window behind, which is indistinguishable from a hung one and reports
+// nothing at all.
+Sentry.init({});
 
 // The camera bubble's and the dock's windows are sized in main with the same
 // constant, so publishing it as a custom property keeps the CSS inset and the
