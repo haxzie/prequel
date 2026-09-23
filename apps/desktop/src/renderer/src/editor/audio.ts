@@ -47,6 +47,8 @@ export class AudioMixer {
   private readonly onsets = new Map<string, number>();
   /** Sources started and not yet ended, so a pause or a seek can stop them. */
   private readonly live = new Set<AudioBufferSourceNode>();
+  /** The picker's demo, while one is playing. A second press replaces it. */
+  private preview: AudioBufferSourceNode | null = null;
 
   /**
    * Routes an element through its own gain.
@@ -166,18 +168,24 @@ export class AudioMixer {
   }
 
   /**
-   * Plays a picker's demo once, through a bus's gain.
+   * Plays a picker's demo once, at `gain`, straight to the output.
    *
    * Not a bank voice: the addon hands back the whole five seconds already
    * mixed and panned, so this decodes and starts it outright rather than
-   * going through `schedule`, which places a cue against an `onset`. Routed
-   * through the bus gain regardless, so the preview matches the volume slider
-   * a user is looking at while they press it.
+   * going through `schedule`, which places a cue against an `onset`.
+   *
+   * Deliberately *not* on the sound bus. A bus is muted while its sound is
+   * Off, and Off is exactly what someone has selected when they open the
+   * picker to find out what these sound like — routed there, every row's play
+   * button would do nothing until a sound had already been chosen. The volume
+   * is passed in instead, so the preview is still as loud as the slider says.
    */
-  playSample(bus: "keys" | "clicks", sample: SoundSample): void {
+  playSample(sample: SoundSample, gain: number): void {
     const context = this.ensureContext();
-    const out = this.gains.get(bus);
-    if (!out) return;
+
+    // One demo at a time. The buttons sit in a list meant to be tried a row at
+    // a time, and five-second samples left to overlap stop being comparable.
+    this.stopSample();
 
     const frames = sample.samples.length / sample.channels;
     const buffer = context.createBuffer(sample.channels, frames, sample.sampleRate);
@@ -189,16 +197,36 @@ export class AudioMixer {
       buffer.copyToChannel(data, channel);
     }
 
+    const level = context.createGain();
+    level.gain.value = Math.max(0, gain);
+    level.connect(context.destination);
+
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(out);
+    source.connect(level);
     source.start();
 
+    this.preview = source;
     this.live.add(source);
     source.onended = () => {
+      if (this.preview === source) this.preview = null;
       this.live.delete(source);
       source.disconnect();
+      level.disconnect();
     };
+  }
+
+  /** Stops the picker's demo, if one is playing. */
+  stopSample(): void {
+    const source = this.preview;
+    if (!source) return;
+
+    this.preview = null;
+    try {
+      source.stop(0);
+    } catch {
+      // Never started; `onended` still runs and does the tidying.
+    }
   }
 
   /** Stops every voice that is playing or waiting to. A pause, or a seek. */
@@ -214,6 +242,7 @@ export class AudioMixer {
       source.disconnect();
     }
     this.live.clear();
+    this.preview = null;
   }
 
   /** The audio clock, or zero before there is one. */

@@ -781,11 +781,22 @@ export function Dropdown<T extends string>({
   value,
   options,
   disabled,
+  action,
   onChange,
 }: {
   value: T;
   options: { value: T; label: string; style?: CSSProperties }[];
   disabled?: boolean;
+  /**
+   * A control at the right-hand end of each open row — the sound pickers' play
+   * button, which auditions a keyboard without choosing it.
+   *
+   * A render prop rather than a field on the option because the control is
+   * interactive, and it therefore has to sit *beside* the row's radio rather
+   * than inside it: a button within a button is neither valid nor clickable.
+   * Returning null leaves a row with none, which is what "Off" wants.
+   */
+  action?: (option: { value: T; label: string }) => ReactNode;
   onChange: (value: T) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -819,26 +830,37 @@ export function Dropdown<T extends string>({
       {open && (
         <div className="mt-1 flex flex-col gap-0.5" role="radiogroup">
           {options.map((option) => (
-            <button
+            // The row's surface, rather than the radio itself, so an `action`
+            // beside the radio is inside the same highlight. With no action
+            // the radio fills the row and this is the shape it always was.
+            <div
               key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={option.value === value}
               className={cn(
-                "flex items-center rounded-md px-2.5 text-left text-[13px] transition-colors",
-                CONTROL_H,
-                option.value === value
-                  ? "bg-white/12 text-editor-fg"
-                  : "text-editor-muted hover:bg-white/6 hover:text-editor-fg",
+                "group flex items-center rounded-md transition-colors",
+                option.value === value ? "bg-white/12" : "hover:bg-white/6",
               )}
-              style={option.style}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
             >
-              {option.label}
-            </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={option.value === value}
+                className={cn(
+                  "flex min-w-0 flex-1 items-center px-2.5 text-left text-[13px]",
+                  CONTROL_H,
+                  option.value === value
+                    ? "text-editor-fg"
+                    : "text-editor-muted group-hover:text-editor-fg",
+                )}
+                style={option.style}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                {option.label}
+              </button>
+              {action?.(option)}
+            </div>
           ))}
         </div>
       )}

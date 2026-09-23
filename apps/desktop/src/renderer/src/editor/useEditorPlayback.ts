@@ -166,10 +166,10 @@ export interface EditorPlayback {
    */
   audition: (bus: "keys" | "clicks", profile: string) => void;
   /**
-   * Plays a whole five-second demo now — the picker's play button, as
-   * distinct from `audition`'s single note on choosing a profile.
+   * Plays a whole five-second demo now, at `gain` — the picker's play button,
+   * as distinct from `audition`'s single note on choosing a profile.
    */
-  playSample: (bus: "keys" | "clicks", sample: SoundSample) => void;
+  playSample: (sample: SoundSample, gain: number) => void;
   /** Which tracks currently have a frame to show. */
   visible: Set<TrackKind>;
 }
@@ -507,9 +507,9 @@ export function useEditorPlayback(
     [mixer],
   );
   const playSample = useCallback(
-    (bus: "keys" | "clicks", sample: SoundSample) => {
+    (sample: SoundSample, gain: number) => {
       mixer.resume();
-      mixer.playSample(bus, sample);
+      mixer.playSample(sample, gain);
     },
     [mixer],
   );

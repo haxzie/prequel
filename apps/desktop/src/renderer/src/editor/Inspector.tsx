@@ -163,10 +163,10 @@ export interface InspectorProps {
    */
   onAudition: (bus: "keys" | "clicks", profile: string) => void;
   /**
-   * Plays a whole five-second demo of a profile — the picker's play button,
-   * for hearing more than the one note `onAudition` gives on choosing it.
+   * Plays a whole five-second demo of a profile at `volume` — the play button
+   * on each row of a sound picker, for hearing a keyboard without choosing it.
    */
-  onPlaySample: (bus: "keys" | "clicks", profile: string) => void;
+  onPlaySample: (profile: string, volume: number) => void;
   /** How the transcript is doing, so the captions panel can offer to make one. */
   captions: CaptionsState;
   /** The hosted background catalogue, or the shipped presets as a fallback. */
@@ -2569,18 +2569,23 @@ const FRAME_KEYS: (keyof BackgroundSettings)[] = [
   "shadowY",
 ];
 
-/** Beside a sound picker: hears the whole five-second demo, not one note. */
-function PlaySampleButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+/**
+ * The play button on a sound picker's row: five seconds of that keyboard,
+ * without choosing it.
+ *
+ * Its own button beside the row's radio rather than part of it, so pressing it
+ * neither selects the row nor closes the list — a list of keyboards is meant
+ * to be tried one after another before one is settled on.
+ */
+function PlaySampleButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      title="Play a sample"
-      aria-label="Play a sample"
-      disabled={disabled}
+      title={`Play ${label}`}
+      aria-label={`Play ${label}`}
       className={cn(
-        "grid size-7 flex-none place-items-center rounded-md text-editor-muted transition-colors",
-        "hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3",
-        "disabled:pointer-events-none disabled:opacity-40",
+        "mr-1 grid size-6 flex-none place-items-center rounded text-editor-muted",
+        "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3",
       )}
       onClick={onClick}
     >
@@ -2604,7 +2609,7 @@ function AudioPanel({
   field: FieldProps;
   set: Setter;
   onAudition: (bus: "keys" | "clicks", profile: string) => void;
-  onPlaySample: (bus: "keys" | "clicks", profile: string) => void;
+  onPlaySample: (profile: string, volume: number) => void;
 }) {
   const { audio } = settings;
   const hasTracks = present.has("microphone") || present.has("system_audio");
@@ -2684,25 +2689,26 @@ function AudioPanel({
             Synthetic sounds for clicks.
           </p>
           <Field icon={<KeyboardIcon />} label="Keyboard" {...field("audio", "keySound")}>
-            <div className="flex items-center gap-1.5">
-              <div className="min-w-0 flex-1">
-                <Dropdown
-                  value={keySound}
-                  options={[
-                    { value: SOUND_OFF, label: "Off" },
-                    ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
-                  ]}
-                  onChange={(value) => {
-                    set("audio", "keySound", value);
-                    if (value !== SOUND_OFF) onAudition("keys", value);
-                  }}
-                />
-              </div>
-              <PlaySampleButton
-                disabled={keySound === SOUND_OFF}
-                onClick={() => onPlaySample("keys", keySound)}
-              />
-            </div>
+            <Dropdown
+              value={keySound}
+              options={[
+                { value: SOUND_OFF, label: "Off" },
+                ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+              ]}
+              // Every row but Off, which has nothing to play.
+              action={(option) =>
+                option.value === SOUND_OFF ? null : (
+                  <PlaySampleButton
+                    label={option.label}
+                    onClick={() => onPlaySample(option.value, audio.keySoundVolume)}
+                  />
+                )
+              }
+              onChange={(value) => {
+                set("audio", "keySound", value);
+                if (value !== SOUND_OFF) onAudition("keys", value);
+              }}
+            />
           </Field>
           <Slider
             icon={<SpeakerIcon />}
@@ -2716,25 +2722,25 @@ function AudioPanel({
             onChange={(value) => set("audio", "keySoundVolume", value)}
           />
           <Field icon={<MouseIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
-            <div className="flex items-center gap-1.5">
-              <div className="min-w-0 flex-1">
-                <Dropdown
-                  value={clickSound}
-                  options={[
-                    { value: SOUND_OFF, label: "Off" },
-                    ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
-                  ]}
-                  onChange={(value) => {
-                    set("audio", "clickSound", value);
-                    if (value !== SOUND_OFF) onAudition("clicks", value);
-                  }}
-                />
-              </div>
-              <PlaySampleButton
-                disabled={clickSound === SOUND_OFF}
-                onClick={() => onPlaySample("clicks", clickSound)}
-              />
-            </div>
+            <Dropdown
+              value={clickSound}
+              options={[
+                { value: SOUND_OFF, label: "Off" },
+                ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+              ]}
+              action={(option) =>
+                option.value === SOUND_OFF ? null : (
+                  <PlaySampleButton
+                    label={option.label}
+                    onClick={() => onPlaySample(option.value, audio.clickSoundVolume)}
+                  />
+                )
+              }
+              onChange={(value) => {
+                set("audio", "clickSound", value);
+                if (value !== SOUND_OFF) onAudition("clicks", value);
+              }}
+            />
           </Field>
           <Slider
             icon={<SpeakerIcon />}

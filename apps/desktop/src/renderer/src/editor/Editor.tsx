@@ -908,14 +908,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   useAudioMix(media, state, session);
   useSoundBanks(media, state.project);
   const playSample = useCallback(
-    (bus: "keys" | "clicks", profile: string) => {
+    (profile: string, volume: number) => {
       // Fetched on demand rather than preloaded like the banks `useSoundBanks`
       // keeps: a demo is only ever wanted the moment someone presses play, and
-      // main caches it the same way, so a second press of the same profile is
-      // free.
+      // main caches it the same way, so pressing the same row twice is free.
       void window.prequel.editor.soundSample(profile).then((result) => {
         if (result.ok) {
-          media.playSample(bus, result.value);
+          media.playSample(result.value, volume);
         } else {
           console.warn(`[editor] could not load the sound sample ${profile}:`, result.message);
         }
