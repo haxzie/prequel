@@ -39,7 +39,8 @@ const TRANSPORT =
   "grid size-8 place-items-center rounded-full transition-colors [&_svg]:size-[15px]";
 
 /**
- * Transport on the left, the two things you can do to a clip on the right.
+ * The verbs for the selection and the clock on the left, transport centred,
+ * the two things you can add on the right.
  *
  * Buttons rather than modes. A tool that changes what a click means has to be
  * held in your head, put back when you are done, and shows its effect only
@@ -89,8 +90,8 @@ export function PlaybackControls({
     // centred on the *row* and not on whatever is left over after the clock and
     // the verbs have taken their share. The two outer columns are `1fr` each
     // and get an equal split, so the middle one stays put as either side
-    // changes width — which the clock does not, but the verb group does the
-    // first time undo appears.
+    // changes width — which the clock does not, but the verb group beside it
+    // does the first time undo appears.
     // The border belongs here and nowhere below it: the transport and the strip
     // are one section, so the line goes above the pair rather than between
     // them, where it read as the timeline being a separate panel.
@@ -103,34 +104,67 @@ export function PlaybackControls({
         "border-t border-editor-line bg-editor-veil px-4 py-2"
       }
     >
-      {/* The clock and what it is counting towards, as one thing.
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+          <Action
+            label="Split at the playhead"
+            shortcut="S"
+            Icon={ScissorsIcon}
+            // Both act on the selection, so with nothing selected there is
+            // nothing for either to do. Disabled rather than hidden: they are
+            // where they will be when there is.
+            disabled={!canSplit}
+            onClick={onSplit}
+          />
+          <Action
+            label="Delete"
+            shortcut="⌫"
+            Icon={TrashIcon}
+            disabled={!canDelete}
+            onClick={onDelete}
+          />
+          {/* Hidden until there is a step back, not disabled like the two
+              beside it — those are always the verbs for the current selection,
+              whereas undo is a claim that something happened, and an empty
+              history has nothing to say. Last in the group rather than first
+              because the group is pinned to the left: appearing has to extend
+              it away from the edge, or the cut and delete buttons would move
+              out from under the pointer the first time an edit lands. It pushes
+              the clock along instead, which is read and never aimed at. */}
+          {canUndo && (
+            <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
+          )}
+        </div>
 
-          Grouped so the row's own `gap-3` cannot fall between them: a time and
-          its total read as a single value, and spacing them like two controls
-          is half of what made this look wrong.
+        {/* The clock and what it is counting towards, as one thing.
 
-          The other half was the width. The box has to be fixed — the playback
-          loop writes the text straight to the DOM sixty times a second, and an
-          auto-width box would resize as the digits changed and shunt the total
-          left and right on every frame — but it was a flat `w-16` with the text
-          left-aligned, so every value shorter than the box left its slack
-          sitting between the time and the slash. Right-aligned in a box sized to
-          the longest value it can hold puts that slack on the outside of the
-          pair instead, where nothing is reading it. */}
-      <div className="flex items-center gap-1 text-xs tabular-nums">
-        {/* Rendered once. The playback loop rewrites its text, so React must not. */}
-        <Timecode
-          elementRef={media.timecodeRef}
-          initial="0:00.00"
-          className="flex-none text-right text-editor-fg"
-          // The total, because the two share a format and nothing the clock can
-          // say is wider than the thing it is counting towards. `ch` is the
-          // advance of a digit and `tabular-nums` makes every digit that wide,
-          // so this is exact for the digits and generous by the difference on
-          // the colon and the point — which is the safe direction to be wrong.
-          style={{ width: `${String(formatTimecode(duration).length)}ch` }}
-        />
-        <span className="text-editor-muted">/ {formatTimecode(duration)}</span>
+            Grouped so the row's own `gap-3` cannot fall between them: a time and
+            its total read as a single value, and spacing them like two controls
+            is half of what made this look wrong.
+
+            The other half was the width. The box has to be fixed — the playback
+            loop writes the text straight to the DOM sixty times a second, and an
+            auto-width box would resize as the digits changed and shunt the total
+            left and right on every frame — but it was a flat `w-16` with the text
+            left-aligned, so every value shorter than the box left its slack
+            sitting between the time and the slash. Right-aligned in a box sized to
+            the longest value it can hold puts that slack on the outside of the
+            pair instead, where nothing is reading it. */}
+        <div className="flex items-center gap-1 text-xs tabular-nums">
+          {/* Rendered once. The playback loop rewrites its text, so React must not. */}
+          <Timecode
+            elementRef={media.timecodeRef}
+            initial="0:00.00"
+            className="flex-none text-right text-editor-fg"
+            // The total, because the two share a format and nothing the clock can
+            // say is wider than the thing it is counting towards. `ch` is the
+            // advance of a digit and `tabular-nums` makes every digit that wide,
+            // so this is exact for the digits and generous by the difference on
+            // the colon and the point — which is the safe direction to be wrong.
+            style={{ width: `${String(formatTimecode(duration).length)}ch` }}
+          />
+          <span className="text-editor-muted">/ {formatTimecode(duration)}</span>
+        </div>
       </div>
       <div className="flex items-center justify-center gap-1">
         <button
@@ -169,12 +203,11 @@ export function PlaybackControls({
       </div>
 
       <div className="flex items-center justify-self-end gap-2">
-        {/* On its own, in a pill of its own. The group beside it is the verbs
-            for the current selection — undo, cut, delete all act on what you
-            have already picked — and this one acts on the playhead instead,
-            so putting it in the same box said it was a fourth of the same
-            kind. It is also the one with a word on it: a bare magnifier next
-            to a pair of scissors reads as a search box. */}
+        {/* On its own, at the other end of the row from the verbs. Those act on
+            what you have already picked — cut, delete, undo — and these two act
+            on the playhead instead, so sharing a box said they were more of the
+            same kind. They are also the ones with a word on them: a bare
+            magnifier next to a pair of scissors reads as a search box. */}
         <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <Action
             label="Add Zoom"
@@ -197,35 +230,6 @@ export function PlaybackControls({
             text
             disabled={!canAddText}
             onClick={onAddText}
-          />
-        </div>
-
-        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-          {/* Hidden until there is a step back, not disabled like the two beside
-              it — those are always the verbs for the current selection, whereas
-              undo is a claim that something happened, and an empty history has
-              nothing to say. Because the group is pinned to the right by the
-              spacer above, appearing extends it leftwards and the cut and delete
-              buttons stay exactly where they were. */}
-          {canUndo && (
-            <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
-          )}
-          <Action
-            label="Split at the playhead"
-            shortcut="S"
-            Icon={ScissorsIcon}
-            // Both act on the selection, so with nothing selected there is
-            // nothing for either to do. Disabled rather than hidden: they are
-            // where they will be when there is.
-            disabled={!canSplit}
-            onClick={onSplit}
-          />
-          <Action
-            label="Delete"
-            shortcut="⌫"
-            Icon={TrashIcon}
-            disabled={!canDelete}
-            onClick={onDelete}
           />
         </div>
       </div>
