@@ -17,7 +17,15 @@
  * asks to have written land in an overlay directory, which is read first, so
  * the fixture recording's own files keep their mtimes.
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,7 +80,10 @@ function inside(base: string, path: string): boolean {
   return target === root || target.startsWith(root + sep);
 }
 
-function parseRange(header: string | undefined, size: number): { start: number; end: number } | null {
+function parseRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | null {
   if (!header) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
   if (!match) return null;

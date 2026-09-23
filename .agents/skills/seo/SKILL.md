@@ -91,20 +91,20 @@ commands use `--json`, which never prompts.
 
 Run the first report, read it, then decide. Do not run every report blindly.
 
-| Job | Reports |
-|---|---|
-| Page not indexed or missing from Google | `index-coverage`, `index-monitor` (URL Inspection), `audit-page`, `redirect-trace` |
-| Traffic or clicks dropped | `search-performance-overview`, `traffic-anomaly`, `update-correlation`, `segment-impact`, `decaying-pages`, `link-recovery` |
-| Audit a whole site | `report`, then `site-crawl`, `top-fixes`, or `ai-search-scorecard` when needed |
-| More clicks from existing pages | `quick-wins`, `ctr-underperformers`, `striking-distance`, `second-page`, `internal-links` |
-| AI search visibility or readiness | `ai-readiness`, `agent-readiness`, `geo-gaps`, `ai-mention-research`, `ai-prompt-observations`, `ai-referrals` |
-| Plan content from real demand | `query-clusters`, `page-opportunities`, `content-optimization`, `cannibalisation` |
-| Research keywords and competitors | `competitive-opportunities`, `keyword-research`, `serp-results`, `ranked-keywords`, `ranking-pages`, `serp-competitors`, `competitor-keyword-gap` |
-| Local or programmatic SEO | `local-search-demand`, `pseo-patterns`, `pseo-opportunities`, `pseo-audit` |
-| Links, Bing, or server logs | `domain-rating`, `link-evidence`, `bing-webmaster-overview`, `server-log-analysis` |
-| Catch regressions | `technical-watch`, `crawl-diff`, `index-watch`, `measure-change` |
-| Client-ready reporting | `monthly-report`, `narrative-report`, `monthly-action-plan` |
-| Turn crawl findings into tickets | `top-fixes`, `affected-urls`, `explain-crawl-issue` |
+| Job                                     | Reports                                                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page not indexed or missing from Google | `index-coverage`, `index-monitor` (URL Inspection), `audit-page`, `redirect-trace`                                                                |
+| Traffic or clicks dropped               | `search-performance-overview`, `traffic-anomaly`, `update-correlation`, `segment-impact`, `decaying-pages`, `link-recovery`                       |
+| Audit a whole site                      | `report`, then `site-crawl`, `top-fixes`, or `ai-search-scorecard` when needed                                                                    |
+| More clicks from existing pages         | `quick-wins`, `ctr-underperformers`, `striking-distance`, `second-page`, `internal-links`                                                         |
+| AI search visibility or readiness       | `ai-readiness`, `agent-readiness`, `geo-gaps`, `ai-mention-research`, `ai-prompt-observations`, `ai-referrals`                                    |
+| Plan content from real demand           | `query-clusters`, `page-opportunities`, `content-optimization`, `cannibalisation`                                                                 |
+| Research keywords and competitors       | `competitive-opportunities`, `keyword-research`, `serp-results`, `ranked-keywords`, `ranking-pages`, `serp-competitors`, `competitor-keyword-gap` |
+| Local or programmatic SEO               | `local-search-demand`, `pseo-patterns`, `pseo-opportunities`, `pseo-audit`                                                                        |
+| Links, Bing, or server logs             | `domain-rating`, `link-evidence`, `bing-webmaster-overview`, `server-log-analysis`                                                                |
+| Catch regressions                       | `technical-watch`, `crawl-diff`, `index-watch`, `measure-change`                                                                                  |
+| Client-ready reporting                  | `monthly-report`, `narrative-report`, `monthly-action-plan`                                                                                       |
+| Turn crawl findings into tickets        | `top-fixes`, `affected-urls`, `explain-crawl-issue`                                                                                               |
 
 When provider access is unavailable, describe the report and use its
 `researchFiles` and `columns` schema. Read import provenance and never guess

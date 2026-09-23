@@ -44,8 +44,7 @@ for (const k of ["kind", "where", "title", "url"]) {
   if (!p[k]) throw new Error(`missing "${k}"`);
 }
 
-const esc = (s) =>
-  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // The source's own mark, drawn inline so the card needs no network and no
 // font. A coloured dot was the first version and read as a bullet point;
@@ -119,19 +118,37 @@ writeFileSync(page, html);
 
 // A tall window so the page never scrolls; the trim below cuts the white
 // underneath the card to its real height.
-execFileSync(CHROME, [
-  "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
-  "--force-device-scale-factor=2", "--window-size=720,1400",
-  `--screenshot=${png}`, `file://${page}`,
-], { stdio: "ignore" });
+execFileSync(
+  CHROME,
+  [
+    "--headless=new",
+    "--disable-gpu",
+    "--hide-scrollbars",
+    "--no-first-run",
+    "--force-device-scale-factor=2",
+    "--window-size=720,1400",
+    `--screenshot=${png}`,
+    `file://${page}`,
+  ],
+  { stdio: "ignore" },
+);
 
 // `-trim` finds the card's real edges, which also eats the padding, so the
 // padding is put back as a uniform border (52x44 at 2x is the 26x22 the CSS
 // asked for). No drawn frame: the `img` override in `mdx-components.tsx` adds
 // its own hairline, and a second one reads as double-framed.
 execFileSync("magick", [
-  png, "-trim", "+repage", "-bordercolor", "#fff", "-border", "52x44",
-  "-strip", "-quality", "88", out,
+  png,
+  "-trim",
+  "+repage",
+  "-bordercolor",
+  "#fff",
+  "-border",
+  "52x44",
+  "-strip",
+  "-quality",
+  "88",
+  out,
 ]);
 rmSync(dir, { recursive: true, force: true });
 console.log(`${out}  <- ${p.url}`);

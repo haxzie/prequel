@@ -18,15 +18,15 @@ it, with a link.
 
 ## Where things go
 
-| Path                                            | What it is                                                   |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| `apps/web/src/content/blog/<competitor>-alternatives.mdx` | The prose. No frontmatter, no `#`; start at `##`.  |
-| `apps/web/src/content/posts.ts`                 | Title, excerpt, date, tag `Comparison`, reading time, FAQ.   |
-| `apps/web/public/blog/tools/<tool>.webp`        | Landing page shots, shared across posts. Check before capturing. |
-| `apps/web/public/blog/quotes/<slug>.webp`       | Quote cards, indexed in `quotes.json`.                       |
-| `.claude/skills/comparison-posts/assets/quotes.json` | Every citation captured so far: slug, where, title, URL. |
-| `.claude/skills/alternatives-posts/scripts/render-quote-card.mjs` | Draws a card from a real post's data.      |
-| `.context/research/<slug>.md`                   | The brief from `[[blog-research]]`. Run it first.            |
+| Path                                                              | What it is                                                       |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `apps/web/src/content/blog/<competitor>-alternatives.mdx`         | The prose. No frontmatter, no `#`; start at `##`.                |
+| `apps/web/src/content/posts.ts`                                   | Title, excerpt, date, tag `Comparison`, reading time, FAQ.       |
+| `apps/web/public/blog/tools/<tool>.webp`                          | Landing page shots, shared across posts. Check before capturing. |
+| `apps/web/public/blog/quotes/<slug>.webp`                         | Quote cards, indexed in `quotes.json`.                           |
+| `.claude/skills/comparison-posts/assets/quotes.json`              | Every citation captured so far: slug, where, title, URL.         |
+| `.claude/skills/alternatives-posts/scripts/render-quote-card.mjs` | Draws a card from a real post's data.                            |
+| `.context/research/<slug>.md`                                     | The brief from `[[blog-research]]`. Run it first.                |
 
 ## Before writing
 
@@ -142,7 +142,7 @@ Proof is a real post by a real person, shown as a card and linked under it:
 Where the proof comes from, in the order to try:
 
 - **Reddit.** Search with `firecrawl_search` and `includeDomains:
-  ["reddit.com"]`; the results carry title, snippet and URL. Prefer a
+["reddit.com"]`; the results carry title, snippet and URL. Prefer a
   grievance from a user to a launch post from a founder, and prefer a thread
   with comments to one without. Check `quotes.json` first; a thread already
   captured has a card already.

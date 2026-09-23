@@ -2422,9 +2422,7 @@ function RecordingPanel({
               className={cn(
                 "rounded-md px-1 py-1.5 text-center text-[11px] tabular-nums transition-colors",
                 "disabled:pointer-events-none disabled:opacity-40",
-                preset === speed
-                  ? "bg-white/15 text-white"
-                  : "text-editor-muted hover:bg-white/10",
+                preset === speed ? "bg-white/15 text-white" : "text-editor-muted hover:bg-white/10",
               )}
               onClick={() => onChangeSpeed(preset)}
             >

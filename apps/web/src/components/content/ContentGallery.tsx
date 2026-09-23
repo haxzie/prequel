@@ -122,7 +122,11 @@ export function ContentGallery({ items }: { items: LibraryItem[] }) {
   const filters = (
     <div className="flex flex-col gap-7">
       <FilterGroup title="Type">
-        <FilterButton active={type === "all"} count={items.filter(byTopic).length} onClick={() => apply({ type: "all" })}>
+        <FilterButton
+          active={type === "all"}
+          count={items.filter(byTopic).length}
+          onClick={() => apply({ type: "all" })}
+        >
           All
         </FilterButton>
         {typeCounts.map((kind) => (
@@ -138,7 +142,11 @@ export function ContentGallery({ items }: { items: LibraryItem[] }) {
       </FilterGroup>
 
       <FilterGroup title="Topic">
-        <FilterButton active={topic === "all"} count={items.filter(byType).length} onClick={() => apply({ topic: "all" })}>
+        <FilterButton
+          active={topic === "all"}
+          count={items.filter(byType).length}
+          onClick={() => apply({ topic: "all" })}
+        >
           All
         </FilterButton>
         {topicCounts.map((entry) => (
@@ -249,7 +257,9 @@ export function ContentGallery({ items }: { items: LibraryItem[] }) {
 function FilterGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <p className="mb-2 px-2.5 font-mono text-xs tracking-[0.18em] text-muted uppercase">{title}</p>
+      <p className="mb-2 px-2.5 font-mono text-xs tracking-[0.18em] text-muted uppercase">
+        {title}
+      </p>
       <ul className="flex flex-col gap-0.5">{children}</ul>
     </div>
   );

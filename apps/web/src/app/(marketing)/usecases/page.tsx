@@ -160,9 +160,7 @@ export default function UseCases() {
         <Container>
           <div className="squircle lit relative overflow-hidden rounded-3xl border border-line bg-surface px-6 py-14 text-center sm:px-16">
             <div className="brand-gradient pointer-events-none absolute inset-x-0 top-0 h-px opacity-70" />
-            <h2 className="text-2xl font-medium tracking-tight text-fg">
-              None of these quite it?
-            </h2>
+            <h2 className="text-2xl font-medium tracking-tight text-fg">None of these quite it?</h2>
             <p className="mx-auto mt-3 max-w-md text-pretty text-muted">
               Every one of these is the same app. The features page is the whole list of what
               Prequel does to a recording.

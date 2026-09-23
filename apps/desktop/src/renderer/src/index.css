@@ -643,7 +643,6 @@ body {
   opacity: 0.45;
 }
 
-
 /* The follower has lost the reader: the status line breathes until it finds
    them again. */
 .prompter-status[data-lost="true"] {

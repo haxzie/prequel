@@ -18,12 +18,12 @@ finds a stale review or a different product with the same name.
 
 ## Where things go
 
-| Path                                        | What it is                                          |
-| ------------------------------------------- | --------------------------------------------------- |
-| `.context/research/<slug>.md`               | The brief. Gitignored; scaffolding, not shipped.    |
-| `apps/web/src/content/competitors.ts`       | Verified prices and features for the six with pages |
-| `.claude/skills/comparison-posts/assets/quotes.json` | Every Reddit citation already captured     |
-| `apps/web/src/content/posts.ts`             | What the blog already covers                        |
+| Path                                                 | What it is                                          |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| `.context/research/<slug>.md`                        | The brief. Gitignored; scaffolding, not shipped.    |
+| `apps/web/src/content/competitors.ts`                | Verified prices and features for the six with pages |
+| `.claude/skills/comparison-posts/assets/quotes.json` | Every Reddit citation already captured              |
+| `apps/web/src/content/posts.ts`                      | What the blog already covers                        |
 
 The brief is not committed because the post carries its own evidence: prices
 under the table with a check date, Reddit threads linked at the citation, and
@@ -65,14 +65,14 @@ Present this and wait. Research on the wrong genre is an hour wasted.
 Read these before the web, so the brief contrasts competitors against what
 Prequel actually ships rather than against what a search engine remembers:
 
-| Fact                              | Source                                                    |
-| --------------------------------- | --------------------------------------------------------- |
-| Resolution, fps, codecs, output   | `SPECS` in `apps/web/src/components/landing/LandingBody.tsx` |
+| Fact                               | Source                                                          |
+| ---------------------------------- | --------------------------------------------------------------- |
+| Resolution, fps, codecs, output    | `SPECS` in `apps/web/src/components/landing/LandingBody.tsx`    |
 | What the automatic first pass does | `ALREADY_DONE` in the same file. **Nothing else is automatic.** |
-| Price, trial length               | `apps/web/src/lib/pricing.ts`, never a number from memory |
-| Product answers                   | `apps/web/src/lib/faq.ts`                                 |
-| Feature rows and what we claim    | `FEATURE_ROWS` in `competitors.ts`                        |
-| Requirements                      | Apple Silicon, macOS 14 or later, Screen Recording grant  |
+| Price, trial length                | `apps/web/src/lib/pricing.ts`, never a number from memory       |
+| Product answers                    | `apps/web/src/lib/faq.ts`                                       |
+| Feature rows and what we claim     | `FEATURE_ROWS` in `competitors.ts`                              |
+| Requirements                       | Apple Silicon, macOS 14 or later, Screen Recording grant        |
 
 Two rules from `[[no-dead-air-claim]]` and `[[site-copy]]` apply to the brief
 as much as to the post. Prequel does not cut, trim or remove silences; cutting

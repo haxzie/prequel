@@ -133,17 +133,17 @@ most, and only where the picture beside it proves the adjective.
 
 ## Where the strings live
 
-| Path | What it holds |
-| --- | --- |
-| `src/lib/site.ts` | Tagline, meta description, nav labels. Anything said twice. |
-| `src/lib/faq.ts` | The landing FAQ. Rendered as copy and as `FAQPage` JSON-LD off one array. |
-| `src/app/(marketing)/page.tsx` | The home hero title and lede. |
-| `src/components/landing/LandingBody.tsx` | Everything under the hero, shared with `/create/<slug>`. |
-| `src/components/landing/{Zoom,Layout,Captions}Demo.tsx` | Each demo's own heading, lede and `aria-label`. |
-| `src/components/DownloadButton.tsx` | The line under the download button. |
-| `src/content/use-cases.ts` | The sixteen `/create/<slug>` heroes and their own FAQs. |
-| `src/content/competitors.ts` | Cited head-to-head facts. Has its own rules in the file. |
-| `src/lib/pricing.ts` | Plan names, plan blurbs, the pricing FAQ. |
+| Path                                                    | What it holds                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `src/lib/site.ts`                                       | Tagline, meta description, nav labels. Anything said twice.               |
+| `src/lib/faq.ts`                                        | The landing FAQ. Rendered as copy and as `FAQPage` JSON-LD off one array. |
+| `src/app/(marketing)/page.tsx`                          | The home hero title and lede.                                             |
+| `src/components/landing/LandingBody.tsx`                | Everything under the hero, shared with `/create/<slug>`.                  |
+| `src/components/landing/{Zoom,Layout,Captions}Demo.tsx` | Each demo's own heading, lede and `aria-label`.                           |
+| `src/components/DownloadButton.tsx`                     | The line under the download button.                                       |
+| `src/content/use-cases.ts`                              | The sixteen `/create/<slug>` heroes and their own FAQs.                   |
+| `src/content/competitors.ts`                            | Cited head-to-head facts. Has its own rules in the file.                  |
+| `src/lib/pricing.ts`                                    | Plan names, plan blurbs, the pricing FAQ.                                 |
 
 `aria-label` counts as copy. It is read aloud, so it obeys every rule here,
 em dashes included.

@@ -22,24 +22,24 @@ read catches what only a person catches.
 Run from the repo root. It exits with the number of blockers. What it checks,
 and why each one is there:
 
-| Check                          | Why                                                                 |
-| ------------------------------ | ------------------------------------------------------------------- |
-| Em dashes                      | The first thing the user notices, every time. A blocker.            |
-| American spellings             | Arrive with competitor research and survive a read.                 |
-| "dead air", cuts silences      | The first pass never trims. The one overclaim that produces refunds. |
-| Shortcoming language           | "the catch", "downside", "still early". None of it goes on the page. |
-| Apple Silicon, macOS 14        | The one requirement that stays in, so a buyer's Mac can run it.     |
-| Prices against `pricing.ts`    | A price from memory is the number that is wrong.                    |
-| No `#` heading                 | The `<h1>` is rendered from `posts.ts`.                              |
-| Opens on the definitional question | And that the question is unique across the blog.                |
-| No body FAQ                    | The template renders one from `posts.ts`; a second is a duplicate.  |
-| Title case headings            | Two capitalised words after the first is what title case produces.  |
-| Outside hosts                  | Citation hosts only (Reddit, HN, X, G2, GitHub, Product Hunt); a competitor is never linked. |
-| Quote cards carry a link       | A card with no link under it is a picture, not a citation.          |
-| Internal links resolve         | Markdown links are not `<Link>`, so `typedRoutes` cannot catch them. |
-| `/alternatives/` pages exist   | Six exist. A seventh is a 404.                                       |
-| Images exist, are WebP, have alt | Lazy-loaded, so a missing one is an empty box nobody sees locally. |
-| `posts.ts` entry, FAQ count, pillar, reading time | Where the metadata lives, and what drifts.       |
+| Check                                             | Why                                                                                          |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Em dashes                                         | The first thing the user notices, every time. A blocker.                                     |
+| American spellings                                | Arrive with competitor research and survive a read.                                          |
+| "dead air", cuts silences                         | The first pass never trims. The one overclaim that produces refunds.                         |
+| Shortcoming language                              | "the catch", "downside", "still early". None of it goes on the page.                         |
+| Apple Silicon, macOS 14                           | The one requirement that stays in, so a buyer's Mac can run it.                              |
+| Prices against `pricing.ts`                       | A price from memory is the number that is wrong.                                             |
+| No `#` heading                                    | The `<h1>` is rendered from `posts.ts`.                                                      |
+| Opens on the definitional question                | And that the question is unique across the blog.                                             |
+| No body FAQ                                       | The template renders one from `posts.ts`; a second is a duplicate.                           |
+| Title case headings                               | Two capitalised words after the first is what title case produces.                           |
+| Outside hosts                                     | Citation hosts only (Reddit, HN, X, G2, GitHub, Product Hunt); a competitor is never linked. |
+| Quote cards carry a link                          | A card with no link under it is a picture, not a citation.                                   |
+| Internal links resolve                            | Markdown links are not `<Link>`, so `typedRoutes` cannot catch them.                         |
+| `/alternatives/` pages exist                      | Six exist. A seventh is a 404.                                                               |
+| Images exist, are WebP, have alt                  | Lazy-loaded, so a missing one is an empty box nobody sees locally.                           |
+| `posts.ts` entry, FAQ count, pillar, reading time | Where the metadata lives, and what drifts.                                                   |
 
 A warning is a judgement call the reviewer makes on the read. A blocker is
 not.

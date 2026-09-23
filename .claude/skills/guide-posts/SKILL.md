@@ -17,14 +17,14 @@ run that skill before writing a post that names a competitor's price.
 
 ## Where things go
 
-| Path                                    | What it is                                              |
-| --------------------------------------- | ------------------------------------------------------- |
-| `apps/web/src/content/blog/<slug>.mdx`  | The prose. No frontmatter, no `#`; start at `##`.       |
-| `apps/web/src/content/posts.ts`         | Title, excerpt, date, tag, reading time, FAQ, pillar.   |
-| `apps/web/src/components/blog/`         | Drawn figures of the editor, one file per post.         |
-| `apps/web/public/blog/tools/<tool>.webp` | Landing page shots, shared across every post.          |
-| `apps/web/public/blog/quotes/`          | Cropped Reddit threads, indexed in `quotes.json`.       |
-| `apps/web/src/mdx-components.tsx`       | Heading, image, table styling. Done; do not add.        |
+| Path                                     | What it is                                            |
+| ---------------------------------------- | ----------------------------------------------------- |
+| `apps/web/src/content/blog/<slug>.mdx`   | The prose. No frontmatter, no `#`; start at `##`.     |
+| `apps/web/src/content/posts.ts`          | Title, excerpt, date, tag, reading time, FAQ, pillar. |
+| `apps/web/src/components/blog/`          | Drawn figures of the editor, one file per post.       |
+| `apps/web/public/blog/tools/<tool>.webp` | Landing page shots, shared across every post.         |
+| `apps/web/public/blog/quotes/`           | Cropped Reddit threads, indexed in `quotes.json`.     |
+| `apps/web/src/mdx-components.tsx`        | Heading, image, table styling. Done; do not add.      |
 
 The `<h1>` is rendered from `posts.ts`, so the MDX has no `#` heading. The
 first line of the file is `## What is <thing>?`.

@@ -12,7 +12,9 @@ import { describe, expect, it, vi } from "vitest";
 
 // Neither is exercised here — the SDK would pull in the real `electron`, which
 // has no `app` outside a running Electron.
-vi.mock("electron", () => ({ app: { isPackaged: false, getName: () => "Prequel", getVersion: () => "0.0.0" } }));
+vi.mock("electron", () => ({
+  app: { isPackaged: false, getName: () => "Prequel", getVersion: () => "0.0.0" },
+}));
 vi.mock("@sentry/electron/main", () => ({ init: vi.fn(), captureException: vi.fn() }));
 
 const { scrub } = await import("./sentry.ts");
@@ -29,7 +31,10 @@ describe("scrubbing an event before it is sent", () => {
             stacktrace: {
               frames: [
                 { filename: `${HOME}/Applications/Prequel.app/out/main/index.js` },
-                { filename: "/Users/sam/build/renderer.js", abs_path: "/Users/sam/build/renderer.js" },
+                {
+                  filename: "/Users/sam/build/renderer.js",
+                  abs_path: "/Users/sam/build/renderer.js",
+                },
               ],
             },
           },

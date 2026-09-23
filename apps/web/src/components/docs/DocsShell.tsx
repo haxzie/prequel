@@ -31,7 +31,7 @@ export function DocsShell({
   children: ReactNode;
 }) {
   const active = sections.find((section) => section.pages.some((page) => page.slug === current));
-  const where = current === "changelog" ? "Changelog" : active?.title ?? "Overview";
+  const where = current === "changelog" ? "Changelog" : (active?.title ?? "Overview");
 
   return (
     <Container className="py-14 lg:py-20">
@@ -46,18 +46,13 @@ export function DocsShell({
         <details className="group rounded-2xl border border-line bg-elevated lg:hidden">
           <summary className="flex cursor-pointer items-center justify-between px-5 py-3.5 text-sm font-medium text-fg marker:content-none [&::-webkit-details-marker]:hidden">
             <span>
-              <span className="font-mono text-xs tracking-[0.18em] text-muted uppercase">
-                Docs
-              </span>
+              <span className="font-mono text-xs tracking-[0.18em] text-muted uppercase">Docs</span>
               <span className="mx-2 text-muted" aria-hidden>
                 ·
               </span>
               {where}
             </span>
-            <span
-              aria-hidden
-              className="text-muted transition-transform group-open:rotate-180"
-            >
+            <span aria-hidden className="text-muted transition-transform group-open:rotate-180">
               ⌄
             </span>
           </summary>

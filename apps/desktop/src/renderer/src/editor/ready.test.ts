@@ -27,9 +27,9 @@ describe("revealing the preview", () => {
 
   it("waits for the matte, so a cutout is never revealed as a bare rectangle", () => {
     expect(previewReady({ ...base, matte: true })).toBe(false);
-    expect(previewReady({ ...base, matte: true, decoded: new Set(["screen", "camera_matte"]) })).toBe(
-      true,
-    );
+    expect(
+      previewReady({ ...base, matte: true, decoded: new Set(["screen", "camera_matte"]) }),
+    ).toBe(true);
   });
 
   it("waits for every image the plan names", () => {
@@ -58,8 +58,8 @@ describe("revealing the preview", () => {
     // A background deleted from the recording directory: the retry ladder ends
     // and the path settles unloaded. Waiting on the image map instead held the
     // whole preview behind a file that was never coming.
-    expect(
-      previewReady({ ...base, wanted: ["gone.jpg"], settled: new Set(["gone.jpg"]) }),
-    ).toBe(true);
+    expect(previewReady({ ...base, wanted: ["gone.jpg"], settled: new Set(["gone.jpg"]) })).toBe(
+      true,
+    );
   });
 });

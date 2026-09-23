@@ -75,7 +75,7 @@ Two consequences worth knowing before editing a component. A literal `white` or
 the CSS product mocks on the landing page, which draw a dark editor being
 recorded, and a shared link's video stage. Everywhere else the ink and the ground
 are `--fg` and `--bg`, in that direction, and `bg-fg/8` is the hover tint. And
-`--surface` steps *down* from `--bg` on light and *up* from it on dark, which is
+`--surface` steps _down_ from `--bg` on light and _up_ from it on dark, which is
 the one thing that inverts structurally rather than by value.
 
 ## The mark

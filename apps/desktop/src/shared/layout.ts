@@ -3643,8 +3643,10 @@ function onSprite(
   // The streak turned back by the same lean, so it keeps running along the
   // sprite's own axis once that axis has itself turned — the rigid-rotation
   // counterpart to `onAxes`'s projective one.
-  const smearX = rotation === 0 ? alongX : alongX * Math.cos(rotation) + alongY * Math.sin(rotation);
-  const smearY = rotation === 0 ? alongY : alongY * Math.cos(rotation) - alongX * Math.sin(rotation);
+  const smearX =
+    rotation === 0 ? alongX : alongX * Math.cos(rotation) + alongY * Math.sin(rotation);
+  const smearY =
+    rotation === 0 ? alongY : alongY * Math.cos(rotation) - alongX * Math.sin(rotation);
 
   return { ...bare, smearX: smearX * magnify, smearY: smearY * magnify, quad: corners };
 }
@@ -3828,7 +3830,13 @@ function withTilt(points: ShapedPoint[], strength: number, unit: number): Shaped
 
     const previous = points[index - 1];
     const stepSeconds = previous ? (point.at - previous.at) / 1_000_000_000 : 0;
-    [angle, angularVelocity] = damp(angle, angularVelocity, target, Math.max(stepSeconds, 0), TILT_SECONDS);
+    [angle, angularVelocity] = damp(
+      angle,
+      angularVelocity,
+      target,
+      Math.max(stepSeconds, 0),
+      TILT_SECONDS,
+    );
 
     out.push({ ...point, rotation: angle });
   }

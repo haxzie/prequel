@@ -59,8 +59,8 @@ export function TryItAside() {
         <div>
           <h2 className="text-base font-medium text-fg">Try it yourself</h2>
           <p className="mt-2 text-sm text-muted">
-            Prequel records your screen and hands back a finished video. Free for {TRIAL_DAYS}{" "}
-            days, with no watermark on anything you export.
+            Prequel records your screen and hands back a finished video. Free for {TRIAL_DAYS} days,
+            with no watermark on anything you export.
           </p>
         </div>
       </div>

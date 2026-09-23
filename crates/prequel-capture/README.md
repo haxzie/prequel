@@ -32,7 +32,7 @@ size, style and visibility stay editable and a zoom can follow it.
 **`clicks`** — where it was pressed. The strongest signal a screen recording
 gives about what mattered and when, and what the editor's automatic zooms are
 built from. A listen-only CGEventTap on mouse-down and key-down. The tap can be
-*made* without any grant, but then receives only events aimed at Prequel
+_made_ without any grant, but then receives only events aimed at Prequel
 itself — which during a recording is almost none of them — so it needs the
 Accessibility grant to see anything, and says so in the log when it does not.
 

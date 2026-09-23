@@ -30,11 +30,7 @@ export default async function DocPage({ params }: PageProps<"/docs/[slug]">) {
   const { slug } = await params;
   if (!isDocSlug(slug)) notFound();
 
-  const [doc, sections, pager] = await Promise.all([
-    loadDoc(slug),
-    outline(),
-    neighbours(slug),
-  ]);
+  const [doc, sections, pager] = await Promise.all([loadDoc(slug), outline(), neighbours(slug)]);
   // The FAQ is rendered by this page rather than by the MDX, so the source has
   // no heading for it; added by hand so the list matches what is on screen.
   const toc = [

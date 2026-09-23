@@ -190,15 +190,7 @@ export function Switch({ on }: { on: boolean }) {
  * height, in white rather than muted — it is a control's own label, not a
  * caption over one.
  */
-export function ToggleField({
-  icon,
-  label,
-  on,
-}: {
-  icon: ReactNode;
-  label: string;
-  on: boolean;
-}) {
+export function ToggleField({ icon, label, on }: { icon: ReactNode; label: string; on: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <Glyph>{icon}</Glyph>
@@ -364,7 +356,13 @@ export function PanelHeader({ icon, title }: { icon: ReactNode; title: string })
  * showing — with no surface behind the rail there is nothing for a muted colour
  * to read against, and a dimmed glyph looks disabled rather than unselected.
  */
-export function Rail({ items, at }: { items: { id: string; Icon: () => ReactNode }[]; at: number }) {
+export function Rail({
+  items,
+  at,
+}: {
+  items: { id: string; Icon: () => ReactNode }[];
+  at: number;
+}) {
   return (
     <nav className="relative my-2 mr-2 flex flex-none flex-col gap-1 self-start rounded-[10px] border border-editor-line bg-editor-panel p-1.5 shadow-[0_1px_6px_rgba(0,0,0,0.3)]">
       <span

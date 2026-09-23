@@ -116,7 +116,9 @@ export const client = {
    */
   NEXT_PUBLIC_SENTRY_DSN: z
     .string()
-    .default("https://8e674474b20967bde834331f07c9a0e0@o4512135762149376.ingest.us.sentry.io/4512135763394560"),
+    .default(
+      "https://8e674474b20967bde834331f07c9a0e0@o4512135762149376.ingest.us.sentry.io/4512135763394560",
+    ),
 };
 
 function build() {

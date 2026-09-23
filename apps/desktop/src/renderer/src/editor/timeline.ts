@@ -242,7 +242,11 @@ export function splitAt(slices: readonly Slice[], time: MediaTime, id: () => str
             source: { start: candidate.source.start, end: source },
             speed: candidate.speed,
           },
-          { id: id(), source: { start: source, end: candidate.source.end }, speed: candidate.speed },
+          {
+            id: id(),
+            source: { start: source, end: candidate.source.end },
+            speed: candidate.speed,
+          },
         ]
       : [{ id: candidate.id, source: { ...candidate.source }, speed: candidate.speed }],
   );
