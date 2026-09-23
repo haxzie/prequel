@@ -73,9 +73,11 @@ function settings(overrides: Partial<SliceSettings> = {}): SliceSettings {
   };
 }
 
-/** Settings that draw the pointer exactly where it was sampled. */
+/** Settings that draw the pointer exactly where it was sampled, upright. */
 function unsmoothed(): SliceSettings {
-  return settings({ layout: { ...DEFAULT_SETTINGS.layout, cursorSmoothing: 0 } });
+  return settings({
+    layout: { ...DEFAULT_SETTINGS.layout, cursorSmoothing: 0, cursorTilt: 0 },
+  });
 }
 
 function image(plan: RenderPlan, source: "screen" | "camera") {
@@ -1416,6 +1418,11 @@ describe("smoothing the pointer's path", () => {
           ...DEFAULT_SETTINGS.layout,
           cursorSmoothing: smoothing,
           cursorMotionBlur: motionBlur,
+          // Off, so the smear this file is testing stays in screen space: with
+          // a lean on top, `onSprite` re-expresses it in the sprite's own
+          // rotated axes instead, which is a different, separately tested
+          // feature.
+          cursorTilt: 0,
         },
       }),
       { shapes: SHAPES, size: 0.035, hideAfter: null, samples },
@@ -1551,6 +1558,121 @@ describe("smoothing the pointer's path", () => {
     for (const smoothing of [0, 0.2, 0.5, 1]) {
       const times = drawn(ZIGZAG, smoothing).points.map((point) => point.at);
       expect(times, `at ${smoothing}`).toEqual([...times].sort((a, b) => a - b));
+    }
+  });
+});
+
+describe("leaning into a fast move", () => {
+  const SHAPES = { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } };
+
+  const leaning = (samples: { at: number; x: number; y: number }[], tilt: number) => {
+    const item = buildRenderPlan(
+      { width: 1920, height: 1080 },
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cursorSmoothing: 0,
+          cursorMotionBlur: 0,
+          cursorTilt: tilt,
+        },
+      }),
+      { shapes: SHAPES, size: 0.035, hideAfter: null, samples },
+    ).items.find((candidate) => candidate.kind === "cursor")!;
+    if (item.kind !== "cursor") throw new Error("wrong item");
+    return item;
+  };
+
+  /** A hand sweeping right across the frame at a steady rate. */
+  const RIGHT = Array.from({ length: 10 }, (_, step) => ({
+    at: step * 33_000_000,
+    x: 0.1 + step * 0.08,
+    y: 0.5,
+  }));
+
+  /** The same sweep, run backwards. */
+  const LEFT = [...RIGHT].reverse().map((sample, step) => ({ ...sample, at: step * 33_000_000 }));
+
+  const STILL = [
+    { at: 0, x: 0.5, y: 0.5 },
+    { at: 300_000_000, x: 0.5, y: 0.5 },
+  ];
+
+  /** The four corners as points, in the order the vertex id walks them. */
+  const corners = (quad: readonly number[]) =>
+    [0, 1, 2, 3].map((index) => ({ x: quad[index * 3]!, y: quad[index * 3 + 1]! }));
+
+  /**
+   * The angle the box's own left edge makes with true vertical.
+   *
+   * Independent of the hotspot's own offset from the box's centre — which a
+   * simpler measure, like comparing one corner's `x` to another's, is not —
+   * because it reads the *edge* between two corners rather than either
+   * corner's position on its own.
+   */
+  const leanAngle = (point: { quad?: number[] }) => {
+    const [topLeft, , bottomLeft] = corners(point.quad!);
+    return Math.atan2(topLeft!.x - bottomLeft!.x, bottomLeft!.y - topLeft!.y);
+  };
+
+  it("draws no quad at all when it is switched off", () => {
+    for (const point of leaning(RIGHT, 0).points) {
+      expect(point.quad).toBeUndefined();
+    }
+  });
+
+  it("leaves a still pointer upright even when it is switched on", () => {
+    // `tanh` of a zero speed is exactly zero, not merely small, so a parked
+    // pointer never enters `onSprite`'s quad-building branch at all.
+    for (const point of leaning(STILL, 1).points) {
+      expect(point.quad).toBeUndefined();
+    }
+  });
+
+  it("leans a fast move without shifting the tip that clicks", () => {
+    // The one thing a lean must never do: the hotspot is where a click
+    // actually lands, and a lean that moved it would slide the pointer off
+    // whatever it was clicking.
+    const upright = leaning(RIGHT, 0).points;
+    const tilted = leaning(RIGHT, 1).points;
+
+    for (let index = 0; index < upright.length; index += 1) {
+      expect(tilted[index]!.x).toBeCloseTo(upright[index]!.x, 6);
+      expect(tilted[index]!.y).toBeCloseTo(upright[index]!.y, 6);
+    }
+
+    // And it actually leaned somewhere — otherwise the position check above
+    // would pass trivially against a setting that does nothing.
+    expect(tilted.some((point) => point.quad !== undefined)).toBe(true);
+  });
+
+  it("leans opposite ways for opposite moves", () => {
+    const rightward = leaning(RIGHT, 1).points.find((point) => point.quad)!;
+    const leftward = leaning(LEFT, 1).points.find((point) => point.quad)!;
+
+    expect(leanAngle(rightward)).toBeGreaterThan(0);
+    expect(leanAngle(leftward)).toBeLessThan(0);
+  });
+
+  it("leans further at a higher setting", () => {
+    const half = leaning(RIGHT, 0.5).points.find((point) => point.quad)!;
+    const full = leaning(RIGHT, 1).points.find((point) => point.quad)!;
+
+    expect(leanAngle(full)).toBeGreaterThan(leanAngle(half));
+  });
+
+  it("never leans past its own maximum", () => {
+    // `tanh` only ever approaches its limit, so nothing short of an assertion
+    // like this one would catch a formula that let it through.
+    const teleport = [
+      { at: 0, x: 0.01, y: 0.5 },
+      { at: 33_000_000, x: 0.99, y: 0.5 },
+      { at: 66_000_000, x: 0.01, y: 0.5 },
+    ];
+
+    for (const point of leaning(teleport, 1).points) {
+      if (!point.quad) continue;
+      expect(Math.abs(leanAngle(point))).toBeLessThan((18 * Math.PI) / 180 + 0.001);
     }
   });
 });

@@ -67,6 +67,7 @@ import {
   FocusIcon,
   FontIcon,
   LayoutIcon,
+  LeanIcon,
   LevelIcon,
   LinesIcon,
   MicIcon,
@@ -1865,6 +1866,21 @@ function CursorPanel({
           // and a figure in pixels would be a number nobody can picture.
           format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
           onChange={(value) => set("layout", "cursorMotionBlur", value)}
+        />
+
+        <Slider
+          icon={<LeanIcon />}
+          label="Lean"
+          {...field("layout", "cursorTilt")}
+          value={layout.cursorTilt}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={off}
+          // A share of the small maximum angle rather than the angle itself,
+          // shown the way Smoothing and Motion blur above are.
+          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+          onChange={(value) => set("layout", "cursorTilt", value)}
         />
       </Section>
 

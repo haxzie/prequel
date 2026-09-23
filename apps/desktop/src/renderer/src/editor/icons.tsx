@@ -928,6 +928,17 @@ export function BlurIcon() {
   );
 }
 
+/** An upright line beside the same line leaned off it: the angle a lean is. */
+export function LeanIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 20V5" strokeDasharray="2 3" />
+      <path d="M12 20 17 6" />
+      <path d="M9.5 12a6 6 0 0 1 1-6.5" />
+    </svg>
+  );
+}
+
 /** A clock: the wait before something happens. */
 export function ClockIcon() {
   return (

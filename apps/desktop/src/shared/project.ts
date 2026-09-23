@@ -267,6 +267,16 @@ export interface LayoutSettings {
    * much of that speed is allowed to show. 0 draws it as sharp as it ever was.
    */
   cursorMotionBlur: number;
+  /**
+   * How far the pointer leans into its own direction of travel, from 0 to 1.
+   *
+   * A share of a small maximum angle rather than an angle itself, shown the
+   * way Smoothing and Motion blur above are: a pointer is an arrow with a
+   * fixed "up", not a dart, so this only ever tips it a little — aiming it
+   * fully along the path would read as the pointer keeling over rather than
+   * hurrying.
+   */
+  cursorTilt: number;
   /** How opaque the pointer's drop shadow is, from 0 to 1. */
   cursorShadowOpacity: number;
   /** Pointer shadow blur, as a fraction of the frame's shorter edge. */
@@ -1121,6 +1131,12 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // on screen a viewer is actively following, and a streak long enough to
   // notice is a streak long enough to lose it in.
   cursorMotionBlur: 0.4,
+  // Higher than Smoothing and Motion blur's own defaults above: those two
+  // erase a fault, so a little goes a long way, but a lean is meant to be
+  // seen, and `TILT_MAX_DEG`/`TILT_REF_SPEED` are already the restrained
+  // side of that — see `cursorTilt`'s own comment for why it never reaches
+  // for the dart a full aim-along-the-path would draw.
+  cursorTilt: 0.6,
   // Off in the shared fallback so projects written before cursor shadows stay
   // unchanged. `newProject` opts newer projects into the restrained default.
   cursorShadowOpacity: 0,
@@ -1653,6 +1669,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         ...beforeShrinking(stored.defaults?.layout),
         ...beforeSmoothing(stored.defaults?.layout),
         ...beforeMotionBlur(stored.defaults?.layout),
+        ...beforeTilt(stored.defaults?.layout),
         ...beforeCursorShadow(stored.defaults?.layout),
         ...beforeCameraRadius(stored.defaults?.layout),
         ...migrateLayout(stored.defaults?.layout),
@@ -1750,6 +1767,21 @@ function beforeMotionBlur(
 ): Partial<LayoutSettings> | undefined {
   if (!stored || "cursorMotionBlur" in stored) return undefined;
   return { cursorMotionBlur: 0 };
+}
+
+/**
+ * Leaves the pointer upright in a project written before it could lean.
+ *
+ * `beforeMotionBlur`'s rule, for the fourth time the same reason: a new
+ * default that changes how an edit already on disk plays back is a project
+ * that came back different from the one its author saved. New recordings get
+ * the lean; an old one is one slider away from it.
+ */
+function beforeTilt(
+  stored: Partial<LayoutSettings> | undefined,
+): Partial<LayoutSettings> | undefined {
+  if (!stored || "cursorTilt" in stored) return undefined;
+  return { cursorTilt: 0 };
 }
 
 /**

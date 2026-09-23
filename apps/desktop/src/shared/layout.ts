@@ -653,6 +653,7 @@ export function buildRenderPlan(
           motion,
           layout.cursorSmoothing,
           layout.cursorMotionBlur,
+          layout.cursorTilt,
           layout.cursorShadowOpacity,
           layout.cursorShadowBlur,
           layout.cursorShadowY,
@@ -3308,6 +3309,7 @@ function cursorItems(
   motion: readonly RectKey[],
   smoothing: number,
   motionBlur: number,
+  tilt: number,
   shadowOpacity: number,
   shadowBlur: number,
   shadowY: number,
@@ -3396,11 +3398,12 @@ function cursorItems(
         // — so a press drawn this way cannot come out differently in the
         // preview and the export.
         scale: plane.placed.scale * pressScale(path.clicks, at),
-        // Placeholders. `withSmear` fills these in at the end, once the gaps
-        // are in and every point's real neighbours are known — measuring here
-        // would use neighbours that are about to change.
+        // Placeholders. `withTilt` and `withSmear` fill these in at the end,
+        // once the gaps are in and every point's real neighbours are known —
+        // measuring here would use neighbours that are about to change.
         smearX: 0,
         smearY: 0,
+        rotation: 0,
         visible: plane.visible,
         kind: cursorKind(path, at),
       };
@@ -3425,8 +3428,11 @@ function cursorItems(
   // this extra room the shader can sample the pointer correctly but the GPU
   // quad clips its shadow at the cursor's own edge.
   const shadowPad = shadow ? shadow.blur * (SHADOW_SPREAD / 2) + Math.abs(shadow.dy) : 0;
-  // Last, so it measures the list that is actually drawn — see `withSmear`.
-  const smeared = withSmear(timed, motionBlur, size);
+  // Tilt before smear: both read the finished list's real neighbours, but the
+  // lean is measured off the raw path while the streak is measured off the
+  // list that is actually drawn — see `withSmear`.
+  const leaning = withTilt(timed, tilt, unit);
+  const smeared = withSmear(leaning, motionBlur, size);
 
   // The image each point is drawn with, which is not the kind it was recorded
   // as: a style that ships no I-beam draws the arrow there, so those points
@@ -3465,7 +3471,9 @@ function cursorItems(
       hotspot: tag.hotspot,
       points: smeared.map((point) =>
         onSprite(
-          { ...point, scale: point.scale / pressScale(path.clicks, point.at) },
+          // Never leaned: a label is read as text, and text that tips over
+          // with a fast move is harder to read at the exact moment it moves.
+          { ...point, scale: point.scale / pressScale(path.clicks, point.at), rotation: 0 },
           planeAt(point.at),
           tag.hotspot,
           tagSize,
@@ -3504,11 +3512,15 @@ interface Plane {
 }
 
 /**
- * The pointer's own four corners, laid on the tilted picture like a decal.
+ * The pointer's own four corners, laid on the tilted picture like a decal, and
+ * turned by `point.rotation` if it is leaning.
  *
- * Without this the sprite is an upright square standing on a leaning picture.
- * Its tip lands in the right place and nothing behind the tip does, so the
- * arrow reads as floating in front of the screen rather than lying on it.
+ * Without the plane term the sprite is an upright square standing on a
+ * leaning picture. Its tip lands in the right place and nothing behind the
+ * tip does, so the arrow reads as floating in front of the screen rather than
+ * lying on it. Without the rotation term a leaning pointer is an upright
+ * square in the wrong place — `withTilt` sets an angle that nothing then
+ * draws.
  *
  * The square is measured on the picture's *surface* — before the projection —
  * and then put through the same homography the picture itself went through.
@@ -3518,26 +3530,47 @@ interface Plane {
  * it. That reads as a styling choice rather than as a fault, which is why it
  * has a test of its own.
  *
- * Nothing is emitted where the picture is flat, exactly as an untilted
- * `RectKey` carries no corners — the rasterisers then draw the upright square
- * they always did.
+ * A quad is emitted with no plane at all wherever the pointer is leaning and
+ * the picture is not — a plain rotated rectangle, divisor 1 at every corner,
+ * needing no perspective. Nothing is emitted where neither is true, exactly
+ * as an untilted `RectKey` carries no corners — the rasterisers then draw the
+ * upright square they always did.
  */
 function onSprite(
-  point: CursorPoint,
+  point: LeaningPoint,
   plane: Plane,
   hotspot: { x: number; y: number },
   size: number,
   extraPad = 0,
 ): CursorPoint {
   const quad = plane.quad;
-  if (!quad || plane.rect.width <= 0 || plane.rect.height <= 0) return point;
+  const rotation = point.rotation;
+  // What every return path hands back once the lean has been read: the
+  // pointer's own fields, minus the lean itself, which does not leave this
+  // file — see `LeaningPoint`.
+  const bare: CursorPoint = {
+    at: point.at,
+    x: point.x,
+    y: point.y,
+    scale: point.scale,
+    visible: point.visible,
+    smearX: point.smearX,
+    smearY: point.smearY,
+  };
+
+  if (!quad && rotation === 0) return bare;
+  if (quad && (plane.rect.width <= 0 || plane.rect.height <= 0)) return bare;
 
   const magnify = plane.placed.scale;
-  if (!(magnify > 0)) return point;
+  if (!(magnify > 0)) return bare;
 
   // The streak, turned to run along the picture rather than across the frame —
-  // see `onAxes`.
-  const [alongX, alongY] = onAxes(quad, plane, point.smearX, point.smearY);
+  // see `onAxes`. Nothing to turn it against without a plane: the picture's
+  // own axes and the frame's are the same thing there, which is the case
+  // `onAxes` already returns unchanged.
+  const [alongX, alongY] = quad
+    ? onAxes(quad, plane, point.smearX, point.smearY)
+    : [point.smearX, point.smearY];
 
   // Every length divided back onto the surface, so the *ratios* the shaders
   // work in — `smear / grown` and `pad / grown` — come out identical to the
@@ -3565,6 +3598,14 @@ function onSprite(
     [left, top + grown],
     [left + grown, top + grown],
   ]) {
+    if (!quad) {
+      // No picture to lie on: the flat corner stands for itself, and a
+      // divisor of 1 tells the shaders' shared "is this tilted" branch to
+      // treat it as an ordinary, non-perspective quad.
+      corners.push(x!, y!, 1);
+      continue;
+    }
+
     const projected = onPlane(
       quad,
       (x! - plane.rect.x) / plane.rect.width,
@@ -3576,7 +3617,7 @@ function onSprite(
     // wedge across the whole frame. Only reachable where a padded sprite hangs
     // off the far edge of a steep tilt, and left upright there is wrong by a
     // few pixels rather than by the width of the picture.
-    if (!(projected.scale > 0) || !Number.isFinite(projected.scale)) return point;
+    if (!(projected.scale > 0) || !Number.isFinite(projected.scale)) return bare;
 
     // The divisor, not the magnification. `rotatedQuad` stores the same thing
     // for the same reason: it is what a GPU divides its varyings by, and
@@ -3585,7 +3626,27 @@ function onSprite(
     corners.push(projected.x, projected.y, 1 / projected.scale);
   }
 
-  return { ...point, smearX: alongX * magnify, smearY: alongY * magnify, quad: corners };
+  // Leaned around the tip rather than the box: the hotspot is where a click
+  // actually lands, and a lean that moved it would slide the pointer off
+  // whatever it is clicking.
+  if (rotation !== 0) {
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    for (let corner = 0; corner < 4; corner += 1) {
+      const dx = corners[corner * 3]! - point.x;
+      const dy = corners[corner * 3 + 1]! - point.y;
+      corners[corner * 3] = point.x + dx * cos - dy * sin;
+      corners[corner * 3 + 1] = point.y + dx * sin + dy * cos;
+    }
+  }
+
+  // The streak turned back by the same lean, so it keeps running along the
+  // sprite's own axis once that axis has itself turned — the rigid-rotation
+  // counterpart to `onAxes`'s projective one.
+  const smearX = rotation === 0 ? alongX : alongX * Math.cos(rotation) + alongY * Math.sin(rotation);
+  const smearY = rotation === 0 ? alongY : alongY * Math.cos(rotation) - alongX * Math.sin(rotation);
+
+  return { ...bare, smearX: smearX * magnify, smearY: smearY * magnify, quad: corners };
 }
 
 /**
@@ -3680,11 +3741,113 @@ function withSmear(points: ShapedPoint[], strength: number, size: number): Shape
   });
 }
 
+/**
+ * How far the lean reaches at full speed, in degrees.
+ *
+ * Screen Studio's own version of this calls it "slightly rotating the
+ * cursor," and that word is doing the work: an arrow has a fixed "up", so
+ * aiming it along the path the way a dart would turns a fast horizontal move
+ * into a pointer lying on its side. This is the lean a hand makes chasing
+ * something across a desk, not a compass needle.
+ *
+ * Twelve read as no lean at all once the setting's own share and `tanh`'s
+ * approach to it were both applied — an ordinary click-to-click move never
+ * reached enough of either to be seen. Half again as much, against a reference
+ * speed an ordinary move actually reaches, is the version anyone can see
+ * without it reading as the pointer overreacting to every twitch of a hand.
+ */
+const TILT_MAX_DEG = 18;
+
+/**
+ * The horizontal speed, in frame-shorter-edges per second, that earns the
+ * full lean.
+ *
+ * A fraction of the frame rather than a pixel count, so the same recording
+ * leans the same amount at 1080p and at 4K — `tanh` against this only
+ * approaches the maximum, never clips onto it, so there is no speed above
+ * which every fast move looks identically tipped over.
+ *
+ * Low enough that a brisk click-to-click move, not only a flung one, gets
+ * most of the way there — the original figure asked for a flick before it
+ * showed anything, which is most of why it read as switched off.
+ */
+const TILT_REF_SPEED = 0.8;
+
+/**
+ * How long the lean takes to catch up with a change of direction, in seconds.
+ *
+ * Independent of `SMOOTH_SECONDS`: the position spring is tuned to erase a
+ * 30 Hz stepped path without trailing the click that ends it, and the lean is
+ * free to run a little further behind that without the tip itself ever
+ * lagging — `onSprite` pins the rotation to the already-smoothed position, it
+ * never moves it.
+ */
+const TILT_SECONDS = 0.1;
+
+/**
+ * Writes each point's lean, from the path it is actually drawn on.
+ *
+ * A central difference for the same reason `withSmear` uses one: the lean is
+ * meant to answer "which way through this moment", and a one-sided difference
+ * lags half a sample, which reads as the tilt swinging late around a turn.
+ *
+ * Only the horizontal component drives it. A pointer is not symmetric the way
+ * a dart is, so leaning it to face a straight-down move would tip the arrow
+ * onto its back rather than forward — the lean this file means is a roll, not
+ * a heading, and a roll has nothing to say about vertical travel.
+ *
+ * The raw target is run through `damp`, the same critically damped spring
+ * `smoothPath` chases the recording with, rather than clamped straight to its
+ * final value — a hard clamp would snap the pointer upright the instant it
+ * slowed below the reference speed, which is a smaller version of the same
+ * jerk `smoothPath` exists to take out of the pointer's position.
+ */
+function withTilt(points: ShapedPoint[], strength: number, unit: number): ShapedPoint[] {
+  const clamped = clamp(strength, 0, 1);
+  if (clamped <= 0 || points.length < 2) {
+    return points.map((point) => ({ ...point, rotation: 0 }));
+  }
+
+  const refSpeed = unit * TILT_REF_SPEED;
+  const maxRadians = (TILT_MAX_DEG * clamped * Math.PI) / 180;
+
+  const out: ShapedPoint[] = [];
+  let angle = 0;
+  let angularVelocity = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]!;
+    const before = points[index - 1] ?? point;
+    const after = points[index + 1] ?? point;
+    const span = after.at - before.at;
+
+    // A leaning arrow, not a heading, and moving right tips the top of it
+    // right — the same sense a hand leans reaching sideways for something.
+    const speedX = span > 0 ? ((after.x - before.x) / span) * 1_000_000_000 : 0;
+    const target = maxRadians * Math.tanh(speedX / refSpeed);
+
+    const previous = points[index - 1];
+    const stepSeconds = previous ? (point.at - previous.at) / 1_000_000_000 : 0;
+    [angle, angularVelocity] = damp(angle, angularVelocity, target, Math.max(stepSeconds, 0), TILT_SECONDS);
+
+    out.push({ ...point, rotation: angle });
+  }
+
+  return out;
+}
+
+/**
+ * A cursor point that still carries the lean `onSprite` is about to bake into
+ * a quad. Never leaves this file — the field says "which way is this leaning
+ * before projection", which is meaningless once the corners exist.
+ */
+type LeaningPoint = CursorPoint & { rotation: number };
+
 /** A point plus the pointer the system was showing there. Never leaves this file. */
-type ShapedPoint = CursorPoint & { kind: CursorKind };
+type ShapedPoint = LeaningPoint & { kind: CursorKind };
 
 /** The point a plan carries, without the kind that chose its image. */
-function plain(point: ShapedPoint): CursorPoint {
+function plain(point: ShapedPoint): LeaningPoint {
   return {
     at: point.at,
     x: point.x,
@@ -3693,6 +3856,7 @@ function plain(point: ShapedPoint): CursorPoint {
     visible: point.visible,
     smearX: point.smearX,
     smearY: point.smearY,
+    rotation: point.rotation,
   };
 }
 
@@ -3750,7 +3914,7 @@ function cursorKind(cursor: CursorTrack, at: number): CursorKind {
 function splitByShape(
   points: readonly ShapedPoint[],
   shapeFor: (kind: CursorKind) => CursorShape,
-): { shape: CursorShape; points: CursorPoint[] }[] {
+): { shape: CursorShape; points: LeaningPoint[] }[] {
   const used = new Map<string, CursorShape>();
   for (const point of points) {
     const shape = shapeFor(point.kind);
@@ -3767,7 +3931,7 @@ function splitByShape(
   if (only) return points.length === 0 ? [] : [{ shape: only, points: points.map(plain) }];
 
   const tracks = new Map(
-    [...used].map(([path, shape]) => [path, { shape, points: [] as CursorPoint[] }]),
+    [...used].map(([path, shape]) => [path, { shape, points: [] as LeaningPoint[] }]),
   );
 
   for (let index = 0; index < points.length; index += 1) {
