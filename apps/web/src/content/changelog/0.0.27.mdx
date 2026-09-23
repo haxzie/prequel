@@ -1,0 +1,5 @@
+export const date = "2026-09-23";
+export const highlight = "Headset microphones record again";
+
+- Recording with a Bluetooth headset as the microphone failed at the end of every take, and the recording was thrown away with it. A headset in hands-free mode records at a much lower sample rate than a built-in mic, and Prequel was asking the encoder for a quality that cannot be produced at that rate — so the sound was rejected, and the take went with it. The rate Prequel asks for now follows the microphone. Recordings made while this was happening were never written and cannot be recovered.
+- Split and delete now sit at the left end of the editor's playback row, ahead of the timecode, rather than over on the right. Undo still appears beside them the moment there is a step back to take.
