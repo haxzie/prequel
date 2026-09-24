@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { FontFamilyListing, FontsCatalogue } from "../../../shared/contract";
 import { fontUrl } from "../../../shared/media-url";
-import type { TextStyle } from "../../../shared/project";
 import { captionFont, isSystemFont } from "./controls/fonts";
 
 /** The CSS family a hosted font is registered under. */
@@ -194,9 +193,4 @@ export function useFonts(): Fonts {
 
 function keyOf(font: string, variant: { weight: number; italic: boolean }): string {
   return `${font}:${String(variant.weight)}:${variant.italic ? "i" : "n"}`;
-}
-
-/** Everything a style says about its face, for callers holding a `TextStyle`. */
-export function wantOf(style: TextStyle): Want {
-  return { font: style.font, weight: style.weight, italic: style.italic };
 }

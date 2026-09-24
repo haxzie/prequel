@@ -279,11 +279,6 @@ function presetWatermark(stored: WatermarkSettings | undefined): WatermarkSettin
 /** The shape `pickWatermarkImage` writes, and the only one a preset may carry. */
 const CARRIED = /^watermark-[a-z0-9]+\.png$/i;
 
-/** The logo a preset brings with it, or null when it brings none. */
-export function presetWatermarkFile(preset: ScenePreset): string | null {
-  return preset.watermark.watermark;
-}
-
 /** Whether applying this preset has to fetch a picture first. */
 export function presetNeedsBackground(preset: ScenePreset): string | null {
   const { background } = preset.background;

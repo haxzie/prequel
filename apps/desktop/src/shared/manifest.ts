@@ -418,11 +418,6 @@ export function trackStart(track: Track): MediaTime {
   return track.segments[0]?.start ?? 0;
 }
 
-/** Media time just past a track's last sample, across every take. */
-export function trackEnd(track: Track): MediaTime {
-  return track.segments.at(-1)?.end ?? 0;
-}
-
 /**
  * The seams a recording was extended at — one per take after the first.
  *
