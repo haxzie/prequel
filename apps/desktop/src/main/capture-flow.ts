@@ -543,7 +543,7 @@ export class CaptureFlow {
       mode === "window" ? setInterval(() => void this.refreshTargets(), WINDOW_REFRESH_MS) : null;
 
     try {
-      const targets = await (await getRecorder()).listTargets();
+      const targets = this.pickable(await (await getRecorder()).listTargets());
       const result = await this.deps.selection.open(
         mode,
         targets,
@@ -552,12 +552,17 @@ export class CaptureFlow {
       // Every outcome of the overlay, named. A cancel and a confirm look the
       // same from outside — the overlay disappears either way — and only one of
       // them goes on to record.
+      //
+      // The window count goes with it because a picker nobody could use and a
+      // picker with nothing in it look identical from here: both are a run that
+      // opened and was cancelled.
       log("info", "selection closed", {
         mode,
         outcome: result ? (result.start === true ? "record" : "chosen") : "cancelled",
         crop: result?.crop
           ? `${String(Math.round(result.crop.width))}×${String(Math.round(result.crop.height))}`
           : "none",
+        windows: targets.filter((target) => target.kind === "Window").length,
       });
 
       if (result) {
@@ -605,6 +610,32 @@ export class CaptureFlow {
   }
 
   /**
+   * What the picker may offer, which is not quite everything on screen.
+   *
+   * While footage is being added the editor window is deliberately left up, and
+   * it is the front-most ordinary window — the button that started this is
+   * inside it. The picker takes the *first* window under the cursor, so leaving
+   * it in the list lays a Prequel-shaped sheet over exactly the window more of
+   * which is being recorded: hovering it highlights Prequel, and only whatever
+   * strip the editor does not cover picks the right thing. That reads as a
+   * picker that ignores the first press, because nothing the user aims at
+   * responds.
+   *
+   * Only that one window, and only while extending. Recording Prequel is a real
+   * thing to want — the editor is worth demonstrating — just not while it is the
+   * window in the way.
+   */
+  private pickable(targets: Target[]): Target[] {
+    if (!this.extending) return targets;
+
+    const editor = this.deps.workspace?.browserWindow();
+    const id = editor && !editor.isDestroyed() ? windowId(editor) : null;
+    if (id === null) return targets;
+
+    return targets.filter((target) => !(target.kind === "Window" && target.id === id));
+  }
+
+  /**
    * Pushes a fresh window list to an open picker.
    *
    * Skipped while a previous refresh is still in flight: listing is fast but
@@ -616,7 +647,7 @@ export class CaptureFlow {
     this.refreshing = true;
 
     try {
-      const targets = await (await getRecorder()).listTargets();
+      const targets = this.pickable(await (await getRecorder()).listTargets());
       // Checked again: the overlay can close while the list is being read.
       if (!this.deps.selection.isOpen) return;
       this.deps.selection.update(targets, await windowIcons(targets));
