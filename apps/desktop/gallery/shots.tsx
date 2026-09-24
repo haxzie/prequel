@@ -130,7 +130,12 @@ function inspector(id: string, label: string, steps: Step[] = []): Shot {
 
 /** The picker labels the three look shots click, so the selector and the
     registry cannot drift apart silently. */
-const LOOK_LABELS = { crt: "CRT", halftone: "Halftone", "window-light": "Window light" };
+const LOOK_LABELS = {
+  crt: "CRT",
+  lcd: "LCD",
+  halftone: "Halftone",
+  "window-light": "Window light",
+};
 
 const EDITOR_READY: Step[] = [
   { kind: "wait", selector: "[data-panel='timeline']" },
@@ -341,12 +346,16 @@ export const SHOTS: readonly Shot[] = [
     ],
     clip: "frame",
   },
-  // Three looks on the real composition, and the three riskiest shaders in the
-  // set: a ruled mask, a dot screen, and the one gobo built from noise. The
-  // pixel tests prove the export draws *something* for every look; only these
-  // show whether it is the right something, and only these reach the WebGL
-  // path at all.
-  ...(["crt", "halftone", "window-light"] as const).map((look) => ({
+  // Four looks on the real composition, and the riskiest shaders in the set:
+  // two ruled masks, a dot screen, and the one gobo built from noise. The pixel
+  // tests prove the export draws *something* for every look; only these show
+  // whether it is the right something, and only these reach the WebGL path at
+  // all.
+  //
+  // The LCD earns its place: it shipped sampling each cell's centre, which
+  // downsampled the recording by the cell size and left no readable text
+  // anywhere in the frame. Nothing asserted caught that — it takes a picture.
+  ...(["crt", "lcd", "halftone", "window-light"] as const).map((look) => ({
     id: `filter-${look}`,
     frame: "workspace" as const,
     install: install(),

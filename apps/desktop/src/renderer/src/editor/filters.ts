@@ -418,42 +418,59 @@ vec3 halftoned(vec2 uv) {
  */
 vec3 panelled(vec2 uv) {
   float cell = pitch();
-  vec2 p = centred(uv);
-  vec2 index = floor(p / cell);
-  vec2 inside = fract(p / cell);
-  vec3 c = grab(uvOf((index + 0.5) * cell));
-  vec3 lit;
+  vec2 cells = centred(uv) / cell;
+  vec2 inside = fract(cells);
 
   if (u_variant == 2) {
-    // A dot matrix: round cells with a wide gap, one colour. The calculator,
+    // A dot matrix genuinely *is* a low-resolution display, so this one
+    // quantises: the colour comes from the middle of the cell, and the whole
+    // point of the look is that there is nothing in between. The calculator,
     // the pager, the handheld console.
+    vec3 c = grab(uvOf((floor(cells) + 0.5) * cell));
     float on = smoothstep(0.42, 0.32, length(inside - 0.5));
-    lit = mix(u_tint * 0.06, u_tint * luma(c) * 1.15, on);
-  } else {
-    // Three stripes across the cell, one channel each.
-    vec3 mask = vec3(0.10);
-    float third = floor(inside.x * 3.0);
-    if (third < 0.5) {
-      mask.r = 1.0;
-    } else if (third < 1.5) {
-      mask.g = 1.0;
-    } else {
-      mask.b = 1.0;
-    }
-    if (u_variant == 1) {
-      mask = mask.bgr;
-    }
-    // A dark row between the cells, which is what a panel's grid actually is.
-    float gap = smoothstep(0.0, 0.10, inside.y) * smoothstep(1.0, 0.90, inside.y);
-    // Both faded where the grid is finer than the raster — see \`resolved\`.
-    vec2 cells = p / cell;
-    mask = mix(vec3(1.0), mask, resolved(cells.x * 3.0));
-    gap = mix(1.0, gap, resolved(cells.y));
-    // Times three, because only a third of the channels are lit at any point
-    // and the frame would otherwise come out two stops down.
-    lit = c * mask * 3.0 * gap;
+    vec3 lit = mix(u_tint * 0.06, u_tint * luma(c) * 1.15, on);
+    return mix(c, lit + u_tint * 0.05, u_strength);
   }
 
+  // Sampled where the pixel is, not from the middle of its cell.
+  //
+  // Snapping to the cell centre is what a panel's own pixels do, and it is the
+  // wrong thing to copy: a cell is several output pixels across, so snapping
+  // downsamples the recording by that factor and every line of text in it
+  // stops being readable — which is exactly what a screen recording is made
+  // of. The stripes and the row gap are a texture laid *over* the picture, not
+  // a resampling of it. The CRT samples continuously for the same reason.
+  vec3 c = grab(uv);
+
+  // Three stripes across the cell, one channel each.
+  vec3 mask = vec3(0.28);
+  float third = floor(inside.x * 3.0);
+  if (third < 0.5) {
+    mask.r = 1.0;
+  } else if (third < 1.5) {
+    mask.g = 1.0;
+  } else {
+    mask.b = 1.0;
+  }
+  if (u_variant == 1) {
+    mask = mask.bgr;
+  }
+
+  // A dark row between the cells, which is what a panel's grid actually is.
+  float gap = smoothstep(0.0, 0.10, inside.y) * smoothstep(1.0, 0.90, inside.y);
+  // Both faded where the grid is finer than the raster — see \`resolved\`.
+  mask = mix(vec3(1.0), mask, resolved(cells.x * 3.0));
+  gap = mix(1.0, gap, resolved(cells.y));
+
+  // Scaled back up, because only one channel in three is fully lit and the
+  // frame would otherwise come out more than a stop down.
+  //
+  // The floor above is high for the same reason the gain here is modest: a
+  // mask that drives the two unlit channels near zero has to be amplified hard
+  // to get the light back, and in the shadows that amplification turns a dark
+  // grey into saturated red-green-blue speckle. A real panel's dark pixels are
+  // dark, not noisy.
+  vec3 lit = c * mask * 1.9 * gap;
   return mix(c, lit + u_tint * 0.05, u_strength);
 }
 

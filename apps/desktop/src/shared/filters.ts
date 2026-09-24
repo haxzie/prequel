@@ -198,7 +198,10 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     ],
     defaults: {
       ...NO_LOOK,
-      filterStrength: 1,
+      // Not the whole way. At full strength the grid is the subject and the
+      // recording is what it is laid over; a little under, and the panel reads
+      // as something the picture is being shown *on*.
+      filterStrength: 0.85,
       // As with the CRT's triad: fine enough to read as a panel, coarse enough
       // that a pixel's three stripes each land on more than one of the
       // output's.
