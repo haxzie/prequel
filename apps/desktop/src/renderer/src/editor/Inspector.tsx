@@ -11,6 +11,7 @@ import {
   READY,
   type FilterId,
   type FilterParam,
+  type FilterSpec,
 } from "../../../shared/filters";
 import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
@@ -316,6 +317,16 @@ export function Inspector(props: InspectorProps) {
    */
   const [captionView, setCaptionView] = useState<"options" | "edit">("options");
   /**
+   * Which of the filters category's two views is showing.
+   *
+   * Local, and put back for the reasons `captionView` above is. The picker is
+   * a grid that grows with the catalogue and a look's own controls run to six;
+   * side by side in one column the controls were already below the fold at
+   * eleven looks, and every look added pushed them further. So choosing one
+   * pushes a view of its own, the way editing captions does.
+   */
+  const [filterView, setFilterView] = useState<"picker" | "options">("picker");
+  /**
    * Whether the presets panel is asking what to call the look being saved.
    *
    * Local, like `captionView`: it is navigation, not an edit.
@@ -327,7 +338,10 @@ export function Inspector(props: InspectorProps) {
    */
   const [naming, setNaming] = useState(false);
   useEffect(() => {
-    if (state.selectedZoomId !== null || state.selectedTextId !== null) setCaptionView("options");
+    if (state.selectedZoomId !== null || state.selectedTextId !== null) {
+      setCaptionView("options");
+      setFilterView("picker");
+    }
   }, [state.selectedZoomId, state.selectedTextId]);
 
   const settings = activeSettings(state);
@@ -543,9 +557,17 @@ export function Inspector(props: InspectorProps) {
   // unreachable — it exists to keep this total rather than to be taken.
   const showing = categories.find((category) => category.id === active) ?? categories[0]!;
   const editingCaptions = active === "captions" && captionView === "edit";
+  // Only with a look actually on: `filterView` survives the look being cleared
+  // from somewhere else — a preset, an undo — and a pushed view of nothing is a
+  // back button over an empty column.
+  const tuningFilter =
+    active === "filters" &&
+    filterView === "options" &&
+    filterSpec(settings.effects.filter) !== null;
 
   const close = () => {
     setCaptionView("options");
+    setFilterView("picker");
     props.onClose();
   };
 
@@ -557,6 +579,7 @@ export function Inspector(props: InspectorProps) {
         onChange={(id) => {
           onTab(id);
           setCaptionView("options");
+          setFilterView("picker");
           // Both views put back when the panel changes what it is about, so
           // coming back to a category never finds it mid-something.
           setNaming(false);
@@ -653,7 +676,7 @@ export function Inspector(props: InspectorProps) {
               had been left — the top of the new panel out of sight, for no
               reason anyone could see. A remounted scroller opens at the top. */}
           <div
-            key={editingCaptions ? "captions-editor" : active}
+            key={editingCaptions ? "captions-editor" : tuningFilter ? "filter-options" : active}
             className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
           >
             <ScrollFade className="sticky top-0 z-10" />
@@ -723,7 +746,16 @@ export function Inspector(props: InspectorProps) {
                 />
               )}
 
-              {active === "filters" && <FiltersPanel settings={settings} field={field} set={set} />}
+              {active === "filters" && (
+                <FiltersPanel
+                  settings={settings}
+                  field={field}
+                  set={set}
+                  tuning={tuningFilter}
+                  onTune={() => setFilterView("options")}
+                  onBack={() => setFilterView("picker")}
+                />
+              )}
 
               {active === "watermark" && (
                 <WatermarkPanel
@@ -1701,10 +1733,17 @@ function FiltersPanel({
   settings,
   field,
   set,
+  tuning,
+  onTune,
+  onBack,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   set: Setter;
+  /** Whether the chosen look's own controls are showing rather than the grid. */
+  tuning: boolean;
+  onTune: () => void;
+  onBack: () => void;
 }) {
   const effects = settings.effects;
   const spec = filterSpec(effects.filter);
@@ -1723,15 +1762,22 @@ function FiltersPanel({
       set("effects", "filter", null);
       return;
     }
-    const chosen = FILTERS[id];
-    set("effects", "filter", id);
-    for (const [key, value] of Object.entries(chosen.defaults)) {
-      set("effects", key, value);
+    // Only when it is a different look. Coming back to the one already on and
+    // having its controls snap to the defaults would undo whatever was dialled
+    // in — and the way back in is a tap on the same tile.
+    if (id !== effects.filter) {
+      set("effects", "filter", id);
+      for (const [key, value] of Object.entries(FILTERS[id].defaults)) {
+        set("effects", key, value);
+      }
     }
+    onTune();
   };
 
-  const uses = (param: FilterParam) => spec?.uses.includes(param) ?? false;
-  const says = (param: FilterParam, fallback: string) => spec?.labels[param] ?? fallback;
+  if (tuning && spec)
+    return (
+      <FilterOptions spec={spec} settings={settings} field={field} set={set} onBack={onBack} />
+    );
 
   return (
     <>
@@ -1768,100 +1814,171 @@ function FiltersPanel({
           ))}
         </div>
       </Section>
-
-      {/* Nothing below the picker without a look, rather than a column of dead
-          controls. Every other panel greys its controls instead, because there
-          the thing they act on is still on screen and the question "what else
-          could this do?" is worth answering. Here there is no look at all, so
-          there is nothing for them to be about. */}
-      {spec && (
-        <Section title={spec.label}>
-          {spec.variants.length > 0 &&
-            (spec.variants.length <= 3 ? (
-              <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
-                <Segmented
-                  value={effects.filterVariant}
-                  options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
-                  onChange={(value) => set("effects", "filterVariant", value)}
-                />
-              </Field>
-            ) : (
-              <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
-                <Dropdown
-                  value={effects.filterVariant}
-                  options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
-                  onChange={(value) => set("effects", "filterVariant", value)}
-                />
-              </Field>
-            ))}
-
-          {uses("strength") && (
-            <Slider
-              icon={<StrengthIcon />}
-              label={says("strength", "Strength")}
-              value={effects.filterStrength}
-              min={0}
-              max={1}
-              format={percent}
-              {...field("effects", "filterStrength")}
-              onChange={(value) => set("effects", "filterStrength", value)}
-            />
-          )}
-
-          {uses("scale") && (
-            <Slider
-              icon={<SizeIcon />}
-              label={says("scale", "Size")}
-              value={effects.filterScale}
-              min={FILTER_SCALE_MIN}
-              max={FILTER_SCALE_MAX}
-              step={0.0005}
-              // As a fraction of the frame's shorter edge it reads as 0.004,
-              // which means nothing. Against the frame it is a percentage of
-              // the picture, which is the thing being chosen.
-              format={percent}
-              {...field("effects", "filterScale")}
-              onChange={(value) => set("effects", "filterScale", value)}
-            />
-          )}
-
-          {uses("angle") && (
-            <Slider
-              icon={<AngleIcon />}
-              label={says("angle", "Angle")}
-              value={effects.filterAngle}
-              min={0}
-              max={360}
-              step={1}
-              format={(value) => `${Math.round(value)}°`}
-              {...field("effects", "filterAngle")}
-              onChange={(value) => set("effects", "filterAngle", value)}
-            />
-          )}
-
-          {uses("tint") && (
-            <ColorField
-              icon={<DropletIcon />}
-              label={says("tint", "Colour")}
-              value={effects.filterTint}
-              {...field("effects", "filterTint")}
-              onChange={(value) => set("effects", "filterTint", value)}
-            />
-          )}
-
-          {uses("animated") && (
-            <ToggleField
-              icon={<MoveIcon />}
-              label={says("animated", "Animate")}
-              value={effects.filterAnimated}
-              {...field("effects", "filterAnimated")}
-              onChange={(value) => set("effects", "filterAnimated", value)}
-            />
-          )}
-        </Section>
-      )}
     </>
   );
+}
+
+/**
+ * One look's own controls, pushed over the grid.
+ *
+ * The card at the top is what says which look this is and how to leave it. A
+ * swatch rather than only a name, because the grid is a wall of pictures and
+ * coming back to a word would make you read to find out where you are.
+ *
+ * The back arrow lives in the card rather than in the panel header, which is
+ * where the captions editor puts its own. The header here still says Filters —
+ * true of both views — so the card carries the whole of what changed, and there
+ * is one way back rather than two.
+ */
+function FilterOptions({
+  spec,
+  settings,
+  field,
+  set,
+  onBack,
+}: {
+  spec: FilterSpec;
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+  onBack: () => void;
+}) {
+  const effects = settings.effects;
+  const id = effects.filter as FilterId;
+  const uses = (param: FilterParam) => spec.uses.includes(param);
+  const says = (param: FilterParam, fallback: string) => spec.labels[param] ?? fallback;
+
+  return (
+    <>
+      <Section>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-1.5",
+          )}
+        >
+          <button
+            type="button"
+            aria-label="All filters"
+            title="All filters"
+            className={cn(
+              "grid size-7 flex-none place-items-center rounded-md text-editor-muted",
+              "hover:bg-white/10 hover:text-editor-fg [&_svg]:size-4",
+            )}
+            onClick={onBack}
+          >
+            <BackIcon />
+          </button>
+
+          <span
+            className="block h-9 w-12 flex-none overflow-hidden rounded-[4px]"
+            style={{ background: FILTER_SWATCHES[id] }}
+            aria-hidden
+          />
+
+          <span className="min-w-0 flex-1 truncate text-[13px] text-editor-fg">{spec.label}</span>
+        </div>
+      </Section>
+
+      <Section>
+        {spec.variants.length > 0 &&
+          (spec.variants.length <= 3 ? (
+            <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
+              <Segmented
+                value={effects.filterVariant}
+                options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
+                onChange={(value) => set("effects", "filterVariant", value)}
+              />
+            </Field>
+          ) : (
+            <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
+              <Dropdown
+                value={effects.filterVariant}
+                options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
+                onChange={(value) => set("effects", "filterVariant", value)}
+              />
+            </Field>
+          ))}
+
+        {uses("strength") && (
+          <Slider
+            icon={<StrengthIcon />}
+            label={says("strength", "Strength")}
+            value={effects.filterStrength}
+            min={0}
+            max={1}
+            format={percent}
+            {...field("effects", "filterStrength")}
+            onChange={(value) => set("effects", "filterStrength", value)}
+          />
+        )}
+
+        {uses("scale") && (
+          <Slider
+            icon={<SizeIcon />}
+            label={says("scale", "Size")}
+            value={effects.filterScale}
+            min={FILTER_SCALE_MIN}
+            max={FILTER_SCALE_MAX}
+            step={0.0005}
+            // Against the frame, because a bare 0.008 means nothing — but with
+            // a decimal below ten per cent, because `percent` rounds and the
+            // fine end of this range is where the ruled looks live. A CRT triad
+            // at 0.008 and an LCD cell at 0.012 both read "1%" rounded, and so
+            // does everything between them: the slider moves and the number
+            // does not.
+            format={fraction}
+            {...field("effects", "filterScale")}
+            onChange={(value) => set("effects", "filterScale", value)}
+          />
+        )}
+
+        {uses("angle") && (
+          <Slider
+            icon={<AngleIcon />}
+            label={says("angle", "Angle")}
+            value={effects.filterAngle}
+            min={0}
+            max={360}
+            step={1}
+            format={(value) => `${Math.round(value)}°`}
+            {...field("effects", "filterAngle")}
+            onChange={(value) => set("effects", "filterAngle", value)}
+          />
+        )}
+
+        {uses("tint") && (
+          <ColorField
+            icon={<DropletIcon />}
+            label={says("tint", "Colour")}
+            value={effects.filterTint}
+            {...field("effects", "filterTint")}
+            onChange={(value) => set("effects", "filterTint", value)}
+          />
+        )}
+
+        {uses("animated") && (
+          <ToggleField
+            icon={<MoveIcon />}
+            label={says("animated", "Animate")}
+            value={effects.filterAnimated}
+            {...field("effects", "filterAnimated")}
+            onChange={(value) => set("effects", "filterAnimated", value)}
+          />
+        )}
+      </Section>
+    </>
+  );
+}
+
+/**
+ * A fraction of the frame, as a percentage that can be read at the fine end.
+ *
+ * `percent` rounds to whole numbers, which is right for a strength running 0 to
+ * 1 and wrong for a pitch running 0.001 to 0.2 — seven of the catalogue's own
+ * defaults land on "0%" or "1%" through it.
+ */
+function fraction(value: number): string {
+  return value < 0.1 ? `${(value * 100).toFixed(1)}%` : `${Math.round(value * 100)}%`;
 }
 
 /** Three across, matching the layout picker's grid. */
@@ -1886,8 +2003,7 @@ const FILTER_LABEL = "text-[9px] leading-tight text-editor-muted text-center";
  * cannot do, because a pattern of its own reads as the subject rather than as
  * the treatment.
  */
-const NO_FILTER_SWATCH =
-  "linear-gradient(90deg, #4b5563 0 34%, #cbd5e1 34% 66%, #4b5563 66%)";
+const NO_FILTER_SWATCH = "linear-gradient(90deg, #4b5563 0 34%, #cbd5e1 34% 66%, #4b5563 66%)";
 
 /**
  * What each look does, as a picture made of gradients.
@@ -1907,8 +2023,7 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
 
   // The block warmed and the field cooled, which is the split every grade in
   // the set is some version of.
-  grade:
-    "linear-gradient(90deg, #4a5b6b 0 34%, #e0c9a6 34% 66%, #4a5b6b 66%)",
+  grade: "linear-gradient(90deg, #4a5b6b 0 34%, #e0c9a6 34% 66%, #4a5b6b 66%)",
 
   // The same edges, stepped. Drawn as hard stops rather than a gradient,
   // because the whole of what pixelating does is remove the in-between.
@@ -1919,8 +2034,7 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
   // repeating-radial-gradient, which draws concentric rings from one centre —
   // a target, not a screen.
   halftone:
-    "radial-gradient(circle, #1c1c1e 0 1.3px, transparent 1.6px) 0 0 / 5px 5px, " +
-    "#e8e6e1",
+    "radial-gradient(circle, #1c1c1e 0 1.3px, transparent 1.6px) 0 0 / 5px 5px, " + "#e8e6e1",
 
   // The block cut into subpixel stripes, on a black that never quite arrives.
   lcd:
@@ -1928,8 +2042,7 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
     "#12181f",
 
   // The block bowed: the same two edges, pushed apart in the middle.
-  fisheye:
-    "radial-gradient(ellipse 150% 100% at 50% 50%, #cbd5e1 0 30%, #4b5563 52%)",
+  fisheye: "radial-gradient(ellipse 150% 100% at 50% 50%, #cbd5e1 0 30%, #4b5563 52%)",
 
   // Scanlines over a triad, with the corners falling away.
   //
