@@ -875,6 +875,7 @@ mod tests {
                     height: 1080.0,
                 },
                 items,
+                filter: None,
             },
             audio: AudioMix::tracks(1.0, 1.0),
             speed: 1.0,

@@ -26,11 +26,13 @@
  */
 import { captionStyle } from "./captions.js";
 import { cursorStyle } from "./contract.js";
+import { filterId } from "./filters.js";
 import { layoutBoxes } from "./layout.js";
 import { AUTO_PRESET_ID, evenSize, findPreset } from "./presets.js";
 import {
   DEFAULT_BACKGROUND,
   DEFAULT_CAPTIONS,
+  DEFAULT_EFFECTS,
   DEFAULT_LAYOUT,
   DEFAULT_WATERMARK,
   DEFAULT_ZOOM,
@@ -38,6 +40,7 @@ import {
   type Background,
   type BackgroundSettings,
   type CaptionSettings,
+  type EffectsSettings,
   type LayoutSettings,
   type WatermarkSettings,
   type ZoomDefaults,
@@ -95,6 +98,15 @@ export interface ScenePreset {
    * normalised; see `presetBackground`.
    */
   watermark: WatermarkSettings;
+  /**
+   * The look laid over the frame, when the preset carries one.
+   *
+   * A preset is a *look*, and this is one — which is why `effects` is here and
+   * `audio` is not. Every leaf, including `filter: null` for a preset that
+   * deliberately takes the look back off: a preset that only ever *added* a
+   * filter could never be used to clear one.
+   */
+  effects: EffectsSettings;
   zoom: ZoomDefaults;
 }
 
@@ -170,6 +182,17 @@ export function sanitiseScenePreset(value: unknown): ScenePreset | null {
     },
     captions,
     watermark: presetWatermark(stored.watermark),
+    effects: {
+      ...DEFAULT_EFFECTS,
+      ...stored.effects,
+      // Normalised to a look this build can draw, for the reason `cursorStyle`
+      // and `captionStyle` are normalised just above — and this is the
+      // direction that matters most here. A preset published for a newer build
+      // names looks this one has never heard of, and an unknown id applied to a
+      // clip would sit in that clip's overrides unreadable, outliving the
+      // preset it came from.
+      filter: filterId(stored.effects?.filter),
+    },
     zoom: sanitiseZoomLook(stored.zoom, DEFAULT_ZOOM),
   };
 }

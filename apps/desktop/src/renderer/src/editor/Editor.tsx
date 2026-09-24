@@ -612,6 +612,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           },
           layout: previewSettings.layout,
           background: previewSettings.background,
+          effects: previewSettings.effects,
           captions,
           watermark: previewSettings.watermark,
           zoom: state.project.zoomDefaults,

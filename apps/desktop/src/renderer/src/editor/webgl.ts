@@ -34,6 +34,8 @@ import {
   type Shape,
   type Size,
 } from "../../../shared/layout";
+import { variantIndex } from "../../../shared/filters";
+import { FILTER_LOOKS, FILTER_SHADER_SOURCE, filterTime } from "./filters";
 
 /** Images the plan names by path — backgrounds, and the pointer. */
 export type Images = Map<string, CanvasImageSource>;
@@ -514,12 +516,44 @@ interface Program {
   useMatte: WebGLUniformLocation | null;
 }
 
+/** The full-screen pass that lays a look over the finished frame. */
+interface FilterProgram {
+  program: WebGLProgram;
+  scene: WebGLUniformLocation | null;
+  look: WebGLUniformLocation | null;
+  variant: WebGLUniformLocation | null;
+  strength: WebGLUniformLocation | null;
+  scale: WebGLUniformLocation | null;
+  angle: WebGLUniformLocation | null;
+  tint: WebGLUniformLocation | null;
+  time: WebGLUniformLocation | null;
+  frame: WebGLUniformLocation | null;
+}
+
+/** The items are drawn in here first when a look will run over them. */
+interface Scene {
+  texture: WebGLTexture;
+  framebuffer: WebGLFramebuffer;
+  width: number;
+  height: number;
+}
+
 export class WebGlCompositor {
   private gl: WebGL2RenderingContext | null = null;
   private program: Program | null = null;
   /** A copy of the frame under the caption being drawn. See `grabBackdrop`. */
   private backdrop: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
+  /**
+   * Built on the first filtered frame, and kept even when the look is taken
+   * off: a program is cheap to hold and compiling one mid-drag would stutter.
+   * `null` means it would not compile, which has already been logged.
+   */
+  private filterProgram: FilterProgram | null = null;
+  private filterFailed = false;
+  /** Allocated on the first filtered frame. A recording with no look never
+      pays for it. */
+  private scene: Scene | null = null;
 
   /** One texture per source, reused: a new one per frame would thrash. */
   private readonly textures = new Map<string, WebGLTexture>();
@@ -555,6 +589,18 @@ export class WebGlCompositor {
     const gl = this.context(canvas);
     if (!gl || !this.program) return;
 
+    // A look reads the whole composition, and a fragment shader cannot sample
+    // the framebuffer it is drawing into. So with a look on, the items go into
+    // a texture of their own and the look reads that.
+    //
+    // Only with a look on. An unfiltered preview draws straight to the canvas
+    // exactly as it always has, allocating nothing and costing nothing — which
+    // matters, because most clips wear no look and this runs sixty times a
+    // second.
+    const filter = plan.filter ? this.filterFor(gl) : null;
+    const scene = filter ? this.sceneFor(gl, backing) : null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, scene?.framebuffer ?? null);
+
     gl.viewport(0, 0, backing.width, backing.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -568,8 +614,135 @@ export class WebGlCompositor {
     }
 
     gl.bindVertexArray(null);
+
+    if (plan.filter && filter && scene) {
+      this.drawFilter(gl, filter, scene, plan.filter, plan.frame, at);
+    }
+
     this.retire(gl);
     this.frame += 1;
+  }
+
+  /**
+   * Lays the look over everything that was just drawn.
+   *
+   * Blending is **off**. The scene texture is already composited and
+   * premultiplied, and this pass replaces the canvas rather than drawing onto
+   * it; source-over here would blend the frame with itself at every translucent
+   * pixel. Put back afterwards, because every other draw in this class expects
+   * it on and a `draw()` that left it off would break the *next* frame rather
+   * than this one.
+   */
+  private drawFilter(
+    gl: WebGL2RenderingContext,
+    program: FilterProgram,
+    scene: Scene,
+    filter: NonNullable<RenderPlan["filter"]>,
+    frame: Size,
+    at: number,
+  ): void {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.BLEND);
+
+    gl.useProgram(program.program);
+    gl.bindVertexArray(this.vao);
+
+    // Unit 0, which is where every other draw leaves the active texture — see
+    // the note in `grabBackdrop` about unit 1 staying bound to the backdrop.
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, scene.texture);
+    gl.uniform1i(program.scene, 0);
+
+    gl.uniform1i(program.look, FILTER_LOOKS[filter.id]);
+    // Resolved against the look's own list by `buildRenderPlan`, so the number
+    // here is an index into the shader's switch and never a name.
+    gl.uniform1i(program.variant, variantIndex(filter.id, filter.variant));
+    gl.uniform1f(program.strength, filter.strength);
+    gl.uniform1f(program.scale, filter.scale);
+    gl.uniform1f(program.angle, filter.angle);
+    const [r, g, b] = rgba(filter.tint);
+    gl.uniform3f(program.tint, r, g, b);
+    gl.uniform1f(program.time, filterTime(at, filter.animated));
+    gl.uniform2f(program.frame, frame.width, frame.height);
+
+    drawQuad(gl);
+
+    gl.bindVertexArray(null);
+    gl.enable(gl.BLEND);
+  }
+
+  /** The filter program, compiled once. Null once it has failed, so a broken
+      shader logs once rather than sixty times a second. */
+  private filterFor(gl: WebGL2RenderingContext): FilterProgram | null {
+    if (this.filterProgram) return this.filterProgram;
+    if (this.filterFailed) return null;
+
+    this.filterProgram = compileFilter(gl);
+    // Set whether or not it worked: a second attempt would compile the same
+    // source against the same driver and fail the same way.
+    this.filterFailed = this.filterProgram === null;
+    return this.filterProgram;
+  }
+
+  /**
+   * The texture the items are drawn into when a look will run over them.
+   *
+   * Sized to the backing store rather than to the plan's frame. The look is
+   * expensive per pixel and the preview is a fraction of the output's size, so
+   * this is the difference between a bloom costing two million pixels and
+   * costing eight. Everything in `filters.ts` works in normalised coordinates
+   * for exactly this reason — see the note at the top of that file.
+   */
+  private sceneFor(gl: WebGL2RenderingContext, backing: Backing): Scene | null {
+    const fit = this.scene?.width === backing.width && this.scene?.height === backing.height;
+    if (this.scene && fit) return this.scene;
+
+    if (this.scene) {
+      gl.deleteTexture(this.scene.texture);
+      gl.deleteFramebuffer(this.scene.framebuffer);
+      this.scene = null;
+    }
+
+    const texture = gl.createTexture();
+    const framebuffer = gl.createFramebuffer();
+    if (!texture || !framebuffer) return null;
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      backing.width,
+      backing.height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    // Linear, and clamped: a tap a hair outside the frame must not wrap to the
+    // far edge, which shows as a stripe of the opposite corner along the
+    // border. The exporter's sampler is declared the same way.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    if (!complete) {
+      console.error("[editor] the filter's framebuffer is incomplete; drawing without a look");
+      gl.deleteTexture(texture);
+      gl.deleteFramebuffer(framebuffer);
+      return null;
+    }
+
+    this.scene = { texture, framebuffer, width: backing.width, height: backing.height };
+    return this.scene;
   }
 
   /**
@@ -610,8 +783,19 @@ export class WebGlCompositor {
     this.textures.clear();
     this.touched.clear();
     if (this.program) gl.deleteProgram(this.program.program);
+    if (this.filterProgram) gl.deleteProgram(this.filterProgram.program);
+    if (this.scene) {
+      gl.deleteTexture(this.scene.texture);
+      gl.deleteFramebuffer(this.scene.framebuffer);
+    }
     if (this.vao) gl.deleteVertexArray(this.vao);
     this.program = null;
+    this.filterProgram = null;
+    // Cleared with the program: `context()` rebuilds after a stray dispose, and
+    // a compositor that had once failed to compile would otherwise never try
+    // again on a context that might now succeed.
+    this.filterFailed = false;
+    this.scene = null;
     this.vao = null;
   }
 
@@ -937,6 +1121,13 @@ export class WebGlCompositor {
   private grabBackdrop(gl: WebGL2RenderingContext, rect: Rect, frame: Size): void {
     const p = this.program;
     if (!p) return;
+
+    // Reads from whatever is bound as the read framebuffer, which with a look
+    // on is the scene texture's rather than the canvas. That is what makes this
+    // keep working: with a filter, nothing has been drawn to the canvas yet,
+    // and a caption would otherwise colour itself against an empty frame — so
+    // the words would pick the wrong colour, but only on filtered clips. The
+    // flip below is unchanged either way, both buffers being bottom-up.
 
     const scale = gl.drawingBufferWidth / Math.max(frame.width, 1);
     // Clamped into the buffer: `copyTexImage2D` reads undefined pixels outside
@@ -1405,6 +1596,71 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     alpha: at("u_alpha"),
     matte: at("u_matte"),
     useMatte: at("u_useMatte"),
+  };
+}
+
+/**
+ * Builds the full-screen pass that lays a look over the frame.
+ *
+ * Its own function rather than a second branch in `compile`: the two programs
+ * share no uniform and no shader, and the only thing folding them together
+ * would save is the eight lines that compile a shader — at the cost of one
+ * function whose return type is a union of two unrelated shapes.
+ *
+ * Null on failure, logged once by the caller. A look that will not compile
+ * costs the look; the preview keeps drawing.
+ */
+function compileFilter(gl: WebGL2RenderingContext): FilterProgram | null {
+  const { vertex: vertexSource, fragment: fragmentSource } = FILTER_SHADER_SOURCE();
+
+  const build = (kind: number, source: string) => {
+    const shader = gl.createShader(kind);
+    if (!shader) return null;
+
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error("[editor] the filter shader failed to compile:", gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  };
+
+  const vertex = build(gl.VERTEX_SHADER, vertexSource);
+  const fragment = build(gl.FRAGMENT_SHADER, fragmentSource);
+  if (!vertex || !fragment) return null;
+
+  const program = gl.createProgram();
+  if (!program) return null;
+
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error("[editor] the filter shader failed to link:", gl.getProgramInfoLog(program));
+    return null;
+  }
+
+  const at = (name: string) => gl.getUniformLocation(program, name);
+  return {
+    program,
+    scene: at("u_scene"),
+    look: at("u_look"),
+    // Null until a look has more than one way to be worn: a uniform nothing
+    // reads is optimised out of the linked program, and setting a null location
+    // is a no-op rather than an error.
+    variant: at("u_variant"),
+    strength: at("u_strength"),
+    scale: at("u_scale"),
+    angle: at("u_angle"),
+    tint: at("u_tint"),
+    time: at("u_time"),
+    frame: at("u_frame"),
   };
 }
 

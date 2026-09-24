@@ -867,11 +867,119 @@ pub struct Placed {
     pub quad: Option<[f64; 12]>,
 }
 
+/// Which look a clip wears, by name.
+///
+/// A name rather than an index, which is the whole reason this is an enum and
+/// not a `u32`: a plan naming a look this build does not have parses as
+/// `Unknown` and renders the frame plainly, where a renumbered index would have
+/// parsed as some *other* look and rendered nonsense. `#[serde(other)]` is what
+/// makes the unknown case a value rather than a parse error — and a parse error
+/// here fails the entire export, not one frame.
+///
+/// Mirrors `FilterId` in `apps/desktop/src/shared/filters.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FilterKind {
+    Aberration,
+    Grade,
+    Pixelate,
+    Halftone,
+    Lcd,
+    Fisheye,
+    Crt,
+    Vhs,
+    Film,
+    Bloom,
+    WindowLight,
+    /// Anything this build has never heard of. Drawn as no filter at all.
+    #[serde(other)]
+    Unknown,
+}
+
+impl FilterKind {
+    /// Which arm of the shader's look switch this is.
+    ///
+    /// Hand-kept in lockstep with the same order in `filters.metal`, and pinned
+    /// by `the_filter_kinds_match_the_shader` below. Nothing can compile across
+    /// that boundary, so the guard is a test naming the numbers — the same
+    /// discipline `the_uniform_block_matches_the_shader` uses.
+    pub fn index(self) -> u32 {
+        match self {
+            Self::Aberration => 0,
+            Self::Grade => 1,
+            Self::Pixelate => 2,
+            Self::Halftone => 3,
+            Self::Lcd => 4,
+            Self::Fisheye => 5,
+            Self::Crt => 6,
+            Self::Vhs => 7,
+            Self::Film => 8,
+            Self::Bloom => 9,
+            Self::WindowLight => 10,
+            Self::Unknown => u32::MAX,
+        }
+    }
+
+    /// Which arm of the look's own variant switch `name` is.
+    ///
+    /// Mirrors `variantIndex` in `apps/desktop/src/shared/filters.ts`, and the
+    /// two are kept honest by a test on each side naming the same numbers. An
+    /// unrecognised name is 0 — the look's first variant, which is a look,
+    /// where refusing would be a blank frame.
+    pub fn variant_index(self, name: &str) -> u32 {
+        self.variants()
+            .iter()
+            .position(|v| *v == name)
+            .unwrap_or(0) as u32
+    }
+
+    /// This look's sub-looks, in the order `FILTERS[id].variants` lists them.
+    ///
+    /// Empty for every look in this build: `Aberration` is the only one with a
+    /// shader behind it and there is a single way to wear it. Each look that
+    /// gains variants gets an arm here and a matching entry in the registry.
+    fn variants(self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+/// The look laid over the frame once every item has been drawn into it.
+///
+/// Mirrors `PlanFilter` in `apps/desktop/src/shared/layout.ts`. Not a
+/// `PlanItem`: items are drawn *into* the frame and this is what happens to the
+/// frame after all of them have been.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanFilter {
+    pub id: FilterKind,
+    #[serde(default)]
+    pub variant: String,
+    pub strength: f64,
+    /// A fraction of the frame's shorter edge, not output pixels.
+    ///
+    /// The one distance in a plan that is not resolved, and it earns it: the
+    /// preview rasterises at the size of the canvas on screen and this side at
+    /// the output resolution, so a pitch in pixels would be three times as
+    /// dense in the file as it was on screen.
+    pub scale: f64,
+    /// Radians, resolved from the setting's degrees by the editor.
+    pub angle: f64,
+    #[serde(default)]
+    pub tint: String,
+    #[serde(default)]
+    pub animated: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RenderPlan {
     pub frame: Size,
     /// Drawn in order, back to front.
     pub items: Vec<PlanItem>,
+    /// The look laid over all of them, when the clip wears one.
+    ///
+    /// Defaulted, so a plan written before filters existed still parses — and
+    /// parses as unfiltered, which is what it drew.
+    #[serde(default)]
+    pub filter: Option<PlanFilter>,
 }
 
 /// A colour as the plan carries it: `#rrggbb` or `rgba(r, g, b, a)`.
@@ -1020,10 +1128,105 @@ mod tests {
                 width: 2.0,
                 color: "#ffffff".to_owned(),
             }],
+            filter: None,
         };
 
         let json = serde_json::to_string(&plan).unwrap();
         assert_eq!(serde_json::from_str::<RenderPlan>(&json).unwrap(), plan);
+    }
+
+    /// A plan the browser wrote, with a look on it.
+    ///
+    /// Written out as JSON rather than built and round-tripped: the round trip
+    /// above would pass just as happily with a field renamed on both sides at
+    /// once, and the editor is the only thing that actually writes this.
+    #[test]
+    fn parses_a_plan_wearing_a_look() {
+        let json = r##"{
+            "frame": { "width": 1920, "height": 1080 },
+            "items": [],
+            "filter": {
+                "id": "aberration",
+                "variant": "",
+                "strength": 0.35,
+                "scale": 0.01,
+                "angle": 1.5707963267948966,
+                "tint": "#ffffff",
+                "animated": false
+            }
+        }"##;
+
+        let plan: RenderPlan = serde_json::from_str(json).unwrap();
+        let filter = plan.filter.expect("the look survives the crossing");
+        assert_eq!(filter.id, FilterKind::Aberration);
+        assert_eq!(filter.strength, 0.35);
+        assert!(!filter.animated);
+    }
+
+    #[test]
+    fn a_plan_written_before_filters_existed_still_parses() {
+        // And parses as unfiltered, which is what it drew. The whole reason
+        // `filter` is `#[serde(default)]` and absent rather than null.
+        let json = r#"{ "frame": { "width": 16, "height": 9 }, "items": [] }"#;
+
+        let plan: RenderPlan = serde_json::from_str(json).unwrap();
+        assert_eq!(plan.filter, None);
+    }
+
+    #[test]
+    fn a_look_this_build_has_never_heard_of_draws_nothing() {
+        // The forward-compatibility rule, and the reason the id crosses as a
+        // name rather than an index. A renumbered index would have parsed as
+        // some *other* look and rendered nonsense; an unknown name renders the
+        // frame plainly. Refusing would fail the entire export at the first
+        // parse, not one frame of it.
+        let json = r#"{
+            "frame": { "width": 16, "height": 9 },
+            "items": [],
+            "filter": { "id": "hologram", "strength": 1, "scale": 0.01, "angle": 0 }
+        }"#;
+
+        let plan: RenderPlan = serde_json::from_str(json).unwrap();
+        let filter = plan.filter.expect("it still parses");
+        assert_eq!(filter.id, FilterKind::Unknown);
+        // Past every arm of the shader's switch, which draws the frame it was
+        // given.
+        assert_eq!(filter.id.index(), u32::MAX);
+    }
+
+    /// The numbering `FILTER_LOOKS` in
+    /// `apps/desktop/src/renderer/src/editor/filters.ts` mirrors, and the arms
+    /// of the switch in `filters.metal`.
+    ///
+    /// Written out on both sides because nothing compiles across the boundary.
+    /// A look inserted in the middle of either list without the other renumbers
+    /// every look after it — which does not fail to build, it draws the wrong
+    /// effect.
+    #[test]
+    fn the_filter_kinds_match_the_shader() {
+        assert_eq!(FilterKind::Aberration.index(), 0);
+        assert_eq!(FilterKind::Grade.index(), 1);
+        assert_eq!(FilterKind::Pixelate.index(), 2);
+        assert_eq!(FilterKind::Halftone.index(), 3);
+        assert_eq!(FilterKind::Lcd.index(), 4);
+        assert_eq!(FilterKind::Fisheye.index(), 5);
+        assert_eq!(FilterKind::Crt.index(), 6);
+        assert_eq!(FilterKind::Vhs.index(), 7);
+        assert_eq!(FilterKind::Film.index(), 8);
+        assert_eq!(FilterKind::Bloom.index(), 9);
+        assert_eq!(FilterKind::WindowLight.index(), 10);
+    }
+
+    /// The table `variantIndex` in `apps/desktop/src/shared/filters.ts`
+    /// mirrors, written out.
+    ///
+    /// Nothing in this build wears more than one way yet, so this pins the
+    /// fallback rather than a list. A variant name that is not the look's still
+    /// names a look that is, and the look drawn some way beats a blank frame.
+    #[test]
+    fn an_unknown_variant_draws_the_looks_first() {
+        assert_eq!(FilterKind::Aberration.variant_index(""), 0);
+        assert_eq!(FilterKind::Aberration.variant_index("trinitron"), 0);
     }
 
     #[test]

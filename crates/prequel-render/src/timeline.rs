@@ -190,6 +190,7 @@ mod tests {
                     height: 1080.0,
                 },
                 items: vec![],
+                filter: None,
             },
             audio: AudioMix::tracks(1.0, 1.0),
             speed,

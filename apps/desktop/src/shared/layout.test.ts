@@ -27,7 +27,9 @@ import {
   type RenderPlan,
   type Size,
 } from "./layout.js";
+import { FILTER_SCALE_MAX } from "./filters.js";
 import {
+  DEFAULT_EFFECTS,
   DEFAULT_SETTINGS,
   DEFAULT_ZOOM,
   SHAPE_RADIUS,
@@ -70,6 +72,7 @@ function settings(overrides: Partial<SliceSettings> = {}): SliceSettings {
     watermark: { ...base.watermark, ...overrides.watermark },
     audio: { ...base.audio, ...overrides.audio },
     captions: { ...base.captions, ...overrides.captions },
+    effects: { ...base.effects, ...overrides.effects },
   };
 }
 
@@ -4866,5 +4869,100 @@ describe("whole nanoseconds", () => {
       smearX: 0.5,
       scale: 1.25,
     });
+  });
+});
+
+describe("the look laid over the frame", () => {
+  it("carries no filter field at all when no look is chosen", () => {
+    // Absent, not null. A clip with no look has to produce exactly the JSON it
+    // produced before filters existed, which is what lets a build of the
+    // exporter that predates this read a plan written by one that does not.
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, settings());
+
+    expect("filter" in plan).toBe(false);
+  });
+
+  it("draws nothing extra for a look this build cannot render", () => {
+    // What a `project.json` from a newer build looks like from here: the id
+    // parses, the clip opens, and the frame is drawn plainly. The alternative
+    // is an editor that will not open somebody's project.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({ effects: { ...DEFAULT_EFFECTS, filter: "hologram" } }),
+    );
+
+    expect(plan.filter).toBeUndefined();
+  });
+
+  it("resolves the angle into radians and leaves the scale a fraction", () => {
+    // The angle because a shader wants radians and a dial reads degrees, and
+    // both rasterisers would otherwise have to know which it was. The scale
+    // *not*, and it is the one distance in a plan that stays a fraction: the
+    // preview rasterises at the size of the canvas on screen and the export at
+    // the output resolution, so a pitch in output pixels would be three times
+    // as dense in the file as it was on screen.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        effects: {
+          ...DEFAULT_EFFECTS,
+          filter: "aberration",
+          filterAngle: 90,
+          filterScale: 0.02,
+        },
+      }),
+    );
+
+    expect(plan.filter?.id).toBe("aberration");
+    expect(plan.filter?.angle).toBeCloseTo(Math.PI / 2, 10);
+    expect(plan.filter?.scale).toBe(0.02);
+  });
+
+  it("means the same thing in a portrait frame as in a landscape one", () => {
+    // The scale is a fraction of the *shorter* edge, like every other geometry
+    // setting, so a look survives 16:9 → 9:16 rather than getting three times
+    // finer with the frame.
+    const look = settings({
+      effects: { ...DEFAULT_EFFECTS, filter: "aberration", filterScale: 0.02 },
+    });
+    const wide = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: CAMERA }, look);
+    const tall = buildRenderPlan(VERTICAL, { screen: SCREEN, camera: CAMERA }, look);
+
+    expect(wide.filter?.scale).toBe(tall.filter?.scale);
+  });
+
+  it("clamps a strength and a scale that a hand-edited file could hold", () => {
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        effects: {
+          ...DEFAULT_EFFECTS,
+          filter: "aberration",
+          filterStrength: 40,
+          filterScale: 900,
+        },
+      }),
+    );
+
+    expect(plan.filter?.strength).toBe(1);
+    expect(plan.filter?.scale).toBe(FILTER_SCALE_MAX);
+  });
+
+  it("falls back to a variant the look has", () => {
+    // A variant name from a newer build names a look this one *does* have. The
+    // look drawn some way beats a blank frame, so it comes back as the look's
+    // first variant — and `aberration` has none, so that is no variant at all.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        effects: { ...DEFAULT_EFFECTS, filter: "aberration", filterVariant: "trinitron" },
+      }),
+    );
+
+    expect(plan.filter?.variant).toBe("");
   });
 });

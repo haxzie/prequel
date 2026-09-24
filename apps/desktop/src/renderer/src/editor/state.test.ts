@@ -12,6 +12,7 @@ import {
   DEFAULT_BACKGROUND,
   DEFAULT_CAPTIONS,
   DEFAULT_LAYOUT,
+  DEFAULT_EFFECTS,
   DEFAULT_WATERMARK,
   DEFAULT_ZOOM_LOOK,
   newProject,
@@ -1203,6 +1204,7 @@ describe("applying a saved look", () => {
       background: { ...DEFAULT_BACKGROUND, padding: 0.2, cornerRadius: 0.05 },
       captions: { ...captionLook(), captionAccent: "#ff0000" },
       watermark: { ...DEFAULT_WATERMARK },
+      effects: { ...DEFAULT_EFFECTS, filter: "aberration", filterStrength: 0.8 },
       zoom: { ...DEFAULT_ZOOM_LOOK, speed: 1.2 },
       ...over,
     };

@@ -317,6 +317,26 @@ export const SHOTS: readonly Shot[] = [
     clip: "frame",
   },
   inspector("inspector-captions", "Captions"),
+  inspector("inspector-filters", "Filters"),
+  // A look actually on the picture, rather than the panel that chooses it.
+  // The whole frame, because the point of the shot is the preview: this is the
+  // only place a filter is *seen* rather than asserted, and the WebGL pass it
+  // goes through is the one the tests cannot reach.
+  {
+    id: "filter-applied",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Filters"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label^="Chromatic aberration"]' },
+      // Past the write, the plan rebuild and a draw or two.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
   inspector("inspector-logo", "Logo"),
   // `Z` adds a zoom at the playhead and selects it, which is what swaps the
   // panel to the zoom's own three tabs.

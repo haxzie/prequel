@@ -221,6 +221,7 @@ mod tests {
                     height: 9.0,
                 },
                 items: Vec::new(),
+                filter: None,
             },
             audio,
             speed: 1.0,

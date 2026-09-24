@@ -229,6 +229,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
             matte: false,
             motion: Vec::new(),
         }],
+        filter: None,
     };
 
     export(
@@ -287,6 +288,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
             mirror: true,
             matte: false,
         }],
+        filter: None,
     };
 
     export(
@@ -364,6 +366,7 @@ fn draws_an_image_background() {
                 motion: Vec::new(),
             },
         ],
+        filter: None,
     };
 
     export(
@@ -424,6 +427,7 @@ fn a_translucent_layer_lands_at_the_opacity_it_asks_for() {
                 },
             },
         ],
+        filter: None,
     };
 
     export(
@@ -628,6 +632,7 @@ fn swaps_the_pointer_image_partway_through() {
                 ],
             },
         ],
+        filter: None,
     };
 
     export(
@@ -716,6 +721,7 @@ fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
                 }],
             },
         ],
+        filter: None,
     };
 
     export(
@@ -828,6 +834,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 points: vec![point(0), point(S as i64)],
             },
         ],
+        filter: None,
     };
 
     export(
@@ -936,6 +943,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 points: vec![point(0), point(S as i64)],
             },
         ],
+        filter: None,
     };
 
     export(
@@ -1154,6 +1162,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
+        filter: None,
     };
 
     export(
@@ -1253,6 +1262,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                 motion: Vec::new(),
             },
         ],
+        filter: None,
     };
 
     export(
@@ -1319,6 +1329,7 @@ fn camera_over_red(matte: bool) -> RenderPlan {
                 motion: Vec::new(),
             },
         ],
+        filter: None,
     }
 }
 
@@ -1449,6 +1460,7 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
             matte: false,
             motion: Vec::new(),
         }],
+        filter: None,
     };
 
     export(
@@ -1553,6 +1565,7 @@ fn an_overlay_fades_in_where_its_keys_say_and_keeps_its_crop() {
                 ],
             },
         ],
+        filter: None,
     };
 
     export(

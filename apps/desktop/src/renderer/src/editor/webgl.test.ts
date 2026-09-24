@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { FILTER_SHADER_SOURCE } from "./filters";
 import { SHADER_SOURCE } from "./webgl";
 
 /**
@@ -66,8 +67,19 @@ const RESERVED = [
 const code = (source: string) =>
   source.replaceAll(/\/\*[\s\S]*?\*\//g, " ").replaceAll(/\/\/[^\n]*/g, " ");
 
-describe("the shaders", () => {
-  const sources = Object.entries(SHADER_SOURCE());
+/**
+ * Both pairs, because both are compiled by the same driver and neither is seen
+ * by the build. The filter pair is the newer and the likelier of the two to
+ * break this way: it grows an arm per look, and a look is written in one sitting
+ * and looked at on one machine.
+ */
+const PAIRS = [
+  ["the item shader", SHADER_SOURCE()],
+  ["the filter shader", FILTER_SHADER_SOURCE()],
+] as const;
+
+describe.each(PAIRS)("%s", (_name, pair) => {
+  const sources = Object.entries(pair);
 
   for (const [stage, source] of sources) {
     it(`declares no reserved word in the ${stage} stage`, () => {

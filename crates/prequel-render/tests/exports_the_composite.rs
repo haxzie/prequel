@@ -160,6 +160,7 @@ fn plan() -> RenderPlan {
                 motion: Vec::new(),
             },
         ],
+        filter: None,
     }
 }
 

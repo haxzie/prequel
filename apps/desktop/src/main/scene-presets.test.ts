@@ -17,6 +17,7 @@ import {
   DEFAULT_BACKGROUND,
   DEFAULT_CAPTIONS,
   DEFAULT_LAYOUT,
+  DEFAULT_EFFECTS,
   DEFAULT_WATERMARK,
   DEFAULT_ZOOM_LOOK,
 } from "../shared/project.js";
@@ -47,6 +48,7 @@ function look(over: Partial<ScenePreset> = {}): ScenePreset {
     background: { ...DEFAULT_BACKGROUND },
     captions,
     watermark: { ...DEFAULT_WATERMARK },
+    effects: { ...DEFAULT_EFFECTS },
     zoom: { ...DEFAULT_ZOOM_LOOK },
     ...over,
   };

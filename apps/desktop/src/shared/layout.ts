@@ -17,11 +17,19 @@
  */
 import { captionStyle } from "./captions.js";
 import type { CursorShape } from "./contract.js";
+import {
+  FILTER_SCALE_MAX,
+  FILTER_SCALE_MIN,
+  filterSpec,
+  variantIndex,
+  type FilterId,
+} from "./filters.js";
 import type { CursorKind } from "./manifest.js";
 import type {
   Background,
   BackgroundSettings,
   CameraShape,
+  EffectsSettings,
   LayoutPreset,
   LayoutSettings,
   SliceSettings,
@@ -489,10 +497,57 @@ export type Paint =
    */
   | { kind: "image"; path: string; blur: number };
 
+/**
+ * The look laid over the frame once every item has been drawn into it.
+ *
+ * A field on the plan rather than a `PlanItem`, and deliberately: items are
+ * things drawn *into* the frame, back to front, and this is what happens to the
+ * frame after all of them have been. A plan is built per slice, so a per-slice
+ * filter is exactly a per-plan field.
+ *
+ * Everything here is resolved — the fraction is still a fraction, but the angle
+ * is radians and the variant has been checked against the catalogue — so the
+ * two rasterisers are handed the answer, as they are for geometry.
+ */
+export interface PlanFilter {
+  /**
+   * The look's name, not a number.
+   *
+   * A renumbered index renders garbage; an unrecognised name renders nothing,
+   * which is the failure anybody would choose. `plan.rs` reads it into an enum
+   * with a catch-all arm for the same reason.
+   */
+  id: FilterId;
+  variant: string;
+  strength: number;
+  /**
+   * The look's size, left as a fraction of the frame's shorter edge rather than
+   * resolved to pixels like every other distance in a plan.
+   *
+   * The one exception, and it earns it: the preview rasterises at the size of
+   * the canvas on screen and the export at the output resolution, so a pitch
+   * resolved to output pixels would be three times as dense in the file as on
+   * screen. The shader works in normalised frame coordinates and this is the
+   * unit it works in.
+   */
+  scale: number;
+  /** Radians. Resolved from the setting's degrees here, so neither rasteriser
+      has to know which the number was. */
+  angle: number;
+  tint: string;
+  animated: boolean;
+}
+
 export interface RenderPlan {
   frame: Size;
   /** Drawn in order, back to front. */
   items: PlanItem[];
+  /**
+   * Absent when the clip wears no look, which is most of them — and absent
+   * rather than a null, so a plan written before filters existed and a plan
+   * written today with none are the same JSON.
+   */
+  filter?: PlanFilter;
 }
 
 /** Superellipse exponent per camera shape. */
@@ -1043,7 +1098,41 @@ export function buildRenderPlan(
   // is a caption nobody can read, and the bubble is the thing that moves.
   items.push(...captionItems(frame, settings.captions, cues));
 
-  return { frame, items };
+  const filter = planFilter(settings.effects);
+  // Spread rather than always present, so a clip with no look produces exactly
+  // the JSON it produced before filters existed — which is what lets an older
+  // exporter read a newer plan, and what makes the "no filter" case free rather
+  // than a `null` every plan has to carry.
+  return filter ? { frame, items, filter } : { frame, items };
+}
+
+/**
+ * The chosen look, resolved, or null.
+ *
+ * Null for no look and for a look this build cannot draw — `filterSpec` decides
+ * which, and the second case is the one that matters: a `project.json` from a
+ * newer build names filters this one has never heard of, and the clip drawn
+ * plainly is a far better answer than an editor that will not open it.
+ */
+function planFilter(effects: EffectsSettings): PlanFilter | null {
+  const spec = filterSpec(effects.filter);
+  if (!spec) return null;
+
+  return {
+    id: effects.filter as FilterId,
+    // Checked against the look's own list here rather than in the shader, which
+    // has no strings to check against. An unknown name comes back as the first
+    // variant, so a look is always drawn as *something*.
+    variant: spec.variants[variantIndex(effects.filter as FilterId, effects.filterVariant)]?.id ?? "",
+    strength: clamp(effects.filterStrength, 0, 1),
+    scale: clamp(effects.filterScale, FILTER_SCALE_MIN, FILTER_SCALE_MAX),
+    // Degrees in the settings because that is what a dial reads; radians here
+    // because that is what a shader wants. Resolved once, like every other
+    // number in a plan.
+    angle: (effects.filterAngle * Math.PI) / 180,
+    tint: effects.filterTint,
+    animated: effects.filterAnimated,
+  };
 }
 
 /**

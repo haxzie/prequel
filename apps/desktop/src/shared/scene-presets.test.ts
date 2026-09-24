@@ -15,6 +15,7 @@ import {
   DEFAULT_CAPTIONS,
   DEFAULT_LAYOUT,
   DEFAULT_SETTINGS,
+  DEFAULT_EFFECTS,
   DEFAULT_WATERMARK,
   DEFAULT_ZOOM_LOOK,
 } from "./project";
@@ -57,6 +58,7 @@ describe("what a look carries", () => {
     expect(Object.keys(preset.layout).sort()).toEqual(Object.keys(DEFAULT_LAYOUT).sort());
     expect(Object.keys(preset.background).sort()).toEqual(Object.keys(DEFAULT_BACKGROUND).sort());
     expect(Object.keys(preset.watermark).sort()).toEqual(Object.keys(DEFAULT_WATERMARK).sort());
+    expect(Object.keys(preset.effects).sort()).toEqual(Object.keys(DEFAULT_EFFECTS).sort());
     expect(Object.keys(preset.zoom).sort()).toEqual(Object.keys(DEFAULT_ZOOM_LOOK).sort());
   });
 
@@ -71,7 +73,13 @@ describe("what a look carries", () => {
     const preset = read();
     const sections = Object.keys(DEFAULT_SETTINGS).filter((section) => section in preset);
 
-    expect(sections.sort()).toEqual(["background", "captions", "layout", "watermark"]);
+    expect(sections.sort()).toEqual([
+      "background",
+      "captions",
+      "effects",
+      "layout",
+      "watermark",
+    ]);
     expect("audio" in preset).toBe(false);
   });
 

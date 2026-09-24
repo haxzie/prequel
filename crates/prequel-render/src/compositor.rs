@@ -22,6 +22,31 @@ use crate::plan::{
 };
 use crate::{Error, Result};
 
+/// Mirrors `FilterUniforms` in `filters.metal`. Field order and padding must
+/// match, for the reason the block below spells out at length.
+///
+/// Its own block rather than more fields on `Uniforms`: that one is 272 bytes
+/// with a hand-derived offset table and a test asserting every offset in it,
+/// and none of this is read by a per-item draw. Keeping them apart is what lets
+/// a look be added without re-deriving the numbers that place a camera.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct FilterUniforms {
+    /// Leads, and is 16 bytes, so every scalar after it keeps its offset
+    /// whatever is added later.
+    tint: [f32; 4],
+    frame: [f32; 2],
+    strength: f32,
+    /// A fraction of the frame's shorter edge, never a pixel count.
+    scale: f32,
+    /// Radians.
+    angle: f32,
+    /// Seconds, already wrapped by `filter_time`.
+    time: f32,
+    look: u32,
+    variant: u32,
+}
+
 /// Mirrors `Uniforms` in `shaders.metal`. Field order and padding must match.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -149,6 +174,22 @@ pub struct Compositor {
     caption_clock: u64,
     /// A copy of the frame under the caption being drawn. See `grab_backdrop`.
     backdrop: Option<arc::R<mtl::Texture>>,
+    /// The pass that lays a look over the finished frame.
+    ///
+    /// `None` when `filters.metal` would not compile or is missing a function.
+    /// A filtered frame then draws unfiltered rather than failing the export:
+    /// a shader is the sort of thing that breaks on one machine's driver, and
+    /// losing the look beats losing the file. The reason is logged once at
+    /// startup, which reaches `~/Library/Logs/Prequel/main.log` — the only
+    /// console a packaged build has.
+    filter_pipeline: Option<arc::R<mtl::RenderPipelineState>>,
+    /// Where the items are drawn when a look will run over them.
+    ///
+    /// Metal cannot sample the texture it is drawing into, so a pass that reads
+    /// the whole composition has to read a different one. Allocated on the
+    /// first filtered frame and reused: an export is one size throughout, and
+    /// a recording with no filter never pays for it at all.
+    scene: Option<arc::R<mtl::Texture>>,
 }
 
 /// How many caption and text bitmaps to keep decoded at once.
@@ -220,6 +261,22 @@ impl Compositor {
 
         let pool = output_pool(width, height)?;
 
+        // Built eagerly and kept optional, rather than lazily on the first
+        // filtered frame: a shader that will not compile should say so once, at
+        // the top of the log, beside everything else about how this export was
+        // set up — not three thousand frames in, where it would be mistaken for
+        // something the footage did.
+        let filter_pipeline = match filter_pipeline(&device) {
+            Ok(pipeline) => Some(pipeline),
+            Err(error) => {
+                tracing::error!(
+                    "the filter shader would not build, so clips wearing a look will export \
+                     without one: {error}"
+                );
+                None
+            }
+        };
+
         Ok(Self {
             device,
             queue,
@@ -230,6 +287,8 @@ impl Compositor {
             caption_use: HashMap::new(),
             caption_clock: 0,
             backdrop: None,
+            filter_pipeline,
+            scene: None,
         })
     }
 
@@ -347,10 +406,26 @@ impl Compositor {
             has_matte: matte.is_some(),
         };
 
+        // A look reads the whole composition, and Metal cannot sample the
+        // texture it is drawing into — the same wall `grab_backdrop` hits for a
+        // caption. So the items go into a texture of their own and the look
+        // reads that. Only when there is a look: an unfiltered export draws
+        // straight into the output buffer as it always has, and allocates
+        // nothing extra.
+        let filtered = plan
+            .filter
+            .as_ref()
+            .filter(|_| self.filter_pipeline.is_some());
+        let scene = match filtered {
+            Some(_) => Some(self.scene_texture(plan.frame)?),
+            None => None,
+        };
+        let items_into: &mtl::Texture = scene.as_deref().unwrap_or(&target.texture);
+
         let descriptor = mtl::RenderPassDesc::new();
         let attachments = descriptor.color_attaches();
         let mut attachment = attachments.get(0);
-        attachment.set_texture(Some(&target.texture));
+        attachment.set_texture(Some(items_into));
         attachment.set_load_action(mtl::LoadAction::Clear);
         attachment.set_store_action(mtl::StoreAction::Store);
         attachment.set_clear_color(mtl::ClearColor::clear());
@@ -389,13 +464,18 @@ impl Compositor {
                 && copied != Some(*dst_rect)
             {
                 unsafe { encoder.end_encoding() };
-                self.grab_backdrop(&mut cmd, &target.texture, dst_rect, plan.frame)?;
+                // From whichever texture the items are going into, not from the
+                // output buffer: with a look on, nothing has been drawn into
+                // the output buffer yet and a caption would measure itself
+                // against an empty frame — reading as words that pick the wrong
+                // colour only on filtered clips.
+                self.grab_backdrop(&mut cmd, items_into, dst_rect, plan.frame)?;
                 copied = Some(*dst_rect);
 
                 let descriptor = mtl::RenderPassDesc::new();
                 let attachments = descriptor.color_attaches();
                 let mut attachment = attachments.get(0);
-                attachment.set_texture(Some(&target.texture));
+                attachment.set_texture(Some(items_into));
                 // Load, not clear: everything drawn so far is the frame.
                 attachment.set_load_action(mtl::LoadAction::Load);
                 attachment.set_store_action(mtl::StoreAction::Store);
@@ -444,6 +524,58 @@ impl Compositor {
         // Safety: no further commands are encoded after this, and the encoder
         // is dropped immediately below.
         unsafe { encoder.end_encoding() };
+
+        // The look, over everything that was just drawn.
+        //
+        // Encoded onto the *same* command buffer, which is what keeps the
+        // single commit-and-wait below sufficient: the scene texture is owned
+        // by `self` and the output buffer is held by `target`, so neither can
+        // be freed while the GPU is reading it. Committing this separately
+        // would reintroduce exactly the lifetime rules the note below says
+        // pipelining was not worth.
+        if let (Some(filter), Some(scene), Some(pipeline)) =
+            (filtered, scene.as_deref(), self.filter_pipeline.as_deref())
+        {
+            let descriptor = mtl::RenderPassDesc::new();
+            let attachments = descriptor.color_attaches();
+            let mut attachment = attachments.get(0);
+            attachment.set_texture(Some(&target.texture));
+            // Clear rather than Load: this pass covers every pixel of the
+            // output buffer, and the buffer came from a pool, so whatever it
+            // holds is the last frame that used it.
+            attachment.set_load_action(mtl::LoadAction::Clear);
+            attachment.set_store_action(mtl::StoreAction::Store);
+            attachment.set_clear_color(mtl::ClearColor::clear());
+
+            let mut pass = cmd
+                .new_render_cmd_enc(&descriptor)
+                .ok_or_else(|| Error::Metal("could not create a filter encoder".to_owned()))?;
+            pass.set_render_ps(pipeline);
+
+            let uniforms = FilterUniforms {
+                tint: rgba(&filter.tint),
+                frame,
+                strength: filter.strength as f32,
+                scale: filter.scale as f32,
+                angle: filter.angle as f32,
+                time: filter_time(at, filter.animated),
+                look: filter.id.index(),
+                variant: filter.id.variant_index(&filter.variant),
+            };
+            let buffer = self
+                .device
+                .new_buf_with_slice(&[uniforms], mtl::ResOpts::default())
+                .ok_or_else(|| Error::Metal("could not allocate filter uniforms".to_owned()))?;
+
+            pass.set_fragment_buf_at(Some(&buffer), 0, 0);
+            pass.set_fragment_texture_at(Some(scene), 0);
+            pass.draw_primitives(mtl::Primitive::TriangleStrip, 0, 4);
+
+            // Safety: nothing further is encoded, and the encoder is dropped
+            // on the next line.
+            unsafe { pass.end_encoding() };
+        }
+
         cmd.commit();
         // Waited on rather than pipelined, which is what makes holding the
         // textures until here sufficient.
@@ -1001,6 +1133,41 @@ impl Compositor {
         Ok(())
     }
 
+    /// The texture the items are drawn into when a look will run over them.
+    ///
+    /// Allocated on the first filtered frame and reused for the rest: an export
+    /// is one size throughout, so the reallocation below never fires twice in
+    /// practice — it is there so a size change cannot hand the filter pass a
+    /// texture of the wrong shape.
+    fn scene_texture(&mut self, frame: Size) -> Result<arc::R<mtl::Texture>> {
+        let width = (frame.width.round() as usize).max(1);
+        let height = (frame.height.round() as usize).max(1);
+
+        let stale = self
+            .scene
+            .as_ref()
+            .is_none_or(|texture| texture.width() != width || texture.height() != height);
+        if stale {
+            let mut desc =
+                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, width, height, false);
+            // Both: the items are rendered into it and the filter pass samples
+            // it. `SHADER_READ` alone is a validation failure at the first
+            // frame, which in a packaged build is an export that stops with a
+            // Metal message rather than a picture.
+            desc.set_usage(mtl::TextureUsage::RENDER_TARGET | mtl::TextureUsage::SHADER_READ);
+            self.scene = Some(
+                self.device
+                    .new_texture(&desc)
+                    .ok_or_else(|| Error::Metal("could not make a scene texture".to_owned()))?,
+            );
+        }
+
+        self.scene
+            .as_ref()
+            .map(|texture| texture.retained())
+            .ok_or_else(|| Error::Metal("no scene texture".to_owned()))
+    }
+
     /// Wraps a pixel buffer as a Metal texture, without copying it.
     fn texture_for(
         &self,
@@ -1026,6 +1193,68 @@ impl Compositor {
             _buffer: own,
         })
     }
+}
+
+/// Builds the pass that lays a look over the finished frame.
+///
+/// A free function rather than more of `Compositor::new`: it can fail without
+/// the compositor failing, which is the whole point — a broken filter shader
+/// costs the look, not the export.
+///
+/// Blending is **off**. The scene texture is already composited and
+/// premultiplied, and this pass replaces the target rather than drawing onto
+/// it; source-over here would blend the frame with whatever the clear left
+/// behind, which on a cleared target is a no-op and on any other target is a
+/// double exposure waiting to happen.
+fn filter_pipeline(device: &mtl::Device) -> Result<arc::R<mtl::RenderPipelineState>> {
+    let source = ns::String::with_str(include_str!("filters.metal"));
+    let library = device
+        .new_lib_with_src_blocking(&source, Some(&mtl::CompileOpts::new()))
+        .map_err(|e| Error::Metal(format!("{e:?}")))?;
+
+    let vertex = library
+        .new_fn(&ns::String::with_str("filter_vertex"))
+        .ok_or_else(|| Error::Metal("filter_vertex missing".to_owned()))?;
+    let fragment = library
+        .new_fn(&ns::String::with_str("filter_fragment"))
+        .ok_or_else(|| Error::Metal("filter_fragment missing".to_owned()))?;
+
+    let mut descriptor = mtl::RenderPipelineDesc::new();
+    descriptor.set_vertex_fn(Some(&vertex));
+    descriptor.set_fragment_fn(Some(&fragment));
+
+    let attachments = descriptor.color_attaches();
+    let mut attachment = attachments.get(0);
+    attachment.set_pixel_format(mtl::PixelFormat::Bgra8UNorm);
+    attachment.set_blending_enabled(false);
+
+    device
+        .new_render_ps(&descriptor)
+        .map_err(|e| Error::Metal(format!("{e:?}")))
+}
+
+/// Source nanoseconds to the seconds a shader animates on, wrapped.
+///
+/// A half-hour recording is 1.8e12 nanoseconds. As an `f32` — which is all a
+/// uniform is — that holds about a millisecond, so a rolling bar would quantise
+/// to something coarser than a frame well before the end of a long take.
+/// Wrapped at a hundred seconds it holds about a microsecond, forever.
+///
+/// A hundred, and a whole number of them, so every periodic function in
+/// `filters.metal` has a period that divides it and the wrap is invisible.
+///
+/// Mirrors `filterTime` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+/// Both sides must wrap identically or a scrubbed preview and an exported frame
+/// at the same moment show different noise.
+const FILTER_TIME_WRAP_NS: u64 = 100_000_000_000;
+
+fn filter_time(at: MediaTime, animated: bool) -> f32 {
+    // A still look passes zero rather than being branched around in the shader:
+    // one code path, and the "off" state is a value rather than a mode.
+    if !animated {
+        return 0.0;
+    }
+    (at % FILTER_TIME_WRAP_NS) as f32 / 1e9
 }
 
 /// Pooled output buffers, rather than one allocation per frame.
@@ -1195,6 +1424,58 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, matte), 260);
         assert_eq!(align_of::<Uniforms>(), 4);
         assert_eq!(size_of::<Uniforms>(), 272);
+    }
+
+    /// The filter block's layout has to match `FilterUniforms` in
+    /// `filters.metal` byte for byte, for the reason the block above does: a
+    /// mismatch does not fail to compile, it renders the wrong colour.
+    ///
+    /// Its own test because it is its own block. That is the point of keeping
+    /// them apart — a look added here cannot move a number that places a
+    /// camera.
+    #[test]
+    fn the_filter_uniform_block_matches_the_shader() {
+        use std::mem::{align_of, offset_of, size_of};
+
+        // The `float4` leads and is 16 bytes, so every scalar after it sits on
+        // a 4-byte boundary and keeps the offset it has whatever is added
+        // later.
+        assert_eq!(offset_of!(FilterUniforms, tint), 0);
+        assert_eq!(offset_of!(FilterUniforms, frame), 16);
+        assert_eq!(offset_of!(FilterUniforms, strength), 24);
+        assert_eq!(offset_of!(FilterUniforms, scale), 28);
+        assert_eq!(offset_of!(FilterUniforms, angle), 32);
+        assert_eq!(offset_of!(FilterUniforms, time), 36);
+        assert_eq!(offset_of!(FilterUniforms, look), 40);
+        assert_eq!(offset_of!(FilterUniforms, variant), 44);
+
+        // 48 is already a multiple of 16, so MSL adds no tail and neither does
+        // Rust. Written out so that stops being a coincidence the day a field
+        // is added.
+        assert_eq!(align_of::<FilterUniforms>(), 4);
+        assert_eq!(size_of::<FilterUniforms>(), 48);
+    }
+
+    #[test]
+    fn a_still_look_animates_on_nothing() {
+        // Zero rather than a branch in the shader: one code path, and the
+        // "off" state is a value rather than a mode.
+        assert_eq!(filter_time(7 * 1_000_000_000, false), 0.0);
+    }
+
+    #[test]
+    fn the_shader_clock_keeps_its_precision_through_a_long_take() {
+        // Half an hour in. Unwrapped nanoseconds as an `f32` hold about a
+        // millisecond here, which is coarser than a frame — a rolling bar would
+        // visibly step. Wrapped, this is exact.
+        let half_an_hour = 1_800 * 1_000_000_000_u64;
+        assert_eq!(filter_time(half_an_hour, true), 0.0);
+        assert_eq!(filter_time(half_an_hour + 500_000_000, true), 0.5);
+
+        // And the wrap lands on a whole second, so a periodic function whose
+        // period divides a hundred does not jump across it.
+        assert_eq!(filter_time(FILTER_TIME_WRAP_NS - 1_000_000_000, true), 99.0);
+        assert_eq!(filter_time(FILTER_TIME_WRAP_NS, true), 0.0);
     }
 
     #[test]

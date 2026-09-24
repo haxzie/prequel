@@ -3,6 +3,15 @@ import { useEffect, useRef, useState, type Dispatch } from "react";
 import { captionStyle } from "../../../shared/captions";
 import { cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
+import {
+  FILTER_SCALE_MAX,
+  FILTER_SCALE_MIN,
+  FILTERS,
+  filterSpec,
+  READY,
+  type FilterId,
+  type FilterParam,
+} from "../../../shared/filters";
 import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
@@ -60,10 +69,12 @@ import {
   CutoutIcon,
   KeyboardIcon,
   MouseIcon,
+  MoveIcon,
   PersonIcon,
   DepthIcon,
   DropletIcon,
   EyeIcon,
+  FilterIcon,
   EyeOffIcon,
   FillIcon,
   FocusIcon,
@@ -487,10 +498,13 @@ export function Inspector(props: InspectorProps) {
     ...(props.present.has("microphone")
       ? [{ id: "captions" as const, label: "Captions", Icon: CaptionsIcon }]
       : []),
-    // Last, and past the conditional ones. Everything above is something the
-    // recording already has and is being dressed; a logo is a thing added to
-    // it, so it reads as the end of the list rather than as another property of
-    // the picture.
+    // Past the conditional ones, and beside the logo rather than among the
+    // panels above. Everything above dresses a picture the recording already
+    // has; these two are laid *over* the finished composition and belong to
+    // none of them.
+    { id: "filters", label: "Filters", Icon: FilterIcon },
+    // Last. A logo is a thing added to the video, so it reads as the end of the
+    // list rather than as another property of the picture.
     { id: "watermark", label: "Logo", Icon: WatermarkIcon },
   ];
 
@@ -516,6 +530,7 @@ export function Inspector(props: InspectorProps) {
     layout: { section: "layout" },
     background: { section: "background", keys: PAINT_KEYS },
     recording: { section: "background", keys: FRAME_KEYS },
+    filters: { section: "effects" },
     watermark: { section: "watermark" },
     camera: { section: "layout" },
     audio: { section: "audio" },
@@ -710,6 +725,8 @@ export function Inspector(props: InspectorProps) {
                   }}
                 />
               )}
+
+              {active === "filters" && <FiltersPanel settings={settings} field={field} set={set} />}
 
               {active === "watermark" && (
                 <WatermarkPanel
@@ -975,6 +992,7 @@ export type CategoryId =
   | "audio"
   | "cursor"
   | "captions"
+  | "filters"
   | "watermark";
 
 /**
@@ -1664,6 +1682,233 @@ function PresetGrid({ presets, state }: { presets: ScenePreset[]; state: Presets
  * file — a position and a size for a mark that does not exist are three sliders
  * describing nothing.
  */
+/**
+ * The look laid over the finished frame.
+ *
+ * A grid of small pictures over a list of names, for the reason `LayoutPicker`
+ * is one: "colour splitting that grows towards the edges" is a sentence nobody
+ * reads twice, and a square with its channels pulled apart is understood before
+ * it has finished being looked at.
+ *
+ * The tiles are drawn in CSS rather than rendered. There is no offscreen
+ * preview machinery here, and building one would mean either a WebGL context
+ * per tile or eleven full renders a frame — for a picture that is answered
+ * better anyway by the canvas two inches to the left, which shows the look on
+ * the actual recording the moment a tile is clicked.
+ *
+ * Only the controls the chosen look reads are shown, under that look's own
+ * words. Six leaves serve the whole catalogue — see `shared/filters.ts` — and
+ * `uses` and `labels` are what keep a shared vocabulary from feeling shared.
+ */
+function FiltersPanel({
+  settings,
+  field,
+  set,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+}) {
+  const effects = settings.effects;
+  const spec = filterSpec(effects.filter);
+
+  /**
+   * Choosing a look writes its own defaults with it, in one edit.
+   *
+   * The same move `freshFraming` makes when the arrangement changes, and for
+   * the same reason: a strength dialled in for a halftone means something else
+   * entirely to a fisheye, and arriving at a look that is obviously itself
+   * beats arriving at one that happens to be invisible. One edit, so one undo
+   * step takes the whole thing back off.
+   */
+  const choose = (id: FilterId | null) => {
+    if (!id) {
+      set("effects", "filter", null);
+      return;
+    }
+    const chosen = FILTERS[id];
+    set("effects", "filter", id);
+    for (const [key, value] of Object.entries(chosen.defaults)) {
+      set("effects", key, value);
+    }
+  };
+
+  const uses = (param: FilterParam) => spec?.uses.includes(param) ?? false;
+  const says = (param: FilterParam, fallback: string) => spec?.labels[param] ?? fallback;
+
+  return (
+    <>
+      {/* No heading. The panel header already says Filters, and a section
+          repeating the word the rail just opened is a label read by nobody —
+          the same reason the logo's first group carries none. */}
+      <Section>
+        <div className={FILTER_GRID}>
+          <button
+            type="button"
+            aria-label="No filter"
+            title="No filter"
+            aria-pressed={effects.filter === null}
+            className={cn(FILTER_CELL, effects.filter === null && FILTER_CHOSEN)}
+            onClick={() => choose(null)}
+          >
+            <span className={FILTER_SWATCH} style={{ background: NO_FILTER_SWATCH }} />
+            <span className={FILTER_LABEL}>None</span>
+          </button>
+
+          {READY.map((id) => (
+            <button
+              key={id}
+              type="button"
+              aria-label={`${FILTERS[id].label} — ${FILTERS[id].hint}`}
+              title={FILTERS[id].hint}
+              aria-pressed={effects.filter === id}
+              className={cn(FILTER_CELL, effects.filter === id && FILTER_CHOSEN)}
+              onClick={() => choose(id)}
+            >
+              <span className={FILTER_SWATCH} style={{ background: FILTER_SWATCHES[id] }} />
+              <span className={FILTER_LABEL}>{FILTERS[id].label}</span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      {/* Nothing below the picker without a look, rather than a column of dead
+          controls. Every other panel greys its controls instead, because there
+          the thing they act on is still on screen and the question "what else
+          could this do?" is worth answering. Here there is no look at all, so
+          there is nothing for them to be about. */}
+      {spec && (
+        <Section title={spec.label}>
+          {spec.variants.length > 0 &&
+            (spec.variants.length <= 3 ? (
+              <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
+                <Segmented
+                  value={effects.filterVariant}
+                  options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
+                  onChange={(value) => set("effects", "filterVariant", value)}
+                />
+              </Field>
+            ) : (
+              <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
+                <Dropdown
+                  value={effects.filterVariant}
+                  options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
+                  onChange={(value) => set("effects", "filterVariant", value)}
+                />
+              </Field>
+            ))}
+
+          {uses("strength") && (
+            <Slider
+              icon={<StrengthIcon />}
+              label={says("strength", "Strength")}
+              value={effects.filterStrength}
+              min={0}
+              max={1}
+              format={percent}
+              {...field("effects", "filterStrength")}
+              onChange={(value) => set("effects", "filterStrength", value)}
+            />
+          )}
+
+          {uses("scale") && (
+            <Slider
+              icon={<SizeIcon />}
+              label={says("scale", "Size")}
+              value={effects.filterScale}
+              min={FILTER_SCALE_MIN}
+              max={FILTER_SCALE_MAX}
+              step={0.0005}
+              // As a fraction of the frame's shorter edge it reads as 0.004,
+              // which means nothing. Against the frame it is a percentage of
+              // the picture, which is the thing being chosen.
+              format={percent}
+              {...field("effects", "filterScale")}
+              onChange={(value) => set("effects", "filterScale", value)}
+            />
+          )}
+
+          {uses("angle") && (
+            <Slider
+              icon={<AngleIcon />}
+              label={says("angle", "Angle")}
+              value={effects.filterAngle}
+              min={0}
+              max={360}
+              step={1}
+              format={(value) => `${Math.round(value)}°`}
+              {...field("effects", "filterAngle")}
+              onChange={(value) => set("effects", "filterAngle", value)}
+            />
+          )}
+
+          {uses("tint") && (
+            <ColorField
+              icon={<DropletIcon />}
+              label={says("tint", "Colour")}
+              value={effects.filterTint}
+              {...field("effects", "filterTint")}
+              onChange={(value) => set("effects", "filterTint", value)}
+            />
+          )}
+
+          {uses("animated") && (
+            <ToggleField
+              icon={<MoveIcon />}
+              label={says("animated", "Animate")}
+              value={effects.filterAnimated}
+              {...field("effects", "filterAnimated")}
+              onChange={(value) => set("effects", "filterAnimated", value)}
+            />
+          )}
+        </Section>
+      )}
+    </>
+  );
+}
+
+/** Three across, matching the layout picker's grid. */
+const FILTER_GRID = "grid grid-cols-3 gap-1";
+
+const FILTER_CELL =
+  "relative flex flex-col items-center gap-1.5 rounded-lg border border-white/10 " +
+  "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
+
+const FILTER_CHOSEN = "ring-2 ring-selected ring-inset";
+
+const FILTER_SWATCH = "block h-10 w-full rounded-[3px] overflow-hidden";
+
+const FILTER_LABEL = "text-[9px] leading-tight text-editor-muted text-center";
+
+/**
+ * A pale block on a dark field: a picture with nothing done to it.
+ *
+ * One edge either side, and nothing else. Every look's tile is this same
+ * picture with that look applied, so a tile can be held against "None" and the
+ * difference is the whole of what the look does — which a repeating pattern
+ * cannot do, because a pattern of its own reads as the subject rather than as
+ * the treatment.
+ */
+const NO_FILTER_SWATCH =
+  "linear-gradient(90deg, #4b5563 0 34%, #cbd5e1 34% 66%, #4b5563 66%)";
+
+/**
+ * What each look does, as a picture made of gradients.
+ *
+ * A suggestion rather than a rendering — `NO_FILTER_SWATCH`'s block with the
+ * look's own signature on it, so the grid reads as one picture treated eleven
+ * ways and every tile is directly comparable with "None".
+ */
+const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
+  // The same block, with red left of its leading edge and cyan right of its
+  // trailing one. Red and *cyan* rather than red and blue: the red channel is
+  // displaced one way and both the others the other, so what a real split
+  // leaves on the far edge is green and blue together. Blue alone is the thing
+  // people draw when they have not looked at one.
+  aberration:
+    "linear-gradient(90deg, #4b5563 0 30%, #d1585d 30% 34%, #cbd5e1 34% 66%, #4ecdc4 66% 70%, #4b5563 70%)",
+};
+
 function WatermarkPanel({
   settings,
   field,

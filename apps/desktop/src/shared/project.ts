@@ -9,6 +9,7 @@
  * renderer edits it, and the exporter is handed what it resolves to.
  */
 import type { ExportFormat } from "./contract.js";
+import { filterId } from "./filters.js";
 import { placement } from "./layout.js";
 import type { MediaTime, SourceInfo } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
@@ -523,12 +524,65 @@ export interface WatermarkSettings {
   watermarkOpacity: number;
 }
 
+/**
+ * A look laid over the finished frame — a CRT, a lens, light through a window.
+ *
+ * Its own section rather than more `background` leaves, and for a sharper
+ * reason than the watermark's: every other section says how something is
+ * *drawn*, and this says what happens to the frame once everything has been.
+ * The background, the recording, the camera and the captions all go through it
+ * together, which is what makes the picture read as being on a monitor rather
+ * than as a screen layer wearing a costume.
+ *
+ * Six leaves for the whole catalogue, not four per effect. `shared/filters.ts`
+ * is the table that says what each one means for the chosen look, and why they
+ * are shared.
+ */
+export interface EffectsSettings {
+  /**
+   * The look, or null for none.
+   *
+   * A string rather than a union so a project written against a longer
+   * catalogue still opens against a shorter one — the same guard `cursorStyle`
+   * and `captionStyle` carry. `filterSpec()` answers with a look this build can
+   * draw, or null, and null draws the frame plainly.
+   */
+  filter: string | null;
+  /** How much of it is mixed in, 0 to 1. */
+  filterStrength: number;
+  /** Which sub-look — `"grille"`, `"blinds"`, `"sepia"`. Empty where the look
+      has only one way to be worn. */
+  filterVariant: string;
+  /**
+   * The look's own size, as a fraction of the frame's shorter edge — a scanline
+   * pitch, a blind's spacing, a halftone dot, a bloom radius.
+   *
+   * A fraction and not pixels, for the reason every other geometry leaf is one,
+   * and for a second: the preview rasterises at the size of the canvas on
+   * screen and the export at the output resolution, so a pitch in pixels would
+   * be three times as dense in one as in the other.
+   */
+  filterScale: number;
+  /** Degrees. Where the light falls from, which way a screen is ruled. */
+  filterAngle: number;
+  /** The one colour the look has — a phosphor, an ink, sunlight, a glow. */
+  filterTint: string;
+  /**
+   * Whether the parts that move, move.
+   *
+   * Off is a still look and a cheaper one, and it is the honest default: a
+   * rolling bar is charming for five seconds and tiring for five minutes.
+   */
+  filterAnimated: boolean;
+}
+
 export interface SliceSettings {
   layout: LayoutSettings;
   background: BackgroundSettings;
   watermark: WatermarkSettings;
   audio: AudioSettings;
   captions: CaptionSettings;
+  effects: EffectsSettings;
 }
 
 export type SettingsSection = keyof SliceSettings;
@@ -1266,12 +1320,29 @@ export const DEFAULT_CAPTIONS: CaptionSettings = {
   captionLines: 1,
 };
 
+export const DEFAULT_EFFECTS: EffectsSettings = {
+  // None. A recording that opened wearing a CRT would be a bug report, and the
+  // whole point of the section is that it is reached for deliberately.
+  filter: null,
+  // The rest are what the picker overwrites the moment a look is chosen — see
+  // `FilterSpec.defaults`. They are here so the section is a complete object
+  // even with no look on it, which is what keeps `key in overrides.effects`
+  // answerable for every leaf.
+  filterStrength: 0.5,
+  filterVariant: "",
+  filterScale: 0.01,
+  filterAngle: 0,
+  filterTint: "#ffffff",
+  filterAnimated: false,
+};
+
 export const DEFAULT_SETTINGS: SliceSettings = {
   layout: DEFAULT_LAYOUT,
   background: DEFAULT_BACKGROUND,
   watermark: DEFAULT_WATERMARK,
   audio: DEFAULT_AUDIO,
   captions: DEFAULT_CAPTIONS,
+  effects: DEFAULT_EFFECTS,
 };
 
 /**
@@ -1556,6 +1627,7 @@ export function resolveSettings(
     watermark: { ...defaults.watermark, ...overrides?.watermark },
     audio: { ...defaults.audio, ...overrides?.audio },
     captions: { ...defaults.captions, ...overrides?.captions },
+    effects: { ...defaults.effects, ...overrides?.effects },
   };
 }
 
@@ -1698,6 +1770,16 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         ...stored.defaults?.audio,
       },
       captions: { ...DEFAULT_CAPTIONS, ...stored.defaults?.captions },
+      effects: {
+        ...DEFAULT_EFFECTS,
+        ...stored.defaults?.effects,
+        // Normalised to a look this build can draw, rather than left to fall
+        // back at draw time. `filterSpec()` already answers with a real look or
+        // none either way — what this stops is an unknown id sitting in the
+        // stored defaults, where it would outlive the build that wrote it and
+        // silently come back the day the name was reused for something else.
+        filter: filterId(stored.defaults?.effects?.filter),
+      },
     },
     tracks: [
       {

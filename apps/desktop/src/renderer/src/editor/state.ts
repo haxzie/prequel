@@ -1471,6 +1471,7 @@ function applyPreset(state: EditorState, preset: ScenePreset): EditorState {
     background: preset.background,
     watermark: preset.watermark,
     captions: preset.captions,
+    effects: preset.effects,
   } as const;
 
   return edit(state, (project) => {
@@ -1491,6 +1492,9 @@ function applyPreset(state: EditorState, preset: ScenePreset): EditorState {
           // `captionsOn` is the recording's answer, not the preset's, so it is
           // taken from what is already there rather than carried.
           captions: { ...preset.captions, captionsOn: project.defaults.captions.captionsOn },
+          // Carried whole, `filter: null` included: a preset that could only
+          // ever add a look could never be used to take one off.
+          effects: { ...preset.effects },
         },
       });
     }
