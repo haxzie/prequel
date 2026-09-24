@@ -113,15 +113,20 @@ export function cuesBetween(
     const sliceEnd = slice.timelineStart + slice.duration;
     if (sliceEnd <= from || slice.timelineStart >= to) continue;
 
-    // The window's overlap with this clip, in source time.
+    // The window's overlap with this clip, in source time. Project time runs
+    // at `speed`x source time, as in `toSourceTime`; mapping one to the other
+    // unscaled puts a press on a 2x clip twice as late as its frame, and drops
+    // the presses in the second half of the clip altogether.
     const sourceFrom =
-      slice.source.start + (Math.max(from, slice.timelineStart) - slice.timelineStart);
-    const sourceTo = slice.source.start + (Math.min(to, sliceEnd) - slice.timelineStart);
+      slice.source.start +
+      (Math.max(from, slice.timelineStart) - slice.timelineStart) * slice.speed;
+    const sourceTo =
+      slice.source.start + (Math.min(to, sliceEnd) - slice.timelineStart) * slice.speed;
 
     for (let i = lowerBound(cues, sourceFrom); i < cues.length; i++) {
       const cue = cues[i];
       if (!cue || cue.at >= sourceTo) break;
-      const projectAt = slice.timelineStart + (cue.at - slice.source.start);
+      const projectAt = slice.timelineStart + (cue.at - slice.source.start) / slice.speed;
       out.push({
         cue,
         sliceId: slice.id,

@@ -80,6 +80,19 @@ describe("cuesBetween", () => {
     expect(cuesBetween(cutEdit, [cue(S / 2)], 0, 2 * S)[0]!.stopAt).toBeNull();
   });
 
+  it("places a cue on a sped-up or slowed clip where its frame plays", () => {
+    const fast = place([{ id: "a", source: { start: 0, end: S }, speed: 2 }]);
+    // Source 0.8 s at 2x is project 0.4 s, inside the half-second clip.
+    const found = cuesBetween(fast, [cue(0.8 * S)], 0.3 * S, 0.5 * S);
+    expect(found).toHaveLength(1);
+    expect(found[0]!.projectAt).toBe(0.4 * S);
+
+    const slow = place([{ id: "a", source: { start: 0, end: S }, speed: 0.5 }]);
+    // Source 0.3 s at half speed is project 0.6 s.
+    expect(cuesBetween(slow, [cue(0.3 * S)], 0, 0.5 * S)).toEqual([]);
+    expect(cuesBetween(slow, [cue(0.3 * S)], 0.5 * S, 0.7 * S)[0]!.projectAt).toBe(0.6 * S);
+  });
+
   it("is half-open, so adjacent windows share no cue", () => {
     const cues = [cue(0.2 * S), cue(0.4 * S), cue(0.6 * S)];
     const first = cuesBetween(cutEdit, cues, 0, 0.4 * S);
