@@ -5,7 +5,6 @@ import { Logo } from "@/components/Logo";
 import { Container, Eyebrow } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import { StarredBy } from "@/components/StarredBy";
-import { SITE } from "@/lib/site";
 
 type HeroProps = {
   /** A node and not a string: the home page draws three of its words as chips.

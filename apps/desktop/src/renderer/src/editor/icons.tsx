@@ -549,27 +549,6 @@ export function RoundedIcon() {
   );
 }
 
-/** Lucide `paintbrush`, for a flat colour. */
-export function SolidIcon() {
-  return (
-    <svg {...STROKE} aria-hidden="true">
-      <path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3" />
-      <path d="M9 8c-2 3-4 3.5-7 4l8 8c.5-3 1-5 4-7" />
-      <path d="M14.5 17.5 4.5 15" />
-    </svg>
-  );
-}
-
-/** Lucide `blend`, for two colours running into each other. */
-export function GradientIcon() {
-  return (
-    <svg {...STROKE} aria-hidden="true">
-      <circle cx="9" cy="9" r="7" />
-      <circle cx="15" cy="15" r="7" />
-    </svg>
-  );
-}
-
 /** Lucide `palette`, for the paint behind the picture. */
 export function BackdropIcon() {
   return (
@@ -579,24 +558,6 @@ export function BackdropIcon() {
       <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
       <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
       <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-    </svg>
-  );
-}
-
-/**
- * Lucide `frame`. The edge around the picture, which is what this panel sets.
- *
- * Not `RoundedIcon`, which is already the corner *shape* control inside the
- * camera panel — one glyph meaning both "round the corners" and "everything
- * about the edge" would make the rail's meaning depend on where you saw it.
- */
-export function FrameIcon() {
-  return (
-    <svg {...STROKE} aria-hidden="true">
-      <path d="M4 9h16" />
-      <path d="M4 15h16" />
-      <path d="M9 4v16" />
-      <path d="M15 4v16" />
     </svg>
   );
 }

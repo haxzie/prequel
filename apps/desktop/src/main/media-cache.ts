@@ -36,11 +36,6 @@ export function isJpeg(head: Buffer): boolean {
   return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
 }
 
-/** The same check against a file already on disk, for repairing a poisoned one. */
-export function fileIsJpeg(path: string): boolean {
-  return fileIs(path, isJpeg);
-}
-
 /**
  * Whether these bytes are a font file the engine can load.
  *

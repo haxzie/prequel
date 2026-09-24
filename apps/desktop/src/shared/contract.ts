@@ -1149,17 +1149,6 @@ export interface PickerWindow {
   icon?: string;
 }
 
-/** Everything one picker overlay needs to render its display. */
-export interface PickerDisplay {
-  displayId: number;
-  width: number;
-  height: number;
-  scaleFactor: number;
-  /** The target representing this whole screen. */
-  screenTarget: Target;
-  windows: PickerWindow[];
-}
-
 /** Everything one selection overlay needs to render its display. */
 export interface SelectionSetup {
   mode: ScreenMode;
@@ -1472,8 +1461,6 @@ export const CURSOR_STYLES = [
     },
   },
 ] as const;
-
-export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
 
 /** One image, and the point of it that lands on the pointer's position. */
 export interface CursorShape {

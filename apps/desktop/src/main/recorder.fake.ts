@@ -21,7 +21,6 @@ import {
   TRACK_FILE_NAMES,
 } from "../shared/manifest.js";
 import type {
-  PermissionStatus,
   Recorder,
   RecordingResult,
   RecordingState,

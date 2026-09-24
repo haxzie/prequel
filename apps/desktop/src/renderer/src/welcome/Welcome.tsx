@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import type { AppInfo, PermissionId } from "../../../shared/contract";
-import { assetUrl, permissionIconUrl } from "../../../shared/media-url";
+import type { AppInfo } from "../../../shared/contract";
+import { assetUrl } from "../../../shared/media-url";
 import { cn } from "../lib/cn";
 import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
 import { Avatar } from "../components/Avatar";

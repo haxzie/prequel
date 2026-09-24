@@ -46,7 +46,6 @@ import { PerspectivePlate } from "./controls/PerspectivePlate";
 import {
   AngleIcon,
   AudioIcon,
-  BackdropIcon,
   ImageIcon,
   BackIcon,
   BlurIcon,
@@ -101,7 +100,6 @@ import {
   StrengthIcon,
   TiltIcon,
   TypingIcon,
-  TrashIcon,
   VignetteIcon,
   WideIcon,
   YawIcon,
@@ -118,7 +116,6 @@ import {
   Slider,
   SLIDE_MS,
   Tabs,
-  Toggle,
   ToggleField,
   useTravelling,
 } from "./controls/inputs";

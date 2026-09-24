@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
 import { cn } from "../../lib/cn";
 import { hexToHsv, hsvToHex } from "./colour";

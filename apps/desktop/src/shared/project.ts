@@ -102,7 +102,6 @@ export const SHAPE_RADIUS: Record<CameraShape, number> = {
   wide: 0.12,
   portrait: 0.12,
 };
-export type CameraCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface LayoutSettings {
   preset: LayoutPreset;
