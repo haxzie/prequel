@@ -22,6 +22,7 @@ import {
   type Size,
   type SourceSizes,
   textBlockRect,
+  watermarkRect,
 } from "../../../shared/layout";
 import {
   captionLook,
@@ -1248,30 +1249,6 @@ export function Preview({
       </div>
     </div>
   );
-}
-
-/**
- * The logo's box in output pixels, or null when there is no logo.
- *
- * The same arithmetic `buildRenderPlan` does for its `watermark` item. Repeated
- * rather than read off the plan because the ring and the hit testing both need
- * it *now* — the plan in the draw loop is built from a ref and is a frame
- * behind a drag in flight. Four numbers and one multiplication; the plan's copy
- * is what `layout.test.ts` pins.
- */
-export function watermarkRect(frame: Size, mark: SliceSettings["watermark"]): Rect | null {
-  if (!mark.watermark) return null;
-
-  const unit = Math.min(frame.width, frame.height);
-  const width = mark.watermarkWidth * unit;
-  const height = mark.watermarkHeight * unit;
-
-  return {
-    x: frame.width * mark.watermarkX - width / 2,
-    y: frame.height * mark.watermarkY - height / 2,
-    width,
-    height,
-  };
 }
 
 /** The text with this id, if its span holds the moment. */

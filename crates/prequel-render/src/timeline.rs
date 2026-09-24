@@ -184,10 +184,13 @@ impl Timeline {
             return None;
         }
 
+        // Binary search: this runs once per output frame, and `starts` never
+        // decreases. The last start at or before `at` wins, which is what puts
+        // a boundary frame in the later slice and skips an empty one.
         let slot = self
             .starts
-            .iter()
-            .rposition(|&start| at >= start)
+            .partition_point(|&start| start <= at)
+            .checked_sub(1)
             .filter(|&slot| slot < slices.len())?;
 
         let into = at - self.starts[slot];
