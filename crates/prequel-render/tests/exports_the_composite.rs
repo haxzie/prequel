@@ -17,10 +17,10 @@ use prequel_encode::{AudioWriter, AudioWriterConfig, VideoWriter, VideoWriterCon
 use prequel_keysound::{ClickProfile, KeyProfile, cues};
 use prequel_render::sound::SoundPlan;
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan, Shape,
-    SliceRender, export,
+    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan,
+    SegmentRef, Shape, SliceMedia, SliceRender, export,
 };
-use prequel_session::{KeyClass, KeyPress};
+use prequel_session::{KeyClass, KeyPress, TrackKind};
 
 const S: u64 = 1_000_000_000;
 const SOURCE_W: u32 = 640;
@@ -170,6 +170,22 @@ fn slice(start: u64, end: u64) -> SliceRender {
         plan: plan(),
         audio: AudioMix::tracks(1.0, 1.0),
         speed: 1.0,
+        // The fixed names at the session root, which is where a single-take
+        // recording keeps its files.
+        media: SliceMedia {
+            screen: Some(reference(TrackKind::Screen)),
+            camera: Some(reference(TrackKind::Camera)),
+            matte: None,
+            mic: Some(reference(TrackKind::Microphone)),
+            system: Some(reference(TrackKind::SystemAudio)),
+        },
+    }
+}
+
+fn reference(kind: TrackKind) -> SegmentRef {
+    SegmentRef {
+        file: kind.file_name().into(),
+        offset: 0,
     }
 }
 
@@ -242,10 +258,6 @@ fn exports_only_the_slices_that_were_kept() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S), slice(2 * S, 3 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -293,10 +305,6 @@ fn the_whole_take_exports_at_its_full_length() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -330,10 +338,6 @@ fn reports_progress_as_it_goes() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -365,10 +369,6 @@ fn cancelling_leaves_no_output_behind() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -400,10 +400,6 @@ fn refuses_an_edit_with_nothing_in_it() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -437,10 +433,6 @@ fn re_exporting_replaces_the_previous_file() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 2 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -482,10 +474,6 @@ fn a_failed_export_leaves_nothing_behind() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -517,10 +505,6 @@ fn exports_the_sound_inside_the_video_file() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 2 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 
@@ -654,10 +638,6 @@ fn typing_is_heard_in_a_recording_with_no_audio_track() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![sounding(0, 2 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: Some(SoundPlan {
             cues: cues(&presses, &[], "typing-test"),
         }),
@@ -708,10 +688,6 @@ fn sounds_switched_off_write_no_audio_track_for_a_silent_take() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: Some(SoundPlan {
             cues: cues(
                 &[KeyPress {
@@ -764,10 +740,6 @@ fn a_press_in_a_cut_is_not_heard() {
         fps: OUT_FPS,
         format: OutputFormat::Mp4,
         slices: vec![sounding(0, S), sounding(2 * S, 3 * S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: Some(SoundPlan {
             cues: cues(&presses, &[], "cut"),
         }),
@@ -804,10 +776,6 @@ fn exports_a_gif_that_loops_and_carries_no_audio() {
         fps: 10,
         format: OutputFormat::Gif,
         slices: vec![slice(0, S)],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 

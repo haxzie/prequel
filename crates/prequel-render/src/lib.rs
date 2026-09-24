@@ -47,7 +47,7 @@ pub use plan::{
     CaptionWord, CursorPoint, CursorShadow, OverlayKey, Paint, PlanItem, PlanSource, Point, Rect,
     RectKey, RenderPlan, Shape, Size, Span,
 };
-pub use timeline::{AudioMix, SliceRender, Timeline};
+pub use timeline::{AudioMix, SegmentRef, SliceMedia, SliceRender, Timeline};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

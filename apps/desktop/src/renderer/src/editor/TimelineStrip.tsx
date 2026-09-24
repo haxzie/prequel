@@ -150,7 +150,7 @@ export function TimelineStrip({
   media,
   peaks,
   filmstrip,
-  cameraSpan,
+  cameraSpans,
   captionRange,
 }: {
   state: EditorState;
@@ -160,8 +160,14 @@ export function TimelineStrip({
   peaks: Float32Array | null;
   /** Frame thumbnails for the whole recording, or null while they are built. */
   filmstrip: Filmstrip | null;
-  /** Source time the camera covers, or null if none was recorded. */
-  cameraSpan: { start: MediaTime; end: MediaTime } | null;
+  /**
+   * Source time the camera covers, one span per take that recorded one.
+   *
+   * A list rather than one span because a recording can be extended, and a take
+   * recorded without a camera leaves a gap: a single span across the whole
+   * recording would promise footage two of its clips do not have.
+   */
+  cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   /**
    * The footage under the words selected in the captions editor, in source
    * time, or null when none are. Drawn over the clips so the text and the
@@ -729,7 +735,7 @@ export function TimelineStrip({
                   peaks={peaks}
                   filmstrip={filmstrip}
                   contentWidth={contentWidth}
-                  cameraSpan={cameraSpan}
+                  cameraSpans={cameraSpans}
                   selected={slice.id === state.selectedSliceId}
                   onPointerDown={(event) => onClipPointerDown(slice, event)}
                   onContextMenu={(event) => {
@@ -1252,7 +1258,7 @@ function Clip({
   peaks,
   filmstrip,
   contentWidth,
-  cameraSpan,
+  cameraSpans,
   selected,
   onPointerDown,
   onContextMenu,
@@ -1266,7 +1272,7 @@ function Clip({
   filmstrip: Filmstrip | null;
   /** The strip's full width in pixels, which is what the zoom actually sets. */
   contentWidth: number;
-  cameraSpan: { start: MediaTime; end: MediaTime } | null;
+  cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   /** Right-clicked, with the pointer's position so a menu can open under it. */
@@ -1342,10 +1348,9 @@ function Clip({
   // Overlap rather than "was a camera recorded": a clip trimmed to the first
   // moments of the take can sit entirely before the camera opened, and an icon
   // promising footage that is not in this clip is worse than no icon.
-  const hasCamera =
-    cameraSpan !== null &&
-    slice.source.start < cameraSpan.end &&
-    slice.source.end > cameraSpan.start;
+  const hasCamera = cameraSpans.some(
+    (span) => slice.source.start < span.end && slice.source.end > span.start,
+  );
 
   return (
     <div

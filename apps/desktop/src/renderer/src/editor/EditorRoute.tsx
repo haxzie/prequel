@@ -24,6 +24,27 @@ export function EditorRoute({ name }: { name: string }) {
   const [state, setState] = useState<
     { status: "loading" } | { status: "ready"; session: EditorSession } | { status: "missing" }
   >({ status: "loading" });
+  /**
+   * Bumped when main says the recording has changed on disk.
+   *
+   * A counter rather than a refetch in place, because it is also the `Editor`'s
+   * key: a take appended to the recording lengthens its source clock, and the
+   * reducer reads that once, when it is seeded. Remounting drops the undo history
+   * — which is the honest outcome, since every `Project` in it predates the
+   * footage that has just been added — and the selection, which `focusSliceId`
+   * replaces with the new clip anyway.
+   */
+  const [reloads, setReloads] = useState(0);
+
+  useEffect(
+    () =>
+      window.prequel.editor.onReload((changed) => {
+        // Only this recording. Main sends to the window, and a window showing
+        // something else has no business rereading on its behalf.
+        if (changed === name) setReloads((count) => count + 1);
+      }),
+    [name],
+  );
 
   useEffect(() => {
     let live = true;
@@ -51,14 +72,21 @@ export function EditorRoute({ name }: { name: string }) {
       // order.
       void window.prequel.editor.leave();
     };
-  }, [name]);
+  }, [name, reloads]);
 
   if (state.status === "loading") return <Opening name={name} />;
   if (state.status === "missing") return <Missing name={name} />;
 
   // Keyed on the name, so opening a second recording gets a fresh editor rather
-  // than one carrying the first's selection, history and playhead.
-  return <Editor key={name} session={state.session} onBack={() => navigate("/workspace")} />;
+  // than one carrying the first's selection, history and playhead — and on the
+  // reload count, so a recording that has just grown a take gets one too.
+  return (
+    <Editor
+      key={`${name}:${String(reloads)}`}
+      session={state.session}
+      onBack={() => navigate("/workspace")}
+    />
+  );
 }
 
 /**

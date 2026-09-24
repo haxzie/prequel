@@ -94,6 +94,45 @@ describe("the end of the recording", () => {
     expect(slicesOf(state.project)[0]!.source.start).toBe(0);
   });
 
+  it("keeps a trim inside the take the clip is in", () => {
+    // The only gesture that can *grow* a slice's source range, so without the
+    // clamp it is how a clip comes to span a seam — after which it plays its own
+    // take's file over the next take's footage, which reads as the addition
+    // never having been made.
+    const extended = initialState(
+      newProject(RECORDING, 16 * S, { fullScreen: false, window: null }, [10 * S]),
+      16 * S,
+      [10 * S],
+    );
+    const [first, second] = slicesOf(extended.project);
+
+    const grown = run(extended, {
+      type: "trimSlice",
+      sliceId: first!.id,
+      edge: "end",
+      source: 14 * S,
+    });
+    expect(slicesOf(grown.project)[0]!.source.end).toBe(10 * S);
+
+    // And the other way at the second clip's head, which is the same seam.
+    const back = run(extended, {
+      type: "trimSlice",
+      sliceId: second!.id,
+      edge: "start",
+      source: 4 * S,
+    });
+    expect(slicesOf(back.project)[1]!.source.start).toBe(10 * S);
+
+    // Inside its own take, an ordinary trim still moves.
+    const ordinary = run(extended, {
+      type: "trimSlice",
+      sliceId: second!.id,
+      edge: "end",
+      source: 13 * S,
+    });
+    expect(slicesOf(ordinary.project)[1]!.source.end).toBe(13 * S);
+  });
+
   it("will not let a zoom run past the recording either", () => {
     // Zooms were bounded by `sourceEnd` — the furthest any *clip* reached — so
     // while clips could overrun, a zoom could follow them off the end.
@@ -955,6 +994,7 @@ describe("undo", () => {
       type: "load",
       project: newProject("other", 5 * S),
       duration: 5 * S,
+      seams: [],
     });
 
     // Undoing into the previous recording's project would be a different film.
@@ -1013,7 +1053,12 @@ describe("opening a recording that already has zooms", () => {
     const mounted = initialState(saved, 10 * S);
     const wouldCut = mounted.revision === 0 && saved.zooms.length === 0;
 
-    let state = editorReducer(mounted, { type: "load", project: saved, duration: 10 * S });
+    let state = editorReducer(mounted, {
+      type: "load",
+      project: saved,
+      duration: 10 * S,
+      seams: [],
+    });
     if (wouldCut) state = editorReducer(state, { type: "setZooms", zooms: AUTO });
 
     expect(state.project.zooms).toEqual(MINE);

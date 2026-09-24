@@ -442,6 +442,52 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.source).toEqual({ start: 0, end: 10 * S });
   });
 
+  it("splits a stored slice that spans a seam, keeping both halves in order", () => {
+    // A project saved before the recording was extended: its one clip covers
+    // footage from both takes. Left whole it would resolve to the first take's
+    // file and play that over the new footage, which reads as the addition
+    // never having been made.
+    const project = stored() as { tracks: { slices: unknown[] }[] };
+    project.tracks[0]!.slices = [
+      { id: "take", source: { start: 0, end: 16 * S }, speed: 1, overrides: {} },
+    ];
+
+    const repaired = sanitiseProject(project, RECORDING, 16 * S, [10 * S])!;
+
+    expect(repaired.tracks[0]!.slices.map((slice) => slice.source)).toEqual([
+      { start: 0, end: 10 * S },
+      { start: 10 * S, end: 16 * S },
+    ]);
+    // The first half keeps the id, so a selection survives the reload.
+    expect(repaired.tracks[0]!.slices[0]!.id).toBe("take");
+    expect(repaired.tracks[0]!.slices[1]!.id).not.toBe("take");
+  });
+
+  it("leaves a slice that stops at a seam alone", () => {
+    // Half-open, like every other span here: a clip ending exactly on the seam
+    // is entirely within its own take and must not be cut into two.
+    const project = stored() as { tracks: { slices: unknown[] }[] };
+    project.tracks[0]!.slices = [
+      { id: "a", source: { start: 0, end: 10 * S }, speed: 1, overrides: {} },
+      { id: "b", source: { start: 10 * S, end: 16 * S }, speed: 1, overrides: {} },
+    ];
+
+    const repaired = sanitiseProject(project, RECORDING, 16 * S, [10 * S])!;
+
+    expect(repaired.tracks[0]!.slices.map((slice) => slice.id)).toEqual(["a", "b"]);
+  });
+
+  it("gives a fresh project one slice per take", () => {
+    // Nothing has been edited, and the clip list still has to obey the rule: a
+    // recording extended twice opens as three clips, not one spanning the lot.
+    const project = newProject(RECORDING, 16 * S, { fullScreen: false, window: null }, [10 * S]);
+
+    expect(project.tracks[0]!.slices.map((slice) => slice.source)).toEqual([
+      { start: 0, end: 10 * S },
+      { start: 10 * S, end: 16 * S },
+    ]);
+  });
+
   it("reads a slice saved before speed existed at its recorded rate", () => {
     const project = stored() as { tracks: { slices: unknown[] }[] };
     project.tracks[0]!.slices = [{ id: "a", source: { start: 0, end: 4 * S }, overrides: {} }];

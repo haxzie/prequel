@@ -13,7 +13,7 @@
  */
 import type { CursorLayer, EditorSession, TrackMedia } from "../src/shared/contract";
 import type { Manifest } from "../src/shared/manifest";
-import { parseManifest } from "../src/shared/manifest";
+import { parseManifest, seamsOf } from "../src/shared/manifest";
 import type { Project } from "../src/shared/project";
 import {
   FALLBACK_BACKGROUND,
@@ -52,24 +52,36 @@ export async function loadSession(
 
   const manifest = parseManifest(manifestText);
 
-  const media: TrackMedia[] = manifest.tracks.map((track) => ({
-    kind: track.kind,
-    url: mediaUrl(name, track.file_name),
-    // From the manifest, which is the only place a late start is recorded —
-    // see the note in `editor-session.ts`.
-    offset: track.start,
-    duration: track.end - track.start,
-    width: track.width ?? null,
-    height: track.height ?? null,
-    frameRate: null,
-    matteUrl: track.matte ? mediaUrl(name, track.matte.file_name) : null,
-  }));
+  // One entry per (kind, segment), as `readEditorSession` builds it: a fixture
+  // recording extended with a second take has two files per kind.
+  const media: TrackMedia[] = manifest.tracks.flatMap((track) =>
+    track.segments.map((segment, index) => ({
+      kind: track.kind,
+      segment: index,
+      file: segment.file_name,
+      url: mediaUrl(name, segment.file_name),
+      // From the manifest, which is the only place a late start is recorded —
+      // see the note in `editor-session.ts`.
+      offset: segment.start,
+      duration: segment.end - segment.start,
+      width: segment.width ?? null,
+      height: segment.height ?? null,
+      frameRate: null,
+      matteUrl: segment.matte ? mediaUrl(name, segment.matte.file_name) : null,
+      matteFile: segment.matte?.file_name ?? null,
+    })),
+  );
 
   const projectText = saved ? await text(`${base}/project.json`) : null;
   let project: Project | null = null;
   if (projectText) {
     try {
-      project = sanitiseProject(JSON.parse(projectText), manifest.id, manifest.duration);
+      project = sanitiseProject(
+        JSON.parse(projectText),
+        manifest.id,
+        manifest.duration,
+        seamsOf(manifest),
+      );
     } catch {
       project = null;
     }
@@ -79,8 +91,9 @@ export async function loadSession(
     manifest.duration,
     sourceShape(
       manifest.source,
-      media.find((track) => track.kind === "screen"),
+      media.find((track) => track.kind === "screen" && track.segment === 0),
     ),
+    seamsOf(manifest),
   );
 
   const transcriptText = await text(`${base}/transcript.json`);
@@ -107,6 +120,9 @@ export async function loadSession(
     // gallery shot is a picture of the panel, and the panel is offered on the
     // strength of the manifest's presses, not the plan.
     sound: null,
+    // Nothing has just been added here — the gallery opens fixtures, it does not
+    // record into them.
+    focusSliceId: null,
   };
 }
 

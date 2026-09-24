@@ -10,7 +10,7 @@
  * Deliberately free of any `electron` or Node import: main writes it, the
  * renderer receives it over IPC, and both need the same types.
  */
-import type { MediaTime, Track } from "./manifest.js";
+import type { MediaTime, Segment } from "./manifest.js";
 
 /**
  * Bumped whenever the shape changes incompatibly.
@@ -144,15 +144,19 @@ export function isTranscriptWord(value: unknown): value is TranscriptWord {
 }
 
 /**
- * Moves a provider's offsets into `mic.m4a` onto the session clock.
+ * Moves a provider's offsets into one `mic.m4a` onto the session clock.
  *
  * The single place the microphone's late start is applied. Everything
  * downstream — grouping, the timeline, the plan — works in source time, so
  * nothing after this needs to know the manifest had an offset in it at all.
+ *
+ * Per segment rather than per track: a recording extended with a second take
+ * has one mic file per take, each zero-based, and each sits at its own start on
+ * the session clock.
  */
 export function onSessionClock(
   words: readonly { at: MediaTime; end: MediaTime; text: string; confidence: number }[],
-  mic: Pick<Track, "start"> | undefined,
+  mic: Pick<Segment, "start"> | undefined,
 ): TranscriptWord[] {
   const offset = mic?.start ?? 0;
 

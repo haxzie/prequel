@@ -1460,6 +1460,7 @@ export function newProject(
   recordingId: string,
   duration: Ns,
   source: SourceShape = { fullScreen: false, window: null },
+  seams: readonly Ns[] = [],
 ): Project {
   const defaults = structuredClone(DEFAULT_SETTINGS);
   // New projects get a restrained lift from the recording without turning the
@@ -1488,7 +1489,13 @@ export function newProject(
       {
         id: "composite",
         kind: "composite",
-        slices: [{ id: "take", source: { start: 0, end: duration }, speed: 1, overrides: {} }],
+        // One slice per take, because a slice may never span a seam: a clip has
+        // to resolve to exactly one file per kind, and one spanning a seam would
+        // have to play two.
+        slices: cutAtSeams(
+          [{ id: "take", source: { start: 0, end: duration }, speed: 1, overrides: {} }],
+          seams,
+        ),
       },
     ],
     output: { fps: 60, format: "h264", shortEdge: null },
@@ -1634,7 +1641,12 @@ export function hasOverrides(overrides: SliceOverrides | undefined): boolean {
  * Returns null when the file cannot be used at all, so the caller can start
  * fresh instead of guessing.
  */
-export function sanitiseProject(value: unknown, recordingId: string, duration: Ns): Project | null {
+export function sanitiseProject(
+  value: unknown,
+  recordingId: string,
+  duration: Ns,
+  seams: readonly Ns[] = [],
+): Project | null {
   if (typeof value !== "object" || value === null) return null;
 
   const stored = value as Partial<Project>;
@@ -1643,7 +1655,7 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
   // timeline this take does not have.
   if (stored.recordingId !== recordingId) return null;
 
-  const fresh = newProject(recordingId, duration);
+  const fresh = newProject(recordingId, duration, { fullScreen: false, window: null }, seams);
 
   const width = evenSize(number(stored.frame?.width, fresh.frame.width));
   const height = evenSize(number(stored.frame?.height, fresh.frame.height));
@@ -1663,6 +1675,12 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
     }))
     // A slice that survived clamping as empty cannot be drawn or rendered.
     .filter((slice) => slice.source.end > slice.source.start);
+
+  // Cut at every seam the recording was extended at. A slice must resolve to
+  // exactly one file per kind, so one spanning a seam would have to play two —
+  // and what it actually did was play whichever take its start fell in, for its
+  // whole length, which reads as the new footage never having been added.
+  const whole = cutAtSeams(slices, seams);
 
   return {
     version: PROJECT_VERSION,
@@ -1705,12 +1723,44 @@ export function sanitiseProject(value: unknown, recordingId: string, duration: N
         kind: "composite",
         // Everything cut away is recoverable by adding slices back; a project
         // with none at all is not something the editor can show.
-        slices: slices.length > 0 ? slices : fresh.tracks[0]!.slices,
+        slices: whole.length > 0 ? whole : fresh.tracks[0]!.slices,
       },
     ],
     output: outputSettings(stored.output),
     transcript: sanitiseTranscriptEdit(stored.transcript),
   };
+}
+
+/**
+ * Splits any slice that spans a seam, in place in the running order.
+ *
+ * The one rule that makes a per-slice segment lookup sound: a clip resolves to
+ * exactly one file per kind from its start, so a clip that crossed a seam would
+ * play the whole of itself out of the earlier take's file — which looks like
+ * footage rather than like a bug, and is why this is enforced rather than
+ * assumed. `trimSlice` clamps for the same reason; this covers a project written
+ * before the rule and one edited by hand.
+ *
+ * Ids of the extra halves are derived from the original's so they stay stable
+ * across a reload: an id that changed every open would break a selection the
+ * moment the editor was reopened.
+ */
+export function cutAtSeams(slices: readonly Slice[], seams: readonly Ns[]): Slice[] {
+  if (seams.length === 0) return slices.map((slice) => ({ ...slice }));
+
+  return slices.flatMap((slice) => {
+    const inside = seams
+      .filter((seam) => seam > slice.source.start && seam < slice.source.end)
+      .sort((a, b) => a - b);
+    if (inside.length === 0) return [{ ...slice }];
+
+    const edges = [slice.source.start, ...inside, slice.source.end];
+    return edges.slice(0, -1).map((start, index) => ({
+      ...slice,
+      id: index === 0 ? slice.id : `${slice.id}-t${String(index)}`,
+      source: { start, end: edges[index + 1]! },
+    }));
+  });
 }
 
 /**

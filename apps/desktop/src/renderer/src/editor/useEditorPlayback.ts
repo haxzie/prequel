@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorSession, SoundBank, SoundSample, TrackMedia } from "../../../shared/contract";
 import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type MixBus, type TrackGain } from "./audio";
+import { matteKey, mediaKey, segmentAt, type MediaKey } from "./segments";
 import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
 import { writeTicker } from "../lib/ticker";
 import { Playback, followElement, syncElement } from "./playback";
@@ -62,24 +63,35 @@ export interface SoundChoice {
  *
  * The matte is not a `TrackKind` — it is never a lane, never mixed, never
  * probed — but it is a `<video>` the loop has to keep on the camera's clock,
- * so it needs a key of its own in the same map.
+ * so it needs a slot of its own beside the kinds.
+ *
+ * Elements are *registered* per segment (`MediaKey`), because a recording
+ * extended with another take has one file per take. They are *looked up* per
+ * slot, because everything that reads one — the compositor, the loading gate —
+ * wants the file playing now and has no business knowing which take that is.
  */
-export type MediaKey = TrackKind | "camera_matte";
+export type MediaSlot = TrackKind | "camera_matte";
+
+export type { MediaKey } from "./segments";
 
 export interface EditorPlayback {
   playback: Playback;
   playing: boolean;
   duration: MediaTime;
-  /** Ref callback for a track's media element. */
+  /** Ref callback for one segment's media element. */
   register: (key: MediaKey) => (element: HTMLMediaElement | null) => void;
   /**
-   * The live element for a track, or null.
+   * The live element showing a slot right now, or null.
    *
    * Read per frame by the compositor, which draws from the element directly —
    * a video's contents change without React being told, so anything sampling
    * one has to reach for it rather than receive it as a prop.
+   *
+   * Per slot rather than per segment, so a caller never has to work out which
+   * take the playhead is in. Null while no segment of that kind covers the
+   * moment, which is the same answer as "there is no frame here".
    */
-  getElement: (key: MediaKey) => HTMLVideoElement | null;
+  getElement: (slot: MediaSlot) => HTMLVideoElement | null;
   /** Attach to the element whose text should be the running timecode. */
   timecodeRef: (element: HTMLElement | null) => void;
   /**
@@ -216,11 +228,31 @@ export function useEditorPlayback(
   const placed = useMemo(() => place(slices), [slices]);
   const duration = useMemo(() => totalDuration(placed), [placed]);
 
+  /**
+   * Every segment, grouped by kind and left in clock order.
+   *
+   * A list rather than one entry per kind: keyed by kind alone, a recording
+   * extended with a second take would silently keep whichever of its two screen
+   * files came last in the manifest.
+   */
   const tracks = useMemo(() => {
-    const byKind = new Map<TrackKind, TrackMedia>();
-    for (const track of session?.media ?? []) byKind.set(track.kind, track);
+    const byKind = new Map<TrackKind, TrackMedia[]>();
+    for (const track of session?.media ?? []) {
+      const segments = byKind.get(track.kind);
+      if (segments) segments.push(track);
+      else byKind.set(track.kind, [track]);
+    }
     return byKind;
   }, [session]);
+
+  /**
+   * Which element is showing each slot, rewritten by the loop.
+   *
+   * A ref because `getElement` is called from the compositor's own frame loop:
+   * routing it through React state would put a render between the playhead
+   * crossing a seam and the picture following it.
+   */
+  const active = useRef(new Map<MediaSlot, MediaKey>());
 
   useEffect(() => playback.subscribe(setPlaying), [playback]);
   useEffect(() => playback.setDuration(duration), [playback, duration]);
@@ -302,21 +334,46 @@ export function useEditorPlayback(
       lastProject.current = at;
 
       const nowVisible = new Set<TrackKind>();
+      const speed = activeSlice?.speed ?? 1;
 
-      for (const [kind, track] of tracks) {
-        const element = elements.current.get(kind);
-        if (!element) continue;
-
-        const fileTime = source === null ? null : toFileTime(track, source);
+      for (const [kind, segments] of tracks) {
+        const current = source === null ? null : segmentAt(segments, source);
+        const fileTime = current && source !== null ? toFileTime(current, source) : null;
         if (fileTime !== null) nowVisible.add(kind);
 
-        const speed = activeSlice?.speed ?? 1;
-        // Pitch-corrected playback would disagree with the naive resample the
-        // exporter applies (there is no time-stretch DSP on either side of
-        // this codebase) — matched here so the preview never sounds different
-        // from the file it is standing in for.
-        if (element.preservesPitch !== (speed === 1)) element.preservesPitch = speed === 1;
-        syncElement(element, fileTime, playback.isPlaying, { seek: jumped, baseRate: speed });
+        const key = current && fileTime !== null ? mediaKey(kind, current.segment) : null;
+        // A seam is a different file, so the element taking over has never been
+        // anywhere near this moment — it is a jump even when the clock walked
+        // across it.
+        const crossed = key !== (active.current.get(kind) ?? null);
+        if (key) active.current.set(kind, key);
+        else active.current.delete(kind);
+
+        for (const segment of segments) {
+          const element = elements.current.get(mediaKey(kind, segment.segment));
+          if (!element) continue;
+
+          // Pitch-corrected playback would disagree with the naive resample the
+          // exporter applies (there is no time-stretch DSP on either side of
+          // this codebase) — matched here so the preview never sounds different
+          // from the file it is standing in for.
+          if (element.preservesPitch !== (speed === 1)) element.preservesPitch = speed === 1;
+
+          if (current !== segment) {
+            // Paused, never unloaded. The elements of the takes either side of
+            // the playhead stay in the DOM with their decoders intact precisely
+            // so crossing a seam is a seek rather than a `load()`, which would
+            // blank the picture for the few hundred milliseconds it takes to
+            // refetch the container.
+            syncElement(element, null, false);
+            continue;
+          }
+
+          syncElement(element, fileTime, playback.isPlaying, {
+            seek: jumped || crossed,
+            baseRate: speed,
+          });
+        }
       }
 
       // The sounds, armed a little ahead. `at` is on the frame clock and
@@ -338,10 +395,26 @@ export function useEditorPlayback(
       // elements corrected against the clock on their own can sit a quarter
       // of a second apart while playing — see `followElement`. Never in
       // `visible` — it is not a lane.
-      const matte = elements.current.get("camera_matte");
-      const cameraElement = elements.current.get("camera");
-      if (matte && cameraElement) {
-        followElement(matte, cameraElement, nowVisible.has("camera"), playback.isPlaying);
+      // Per segment, because the mask has to be the one written beside *this*
+      // take's camera: the takes' cameras are different files with different
+      // dimensions, and a mask from the wrong one is a silhouette off the
+      // person entirely.
+      for (const segment of tracks.get("camera") ?? []) {
+        const matte = elements.current.get(matteKey(segment.segment));
+        const cameraElement = elements.current.get(mediaKey("camera", segment.segment));
+        if (!matte || !cameraElement) continue;
+
+        const showing = active.current.get("camera") === mediaKey("camera", segment.segment);
+        if (showing) active.current.set("camera_matte", matteKey(segment.segment));
+        else if (active.current.get("camera_matte") === matteKey(segment.segment)) {
+          active.current.delete("camera_matte");
+        }
+        followElement(
+          matte,
+          cameraElement,
+          showing && nowVisible.has("camera"),
+          playback.isPlaying,
+        );
       }
 
       // Only when it changes: this runs every frame, and a fresh Set each time
@@ -419,6 +492,10 @@ export function useEditorPlayback(
       // trim. Their project times are stale; the next tick arms afresh.
       mixer.cancelScheduled();
       scheduler.reset();
+      // Which element is showing what is about to be recomputed from scratch,
+      // and a key left over from the previous session names an element that no
+      // longer exists.
+      active.current.clear();
     };
   }, [session, placed, duration, playback, tracks, mixer, scheduler, cues]);
 
@@ -429,15 +506,20 @@ export function useEditorPlayback(
         return;
       }
       elements.current.set(key, element);
-      if (key !== "camera_matte" && AUDIO_KINDS.includes(key)) mixer.connect(key, element);
+
+      // The kind decides the bus, so every take's microphone lands on the one
+      // gain the volume slider moves.
+      const kind = key.slice(0, key.lastIndexOf(":")) as MediaSlot;
+      if (kind !== "camera_matte" && AUDIO_KINDS.includes(kind)) mixer.connect(kind, element);
     },
     [mixer],
   );
 
-  const getElement = useCallback(
-    (key: MediaKey) => (elements.current.get(key) as HTMLVideoElement | undefined) ?? null,
-    [],
-  );
+  const getElement = useCallback((slot: MediaSlot) => {
+    const key = active.current.get(slot);
+    if (!key) return null;
+    return (elements.current.get(key) as HTMLVideoElement | undefined) ?? null;
+  }, []);
 
   // Stable, because these are ref callbacks: a new function identity makes
   // React detach and reattach the ref on every render, which for the playhead

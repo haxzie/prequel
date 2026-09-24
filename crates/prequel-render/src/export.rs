@@ -11,13 +11,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cidre::cv;
 use prequel_encode::{AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig};
-use prequel_session::{CAMERA_MATTE_FILE, MediaTime, TrackKind};
+use prequel_session::MediaTime;
 
 use crate::compositor::Compositor;
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::reader::{AudioReader, VideoReader};
 use crate::sound::{SoundPlan, SoundTrack};
-use crate::timeline::{MAX_SPEED, MIN_SPEED, SliceRender, Timeline};
+use crate::timeline::{MAX_SPEED, MIN_SPEED, SegmentRef, SliceRender, Timeline};
 use crate::{Error, Result};
 
 /// What the exporter writes audio at. Every source is resampled to it on read,
@@ -135,15 +135,12 @@ pub struct ExportRequest {
     pub height: u32,
     pub fps: u32,
     pub format: OutputFormat,
-    pub slices: Vec<SliceRender>,
-    /// Per-track offsets from the manifest, in nanoseconds.
+    /// Each slice names its own files and their offsets — see `SliceMedia`.
     ///
-    /// The only place a late start is recorded — every session file is written
-    /// zero-based, so the media cannot say when its own track began.
-    pub screen_offset: MediaTime,
-    pub camera_offset: MediaTime,
-    pub mic_offset: MediaTime,
-    pub system_offset: MediaTime,
+    /// Per slice rather than four offsets on the request, because a recording can
+    /// be extended with another take and a source time alone then names no one
+    /// file.
+    pub slices: Vec<SliceRender>,
     /// The typing and click sounds, if the recording has any to place.
     ///
     /// Planned once, outside this crate, and the same plan the preview played
@@ -262,10 +259,6 @@ fn run(
     let mut scratch: Vec<f32> = Vec::new();
     let mut audio_done = false;
 
-    let screen_path = request.session_dir.join(TrackKind::Screen.file_name());
-    let camera_path = request.session_dir.join(TrackKind::Camera.file_name());
-    let matte_path = request.session_dir.join(CAMERA_MATTE_FILE);
-
     let frame_duration = timeline.frame_duration();
     let mut current_slot = usize::MAX;
     let mut screen: Option<VideoReader> = None;
@@ -290,35 +283,46 @@ fn run(
         // A cut means every reader is now somewhere else entirely, so each
         // slice gets its own: `AVAssetReader` cannot seek backwards, and slices
         // can be reordered.
+        // The files come from the slice too, not from the request: a recording
+        // extended with another take plays a different screen file either side
+        // of the seam, and there is no single path to hoist.
         if slot != current_slot {
             current_slot = slot;
-            screen = open_reader(&screen_path, slice, request.screen_offset);
-            camera = open_reader(&camera_path, slice, request.camera_offset);
+            screen = open_ref(&request.session_dir, slice.media.screen.as_ref(), slice);
+            camera = open_ref(&request.session_dir, slice.media.camera.as_ref(), slice);
             // The camera's offset, not one of its own: the matte was written
             // at the camera's timestamps from the camera's origin, which is
             // what lets the two readers land on the same frame. `open_reader`
             // yields `None` for a file that is not there, so a recording made
             // before the matte existed exports exactly as it always did.
-            matte = open_reader(&matte_path, slice, request.camera_offset);
+            matte = slice
+                .media
+                .matte
+                .as_ref()
+                .zip(slice.media.camera.as_ref())
+                .and_then(|(file, camera)| {
+                    open_reader(&request.session_dir.join(file), slice, camera.offset)
+                });
         }
 
         let decoding = std::time::Instant::now();
 
         let screen_frame = screen
             .as_mut()
-            .zip(file_time(source, request.screen_offset))
+            .zip(offset_of(slice.media.screen.as_ref()).and_then(|at| file_time(source, at)))
             .and_then(|(reader, at)| reader.frame_at(at));
 
         // Deliberately nothing before the camera opened: holding its first
         // frame across the gap would show something that was never recorded,
         // and the preview draws nothing there for the same reason.
+        let camera_at = offset_of(slice.media.camera.as_ref()).and_then(|at| file_time(source, at));
         let camera_frame = camera
             .as_mut()
-            .zip(file_time(source, request.camera_offset))
+            .zip(camera_at)
             .and_then(|(reader, at)| reader.frame_at(at));
         let matte_frame = matte
             .as_mut()
-            .zip(file_time(source, request.camera_offset))
+            .zip(camera_at)
             .and_then(|(reader, at)| reader.frame_at(at));
 
         // Immediately before the render and never inside it — see
@@ -566,6 +570,17 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
     paths
 }
 
+/// Opens a reader for the file a slice names for one kind, if it names one.
+fn open_ref(dir: &Path, reference: Option<&SegmentRef>, slice: &SliceRender) -> Option<VideoReader> {
+    let reference = reference?;
+    open_reader(&dir.join(&reference.file), slice, reference.offset)
+}
+
+/// A named file's offset, or None where the slice plays no such file.
+fn offset_of(reference: Option<&SegmentRef>) -> Option<MediaTime> {
+    Some(reference?.offset)
+}
+
 /// Opens a reader for one slice's span of a file, if the file exists.
 fn open_reader(path: &Path, slice: &SliceRender, offset: MediaTime) -> Option<VideoReader> {
     if !path.exists() {
@@ -659,9 +674,14 @@ fn audio_decode_rate(base: f64, speed: f64) -> f64 {
 /// written.
 struct AudioStream<'a> {
     slices: &'a [SliceRender],
-    /// Absent where the recording has no such track. Held rather than re-tested
-    /// per slice, because `exists` on a missing file is a syscall a slice.
-    sources: [Option<(PathBuf, MediaTime)>; 2],
+    /// The session directory the slices' file names are relative to.
+    dir: &'a Path,
+    /// Which of the audio files the slices name are actually on disk.
+    ///
+    /// Tested once per distinct file rather than once per slice — `exists` on a
+    /// missing file is a syscall, and a long edit is hundreds of slices naming
+    /// the same two or three files.
+    present: std::collections::HashSet<PathBuf>,
     /// The slice being mixed, which is not the slice being drawn.
     slot: usize,
     readers: [Option<AudioReader>; 2],
@@ -695,23 +715,27 @@ impl<'a> AudioStream<'a> {
     /// answer is "does either file exist, and does the edit occupy any time at
     /// all" — a pair of `exists` calls and some arithmetic.
     fn open(request: &'a ExportRequest) -> Option<Self> {
-        let sources = [
-            (TrackKind::Microphone, request.mic_offset),
-            (TrackKind::SystemAudio, request.system_offset),
-        ]
-        .map(|(kind, offset)| {
-            let path = request.session_dir.join(kind.file_name());
-            path.exists().then_some((path, offset))
-        });
-
         let sound = SoundTrack::prepare(request.sound.as_ref(), &request.slices, SAMPLE_RATE);
+
+        // Every audio file any slice names, that is really there. Named and
+        // there are different questions: a slice names whatever segment covers
+        // it, and a file that was moved or never written must mix as silence
+        // rather than as a warning per slice.
+        let present: std::collections::HashSet<PathBuf> = request
+            .slices
+            .iter()
+            .flat_map(|slice| [slice.media.mic.as_ref(), slice.media.system.as_ref()])
+            .flatten()
+            .map(|reference| request.session_dir.join(&reference.file))
+            .filter(|path| path.exists())
+            .collect();
 
         // A recording with no microphone and no system audio still gets a
         // sound track if there is typing to hear. Before the sounds existed
         // "no files" meant "no audio", and keeping that rule would have
         // dropped every synthesised press from a silent take without a word —
         // the writer is created without an audio input and never asks again.
-        if sources.iter().all(Option::is_none) && sound.is_none() {
+        if present.is_empty() && sound.is_none() {
             return None;
         }
 
@@ -727,7 +751,8 @@ impl<'a> AudioStream<'a> {
 
         let mut stream = Self {
             slices: &request.slices,
-            sources,
+            dir: &request.session_dir,
+            present,
             slot: 0,
             readers: [None, None],
             gains: [Gain(0.0), Gain(0.0)],
@@ -768,11 +793,26 @@ impl<'a> AudioStream<'a> {
             .map(|sound| sound.range_for(slice))
             .unwrap_or(0..0);
 
-        for (index, source) in self.sources.iter().enumerate() {
-            let Some((path, offset)) = source else {
+        // Off the slice, so a take recorded without a microphone mixes as
+        // silence over its own span rather than reaching for the other take's
+        // file — which would put a minute of the wrong audio under it.
+        let sources = [slice.media.mic.as_ref(), slice.media.system.as_ref()];
+
+        for (index, source) in sources.iter().enumerate() {
+            let Some(reference) = source else {
                 self.readers[index] = None;
                 continue;
             };
+            let path = self.dir.join(&reference.file);
+            // A take recorded without this kind names no segment here at all;
+            // this catches the other case — a named file that is not on disk —
+            // which mixes as silence for the reason a reader that will not open
+            // does.
+            if !self.present.contains(&path) {
+                self.readers[index] = None;
+                continue;
+            }
+            let offset = &reference.offset;
 
             // A muted source is not opened at all. Its samples would be
             // multiplied by zero and thrown away, and the decode is the
@@ -790,7 +830,7 @@ impl<'a> AudioStream<'a> {
             }
 
             let rate = audio_decode_rate(SAMPLE_RATE, slice.speed);
-            self.readers[index] = match AudioReader::open(path, start, end, rate) {
+            self.readers[index] = match AudioReader::open(&path, start, end, rate) {
                 Ok(reader) => Some(reader),
                 Err(err) => {
                     tracing::warn!("could not read {}: {err}", path.display());
@@ -877,6 +917,7 @@ mod tests {
                 items,
             },
             audio: AudioMix::tracks(1.0, 1.0),
+            media: crate::timeline::SliceMedia::default(),
             speed: 1.0,
         }
     }

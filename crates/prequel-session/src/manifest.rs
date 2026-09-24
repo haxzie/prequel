@@ -10,7 +10,12 @@ use crate::clock::MediaTime;
 
 /// Bumped whenever the shape changes incompatibly, so an old recording opened
 /// by a newer build fails loudly instead of exporting something wrong.
-pub const MANIFEST_VERSION: u32 = 1;
+///
+/// 2 turned a track into a list of segments laid end to end on one session
+/// clock, because a recording can be extended with a second take. A v1
+/// manifest still opens — `manifest_v1` reads it and its single file becomes a
+/// one-segment list.
+pub const MANIFEST_VERSION: u32 = 2;
 
 pub const MANIFEST_FILE_NAME: &str = "session.json";
 
@@ -66,14 +71,24 @@ pub struct Matte {
     pub dropped: u64,
 }
 
+/// One take's worth of one track: a file, and where it sits on the session
+/// clock.
+///
+/// The per-file `start` is what keeps a late device honest across takes — take
+/// two's camera opens a couple of hundred milliseconds after take two's
+/// screen, exactly as take one's did, and both facts live here rather than
+/// being inferred from the take's own start. The file itself is always
+/// zero-based; see `prequel-encode`'s `probe.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Track {
-    pub kind: TrackKind,
+pub struct Segment {
+    /// Relative to the session directory: `"screen.mp4"` for the first take,
+    /// `"2/screen.mp4"` for the second. A path rather than a bare name because
+    /// each take is captured into its own subdirectory, under the fixed names
+    /// the capture crates write.
     pub file_name: String,
-    /// Media time of this track's first sample. Non-zero when a device took
-    /// longer to warm up than the one that anchored the clock.
+    /// Media time of this file's first sample, on the session clock.
     pub start: MediaTime,
-    /// Media time just past this track's last sample.
+    /// Media time just past this file's last sample.
     pub end: MediaTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -83,17 +98,84 @@ pub struct Track {
     /// Samples the timing guard rejected. A non-zero count is not a failure,
     /// but a large one points at a struggling capture pipeline.
     pub dropped: u64,
-    /// Only ever set on the camera track. Defaulted so a manifest written
+    /// Only ever set on a camera segment. Defaulted so a manifest written
     /// before the matte existed still parses — as a camera with no matte,
     /// which is what it recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matte: Option<Matte>,
 }
 
-impl Track {
+impl Segment {
     pub fn duration(&self) -> MediaTime {
         self.end.saturating_sub(self.start)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Track {
+    pub kind: TrackKind,
+    /// In session-clock order, never empty, never overlapping. One entry per
+    /// take that recorded this kind — a take with the microphone switched off
+    /// simply contributes none.
+    pub segments: Vec<Segment>,
+}
+
+impl Track {
+    /// Media time of the track's first sample, across every take.
+    pub fn start(&self) -> MediaTime {
+        self.segments.first().map_or(0, |segment| segment.start)
+    }
+
+    /// Media time just past the track's last sample, across every take.
+    pub fn end(&self) -> MediaTime {
+        self.segments.last().map_or(0, |segment| segment.end)
+    }
+
+    pub fn duration(&self) -> MediaTime {
+        self.end().saturating_sub(self.start())
+    }
+
+    /// The segment covering a moment on the session clock, if any.
+    ///
+    /// Half-open, so a seam belongs to the later take — which is what makes
+    /// the join land on a frame rather than between two takes.
+    pub fn segment_at(&self, at: MediaTime) -> Option<&Segment> {
+        self.segments
+            .iter()
+            .find(|segment| at >= segment.start && at < segment.end)
+    }
+}
+
+/// One recording session inside this project. The seam list, and nothing else.
+///
+/// Explicit rather than derived from a track's segment boundaries, because
+/// those disagree per track by however long each device took to open: take
+/// two's camera starts later than take two's screen. A slice may not span a
+/// seam, and if "where is the seam" has two answers the per-slice segment
+/// lookup silently reads the wrong take's file for the first frames of a clip.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Take {
+    /// Subdirectory the take's files are in, relative to the session
+    /// directory. Empty for the first take, whose files sit at the root.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dir: String,
+    pub start: MediaTime,
+    pub end: MediaTime,
+}
+
+impl Take {
+    pub fn duration(&self) -> MediaTime {
+        self.end.saturating_sub(self.start)
+    }
+}
+
+/// A rectangle in the display's own points. See `SourceInfo::crop`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 /// What was on screen, recorded so an editor can reason about the source later.
@@ -117,6 +199,15 @@ pub struct SourceInfo {
     /// "square": a reader falls back to its default rather than to zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub corner_radius: Option<f64>,
+    /// The region an area capture was cropped to, in the display's points.
+    ///
+    /// Recorded so a second take of the same area can reproduce the framing.
+    /// Before this the crop was applied at capture and never written down,
+    /// which made "record more of the same region" impossible to offer.
+    /// Absent for a display, for a window, and for every recording made
+    /// before it was written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crop: Option<Region>,
 }
 
 /// A cursor position sampled during the recording.
@@ -154,8 +245,15 @@ pub struct Manifest {
     pub started_at: String,
     /// Recording length with paused spans already removed.
     pub duration: MediaTime,
+    /// The first take's. Nothing reads it per moment — the editor turns it
+    /// into project defaults once, when the project is created — and a second
+    /// take of a different display would describe itself differently.
     pub source: SourceInfo,
     pub tracks: Vec<Track>,
+    /// Every recording that went into this session, in clock order. Never
+    /// empty. Laid end to end, so a take begins exactly where the last ended.
+    #[serde(default)]
+    pub takes: Vec<Take>,
     /// Whether ScreenCaptureKit drew the pointer into the frames.
     ///
     /// When it did, the pointer is part of the picture and cannot be removed;
@@ -305,14 +403,23 @@ impl Manifest {
     }
 
     pub fn from_json(text: &str) -> Result<Self, ManifestError> {
-        let manifest: Self = serde_json::from_str(text)?;
-        if manifest.version != MANIFEST_VERSION {
-            return Err(ManifestError::UnsupportedVersion {
-                found: manifest.version,
-                expected: MANIFEST_VERSION,
-            });
+        #[derive(Deserialize)]
+        struct VersionOnly {
+            version: u32,
         }
-        Ok(manifest)
+
+        match serde_json::from_str::<VersionOnly>(text)?.version {
+            MANIFEST_VERSION => Ok(serde_json::from_str(text)?),
+            // Every recording made before a session could hold a second take.
+            // Its one file per track is one segment, which is exactly what v2
+            // reduces to for a single take — so this is a shape change and
+            // never a reinterpretation of what was recorded.
+            1 => Ok(crate::manifest_v1::Manifest::from_json(text)?.upgrade()),
+            found => Err(ManifestError::UnsupportedVersion {
+                found,
+                expected: MANIFEST_VERSION,
+            }),
+        }
     }
 
     pub fn track(&self, kind: TrackKind) -> Option<&Track> {
@@ -325,6 +432,25 @@ mod tests {
     use super::*;
 
     const S: MediaTime = 1_000_000_000;
+
+    fn segment(
+        kind: TrackKind,
+        start: MediaTime,
+        end: MediaTime,
+        size: Option<(u32, u32)>,
+        samples: u64,
+    ) -> Segment {
+        Segment {
+            file_name: kind.file_name().to_owned(),
+            start,
+            end,
+            width: size.map(|(w, _)| w),
+            height: size.map(|(_, h)| h),
+            samples,
+            dropped: 0,
+            matte: None,
+        }
+    }
 
     fn sample_manifest() -> Manifest {
         Manifest {
@@ -339,49 +465,40 @@ mod tests {
                 app_name: String::new(),
                 scale_factor: 2.0,
                 corner_radius: None,
+                crop: None,
             },
             tracks: vec![
                 Track {
                     kind: TrackKind::Screen,
-                    file_name: TrackKind::Screen.file_name().to_owned(),
-                    start: 0,
-                    end: 10 * S,
-                    width: Some(3456),
-                    height: Some(2234),
-                    samples: 600,
-                    dropped: 0,
-                    matte: None,
+                    segments: vec![segment(TrackKind::Screen, 0, 10 * S, Some((3456, 2234)), 600)],
                 },
                 Track {
                     kind: TrackKind::Camera,
-                    file_name: TrackKind::Camera.file_name().to_owned(),
-                    start: 200_000_000,
-                    end: 10 * S,
-                    width: Some(1280),
-                    height: Some(720),
-                    samples: 294,
-                    dropped: 0,
-                    matte: Some(Matte {
-                        file_name: CAMERA_MATTE_FILE.to_owned(),
-                        width: 512,
-                        height: 288,
-                        samples: 290,
-                        dropped: 4,
-                    }),
+                    segments: vec![Segment {
+                        matte: Some(Matte {
+                            file_name: CAMERA_MATTE_FILE.to_owned(),
+                            width: 512,
+                            height: 288,
+                            samples: 290,
+                            dropped: 4,
+                        }),
+                        ..segment(TrackKind::Camera, 200_000_000, 10 * S, Some((1280, 720)), 294)
+                    }],
                 },
                 Track {
                     kind: TrackKind::Microphone,
-                    file_name: TrackKind::Microphone.file_name().to_owned(),
-                    // The mic took 120 ms longer to open than the screen.
-                    start: 120_000_000,
-                    end: 10 * S,
-                    width: None,
-                    height: None,
-                    samples: 470,
-                    dropped: 2,
-                    matte: None,
+                    segments: vec![Segment {
+                        dropped: 2,
+                        // The mic took 120 ms longer to open than the screen.
+                        ..segment(TrackKind::Microphone, 120_000_000, 10 * S, None, 470)
+                    }],
                 },
             ],
+            takes: vec![Take {
+                dir: String::new(),
+                start: 0,
+                end: 10 * S,
+            }],
             cursor_baked: false,
             clicks: Vec::new(),
             keys: Vec::new(),
@@ -410,17 +527,125 @@ mod tests {
         let parsed = Manifest::from_json(&sample_manifest().to_json().unwrap()).unwrap();
         let mic = parsed.track(TrackKind::Microphone).unwrap();
 
-        assert_eq!(mic.start, 120_000_000);
+        assert_eq!(mic.start(), 120_000_000);
         assert_eq!(mic.duration(), 10 * S - 120_000_000);
     }
 
     #[test]
     fn rejects_a_manifest_from_an_incompatible_version() {
-        let mut manifest = sample_manifest();
-        manifest.version = MANIFEST_VERSION + 1;
+        for version in [0, MANIFEST_VERSION + 1] {
+            let mut manifest = sample_manifest();
+            manifest.version = version;
 
-        let err = Manifest::from_json(&manifest.to_json().unwrap()).unwrap_err();
-        assert!(matches!(err, ManifestError::UnsupportedVersion { .. }));
+            let err = Manifest::from_json(&manifest.to_json().unwrap()).unwrap_err();
+            assert!(matches!(err, ManifestError::UnsupportedVersion { .. }));
+        }
+    }
+
+    #[test]
+    fn reads_a_version_one_manifest_as_one_segment_per_track() {
+        // Every recording in anybody's library. Its one file per track becomes
+        // a one-segment list, and the whole of it becomes one take — so a v2
+        // reader needs no special case for a recording made before takes
+        // existed.
+        let v1 = serde_json::json!({
+            "version": 1,
+            "id": "Prequel 2026-08-10",
+            "started_at": "2026-08-10T21:30:00Z",
+            "duration": 10 * S,
+            "source": { "kind": "display", "id": 1, "title": "Display", "scale_factor": 2.0 },
+            "tracks": [
+                {
+                    "kind": "screen",
+                    "file_name": "screen.mp4",
+                    "start": 0,
+                    "end": 10 * S,
+                    "width": 3456,
+                    "height": 2234,
+                    "samples": 600,
+                    "dropped": 0
+                },
+                {
+                    "kind": "microphone",
+                    "file_name": "mic.m4a",
+                    "start": 120_000_000,
+                    "end": 10 * S,
+                    "samples": 470,
+                    "dropped": 2
+                }
+            ],
+            "cursor": [{ "at": 0, "x": 0.5, "y": 0.5 }],
+        });
+
+        let parsed = Manifest::from_json(&v1.to_string()).unwrap();
+
+        assert_eq!(parsed.version, MANIFEST_VERSION);
+        assert_eq!(
+            parsed.takes,
+            vec![Take {
+                dir: String::new(),
+                start: 0,
+                end: 10 * S,
+            }]
+        );
+        let screen = parsed.track(TrackKind::Screen).unwrap();
+        assert_eq!(screen.segments.len(), 1);
+        assert_eq!(screen.segments[0].file_name, "screen.mp4");
+        assert_eq!(screen.segments[0].width, Some(3456));
+        // The late mic survives the upgrade; losing it would slide every word
+        // of the recording 120 ms early.
+        assert_eq!(parsed.track(TrackKind::Microphone).unwrap().start(), 120_000_000);
+        assert_eq!(parsed.cursor.len(), 1);
+        // No flag in a v1 manifest means the pointer was drawn into the frames.
+        assert!(parsed.cursor_baked);
+    }
+
+    #[test]
+    fn a_track_reports_the_span_of_its_segments() {
+        // Take two's camera opens later than take two's screen, exactly as
+        // take one's did. The track's span is the first segment's start to the
+        // last segment's end, never the take's.
+        let track = Track {
+            kind: TrackKind::Camera,
+            segments: vec![
+                segment(TrackKind::Camera, 200_000_000, 10 * S, Some((1280, 720)), 294),
+                Segment {
+                    file_name: "2/camera.mp4".to_owned(),
+                    ..segment(
+                        TrackKind::Camera,
+                        10 * S + 180_000_000,
+                        16 * S,
+                        Some((1920, 1080)),
+                        340,
+                    )
+                },
+            ],
+        };
+
+        assert_eq!(track.start(), 200_000_000);
+        assert_eq!(track.end(), 16 * S);
+        assert_eq!(track.duration(), 16 * S - 200_000_000);
+    }
+
+    #[test]
+    fn segment_at_a_seam_belongs_to_the_later_take() {
+        // Half-open, so the join lands on a frame. Were the seam to belong to
+        // the earlier take, the first frame of the new footage would come from
+        // the old file.
+        let track = Track {
+            kind: TrackKind::Screen,
+            segments: vec![
+                segment(TrackKind::Screen, 0, 10 * S, Some((1920, 1080)), 600),
+                Segment {
+                    file_name: "2/screen.mp4".to_owned(),
+                    ..segment(TrackKind::Screen, 10 * S, 16 * S, Some((1280, 720)), 360)
+                },
+            ],
+        };
+
+        assert_eq!(track.segment_at(10 * S - 1).unwrap().file_name, "screen.mp4");
+        assert_eq!(track.segment_at(10 * S).unwrap().file_name, "2/screen.mp4");
+        assert_eq!(track.segment_at(16 * S), None);
     }
 
     #[test]
@@ -468,11 +693,19 @@ mod tests {
         let mut value: serde_json::Value =
             serde_json::from_str(&sample_manifest().to_json().unwrap()).unwrap();
         for track in value["tracks"].as_array_mut().unwrap() {
-            track.as_object_mut().unwrap().remove("matte");
+            for segment in track["segments"].as_array_mut().unwrap() {
+                segment.as_object_mut().unwrap().remove("matte");
+            }
         }
 
         let parsed = Manifest::from_json(&value.to_string()).unwrap();
-        assert!(parsed.tracks.iter().all(|track| track.matte.is_none()));
+        assert!(
+            parsed
+                .tracks
+                .iter()
+                .flat_map(|track| &track.segments)
+                .all(|segment| segment.matte.is_none())
+        );
     }
 
     #[test]

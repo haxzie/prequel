@@ -173,14 +173,17 @@ export function toFileTime(track: TrackMedia, source: MediaTime): MediaTime | nu
 }
 
 /**
- * How much of a gap at a track's edges is closed by holding its nearest frame.
+ * How much of a gap at a segment's edges is closed by holding its nearest frame.
  *
  * Mirrored by `EDGE_TOLERANCE` in `crates/prequel-render/src/export.rs`, so the
  * export shows the camera over exactly the span the preview does. Sized to
  * cover a device opening late — a few hundred milliseconds — and nothing like
  * long enough to paper over a track that failed.
+ *
+ * Exported for `segments.ts`, which decides *which* file a moment falls in and
+ * has to close a gap over the same span this does inside one.
  */
-const EDGE_TOLERANCE: MediaTime = 500_000_000;
+export const EDGE_TOLERANCE: MediaTime = 500_000_000;
 
 /**
  * Source-time step that counts as landing somewhere else rather than playing on.

@@ -1,10 +1,16 @@
 /**
  * Extracting a recording's frames into one sprite sheet for the timeline.
  *
- * Runs once per recording and produces a single image covering the whole take,
- * which every clip then reads its own span out of — the same arrangement
+ * Runs once per recording and produces a single image covering the whole source
+ * clock, which every clip then reads its own span out of — the same arrangement
  * `useWaveforms` has, and for the same reason: doing it per clip would decode
  * the same file again on every cut.
+ *
+ * One sheet across every take, not one per take. The cells are indexed by source
+ * time, so a sheet per take would make every reader ask which take a moment is
+ * in before it could pick a cell — where walking the takes in order while
+ * filling one sheet costs a `src` swap per take, on an element nothing is
+ * watching.
  *
  * **The video element here is deliberately its own.** The four elements the
  * editor plays from are driven at 60 Hz by `useEditorPlayback`, and
@@ -47,14 +53,14 @@ export function useFilmstrip(
 ): Filmstrip | null {
   const [strip, setStrip] = useState<Filmstrip | null>(null);
 
-  // Keyed on the URL rather than the array: `media` is a fresh array on every
+  const screen = media.filter((track) => track.kind === "screen");
+  // Keyed on the URLs rather than the array: `media` is a fresh array on every
   // render of the editor, and depending on it directly would re-extract the
   // whole recording each time.
-  const screen = media.find((track) => track.kind === "screen");
-  const url = screen?.url ?? "";
+  const key = screen.map((track) => track.url).join("|");
 
   useEffect(() => {
-    if (url === "" || duration <= 0) {
+    if (key === "" || duration <= 0) {
       setStrip(null);
       return;
     }
@@ -64,7 +70,7 @@ export function useFilmstrip(
     let live = true;
     const video = document.createElement("video");
 
-    void build(video, url, duration, cellHeight, () => live)
+    void build(video, screen, duration, cellHeight, () => live)
       .then((built) => {
         if (live) setStrip(built);
       })
@@ -82,29 +88,28 @@ export function useFilmstrip(
       video.removeAttribute("src");
       video.load();
     };
-  }, [url, duration, cellHeight]);
+    // `screen` is derived from `key`, which is what actually decides whether the
+    // work has to be redone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, duration, cellHeight]);
 
   return strip;
 }
 
-/** Walks the recording once, drawing each frame into the sheet. */
+/** Walks every take in order, drawing each frame into the one sheet. */
 async function build(
   video: HTMLVideoElement,
-  url: string,
+  segments: readonly TrackMedia[],
   duration: MediaTime,
   cellHeight: number,
   live: () => boolean,
 ): Promise<Filmstrip | null> {
-  video.src = url;
   // Same reason the on-screen elements carry it: `prequel-media:` is a different
   // origin, and a tainted element poisons any attempt to read pixels back off it
   // — which is the entire purpose of this one.
   video.crossOrigin = "anonymous";
   video.muted = true;
   video.preload = "auto";
-
-  await once(video, "loadedmetadata");
-  if (!live() || video.videoWidth === 0) return null;
 
   const plan = cadence(duration);
   const height = Math.max(1, Math.round(cellHeight));
@@ -113,41 +118,65 @@ async function build(
   canvas.width = THUMB_WIDTH * Math.min(plan.count, MAX_FRAMES);
   canvas.height = height;
 
-  // Cover, not fit: a cell is 48 wide by the clip row's height, which is a
-  // squarer box than any screen recording. Letterboxing would put bars through
-  // the middle of the strip, so the frame is cropped to the centre instead —
-  // this is orientation, and the centre is where the content is.
-  const scale = Math.max(THUMB_WIDTH / video.videoWidth, height / video.videoHeight);
-  const cropWidth = THUMB_WIDTH / scale;
-  const cropHeight = height / scale;
-  const cropX = (video.videoWidth - cropWidth) / 2;
-  const cropY = (video.videoHeight - cropHeight) / 2;
-
   const context = canvas.getContext("2d");
   if (!context) return null;
 
   let drew = 0;
-  for (let index = 0; index < plan.count; index += 1) {
+
+  for (const segment of segments) {
     if (!live()) return null;
 
-    // Clamped inside the file: the last frame's nominal time can land a hair
-    // past the end, and seeking past the end never fires `seeked`.
-    const at = Math.min(frameTime(index, plan.interval), duration - plan.interval / 2);
-    const seeked = await seek(video, at / 1_000_000_000);
-    if (!seeked) continue;
+    video.src = segment.url;
+    // A swap per take, not per frame. This element is off the DOM and nothing
+    // reads it while it seeks, so the `load()` a swap costs is paid once per
+    // take — unlike the playback elements, where a swap at a seam would blank
+    // the picture every time the playhead crossed one.
+    await once(video, "loadedmetadata");
+    if (!live()) return null;
+    if (video.videoWidth === 0) continue;
 
-    context.drawImage(
-      video,
-      cropX,
-      cropY,
-      cropWidth,
-      cropHeight,
-      index * THUMB_WIDTH,
-      0,
-      THUMB_WIDTH,
-      height,
-    );
-    drew += 1;
+    // Per take, because two takes can be different sizes. Cover, not fit: a cell
+    // is 48 wide by the clip row's height, which is a squarer box than any
+    // screen recording. Letterboxing would put bars through the middle of the
+    // strip, so the frame is cropped to the centre instead — this is
+    // orientation, and the centre is where the content is.
+    const scale = Math.max(THUMB_WIDTH / video.videoWidth, height / video.videoHeight);
+    const cropWidth = THUMB_WIDTH / scale;
+    const cropHeight = height / scale;
+    const cropX = (video.videoWidth - cropWidth) / 2;
+    const cropY = (video.videoHeight - cropHeight) / 2;
+
+    const from = segment.offset;
+    const to = segment.offset + segment.duration;
+
+    for (let index = 0; index < plan.count; index += 1) {
+      if (!live()) return null;
+
+      // Clamped inside the whole recording first, because the last cell's
+      // nominal time can land a hair past the end.
+      const source = Math.min(frameTime(index, plan.interval), duration - plan.interval / 2);
+      if (source < from || source >= to) continue;
+
+      // Into this take's own file, which is zero-based — the offset is the only
+      // record of where it sits, and subtracting it twice would show an earlier
+      // moment of the take in every cell.
+      const at = Math.min(source - from, Math.max(0, segment.duration - plan.interval / 2));
+      const seeked = await seek(video, at / 1_000_000_000);
+      if (!seeked) continue;
+
+      context.drawImage(
+        video,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        index * THUMB_WIDTH,
+        0,
+        THUMB_WIDTH,
+        height,
+      );
+      drew += 1;
+    }
   }
 
   if (!live() || drew === 0) return null;

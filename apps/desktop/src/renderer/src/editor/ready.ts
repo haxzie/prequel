@@ -14,11 +14,17 @@
  * and `onload`.
  */
 export interface ReadyInputs {
-  /** Video tracks the recording has: `screen`, and `camera` when there is one. */
+  /**
+   * The video elements to wait for, by media key.
+   *
+   * The first take's only. Every take's elements are in the DOM at once, and a
+   * recording extended twice would otherwise sit behind the loading screen
+   * until footage nobody has scrolled to had buffered.
+   */
   videoKinds: readonly string[];
   /** Whether the camera came with a person matte, which is a video of its own. */
   matte: boolean;
-  /** Tracks that have settled, whether they decoded or failed. */
+  /** Elements that have settled, whether they decoded or failed. */
   decoded: ReadonlySet<string>;
   /** Image paths the plan names. */
   wanted: readonly string[];
@@ -36,7 +42,7 @@ export function previewReady({
   if (!videoKinds.every((kind) => decoded.has(kind))) return false;
   // Revealed before the mask has decoded, a cutout shows one frame of the
   // person as a bare rectangle.
-  if (matte && !decoded.has("camera_matte")) return false;
+  if (matte && !decoded.has("camera_matte:0")) return false;
 
   return wanted.every((path) => settled.has(path));
 }

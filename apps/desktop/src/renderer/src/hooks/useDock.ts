@@ -13,6 +13,7 @@ const INITIAL: DockState = {
   selecting: false,
   openMenu: null,
   cameraError: null,
+  extending: false,
   // Nothing is opened until main says the panel is up. Starting true would
   // grab the camera for one round trip on every window that renders this.
   devicesLive: false,

@@ -79,6 +79,16 @@ export interface EditorState {
    * produced a slice describing footage that does not exist.
    */
   duration: MediaTime;
+  /**
+   * Source times the recording was extended at, one per take after the first.
+   *
+   * Held for the reason `duration` is: a reducer with only the project cannot
+   * tell a trim that has run into the next take from one that has not. A slice
+   * must resolve to exactly one file per kind, so a trim that grew one across a
+   * seam would leave a clip playing the earlier take's file over footage from
+   * the later one — see `cutAtSeams`.
+   */
+  seams: readonly MediaTime[];
   /** Bumped on every change that should be persisted. */
   revision: number;
   /**
@@ -102,7 +112,7 @@ export interface EditorState {
 }
 
 export type EditorAction =
-  | { type: "load"; project: Project; duration: MediaTime }
+  | { type: "load"; project: Project; duration: MediaTime; seams: readonly MediaTime[] }
   | { type: "select"; sliceId: string | null }
   | { type: "setFrame"; frame: Project["frame"] }
   | { type: "setOutput"; output: Project["output"] }
@@ -247,7 +257,11 @@ export type EditorAction =
    */
   | { type: "beginEdit" };
 
-export function initialState(project: Project, duration: MediaTime = 0): EditorState {
+export function initialState(
+  project: Project,
+  duration: MediaTime = 0,
+  seams: readonly MediaTime[] = [],
+): EditorState {
   return {
     project,
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
@@ -258,6 +272,9 @@ export function initialState(project: Project, duration: MediaTime = 0): EditorS
     // is clamped against it, and clamping to zero is harmless because there is
     // nothing on the timeline to drag yet.
     duration,
+    // Empty until a recording is opened, like `duration`: the placeholder
+    // project this starts on describes no media, so there is nothing to cross.
+    seams,
     revision: 0,
     history: [],
     coalesce: null,
@@ -431,7 +448,7 @@ function apply(
 ): EditorState {
   switch (action.type) {
     case "load":
-      return initialState(action.project, action.duration);
+      return initialState(action.project, action.duration, action.seams);
 
     case "select":
       // Not a change worth persisting, so the revision stays put. Selecting a
@@ -1825,7 +1842,14 @@ function trimSlice(
   // last frame — and the slice then claimed footage the file does not contain.
   // Nothing downstream complains: the player runs out and holds the last frame,
   // so it reads as a clip that mysteriously freezes rather than as a bad trim.
-  const bounded = clampTo(source, 0, state.duration);
+  //
+  // And to the take the clip is in, not the whole recording. This is the only
+  // gesture that can grow a slice's source range, so without the second clamp it
+  // is the way a clip comes to span a seam — after which it plays its own take's
+  // file over the next take's footage, which reads as the addition never having
+  // been made.
+  const take = takeAround(state.seams, slice, state.duration);
+  const bounded = clampTo(source, take.start, take.end);
   if (bounded === slice.source[action.edge]) return state;
 
   return edit(state, (project) =>
@@ -1865,6 +1889,29 @@ function setSliceSpeed(
       ),
     ),
   );
+}
+
+/**
+ * The span of the take a slice sits in.
+ *
+ * From the seams rather than from any track's segment boundaries, which disagree
+ * by however long each device took to open — see `Take` in the manifest. A slice
+ * never spans a seam, so its start decides which take it is in.
+ */
+function takeAround(
+  seams: readonly MediaTime[],
+  slice: Slice,
+  duration: MediaTime,
+): { start: MediaTime; end: MediaTime } {
+  let start = 0;
+  let end = duration;
+
+  for (const seam of seams) {
+    if (seam <= slice.source.start) start = Math.max(start, seam);
+    else end = Math.min(end, seam);
+  }
+
+  return { start, end };
 }
 
 export { MIN_SLICE_NS };

@@ -227,6 +227,50 @@ export class WorkspaceWindow {
   }
 
   /**
+   * The window itself, for the capture's exclusion list.
+   *
+   * Null before it exists. Handed out rather than kept behind a method that hides
+   * it because `excludedWindowIds` wants a `CGWindowID`, which only the window
+   * can give — see `windowId`.
+   */
+  browserWindow(): BrowserWindow | null {
+    return this.window && !this.window.isDestroyed() ? this.window : null;
+  }
+
+  /**
+   * Brings the editor back to the recording it is already on, and tells it to
+   * read that recording again.
+   *
+   * What a finished Add Recording lands on. Not `open`, and not `openRecording`:
+   * the route does not change across an extend — it is the same recording — so
+   * navigating to it would remount nothing and the editor would go on showing a
+   * manifest one take out of date.
+   *
+   * The window is never hidden for an extend, so there is nothing to show here
+   * but the focus: the editor stayed up and was excluded from the capture
+   * instead, which keeps the size and position the user set rather than throwing
+   * them away on a round trip they are expected to make repeatedly.
+   */
+  resumeEditing(dir: string): void {
+    const window = this.browserWindow();
+    if (!window) {
+      // The window was closed while the addition was being recorded. The
+      // footage is merged and on disk either way, so this opens the editor on it
+      // the way a finished take does.
+      this.open(dir);
+      return;
+    }
+
+    window.show();
+    window.focus();
+    window.webContents.send(IPC_CHANNELS.editorReload, basename(dir));
+    // The panel and the bubble get out of the way, as they do whenever this
+    // window takes over — the addition is made and there is nothing left to set
+    // up.
+    this.options.onOpen?.();
+  }
+
+  /**
    * Goes back to the library, writing the edit being left behind.
    *
    * Lands on the grid unless asked for another pane. Leaving an editor is a
@@ -322,7 +366,14 @@ export class WorkspaceWindow {
     this.window?.webContents.send(IPC_CHANNELS.workspaceNavigate, route);
   }
 
-  private flush(): void {
+  /**
+   * Writes the held project for whatever recording is open.
+   *
+   * Public as well as used internally: adding a take appends a clip to
+   * `project.json`, and a save still held on this side would land on top of the
+   * merged one the moment anything asked for it.
+   */
+  flush(): void {
     if (this.current) flushProject(this.current);
   }
 }

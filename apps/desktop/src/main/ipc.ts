@@ -375,6 +375,28 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
 
   ipcMain.handle(IPC_CHANNELS.editorLeave, () => attempt(() => workspace.leaveRecording()));
 
+  /**
+   * More footage for the recording being edited.
+   *
+   * Flushed here as well as in the renderer, because the merge is about to append
+   * a clip to `project.json`: a save still held on this side would be written
+   * over the merged one the moment anything asked for it.
+   *
+   * The directory comes from `workspace`, never from the renderer — the renderer
+   * knows a recording's name and nothing about where it lives, which is the rule
+   * every other editor channel follows.
+   */
+  ipcMain.handle(IPC_CHANNELS.editorAddRecording, () =>
+    attempt(async () => {
+      const dir = workspace.currentDir;
+      if (!dir) return null;
+
+      workspace.flush();
+      await flow.extendRecording(dir);
+      return null;
+    }),
+  );
+
   ipcMain.handle(IPC_CHANNELS.editorSoundBank, (_event, profile: string) =>
     attempt(() => readSoundBank(profile)),
   );

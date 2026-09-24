@@ -224,6 +224,7 @@ mod tests {
             },
             audio,
             speed: 1.0,
+            media: crate::timeline::SliceMedia::default(),
         }
     }
 

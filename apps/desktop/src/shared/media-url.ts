@@ -16,9 +16,17 @@ export const MEDIA_SCHEME = "prequel-media";
  * `recording` is the session directory's *name*, never its path: the handler
  * resolves it against the recordings directory and refuses anything that lands
  * outside, so a full path here would simply be rejected.
+ *
+ * `fileName` is a manifest `Segment.file_name`, which for any take past the
+ * first carries that take's subdirectory — `"2/screen.mp4"`. The separator gets
+ * its own URL segment rather than being encoded into one, because whether a
+ * `%2F` survives Chromium's canonicalisation of a `standard:` scheme and comes
+ * back out of `decodeURIComponent` intact is not something to find out from a
+ * 404 that reads as missing footage.
  */
 export function mediaUrl(recording: string, fileName: string): string {
-  return `${MEDIA_SCHEME}://recording/${encodeURIComponent(recording)}/${encodeURIComponent(fileName)}`;
+  const parts = [recording, ...fileName.split("/")].map((part) => encodeURIComponent(part));
+  return `${MEDIA_SCHEME}://recording/${parts.join("/")}`;
 }
 
 /**

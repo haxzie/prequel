@@ -4,6 +4,7 @@ import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
 import {
+  AddRecordingIcon,
   AddTextIcon,
   AddZoomIcon,
   ScissorsIcon,
@@ -55,11 +56,13 @@ export function PlaybackControls({
   media,
   canAddZoom,
   canAddText,
+  canAddRecording,
   canSplit,
   canDelete,
   canUndo,
   onAddZoom,
   onAddText,
+  onAddRecording,
   onSplit,
   onDelete,
   onUndo,
@@ -70,6 +73,8 @@ export function PlaybackControls({
   canAddZoom: boolean;
   /** Some row of texts has room for one. */
   canAddText: boolean;
+  /** Nothing else has the recorder busy, so another take can be added. */
+  canAddRecording: boolean;
   /** A clip is selected, so there is something to cut. */
   canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
@@ -78,6 +83,7 @@ export function PlaybackControls({
   canUndo: boolean;
   onAddZoom: () => void;
   onAddText: () => void;
+  onAddRecording: () => void;
   onSplit: () => void;
   onDelete: () => void;
   onUndo: () => void;
@@ -230,6 +236,19 @@ export function PlaybackControls({
             text
             disabled={!canAddText}
             onClick={onAddText}
+          />
+          {/* Third in the pill, and the one that leaves the editor: it puts the
+              panel back over the screen so more footage can be recorded into
+              this same project, which arrives as another clip at the end. Here
+              rather than beside Split and Delete because it adds something to
+              the timeline, which is what this group is for. */}
+          <Action
+            label="Add Recording"
+            shortcut="R"
+            Icon={AddRecordingIcon}
+            text
+            disabled={!canAddRecording}
+            onClick={onAddRecording}
           />
         </div>
       </div>

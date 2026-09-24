@@ -37,6 +37,14 @@ export function loadProject(
   /** What was recorded — see `newProject`. Only consulted when there is no
       project file yet. */
   source?: SourceShape,
+  /**
+   * Source times the recording was extended at — `seamsOf(manifest)`.
+   *
+   * Consulted whether or not there is a project file: a slice may never span a
+   * seam, so a project saved before the recording was extended has to be cut at
+   * the new one on the way in. See `cutAtSeams`.
+   */
+  seams: readonly Ns[] = [],
 ): Project {
   const held = pending.get(dir);
   if (held) return held;
@@ -47,17 +55,17 @@ export function loadProject(
   } catch {
     // Never edited. Not written yet either — an untouched recording folder
     // stays as the recorder left it.
-    return newProject(recordingId, duration, source);
+    return newProject(recordingId, duration, source, seams);
   }
 
   try {
     return (
-      sanitiseProject(JSON.parse(raw), recordingId, duration) ??
-      newProject(recordingId, duration, source)
+      sanitiseProject(JSON.parse(raw), recordingId, duration, seams) ??
+      newProject(recordingId, duration, source, seams)
     );
   } catch (cause) {
     console.warn(`[editor] ignoring unreadable ${PROJECT_FILE_NAME} in ${dir}:`, cause);
-    return newProject(recordingId, duration, source);
+    return newProject(recordingId, duration, source, seams);
   }
 }
 

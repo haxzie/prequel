@@ -36,6 +36,8 @@ const CUT: Slice[] = [
 function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
   return {
     kind: "camera",
+    segment: 0,
+    file: "camera.mp4",
     url: "prequel-media://recording/take/camera.mp4",
     offset: 0,
     duration: 10 * S,
@@ -43,6 +45,7 @@ function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
     height: 720,
     frameRate: 30,
     matteUrl: null,
+    matteFile: null,
     ...overrides,
   };
 }

@@ -112,40 +112,51 @@ function writeManifest(
   const duration = summary.durationMs * NS_PER_MS;
   const fps = request.fps ?? 60;
 
+  // One segment per track, as a fresh capture always writes: this is a single
+  // take, whether it is the first of a recording or one main is about to merge
+  // into an existing session.
   const tracks: Track[] = [
     {
       kind: "screen",
-      file_name: TRACK_FILE_NAMES.screen,
-      // The screen anchors the clock, so it starts at zero by construction.
-      start: 0,
-      end: duration,
-      width: summary.width,
-      height: summary.height,
-      samples: Math.round((summary.durationMs / 1000) * fps),
-      dropped: 0,
+      segments: [
+        {
+          file_name: TRACK_FILE_NAMES.screen,
+          // The screen anchors the clock, so it starts at zero by construction.
+          start: 0,
+          end: duration,
+          width: summary.width,
+          height: summary.height,
+          samples: Math.round((summary.durationMs / 1000) * fps),
+          dropped: 0,
+        },
+      ],
     },
   ];
 
   if (summary.camera) {
     tracks.push({
       kind: "camera",
-      file_name: TRACK_FILE_NAMES.camera,
-      start: CAMERA_START_MS * NS_PER_MS,
-      end: duration,
-      width: 1280,
-      height: 720,
-      samples: Math.round((summary.durationMs / 1000) * 30),
-      dropped: 0,
-      // A matte beside every fake camera, as the native pipeline writes one
-      // beside every real one: without it no end-to-end run ever sees the
-      // "Remove background" control enabled.
-      matte: {
-        file_name: CAMERA_MATTE_FILE_NAME,
-        width: 512,
-        height: 288,
-        samples: Math.round((summary.durationMs / 1000) * 30),
-        dropped: 0,
-      },
+      segments: [
+        {
+          file_name: TRACK_FILE_NAMES.camera,
+          start: CAMERA_START_MS * NS_PER_MS,
+          end: duration,
+          width: 1280,
+          height: 720,
+          samples: Math.round((summary.durationMs / 1000) * 30),
+          dropped: 0,
+          // A matte beside every fake camera, as the native pipeline writes one
+          // beside every real one: without it no end-to-end run ever sees the
+          // "Remove background" control enabled.
+          matte: {
+            file_name: CAMERA_MATTE_FILE_NAME,
+            width: 512,
+            height: 288,
+            samples: Math.round((summary.durationMs / 1000) * 30),
+            dropped: 0,
+          },
+        },
+      ],
     });
   }
 
@@ -159,11 +170,15 @@ function writeManifest(
 
     tracks.push({
       kind,
-      file_name: TRACK_FILE_NAMES[kind],
-      start,
-      end: duration,
-      samples: Math.round(((summary.durationMs - start / NS_PER_MS) / 1000) * 48_000),
-      dropped: 0,
+      segments: [
+        {
+          file_name: TRACK_FILE_NAMES[kind],
+          start,
+          end: duration,
+          samples: Math.round(((summary.durationMs - start / NS_PER_MS) / 1000) * 48_000),
+          dropped: 0,
+        },
+      ],
     });
   }
 
@@ -184,6 +199,8 @@ function writeManifest(
       scale_factor: target.scaleFactor,
     },
     tracks,
+    // One take, spanning the whole of it.
+    takes: [{ dir: "", start: 0, end: duration }],
     // Not baked, so the editor offers the pointer as a layer. Without this the
     // Cursor panel never appears and the fake cannot drive the part of the UI
     // it exists to drive.
@@ -482,18 +499,27 @@ export function createFakeRecorder(): Recorder {
         return [];
       }
 
-      return manifest.tracks.map((track) => ({
-        kind: track.kind,
-        fileName: track.file_name,
-        // Zero, as every real session file is — the late start lives in the
-        // manifest, and a fake that reported it here would let a double
-        // correction pass unnoticed.
-        start: 0,
-        duration: track.end - track.start,
-        width: track.width,
-        height: track.height,
-        frameRate: track.kind === "screen" ? 60 : track.kind === "camera" ? 30 : undefined,
-      }));
+      // The first segment of each track, which is what the native probe walks:
+      // it looks for the fixed names at the session root, and a later take's
+      // files are in a subdirectory of their own.
+      return manifest.tracks.flatMap((track) => {
+        const segment = track.segments[0];
+        if (!segment) return [];
+        return [
+          {
+            kind: track.kind,
+            fileName: segment.file_name,
+            // Zero, as every real session file is — the late start lives in the
+            // manifest, and a fake that reported it here would let a double
+            // correction pass unnoticed.
+            start: 0,
+            duration: segment.end - segment.start,
+            width: segment.width,
+            height: segment.height,
+            frameRate: track.kind === "screen" ? 60 : track.kind === "camera" ? 30 : undefined,
+          },
+        ];
+      });
     },
   };
 }

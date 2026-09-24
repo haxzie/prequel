@@ -6,9 +6,9 @@
  * panel shows, and every window of ours has to be excluded before capture
  * starts. Both are asserted against the request the recorder actually receives.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,7 @@ import {
   MANIFEST_FILE_NAME,
   MANIFEST_VERSION,
   parseManifest,
+  trackStart,
 } from "../shared/manifest.js";
 import { CaptureFlow, matchCamera } from "./capture-flow.js";
 import { createFakeRecorder } from "./recorder.fake.js";
@@ -94,6 +95,8 @@ function makeFlow(
   const workspace = {
     opened: [] as (string | undefined)[],
     sections: [] as WorkspaceSection[],
+    /** Recordings the editor was brought back to after an addition. */
+    resumed: [] as string[],
   };
   /** How many times the panel opening has asked whether there is a new version. */
   const updateChecks = { count: 0 };
@@ -189,6 +192,10 @@ function makeFlow(
     workspace: {
       open: (dir?: string) => void workspace.opened.push(dir),
       openSection: (section: WorkspaceSection) => void workspace.sections.push(section),
+      resumeEditing: (dir: string) => void workspace.resumed.push(dir),
+      // No window in a test, which is the honest answer — `excludedIds` skips a
+      // null the way it skips a destroyed one.
+      browserWindow: () => null,
     },
     welcome: { close: () => (welcome.closed += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
@@ -404,8 +411,8 @@ describe("stopping a recording", () => {
 
     // The screen anchors the clock; the camera opens late and the offset has to
     // survive into the manifest, or nothing can resync the two.
-    expect(findTrack(manifest, "screen")!.start).toBe(0);
-    expect(findTrack(manifest, "camera")!.start).toBeGreaterThan(0);
+    expect(trackStart(findTrack(manifest, "screen")!)).toBe(0);
+    expect(trackStart(findTrack(manifest, "camera")!)).toBeGreaterThan(0);
   });
 
   it("opens no editor when there was nothing recording", async () => {
@@ -727,5 +734,140 @@ describe("the update check behind the panel", () => {
     flow.showDock();
 
     expect(updateChecks.count).toBe(0);
+  });
+});
+
+describe("adding a recording to a project", () => {
+  /**
+   * Runs a take of a known length.
+   *
+   * The fake recorder measures duration off the wall clock, and a start and stop
+   * in the same tick is a take of zero nanoseconds — which the merge refuses,
+   * correctly: a seam with no footage on the other side of it is not an addition.
+   */
+  async function recordFor(flow: CaptureFlow, ms = 3000): Promise<void> {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    try {
+      await flow.record();
+      vi.setSystemTime(Date.now() + ms);
+      await flow.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  /** A finished recording, and the flow that made it. */
+  async function recorded() {
+    const made = makeFlow();
+    await recordFor(made.flow);
+
+    const dir = made.workspace.opened[0]!;
+    // Cleared so the extend's own effects are the only ones asserted on.
+    made.workspace.opened.length = 0;
+    requests.length = 0;
+
+    return { ...made, dir };
+  }
+
+  it("records into a subdirectory of the recording rather than a fresh one", async () => {
+    const { flow, dir } = await recorded();
+
+    await flow.extendRecording(dir);
+    await flow.record();
+
+    // Inside the recording being extended, in a numbered subdirectory, which is
+    // what lets the take be captured exactly as a whole recording is — fixed
+    // names, its own manifest — one level down. The number itself is whichever
+    // was free; asserting a particular one would only pin `newTakePath`.
+    expect(dirname(requests[0]!.outputPath)).toBe(dir);
+    expect(basename(requests[0]!.outputPath)).toMatch(/^\d+$/);
+  });
+
+  it("keeps the editor window out of the footage", async () => {
+    // The window stays open during an extend rather than hiding, so it has to be
+    // excluded — otherwise the editor is in the recording of itself.
+    const { flow, dir } = await recorded();
+    // Shaped for the `windowId` mock above, which reads the id off the window.
+    const window = { id: 4242, isDestroyed: () => false };
+    (
+      flow as unknown as { deps: { workspace: { browserWindow: () => unknown } } }
+    ).deps.workspace.browserWindow = () => window;
+
+    await flow.extendRecording(dir);
+    await flow.record();
+
+    expect(requests[0]!.excludedWindowIds).toContain(4242);
+  });
+
+  it("merges the take and returns to the editor rather than opening one on it", async () => {
+    const { flow, workspace, dir } = await recorded();
+
+    await flow.extendRecording(dir);
+    await recordFor(flow);
+
+    // Never `open`, which would land on the take's own directory and show the
+    // addition as a recording in its own right.
+    expect(workspace.opened).toEqual([]);
+    expect(workspace.resumed).toEqual([dir]);
+
+    const manifest = parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
+    expect(manifest.takes).toHaveLength(2);
+
+    // The addition's file is named through its own take directory, and the take
+    // table says where that take sits on the clock.
+    const take = manifest.takes[1]!;
+    expect(manifest.tracks[0]!.segments.map((segment) => segment.file_name)).toEqual([
+      "screen.mp4",
+      `${take.dir!}/screen.mp4`,
+    ]);
+    expect(take.start).toBe(manifest.tracks[0]!.segments[0]!.end);
+  });
+
+  it("discards only the addition, leaving the recording as it was", async () => {
+    const { flow, workspace, dir } = await recorded();
+    const before = readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8");
+
+    await flow.extendRecording(dir);
+    await flow.record();
+    const takeDir = requests[0]!.outputPath;
+    await flow.discard();
+
+    // Byte-identical: the base recording has had nothing written to it, because
+    // the merge is the first write and it never ran.
+    expect(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8")).toBe(before);
+    expect(existsSync(takeDir)).toBe(false);
+    // And back where they came from — somebody who discarded an addition is
+    // still in the middle of editing the recording they were adding it to.
+    expect(workspace.resumed).toEqual([dir]);
+  });
+
+  it("returns to the editor when the panel is dismissed before anything is recorded", async () => {
+    const { flow, workspace, dir } = await recorded();
+
+    await flow.extendRecording(dir);
+    flow.close();
+
+    expect(workspace.resumed).toEqual([dir]);
+    // And the flag is clear, so the next Add Recording is not refused.
+    expect(flow.state().extending).toBe(false);
+  });
+
+  it("refuses a second addition while one is in flight", async () => {
+    // Two extends would merge two takes onto one seam.
+    const { flow, workspace, dir } = await recorded();
+
+    await flow.extendRecording(dir);
+    await flow.extendRecording(dir);
+    await recordFor(flow);
+
+    expect(requests).toHaveLength(1);
+    expect(workspace.resumed).toEqual([dir]);
+  });
+
+  it("says nothing of an addition when there is none", async () => {
+    // The flag is what makes the panel's copy and its dismiss read differently,
+    // so it must be false for an ordinary take.
+    const { flow } = makeFlow();
+    expect(flow.state().extending).toBe(false);
   });
 });

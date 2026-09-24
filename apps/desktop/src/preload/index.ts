@@ -269,6 +269,29 @@ const api = {
     leave: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.editorLeave),
 
     /**
+     * Asks for the panel back, to record more into this recording.
+     *
+     * No directory: the renderer knows a recording's name and nothing about where
+     * it lives, and main already holds which one is open. Flush the edit first —
+     * the merge appends a clip to `project.json`.
+     */
+    addRecording: (): Promise<IpcResult<null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorAddRecording),
+
+    /**
+     * Main says a recording has changed on disk and should be read again.
+     *
+     * What a finished Add Recording lands on. The route does not change across
+     * one — it is the same recording — so nothing else would tell the editor that
+     * the manifest it is holding is a take out of date.
+     */
+    onReload: (listener: (name: string) => void): (() => void) => {
+      const handler = (_event: unknown, name: string) => listener(name);
+      ipcRenderer.on(IPC_CHANNELS.editorReload, handler);
+      return () => ipcRenderer.off(IPC_CHANNELS.editorReload, handler);
+    },
+
+    /**
      * The voices of one keyboard or mouse, by id, for the preview to place.
      *
      * The renderer asks for banks and places cues; it never plans a sound

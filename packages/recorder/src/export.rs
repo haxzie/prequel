@@ -18,9 +18,28 @@ use napi_derive::napi;
 
 use prequel_keysound::{ClickProfile, KeyProfile};
 use prequel_render::sound::SoundPlan;
-use prequel_render::{AudioMix, CancelFlag, ExportRequest, OutputFormat, RenderPlan, SliceRender};
+use prequel_render::{
+    AudioMix, CancelFlag, ExportRequest, OutputFormat, RenderPlan, SegmentRef, SliceMedia,
+    SliceRender,
+};
 
 use crate::sound::SoundCues;
+
+/// Which file a slice plays for one kind, and where that file's zero sits.
+///
+/// Resolved by the editor: a slice may never span a seam between two takes, so
+/// exactly one file per kind covers it, and the segment lookup stays in one
+/// place — `editor/segments.ts` — rather than being written a second time here.
+#[napi(object)]
+#[derive(Debug)]
+pub struct SegmentMedia {
+    /// A manifest `Segment.file_name`, relative to the session directory.
+    pub file: String,
+    /// Media time of this file's first sample, in nanoseconds.
+    pub offset: f64,
+    /// The camera's matte, at the camera's own offset. Only ever on the camera.
+    pub matte: Option<String>,
+}
 
 /// One kept span of the recording, as the editor describes it.
 #[napi(object)]
@@ -43,6 +62,12 @@ pub struct ExportSlice {
     /// Which mouse the click sounds are of — a `ClickProfile` id, or `"off"`.
     pub click_sound: String,
     pub click_sound_volume: f64,
+    /// Which file this slice plays for each kind. Absent for a kind no take
+    /// recorded over this slice, which renders as no picture and silence.
+    pub screen: Option<SegmentMedia>,
+    pub camera: Option<SegmentMedia>,
+    pub mic: Option<SegmentMedia>,
+    pub system: Option<SegmentMedia>,
 }
 
 #[napi(object)]
@@ -56,12 +81,6 @@ pub struct ExportOptions {
     /// `"h264"`, `"hevc"` or `"gif"`.
     pub format: String,
     pub slices: Vec<ExportSlice>,
-    /// Per-track offsets from the manifest, in nanoseconds. The only place a
-    /// late start is recorded — every session file is written zero-based.
-    pub screen_offset: f64,
-    pub camera_offset: f64,
-    pub mic_offset: f64,
-    pub system_offset: f64,
     /// The recording's sound plan, exactly as `sound_cues` handed it to the
     /// editor. Omit for a recording with no presses and no clicks.
     pub sound: Option<SoundCues>,
@@ -178,11 +197,25 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
             Error::from_reason(format!("EXPORT: could not read a render plan: {e}"))
         })?;
 
+        let media = SliceMedia {
+            screen: segment_ref(slice.screen)?,
+            matte: slice
+                .camera
+                .as_ref()
+                .and_then(|camera| camera.matte.clone())
+                .map(relative)
+                .transpose()?,
+            camera: segment_ref(slice.camera)?,
+            mic: segment_ref(slice.mic)?,
+            system: segment_ref(slice.system)?,
+        };
+
         slices.push(SliceRender {
             start: slice.start.max(0.0) as u64,
             end: slice.end.max(0.0) as u64,
             plan,
             speed: slice.speed,
+            media,
             audio: AudioMix {
                 mic: slice.mic_volume as f32,
                 system: slice.system_volume as f32,
@@ -212,14 +245,43 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
             _ => OutputFormat::Mp4,
         },
         slices,
-        screen_offset: options.screen_offset.max(0.0) as u64,
-        camera_offset: options.camera_offset.max(0.0) as u64,
-        mic_offset: options.mic_offset.max(0.0) as u64,
-        system_offset: options.system_offset.max(0.0) as u64,
         sound: options.sound.map(|cues| SoundPlan {
             cues: cues.to_cues(),
         }),
     })
+}
+
+fn segment_ref(media: Option<SegmentMedia>) -> Result<Option<SegmentRef>> {
+    let Some(media) = media else {
+        return Ok(None);
+    };
+
+    Ok(Some(SegmentRef {
+        file: relative(media.file)?,
+        offset: media.offset.max(0.0) as u64,
+    }))
+}
+
+/// A file name, checked to name something inside the session directory.
+///
+/// The one renderer-supplied string in an export request that reaches the
+/// filesystem, and the renderer is the least-trusted process in the app —
+/// without this, `"../../../etc/passwd"` would be joined and opened. Refused
+/// rather than sanitised: a name that is not a relative path inside the
+/// recording is not a path to be cleaned up, it is not one of ours.
+fn relative(file: String) -> Result<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(&file);
+    let inside = path
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)));
+
+    if !inside {
+        return Err(Error::from_reason(format!(
+            "EXPORT: {file:?} is not a file inside the recording"
+        )));
+    }
+
+    Ok(path)
 }
 
 fn stage_name(stage: prequel_render::Stage) -> &'static str {

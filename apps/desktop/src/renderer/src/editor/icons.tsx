@@ -683,6 +683,24 @@ export function AddTextIcon() {
   );
 }
 
+/**
+ * A record dot with a plus beside it: the transport's Add Recording button.
+ *
+ * A filled dot rather than an outlined circle, which is what the other two
+ * glyphs in the pill are made of — the dot is what says "record" on every device
+ * anybody owns, and an outline of it would read as another empty shape. Sized to
+ * the same 24-unit box so the three sit on one baseline.
+ */
+export function AddRecordingIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <circle cx="9" cy="12" r="4.5" fill="currentColor" stroke="none" />
+      <path d="M18 9v6" />
+      <path d="M15 12h6" />
+    </svg>
+  );
+}
+
 /** Lucide `move`: the four-way arrows of a position control. */
 export function MoveIcon() {
   return (
