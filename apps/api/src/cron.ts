@@ -27,10 +27,21 @@ import { ensureTeam } from "./lib/teams.ts";
 export async function scheduled(env: Env): Promise<void> {
   const db = database(env);
 
-  await expireGrace(db);
-  await settleTeams(db);
-  await settleUsers(db);
-  await mirrorAvatars(env, db);
+  // Each step on its own. They are independent sweeps, and one throwing — a D1
+  // hiccup, one bad row — would otherwise skip every step after it, hour after
+  // hour, since the same row is still there next time.
+  await step("grace expiry", () => expireGrace(db));
+  await step("team settlement", () => settleTeams(db));
+  await step("account settlement", () => settleUsers(db));
+  await step("avatar mirroring", () => mirrorAvatars(env, db));
+}
+
+async function step(name: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    console.error(`scheduled ${name} failed`, error);
+  }
 }
 
 /**
@@ -65,20 +76,29 @@ async function expireGrace(db: Database): Promise<void> {
     );
 
   for (const subscription of lapsed) {
-    await db
-      .update(schema.subscription)
-      .set({ graceUntil: null, updatedAt: new Date() })
-      .where(eq(schema.subscription.id, subscription.id));
-
-    // The library is left alone, the same as on an outright cancellation. What
-    // changes is the quota, so nothing new goes up until the card does.
-    //
-    // Recomputed rather than set to `free`: a team that also holds the lifetime
-    // licence falls back to that allowance, not to nothing.
-    const plan = await applyPlan(db, subscription.teamId);
-
-    console.warn("grace expired, team moved to", plan, subscription.teamId);
+    // One failure must not stop the sweep, as in `settleUsers`: the teams after
+    // it would otherwise stay Pro past their grace for as long as it keeps
+    // failing.
+    await expireOne(db, subscription).catch((error: unknown) => {
+      console.error("grace expiry failed", subscription.teamId, error);
+    });
   }
+}
+
+async function expireOne(db: Database, subscription: { id: string; teamId: string }) {
+  await db
+    .update(schema.subscription)
+    .set({ graceUntil: null, updatedAt: new Date() })
+    .where(eq(schema.subscription.id, subscription.id));
+
+  // The library is left alone, the same as on an outright cancellation. What
+  // changes is the quota, so nothing new goes up until the card does.
+  //
+  // Recomputed rather than set to `free`: a team that also holds the lifetime
+  // licence falls back to that allowance, not to nothing.
+  const plan = await applyPlan(db, subscription.teamId);
+
+  console.warn("grace expired, team moved to", plan, subscription.teamId);
 }
 
 /**
@@ -129,36 +149,47 @@ async function settleTeams(db: Database): Promise<void> {
     );
 
   for (const team of orphans) {
-    if (await repair(db, team)) continue;
+    // One failure must not stop the sweep, as in `settleUsers`.
+    await settleTeam(db, team).catch((error: unknown) => {
+      console.error("team settlement failed", team.id, error);
+    });
+  }
+}
 
-    // Provably empty, so there is nothing for the cascade to take.
-    const [{ count } = { count: 0 }] = await db
+async function settleTeam(
+  db: Database,
+  team: { id: string; name: string; createdBy: string | null },
+): Promise<void> {
+  if (await repair(db, team)) return;
+
+  // Provably empty, so there is nothing for the cascade to take. Three
+  // independent reads, so one round trip rather than two.
+  const [[{ count } = { count: 0 }], [subscription], [purchase]] = await Promise.all([
+    db
       .select({ count: sql<number>`count(*)` })
       .from(schema.video)
-      .where(eq(schema.video.teamId, team.id));
+      .where(eq(schema.video.teamId, team.id)),
 
-    const [[subscription], [purchase]] = await Promise.all([
-      db
-        .select({ id: schema.subscription.id })
-        .from(schema.subscription)
-        .where(eq(schema.subscription.teamId, team.id))
-        .limit(1),
+    db
+      .select({ id: schema.subscription.id })
+      .from(schema.subscription)
+      .where(eq(schema.subscription.teamId, team.id))
+      .limit(1),
 
-      db
-        .select({ id: schema.purchase.id })
-        .from(schema.purchase)
-        .where(eq(schema.purchase.teamId, team.id))
-        .limit(1),
-    ]);
+    db
+      .select({ id: schema.purchase.id })
+      .from(schema.purchase)
+      .where(eq(schema.purchase.teamId, team.id))
+      .limit(1),
+  ]);
 
-    if (count > 0 || subscription || purchase) {
-      console.error("team has no members but is not empty", team.id, team.name);
-      continue;
-    }
-
-    await db.delete(schema.organization).where(eq(schema.organization.id, team.id));
-    console.warn("empty team removed", team.id, team.name);
+  if (count > 0 || subscription || purchase) {
+    console.error("team has no members but is not empty", team.id, team.name);
+    return;
   }
+
+  await db.delete(schema.organization).where(eq(schema.organization.id, team.id));
+  console.warn("empty team removed", team.id, team.name);
 }
 
 /**
@@ -238,6 +269,10 @@ async function settleUsers(db: Database): Promise<void> {
  * predate the hook and for any sign-up where the copy failed. One that keeps
  * failing — a picture host that answers 403 for good — is retried every hour
  * for the cost of one request, which is cheaper than a column to remember it.
+ *
+ * In a random order, because those rows never leave the query. Taken in table
+ * order, the first twenty-five that can never succeed would be the whole of
+ * every run, and nobody after them would ever be copied.
  */
 async function mirrorAvatars(env: Env, db: Database): Promise<void> {
   const pending = await db
@@ -246,6 +281,7 @@ async function mirrorAvatars(env: Env, db: Database): Promise<void> {
     .where(
       and(isNotNull(schema.user.image), notLike(schema.user.image, `${env.API_URL}/p/avatar/%`)),
     )
+    .orderBy(sql`random()`)
     .limit(AVATARS_PER_RUN);
 
   for (const user of pending) await mirrorProviderPicture(env, db, user);
