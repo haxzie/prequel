@@ -37,7 +37,13 @@ import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
-import { place, toSourceTime, totalDuration, type PlacedSlice } from "./timeline";
+import {
+  place,
+  toProjectTimeThrough,
+  toSourceTime,
+  totalDuration,
+  type PlacedSlice,
+} from "./timeline";
 
 /** Shortest slice a cut may leave behind. Below this it cannot be grabbed. */
 const MIN_SLICE_NS = 100_000_000;
@@ -1313,16 +1319,8 @@ export function zoomInProject(
   zoom: { source: { start: MediaTime; end: MediaTime } },
 ): { start: MediaTime; end: MediaTime } | null {
   const placed = placedSlices(project);
-
-  const at = (source: MediaTime): MediaTime | null => {
-    const slice = placed.find(
-      (candidate) => source >= candidate.source.start && source <= candidate.source.end,
-    );
-    return slice ? slice.timelineStart + (source - slice.source.start) : null;
-  };
-
-  const start = at(zoom.source.start);
-  const end = at(zoom.source.end);
+  const start = toProjectTimeThrough(placed, zoom.source.start);
+  const end = toProjectTimeThrough(placed, zoom.source.end);
 
   // Either edge landing in a cut means there is no one span to play: the zoom is
   // split across the gap, and picking one half would preview the wrong thing.

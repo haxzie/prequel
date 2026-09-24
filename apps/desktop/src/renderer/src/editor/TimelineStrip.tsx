@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import type { MediaTime } from "../../../shared/manifest";
-import { MAX_TEXT_TRACKS, type TextSlice, type ZoomSlice } from "../../../shared/project";
+import { MAX_TEXT_TRACKS, type ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
@@ -28,8 +28,7 @@ import {
 } from "./icons";
 import { fitZoom, ticks } from "./ruler";
 import {
-  placedSlices,
-  projectDuration,
+  slicesOf,
   textCopySpan,
   textSpanAt,
   zoomSpanAt,
@@ -37,13 +36,16 @@ import {
   type EditorState,
 } from "./state";
 import {
+  place,
   spanInProject,
+  toProjectTimeThrough,
   toSourceTime,
+  totalDuration,
   trimmedTo,
   type PlacedSlice,
   type TrimGrab,
 } from "./timeline";
-import { format, HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
+import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
@@ -175,8 +177,13 @@ export function TimelineStrip({
    */
   captionRange: { start: MediaTime; end: MediaTime } | null;
 }) {
-  const placed = placedSlices(state.project);
-  const edited = projectDuration(state.project);
+  // Memoised on the slices, not rebuilt per render: `place` hands back new
+  // objects every call, and this strip re-renders on every preview drag. Fresh
+  // identities would miss each `Clip`'s filmstrip memo and every callback
+  // below that closes over `placed`, every time.
+  const slices = slicesOf(state.project);
+  const placed = useMemo(() => place(slices), [slices]);
+  const edited = totalDuration(placed);
 
   /** The edge being dragged, and how long the edit was when it was picked up. */
   const [trim, setTrim] = useState<{
@@ -345,13 +352,8 @@ export function TimelineStrip({
   );
 
   const projectAt = useCallback(
-    (source: MediaTime): MediaTime | null => {
-      const slice = placed.find(
-        (candidate) => source >= candidate.source.start && source <= candidate.source.end,
-      );
-      // A zoom over a stretch that has been cut away has nowhere to be drawn.
-      return slice ? slice.timelineStart + (source - slice.source.start) : null;
-    },
+    // A zoom over a stretch that has been cut away has nowhere to be drawn.
+    (source: MediaTime): MediaTime | null => toProjectTimeThrough(placed, source),
     [placed],
   );
 
@@ -455,7 +457,7 @@ export function TimelineStrip({
         label.style.transform = `translate3d(calc(-50% + ${String(nudge)}px), 0, 0)`;
         label.style.borderRadius =
           nudge > 0 ? "0 999px 999px 0" : nudge < 0 ? "999px 0 0 999px" : "999px";
-        label.textContent = format(at);
+        label.textContent = formatTimecode(at);
       }
 
       media.setHover(at);
