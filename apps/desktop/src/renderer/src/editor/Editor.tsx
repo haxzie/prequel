@@ -1511,12 +1511,23 @@ function momentsOf(session: EditorSession): Moment[] {
 }
 
 /**
- * Makes the first cut, once.
+ * Makes the first cut, once — and runs it again, scoped, when a take lands.
  *
- * Only on a project nobody has touched: revision 0, and no zooms of its own.
- * Both conditions matter — the first stops it running again on every reopen,
- * and the second means a recording whose zooms were all deleted stays that way
+ * On a project nobody has touched: revision 0, and no zooms of its own. Both
+ * conditions matter — the first stops it running again on every reopen, and
+ * the second means a recording whose zooms were all deleted stays that way
  * rather than growing them back, which would be the app arguing.
+ *
+ * A take Add Recording just merged in is different: `session.focusSliceId`
+ * names it, and it is by construction footage with no zoom of its own yet —
+ * nothing could have covered a span that did not exist a moment ago. Without
+ * this, only the very first take of a project ever got the automatic pass, and
+ * every one added afterwards sat there unzoomed until somebody noticed and
+ * pressed the wand button by hand. Run through `augmentZooms` rather than
+ * `autoZooms`, and scoped to the new slice's span rather than the whole
+ * recording — the whole-recording pass is the wand button, and re-running it
+ * here on every merge would grow back a zoom somebody deliberately deleted
+ * from the *older* footage.
  *
  * Everything it adds is an ordinary zoom, so disagreeing with it is dragging or
  * deleting, not undoing something opaque.
@@ -1530,6 +1541,32 @@ function useFirstCut(
 
   useEffect(() => {
     if (!session || made.current) return;
+    // Marked up front rather than beside each dispatch below: both branches
+    // this effect can take are "once per mount", and the mount is what a merge
+    // remounts — see `EditorRoute`'s `key` bump on `editorReload`.
+    made.current = true;
+
+    if (session.focusSliceId) {
+      const added = session.project.tracks[0]?.slices.find(
+        (slice) => slice.id === session.focusSliceId,
+      );
+      if (!added) return;
+
+      // Source time, the same clock `moment.at` is on — a slice's `source` and
+      // a manifest sample were shifted onto it by the same merge.
+      const moments = momentsOf(session).filter(
+        (moment) => moment.at >= added.source.start && moment.at < added.source.end,
+      );
+      if (moments.length === 0) return;
+
+      const zooms = augmentZooms(session.project.zooms, moments, {
+        duration: added.source.end,
+        hasCursor: session.cursor !== null,
+      });
+      if (zooms.length > session.project.zooms.length) dispatch({ type: "setZooms", zooms });
+      return;
+    }
+
     // Asked of the project as it was loaded, never of the reducer's copy. The
     // two are the same now that the reducer is seeded from the session, and
     // this is deliberately not relying on that: a guard on `state` was what
@@ -1538,11 +1575,6 @@ function useFirstCut(
     if (state.revision !== 0 || session.project.zooms.length > 0) return;
 
     const moments = momentsOf(session);
-
-    // Marked before dispatching rather than after: `zooms.length > 0` only
-    // becomes true on the next render, and without this the effect would run
-    // again in between and add them twice.
-    made.current = true;
     if (moments.length === 0) return;
 
     const zooms = autoZooms(moments, {
