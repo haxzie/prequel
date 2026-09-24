@@ -22,8 +22,9 @@ use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
     AudioMix, CancelFlag, ExportRequest, FilterKind, OutputFormat, PlanFilter, PlanItem, PlanSource,
-    Rect, RenderPlan, Shape, Size, SliceRender, export,
+    Rect, RenderPlan, SegmentRef, Shape, Size, SliceMedia, SliceRender, export,
 };
+use prequel_session::TrackKind;
 
 const S: u64 = 1_000_000_000;
 
@@ -232,11 +233,17 @@ fn render(name: &str, filter: Option<PlanFilter>) -> (PathBuf, Frame) {
             plan: plan(filter),
             audio: AudioMix::tracks(1.0, 1.0),
             speed: 1.0,
+            media: SliceMedia {
+                screen: Some(SegmentRef {
+                    file: TrackKind::Screen.file_name().into(),
+                    offset: 0,
+                }),
+                camera: None,
+                matte: None,
+                mic: None,
+                system: None,
+            },
         }],
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     };
 

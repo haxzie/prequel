@@ -420,21 +420,17 @@ export function WatermarkIcon() {
 }
 
 /**
- * Material Symbols `cinematic_blur`: the look laid over the whole frame.
+ * Lucide `aperture`: the look laid over the whole frame.
  *
- * A strip of film with a subject on it, rather than the funnel most interfaces
- * use for "filter". The funnel means *narrowing a list*, which is in an editor
- * exactly the wrong promise — these change how the picture looks, they do not
- * hide any of it.
- *
- * Filled rather than stroked, unlike most of this file. It is a Material glyph
- * and it is drawn as one solid path; re-cutting it as strokes would be a second
- * drawing of somebody else's icon, and a worse one.
+ * A lens rather than the funnel most interfaces use for "filter". The funnel
+ * means *narrowing a list*, which is in an editor exactly the wrong promise —
+ * these change how the picture looks, they do not hide any of it.
  */
 export function FilterIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="m4 3l2 4h3L7 3h2l2 4h3l-2-4h2l2 4h3l-2-4h3q.825 0 1.413.588T22 5v14q0 .825-.587 1.413T20 21H4q-.825 0-1.412-.587T2 19V5q0-.825.588-1.412T4 3m4 15h8v-.55q0-1.1-1.1-1.775T12 15t-2.9.675T8 17.45zm5.413-4.587Q14 12.825 14 12t-.587-1.412T12 10t-1.412.588T10 12t.588 1.413T12 14t1.413-.587" />
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m14.31 8 5.74 9.94M9.69 8h11.48M7.38 12l5.74-9.94M9.69 16 3.95 6.06M14.31 16H2.83M16.62 12l-5.74 9.94" />
     </svg>
   );
 }
@@ -665,19 +661,19 @@ export function AddTextIcon() {
 }
 
 /**
- * A record dot with a plus beside it: the transport's Add Recording button.
+ * Material Symbols `cinematic_blur`: the transport's Add Recording button.
  *
- * A filled dot rather than an outlined circle, which is what the other two
- * glyphs in the pill are made of — the dot is what says "record" on every device
- * anybody owns, and an outline of it would read as another empty shape. Sized to
- * the same 24-unit box so the three sit on one baseline.
+ * A strip of film with somebody on it — another take of the same recording,
+ * which is what the button adds. Filled rather than stroked, unlike the two
+ * transport glyphs beside it: it is a Material glyph drawn as one solid path,
+ * and re-cutting it as strokes would be a second drawing of somebody else's
+ * icon, and a worse one. The same 24-unit box, so the three sit on one
+ * baseline.
  */
 export function AddRecordingIcon() {
   return (
-    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
-      <circle cx="9" cy="12" r="4.5" fill="currentColor" stroke="none" />
-      <path d="M18 9v6" />
-      <path d="M15 12h6" />
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="m4 3l2 4h3L7 3h2l2 4h3l-2-4h2l2 4h3l-2-4h3q.825 0 1.413.588T22 5v14q0 .825-.587 1.413T20 21H4q-.825 0-1.412-.587T2 19V5q0-.825.588-1.412T4 3m4 15h8v-.55q0-1.1-1.1-1.775T12 15t-2.9.675T8 17.45zm5.413-4.587Q14 12.825 14 12t-.587-1.412T12 10t-1.412.588T10 12t.588 1.413T12 14t1.413-.587" />
     </svg>
   );
 }

@@ -1641,6 +1641,7 @@ fn screen_filling(size: u32) -> RenderPlan {
             matte: false,
             motion: Vec::new(),
         }],
+        filter: None,
     }
 }
 
