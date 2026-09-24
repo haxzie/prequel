@@ -508,6 +508,29 @@ const SHAPE_EXPONENT = { circle: 2, squircle: 4, rounded: 2, wide: 2, portrait: 
 const PORTRAIT_ASPECT = 9 / 16;
 
 /**
+ * The logo's box in output pixels, or null when there is no logo.
+ *
+ * Exported for the preview's ring and hit testing, which need the box *now*:
+ * the plan in the draw loop is built from a ref and is a frame behind a drag in
+ * flight. Called rather than copied there, so the box a drag reads and the box
+ * the plan draws cannot come apart.
+ */
+export function watermarkRect(frame: Size, mark: SliceSettings["watermark"]): Rect | null {
+  if (!mark.watermark) return null;
+
+  const unit = Math.min(frame.width, frame.height);
+  const width = mark.watermarkWidth * unit;
+  const height = mark.watermarkHeight * unit;
+
+  return {
+    x: frame.width * mark.watermarkX - width / 2,
+    y: frame.height * mark.watermarkY - height / 2,
+    width,
+    height,
+  };
+}
+
+/**
  * Turns settings into a flat list of things to draw.
  *
  * `sources.camera` being null, or the camera being switched off, simply omits
@@ -1017,19 +1040,12 @@ export function buildRenderPlan(
   // here, because a watermark has no source to crop and nothing to share the
   // frame with. Its box is what the box says.
   const mark = settings.watermark;
-  if (mark.watermark && mark.watermarkOpacity > 0) {
-    const width = mark.watermarkWidth * unit;
-    const height = mark.watermarkHeight * unit;
-
+  const markRect = watermarkRect(frame, mark);
+  if (mark.watermark && markRect && mark.watermarkOpacity > 0) {
     items.push({
       kind: "watermark",
       path: mark.watermark,
-      dstRect: {
-        x: frame.width * mark.watermarkX - width / 2,
-        y: frame.height * mark.watermarkY - height / 2,
-        width,
-        height,
-      },
+      dstRect: markRect,
       opacity: mark.watermarkOpacity,
     });
   }
@@ -4177,10 +4193,13 @@ export function rectAt(
   // it rests flat and only leans while it is in. The picture stayed frozen at
   // the last tilt and then snapped upright in a single frame. A rectangle is a
   // quad whose corners are its own, so blending into it is continuous.
-  const quad =
-    a.quad || b.quad
-      ? cornersOf(a).map((value, index) => lerp(value, cornersOf(b)[index]!, t))
-      : undefined;
+  // `to` is taken once, not inside the map: this runs per tilted item per
+  // frame, and calling it per corner built the same array twelve times.
+  let quad: number[] | undefined;
+  if (a.quad || b.quad) {
+    const to = cornersOf(b);
+    quad = cornersOf(a).map((value, index) => lerp(value, to[index]!, t));
+  }
 
   const focus =
     a.focus && b.focus
