@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import type { MediaTime } from "../../../shared/manifest";
-import { MAX_TEXT_TRACKS, type TextSlice, type ZoomSlice } from "../../../shared/project";
+import { MAX_TEXT_TRACKS, type ZoomSlice } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
@@ -28,8 +28,7 @@ import {
 } from "./icons";
 import { fitZoom, ticks } from "./ruler";
 import {
-  placedSlices,
-  projectDuration,
+  slicesOf,
   textCopySpan,
   textSpanAt,
   zoomSpanAt,
@@ -37,13 +36,16 @@ import {
   type EditorState,
 } from "./state";
 import {
+  place,
   spanInProject,
+  toProjectTimeThrough,
   toSourceTime,
+  totalDuration,
   trimmedTo,
   type PlacedSlice,
   type TrimGrab,
 } from "./timeline";
-import { format, HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
+import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
@@ -150,7 +152,7 @@ export function TimelineStrip({
   media,
   peaks,
   filmstrip,
-  cameraSpan,
+  cameraSpans,
   captionRange,
 }: {
   state: EditorState;
@@ -160,8 +162,14 @@ export function TimelineStrip({
   peaks: Float32Array | null;
   /** Frame thumbnails for the whole recording, or null while they are built. */
   filmstrip: Filmstrip | null;
-  /** Source time the camera covers, or null if none was recorded. */
-  cameraSpan: { start: MediaTime; end: MediaTime } | null;
+  /**
+   * Source time the camera covers, one span per take that recorded one.
+   *
+   * A list rather than one span because a recording can be extended, and a take
+   * recorded without a camera leaves a gap: a single span across the whole
+   * recording would promise footage two of its clips do not have.
+   */
+  cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   /**
    * The footage under the words selected in the captions editor, in source
    * time, or null when none are. Drawn over the clips so the text and the
@@ -169,8 +177,13 @@ export function TimelineStrip({
    */
   captionRange: { start: MediaTime; end: MediaTime } | null;
 }) {
-  const placed = placedSlices(state.project);
-  const edited = projectDuration(state.project);
+  // Memoised on the slices, not rebuilt per render: `place` hands back new
+  // objects every call, and this strip re-renders on every preview drag. Fresh
+  // identities would miss each `Clip`'s filmstrip memo and every callback
+  // below that closes over `placed`, every time.
+  const slices = slicesOf(state.project);
+  const placed = useMemo(() => place(slices), [slices]);
+  const edited = totalDuration(placed);
 
   /** The edge being dragged, and how long the edit was when it was picked up. */
   const [trim, setTrim] = useState<{
@@ -339,13 +352,8 @@ export function TimelineStrip({
   );
 
   const projectAt = useCallback(
-    (source: MediaTime): MediaTime | null => {
-      const slice = placed.find(
-        (candidate) => source >= candidate.source.start && source <= candidate.source.end,
-      );
-      // A zoom over a stretch that has been cut away has nowhere to be drawn.
-      return slice ? slice.timelineStart + (source - slice.source.start) : null;
-    },
+    // A zoom over a stretch that has been cut away has nowhere to be drawn.
+    (source: MediaTime): MediaTime | null => toProjectTimeThrough(placed, source),
     [placed],
   );
 
@@ -449,7 +457,7 @@ export function TimelineStrip({
         label.style.transform = `translate3d(calc(-50% + ${String(nudge)}px), 0, 0)`;
         label.style.borderRadius =
           nudge > 0 ? "0 999px 999px 0" : nudge < 0 ? "999px 0 0 999px" : "999px";
-        label.textContent = format(at);
+        label.textContent = formatTimecode(at);
       }
 
       media.setHover(at);
@@ -729,7 +737,7 @@ export function TimelineStrip({
                   peaks={peaks}
                   filmstrip={filmstrip}
                   contentWidth={contentWidth}
-                  cameraSpan={cameraSpan}
+                  cameraSpans={cameraSpans}
                   selected={slice.id === state.selectedSliceId}
                   onPointerDown={(event) => onClipPointerDown(slice, event)}
                   onContextMenu={(event) => {
@@ -1252,7 +1260,7 @@ function Clip({
   peaks,
   filmstrip,
   contentWidth,
-  cameraSpan,
+  cameraSpans,
   selected,
   onPointerDown,
   onContextMenu,
@@ -1266,7 +1274,7 @@ function Clip({
   filmstrip: Filmstrip | null;
   /** The strip's full width in pixels, which is what the zoom actually sets. */
   contentWidth: number;
-  cameraSpan: { start: MediaTime; end: MediaTime } | null;
+  cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   /** Right-clicked, with the pointer's position so a menu can open under it. */
@@ -1342,10 +1350,9 @@ function Clip({
   // Overlap rather than "was a camera recorded": a clip trimmed to the first
   // moments of the take can sit entirely before the camera opened, and an icon
   // promising footage that is not in this clip is worse than no icon.
-  const hasCamera =
-    cameraSpan !== null &&
-    slice.source.start < cameraSpan.end &&
-    slice.source.end > cameraSpan.start;
+  const hasCamera = cameraSpans.some(
+    (span) => slice.source.start < span.end && slice.source.end > span.start,
+  );
 
   return (
     <div

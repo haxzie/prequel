@@ -6,6 +6,9 @@
  * starts, because its `CGWindowID` is what keeps it out of the frame. A window
  * created afterwards will be recorded.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { dialog, screen, shell, type BrowserWindow } from "electron";
 
 import type {
@@ -28,7 +31,10 @@ import type { NativeCamera } from "./recorder.js";
 import { getRecorder } from "./recorder.js";
 import { reportError } from "./errors.js";
 import { relaunchApp } from "./permissions.js";
-import { deleteRecording } from "./session.js";
+import type { Manifest } from "../shared/manifest.js";
+import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
+import { deleteRecording, newTakePath } from "./session.js";
+import { mergeTake } from "./session-merge.js";
 import type { RecordingSession } from "./session.js";
 import { windowId } from "./windows/base.js";
 import type { CameraWindow } from "./windows/camera.js";
@@ -117,6 +123,17 @@ export interface CaptureFlowOptions {
   workspace?: {
     open: (dir?: string) => void;
     openSection: (section: WorkspaceSection) => void;
+    /**
+     * Brings the editor back to the recording it was already on, and tells it to
+     * read the recording again.
+     *
+     * Not `open`: the route does not change across an extend — it is the same
+     * recording — so navigating to it would remount nothing and the editor would
+     * go on showing a manifest one take out of date.
+     */
+    resumeEditing: (dir: string) => void;
+    /** The window itself, for the capture's exclusion list. */
+    browserWindow: () => BrowserWindow | null;
   };
   /**
    * The welcome window, for closing it once the flow is finished.
@@ -163,6 +180,24 @@ const FRAME_CHECK_MS = 400;
  */
 const CHECKS_BEFORE_GIVING_UP = 4;
 
+/**
+ * Which picker reproduces a recording's own source.
+ *
+ * `"area"` is a display capture with a crop on it, so it opens the area picker —
+ * pre-dragged where `SourceInfo.crop` was written down, and empty on a recording
+ * made before it was.
+ */
+function modeOf(source: { kind: string }): ScreenMode {
+  switch (source.kind) {
+    case "window":
+      return "window";
+    case "area":
+      return "area";
+    default:
+      return "screen";
+  }
+}
+
 export class CaptureFlow {
   private pending: PendingSelection | null = null;
   private selecting = false;
@@ -177,6 +212,15 @@ export class CaptureFlow {
    * otherwise clear `selecting` for the picker that just replaced it.
    */
   private selectionRun = 0;
+  /**
+   * The recording a take is being added to, and where that take is landing.
+   *
+   * Set for the whole of an extend — the picker, the countdown, the take, the
+   * merge — because every one of those steps behaves differently: the capture
+   * writes into a subdirectory, the stop merges instead of opening an editor, and
+   * a cancel goes back to the editor rather than to the grid.
+   */
+  private extending: { dir: string; takeDir: string } | null = null;
 
   constructor(private readonly deps: CaptureFlowOptions) {
     // The panel renders session state too, so it has to follow it.
@@ -245,6 +289,7 @@ export class CaptureFlow {
       // would go stale on all three paths.
       openMenu: this.deps.dock.menu.openKind,
       cameraError: this.cameraError,
+      extending: this.extending !== null,
       // While the panel is up, or while a recording is running — and at no
       // other time. The devices belong to the setup UI and to the capture, and
       // holding them open past both is what leaves the camera light on with
@@ -318,6 +363,63 @@ export class CaptureFlow {
   /** Opens the Projects grid, for the tray to reach through the flow. */
   openProjects(): void {
     this.deps.workspace?.open();
+  }
+
+  /**
+   * Brings the panel back so more footage can be added to a recording.
+   *
+   * The editor window stays open and is excluded from the capture instead —
+   * `excludedIds` already does this for the panel, the bubble, the prompter and
+   * the pickers, so the machinery exists. Exclusion only bites for a display or
+   * an area; a window capture never saw the editor in the first place.
+   *
+   * Deliberately not through `workspaceOpened`/`workspaceClosed`: the panel has
+   * to coexist with an open editor here, and those two exist to keep it from
+   * doing so. The panel is `alwaysOnTop` at `"screen-saver"`, so it sits above
+   * the window it is now sharing the screen with.
+   */
+  async extendRecording(dir: string): Promise<DockState> {
+    if (this.extending) {
+      // Said out loud rather than silently replacing the first: two extends in
+      // flight would merge two takes onto one seam.
+      log("warn", "add recording ignored: already adding one", { dir, to: this.extending.dir });
+      return this.state();
+    }
+    if (this.deps.session.isBusy()) {
+      log("warn", "add recording ignored: a session is already busy");
+      return this.state();
+    }
+
+    let manifest: Manifest;
+    try {
+      manifest = parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
+    } catch (cause) {
+      console.error(`[flow] could not read ${dir} to add a recording:`, cause);
+      return this.state();
+    }
+
+    // Allocated here rather than at `record`, because `record` can be reached
+    // more than once for one extend — the picker starts it, a hotkey or the
+    // panel may ask again — and a directory reserved per attempt would leave
+    // empty numbered folders behind and discard the wrong one.
+    this.extending = { dir, takeDir: newTakePath(dir) };
+    track("recording_extend_started");
+    log("info", "adding a recording", { dir, takes: manifest.takes.length });
+
+    this.showDock();
+
+    // Defaulted to the source this recording was made of, and changeable: the
+    // usual reason to add footage is to add more of the same thing. A window
+    // that has since been closed, or an area grab from before the crop was
+    // written down, falls back to an ordinary empty picker — refusing to let
+    // somebody add footage because they closed a window would be the wrong
+    // failure.
+    const mode = modeOf(manifest.source);
+    void this.chooseMode(mode).catch((cause) => {
+      console.warn("[flow] could not open the picker:", cause);
+    });
+
+    return this.state();
   }
 
   /**
@@ -584,19 +686,37 @@ export class CaptureFlow {
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
       teleprompter_mode: preferences.teleprompter ? preferences.teleprompterMode : null,
+      // Whether this is a take being added to a project rather than a new
+      // recording. The two are the same capture and a different intent.
+      extend: this.extending !== null,
     });
 
     try {
-      await this.deps.session.start({
-        target: selection.target,
-        crop: selection.crop,
-        captureKeys: preferences.captureKeys,
-        systemAudio: preferences.systemAudio,
-        microphone: preferences.micId !== null,
-        // The bubble is only a preview; this is what writes `camera.mp4`.
-        camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
-        excludedWindowIds: this.excludedIds([dock, camera, teleprompter]),
-      });
+      await this.deps.session.start(
+        {
+          target: selection.target,
+          crop: selection.crop,
+          captureKeys: preferences.captureKeys,
+          systemAudio: preferences.systemAudio,
+          microphone: preferences.micId !== null,
+          // The bubble is only a preview; this is what writes `camera.mp4`.
+          camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,
+          // The editor window is on screen during an extend and must not be in
+          // the footage. Harmless the rest of the time: `excludedIds` skips a
+          // window that is not there.
+          excludedWindowIds: this.excludedIds([
+            dock,
+            camera,
+            teleprompter,
+            this.deps.workspace?.browserWindow() ?? null,
+          ]),
+        },
+        // Into a subdirectory of the recording being extended, so the take is
+        // captured exactly as a whole recording is — fixed names, its own
+        // manifest — one level down. Merging it onto the parent's clock is
+        // `mergeTake`'s job, at stop.
+        this.extending?.takeDir ?? undefined,
+      );
     } catch (cause) {
       // Said out loud, and the panel put back. A start that fails silently
       // leaves the app looking like it ignored the button — which is
@@ -731,7 +851,22 @@ export class CaptureFlow {
     this.deps.dock.hide();
     this.deps.camera.hide();
     this.deps.teleprompter.sync(false);
+
+    // An extend abandoned before it recorded anything. Somebody who dismissed
+    // the panel came from the editor and expects to be back in it, not on the
+    // grid — and the flag has to go or the next Add Recording is refused.
+    const extending = this.extending;
+    this.extending = null;
+
     this.emit();
+
+    if (extending) {
+      // The directory was reserved when the extend started and nothing was ever
+      // written into it. Left behind it would be an empty numbered folder the
+      // recovery pass on open has to walk past for ever.
+      deleteRecording(extending.takeDir);
+      this.deps.workspace?.resumeEditing(extending.dir);
+    }
   }
 
   async stop(): Promise<void> {
@@ -752,6 +887,31 @@ export class CaptureFlow {
     // remembered here, because a stop that failed leaves no result and must not
     // open an editor onto a directory that has no manifest in it.
     const finished = this.deps.session.snapshot().lastResult;
+
+    // Cleared here, not on the way out of each branch: an extend that got as far
+    // as a stop is over however the merge goes, and a flag left set would refuse
+    // the next Add Recording.
+    const extending = this.extending;
+    this.extending = null;
+
+    if (extending) {
+      // Never `openEditor(finished.outputPath)`: that path is the take directory,
+      // and an editor opened on it would show the addition as a recording of its
+      // own — which is exactly what Add Recording exists not to do.
+      if (finished) {
+        try {
+          mergeTake(extending.dir, extending.takeDir);
+        } catch (cause) {
+          // The take's footage and its own manifest are on disk and the base
+          // recording is untouched, so the next open picks it up — see
+          // `mergeUnmergedTakes`.
+          console.error("[flow] could not merge the new take:", cause);
+        }
+      }
+      this.deps.workspace?.resumeEditing(extending.dir);
+      return;
+    }
+
     if (!finished) return;
 
     try {
@@ -781,14 +941,25 @@ export class CaptureFlow {
 
     track("recording_discarded", { duration_ms: Math.round(elapsedMs) });
 
+    const extending = this.extending;
+    this.extending = null;
+
     await this.deps.session.stop();
     this.deps.session.forgetLastResult();
     this.deps.dock.setView("setup");
     this.deps.teleprompter.recordingStopped();
     this.emit();
 
-    if (!path) return;
-    if (deleteRecording(path)) log("info", "recording discarded");
+    // Only the take's own directory. The base recording has had nothing written
+    // to it — the merge is the first write and it has not run — so discarding an
+    // addition leaves the recording exactly as it was.
+    if (path && deleteRecording(path)) {
+      log("info", extending ? "added take discarded" : "recording discarded");
+    }
+
+    // Back where they came from. Somebody who discarded an addition is still in
+    // the middle of editing the recording they were adding it to.
+    if (extending) this.deps.workspace?.resumeEditing(extending.dir);
   }
 
   /** Stops if recording, otherwise opens the panel ready to start. */
@@ -886,7 +1057,7 @@ export class CaptureFlow {
    * current macOS. Passing ids into the content filter is the only mechanism
    * that actually removes our UI from the recording.
    */
-  private excludedIds(extra: BrowserWindow[]): number[] {
+  private excludedIds(extra: (BrowserWindow | null)[]): number[] {
     const ids = new Set<number>();
     for (const window of [...extra, ...this.deps.selection.browserWindows()]) {
       if (!window || window.isDestroyed()) continue;

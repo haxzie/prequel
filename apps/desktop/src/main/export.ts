@@ -14,7 +14,6 @@ import {
   clipboard,
   dialog,
   nativeImage,
-  webContents,
   type BrowserWindow,
   type SaveDialogOptions,
   type WebContents,
@@ -23,6 +22,7 @@ import {
 import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
+import { toEveryWindow } from "./broadcast.js";
 import { redact } from "./errors.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
@@ -127,10 +127,6 @@ export async function chooseExportTarget(
  */
 let startedAt = 0;
 
-export function isExporting(): boolean {
-  return running !== null;
-}
-
 /**
  * Starts an export.
  *
@@ -192,11 +188,15 @@ export async function startExport(request: ExportRequest): Promise<void> {
           keySoundVolume: slice.keySoundVolume,
           clickSound: slice.clickSound,
           clickSoundVolume: slice.clickSoundVolume,
+          // Which file each kind plays, resolved in the renderer because a
+          // slice may never span a seam between two takes. Passed through
+          // rather than re-derived: main holds no segment lookup, and a second
+          // one is how an export comes to read the wrong take's footage.
+          screen: slice.media.screen,
+          camera: slice.media.camera,
+          mic: slice.media.microphone,
+          system: slice.media.system_audio,
         })),
-        screenOffset: request.offsets.screen,
-        cameraOffset: request.offsets.camera,
-        micOffset: request.offsets.microphone,
-        systemOffset: request.offsets.system_audio,
         sound: request.sound ?? undefined,
       },
       (error, progress) => {
@@ -319,7 +319,5 @@ function finish(update: ExportProgress): void {
  * thing that should know it finished.
  */
 function broadcast(progress: ExportProgress): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.exportProgress, progress);
-  }
+  toEveryWindow(IPC_CHANNELS.exportProgress, progress);
 }

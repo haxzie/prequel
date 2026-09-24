@@ -17,7 +17,7 @@ use prequel_keysound::{Bank, ClickProfile, Cue, CueKind, KeyProfile};
 use prequel_session::MediaTime;
 
 use crate::mixer::{CHANNELS, frames_for};
-use crate::timeline::SliceRender;
+use crate::timeline::{MAX_SPEED, MIN_SPEED, SliceRender};
 
 /// The sound plan for a recording: every cue, on the recording's timeline.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -135,13 +135,25 @@ impl SoundTrack {
         debug_assert!(into.len() >= frames * CHANNELS);
         let cues = &self.cues[range];
 
+        // Frames are output time and cues are source time, and a slice at
+        // twice the rate covers two seconds of source in each second of
+        // output. Treating the two as one clock puts every press at 2x twice
+        // as late as its picture, and never mixes the second half of the
+        // clip's presses at all — the same mapping `Timeline::locate` makes
+        // for the picture, so a key and its frame stay together.
+        let speed = slice.speed.clamp(MIN_SPEED, MAX_SPEED);
+        let to_source = |output: MediaTime| (output as f64 * speed) as MediaTime;
+
         // Only the cues that can reach this window: those from a voice's
         // length before it to a touch lead past it. Without this a slice with
         // thousands of presses walks all of them for every quarter second.
-        let window_start = slice.start + self.time_of(from_frame);
-        let window_end = slice.start + self.time_of(from_frame + frames);
-        let first = cues.partition_point(|cue| cue.at + VOICE_REACH < window_start);
-        let last = cues.partition_point(|cue| cue.at < window_end + VOICE_REACH);
+        // A voice plays at its own rate whatever the clip's, so its reach is
+        // output time and is scaled into source time like the window.
+        let reach = to_source(VOICE_REACH);
+        let window_start = slice.start + to_source(self.time_of(from_frame));
+        let window_end = slice.start + to_source(self.time_of(from_frame + frames));
+        let first = cues.partition_point(|cue| cue.at + reach < window_start);
+        let last = cues.partition_point(|cue| cue.at < window_end + reach);
 
         for cue in &cues[first..last] {
             let (bank, level) = match cue.kind {
@@ -170,7 +182,8 @@ impl SoundTrack {
 
             // Where the voice's onset lands, in slice frames; its first sample
             // is `onset` frames before that, which can be before the slice.
-            let onset_frame = frames_for(cue.at - slice.start, self.sample_rate) as i64;
+            let offset = ((cue.at - slice.start) as f64 / speed) as MediaTime;
+            let onset_frame = frames_for(offset, self.sample_rate) as i64;
             let voice_start = onset_frame - bank.onset() as i64;
             let voice_end = voice_start + voice.len() as i64;
 
@@ -225,6 +238,7 @@ mod tests {
             },
             audio,
             speed: 1.0,
+            media: crate::timeline::SliceMedia::default(),
         }
     }
 
@@ -314,6 +328,47 @@ mod tests {
         assert_eq!(loudest, 24_000 + peak - onset);
         // And the touch lead starts before the press, not on it.
         assert!(first_sound(&left).unwrap() < 24_000);
+    }
+
+    #[test]
+    fn a_faster_clip_hears_the_press_sooner() {
+        // At 2x the press 0.8 s into the source is 0.4 s into the output, and
+        // the slice is half a second long — so a press in the second half of
+        // the source is still heard, rather than falling past the end.
+        let mut fast = slice(0, S, sounds_on());
+        fast.speed = 2.0;
+        let normal = slice(0, S, sounds_on());
+        let plan = plan(vec![cue(4 * S / 5, CueKind::Letter)]);
+        let track =
+            SoundTrack::prepare(Some(&plan), &[fast.clone(), normal.clone()], RATE).unwrap();
+
+        let a = render(&track, &normal, 12_000);
+        let b = render(&track, &fast, 1_001);
+        assert_eq!(b.len(), 24_000);
+        // The same voice, at 19 200 frames rather than 38 400.
+        assert_eq!(
+            &a[38_400 - 1_000..38_400 + 4_000],
+            &b[19_200 - 1_000..19_200 + 4_000]
+        );
+    }
+
+    #[test]
+    fn a_slower_clip_hears_the_press_later() {
+        let mut slow = slice(0, S / 2, sounds_on());
+        slow.speed = 0.5;
+        let normal = slice(0, S, sounds_on());
+        let plan = plan(vec![cue(S / 4, CueKind::Letter)]);
+        let track =
+            SoundTrack::prepare(Some(&plan), &[slow.clone(), normal.clone()], RATE).unwrap();
+
+        let a = render(&track, &normal, 12_000);
+        let b = render(&track, &slow, 7_000);
+        assert_eq!(b.len(), 48_000);
+        // 0.25 s of source at half speed is 0.5 s of output.
+        assert_eq!(
+            &a[12_000 - 1_000..12_000 + 5_000],
+            &b[24_000 - 1_000..24_000 + 5_000]
+        );
     }
 
     #[test]

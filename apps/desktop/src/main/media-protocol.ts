@@ -90,6 +90,15 @@ export const MEDIA_SCHEME_PRIVILEGES = {
 const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
 
 /**
+ * A take's subdirectory inside a recording, as `newTakePath` names them.
+ *
+ * Numbered rather than named precisely so this can be a digit check — the one
+ * extra path segment the `recording` route allows reaches takes and nothing
+ * else, which keeps the widening from resting on the traversal guard alone.
+ */
+const TAKE_DIR = /^\d+$/;
+
+/**
  * Resolves a media URL to a file on disk, or to null.
  *
  * Only the `recording` route resolves a path the renderer supplied, and it is
@@ -152,12 +161,17 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
     return written.get(parts[0]!) ?? null;
   }
 
-  if (parts.length !== 2) return null;
+  // Two segments for the first take, whose files sit at the session root, and
+  // three for any take after it — `recording/<name>/2/screen.mp4`. The middle
+  // one may only be a take directory: a digit run and nothing else, so widening
+  // the route by one segment does not widen what it can reach.
+  if (parts.length !== 2 && parts.length !== 3) return null;
+  if (parts.length === 3 && !TAKE_DIR.test(parts[1]!)) return null;
 
-  const [recording, fileName] = parts as [string, string];
+  const fileName = parts.at(-1)!;
   if (!ALLOWED.test(fileName)) return null;
 
-  const path = resolve(join(root, recording, fileName));
+  const path = resolve(join(root, ...parts));
   const base = resolve(root);
   // The separator matters: without it `/Movies/Prequel-evil` passes a plain
   // `startsWith` against `/Movies/Prequel`.

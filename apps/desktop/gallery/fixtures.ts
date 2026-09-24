@@ -80,6 +80,7 @@ export const DOCK: DockState = {
   // Off, so the panel draws the device names from `preferences` and never asks
   // the browser for a camera. Headless Chrome has fake devices, but a real
   // Chrome has real ones and would light the camera to take a screenshot.
+  extending: false,
   devicesLive: false,
 };
 

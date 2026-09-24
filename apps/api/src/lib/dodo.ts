@@ -115,10 +115,6 @@ export interface DodoSubscription {
   metadata: Record<string, string>;
 }
 
-export function getSubscription(env: Env, subscriptionId: string): Promise<DodoSubscription> {
-  return call<DodoSubscription>(env, `/subscriptions/${subscriptionId}`);
-}
-
 /**
  * One payment, fetched rather than taken from a webhook body.
  *

@@ -49,7 +49,11 @@ export function RecordingView({ state }: { state: DockState }) {
             buttons are the ones that end the take, and putting Discard next to
             Stop is how a hurried click loses a recording. */}
         <Control
-          label="Discard recording"
+          // Named for what it actually throws away. While a take is being added
+          // to a project, "Discard recording" reads as though the whole
+          // recording goes — where in fact only this addition does, and the
+          // project is untouched.
+          label={state.extending ? "Discard this addition" : "Discard recording"}
           className="hover:bg-dock-record hover:text-white"
           onClick={() => void window.prequel.dock.discard()}
         >
@@ -63,7 +67,7 @@ export function RecordingView({ state }: { state: DockState }) {
           {paused ? <PlayIcon /> : <PauseIcon />}
         </Control>
         <Control
-          label="Stop recording"
+          label={state.extending ? "Add to the project" : "Stop recording"}
           className="bg-dock-record text-white hover:brightness-[1.12]"
           onClick={() => void window.prequel.dock.stop()}
         >

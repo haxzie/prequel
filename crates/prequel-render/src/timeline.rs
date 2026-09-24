@@ -13,6 +13,8 @@
 //! Pure arithmetic, so it is testable without a GPU or a file.
 
 use prequel_keysound::{ClickProfile, KeyProfile};
+use std::path::PathBuf;
+
 use prequel_session::MediaTime;
 
 use crate::plan::RenderPlan;
@@ -26,6 +28,40 @@ const NS_PER_SECOND: u64 = 1_000_000_000;
 pub const MIN_SPEED: f64 = 0.25;
 pub const MAX_SPEED: f64 = 4.0;
 
+/// Which file a slice plays for one kind, and where that file's zero sits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentRef {
+    /// Relative to the session directory: `"screen.mp4"` for the first take,
+    /// `"2/screen.mp4"` for the second.
+    pub file: PathBuf,
+    /// Media time of this file's first sample, on the session clock. Per file
+    /// rather than per track, because a recording can be extended with another
+    /// take and each take's devices open at their own moments.
+    pub offset: MediaTime,
+}
+
+/// Which files a slice plays.
+///
+/// Resolved by the editor, which owns the segment lookup — a slice may never
+/// span a seam between two takes, so exactly one file per kind covers it. Two
+/// implementations of "which take is this moment in" is how a preview and an
+/// export come to show different footage, which is the same rule the plan
+/// follows for geometry.
+///
+/// A kind absent here was recorded by no take over this slice, and renders as no
+/// picture and silence — never as the nearest take's.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SliceMedia {
+    pub screen: Option<SegmentRef>,
+    pub camera: Option<SegmentRef>,
+    /// The camera's matte. No offset of its own: it was written at the camera's
+    /// timestamps from the camera's origin, which is what lets the two readers
+    /// land on the same frame.
+    pub matte: Option<PathBuf>,
+    pub mic: Option<SegmentRef>,
+    pub system: Option<SegmentRef>,
+}
+
 /// One kept span of the recording, and how it should look and sound.
 #[derive(Debug, Clone)]
 pub struct SliceRender {
@@ -36,6 +72,7 @@ pub struct SliceRender {
     pub audio: AudioMix,
     /// Playback rate. 1 is unchanged; output duration is `(end - start) / speed`.
     pub speed: f64,
+    pub media: SliceMedia,
 }
 
 /// Per-source gain, applied as a plain multiply.
@@ -147,10 +184,13 @@ impl Timeline {
             return None;
         }
 
+        // Binary search: this runs once per output frame, and `starts` never
+        // decreases. The last start at or before `at` wins, which is what puts
+        // a boundary frame in the later slice and skips an empty one.
         let slot = self
             .starts
-            .iter()
-            .rposition(|&start| at >= start)
+            .partition_point(|&start| start <= at)
+            .checked_sub(1)
             .filter(|&slot| slot < slices.len())?;
 
         let into = at - self.starts[slot];
@@ -194,6 +234,7 @@ mod tests {
             },
             audio: AudioMix::tracks(1.0, 1.0),
             speed,
+            media: SliceMedia::default(),
         }
     }
 

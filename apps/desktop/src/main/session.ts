@@ -6,7 +6,7 @@
  * command means lives here rather than in any one of them. Everything else
  * observes and reacts.
  */
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
@@ -98,7 +98,15 @@ export class RecordingSession {
     this.emit();
   }
 
-  async start(options: StartOptions): Promise<void> {
+  /**
+   * Starts a take.
+   *
+   * `outputPath` is a second parameter rather than a field on `StartOptions`
+   * because that type crosses IPC from a renderer, and a renderer-supplied
+   * capture path is a write anywhere on disk. Passed in by `CaptureFlow` when it
+   * is adding a take to an existing recording — see `newTakePath`.
+   */
+  async start(options: StartOptions, outputPath = newRecordingPath()): Promise<void> {
     if (this.status !== "idle") {
       // Said out loud. A start that returns quietly because the session is in
       // some other state looks exactly like a button that does nothing.
@@ -111,7 +119,6 @@ export class RecordingSession {
     this.lastResult = null;
     this.emit();
 
-    const outputPath = newRecordingPath();
     const request: StartRecordingRequest = {
       targetKind: options.target.kind,
       targetId: options.target.id,
@@ -268,6 +275,28 @@ export class RecordingSession {
 export function newRecordingPath(now = new Date(), dir = SESSIONS_DIR): string {
   mkdirSync(dir, { recursive: true });
   return join(dir, `Prequel ${fileTimestamp(now)}`);
+}
+
+/**
+ * A directory for one more take inside a recording that already exists.
+ *
+ * `<recording>/2`, `<recording>/3` — the lowest number not taken. Numbered
+ * rather than timestamped so the media protocol's route for them can be a digit
+ * check: a take gets one extra URL segment, and that segment reaching takes and
+ * nothing else is what keeps the widening from resting on the traversal guard
+ * alone.
+ *
+ * The capture crates need no change for this: they create the directory they are
+ * handed and write the fixed names into it, so a take's files are the same files
+ * a whole recording's are, one level down.
+ */
+export function newTakePath(recording: string): string {
+  let index = 2;
+  while (existsSync(join(recording, String(index)))) index += 1;
+
+  const path = join(recording, String(index));
+  mkdirSync(path, { recursive: true });
+  return path;
 }
 
 /**

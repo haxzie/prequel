@@ -684,10 +684,9 @@ pub fn overlay_at(span: Span, keys: &[OverlayKey], at: i64) -> Option<OverlayDra
         return Some(OverlayDraw::from(last));
     }
 
-    let mut index = 1;
-    while index < keys.len() - 1 && keys[index].at <= at {
-        index += 1;
-    }
+    // Binary search, as `rect_at` and `cursor_at` do: this runs per text unit
+    // per frame. The early returns above hold `index` inside `1..len`.
+    let index = keys.partition_point(|key| key.at <= at);
     let a = &keys[index - 1];
     let b = &keys[index];
     // Two keys on one nanosecond happen when a motion has no length; the lerp

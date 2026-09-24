@@ -1507,13 +1507,37 @@ function sizeOf(image: CanvasImageSource): { width: number; height: number } {
   return { width: sized.width, height: sized.height };
 }
 
+type Rgba = readonly [number, number, number, number];
+
+/**
+ * Parsed colours, by the string the plan carries.
+ *
+ * `set` asks for four colours on every draw of every frame, and a plan holds a
+ * handful of distinct ones — parsing each with a regex sixty times a second is
+ * garbage for nothing. Bounded, because dragging through a colour picker is a
+ * new string per frame and nothing else would ever let those go.
+ */
+const COLOURS = new Map<string, Rgba>();
+const COLOURS_MAX = 256;
+
+/** A plan colour as four floats, parsed once per distinct string. */
+function rgba(color: string): Rgba {
+  let parsed = COLOURS.get(color);
+  if (!parsed) {
+    if (COLOURS.size >= COLOURS_MAX) COLOURS.clear();
+    parsed = parseColour(color);
+    COLOURS.set(color, parsed);
+  }
+  return parsed;
+}
+
 /**
  * A plan colour as four floats.
  *
  * Both forms the plan can carry, because it is written by a browser: `#rrggbb`
  * for anything the user picked, `rgba()` where an opacity was folded in.
  */
-function rgba(color: string): [number, number, number, number] {
+function parseColour(color: string): Rgba {
   const parsed = /rgba?\(([^)]+)\)/.exec(color);
   if (parsed) {
     const parts = parsed[1]!.split(",").map((part) => Number(part.trim()));

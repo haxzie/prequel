@@ -139,6 +139,26 @@ export function toProjectTime(placed: readonly PlacedSlice[], source: MediaTime)
 }
 
 /**
+ * `toProjectTime` with the clip's end matched too, for the edge of a span.
+ *
+ * Slices are half-open, so a zoom or a text that runs exactly to the end of
+ * its clip would otherwise map to nothing — and ending on a cut is the normal
+ * way to zoom out into one. The first clip that holds the moment wins, so a
+ * source time on a join between two adjacent clips lands on the earlier one.
+ */
+export function toProjectTimeThrough(
+  placed: readonly PlacedSlice[],
+  source: MediaTime,
+): MediaTime | null {
+  for (const slice of placed) {
+    if (source >= slice.source.start && source <= slice.source.end) {
+      return slice.timelineStart + (source - slice.source.start) / slice.speed;
+    }
+  }
+  return null;
+}
+
+/**
  * Where a track should be seeked to, for a moment in source time.
  *
  * Null when the track was not yet recording — the camera opens a few hundred
@@ -173,14 +193,17 @@ export function toFileTime(track: TrackMedia, source: MediaTime): MediaTime | nu
 }
 
 /**
- * How much of a gap at a track's edges is closed by holding its nearest frame.
+ * How much of a gap at a segment's edges is closed by holding its nearest frame.
  *
  * Mirrored by `EDGE_TOLERANCE` in `crates/prequel-render/src/export.rs`, so the
  * export shows the camera over exactly the span the preview does. Sized to
  * cover a device opening late — a few hundred milliseconds — and nothing like
  * long enough to paper over a track that failed.
+ *
+ * Exported for `segments.ts`, which decides *which* file a moment falls in and
+ * has to close a gap over the same span this does inside one.
  */
-const EDGE_TOLERANCE: MediaTime = 500_000_000;
+export const EDGE_TOLERANCE: MediaTime = 500_000_000;
 
 /**
  * Source-time step that counts as landing somewhere else rather than playing on.
@@ -208,11 +231,6 @@ const CONTINUITY: MediaTime = 100_000_000;
 export function hasJumped(previous: MediaTime | null, source: MediaTime | null): boolean {
   if (previous === null || source === null) return false;
   return Math.abs(source - previous) > CONTINUITY;
-}
-
-/** Seconds, which is the unit `HTMLMediaElement.currentTime` speaks. */
-export function toSeconds(ns: MediaTime): number {
-  return ns / 1_000_000_000;
 }
 
 /**

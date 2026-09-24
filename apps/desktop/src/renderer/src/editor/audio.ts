@@ -60,12 +60,19 @@ export class AudioMixer {
     if (this.connected.has(element)) return;
 
     const context = this.ensureContext();
-    const gain = context.createGain();
+
+    // One gain per kind, shared by every element of it. A recording extended
+    // with a second take has one microphone file per take, and a gain created
+    // per element would leave the bus holding whichever was wired last — so the
+    // volume slider would move one take and not the other.
+    let gain = this.gains.get(kind);
+    if (!gain) {
+      gain = context.createGain();
+      gain.connect(context.destination);
+      this.gains.set(kind, gain);
+    }
 
     context.createMediaElementSource(element).connect(gain);
-    gain.connect(context.destination);
-
-    this.gains.set(kind, gain);
     this.connected.add(element);
   }
 

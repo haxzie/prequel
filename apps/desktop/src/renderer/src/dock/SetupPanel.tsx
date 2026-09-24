@@ -146,7 +146,12 @@ export function SetupPanel({ state }: { state: DockState }) {
       data-panel="setup"
       className="drag flex h-full w-max animate-view-in items-center gap-1.5 px-1.5"
     >
-      <IconButton title="Close" onClick={() => void window.prequel.dock.close()}>
+      {/* Named for where it goes. Dismissing the panel mid-addition returns to
+          the editor the addition was started from, not to the library. */}
+      <IconButton
+        title={state.extending ? "Back to the editor" : "Close"}
+        onClick={() => void window.prequel.dock.close()}
+      >
         <CloseIcon />
       </IconButton>
 

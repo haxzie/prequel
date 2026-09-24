@@ -20,7 +20,7 @@ import type {
 import { dialog, shell, type BrowserWindow } from "electron";
 
 import type { Manifest, TrackKind } from "../shared/manifest.js";
-import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
+import { MANIFEST_FILE_NAME, parseManifest, seamsOf } from "../shared/manifest.js";
 import type { CursorLayer } from "../shared/contract.js";
 import { CURSOR_FILES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
@@ -28,6 +28,7 @@ import { FALLBACK_BACKGROUND, sourceShape } from "../shared/project.js";
 import type { Transcript } from "../shared/transcript.js";
 import { TRANSCRIPT_FILE_NAME, parseTranscript } from "../shared/transcript.js";
 import { loadProject } from "./editor-project.js";
+import { mergeUnmergedTakes, takeFocus } from "./session-merge.js";
 import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
 import { insideRecordings } from "./session.js";
@@ -44,6 +45,14 @@ import { copyPresetBackground, ensureWallpaper } from "./wallpaper.js";
  * probe failure degrades the editor rather than refusing to open it.
  */
 export async function readEditorSession(dir: string): Promise<EditorSession> {
+  // Before the manifest is read, because it may change it. A take whose merge
+  // never finished — the app quit, the machine lost power — is real footage in a
+  // numbered subdirectory the take table does not mention, and deleting it
+  // silently is not an option. Derivable from the table, so this is idempotent
+  // rather than stateful: a recording with nothing outstanding pays one
+  // `readdir`.
+  mergeUnmergedTakes(dir);
+
   const manifest = parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
 
   let probes: TrackProbe[] = [];
@@ -55,28 +64,38 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
 
   const byKind = new Map(probes.map((probe) => [probe.kind as TrackKind, probe]));
 
-  const media: TrackMedia[] = manifest.tracks.map((track) => {
-    const probe = byKind.get(track.kind);
-    return {
-      kind: track.kind,
-      url: mediaUrl(dir, track.file_name),
-      // From the manifest, which is the only place a late start is recorded:
-      // every session file is written zero-based, so the file itself cannot
-      // say when its track began. Subtracting a probed start as well would
-      // double-count the correction.
-      offset: track.start,
-      // Preferring the media's own account where there is one: the manifest
-      // records what the recorder believed it wrote, and a struggling pipeline
-      // can leave the two disagreeing.
-      duration: probe?.duration ?? track.end - track.start,
-      width: probe?.width ?? track.width ?? null,
-      height: probe?.height ?? track.height ?? null,
-      frameRate: probe?.frameRate ?? null,
-      // The name comes from the manifest rather than a constant, so a matte
-      // written under any name the recorder chooses is the one that plays.
-      matteUrl: track.matte ? mediaUrl(dir, track.matte.file_name) : null,
-    };
-  });
+  // One entry per segment, so a recording extended with a second take offers
+  // the renderer both files rather than whichever one a `Map` keyed by kind
+  // happened to keep. The probe only describes the first take's files — it
+  // walks the session root — so every later segment falls back to the
+  // manifest, which is what the recorder wrote and is never absent.
+  const media: TrackMedia[] = manifest.tracks.flatMap((track) =>
+    track.segments.map((segment, index) => {
+      const probe = index === 0 ? byKind.get(track.kind) : undefined;
+      return {
+        kind: track.kind,
+        segment: index,
+        file: segment.file_name,
+        url: mediaUrl(dir, segment.file_name),
+        // From the manifest, which is the only place a late start is recorded:
+        // every session file is written zero-based, so the file itself cannot
+        // say when its track began. Subtracting a probed start as well would
+        // double-count the correction.
+        offset: segment.start,
+        // Preferring the media's own account where there is one: the manifest
+        // records what the recorder believed it wrote, and a struggling pipeline
+        // can leave the two disagreeing.
+        duration: probe?.duration ?? segment.end - segment.start,
+        width: probe?.width ?? segment.width ?? null,
+        height: probe?.height ?? segment.height ?? null,
+        frameRate: probe?.frameRate ?? null,
+        // The name comes from the manifest rather than a constant, so a matte
+        // written under any name the recorder chooses is the one that plays.
+        matteUrl: segment.matte ? mediaUrl(dir, segment.matte.file_name) : null,
+        matteFile: segment.matte?.file_name ?? null,
+      };
+    }),
+  );
 
   return {
     dir,
@@ -92,12 +111,19 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
         manifest.duration,
         sourceShape(
           manifest.source,
-          media.find((track) => track.kind === "screen"),
+          // The first take's screen, which is the one `manifest.source`
+          // describes and so the only one whose shape may set the defaults of
+          // a project nobody has edited yet.
+          media.find((track) => track.kind === "screen" && track.segment === 0),
         ),
+        seamsOf(manifest),
       ),
     ),
     transcript: readTranscript(dir, manifest.id),
     sound: await soundPlan(manifest),
+    // Read once and cleared: it describes the addition that has just been made,
+    // not a property of the recording.
+    focusSliceId: takeFocus(dir),
   };
 }
 

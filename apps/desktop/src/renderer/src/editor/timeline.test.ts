@@ -14,6 +14,7 @@ import {
   splitAt,
   toFileTime,
   toProjectTime,
+  toProjectTimeThrough,
   spanInProject,
   toSourceTime,
   totalDuration,
@@ -36,6 +37,8 @@ const CUT: Slice[] = [
 function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
   return {
     kind: "camera",
+    segment: 0,
+    file: "camera.mp4",
     url: "prequel-media://recording/take/camera.mp4",
     offset: 0,
     duration: 10 * S,
@@ -43,6 +46,7 @@ function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
     height: 720,
     frameRate: 30,
     matteUrl: null,
+    matteFile: null,
     ...overrides,
   };
 }
@@ -196,6 +200,18 @@ describe("project ↔ source", () => {
       start: 1 * S,
       end: 3 * S,
     });
+  });
+
+  it("maps a span's end on the end of its clip, and scales it by speed", () => {
+    // Half-open `toProjectTime` has nothing at 2s of CUT; the edge of a zoom
+    // that ends on the cut must still land on the join.
+    expect(toProjectTime(place(CUT), 2 * S)).toBeNull();
+    expect(toProjectTimeThrough(place(CUT), 2 * S)).toBe(2 * S);
+    expect(toProjectTimeThrough(place(CUT), 3 * S)).toBeNull();
+
+    const placed = place([{ id: "a", source: { start: 0, end: 10 * S }, speed: 2 }]);
+    expect(toProjectTimeThrough(placed, 6 * S)).toBe(3 * S);
+    expect(toProjectTimeThrough(placed, 10 * S)).toBe(5 * S);
   });
 });
 

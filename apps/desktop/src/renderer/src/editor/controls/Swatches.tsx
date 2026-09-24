@@ -1,6 +1,5 @@
 import { BackgroundSkeleton, BackgroundSwatch } from "./BackgroundSwatch";
 import type { Backgrounds } from "../useBackgrounds";
-import { assetUrl } from "../../../../shared/media-url";
 import type { Background } from "../../../../shared/project";
 import { WALLPAPER_FILE_NAME } from "../../../../shared/project";
 import {

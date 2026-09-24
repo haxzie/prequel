@@ -151,7 +151,7 @@ fn write_manifest(
 ) {
     use prequel_session::{
         CAMERA_MATTE_FILE, ClickSample, CursorSample, KeySpan, MANIFEST_FILE_NAME,
-        MANIFEST_VERSION, Manifest, Matte, SourceInfo, TrackKind, TypingSample,
+        MANIFEST_VERSION, Manifest, Matte, SourceInfo, Take, TrackKind, TypingSample,
     };
 
     // Only where there is one. A screen track in the manifest that names a file
@@ -178,10 +178,10 @@ fn write_manifest(
             camera.frames,
             camera.timing.dropped + camera.dropped_encoder + camera.dropped_late,
         );
-        // The matte rides on the camera track: it is the one thing that
+        // The matte rides on the camera segment: it is the one thing that
         // tells the editor the file exists, and the file name is carried
         // here so no reader has to know the constant.
-        entry.matte = camera.matte.map(|matte| Matte {
+        entry.segments[0].matte = camera.matte.map(|matte| Matte {
             file_name: CAMERA_MATTE_FILE.to_owned(),
             width: matte.width,
             height: matte.height,
@@ -211,6 +211,14 @@ fn write_manifest(
         ));
     }
 
+    // Hoisted out of the literal below because the take table needs it too:
+    // the screen's where there is one, and the camera's otherwise, so a take
+    // that lost its screen still says how long it is.
+    let duration = screen
+        .map(|s| s.duration)
+        .or_else(|| camera.map(|c| c.duration))
+        .unwrap_or(0);
+
     let manifest = Manifest {
         version: MANIFEST_VERSION,
         id: plan
@@ -219,12 +227,7 @@ fn write_manifest(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default(),
         started_at: plan.started_at.clone(),
-        // The screen's where there is one, and the camera's otherwise, so a
-        // take that lost its screen still says how long it is.
-        duration: screen
-            .map(|s| s.duration)
-            .or_else(|| camera.map(|c| c.duration))
-            .unwrap_or(0),
+        duration,
         source: SourceInfo {
             kind: plan.source_kind.to_owned(),
             id: plan.source_id,
@@ -234,8 +237,21 @@ fn write_manifest(
             // Only a window measures as anything; a display's is `None` before
             // it gets here, and so is a failed screen track's.
             corner_radius: screen.and_then(|s| s.window_corner_radius),
+            // Written down so a second take of the same region can reproduce
+            // the framing. An area is otherwise indistinguishable from the
+            // whole display it was cut out of.
+            crop: plan.crop,
         },
         tracks,
+        // One take: this is what a fresh capture writes, whether it is the
+        // first of a recording or one that main is about to merge into an
+        // existing session. Laying it out on the session clock is the merge's
+        // job, and it is the only thing that knows where the seam falls.
+        takes: vec![Take {
+            dir: String::new(),
+            start: 0,
+            end: duration,
+        }],
         cursor_baked: plan.cursor_baked,
         // Buttons and where — the editor's automatic zooms are built from when
         // and where, not from what.
@@ -309,6 +325,11 @@ fn write_manifest(
     }
 }
 
+/// A track of exactly one segment.
+///
+/// A fresh capture always writes one: this is a single take, and the file
+/// names are the fixed ones inside its own directory. Laying several takes'
+/// segments onto one session clock is the merge's job, in main.
 fn track(
     kind: prequel_session::TrackKind,
     start: u64,
@@ -319,14 +340,16 @@ fn track(
 ) -> prequel_session::Track {
     prequel_session::Track {
         kind,
-        file_name: kind.file_name().to_owned(),
-        start,
-        end,
-        width: size.map(|(w, _)| w),
-        height: size.map(|(_, h)| h),
-        samples,
-        dropped,
-        matte: None,
+        segments: vec![prequel_session::Segment {
+            file_name: kind.file_name().to_owned(),
+            start,
+            end,
+            width: size.map(|(w, _)| w),
+            height: size.map(|(_, h)| h),
+            samples,
+            dropped,
+            matte: None,
+        }],
     }
 }
 
@@ -531,6 +554,9 @@ struct SessionPlan {
     started_at: String,
     source_kind: &'static str,
     source_id: u32,
+    /// The region an area capture was cut to, for the manifest. See
+    /// `SourceInfo::crop`.
+    crop: Option<prequel_session::Region>,
     scale_factor: f64,
     /// Whether ScreenCaptureKit drew the pointer into the frames.
     ///
@@ -717,7 +743,7 @@ impl Task for StartRecording {
             };
         }
         options.show_cursor = request.show_cursor.unwrap_or(false);
-        options.crop = request.crop.map(|c| capture::Bounds {
+        options.crop = request.crop.as_ref().map(|c| capture::Bounds {
             x: c.x,
             y: c.y,
             width: c.width,
@@ -795,6 +821,12 @@ impl Task for StartRecording {
                     TargetKind::Window => "window",
                 },
                 source_id: request.target_id,
+                crop: request.crop.as_ref().map(|c| prequel_session::Region {
+                    x: c.x,
+                    y: c.y,
+                    width: c.width,
+                    height: c.height,
+                }),
                 scale_factor: request.scale_factor,
                 cursor_baked: options.show_cursor,
             },

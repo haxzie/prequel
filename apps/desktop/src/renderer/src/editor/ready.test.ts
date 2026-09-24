@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { previewReady } from "./ready";
 
 const base = {
-  videoKinds: ["screen"],
+  videoKinds: ["screen:0"],
   matte: false,
-  decoded: new Set(["screen"]),
+  decoded: new Set(["screen:0"]),
   wanted: [] as string[],
   settled: new Set<string>(),
 };
@@ -13,14 +13,18 @@ const base = {
 describe("revealing the preview", () => {
   it("waits for every video track, not just the first to decode", () => {
     expect(
-      previewReady({ ...base, videoKinds: ["screen", "camera"], decoded: new Set(["screen"]) }),
+      previewReady({
+        ...base,
+        videoKinds: ["screen:0", "camera:0"],
+        decoded: new Set(["screen:0"]),
+      }),
     ).toBe(false);
 
     expect(
       previewReady({
         ...base,
-        videoKinds: ["screen", "camera"],
-        decoded: new Set(["screen", "camera"]),
+        videoKinds: ["screen:0", "camera:0"],
+        decoded: new Set(["screen:0", "camera:0"]),
       }),
     ).toBe(true);
   });
@@ -28,7 +32,20 @@ describe("revealing the preview", () => {
   it("waits for the matte, so a cutout is never revealed as a bare rectangle", () => {
     expect(previewReady({ ...base, matte: true })).toBe(false);
     expect(
-      previewReady({ ...base, matte: true, decoded: new Set(["screen", "camera_matte"]) }),
+      previewReady({ ...base, matte: true, decoded: new Set(["screen:0", "camera_matte:0"]) }),
+    ).toBe(true);
+  });
+
+  it("waits only for the first take's video, never for footage nobody has reached", () => {
+    // Every take's elements are in the DOM at once so a seam is a seek rather
+    // than a `load()`. Gating on all of them held a recording extended twice
+    // behind "Loading the recording…" until the last take had buffered.
+    expect(
+      previewReady({
+        ...base,
+        videoKinds: ["screen:0"],
+        decoded: new Set(["screen:0"]),
+      }),
     ).toBe(true);
   });
 
@@ -48,8 +65,8 @@ describe("revealing the preview", () => {
     expect(
       previewReady({
         ...base,
-        videoKinds: ["screen", "camera"],
-        decoded: new Set(["screen", "camera"]),
+        videoKinds: ["screen:0", "camera:0"],
+        decoded: new Set(["screen:0", "camera:0"]),
       }),
     ).toBe(true);
   });

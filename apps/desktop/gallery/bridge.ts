@@ -219,6 +219,11 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         return sessionCache.then((value) => ({ ok: true as const, value }));
       },
       leave: () => ok(undefined),
+      // Nothing to record into. The gallery drives the editor over fixture
+      // recordings, and there is no capture pipeline behind this window.
+      addRecording: () => ok(null),
+      // Nothing ever changes a fixture on disk, so nothing ever fires this.
+      onReload: () => () => undefined,
       // No addon to render one. The preview schedules nothing for a bank it
       // never received, which is the right picture for a gallery to take.
       soundBank: () =>

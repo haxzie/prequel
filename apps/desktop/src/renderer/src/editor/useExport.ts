@@ -12,6 +12,7 @@ import {
   type EditorSession,
   type ExportProgress,
   type ExportSlice,
+  type TrackMedia,
 } from "../../../shared/contract";
 import {
   buildRenderPlan,
@@ -20,7 +21,7 @@ import {
   type RenderedText,
   type Size,
 } from "../../../shared/layout";
-import type { TrackKind } from "../../../shared/manifest";
+import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
 import { exportUrl } from "../../../shared/media-url";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
@@ -32,7 +33,9 @@ import {
   type OutputSettings,
   type Project,
 } from "../../../shared/project";
+import { segmentAt, segmentsOf } from "./segments";
 import { slicesOf } from "./state";
+import type { Slice } from "./timeline";
 
 /** A finished export, in the form the dialog needs to show and hand it on. */
 export interface ExportResult {
@@ -160,7 +163,6 @@ export function useExport(
         bitmaps.current.texts,
         bitmaps.current.tags,
       ),
-      offsets: offsetsOf(session),
       sound: session.sound,
     });
 
@@ -231,8 +233,15 @@ async function settled(drawing: { current: boolean }): Promise<void> {
   }
 }
 
-/** Resolves every slice into geometry and gain the exporter can render. */
-function buildSlices(
+/**
+ * Resolves every slice into geometry and gain the exporter can render.
+ *
+ * Exported for its own test rather than only through the hook: the per-slice
+ * source sizes are what let a second take at a different resolution export
+ * correctly, and getting them wrong renders a plausible, wrongly-cropped picture
+ * with nothing in any log.
+ */
+export function buildSlices(
   session: EditorSession,
   project: Project,
   frame: Size,
@@ -240,11 +249,19 @@ function buildSlices(
   texts: ReadonlyMap<string, RenderedText>,
   tags: CursorTags,
 ): ExportSlice[] {
-  const sources = sourceSizes(session);
-
   const all = slicesOf(project);
 
   return all.map((slice, index) => {
+    // Per slice, never hoisted. A recording extended with a take at a different
+    // resolution has a different source size either side of the seam, and one
+    // pair of dimensions used for every slice would crop take two against take
+    // one's — which renders a plausible, wrongly-framed picture and says nothing
+    // in any log.
+    const media = sliceMedia(session, slice);
+    const sources = {
+      screen: sizeOf(media.screen),
+      camera: sizeOf(media.camera),
+    };
     const settings = resolveSettings(project.defaults, slice.overrides);
     // The slice before this one, so the camera arrives rather than teleports.
     // The first slice has nothing behind it and gets no transition, which is
@@ -260,6 +277,7 @@ function buildSlices(
       // and the message names a number rather than a field.
       start: Math.round(slice.source.start),
       end: Math.round(slice.source.end),
+      media: refsFor(media),
       // The same function the preview draws from, so the two cannot disagree
       // about where anything sits — with every time in it rounded to a whole
       // nanosecond on the way out, which the preview does not need and the
@@ -320,30 +338,50 @@ function buildSlices(
 }
 
 /**
- * The recorded dimensions of each source.
+ * Which segment of each kind this slice plays.
+ *
+ * A slice may never span a seam, so its start decides the whole of it — see the
+ * guards in `sanitiseProject` and `trimSlice`, which is what makes one lookup
+ * per slice sound rather than one per frame.
+ */
+function sliceMedia(session: EditorSession, slice: Slice): Partial<Record<TrackKind, TrackMedia>> {
+  const found: Partial<Record<TrackKind, TrackMedia>> = {};
+
+  for (const kind of TRACK_KINDS) {
+    const segment = segmentAt(segmentsOf(session.media, kind), slice.source.start);
+    if (segment) found[kind] = segment;
+  }
+
+  return found;
+}
+
+/** The file and offset the exporter needs, per kind. */
+function refsFor(media: Partial<Record<TrackKind, TrackMedia>>): ExportSlice["media"] {
+  const refs: ExportSlice["media"] = {};
+
+  for (const kind of TRACK_KINDS) {
+    const track = media[kind];
+    if (!track) continue;
+    refs[kind] = {
+      file: track.file,
+      offset: Math.round(track.offset),
+      // A sidecar of the camera, written at the camera's timestamps from the
+      // camera's origin, so it shares the camera's offset rather than carrying
+      // one of its own.
+      ...(track.matteFile ? { matte: track.matteFile } : {}),
+    };
+  }
+
+  return refs;
+}
+
+/**
+ * The recorded dimensions of one segment.
  *
  * Taken from the media itself where the probe found it, because the plan's
  * geometry depends on the real pixel size rather than on what the recorder
  * believed it wrote.
  */
-function sourceSizes(session: EditorSession) {
-  const find = (kind: TrackKind) => {
-    const track = session.media.find((candidate) => candidate.kind === kind);
-    return track?.width && track.height ? { width: track.width, height: track.height } : null;
-  };
-
-  return { screen: find("screen"), camera: find("camera") };
-}
-
-/** Per-track offsets, from the manifest — the only place they are recorded. */
-function offsetsOf(session: EditorSession): Record<TrackKind, number> {
-  const offsets: Record<TrackKind, number> = {
-    screen: 0,
-    camera: 0,
-    microphone: 0,
-    system_audio: 0,
-  };
-
-  for (const track of session.media) offsets[track.kind] = track.offset;
-  return offsets;
+function sizeOf(track: TrackMedia | undefined): { width: number; height: number } | null {
+  return track?.width && track.height ? { width: track.width, height: track.height } : null;
 }

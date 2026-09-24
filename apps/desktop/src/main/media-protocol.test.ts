@@ -29,8 +29,10 @@ afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 const TAKE = "Prequel 2026-08-11 12-00-00";
 const BODY = Buffer.from("0123456789");
 
-mkdirSync(join(ROOT, TAKE), { recursive: true });
+mkdirSync(join(ROOT, TAKE, "2"), { recursive: true });
 writeFileSync(join(ROOT, TAKE, "screen.mp4"), BODY);
+writeFileSync(join(ROOT, TAKE, "2", "screen.mp4"), BODY);
+writeFileSync(join(ROOT, TAKE, "2", "notes.txt"), "no");
 
 // A file outside the recordings directory, for the traversal cases to aim at.
 writeFileSync(join(ROOT, "..", "prequel-media-secret.mp4"), "secret");
@@ -99,9 +101,39 @@ describe("resolveMediaPath", () => {
     expect(resolveMediaPath(url, ROOT)).toBeNull();
   });
 
+  it("serves a file inside an added take's own directory", () => {
+    // A recording extended with a second take keeps that take's files in a
+    // numbered subdirectory, and the manifest names them through it — so the
+    // route is one segment longer for them.
+    expect(resolveMediaPath(mediaUrl(join(ROOT, TAKE), "2/screen.mp4"), ROOT)).toBe(
+      join(ROOT, TAKE, "2", "screen.mp4"),
+    );
+  });
+
+  it("refuses a middle segment that is not a take directory", () => {
+    // The extra segment reaches takes and nothing else. Without the digit check
+    // the widening would rest on the traversal guard alone, which proves only
+    // that a path is *somewhere* under the recordings folder.
+    const url = `prequel-media://recording/${encodeURIComponent(TAKE)}/notes/screen.mp4`;
+    expect(resolveMediaPath(url, ROOT)).toBeNull();
+  });
+
+  it("refuses a traversal through a take directory", () => {
+    // One `..` deeper than the two-segment case, because a take directory is one
+    // level further in — the guard resolves first and compares afterwards, so
+    // how many it takes to get out does not matter to it.
+    const url = `prequel-media://recording/${encodeURIComponent(TAKE)}/2/${encodeURIComponent("../../../prequel-media-secret.mp4")}`;
+    expect(resolveMediaPath(url, ROOT)).toBeNull();
+  });
+
+  it("refuses a file type a take directory never contains either", () => {
+    const url = `prequel-media://recording/${encodeURIComponent(TAKE)}/2/notes.txt`;
+    expect(resolveMediaPath(url, ROOT)).toBeNull();
+  });
+
   it("refuses a URL with the wrong number of path segments", () => {
     expect(resolveMediaPath("prequel-media://recording/screen.mp4", ROOT)).toBeNull();
-    expect(resolveMediaPath(`prequel-media://recording/a/b/screen.mp4`, ROOT)).toBeNull();
+    expect(resolveMediaPath(`prequel-media://recording/a/2/b/screen.mp4`, ROOT)).toBeNull();
   });
 });
 

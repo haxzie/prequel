@@ -18,12 +18,26 @@ export type MediaTime = number;
  *
  * Checked rather than assumed, so an old recording opened by a newer build
  * fails loudly instead of being edited — and exported — as something it is not.
+ *
+ * 2 turned a track into a list of segments laid end to end on one session
+ * clock, because a recording can be extended with a second take. A v1 manifest
+ * still opens — `upgradeV1` reads it and its single file becomes a one-segment
+ * list.
  */
-export const MANIFEST_VERSION = 1;
+export const MANIFEST_VERSION = 2;
 
 export const MANIFEST_FILE_NAME = "session.json";
 
 export type TrackKind = "screen" | "camera" | "microphone" | "system_audio";
+
+/**
+ * Every kind, in the order the recorder writes them.
+ *
+ * A list as well as the union, so anything that has to visit each kind — the
+ * export's per-slice media refs, the mixer's buses — iterates one definition
+ * rather than repeating the four names.
+ */
+export const TRACK_KINDS: readonly TrackKind[] = ["screen", "camera", "microphone", "system_audio"];
 
 /** The file each kind is written to, inside a session directory. */
 export const TRACK_FILE_NAMES: Record<TrackKind, string> = {
@@ -58,18 +72,31 @@ export interface Matte {
  */
 export const CAMERA_MATTE_FILE_NAME = "camera-matte.mp4";
 
-export interface Track {
-  kind: TrackKind;
+/**
+ * One take's worth of one track: a file, and where it sits on the session clock.
+ *
+ * The file itself is always zero-based — `VideoWriter` opens its session at the
+ * first sample's PTS — so `start` is the only record of a late device, and it is
+ * per file rather than per track because take two's camera opens a couple of
+ * hundred milliseconds after take two's screen, exactly as take one's did.
+ */
+export interface Segment {
+  /**
+   * Relative to the session directory: `"screen.mp4"` for the first take,
+   * `"2/screen.mp4"` for the second. A path rather than a bare name because
+   * each take is captured into its own subdirectory, under the fixed names of
+   * `TRACK_FILE_NAMES`.
+   */
   file_name: string;
   /**
-   * Media time of this track's first sample.
+   * Media time of this file's first sample.
    *
    * Non-zero when a device took longer to warm up than the one that anchored
    * the clock — the camera routinely opens a few hundred milliseconds late.
    * This is the offset that has to be honoured to keep the tracks in sync.
    */
   start: MediaTime;
-  /** Media time just past this track's last sample. */
+  /** Media time just past this file's last sample. */
   end: MediaTime;
   width?: number;
   height?: number;
@@ -78,11 +105,47 @@ export interface Track {
       capture pipeline, but is not itself a failure. */
   dropped: number;
   /**
-   * Only ever on the camera track, and only when segmentation was available
+   * Only ever on a camera segment, and only when segmentation was available
    * while recording. Absent on every recording made before it existed — a
    * camera with no matte, which is what those recorded.
    */
   matte?: Matte;
+}
+
+export interface Track {
+  kind: TrackKind;
+  /**
+   * In session-clock order, never empty, never overlapping. One entry per take
+   * that recorded this kind — a take with the microphone switched off simply
+   * contributes none, so a track can stop before the recording does.
+   */
+  segments: Segment[];
+}
+
+/**
+ * One recording session inside this project. The seam list, and nothing else.
+ *
+ * Explicit rather than derived from a track's segment boundaries, because those
+ * disagree per track by however long each device took to open. A slice may not
+ * span a seam, and if "where is the seam" has two answers the per-slice segment
+ * lookup reads the wrong take's file for the first frames of a clip.
+ */
+export interface Take {
+  /**
+   * Subdirectory the take's files are in, relative to the session directory.
+   * Empty for the first take, whose files sit at the root.
+   */
+  dir?: string;
+  start: MediaTime;
+  end: MediaTime;
+}
+
+/** A rectangle in the display's own points. See `SourceInfo.crop`. */
+export interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface SourceInfo {
@@ -112,6 +175,15 @@ export interface SourceInfo {
    * project keeps its stock radius rather than dropping to zero.
    */
   corner_radius?: number;
+  /**
+   * The region an area capture was cropped to, in the display's own points.
+   *
+   * Recorded so a second take of the same area can reproduce the framing.
+   * Absent for a display, for a window, and on every recording made before it
+   * was written down — where the area picker opens with nothing pre-dragged
+   * rather than guessing.
+   */
+  crop?: Region;
 }
 
 /**
@@ -212,8 +284,19 @@ export interface Manifest {
   started_at: string;
   /** Recording length with paused spans already removed. */
   duration: MediaTime;
+  /**
+   * The first take's. Nothing reads it per moment — `sourceShape` turns it into
+   * project defaults once, when the project is created — and a second take of a
+   * different display would describe itself differently.
+   */
   source: SourceInfo;
   tracks: Track[];
+  /**
+   * Every recording that went into this session, in clock order. Never empty
+   * after `parseManifest`, which synthesises one for a v1 manifest. Laid end to
+   * end, so a take begins exactly where the last one ended.
+   */
+  takes: Take[];
   /**
    * Whether ScreenCaptureKit drew the pointer into the frames.
    *
@@ -282,18 +365,66 @@ export function parseManifest(text: string): Manifest {
   }
 
   const manifest = value as Partial<Manifest>;
+  if (!Array.isArray(manifest.tracks)) {
+    throw new ManifestError("session.json has no tracks");
+  }
+
+  // Every recording made before a session could hold a second take. Its one
+  // file per track is one segment, which is exactly what this shape reduces to
+  // for a single take — so nothing downstream needs a special case, and the
+  // upgrade is a shape change rather than a reinterpretation.
+  if (manifest.version === 1) return upgradeV1(manifest as unknown as V1Manifest);
+
   if (manifest.version !== MANIFEST_VERSION) {
     throw new ManifestError(
       `session.json is version ${String(manifest.version)}, this build understands ${MANIFEST_VERSION}`,
     );
   }
-  if (!Array.isArray(manifest.tracks)) {
-    throw new ManifestError("session.json has no tracks");
-  }
 
   return manifest as Manifest;
 }
 
+/** A track as v1 wrote it: one file, with the span and size on the track. */
+type V1Track = Omit<Segment, "file_name"> & { kind: TrackKind; file_name: string };
+
+type V1Manifest = Omit<Manifest, "tracks" | "takes"> & { tracks: V1Track[] };
+
+/**
+ * A v1 manifest in the current shape, in memory only.
+ *
+ * Never written back. A build that rewrote a v1 recording as v2 for having
+ * looked at it would make that recording unopenable by the build the user is
+ * about to roll back to, for no reason at all — v2 is written by a fresh
+ * capture and by the merge, and by nothing else.
+ */
+function upgradeV1(manifest: V1Manifest): Manifest {
+  const { tracks, ...rest } = manifest;
+  return {
+    ...rest,
+    version: MANIFEST_VERSION,
+    tracks: tracks.map(({ kind, ...segment }) => ({ kind, segments: [segment] })),
+    // One take, spanning the whole recording, with its files at the session
+    // root — which is where a v1 recording keeps them.
+    takes: [{ dir: "", start: 0, end: manifest.duration }],
+  };
+}
+
 export function findTrack(manifest: Manifest, kind: TrackKind): Track | undefined {
   return manifest.tracks.find((track) => track.kind === kind);
+}
+
+/** Media time of a track's first sample, across every take. 0 when empty. */
+export function trackStart(track: Track): MediaTime {
+  return track.segments[0]?.start ?? 0;
+}
+
+/**
+ * The seams a recording was extended at — one per take after the first.
+ *
+ * Read from the take table rather than from any track's segment boundaries,
+ * which disagree by however long each device took to open. A slice may not span
+ * one of these.
+ */
+export function seamsOf(manifest: Manifest): MediaTime[] {
+  return manifest.takes.slice(1).map((take) => take.start);
 }

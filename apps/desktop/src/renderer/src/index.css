@@ -616,6 +616,23 @@ body {
   --dot-off: #6f757c;
 }
 
+/* The panel's own focus ring, in place of Chromium's.
+   The default is the system accent — a hard blue rectangle that sits outside
+   the control's rounding and does not follow it. On this panel it lands next to
+   the one blue thing that means something, the selected source, and reads as a
+   second selection nobody made. It turns up most after a drop-up closes, which
+   returns focus to the button that opened it.
+   Replaced rather than removed: `outline: none` takes a keyboard user's only
+   way of telling where they are, and this panel is reachable by keyboard.
+   `:focus-visible`, so a pressed button does not keep it once the pointer has
+   gone. The same hairline the dividers use, drawn just inside the control's
+   edge — an outline follows the element's own `border-radius`, so it rounds
+   with each control rather than boxing it. */
+.dock-theme :focus-visible {
+  outline: 2px solid var(--dock-line);
+  outline-offset: -2px;
+}
+
 /* The three states of a word in the island, written to `data-state` straight
    from the position handler rather than through React — see `Teleprompter`.
    Read words fall back rather than vanish, so a reader who looks up can find

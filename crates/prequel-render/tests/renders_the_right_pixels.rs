@@ -16,9 +16,10 @@ use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
     AudioMix, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat, OverlayKey,
-    Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, SliceRender, Span,
-    export,
+    Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, SegmentRef, Shape, Size,
+    SliceMedia, SliceRender, Span, export,
 };
+use prequel_session::{CAMERA_MATTE_FILE, TrackKind};
 
 const S: u64 = 1_000_000_000;
 const OUT_W: u32 = 320;
@@ -170,6 +171,19 @@ fn slice(plan: RenderPlan) -> SliceRender {
         plan,
         audio: AudioMix::tracks(1.0, 1.0),
         speed: 1.0,
+        media: SliceMedia {
+            screen: Some(SegmentRef {
+                file: TrackKind::Screen.file_name().into(),
+                offset: 0,
+            }),
+            camera: Some(SegmentRef {
+                file: TrackKind::Camera.file_name().into(),
+                offset: 0,
+            }),
+            matte: Some(CAMERA_MATTE_FILE.into()),
+            mic: None,
+            system: None,
+        },
     }
 }
 
@@ -182,10 +196,6 @@ fn request(dir: &Path, output: &Path, slices: Vec<SliceRender>) -> ExportRequest
         fps: FPS,
         format: OutputFormat::Mp4,
         slices,
-        screen_offset: 0,
-        camera_offset: 0,
-        mic_offset: 0,
-        system_offset: 0,
         sound: None,
     }
 }
@@ -1597,6 +1607,109 @@ fn an_overlay_fades_in_where_its_keys_say_and_keeps_its_crop() {
         "right of the crop, held",
     );
     near(held.at(250, 120), (255, 0, 0), "beside the box");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A full-frame plan drawing the screen at `size`, so a take of any dimensions
+/// fills the output.
+fn screen_filling(size: u32) -> RenderPlan {
+    RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![PlanItem::Image {
+            source: PlanSource::Screen,
+            src_rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: size as f64,
+                height: size as f64,
+            },
+            dst_rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            shape: Shape {
+                radius: 0.0,
+                exponent: 2.0,
+            },
+            mirror: false,
+            matte: false,
+            motion: Vec::new(),
+        }],
+    }
+}
+
+#[test]
+fn renders_each_take_from_its_own_file() {
+    // A recording extended with a second take: two files on one session clock,
+    // a seam between them, and a slice either side.
+    //
+    // Pinned by colour because every shape assertion passes on an export that
+    // plays the first take twice — same duration, same frame count, same
+    // dimensions — and only the pixel catches a slice reading the wrong file or
+    // double-counting an offset. The second take is a different size as well,
+    // so a plan built against the first take's dimensions would sample the
+    // wrong window of it.
+    let dir = scratch("prequel-pixels-takes");
+    std::fs::create_dir_all(dir.join("2")).expect("create the second take's directory");
+
+    let first = split_frame(200, 200, [0, 0, 255], [0, 0, 255]);
+    record(&dir, "screen.mp4", 200, 200, &first);
+
+    let second = split_frame(120, 120, [0, 255, 0], [0, 255, 0]);
+    record(&dir.join("2"), "screen.mp4", 120, 120, &second);
+
+    let take_one = SliceRender {
+        start: 0,
+        end: S,
+        plan: screen_filling(200),
+        audio: AudioMix::tracks(0.0, 0.0),
+        speed: 1.0,
+        media: SliceMedia {
+            screen: Some(SegmentRef {
+                file: "screen.mp4".into(),
+                offset: 0,
+            }),
+            ..SliceMedia::default()
+        },
+    };
+
+    // The second take begins where the first ended, and its file is zero-based
+    // — which is what the offset is for. Subtracting it twice would read past
+    // the end of a one-second file and render nothing at all.
+    let take_two = SliceRender {
+        start: S,
+        end: 2 * S,
+        plan: screen_filling(120),
+        media: SliceMedia {
+            screen: Some(SegmentRef {
+                file: "2/screen.mp4".into(),
+                offset: S,
+            }),
+            ..SliceMedia::default()
+        },
+        ..take_one.clone()
+    };
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![take_one, take_two]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // Either side of the seam, which falls halfway through a two-second export.
+    let before = frame_at(&output, FPS - 1);
+    near(before.at(160, 120), (0, 0, 255), "the last frame of take one");
+
+    let after = frame_at(&output, FPS);
+    near(after.at(160, 120), (0, 255, 0), "the first frame of take two");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

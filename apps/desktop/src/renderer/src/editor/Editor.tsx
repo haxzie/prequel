@@ -8,8 +8,13 @@ import {
   type Dispatch,
 } from "react";
 
-import { CURSOR_FILES, mayExport, type EditorSession } from "../../../shared/contract";
-import type { MediaTime, TrackKind } from "../../../shared/manifest";
+import {
+  CURSOR_FILES,
+  mayExport,
+  type EditorSession,
+  type TrackMedia,
+} from "../../../shared/contract";
+import { seamsOf, type MediaTime, type TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
   clickSoundId,
@@ -42,6 +47,7 @@ import { PlaybackControls } from "./PlaybackControls";
 import { Preview, type Grab, type Picked } from "./Preview";
 import { asCard } from "./poster";
 import { previewReady } from "./ready";
+import { matteKey, mediaKey } from "./segments";
 import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
@@ -68,7 +74,7 @@ import {
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
 import { useEditorPlayback } from "./useEditorPlayback";
-import type { MediaKey } from "./useEditorPlayback";
+import type { MediaKey } from "./segments";
 import { useExport } from "./useExport";
 import { useFilmstrip } from "./useFilmstrip";
 import { useLicence } from "../hooks/useLicence";
@@ -112,7 +118,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // recording that does not exist. That is how the first cut came to replace a
   // saved project's zooms on every reopen.
   const [state, dispatch] = useReducer(editorReducer, session, (opened) =>
-    initialState(opened.project, opened.manifest.duration),
+    initialState(opened.project, opened.manifest.duration, seamsOf(opened.manifest)),
   );
   const [images, setImages] = useState<Images>(new Map());
   /**
@@ -167,10 +173,26 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [session.cursor],
   );
 
-  /** The camera's person matte, or null on a recording made without one. */
-  const matteUrl = useMemo(
-    () => session.media.find((track) => track.kind === "camera")?.matteUrl ?? null,
+  /**
+   * Every camera segment that came with a person matte.
+   *
+   * One `<video>` per matte rather than one for the recording: a matte is
+   * written beside its own take's camera, at that camera's dimensions and
+   * timestamps, and a mask from the wrong take is a silhouette hanging off the
+   * person entirely.
+   */
+  const mattes = useMemo(
+    () =>
+      session.media.filter(
+        (track): track is TrackMedia & { matteUrl: string } =>
+          track.kind === "camera" && track.matteUrl !== null,
+      ),
     [session],
+  );
+  /** The matte of the recording's first take, which is what the reveal waits on. */
+  const matteUrl = useMemo(
+    () => mattes.find((track) => track.segment === 0)?.matteUrl ?? null,
+    [mattes],
   );
   /** Whether the camera came with a person matte — the cutout needs one. */
   const cameraMatte = matteUrl !== null;
@@ -257,7 +279,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // clamped against this. Re-run when the session changes because main re-sends
   // it on every load, which is what restores the edit after an HMR round trip.
   useEffect(() => {
-    dispatch({ type: "load", project: session.project, duration: session.manifest.duration });
+    dispatch({
+      type: "load",
+      project: session.project,
+      duration: session.manifest.duration,
+      seams: seamsOf(session.manifest),
+    });
   }, [session]);
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
@@ -317,9 +344,15 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const ready = useMemo(
     () =>
       previewReady({
+        // The first take's video only. Every take's elements are in the DOM at
+        // once, and waiting for all of them would hold a three-take recording
+        // behind "Loading the recording…" until every one had buffered — while
+        // the playhead starts at zero, which is always the first take.
         videoKinds: session.media
-          .filter((track) => track.kind === "screen" || track.kind === "camera")
-          .map((track) => track.kind),
+          .filter(
+            (track) => track.segment === 0 && (track.kind === "screen" || track.kind === "camera"),
+          )
+          .map((track) => mediaKey(track.kind, track.segment)),
         matte: matteUrl !== null,
         decoded,
         wanted: imagePaths(state.project, cursorFiles),
@@ -813,6 +846,60 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   );
 
   /**
+   * Lands on the clip a just-finished Add Recording appended.
+   *
+   * Selected and seeked to, so the editor comes back showing the footage that
+   * was just added rather than the head of the recording. Once per session,
+   * because `focusSliceId` describes that addition and not the recording — main
+   * clears it as the editor reads it, and the editor remounts across an extend so
+   * there is one open per merge.
+   */
+  useEffect(() => {
+    const id = session.focusSliceId;
+    if (!id) return;
+
+    const found = placed.find((slice) => slice.id === id);
+    if (!found) return;
+
+    dispatch({ type: "select", sliceId: id });
+    media.playback.seek(found.timelineStart);
+    // Deliberately not depending on `placed`, which is rebuilt on every edit:
+    // this is the arrival, and running it again after the user has moved the
+    // playhead would drag them back to the new clip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  /**
+   * Puts the panel back so more footage can be recorded into this project.
+   *
+   * The edit is flushed *first* and awaited. Saving is debounced, so pressing
+   * this straight after a drag leaves a write in flight — and the merge is about
+   * to append a clip to the same file, which that write would then land on top
+   * of. Main flushes its own side too; both are cheap and the failure is a lost
+   * clip.
+   */
+  const addRecording = useCallback(async () => {
+    // Paused first. The panel is about to cover the screen and the recording is
+    // about to start; a preview still playing behind it is four media elements
+    // and a canvas competing with the capture for the same frame budget.
+    media.playback.pause();
+
+    const saved = await window.prequel.editor.saveProject(session.dir, state.project);
+    if (!saved.ok) {
+      // Said out loud and not gone ahead with. Adding footage to a project whose
+      // last edits were not written would look like the edits were the thing
+      // that was lost.
+      console.error("[editor] could not save before adding a recording:", saved.message);
+      return;
+    }
+
+    const result = await window.prequel.editor.addRecording();
+    if (!result.ok) {
+      console.error("[editor] could not add a recording:", result.message);
+    }
+  }, [media, session.dir, state.project]);
+
+  /**
    * The words as the finished file will have them, for the share page's
    * chapters. Computed live, like `durationMs`: the dialog is what stops the
    * edit changing between the export and the share.
@@ -886,22 +973,25 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // The span the camera actually covers, not just whether one was recorded.
   // It opens a few hundred ms after the screen, so a clip cut from the very
   // start of the take genuinely has no camera in it and should not claim to.
-  const cameraSpan = useMemo(() => {
-    const track = session.media.find((candidate) => candidate.kind === "camera");
-    return track ? { start: track.offset, end: track.offset + track.duration } : null;
-  }, [session]);
+  // One span per take that recorded a camera: the row has to show a gap where a
+  // take was recorded without one, not a bar spanning the whole recording.
+  const cameraSpans = useMemo(
+    () =>
+      session.media
+        .filter((candidate) => candidate.kind === "camera")
+        .map((track) => ({ start: track.offset, end: track.offset + track.duration })),
+    [session],
+  );
 
   // From the manifest rather than the video element: the inspector needs it to
   // shape the `wide` bubble before the element has necessarily loaded.
-  const cameraSource = useMemo(() => {
-    const track = session.media.find((candidate) => candidate.kind === "camera");
-    return track?.width && track.height ? { width: track.width, height: track.height } : null;
-  }, [session]);
+  // The first take's, for both. These shape the inspector's controls and the
+  // automatic output frame — decisions about the recording rather than about the
+  // moment — and the picture itself is laid out per slice from the segment that
+  // slice plays, in `Preview` and in `useExport`.
+  const cameraSource = useMemo(() => sizeOf(session.media, "camera"), [session]);
 
-  const screenSource = useMemo(() => {
-    const track = session.media.find((candidate) => candidate.kind === "screen");
-    return track?.width && track.height ? { width: track.width, height: track.height } : null;
-  }, [session]);
+  const screenSource = useMemo(() => sizeOf(session.media, "screen"), [session]);
 
   useAutoFrame(state.project.frame, screenSource, dispatch);
   useFirstCut(session, state, dispatch);
@@ -924,7 +1014,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [media],
   );
   useEditorImages(session, state.project, cursorFiles, setImages, markImageSettled);
-  useShortcuts(media, dispatch, state);
+  useShortcuts(media, dispatch, state, () => void addRecording());
 
   useEffect(() => {
     if (selected !== null) setPanelOpen(true);
@@ -1184,9 +1274,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           // is the answer for all of them.
           canAddZoom={zoomSpanNear(state.project, 0) !== null}
           canAddText={textSpanNear(state.project, 0) !== null}
+          // Off while an export is running: the recorder and the exporter fight
+          // over the same GPU and the same encoder, and the dock appearing over
+          // a render nobody asked to interrupt is the wrong outcome either way.
+          canAddRecording={!exportState.running}
           canUndo={canUndo(state)}
           onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
           onAddText={() => dispatch({ type: "addTextNear", at: media.playback.position() })}
+          onAddRecording={() => void addRecording()}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
             if (state.selectedTextId) {
@@ -1206,7 +1301,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           media={media}
           peaks={peaks}
           filmstrip={filmstrip}
-          cameraSpan={cameraSpan}
+          cameraSpans={cameraSpans}
           captionRange={captionRange}
         />
       </div>
@@ -1225,8 +1320,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
         {session.media.map((track) =>
           track.kind === "screen" || track.kind === "camera" ? (
             <video
-              key={track.kind}
-              ref={media.register(track.kind)}
+              key={mediaKey(track.kind, track.segment)}
+              ref={media.register(mediaKey(track.kind, track.segment))}
               src={track.url}
               crossOrigin="anonymous"
               muted
@@ -1237,7 +1332,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // this moment, and it says so before there are any pixels to
               // draw. Compositing then paints a background with nothing on it,
               // which is the flash this reports away.
-              onLoadedData={() => markDecoded(track.kind)}
+              onLoadedData={() => markDecoded(mediaKey(track.kind, track.segment))}
               // Counted as decoded on failure too, for the reason the matte
               // below is: `ready` waits for every video track, and a track
               // that will not open never sends `loadeddata`. Without this the
@@ -1249,39 +1344,39 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onError={(event) => {
                 const failure = event.currentTarget.error;
                 console.error(
-                  `[editor] the ${track.kind} track would not open:`,
+                  `[editor] ${track.file} would not open:`,
                   failure ? `${failure.code}: ${failure.message}` : "no reason given",
                 );
-                markDecoded(track.kind);
+                markDecoded(mediaKey(track.kind, track.segment));
               }}
             />
           ) : (
             <audio
-              key={track.kind}
-              ref={media.register(track.kind)}
+              key={mediaKey(track.kind, track.segment)}
+              ref={media.register(mediaKey(track.kind, track.segment))}
               src={track.url}
               crossOrigin="anonymous"
               preload="auto"
             />
           ),
         )}
-        {matteUrl && (
+        {mattes.map((track) => (
           <video
-            key="camera_matte"
-            ref={media.register("camera_matte")}
-            src={matteUrl}
+            key={matteKey(track.segment)}
+            ref={media.register(matteKey(track.segment))}
+            src={track.matteUrl}
             crossOrigin="anonymous"
             muted
             playsInline
             preload="auto"
-            onLoadedData={() => markDecoded("camera_matte")}
+            onLoadedData={() => markDecoded(matteKey(track.segment))}
             // Counted as decoded on failure as well: a sidecar that will not
             // open must not hold the whole editor behind the loading screen.
             // The camera then draws whole, which is what the preview does for
             // any matte that is not there.
-            onError={() => markDecoded("camera_matte")}
+            onError={() => markDecoded(matteKey(track.segment))}
           />
-        )}
+        ))}
       </div>
 
       {/* Unmounted when closed rather than hidden. Its preview is a playing
@@ -1417,12 +1512,23 @@ function momentsOf(session: EditorSession): Moment[] {
 }
 
 /**
- * Makes the first cut, once.
+ * Makes the first cut, once — and runs it again, scoped, when a take lands.
  *
- * Only on a project nobody has touched: revision 0, and no zooms of its own.
- * Both conditions matter — the first stops it running again on every reopen,
- * and the second means a recording whose zooms were all deleted stays that way
+ * On a project nobody has touched: revision 0, and no zooms of its own. Both
+ * conditions matter — the first stops it running again on every reopen, and
+ * the second means a recording whose zooms were all deleted stays that way
  * rather than growing them back, which would be the app arguing.
+ *
+ * A take Add Recording just merged in is different: `session.focusSliceId`
+ * names it, and it is by construction footage with no zoom of its own yet —
+ * nothing could have covered a span that did not exist a moment ago. Without
+ * this, only the very first take of a project ever got the automatic pass, and
+ * every one added afterwards sat there unzoomed until somebody noticed and
+ * pressed the wand button by hand. Run through `augmentZooms` rather than
+ * `autoZooms`, and scoped to the new slice's span rather than the whole
+ * recording — the whole-recording pass is the wand button, and re-running it
+ * here on every merge would grow back a zoom somebody deliberately deleted
+ * from the *older* footage.
  *
  * Everything it adds is an ordinary zoom, so disagreeing with it is dragging or
  * deleting, not undoing something opaque.
@@ -1436,6 +1542,32 @@ function useFirstCut(
 
   useEffect(() => {
     if (!session || made.current) return;
+    // Marked up front rather than beside each dispatch below: both branches
+    // this effect can take are "once per mount", and the mount is what a merge
+    // remounts — see `EditorRoute`'s `key` bump on `editorReload`.
+    made.current = true;
+
+    if (session.focusSliceId) {
+      const added = session.project.tracks[0]?.slices.find(
+        (slice) => slice.id === session.focusSliceId,
+      );
+      if (!added) return;
+
+      // Source time, the same clock `moment.at` is on — a slice's `source` and
+      // a manifest sample were shifted onto it by the same merge.
+      const moments = momentsOf(session).filter(
+        (moment) => moment.at >= added.source.start && moment.at < added.source.end,
+      );
+      if (moments.length === 0) return;
+
+      const zooms = augmentZooms(session.project.zooms, moments, {
+        duration: added.source.end,
+        hasCursor: session.cursor !== null,
+      });
+      if (zooms.length > session.project.zooms.length) dispatch({ type: "setZooms", zooms });
+      return;
+    }
+
     // Asked of the project as it was loaded, never of the reducer's copy. The
     // two are the same now that the reducer is seeded from the session, and
     // this is deliberately not relying on that: a guard on `state` was what
@@ -1444,11 +1576,6 @@ function useFirstCut(
     if (state.revision !== 0 || session.project.zooms.length > 0) return;
 
     const moments = momentsOf(session);
-
-    // Marked before dispatching rather than after: `zooms.length > 0` only
-    // becomes true on the next render, and without this the effect would run
-    // again in between and add them twice.
-    made.current = true;
     if (moments.length === 0) return;
 
     const zooms = autoZooms(moments, {
@@ -1792,11 +1919,17 @@ function useShortcuts(
   media: ReturnType<typeof useEditorPlayback>,
   dispatch: Dispatch<EditorAction>,
   state: EditorState,
+  onAddRecording: () => void,
 ) {
   // Read through a ref so the listener is bound once rather than rebound on
   // every edit — the selection and tool change constantly.
   const latest = useRef(state);
   latest.current = state;
+  // Through a ref for the same reason, and it matters more here: this closure
+  // holds the project it saves, so a stale one would write an edit from several
+  // keystrokes ago over the current one.
+  const addRecording = useRef(onAddRecording);
+  addRecording.current = onAddRecording;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1849,6 +1982,14 @@ function useShortcuts(
           dispatch({ type: "addTextNear", at: media.playback.position() });
           return;
 
+        // Records more into this project. Beside Z and T because it is the third
+        // thing the transport's pill adds, even though this one leaves the editor
+        // to do it.
+        case "KeyR":
+          event.preventDefault();
+          addRecording.current();
+          return;
+
         case "Backspace":
         case "Delete": {
           // Whichever of the three is selected — they are mutually exclusive,
@@ -1875,4 +2016,20 @@ function useShortcuts(
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [media, dispatch]);
+}
+
+/**
+ * The first take's dimensions for one kind, or null.
+ *
+ * The first take's because these shape the inspector's stock controls and the
+ * automatic output frame — decisions about the recording, made once. The picture
+ * is laid out per slice from the segment that slice plays, which is what lets a
+ * second take at a different resolution compose correctly.
+ */
+function sizeOf(
+  media: readonly TrackMedia[],
+  kind: TrackKind,
+): { width: number; height: number } | null {
+  const track = media.find((candidate) => candidate.kind === kind && candidate.segment === 0);
+  return track?.width && track.height ? { width: track.width, height: track.height } : null;
 }

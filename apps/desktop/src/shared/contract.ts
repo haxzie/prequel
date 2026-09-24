@@ -612,6 +612,24 @@ export const IPC_CHANNELS = {
    * open, or a rename, would read in preference to the file on disk.
    */
   editorLeave: "editor:leave",
+  /**
+   * Editor renderer → main: put the panel back, I want to record more into this
+   * recording.
+   *
+   * The renderer flushes its edit before asking, and main flushes again on this
+   * side — the merge appends a clip to `project.json`, and a debounced save
+   * landing after that would write the pre-merge project back over it.
+   */
+  editorAddRecording: "editor:addRecording",
+  /**
+   * Main → the editor: read this recording again.
+   *
+   * Carries the recording's name so an editor showing a different one ignores
+   * it. The route does not change across an extend — it is the same recording —
+   * so navigating to it would remount nothing and the editor would go on showing
+   * a manifest one take out of date.
+   */
+  editorReload: "editor:reload",
   editorSaveProject: "editor:saveProject",
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
@@ -758,11 +776,49 @@ export const IPC_CHANNELS = {
   shareProgress: "share:progress",
 } as const;
 
+/**
+ * Which file a slice plays for one kind, and where that file's zero sits.
+ *
+ * A recording can be extended with another take, so "the screen track" is a
+ * list of files laid end to end on one session clock and a source time alone no
+ * longer names one.
+ */
+export interface ExportSliceMedia {
+  /**
+   * The manifest's `Segment.file_name`, relative to the recording's directory.
+   *
+   * Relative, and checked as such by the addon before it is joined: this is the
+   * one renderer-supplied string in an export request that names a file on disk.
+   */
+  file: string;
+  /**
+   * Nanoseconds into the session at which this file's first sample lands.
+   *
+   * Per file rather than per track, which is the whole reason the four
+   * request-level offsets went: take two's camera opens a couple of hundred
+   * milliseconds after take two's screen, exactly as take one's did.
+   */
+  offset: MediaTime;
+  /** The camera's matte, at the camera's own offset. Absent when there is none. */
+  matte?: string;
+}
+
 /** One kept span, resolved and ready to render. */
 export interface ExportSlice {
   /** Source-time range, in nanoseconds. */
   start: MediaTime;
   end: MediaTime;
+  /**
+   * Which file each kind plays for this slice.
+   *
+   * Resolved in the renderer rather than in Rust. A slice may never span a seam
+   * between two takes, so exactly one segment per kind covers it — and resolving
+   * it on this side keeps one implementation of the segment lookup, in
+   * `editor/segments.ts`, where it is tested. A kind is absent when no take
+   * recorded it over this slice, which the exporter renders as no picture and
+   * silence rather than as the nearest take's.
+   */
+  media: Partial<Record<TrackKind, ExportSliceMedia>>;
   /**
    * The drawing plan for this slice, in absolute output pixels.
    *
@@ -809,13 +865,6 @@ export interface ExportRequest {
   fps: number;
   format: ExportFormat;
   slices: ExportSlice[];
-  /**
-   * Per-track offsets from the manifest, in nanoseconds.
-   *
-   * The only place a late start is recorded: every session file is written
-   * zero-based, so the media cannot say when its own track began.
-   */
-  offsets: Record<TrackKind, MediaTime>;
   /**
    * The recording's sound plan — `EditorSession.sound`, passed straight back.
    *
@@ -1100,17 +1149,6 @@ export interface PickerWindow {
   icon?: string;
 }
 
-/** Everything one picker overlay needs to render its display. */
-export interface PickerDisplay {
-  displayId: number;
-  width: number;
-  height: number;
-  scaleFactor: number;
-  /** The target representing this whole screen. */
-  screenTarget: Target;
-  windows: PickerWindow[];
-}
-
 /** Everything one selection overlay needs to render its display. */
 export interface SelectionSetup {
   mode: ScreenMode;
@@ -1176,6 +1214,14 @@ export interface DockState {
    * show the camera as errored rather than as merrily on.
    */
   cameraError: string | null;
+  /**
+   * Whether this take is being added to a recording that already exists.
+   *
+   * The panel's primary action and its dismiss both read differently then: the
+   * take is going into an open project, and cancelling returns to the editor
+   * rather than to the grid.
+   */
+  extending: boolean;
   /**
    * Whether the renderer should be holding the camera and microphone open.
    *
@@ -1416,8 +1462,6 @@ export const CURSOR_STYLES = [
   },
 ] as const;
 
-export type CursorStyleId = (typeof CURSOR_STYLES)[number]["id"];
-
 /** One image, and the point of it that lands on the pointer's position. */
 export interface CursorShape {
   path: string;
@@ -1503,7 +1547,14 @@ export interface EditorSession {
   /** The directory's own name, which is what the title bar shows. */
   name: string;
   manifest: Manifest;
-  /** One entry per recorded track, in manifest order. */
+  /**
+   * One entry per (kind, segment), in manifest order.
+   *
+   * Flat rather than grouped by kind because it is exactly what the playback
+   * loop's element map wants, and because a `TrackKind` alone stopped
+   * identifying one file the moment a recording could be extended with a
+   * second take.
+   */
   media: TrackMedia[];
   /**
    * The pointer, or null when there is none to draw.
@@ -1533,11 +1584,36 @@ export interface EditorSession {
    * would take the clicks with it.
    */
   sound: SoundCues | null;
+  /**
+   * The clip a just-finished Add Recording appended, or null.
+   *
+   * Selected and scrolled to on the open that follows the merge, so the new
+   * footage is what the editor comes back showing. Cleared as it is read,
+   * because it describes an event rather than a property of the recording — kept
+   * anywhere durable it would move the selection on every open for ever.
+   */
+  focusSliceId: string | null;
 }
 
-/** One track, as the renderer plays it. */
+/** One segment of one track, as the renderer plays it. */
 export interface TrackMedia {
   kind: TrackKind;
+  /**
+   * Index of this segment within its track, which is also its take's index.
+   *
+   * Part of the element key, so a recording extended with a second take gets a
+   * second `<video>` rather than one whose `src` is swapped at the seam — a
+   * swap is a `load()`, and a torn-down decoder is a black frame at every join.
+   */
+  segment: number;
+  /**
+   * The manifest's `Segment.file_name`, relative to the session directory.
+   *
+   * Carried through so the export can name the file a slice plays without
+   * re-deriving it from the URL, which is main's to build and the renderer's
+   * only to fetch.
+   */
+  file: string;
   /**
    * A `prequel-media://` URL.
    *
@@ -1566,6 +1642,14 @@ export interface TrackMedia {
    * written at the camera's timestamps from the camera's origin.
    */
   matteUrl: string | null;
+  /**
+   * The matte's `Segment.file_name`, relative to the recording's directory.
+   *
+   * Beside `matteUrl` because the two answer different questions: the renderer
+   * fetches the URL, and the export names the file for Rust to open. Null
+   * wherever `matteUrl` is.
+   */
+  matteFile: string | null;
 }
 
 /**

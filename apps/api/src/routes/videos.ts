@@ -188,13 +188,16 @@ videos.post("/", async (c) => {
 
   const body = parsed.data;
 
-  const [team] = await db
-    .select({ quota: schema.organization.storageQuotaBytes })
-    .from(schema.organization)
-    .where(eq(schema.organization.id, teamId!))
-    .limit(1);
-
-  const used = await usage(db, teamId!);
+  // Together, as `GET /` does: two independent reads are one round trip to D1
+  // rather than two, on the request a user is waiting on after pressing Share.
+  const [[team], used] = await Promise.all([
+    db
+      .select({ quota: schema.organization.storageQuotaBytes })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, teamId!))
+      .limit(1),
+    usage(db, teamId!),
+  ]);
   if (team && used + body.sizeBytes > team.quota) {
     // Worth an event of its own: somebody hitting this has finished a recording,
     // pressed Share and been turned away, which is the point in the product
@@ -239,14 +242,12 @@ videos.post("/", async (c) => {
     exportShortEdge: body.shortEdge ?? null,
   });
 
-  return c.json({
-    id: videoId,
-    uploadUrl: await signedUpload(c.env, key, body.contentType),
-    posterUploadUrl:
-      poster && body.posterContentType
-        ? await signedUpload(c.env, poster, body.posterContentType)
-        : null,
-  });
+  const [uploadUrl, posterUploadUrl] = await Promise.all([
+    signedUpload(c.env, key, body.contentType),
+    poster && body.posterContentType ? signedUpload(c.env, poster, body.posterContentType) : null,
+  ]);
+
+  return c.json({ id: videoId, uploadUrl, posterUploadUrl });
 });
 
 /**
