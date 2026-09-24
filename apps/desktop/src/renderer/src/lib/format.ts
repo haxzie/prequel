@@ -6,12 +6,18 @@ export const NS_PER_SECOND = 1_000_000_000;
  *
  * Hundredths rather than whole seconds: a cut is placed to a frame, and a
  * readout that only ticks once a second cannot tell you where the playhead is.
+ *
+ * The one formatter for the playhead, the hover line and the clip durations.
+ * Two timecodes a pixel apart in different formats looks like one is wrong.
  */
 export function formatTimecode(ns: number): string {
-  const total = Math.max(0, ns) / NS_PER_SECOND;
-  const minutes = Math.floor(total / 60);
-  const seconds = Math.floor(total % 60);
-  const hundredths = Math.floor((total * 100) % 100);
+  // Whole centiseconds first, then split. `(seconds * 100) % 100` on a float
+  // reads 0.29 s as 28.999… and shows `.28`, so a cut placed at .29 would
+  // read back as a hundredth earlier than it is.
+  const centiseconds = Math.floor(Math.max(0, ns) / (NS_PER_SECOND / 100));
+  const minutes = Math.floor(centiseconds / 6000);
+  const seconds = Math.floor(centiseconds / 100) % 60;
+  const hundredths = centiseconds % 100;
 
   return `${minutes}:${String(seconds).padStart(2, "0")}.${String(hundredths).padStart(2, "0")}`;
 }
