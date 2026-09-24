@@ -128,6 +128,10 @@ function inspector(id: string, label: string, steps: Step[] = []): Shot {
   };
 }
 
+/** The picker labels the three look shots click, so the selector and the
+    registry cannot drift apart silently. */
+const LOOK_LABELS = { crt: "CRT", halftone: "Halftone", "window-light": "Window light" };
+
 const EDITOR_READY: Step[] = [
   { kind: "wait", selector: "[data-panel='timeline']" },
   { kind: "seek", fraction: 0.35 },
@@ -337,6 +341,25 @@ export const SHOTS: readonly Shot[] = [
     ],
     clip: "frame",
   },
+  // Three looks on the real composition, and the three riskiest shaders in the
+  // set: a ruled mask, a dot screen, and the one gobo built from noise. The
+  // pixel tests prove the export draws *something* for every look; only these
+  // show whether it is the right something, and only these reach the WebGL
+  // path at all.
+  ...(["crt", "halftone", "window-light"] as const).map((look) => ({
+    id: `filter-${look}`,
+    frame: "workspace" as const,
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click" as const, selector: 'button[aria-label="Filters"]' },
+      { kind: "settle" as const, ms: 300 },
+      { kind: "click" as const, selector: `button[aria-label^="${LOOK_LABELS[look]}"]` },
+      { kind: "settle" as const, ms: 900 },
+    ],
+    clip: "frame" as const,
+  })),
   inspector("inspector-logo", "Logo"),
   // `Z` adds a zoom at the playhead and selects it, which is what swaps the
   // panel to the zoom's own three tabs.

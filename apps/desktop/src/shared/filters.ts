@@ -110,23 +110,6 @@ const NO_LOOK: FilterDefaults = {
   filterAnimated: false,
 };
 
-/**
- * A catalogue entry that has no shader yet.
- *
- * Present in the table from the start so the id, the label and the copy are
- * decided once, and so `FilterId` is the whole list rather than a list that
- * grows — which would make every `Record<FilterId, …>` elsewhere a moving
- * target. `READY` is what the picker filters on.
- *
- * Declared above `FILTERS` rather than below it: the table calls this while it
- * is being built, and `NO_LOOK` is a `const`. Hoisting covers the function and
- * not the constant, so the other order throws before the module has finished
- * loading — which reads as the editor failing to open.
- */
-function pending(label: string, hint: string): FilterSpec {
-  return { label, hint, uses: [], labels: {}, variants: [], defaults: NO_LOOK };
-}
-
 export const FILTERS: Record<FilterId, FilterSpec> = {
   aberration: {
     label: "Chromatic aberration",
@@ -150,23 +133,215 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     },
   },
 
-  // The rest of the catalogue arrives in later phases. Each is an entry here, a
-  // branch in `filters.ts`'s GLSL and the same branch in `filters.metal` — no
-  // structural change, which is the point of the shared vocabulary.
-  grade: pending("Colour", "A grade over the whole frame — warm, cool, faded, mono."),
-  pixelate: pending("Pixelate", "Square blocks, or dithered down to two colours."),
-  halftone: pending("Halftone", "Printed dots on a ruled screen."),
-  lcd: pending("LCD", "A subpixel grid with a lifted black, the way a panel looks close up."),
-  fisheye: pending("Fish eye", "Bulged through a wide lens."),
-  crt: pending("CRT", "Curved glass, an aperture grille, and a slow rolling bar."),
-  vhs: pending("VHS", "Chroma bleed, line jitter and a tear along the bottom."),
-  film: pending("Film", "Grain, halation and a little weave in the gate."),
-  bloom: pending("Glow", "Highlights blooming out into what is around them."),
-  "window-light": pending("Window light", "Light through blinds, panes, a curtain, or leaves."),
+  grade: {
+    label: "Colour",
+    hint: "A grade over the whole frame — warm, cool, faded, mono.",
+    uses: ["strength", "variant"],
+    labels: { strength: "Amount", variant: "Grade" },
+    variants: [
+      { id: "warm", label: "Warm" },
+      { id: "cool", label: "Cool" },
+      { id: "faded", label: "Faded" },
+      { id: "mono", label: "Mono" },
+      { id: "sepia", label: "Sepia" },
+      { id: "teal-orange", label: "Teal & orange" },
+    ],
+    defaults: { ...NO_LOOK, filterStrength: 0.7, filterVariant: "warm" },
+  },
+
+  pixelate: {
+    label: "Pixelate",
+    hint: "Square blocks, or dithered down to two colours.",
+    uses: ["scale", "variant"],
+    labels: { scale: "Block size", variant: "Style" },
+    variants: [
+      { id: "blocks", label: "Blocks" },
+      { id: "bayer", label: "Dither" },
+    ],
+    // Coarse enough to read as a choice. A block a pixel wide is the original
+    // picture with the frame time of a filter.
+    defaults: { ...NO_LOOK, filterScale: 0.012, filterVariant: "blocks" },
+  },
+
+  halftone: {
+    label: "Halftone",
+    hint: "Printed dots on a ruled screen.",
+    uses: ["strength", "scale", "angle", "tint", "variant"],
+    labels: { strength: "Amount", scale: "Dot pitch", angle: "Screen", tint: "Ink", variant: "Ink set" },
+    variants: [
+      { id: "mono", label: "One ink" },
+      { id: "duotone", label: "Duotone" },
+      { id: "cmyk", label: "CMYK" },
+    ],
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 1,
+      filterScale: 0.006,
+      // 45 degrees, which is where a single screen goes: on the diagonal the
+      // grid stops lining up with anything in the picture and reads as tone
+      // rather than as a pattern laid over it.
+      filterAngle: 45,
+      filterTint: "#1c1c1e",
+      filterVariant: "mono",
+    },
+  },
+
+  lcd: {
+    label: "LCD",
+    hint: "A subpixel grid with a lifted black, the way a panel looks close up.",
+    uses: ["strength", "scale", "tint", "variant"],
+    labels: { strength: "Amount", scale: "Pixel size", tint: "Backlight", variant: "Panel" },
+    variants: [
+      { id: "rgb-stripe", label: "RGB" },
+      { id: "bgr-stripe", label: "BGR" },
+      { id: "dot-matrix", label: "Dot matrix" },
+    ],
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 1,
+      // As with the CRT's triad: fine enough to read as a panel, coarse enough
+      // that a pixel's three stripes each land on more than one of the
+      // output's.
+      filterScale: 0.009,
+      filterTint: "#8fb9d6",
+      filterVariant: "rgb-stripe",
+    },
+  },
+
+  fisheye: {
+    label: "Fish eye",
+    hint: "Bulged through a wide lens.",
+    uses: ["strength", "scale", "variant"],
+    labels: { strength: "Bulge", scale: "Edge zoom", variant: "Lens" },
+    variants: [
+      { id: "barrel", label: "Barrel" },
+      { id: "pincushion", label: "Pincushion" },
+      { id: "dome", label: "Peephole" },
+    ],
+    defaults: { ...NO_LOOK, filterStrength: 0.6, filterScale: 0.02, filterVariant: "barrel" },
+  },
+
+  crt: {
+    label: "CRT",
+    hint: "Curved glass, an aperture grille, and a slow rolling bar.",
+    uses: ["strength", "scale", "angle", "tint", "animated", "variant"],
+    labels: {
+      strength: "Amount",
+      scale: "Triad pitch",
+      angle: "Tilt",
+      tint: "Phosphor",
+      animated: "Refresh bar",
+      variant: "Mask",
+    },
+    variants: [
+      { id: "grille", label: "Grille" },
+      { id: "shadow-mask", label: "Shadow mask" },
+      { id: "slot", label: "Slot mask" },
+    ],
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 0.85,
+      // Eight thousandths of the shorter edge: about nine pixels a triad at
+      // 1080p, so each phosphor gets three and the grille is a grille rather
+      // than a guess. Finer than this and even the export cannot resolve it.
+      filterScale: 0.008,
+      // White, so the tube is colourless until somebody asks for amber or
+      // green. The control is there for exactly those two.
+      filterTint: "#ffffff",
+      filterVariant: "grille",
+    },
+  },
+
+  vhs: {
+    label: "VHS",
+    hint: "Chroma bleed, line jitter and a tear along the bottom.",
+    uses: ["strength", "scale", "animated"],
+    labels: { strength: "Wear", scale: "Line height", animated: "Tracking" },
+    variants: [],
+    defaults: { ...NO_LOOK, filterStrength: 0.7, filterScale: 0.003, filterAnimated: true },
+  },
+
+  film: {
+    label: "Film",
+    hint: "Grain, halation and a little weave in the gate.",
+    uses: ["strength", "scale", "tint", "animated", "variant"],
+    labels: {
+      strength: "Amount",
+      scale: "Grain size",
+      tint: "Halation",
+      animated: "Gate weave",
+      variant: "Stock",
+    },
+    variants: [
+      { id: "16mm", label: "16mm" },
+      { id: "35mm", label: "35mm" },
+      { id: "super8", label: "Super 8" },
+    ],
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 0.8,
+      filterScale: 0.003,
+      // The warm bleed a bright highlight leaves on film stock.
+      filterTint: "#ff9a5c",
+      filterVariant: "16mm",
+      filterAnimated: true,
+    },
+  },
+
+  bloom: {
+    label: "Glow",
+    hint: "Highlights blooming out into what is around them.",
+    uses: ["strength", "scale", "tint"],
+    labels: { strength: "Amount", scale: "Radius", tint: "Colour" },
+    variants: [],
+    defaults: { ...NO_LOOK, filterStrength: 0.6, filterScale: 0.02, filterTint: "#ffffff" },
+  },
+
+  "window-light": {
+    label: "Window light",
+    hint: "Light through blinds, panes, a curtain, or leaves.",
+    uses: ["strength", "scale", "angle", "tint", "variant"],
+    labels: {
+      strength: "Contrast",
+      scale: "Spacing",
+      angle: "Direction",
+      tint: "Sunlight",
+      variant: "Through",
+    },
+    variants: [
+      { id: "blinds", label: "Blinds" },
+      { id: "panes", label: "Panes" },
+      { id: "curtain", label: "Curtain" },
+      { id: "leaves", label: "Leaves" },
+    ],
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 0.75,
+      filterScale: 0.06,
+      filterAngle: 20,
+      // Late afternoon. A neutral "sunlight" is a contradiction, and the whole
+      // reason this reads as light rather than as a grey overlay is that the
+      // lit side warms while the shadow cools.
+      filterTint: "#ffd9a0",
+      filterVariant: "blinds",
+    },
+  },
 };
 
 /** The looks with a shader behind them, in the order the picker shows them. */
-export const READY: readonly FilterId[] = ["aberration"];
+export const READY: readonly FilterId[] = [
+  "aberration",
+  "grade",
+  "pixelate",
+  "halftone",
+  "lcd",
+  "fisheye",
+  "crt",
+  "vhs",
+  "film",
+  "bloom",
+  "window-light",
+];
 
 /** Whether a look can actually be drawn in this build. */
 export function isReady(id: FilterId): boolean {

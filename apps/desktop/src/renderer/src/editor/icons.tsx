@@ -420,17 +420,22 @@ export function WatermarkIcon() {
 }
 
 /**
- * Lucide `aperture`: the look laid over the whole frame.
+ * Framework7 `camera_filters`: the look laid over the whole frame.
  *
- * A lens rather than the funnel most interfaces use for "filter". The funnel
- * means *narrowing a list*, which is in an editor exactly the wrong promise —
- * these change how the picture looks, they do not hide any of it.
+ * Three glass discs overlapping, which is what a filter *is* to anyone who has
+ * put one on a lens — rather than the funnel most interfaces reach for. A
+ * funnel means narrowing a list, which in an editor is exactly the wrong
+ * promise: these change how the picture looks, they do not hide any of it.
+ *
+ * Its own 56-unit box rather than the 24 the rest of this file uses. The path
+ * is drawn in those units and rescaling it by hand would be a second drawing of
+ * somebody else's icon; the rail sizes every glyph by its box, so it lands the
+ * same size as its neighbours either way.
  */
 export function FilterIcon() {
   return (
-    <svg {...STROKE} aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="m14.31 8 5.74 9.94M9.69 8h11.48M7.38 12l5.74-9.94M9.69 16 3.95 6.06M14.31 16H2.83M16.62 12l-5.74 9.94" />
+    <svg viewBox="0 0 56 56" fill="currentColor" aria-hidden="true">
+      <path d="M18.964 51.506q3.31 0 6.202-1.247a16.3 16.3 0 0 0 5.09-3.436a15.9 15.9 0 0 0 3.436-5.09q1.236-2.903 1.235-6.214q0-3.288-1.247-6.179a16.17 16.17 0 0 0-8.514-8.515q-2.892-1.247-6.202-1.247q-3.288 0-6.19 1.247a16.13 16.13 0 0 0-8.527 8.515Q3 32.231 3 35.52q0 3.31 1.247 6.213a16.1 16.1 0 0 0 3.436 5.09a16.1 16.1 0 0 0 5.09 3.436q2.903 1.247 6.19 1.247m0-3.628a12 12 0 0 1-4.785-.964a12.6 12.6 0 0 1-3.945-2.653a12.2 12.2 0 0 1-2.653-3.934q-.953-2.246-.953-4.808q0-2.54.953-4.773a12.2 12.2 0 0 1 2.653-3.923a12.6 12.6 0 0 1 3.945-2.653a12 12 0 0 1 4.785-.964q2.562 0 4.796.964a12.5 12.5 0 0 1 6.576 6.576q.963 2.234.963 4.773q0 2.563-.963 4.808a12.46 12.46 0 0 1-6.576 6.587q-2.235.963-4.796.964m9.047-11.95q3.288 0 6.18-1.236a16 16 0 0 0 5.09-3.436a16 16 0 0 0 3.436-5.09q1.236-2.892 1.235-6.202t-1.235-6.19a16.1 16.1 0 0 0-3.436-5.08a16.2 16.2 0 0 0-5.09-3.447Q31.299 4 28.01 4q-3.31 0-6.201 1.247a16.2 16.2 0 0 0-5.091 3.447a16.3 16.3 0 0 0-3.447 5.08q-1.247 2.88-1.247 6.19t1.247 6.202a16.2 16.2 0 0 0 3.447 5.09a16.1 16.1 0 0 0 5.09 3.436q2.892 1.236 6.202 1.236m0-3.629q-2.562 0-4.807-.952a12.2 12.2 0 0 1-3.934-2.653a12.6 12.6 0 0 1-2.653-3.934q-.964-2.235-.964-4.796t.964-4.785a12.7 12.7 0 0 1 2.653-3.923a12.4 12.4 0 0 1 3.934-2.664q2.246-.964 4.807-.964q2.54 0 4.774.964q2.233.963 3.934 2.653a12.2 12.2 0 0 1 2.653 3.923q.952 2.234.952 4.796t-.952 4.796a12.4 12.4 0 0 1-2.653 3.934a12.4 12.4 0 0 1-3.934 2.653q-2.234.952-4.774.952m9.048 19.207q3.288 0 6.18-1.247a16.3 16.3 0 0 0 5.09-3.436a15.9 15.9 0 0 0 3.435-5.09Q53 38.83 53 35.519q0-3.288-1.236-6.179a15.9 15.9 0 0 0-3.435-5.08a16.3 16.3 0 0 0-5.09-3.435q-2.892-1.247-6.18-1.247q-3.31 0-6.213 1.247a16.13 16.13 0 0 0-8.526 8.515q-1.247 2.891-1.247 6.18q0 3.31 1.247 6.213a16.1 16.1 0 0 0 3.435 5.09a16.1 16.1 0 0 0 5.09 3.436q2.904 1.247 6.214 1.247m0-3.628q-2.562 0-4.807-.964a12.5 12.5 0 0 1-3.934-2.653a12.5 12.5 0 0 1-2.654-3.934q-.963-2.246-.963-4.808q0-2.54.963-4.773a12.46 12.46 0 0 1 6.587-6.576q2.246-.963 4.808-.964q2.54 0 4.773.964a12.5 12.5 0 0 1 6.576 6.576q.964 2.234.964 4.773q0 2.563-.952 4.808a12.3 12.3 0 0 1-2.642 3.934a12.5 12.5 0 0 1-3.934 2.653a12 12 0 0 1-4.785.964" />
     </svg>
   );
 }

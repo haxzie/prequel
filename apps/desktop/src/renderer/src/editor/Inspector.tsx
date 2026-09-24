@@ -1904,6 +1904,71 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
   // people draw when they have not looked at one.
   aberration:
     "linear-gradient(90deg, #4b5563 0 30%, #d1585d 30% 34%, #cbd5e1 34% 66%, #4ecdc4 66% 70%, #4b5563 70%)",
+
+  // The block warmed and the field cooled, which is the split every grade in
+  // the set is some version of.
+  grade:
+    "linear-gradient(90deg, #4a5b6b 0 34%, #e0c9a6 34% 66%, #4a5b6b 66%)",
+
+  // The same edges, stepped. Drawn as hard stops rather than a gradient,
+  // because the whole of what pixelating does is remove the in-between.
+  pixelate:
+    "linear-gradient(90deg, #4b5563 0 25%, #7b828c 25% 34%, #cbd5e1 34% 66%, #7b828c 66% 75%, #4b5563 75%)",
+
+  // An even grid of dots on paper. Tiled with a background-size rather than a
+  // repeating-radial-gradient, which draws concentric rings from one centre —
+  // a target, not a screen.
+  halftone:
+    "radial-gradient(circle, #1c1c1e 0 1.3px, transparent 1.6px) 0 0 / 5px 5px, " +
+    "#e8e6e1",
+
+  // The block cut into subpixel stripes, on a black that never quite arrives.
+  lcd:
+    "repeating-linear-gradient(90deg, #ff5a5a 0 2px, #5aff8a 2px 4px, #5a8aff 4px 6px), " +
+    "#12181f",
+
+  // The block bowed: the same two edges, pushed apart in the middle.
+  fisheye:
+    "radial-gradient(ellipse 150% 100% at 50% 50%, #cbd5e1 0 30%, #4b5563 52%)",
+
+  // Scanlines over a triad, with the corners falling away.
+  //
+  // Coarser stripes and harder scanlines than the LCD tile, and a vignette it
+  // does not have. The two looks are both RGB triads up close, so the tiles
+  // have to differ by the things that actually tell them apart: a tube is
+  // curved, banded and dark at the edges where a panel is flat and even.
+  crt:
+    "radial-gradient(ellipse 120% 120% at 50% 50%, transparent 40%, rgba(0,0,0,0.75) 100%), " +
+    "repeating-linear-gradient(0deg, rgba(0,0,0,0.70) 0 1.5px, transparent 1.5px 4px), " +
+    "repeating-linear-gradient(90deg, #ff4d4d 0 3px, #4dff7a 3px 6px, #4d7aff 6px 9px)",
+
+  // The block torn sideways, a line at a time, with the colour arriving late.
+  //
+  // The tear is listed *first*: in CSS the first background layer is the one on
+  // top, so putting the opaque block first painted straight over it and the
+  // tile came out identical to "None".
+  vhs:
+    "repeating-linear-gradient(0deg, rgba(255,90,140,0.45) 0 2px, rgba(90,200,255,0.4) 2px 4px, transparent 4px 7px), " +
+    "linear-gradient(90deg, #4b5563 0 28%, #cbd5e1 28% 60%, #4b5563 60%)",
+
+  // A warm block with its highlight bleeding into the field, under fine grain.
+  //
+  // The grain is barely there on purpose. At the alpha it reads properly on a
+  // frame it becomes a woven texture at tile size, and the tile stops being a
+  // picture of film and becomes a picture of cloth.
+  film:
+    "repeating-conic-gradient(rgba(255,255,255,0.055) 0% 25%, transparent 0% 50%) 0 0 / 2px 2px, " +
+    "linear-gradient(90deg, #4a4239 0 28%, #ffb07a 28% 33%, #ede0cd 33% 67%, #ffb07a 67% 72%, #4a4239 72%)",
+
+  // The block spilling light past where it ends.
+  bloom:
+    "radial-gradient(ellipse 60% 120% at 50% 50%, #ffffff 0 24%, rgba(255,230,180,0.55) 46%, #3b4450 72%)",
+
+  // Slats across the whole field, warm where the light lands and cool where it
+  // does not — the split the shader itself is built on.
+  "window-light":
+    "repeating-linear-gradient(115deg, rgba(255,217,160,0.85) 0 7px, rgba(70,86,120,0.9) 7px 15px), " +
+    "#6b7280",
 };
 
 function WatermarkPanel({

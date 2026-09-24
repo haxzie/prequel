@@ -314,3 +314,76 @@ fn a_look_leaves_the_middle_of_the_picture_alone() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Every look in the catalogue, with the variant that exercises the most of it.
+///
+/// The index is what the shader switches on and the variant is what its own
+/// switch does, so a look wired to the wrong arm and a variant that never
+/// reaches its branch both show up as "this frame is identical to the
+/// unfiltered one".
+const EVERY_LOOK: [(FilterKind, &str); 11] = [
+    (FilterKind::Aberration, ""),
+    (FilterKind::Grade, "teal-orange"),
+    (FilterKind::Pixelate, "bayer"),
+    (FilterKind::Halftone, "cmyk"),
+    (FilterKind::Lcd, "dot-matrix"),
+    (FilterKind::Fisheye, "dome"),
+    (FilterKind::Crt, "slot"),
+    (FilterKind::Vhs, ""),
+    (FilterKind::Film, "super8"),
+    (FilterKind::Bloom, ""),
+    (FilterKind::WindowLight, "leaves"),
+];
+
+/// How far apart two frames are, averaged over every channel of every pixel.
+fn distance(a: &Frame, b: &Frame) -> f64 {
+    let total: i64 = a
+        .pixels
+        .iter()
+        .zip(b.pixels.iter())
+        .map(|(x, y)| (*x as i64 - *y as i64).abs())
+        .sum();
+    total as f64 / a.pixels.len() as f64
+}
+
+#[test]
+fn every_look_in_the_catalogue_changes_the_frame() {
+    // The cheapest guard there is on eleven shaders, and it catches the failure
+    // that costs the most to find by eye: a look whose arm of the switch is
+    // never reached exports the picture untouched, which in the editor is
+    // indistinguishable from "this effect is subtle".
+    //
+    // It also proves the Metal library compiles with all eleven in it. A
+    // `filters.metal` that will not build leaves `filter_pipeline` as `None`
+    // and every frame here comes out unfiltered — so this one assertion covers
+    // the whole file.
+    let (plain_dir, plain) = render("prequel-filter-plain", None);
+
+    for (kind, variant) in EVERY_LOOK {
+        let mut filter = aberration();
+        filter.id = kind;
+        filter.variant = variant.to_owned();
+        // A pitch fine enough that a ruled look lands several cells across the
+        // frame, and a tint that is not white so the looks that multiply by one
+        // actually move.
+        filter.scale = 0.02;
+        filter.tint = "#ffb478".to_owned();
+        // Still, so the frame is the same one every run: the animated parts
+        // hash the clock, and a test that changed with the wall clock would be
+        // a test nobody trusts.
+        filter.animated = false;
+
+        let name = format!("prequel-filter-{}", kind.index());
+        let (dir, frame) = render(&name, Some(filter));
+        let moved = distance(&frame, &plain);
+
+        assert!(
+            moved > 1.0,
+            "{kind:?}/{variant} left the frame alone (mean channel distance {moved:.3})"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    let _ = std::fs::remove_dir_all(&plain_dir);
+}

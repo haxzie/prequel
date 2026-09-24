@@ -82,17 +82,21 @@ describe("what this build can draw", () => {
     for (const id of READY) expect(ALL).toContain(id);
   });
 
-  it("refuses a look with no shader behind it", () => {
-    // The forward-compatibility rule, from the other direction. A project or a
-    // published preset naming a look this build has listed but not implemented
-    // must draw plainly rather than draw nothing — and `READY`, not `FILTERS`,
-    // is what decides.
-    const pending = ALL.filter((id) => !isReady(id));
-    expect(pending.length).toBeGreaterThan(0);
-    for (const id of pending) {
-      expect(filterSpec(id), id).toBeNull();
-      expect(filterId(id), id).toBeNull();
+  it("has a shader behind every look in the catalogue", () => {
+    // True today, and the reason `READY` still exists separately: it is what a
+    // look is gated on while its shader is being written, so a half-finished
+    // one can sit in the table with its id and copy decided without the picker
+    // offering something that would draw nothing.
+    for (const id of ALL) {
+      expect(isReady(id), id).toBe(true);
+      expect(filterSpec(id), id).not.toBeNull();
     }
+  });
+
+  it("offers every ready look, in the catalogue's own order", () => {
+    // The picker renders `READY` rather than `FILTERS`, so a look added to the
+    // table and forgotten here is a look nobody can reach.
+    expect([...READY]).toEqual(ALL);
   });
 
   it("refuses a name it has never heard of, and no name", () => {
@@ -115,7 +119,16 @@ describe("variant numbering", () => {
    * added here fails the total below rather than silently drawing its first
    * variant in the export and its chosen one in the preview.
    */
-  const NUMBERS: Partial<Record<FilterId, Record<string, number>>> = {};
+  const NUMBERS: Partial<Record<FilterId, Record<string, number>>> = {
+    grade: { warm: 0, cool: 1, faded: 2, mono: 3, sepia: 4, "teal-orange": 5 },
+    pixelate: { blocks: 0, bayer: 1 },
+    halftone: { mono: 0, duotone: 1, cmyk: 2 },
+    lcd: { "rgb-stripe": 0, "bgr-stripe": 1, "dot-matrix": 2 },
+    fisheye: { barrel: 0, pincushion: 1, dome: 2 },
+    crt: { grille: 0, "shadow-mask": 1, slot: 2 },
+    film: { "16mm": 0, "35mm": 1, super8: 2 },
+    "window-light": { blinds: 0, panes: 1, curtain: 2, leaves: 3 },
+  };
 
   it("matches the numbers the exporter holds", () => {
     for (const [id, expected] of Object.entries(NUMBERS)) {

@@ -934,11 +934,25 @@ impl FilterKind {
 
     /// This look's sub-looks, in the order `FILTERS[id].variants` lists them.
     ///
-    /// Empty for every look in this build: `Aberration` is the only one with a
-    /// shader behind it and there is a single way to wear it. Each look that
-    /// gains variants gets an arm here and a matching entry in the registry.
+    /// Hand-kept in lockstep with the registry in
+    /// `apps/desktop/src/shared/filters.ts`, and pinned by a test on each side
+    /// naming the same numbers. A variant inserted in the middle of one list
+    /// and not the other renumbers every variant after it — which does not fail
+    /// to build, it draws the wrong sub-look in the export and the right one in
+    /// the preview.
     fn variants(self) -> &'static [&'static str] {
-        &[]
+        match self {
+            Self::Grade => &["warm", "cool", "faded", "mono", "sepia", "teal-orange"],
+            Self::Pixelate => &["blocks", "bayer"],
+            Self::Halftone => &["mono", "duotone", "cmyk"],
+            Self::Lcd => &["rgb-stripe", "bgr-stripe", "dot-matrix"],
+            Self::Fisheye => &["barrel", "pincushion", "dome"],
+            Self::Crt => &["grille", "shadow-mask", "slot"],
+            Self::Film => &["16mm", "35mm", "super8"],
+            Self::WindowLight => &["blinds", "panes", "curtain", "leaves"],
+            // One way to be worn each, so the fallback of 0 is the only answer.
+            Self::Aberration | Self::Vhs | Self::Bloom | Self::Unknown => &[],
+        }
     }
 }
 
@@ -1217,15 +1231,28 @@ mod tests {
     }
 
     /// The table `variantIndex` in `apps/desktop/src/shared/filters.ts`
-    /// mirrors, written out.
-    ///
-    /// Nothing in this build wears more than one way yet, so this pins the
-    /// fallback rather than a list. A variant name that is not the look's still
-    /// names a look that is, and the look drawn some way beats a blank frame.
+    /// mirrors, written out on both sides because nothing compiles across the
+    /// boundary.
+    #[test]
+    fn the_variant_numbering_matches_the_registry() {
+        assert_eq!(FilterKind::Grade.variant_index("warm"), 0);
+        assert_eq!(FilterKind::Grade.variant_index("teal-orange"), 5);
+        assert_eq!(FilterKind::Pixelate.variant_index("bayer"), 1);
+        assert_eq!(FilterKind::Halftone.variant_index("cmyk"), 2);
+        assert_eq!(FilterKind::Lcd.variant_index("dot-matrix"), 2);
+        assert_eq!(FilterKind::Fisheye.variant_index("dome"), 2);
+        assert_eq!(FilterKind::Crt.variant_index("slot"), 2);
+        assert_eq!(FilterKind::Film.variant_index("super8"), 2);
+        assert_eq!(FilterKind::WindowLight.variant_index("leaves"), 3);
+    }
+
     #[test]
     fn an_unknown_variant_draws_the_looks_first() {
+        // A variant name that is not the look's still names a look that is, and
+        // the look drawn some way beats a blank frame.
+        assert_eq!(FilterKind::Crt.variant_index("trinitron"), 0);
+        // And a look with one way of being worn has nothing to pick from.
         assert_eq!(FilterKind::Aberration.variant_index(""), 0);
-        assert_eq!(FilterKind::Aberration.variant_index("trinitron"), 0);
     }
 
     #[test]
