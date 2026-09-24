@@ -16,7 +16,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { webContents } from "electron";
+import { toEveryWindow } from "../broadcast.js";
 
 import type { TranscribeProgress } from "../../shared/contract.js";
 import { IPC_CHANNELS } from "../../shared/contract.js";
@@ -35,10 +35,6 @@ import { TranscribeError, type TranscribeResult, type Transcriber } from "./tran
 /** The directory currently being transcribed, or null. */
 let running: string | null = null;
 let cancelling: AbortController | null = null;
-
-export function isTranscribing(): boolean {
-  return running !== null;
-}
 
 /**
  * Transcribes a recording's microphone track and writes `transcript.json`.
@@ -193,11 +189,5 @@ function finish(update: Omit<TranscribeProgress, "dir">): void {
  * open on that recording.
  */
 function broadcast(update: Omit<TranscribeProgress, "dir">, dir = running ?? ""): void {
-  const message: TranscribeProgress = { ...update, dir };
-
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) {
-      contents.send(IPC_CHANNELS.transcribeProgress, message);
-    }
-  }
+  toEveryWindow(IPC_CHANNELS.transcribeProgress, { ...update, dir } satisfies TranscribeProgress);
 }
