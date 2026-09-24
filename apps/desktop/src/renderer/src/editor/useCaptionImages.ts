@@ -65,14 +65,16 @@ export function useCaptionImages(
     const name = recordingName(session.dir);
     let frame = 0;
     let cancelled = false;
+    /** Paths `evict` let go of since the last `publish`. */
+    let dropped: string[] = [];
 
-    const tick = () => {
+    const tick = (now: DOMHighResTimeStamp) => {
       frame = requestAnimationFrame(tick);
 
       // Null before the media is ready, and between slices at a cut. Nothing to
       // load rather than a window around zero, which would decode the first
       // cues of the recording every time the playhead crossed a gap.
-      const at = latest.current.media.sourceAt(performance.now());
+      const at = latest.current.media.sourceAt(now);
       if (at === null) return;
       clock.current += 1;
 
@@ -136,6 +138,7 @@ export function useCaptionImages(
         if (stalest === null || seen === clock.current) break;
         loaded.current.delete(stalest);
         used.current.delete(stalest);
+        dropped.push(stalest);
       }
     };
 
@@ -148,11 +151,16 @@ export function useCaptionImages(
      */
     const publish = () => {
       const mine = new Map(loaded.current);
+      const gone = dropped;
+      dropped = [];
       setImages((images) => {
         const next = new Map(images);
-        // Only ever adds and replaces: the backgrounds and pointer images in
-        // here belong to `useEditorImages`, and dropping them would blank the
-        // composition to get a caption on screen.
+        // Removes only what this hook evicted. The backgrounds and pointer
+        // images in here belong to `useEditorImages`, and dropping them would
+        // blank the composition to get a caption on screen. Removing nothing
+        // at all is the other failure: every bitmap evicted from `loaded`
+        // stays alive in this map, and `KEEP` bounds nothing.
+        for (const path of gone) if (!mine.has(path)) next.delete(path);
         for (const [path, image] of mine) next.set(path, image);
         return next;
       });
