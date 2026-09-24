@@ -6,7 +6,7 @@
  * renderer can act on, so the UI can show a recovery path instead of an
  * unhandled promise rejection.
  */
-import { app, BrowserWindow, ipcMain, systemPreferences, webContents } from "electron";
+import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
 
 import { env } from "@prequel/env";
 
@@ -23,6 +23,7 @@ import type {
   TeleprompterState,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
+import { toEveryWindow } from "./broadcast.js";
 import type {
   AuthState,
   Entitlement,
@@ -39,13 +40,7 @@ import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
 import { setToggleShortcut } from "./shortcuts.js";
 import { cancelExport, chooseExportTarget, copyExport, dragExport, startExport } from "./export.js";
-import {
-  entitlement,
-  onEntitlementChanged,
-  openUpgrade,
-  refreshEntitlement,
-  trackUpgradePrompt,
-} from "./licence.js";
+import { entitlement, openUpgrade, refreshEntitlement, trackUpgradePrompt } from "./licence.js";
 import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
@@ -521,30 +516,22 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
  * drives it arrives many times a second from a place none of them can see.
  */
 export function broadcastUpdateState(state: UpdateState): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.updateChanged, state);
-  }
+  toEveryWindow(IPC_CHANNELS.updateChanged, state);
+}
+
+/** Tells every open window what macOS now says about opening at login. */
+export function broadcastLoginItem(enabled: boolean | null): void {
+  toEveryWindow(IPC_CHANNELS.loginItemChanged, enabled);
 }
 
 /** Pushes panel state to every live renderer. */
-/** Tells every open window what macOS now says about opening at login. */
-export function broadcastLoginItem(enabled: boolean | null): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.loginItemChanged, enabled);
-  }
-}
-
 export function broadcastDockState(state: DockState): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.dockChanged, state);
-  }
+  toEveryWindow(IPC_CHANNELS.dockChanged, state);
 }
 
 /** The prompter's rare changes: script, pause, listening. The position is not here. */
 export function broadcastTeleprompter(state: TeleprompterState): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.teleprompterChanged, state);
-  }
+  toEveryWindow(IPC_CHANNELS.teleprompterChanged, state);
 }
 
 /**
@@ -556,9 +543,7 @@ export function broadcastTeleprompter(state: TeleprompterState): void {
  * prevent.
  */
 export function broadcastAuthState(state: AuthState): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.authChanged, state);
-  }
+  toEveryWindow(IPC_CHANNELS.authChanged, state);
 }
 
 /**
@@ -569,9 +554,7 @@ export function broadcastAuthState(state: AuthState): void {
  * necessarily in the window that opened the browser.
  */
 export function broadcastEntitlement(value: Entitlement): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.licenceChanged, value);
-  }
+  toEveryWindow(IPC_CHANNELS.licenceChanged, value);
 }
 
 export function removeIpc(): void {

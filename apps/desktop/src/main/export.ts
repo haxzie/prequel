@@ -14,7 +14,6 @@ import {
   clipboard,
   dialog,
   nativeImage,
-  webContents,
   type BrowserWindow,
   type SaveDialogOptions,
   type WebContents,
@@ -23,6 +22,7 @@ import {
 import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
+import { toEveryWindow } from "./broadcast.js";
 import { redact } from "./errors.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
@@ -126,10 +126,6 @@ export async function chooseExportTarget(
  * a packaged app has no console and the log only records the stages.
  */
 let startedAt = 0;
-
-export function isExporting(): boolean {
-  return running !== null;
-}
 
 /**
  * Starts an export.
@@ -323,7 +319,5 @@ function finish(update: ExportProgress): void {
  * thing that should know it finished.
  */
 function broadcast(progress: ExportProgress): void {
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.exportProgress, progress);
-  }
+  toEveryWindow(IPC_CHANNELS.exportProgress, progress);
 }

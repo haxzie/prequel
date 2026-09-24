@@ -12,7 +12,7 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { basename, extname } from "node:path";
 
-import { webContents } from "electron";
+import { toEveryWindow } from "./broadcast.js";
 
 import { IPC_CHANNELS, type ShareProgress, type ShareRequest } from "../shared/contract.js";
 import { apiFetch, ApiError } from "./api.js";
@@ -34,10 +34,6 @@ interface Created {
  * meaningless.
  */
 let current: { path: string; abort: AbortController } | null = null;
-
-export function isSharing(): boolean {
-  return current !== null;
-}
 
 export async function startShare(share: ShareRequest): Promise<void> {
   if (current) throw new ApiError("ALREADY_SHARING", "Something is already uploading.");
@@ -314,7 +310,5 @@ function requestFor(
 function broadcast(update: Omit<ShareProgress, "url" | "error"> & Partial<ShareProgress>): void {
   const message: ShareProgress = { url: null, error: null, ...update };
 
-  for (const contents of webContents.getAllWebContents()) {
-    if (!contents.isDestroyed()) contents.send(IPC_CHANNELS.shareProgress, message);
-  }
+  toEveryWindow(IPC_CHANNELS.shareProgress, message);
 }

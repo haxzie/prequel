@@ -40,6 +40,21 @@ import { IPC_CHANNELS } from "../shared/contract.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
 import type { Project } from "../shared/project.js";
 
+/**
+ * Listens on a channel main broadcasts on, and hands back the way to stop.
+ *
+ * Every `on…` below goes through this so none can forget the `off`: a listener
+ * left behind by an unmounted component fires into a dead closure for the life
+ * of the window, and a remount adds a second one, so each broadcast then lands
+ * twice. The event is dropped here too — it carries `sender`, which a renderer
+ * has no business holding.
+ */
+function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
+  const handler = (_event: unknown, value: T) => listener(value);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.off(channel, handler);
+}
+
 export type {
   AppInfo,
   BackgroundImage,
@@ -114,11 +129,8 @@ const api = {
      * in System Settings, so the switch has to be told to look again rather
      * than trusting what it read when it mounted.
      */
-    onChange: (listener: (enabled: boolean) => void): (() => void) => {
-      const handler = (_event: unknown, enabled: boolean) => listener(enabled);
-      ipcRenderer.on(IPC_CHANNELS.loginItemChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.loginItemChanged, handler);
-    },
+    onChange: (listener: (enabled: boolean) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.loginItemChanged, listener),
   },
 
   settings: {
@@ -174,18 +186,12 @@ const api = {
      * function. The bubble is a drag region and so never sees the cursor
      * itself — see `HOVER_POLL_MS` in main's camera window.
      */
-    onCameraHover: (listener: (hovered: boolean) => void): (() => void) => {
-      const handler = (_event: unknown, hovered: boolean) => listener(hovered);
-      ipcRenderer.on(IPC_CHANNELS.cameraHover, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.cameraHover, handler);
-    },
+    onCameraHover: (listener: (hovered: boolean) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.cameraHover, listener),
 
     /** Subscribes to panel state. Returns an unsubscribe function. */
-    onChange: (listener: (state: DockState) => void): (() => void) => {
-      const handler = (_event: unknown, state: DockState) => listener(state);
-      ipcRenderer.on(IPC_CHANNELS.dockChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.dockChanged, handler);
-    },
+    onChange: (listener: (state: DockState) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.dockChanged, listener),
   },
 
   teleprompter: {
@@ -201,34 +207,22 @@ const api = {
     ready: (): void => ipcRenderer.send(IPC_CHANNELS.teleprompterReady),
 
     /** Subscribes to the script, pause and listening state. Returns an unsubscribe function. */
-    onChange: (listener: (state: TeleprompterState) => void): (() => void) => {
-      const handler = (_event: unknown, state: TeleprompterState) => listener(state);
-      ipcRenderer.on(IPC_CHANNELS.teleprompterChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterChanged, handler);
-    },
+    onChange: (listener: (state: TeleprompterState) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.teleprompterChanged, listener),
 
     /** Whether the island is being shown or is about to be hidden — its cue to slide. */
-    onVisible: (listener: (visible: boolean) => void): (() => void) => {
-      const handler = (_event: unknown, visible: boolean) => listener(visible);
-      ipcRenderer.on(IPC_CHANNELS.teleprompterVisible, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterVisible, handler);
-    },
+    onVisible: (listener: (visible: boolean) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.teleprompterVisible, listener),
 
     /** Subscribes to the reader's position. Sent to the island alone, often. */
-    onPosition: (listener: (position: TeleprompterPosition) => void): (() => void) => {
-      const handler = (_event: unknown, position: TeleprompterPosition) => listener(position);
-      ipcRenderer.on(IPC_CHANNELS.teleprompterPosition, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.teleprompterPosition, handler);
-    },
+    onPosition: (listener: (position: TeleprompterPosition) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.teleprompterPosition, listener),
   },
 
   selection: {
     /** Fires once per overlay, with that display's geometry. */
-    onSetup: (listener: (setup: SelectionSetup) => void): (() => void) => {
-      const handler = (_event: unknown, setup: SelectionSetup) => listener(setup);
-      ipcRenderer.on(IPC_CHANNELS.selectionSetup, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.selectionSetup, handler);
-    },
+    onSetup: (listener: (setup: SelectionSetup) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.selectionSetup, listener),
     /**
      * What this overlay should be showing.
      *
@@ -285,11 +279,8 @@ const api = {
      * one — it is the same recording — so nothing else would tell the editor that
      * the manifest it is holding is a take out of date.
      */
-    onReload: (listener: (name: string) => void): (() => void) => {
-      const handler = (_event: unknown, name: string) => listener(name);
-      ipcRenderer.on(IPC_CHANNELS.editorReload, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.editorReload, handler);
-    },
+    onReload: (listener: (name: string) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.editorReload, listener),
 
     /**
      * The voices of one keyboard or mouse, by id, for the preview to place.
@@ -348,11 +339,8 @@ const api = {
        * promise from `start`, so there is one channel and no race between
        * "done" and the tick before it.
        */
-      onProgress: (listener: (progress: ExportProgress) => void): (() => void) => {
-        const handler = (_event: unknown, progress: ExportProgress) => listener(progress);
-        ipcRenderer.on(IPC_CHANNELS.exportProgress, handler);
-        return () => ipcRenderer.off(IPC_CHANNELS.exportProgress, handler);
-      },
+      onProgress: (listener: (progress: ExportProgress) => void): (() => void) =>
+        subscribe(IPC_CHANNELS.exportProgress, listener),
 
       /** Puts a finished export on the pasteboard as a file, not as its path. */
       copy: (path: string): Promise<IpcResult<void>> =>
@@ -387,11 +375,8 @@ const api = {
 
       cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.shareCancel),
 
-      onProgress: (listener: (progress: ShareProgress) => void): (() => void) => {
-        const handler = (_event: unknown, progress: ShareProgress) => listener(progress);
-        ipcRenderer.on(IPC_CHANNELS.shareProgress, handler);
-        return () => ipcRenderer.off(IPC_CHANNELS.shareProgress, handler);
-      },
+      onProgress: (listener: (progress: ShareProgress) => void): (() => void) =>
+        subscribe(IPC_CHANNELS.shareProgress, listener),
     },
 
     transcribe: {
@@ -406,11 +391,8 @@ const api = {
        * `start`, for the same reason the export's does: one channel, and no
        * race between the result and the tick before it.
        */
-      onProgress: (listener: (progress: TranscribeProgress) => void): (() => void) => {
-        const handler = (_event: unknown, progress: TranscribeProgress) => listener(progress);
-        ipcRenderer.on(IPC_CHANNELS.transcribeProgress, handler);
-        return () => ipcRenderer.off(IPC_CHANNELS.transcribeProgress, handler);
-      },
+      onProgress: (listener: (progress: TranscribeProgress) => void): (() => void) =>
+        subscribe(IPC_CHANNELS.transcribeProgress, listener),
     },
 
     backgrounds: {
@@ -576,17 +558,11 @@ const api = {
      * recording, a finished capture opening its take, and a delete taking the
      * window off what it just removed.
      */
-    onNavigate: (listener: (route: string) => void): (() => void) => {
-      const handler = (_event: unknown, route: string) => listener(route);
-      ipcRenderer.on(IPC_CHANNELS.workspaceNavigate, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.workspaceNavigate, handler);
-    },
+    onNavigate: (listener: (route: string) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.workspaceNavigate, listener),
 
-    onSection: (listener: (section: WorkspaceSection) => void): (() => void) => {
-      const handler = (_event: unknown, section: WorkspaceSection) => listener(section);
-      ipcRenderer.on(IPC_CHANNELS.workspaceSection, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.workspaceSection, handler);
-    },
+    onSection: (listener: (section: WorkspaceSection) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.workspaceSection, listener),
 
     /**
      * Says the view is mounted, so main can send what it should be showing.
@@ -615,11 +591,8 @@ const api = {
      * analytics call that can make Export feel slow.
      */
     prompted: (): void => ipcRenderer.send(IPC_CHANNELS.licencePrompted),
-    onChange: (listener: (entitlement: Entitlement) => void): (() => void) => {
-      const handler = (_event: unknown, value: Entitlement) => listener(value);
-      ipcRenderer.on(IPC_CHANNELS.licenceChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.licenceChanged, handler);
-    },
+    onChange: (listener: (entitlement: Entitlement) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.licenceChanged, listener),
   },
 
   auth: {
@@ -641,11 +614,8 @@ const api = {
     openDashboard: (): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.authOpenDashboard),
 
-    onChange: (listener: (state: AuthState) => void): (() => void) => {
-      const handler = (_event: unknown, state: AuthState) => listener(state);
-      ipcRenderer.on(IPC_CHANNELS.authChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.authChanged, handler);
-    },
+    onChange: (listener: (state: AuthState) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.authChanged, listener),
   },
 
   update: {
@@ -675,11 +645,8 @@ const api = {
     /** Brings up the update window, which has room for notes and progress. */
     open: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.updateOpen),
 
-    onChange: (listener: (state: UpdateState) => void): (() => void) => {
-      const handler = (_event: unknown, state: UpdateState) => listener(state);
-      ipcRenderer.on(IPC_CHANNELS.updateChanged, handler);
-      return () => ipcRenderer.off(IPC_CHANNELS.updateChanged, handler);
-    },
+    onChange: (listener: (state: UpdateState) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.updateChanged, listener),
   },
 };
 
