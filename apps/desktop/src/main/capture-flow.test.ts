@@ -15,7 +15,9 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import {
   DEFAULT_PREFERENCES,
   type RecordingPreferences,
+  type ScreenMode,
   type SelectionResult,
+  type Target,
   type WorkspaceSection,
 } from "../shared/contract.js";
 import {
@@ -106,9 +108,12 @@ function makeFlow(
     opened: 0,
     cancelled: 0,
     isOpen: false,
+    /** What the last picker was given to offer. */
+    offered: [] as Target[],
     browserWindows: () => [],
-    open: async () => {
+    open: async (_mode: ScreenMode, targets: Target[] = []) => {
       selection.opened += 1;
+      selection.offered = targets;
       return picked;
     },
     cancel: () => {
@@ -797,6 +802,43 @@ describe("adding a recording to a project", () => {
     await flow.record();
 
     expect(requests[0]!.excludedWindowIds).toContain(4242);
+  });
+
+  it("does not offer the editor window as something to record", async () => {
+    // It is the front-most ordinary window while the picker is up — the button
+    // that opened the picker is in it — and the picker takes the first window
+    // under the cursor. Offered, it covers the window being added to and the
+    // press reads as ignored.
+    const { flow, selection, dir } = await recorded();
+    // The id the fake recorder lists for the VS Code window, so the editor is
+    // something the picker would otherwise have shown.
+    const window = { id: 1001, isDestroyed: () => false };
+    (
+      flow as unknown as { deps: { workspace: { browserWindow: () => unknown } } }
+    ).deps.workspace.browserWindow = () => window;
+
+    await flow.extendRecording(dir);
+    await vi.waitFor(() => expect(selection.opened).toBe(1));
+
+    expect(selection.offered.map((target) => target.id)).not.toContain(1001);
+    // Everything else still is: this removes one window, not Prequel.
+    expect(selection.offered.map((target) => target.id)).toContain(1002);
+  });
+
+  it("offers it again once the addition is over", async () => {
+    // Recording Prequel's own window is a real thing to want. It is only
+    // withheld while that window is the one in the way.
+    const { flow, selection, dir } = await recorded();
+    const window = { id: 1001, isDestroyed: () => false };
+    (
+      flow as unknown as { deps: { workspace: { browserWindow: () => unknown } } }
+    ).deps.workspace.browserWindow = () => window;
+
+    await flow.extendRecording(dir);
+    flow.close();
+    await flow.chooseMode("window");
+
+    expect(selection.offered.map((target) => target.id)).toContain(1001);
   });
 
   it("merges the take and returns to the editor rather than opening one on it", async () => {
