@@ -58,6 +58,14 @@ describe("formatTimecode", () => {
     expect(formatTimecode(61.5 * NS_PER_SECOND)).toBe("1:01.50");
   });
 
+  it("does not lose a hundredth to floating point", () => {
+    // Each of these read one hundredth short when split as a float.
+    expect(formatTimecode(290_000_000)).toBe("0:00.29");
+    expect(formatTimecode(570_000_000)).toBe("0:00.57");
+    expect(formatTimecode(9_290_000_000)).toBe("0:09.29");
+    expect(formatTimecode(59_999_999_999)).toBe("0:59.99");
+  });
+
   it("never runs negative", () => {
     expect(formatTimecode(-1)).toBe("0:00.00");
   });

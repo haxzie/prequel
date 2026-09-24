@@ -14,6 +14,7 @@ import type { MediaTime, TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type MixBus, type TrackGain } from "./audio";
 import { matteKey, mediaKey, segmentAt, type MediaKey } from "./segments";
 import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
+import { formatTimecode } from "../lib/format";
 import { writeTicker } from "../lib/ticker";
 import { Playback, followElement, syncElement } from "./playback";
 import {
@@ -474,7 +475,7 @@ export function useEditorPlayback(
       // Written only when the displayed value actually changes — the string is
       // rebuilt cheaply, but the DOM write is not free, and there are two of
       // them now.
-      const text = format(at);
+      const text = formatTimecode(at);
       if (text !== shown) {
         shown = text;
         // Through `writeTicker` rather than straight onto the node: an element
@@ -653,19 +654,4 @@ export function useEditorPlayback(
       visible,
     ],
   );
-}
-
-/**
- * `m:ss.cc`, rebuilt on every frame so it stays cheap.
- *
- * Exported so the hover line's label reads the same as the playhead's. Two
- * timecodes a pixel apart in different formats is the sort of thing that looks
- * like one of them is wrong.
- */
-export function format(ns: MediaTime): string {
-  const total = Math.max(0, ns) / 1_000_000_000;
-  const minutes = Math.floor(total / 60);
-  const seconds = Math.floor(total % 60);
-  const hundredths = Math.floor((total * 100) % 100);
-  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(hundredths).padStart(2, "0")}`;
 }
