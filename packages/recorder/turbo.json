@@ -4,27 +4,32 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      // The workspace crates, and not only this package's own source.
+      //
+      // The addon is a thin napi wrapper: almost everything it does lives in
+      // `crates/`, and `filters.metal` and `shaders.metal` are `include_str!`-ed
+      // straight into the binary. Without these the cache is keyed on a
+      // directory that barely changes, so a rewritten shader restores a
+      // *stale* `.node` and the packaged app exports through a compositor
+      // nobody has edited for days.
+      //
+      // That is not hypothetical. Ten filter looks were added to
+      // `crates/prequel-render/src/filters.metal`, every test passed — `cargo
+      // test` compiles the crate from source and never goes through the
+      // addon — and the shipped build exported all ten unfiltered, because the
+      // `.node` it carried predated them.
+      //
+      // `$TURBO_ROOT$` rather than the root `globalDependencies`, so a crate
+      // change invalidates this build and not every task in the repository.
       "inputs": [
         "$TURBO_DEFAULT$",
         "src/**/*.rs",
         "Cargo.toml",
         "build.rs",
-        "$TURBO_ROOT$/crates/**/*.rs",
-        "$TURBO_ROOT$/crates/**/Cargo.toml",
+        "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml"
       ],
       "outputs": ["*.node", "index.js", "index.d.ts"]
-    },
-    "test": {
-      "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "src/**/*.rs",
-        "Cargo.toml",
-        "$TURBO_ROOT$/crates/**/*.rs",
-        "$TURBO_ROOT$/crates/**/Cargo.toml"
-      ],
-      "outputs": []
     }
   }
 }

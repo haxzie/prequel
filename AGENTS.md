@@ -50,6 +50,16 @@ app means granting Screen Recording.
 After changing Rust that JavaScript calls, rebuild the addon or the change is
 invisible: `cd packages/recorder && PATH="$HOME/.cargo/bin:$PATH" pnpm build`.
 
+**This includes the shaders.** `shaders.metal` and `filters.metal` are
+`include_str!`-ed into `prequel-render` and so into the addon, and nothing in
+the JavaScript build knows they exist. `cargo test` compiles the crate from
+source and never goes through the addon, so a rewritten shader can be fully
+green and still be absent from the packaged app — the preview draws the new
+GLSL, the export runs the old MSL, and the two disagree with nothing on screen
+or in the log to say why. `pnpm --filter @prequel/desktop package` now rebuilds
+the addon first, and `packages/recorder/turbo.json` keys its cache on
+`crates/**` for the same reason. Both are there because this went wrong.
+
 After changing `packages/db`, regenerate and apply the migration or D1 still has
 the old schema: `pnpm --filter @prequel/db generate && pnpm --filter @prequel/api
 migrate`.

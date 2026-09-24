@@ -536,6 +536,20 @@ impl Compositor {
         if let (Some(filter), Some(scene), Some(pipeline)) =
             (filtered, scene.as_deref(), self.filter_pipeline.as_deref())
         {
+            // The mip chain, built from what the items just drew.
+            //
+            // Encoded between the two passes on the same command buffer, so it
+            // is ordered against both without a second commit. Built for every
+            // filtered frame rather than only for the looks that sample it: it
+            // is a hardware blit over a texture the GPU already has hot, and
+            // one `match` here deciding which looks need it would be a third
+            // hand-kept mirror of the catalogue — the kind that goes wrong
+            // silently the first time a look starts blurring.
+            {
+                let mut mips = scene.retained();
+                cmd.blit(|blit| blit.generate_mipmaps(&mut mips));
+            }
+
             let descriptor = mtl::RenderPassDesc::new();
             let attachments = descriptor.color_attaches();
             let mut attachment = attachments.get(0);
@@ -1148,8 +1162,13 @@ impl Compositor {
             .as_ref()
             .is_none_or(|texture| texture.width() != width || texture.height() != height);
         if stale {
+            // Mipmapped, which only the glow reads — see `bloomed` in
+            // `filters.metal`. A spiral of point samples wide enough to be a
+            // bloom leaves gaps between the taps, and the eye reads those gaps
+            // as grain; sampling a level where each texel is already an average
+            // of its neighbourhood fills them by construction.
             let mut desc =
-                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, width, height, false);
+                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, width, height, true);
             // Both: the items are rendered into it and the filter pass samples
             // it. `SHADER_READ` alone is a validation failure at the first
             // frame, which in a packaged build is an export that stops with a

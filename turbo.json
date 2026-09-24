@@ -24,6 +24,20 @@
         "index.d.ts"
       ]
     },
+    // Packaging builds what it packages.
+    //
+    // Without this the task is outside the graph entirely, so `electron-builder`
+    // copies whatever `.node` happens to be sitting in `packages/recorder` —
+    // which after a change to `crates/` is the previous one. The app installs,
+    // launches, previews correctly, and exports through a compositor built
+    // before the change, with nothing anywhere saying so.
+    //
+    // Uncached on purpose: the output is a signed disk image, and the note on
+    // `build`'s `outputs` above covers why those are not worth keeping.
+    "package": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "test": {
       "dependsOn": ["^build"],
       "outputs": []

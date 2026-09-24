@@ -8,7 +8,7 @@
     "dev": "node scripts/sync-backgrounds.mjs && electron-vite dev --watch",
     "build": "node scripts/sync-backgrounds.mjs && electron-vite build",
     "preview": "electron-vite preview",
-    "package": "node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",
+    "package": "pnpm --filter @prequel/recorder build && node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",
     "install:app": "node scripts/install.mjs",
     "ship": "pnpm package && pnpm install:app",
     "test": "node scripts/sync-backgrounds.mjs && vitest run",

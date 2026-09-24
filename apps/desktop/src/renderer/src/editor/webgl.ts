@@ -616,6 +616,13 @@ export class WebGlCompositor {
     gl.bindVertexArray(null);
 
     if (plan.filter && filter && scene) {
+      // The mip chain, built from what the items just drew. For every filtered
+      // frame rather than only the looks that sample it: it is a few hundred
+      // microseconds on a texture the GPU already has, and a list here of which
+      // looks blur would be a third hand-kept mirror of the catalogue — the
+      // kind that goes wrong silently the first time a look starts blurring.
+      gl.bindTexture(gl.TEXTURE_2D, scene.texture);
+      gl.generateMipmap(gl.TEXTURE_2D);
       this.drawFilter(gl, filter, scene, plan.filter, plan.frame, at);
     }
 
@@ -722,7 +729,12 @@ export class WebGlCompositor {
     // Linear, and clamped: a tap a hair outside the frame must not wrap to the
     // far edge, which shows as a stripe of the opposite corner along the
     // border. The exporter's sampler is declared the same way.
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    //
+    // The minification filter walks the mip chain, which only the glow reads —
+    // see `bloomed` in `filters.ts`. Plain `LINEAR` here would silently serve
+    // every `textureLod` from level 0, which is the smooth blur turning back
+    // into the gapped one with nothing on screen to say why.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

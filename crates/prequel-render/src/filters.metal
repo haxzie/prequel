@@ -114,8 +114,18 @@ static float2 corner(constant FilterUniforms &u) {
     return centred(u, float2(1.0));
 }
 
+/// The scene, at full resolution.
+///
+/// The level is stated rather than left to the hardware, and that is not
+/// belt-and-braces. The scene carries a mip chain for the glow, and a sampler
+/// left to pick its own level picks it from the derivative of the coordinate —
+/// which for the looks that *snap* their coordinate to a cell spikes at every
+/// cell boundary. Pixelate and the dot-matrix panel would come back with a soft
+/// band around each block, from a level nothing asked for.
+///
+/// Only `bloomed` names a level other than this one.
 static float3 grab(texture2d<float> scene, sampler smp, float2 uv) {
-    return scene.sample(smp, clamp(uv, 0.0, 1.0)).rgb;
+    return scene.sample(smp, clamp(uv, 0.0, 1.0), level(0.0)).rgb;
 }
 
 /// A number from a position, stable and cheap.
@@ -218,7 +228,7 @@ static float4 aberration(texture2d<float> scene, sampler smp,
     float shorter = min(u.frame.x, u.frame.y);
     offset = offset * shorter / u.frame;
 
-    float4 green = scene.sample(smp, uv);
+    float4 green = scene.sample(smp, uv, level(0.0));
     float r = grab(scene, smp, uv + offset).r;
     float b = grab(scene, smp, uv - offset).b;
     return float4(r, green.g, b, green.a);
@@ -615,16 +625,39 @@ static float3 filmed(texture2d<float> scene, sampler smp,
 static float3 bloomed(texture2d<float> scene, sampler smp,
                       constant FilterUniforms &u, float2 uv) {
     float3 c = grab(scene, smp, uv);
-    float3 glow = float3(0.0);
     float radius = pitch(u) * 2.0;
-    for (int i = 0; i < 24; i++) {
+
+    // Which level of the chain a tap comes from.
+    //
+    // A quarter of the radius, in texels of the scene. Each tap then already
+    // averages a footprint that size, so sixteen of them across the disc
+    // overlap instead of leaving holes — which is the whole difference between
+    // this and the version that read as grain. `sample_focused` in the item
+    // shader documents the same failure and answers it by adding taps; that
+    // works for a defocus a few pixels wide and cannot work here, because a
+    // bloom is forty.
+    float shorter = min(u.frame.x, u.frame.y);
+    // Not named `level`: that is the name of the sampler qualifier two lines
+    // below, and shadowing it stops the whole file compiling — which costs the
+    // look rather than the export, and says so only in the log.
+    float lod = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+
+    float3 glow = float3(0.0);
+    for (int i = 0; i < 16; i++) {
         float turn = float(i) * 2.399963;
-        float reach = sqrt(float(i) + 0.5) / 4.95;
+        float reach = sqrt(float(i) + 0.5) / 4.05;
         float2 off = float2(cos(turn), sin(turn)) * reach * radius;
-        float3 tap = grab(scene, smp, uv_of(u, centred(u, uv) + off));
-        glow += tap * smoothstep(0.55, 1.0, luma(tap));
+        float2 at = clamp(uv_of(u, centred(u, uv) + off), 0.0, 1.0);
+        float3 tap = scene.sample(smp, at, level(lod)).rgb;
+        // A lower threshold than a photographic bloom would use, and
+        // deliberately. A tap is an average of its footprint, so a line of
+        // white text two pixels thick arrives as a mid grey rather than as
+        // white — threshold it where the highlight actually is and text, which
+        // is most of what a screen recording is made of, never glows at all.
+        glow += tap * smoothstep(0.30, 0.85, luma(tap));
     }
-    return c + glow * 0.0417 * u.tint.rgb * u.strength * 2.2;
+
+    return c + glow * 0.0625 * u.tint.rgb * u.strength * 2.2;
 }
 
 /// How lit this point is, through whichever thing the light is coming past.
@@ -679,7 +712,11 @@ fragment float4 filter_fragment(FilterVertex in [[stage_in]],
     // Clamped, like the item shader's: a tap a hair outside the frame must not
     // wrap to the far edge, which shows as a stripe of the opposite corner
     // along the border.
-    constexpr sampler smp(filter::linear, address::clamp_to_edge);
+    // `mip_filter` as well as the rest: the glow samples a level of the chain
+    // rather than the top, and without it every such sample silently comes back
+    // from level 0 — which is the ungapped blur turning back into the gapped
+    // one, with nothing to say so.
+    constexpr sampler smp(filter::linear, mip_filter::linear, address::clamp_to_edge);
 
     switch (u.look) {
         case 0: return aberration(scene, smp, u, in.uv);
@@ -699,5 +736,5 @@ fragment float4 filter_fragment(FilterVertex in [[stage_in]],
     // A look this build has no shader for draws the frame it was given. The
     // same answer `FilterKind::Unknown` gives on the way in, and the same
     // reasoning: a picture unchanged is a far better failure than a blank one.
-    return scene.sample(smp, in.uv);
+    return scene.sample(smp, in.uv, level(0.0));
 }

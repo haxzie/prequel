@@ -164,8 +164,20 @@ vec2 corner() {
   return centred(vec2(1.0));
 }
 
+/**
+ * The scene, at full resolution.
+ *
+ * The level is stated rather than left to the hardware, and that is not
+ * belt-and-braces. The scene carries a mip chain for the glow, and a sampler
+ * left to pick its own level picks it from the derivative of the coordinate —
+ * which for the looks that *snap* their coordinate to a cell spikes at every
+ * cell boundary. Pixelate and the dot-matrix panel would come back with a soft
+ * band around each block, from a level nothing asked for.
+ *
+ * Only \`bloomed\` names a level other than this one.
+ */
 vec3 grab(vec2 uv) {
-  return texture(u_scene, clamp(uv, 0.0, 1.0)).rgb;
+  return textureLod(u_scene, clamp(uv, 0.0, 1.0), 0.0).rgb;
 }
 
 /**
@@ -273,7 +285,7 @@ vec4 aberration(vec2 uv) {
   float shorter = min(u_frame.x, u_frame.y);
   offset = offset * shorter / u_frame;
 
-  vec4 green = texture(u_scene, uv);
+  vec4 green = textureLod(u_scene, uv, 0.0);
   float r = grab(uv + offset).r;
   float b = grab(uv - offset).b;
   return vec4(r, green.g, b, green.a);
@@ -671,16 +683,34 @@ vec3 filmed(vec2 uv) {
  */
 vec3 bloomed(vec2 uv) {
   vec3 c = grab(uv);
-  vec3 glow = vec3(0.0);
   float radius = pitch() * 2.0;
-  for (int i = 0; i < 24; i++) {
+
+  // Which level of the chain a tap comes from.
+  //
+  // A quarter of the radius, in texels of the scene. Each tap then already
+  // averages a footprint that size, so sixteen of them across the disc overlap
+  // instead of leaving holes — which is the whole difference between this and
+  // the version that read as grain. \`sample_focused\` in the item shader
+  // documents the same failure and answers it by adding taps; that works for a
+  // defocus a few pixels wide and cannot work here, because a bloom is forty.
+  float shorter = min(u_frame.x, u_frame.y);
+  float level = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < 16; i++) {
     float turn = float(i) * 2.399963;
-    float reach = sqrt(float(i) + 0.5) / 4.95;
+    float reach = sqrt(float(i) + 0.5) / 4.05;
     vec2 off = vec2(cos(turn), sin(turn)) * reach * radius;
-    vec3 tap = grab(uvOf(centred(uv) + off));
-    glow += tap * smoothstep(0.55, 1.0, luma(tap));
+    vec3 tap = textureLod(u_scene, clamp(uvOf(centred(uv) + off), 0.0, 1.0), level).rgb;
+    // A lower threshold than a photographic bloom would use, and deliberately.
+    // A tap is an average of its footprint, so a line of white text two pixels
+    // thick arrives as a mid grey rather than as white — threshold it where the
+    // highlight actually is and text, which is most of what a screen recording
+    // is made of, never glows at all.
+    glow += tap * smoothstep(0.30, 0.85, luma(tap));
   }
-  return c + glow * 0.0417 * u_tint * u_strength * 2.2;
+
+  return c + glow * 0.0625 * u_tint * u_strength * 2.2;
 }
 
 /** How lit this point is, through whichever thing the light is coming past. */
@@ -759,7 +789,7 @@ void main() {
     // A look this build has no shader for draws the frame it was given. The
     // same answer \`FilterKind::Unknown\` gives on the other side, and the same
     // reasoning: a picture unchanged is a far better failure than a blank one.
-    colour = texture(u_scene, v_uv);
+    colour = textureLod(u_scene, v_uv, 0.0);
   }
 
   // Every look but the aberration returns opaque colour. The scene covers the
