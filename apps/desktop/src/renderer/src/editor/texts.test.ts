@@ -22,6 +22,7 @@ import {
   slicesOf,
   textCopySpan,
   textInProject,
+  textSpanAt,
   textSpanNear,
   type EditorAction,
   type EditorState,
@@ -520,5 +521,36 @@ describe("the two clocks a text is measured on", () => {
 
     const gone = run(state, { type: "deleteSlice", sliceId: onIt.id });
     expect(textInProject(gone.project, text)).toBeNull();
+  });
+});
+
+describe("what the text row offers on a cut edit", () => {
+  /** 0-2 s and 4-10 s of the recording, playing as 0-8 s of the film. */
+  function cut(): EditorState {
+    const state = run(start(), { type: "split", at: 2 * S }, { type: "split", at: 4 * S });
+    const middle = slicesOf(state.project)[1]!;
+    return run(state, { type: "deleteSlice", sliceId: middle.id });
+  }
+
+  it("answers in the clock the strip asks in", () => {
+    // Both the outline the row draws and the text a press lays down come from
+    // here, so this is where a mix-up between the two clocks shows. Six seconds
+    // into the film is eight into the recording, and asking with either number
+    // has to give an answer on the film's.
+    expect(textSpanAt(cut().project, 0, 6 * S)).toEqual({ start: 6 * S, end: 8 * S });
+  });
+
+  it("offers a span over a cut rather than stopping at it", () => {
+    // A press just before the seam at two seconds. The text runs its full
+    // three, straight over the join — which is the whole point of measuring a
+    // length in the finished video.
+    expect(textSpanAt(cut().project, 0, 1.5 * S)).toEqual({ start: 1.5 * S, end: 4.5 * S });
+  });
+
+  it("shortens what it offers at the very end rather than refusing", () => {
+    // A second from the end of an eight-second edit: there is room for one
+    // second, and an outline that vanished here would read as the row being
+    // dead just where it is most obviously alive.
+    expect(textSpanAt(cut().project, 0, 7 * S)).toEqual({ start: 7 * S, end: 8 * S });
   });
 });

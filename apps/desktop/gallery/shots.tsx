@@ -53,7 +53,7 @@ export type ShotFrameKind =
 export type Step =
   /** A real mouse click on the centre of the first element matching `selector`
       (and, when given, whose trimmed text is `text`). */
-  | { kind: "click"; selector: string; text?: string }
+  | { kind: "click"; selector: string; text?: string; at?: number }
   /**
    * The pointer moved onto an element and left there, with no press.
    *

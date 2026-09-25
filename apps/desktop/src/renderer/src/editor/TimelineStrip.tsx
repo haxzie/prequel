@@ -705,7 +705,7 @@ export function TimelineStrip({
                   width={width}
                   duration={duration}
                   spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
-                  sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                  timeAt={timeAt}
                   toStrip={toStrip}
                   onInteract={media.onInteract}
                   dispatch={dispatch}
@@ -749,7 +749,7 @@ export function TimelineStrip({
                       selected={text.id === state.selectedTextId}
                       label={text.fields.map((field) => field.text).join(" — ")}
                       start={from}
-                      sourceAt={(clientX) => timeAt(clientX)}
+                      timeAt={timeAt}
                       trackAt={trackAt}
                       onSelect={() => {
                         media.onInteract();
@@ -1733,7 +1733,7 @@ function TextRow({
   width,
   duration,
   spanAt,
-  sourceAt,
+  timeAt,
   toStrip,
   onInteract,
   dispatch,
@@ -1750,7 +1750,9 @@ function TextRow({
   width: number;
   duration: MediaTime;
   spanAt: (at: MediaTime, to?: MediaTime) => { start: MediaTime; end: MediaTime } | null;
-  sourceAt: (clientX: number) => MediaTime;
+  /** Project time under a client x. A text is measured on the edit's clock,
+      so this is the only one it ever asks about — see `TextSlice`. */
+  timeAt: (clientX: number) => MediaTime;
   /** A source span as the strip draws it — see the note on `toStrip`. */
   toStrip: (source: {
     start: MediaTime;
@@ -1767,7 +1769,7 @@ function TextRow({
     if (!element) return;
 
     const drawing = draw.current;
-    const pointer = clientX === null ? null : sourceAt(clientX);
+    const pointer = clientX === null ? null : timeAt(clientX);
     const span =
       drawing === null
         ? pointer === null
@@ -1805,7 +1807,7 @@ function TextRow({
         if (!draw.current) showGhost(null);
       }}
       onPointerDown={(event) => {
-        draw.current = { at: sourceAt(event.clientX), x: event.clientX, drawn: false };
+        draw.current = { at: timeAt(event.clientX), x: event.clientX, drawn: false };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerUp={(event) => {
@@ -1819,7 +1821,7 @@ function TextRow({
           type: "addText",
           track,
           at: drawing.at,
-          ...(drawing.drawn ? { to: sourceAt(event.clientX) } : {}),
+          ...(drawing.drawn ? { to: timeAt(event.clientX) } : {}),
         });
         showGhost(null);
       }}
@@ -1872,7 +1874,7 @@ function TextBar({
   selected,
   label,
   start,
-  sourceAt,
+  timeAt,
   trackAt,
   onSelect,
   onContextMenu,
@@ -1893,7 +1895,9 @@ function TextBar({
   selected: boolean;
   label: string;
   start: MediaTime;
-  sourceAt: (clientX: number) => MediaTime;
+  /** Project time under a client x. A text is measured on the edit's clock,
+      so this is the only one it ever asks about — see `TextSlice`. */
+  timeAt: (clientX: number) => MediaTime;
   /** The row under a client y, so a drag can carry the bar between rows. */
   trackAt: (clientY: number) => number;
   onSelect: () => void;
@@ -2001,7 +2005,7 @@ function TextBar({
         // Stops the strip underneath seeking on a press meant for the bar.
         event.stopPropagation();
         onSelect();
-        grab.current = sourceAt(event.clientX) - start;
+        grab.current = timeAt(event.clientX) - start;
         held.current = event.clientX;
         copying.current = event.altKey;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -2015,7 +2019,7 @@ function TextBar({
         // travels instead — where it would land, not where the pointer is.
         if (copying.current) {
           onCopyPreview({
-            start: sourceAt(event.clientX) - grab.current,
+            start: timeAt(event.clientX) - grab.current,
             track: trackAt(event.clientY),
           });
           return;
@@ -2028,7 +2032,7 @@ function TextBar({
       onPointerUp={(event) => {
         if (grab.current !== null) {
           if (copying.current) {
-            onCopy(sourceAt(event.clientX) - grab.current, trackAt(event.clientY));
+            onCopy(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
             event.currentTarget.style.cursor = "";
           } else {
             // The one crossing from the strip's clock to the recording's, made
@@ -2036,7 +2040,7 @@ function TextBar({
             // first: the move that follows re-lays the bar at its new place, so
             // a transform left on it would offset it a second time.
             slide(null);
-            onMove(sourceAt(event.clientX) - grab.current, trackAt(event.clientY));
+            onMove(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
             onDrop();
           }
         }

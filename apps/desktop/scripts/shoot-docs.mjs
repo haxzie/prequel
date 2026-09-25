@@ -280,7 +280,10 @@ async function runStep(sessionId, step) {
         step.selector,
       );
       const r = await rect(sessionId, step.selector, step.text);
-      await click(sessionId, r.x + r.width / 2, r.y + r.height / 2);
+      // `at` is how far along the element's width to press, 0 to 1. The middle
+      // is right for a button and wrong for a track, where *where* you pressed
+      // is the whole of what the press means.
+      await click(sessionId, r.x + r.width * (step.at ?? 0.5), r.y + r.height / 2);
       await sleep(150);
       return;
     }
