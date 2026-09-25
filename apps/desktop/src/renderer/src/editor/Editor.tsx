@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type RefObject,
 } from "react";
 
 import {
@@ -878,6 +879,23 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * of. Main flushes its own side too; both are cheap and the failure is a lost
    * clip.
    */
+  /**
+   * Whether the project in this component is about to be replaced wholesale.
+   *
+   * Set once a take has been merged. Main appends a clip for the new footage
+   * and writes `project.json` itself, and this component is then remounted
+   * around the grown session — so everything it is still holding predates that
+   * append, and writing any of it back would take the new clip off the
+   * timeline. Which is exactly what happened: the footage recorded, the
+   * manifest grew, and the clip never appeared.
+   *
+   * Nothing is lost by going quiet. The edits made before the button was
+   * pressed were saved and awaited at the top of `addRecording`, and are what
+   * main appended *to*; anything after that is replaced by the reload whether
+   * it is written or not.
+   */
+  const superseded = useRef(false);
+
   const addRecording = useCallback(async () => {
     // Paused first. The panel is about to cover the screen and the recording is
     // about to start; a preview still playing behind it is four media elements
@@ -896,7 +914,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     const result = await window.prequel.editor.addRecording();
     if (!result.ok) {
       console.error("[editor] could not add a recording:", result.message);
+      return;
     }
+
+    // Before the reload, and only on the way out of a merge that worked: from
+    // here the file on disk is ahead of anything this component holds.
+    superseded.current = true;
   }, [media, session.dir, state.project]);
 
   /**
@@ -995,7 +1018,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
   useAutoFrame(state.project.frame, screenSource, dispatch);
   useFirstCut(session, state, dispatch);
-  usePersistence(session, state.project, state.revision);
+  usePersistence(session, state.project, state.revision, superseded);
   useAudioMix(media, state, session);
   useSoundBanks(media, state.project);
   const playSample = useCallback(
@@ -1594,14 +1617,20 @@ function useFirstCut(
  * leaving cannot lose the last edit — `beforeunload` is synchronous, which is
  * exactly what is needed when the window is closing.
  */
-function usePersistence(session: EditorSession | null, project: unknown, revision: number) {
+function usePersistence(
+  session: EditorSession | null,
+  project: unknown,
+  revision: number,
+  /** See `superseded` in `Editor`: true once main's copy is ahead of this one. */
+  superseded: RefObject<boolean>,
+) {
   const latest = useRef({ session, project, revision });
   latest.current = { session, project, revision };
 
   useEffect(() => {
     // Revision 0 is the project as loaded. Saving it would create a
     // `project.json` for a recording nobody has edited.
-    if (!session || revision === 0) return;
+    if (!session || revision === 0 || superseded.current) return;
 
     const timer = setTimeout(() => {
       void window.prequel.editor.saveProject(session.dir, project as never);
@@ -1616,7 +1645,7 @@ function usePersistence(session: EditorSession | null, project: unknown, revisio
   useEffect(() => {
     const flush = () => {
       const { session: current, project: pending, revision: at } = latest.current;
-      if (current && at > 0) {
+      if (current && at > 0 && !superseded.current) {
         void window.prequel.editor.saveProject(current.dir, pending as never);
       }
     };

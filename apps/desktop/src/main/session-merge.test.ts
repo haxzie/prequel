@@ -292,6 +292,35 @@ describe("mergeTake", () => {
     ]);
   });
 
+  it("appends for footage the edit stops short of", () => {
+    // The shape a real recording turns into: trimmed down to a few fragments,
+    // the last of which ends well before the seam. The clip for the addition
+    // has to be appended on its own rather than found among what is there —
+    // `already` looks for a slice reaching past the seam, and here nothing
+    // reaches anywhere near it.
+    const { takeDir } = withTake(manifest(10 * S), manifest(6 * S));
+    writeFileSync(
+      join(dir, PROJECT_FILE_NAME),
+      JSON.stringify({
+        ...newProject("Prequel 1", 10 * S),
+        tracks: [
+          {
+            id: "composite",
+            kind: "composite",
+            slices: [{ id: "a", source: { start: 0, end: 2 * S }, speed: 1, overrides: {} }],
+          },
+        ],
+      }),
+    );
+
+    mergeTake(dir, takeDir);
+
+    const slices = project().tracks[0]!.slices;
+    expect(slices).toHaveLength(2);
+    // Covering the addition exactly, from the seam to the grown duration.
+    expect(slices[1]!.source).toEqual({ start: 10 * S, end: 16 * S });
+  });
+
   it("offers the new clip to the editor once, then forgets it", () => {
     const { takeDir } = withTake(manifest(10 * S), manifest(6 * S));
     const result = mergeTake(dir, takeDir)!;
