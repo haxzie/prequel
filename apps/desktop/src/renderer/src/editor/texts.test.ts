@@ -19,6 +19,7 @@ import {
   laneSpanAt,
   laneSpanNear,
   laneTrimmed,
+  placedSlices,
   slicesOf,
   textCopySpan,
   textInProject,
@@ -27,6 +28,7 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
+import { spanInProject } from "./timeline";
 
 const S = 1_000_000_000;
 const RECORDING = "2026-08-11T12-00-00";
@@ -552,5 +554,45 @@ describe("what the text row offers on a cut edit", () => {
     // second, and an outline that vanished here would read as the row being
     // dead just where it is most obviously alive.
     expect(textSpanAt(cut().project, 0, 7 * S)).toEqual({ start: 7 * S, end: 8 * S });
+  });
+});
+
+describe("the clock a ghost is drawn on", () => {
+  /**
+   * A recording whose first ten seconds have been cut away, so the finished
+   * edit's clock and the recording's no longer agree anywhere.
+   */
+  function trimmed(): EditorState {
+    const state = initialState(newProject(RECORDING, 16 * S), 16 * S);
+    const split = run(state, { type: "split", at: 10 * S });
+    const first = slicesOf(split.project)[0]!;
+    return run(split, { type: "deleteSlice", sliceId: first.id });
+  }
+
+  it("answers where a text would go on the finished edit, not on the recording", () => {
+    // The timeline draws the outline of the text a click would add straight
+    // from this span. It used to put it through `spanInProject` first, which
+    // reads a span as source time and looks for the clips covering it — so on
+    // an edit like this one it found none and hid the outline altogether. That
+    // presents as the feature missing rather than as an outline in the wrong
+    // place, which is why it survived a look.
+    const state = trimmed();
+    const span = textSpanAt(state.project, 0, 1 * S)!;
+    expect(span).not.toBeNull();
+    expect(span.start).toBe(1 * S);
+
+    // The proof that the span is already on the strip's clock: read as source
+    // time it names footage this edit does not contain.
+    expect(spanInProject(placedSlices(state.project), span)).toBeNull();
+  });
+
+  it("answers the same for the copy an option-drag would leave", () => {
+    const state = run(trimmed(), { type: "addText", track: 0, at: 0 });
+    const text = state.project.texts[0]!.slices[0]!;
+
+    const span = textCopySpan(state.project, text.id, 1 * S, 1)!;
+    expect(span).not.toBeNull();
+    expect(span.start).toBe(1 * S);
+    expect(spanInProject(placedSlices(state.project), span)).toBeNull();
   });
 });

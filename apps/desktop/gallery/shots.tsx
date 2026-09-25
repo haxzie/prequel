@@ -436,6 +436,21 @@ export const SHOTS: readonly Shot[] = [
     clip: "[data-panel='timeline']",
   },
   {
+    id: "zz-ghost-with-text",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    // A text already on the row, then hover well away from it.
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyT" },
+      { kind: "settle", ms: 900 },
+      { kind: "hover", selector: "[data-text-row='0']", at: 0.12 },
+      { kind: "settle", ms: 500 },
+    ],
+    clip: "[data-panel='timeline']",
+  },
+  {
     id: "editor-text",
     frame: "workspace",
     install: install(),

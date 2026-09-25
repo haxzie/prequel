@@ -540,10 +540,13 @@ export function TimelineStrip({
       const element = copyGhost.current;
       if (!element) return;
 
+      // Project time already, like the text ghost's — `textCopySpan` measures a
+      // text's length on the finished edit's clock, so there is nothing to
+      // cross. Putting it through `toStrip` as well read those numbers as
+      // source times and quietly found no clip covering them.
       const span = copy && textCopySpan(state.project, copy.textId, copy.start, copy.track);
-      const drawn = span ? toStrip(span) : null;
-      const from = drawn?.start ?? null;
-      const to = drawn?.end ?? null;
+      const from = span?.start ?? null;
+      const to = span?.end ?? null;
       if (!copy || from === null || to === null) {
         element.style.opacity = "0";
         return;
@@ -555,7 +558,7 @@ export function TimelineStrip({
       element.style.opacity = "1";
       if (copyGhostLabel.current) copyGhostLabel.current.textContent = copy.label;
     },
-    [state.project, toStrip, duration, textRows],
+    [state.project, duration, textRows],
   );
 
   const trackAt = useCallback(
@@ -706,7 +709,6 @@ export function TimelineStrip({
                   duration={duration}
                   spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
                   timeAt={timeAt}
-                  toStrip={toStrip}
                   onInteract={media.onInteract}
                   dispatch={dispatch}
                 />
@@ -1734,7 +1736,6 @@ function TextRow({
   duration,
   spanAt,
   timeAt,
-  toStrip,
   onInteract,
   dispatch,
 }: {
@@ -1753,11 +1754,6 @@ function TextRow({
   /** Project time under a client x. A text is measured on the edit's clock,
       so this is the only one it ever asks about — see `TextSlice`. */
   timeAt: (clientX: number) => MediaTime;
-  /** A source span as the strip draws it — see the note on `toStrip`. */
-  toStrip: (source: {
-    start: MediaTime;
-    end: MediaTime;
-  }) => { start: MediaTime; end: MediaTime } | null;
   onInteract: () => void;
   dispatch: Dispatch<EditorAction>;
 }) {
@@ -1778,13 +1774,18 @@ function TextRow({
         : drawing.drawn && pointer !== null
           ? spanAt(drawing.at, pointer)
           : spanAt(drawing.at);
-    const drawn = span === null ? null : toStrip(span);
-
-    if (drawn === null) {
+    // Straight onto the strip, with no crossing. `spanAt` is `textSpanAt`,
+    // which answers in project time because that is the clock a text's length
+    // is measured on — putting it through `spanInProject` as well read the
+    // numbers as source times, went looking for clips that happened to cover
+    // them, and on a reordered or heavily cut edit found none. The outline then
+    // hid itself, which is exactly what it looks like when a feature is
+    // missing rather than mismeasured.
+    if (span === null) {
       element.style.opacity = "0";
       return;
     }
-    const { start: from, end: to } = drawn;
+    const { start: from, end: to } = span;
 
     element.style.left = `${String((from / Math.max(duration, 1)) * 100)}%`;
     element.style.width = `${String(((to - from) / Math.max(duration, 1)) * 100)}%`;
@@ -1915,39 +1916,6 @@ function TextBar({
 }) {
   const grab = useRef<MediaTime | null>(null);
   /**
-   * The bar itself, so a drag can slide it without telling the reducer.
-   *
-   * A text is stored against the *recording's* clock, and the strip runs on the
-   * edit's — so turning a pointer into a stored time crosses every cut between
-   * them. Doing that on each move made the bar jump the length of whatever had
-   * been cut away the moment it passed a seam, which reads as the text being
-   * caught by the clip underneath.
-   *
-   * So the drag is purely a slide along the strip: the bar is translated, the
-   * reducer hears nothing, and the crossing happens once, on release, against
-   * where it was actually let go. Written straight to the element for the
-   * reason every other per-frame value here is — this runs on `pointermove`.
-   */
-  const bar = useRef<HTMLDivElement>(null);
-  /** Where the pointer went down, in client pixels. */
-  const held = useRef<number | null>(null);
-
-  /**
-   * The bar follows the pointer by the pixels it has travelled.
-   *
-   * In pixels rather than through the clocks: the strip maps x to time
-   * linearly, so the distance the pointer has moved *is* the distance the bar
-   * should move, and going out through project time and back again would only
-   * find its way to the same number by a longer road.
-   */
-  const slide = (clientX: number | null) => {
-    const element = bar.current;
-    if (!element) return;
-    const from = held.current;
-    element.style.transform =
-      from === null || clientX === null ? "" : `translateX(${String(clientX - from)}px)`;
-  };
-  /**
    * Whether this drag is copying rather than moving.
    *
    * Decided at the press, as the preview decides an option-pan: the key
@@ -1992,7 +1960,6 @@ function TextBar({
         selected ? "outline-title-ring" : "outline-transparent hover:outline-title-ring/40",
         "cursor-grab active:cursor-grabbing",
       )}
-      ref={bar}
       style={{
         top,
         height: TEXT_H,
@@ -2006,7 +1973,6 @@ function TextBar({
         event.stopPropagation();
         onSelect();
         grab.current = timeAt(event.clientX) - start;
-        held.current = event.clientX;
         copying.current = event.altKey;
         event.currentTarget.setPointerCapture(event.pointerId);
         // A copy is one step on its own when it lands; only a move streams.
@@ -2024,10 +1990,13 @@ function TextBar({
           });
           return;
         }
-        // Nothing told to the reducer yet: the bar just follows the pointer,
-        // and where it has landed is worked out once, when it is let go. See
-        // `slide`.
-        slide(event.clientX);
+        // Straight to the reducer, on every move, the way a zoom bar's drag
+        // goes. A text is measured on the strip's own clock now, so there is
+        // no crossing to defer and nothing to gain by holding the row change
+        // back until release — which is what a pixel slide did, and it made
+        // a bar dragged to another row appear to stay on its old one until
+        // the pointer came up.
+        onMove(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
       }}
       onPointerUp={(event) => {
         if (grab.current !== null) {
@@ -2035,29 +2004,21 @@ function TextBar({
             onCopy(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
             event.currentTarget.style.cursor = "";
           } else {
-            // The one crossing from the strip's clock to the recording's, made
-            // against where the bar was actually let go. The slide is cleared
-            // first: the move that follows re-lays the bar at its new place, so
-            // a transform left on it would offset it a second time.
-            slide(null);
             onMove(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
             onDrop();
           }
         }
         grab.current = null;
-        held.current = null;
         copying.current = false;
       }}
       onPointerCancel={(event) => {
         if (copying.current) onCopyPreview(null);
         event.currentTarget.style.cursor = "";
-        // Put back where it started. A gesture the system takes — a three-
-        // finger swipe over the trackpad — gets no `pointerup`, so nothing
-        // would clear the slide and the bar would sit offset from the text it
-        // is drawing until the next drag moved it.
-        slide(null);
+        // A gesture the system takes — a three-finger swipe over the trackpad
+        // — gets no `pointerup`, so the rows the drag emptied have to be tidied
+        // here too or an empty row stays in the strip until the next edit.
+        if (grab.current !== null && !copying.current) onDrop();
         grab.current = null;
-        held.current = null;
         copying.current = false;
       }}
     >
