@@ -88,6 +88,21 @@ Comments and UI copy use British spelling — colour, normalised, behaviour —
 consistently. Keep sentences short and state things plainly; the existing
 comments do not hedge.
 
+## Before anything reaches `main`
+
+**If the branch changes something a user can see, the changelog says so before
+you push** — same branch, same PR, not afterwards. Written after the fact it
+gets reconstructed from commit subjects, which is how a changelog turns into a
+dev log.
+
+One file per release under `apps/web/src/content/changelog`. One sentence per
+entry, about twenty words, in the words on the buttons — no causes, no API
+names, no "it used to". Read the `changelog` skill before writing one; that
+voice is not this file's voice, and this file's voice leaks.
+
+Nothing to add is a normal answer: refactors, tests, build fixes and fixes to
+features that never shipped belong in no release.
+
 ## Invariants that fail silently
 
 These are the ones that cost real debugging time. Breaking any of them produces
