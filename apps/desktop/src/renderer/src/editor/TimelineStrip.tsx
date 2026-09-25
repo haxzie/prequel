@@ -1885,6 +1885,39 @@ function TextBar({
 }) {
   const grab = useRef<MediaTime | null>(null);
   /**
+   * The bar itself, so a drag can slide it without telling the reducer.
+   *
+   * A text is stored against the *recording's* clock, and the strip runs on the
+   * edit's — so turning a pointer into a stored time crosses every cut between
+   * them. Doing that on each move made the bar jump the length of whatever had
+   * been cut away the moment it passed a seam, which reads as the text being
+   * caught by the clip underneath.
+   *
+   * So the drag is purely a slide along the strip: the bar is translated, the
+   * reducer hears nothing, and the crossing happens once, on release, against
+   * where it was actually let go. Written straight to the element for the
+   * reason every other per-frame value here is — this runs on `pointermove`.
+   */
+  const bar = useRef<HTMLDivElement>(null);
+  /** Where the pointer went down, in client pixels. */
+  const held = useRef<number | null>(null);
+
+  /**
+   * The bar follows the pointer by the pixels it has travelled.
+   *
+   * In pixels rather than through the clocks: the strip maps x to time
+   * linearly, so the distance the pointer has moved *is* the distance the bar
+   * should move, and going out through project time and back again would only
+   * find its way to the same number by a longer road.
+   */
+  const slide = (clientX: number | null) => {
+    const element = bar.current;
+    if (!element) return;
+    const from = held.current;
+    element.style.transform =
+      from === null || clientX === null ? "" : `translateX(${String(clientX - from)}px)`;
+  };
+  /**
    * Whether this drag is copying rather than moving.
    *
    * Decided at the press, as the preview decides an option-pan: the key
@@ -1929,6 +1962,7 @@ function TextBar({
         selected ? "outline-title-ring" : "outline-transparent hover:outline-title-ring/40",
         "cursor-grab active:cursor-grabbing",
       )}
+      ref={bar}
       style={{
         top,
         height: TEXT_H,
@@ -1942,6 +1976,7 @@ function TextBar({
         event.stopPropagation();
         onSelect();
         grab.current = sourceAt(event.clientX) - start;
+        held.current = event.clientX;
         copying.current = event.altKey;
         event.currentTarget.setPointerCapture(event.pointerId);
         // A copy is one step on its own when it lands; only a move streams.
@@ -1950,18 +1985,19 @@ function TextBar({
       }}
       onPointerMove={(event) => {
         if (grab.current === null) return;
-        const at = sourceAt(event.clientX) - grab.current;
-        const onto = trackAt(event.clientY);
         // With option held the bar stays put and the outline of the copy
         // travels instead — where it would land, not where the pointer is.
         if (copying.current) {
-          onCopyPreview({ start: at, track: onto });
+          onCopyPreview({
+            start: sourceAt(event.clientX) - grab.current,
+            track: trackAt(event.clientY),
+          });
           return;
         }
-        // Along the row and across them in one gesture: the row is read off
-        // the pointer's height, and the reducer declines a row with no room
-        // at that moment, so the bar stays on its own until one is found.
-        onMove(at, onto);
+        // Nothing told to the reducer yet: the bar just follows the pointer,
+        // and where it has landed is worked out once, when it is let go. See
+        // `slide`.
+        slide(event.clientX);
       }}
       onPointerUp={(event) => {
         if (grab.current !== null) {
@@ -1969,16 +2005,29 @@ function TextBar({
             onCopy(sourceAt(event.clientX) - grab.current, trackAt(event.clientY));
             event.currentTarget.style.cursor = "";
           } else {
+            // The one crossing from the strip's clock to the recording's, made
+            // against where the bar was actually let go. The slide is cleared
+            // first: the move that follows re-lays the bar at its new place, so
+            // a transform left on it would offset it a second time.
+            slide(null);
+            onMove(sourceAt(event.clientX) - grab.current, trackAt(event.clientY));
             onDrop();
           }
         }
         grab.current = null;
+        held.current = null;
         copying.current = false;
       }}
       onPointerCancel={(event) => {
         if (copying.current) onCopyPreview(null);
         event.currentTarget.style.cursor = "";
+        // Put back where it started. A gesture the system takes — a three-
+        // finger swipe over the trackpad — gets no `pointerup`, so nothing
+        // would clear the slide and the bar would sit offset from the text it
+        // is drawing until the next drag moved it.
+        slide(null);
         grab.current = null;
+        held.current = null;
         copying.current = false;
       }}
     >

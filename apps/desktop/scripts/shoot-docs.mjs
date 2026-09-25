@@ -284,6 +284,26 @@ async function runStep(sessionId, step) {
       await sleep(150);
       return;
     }
+    case "hover": {
+      // The pointer put somewhere and left there. A click would answer a
+      // different question: the hover states — a ghost showing where a thing
+      // would land, a row lighting up — only exist while nothing has been
+      // pressed, so they cannot be reached by the step that presses.
+      await until(
+        sessionId,
+        `!!window.__gallery.rect(${JSON.stringify(step.selector)}, ${JSON.stringify(step.text)})`,
+        step.selector,
+      );
+      const r = await rect(sessionId, step.selector, step.text);
+      const x = r.x + r.width * (step.at ?? 0.5);
+      await rpc(
+        "Input.dispatchMouseEvent",
+        { type: "mouseMoved", x, y: r.y + r.height / 2, pointerType: "mouse" },
+        sessionId,
+      );
+      await sleep(150);
+      return;
+    }
     case "key":
       await key(sessionId, step.code);
       await sleep(150);

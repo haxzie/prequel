@@ -54,6 +54,14 @@ export type Step =
   /** A real mouse click on the centre of the first element matching `selector`
       (and, when given, whose trimmed text is `text`). */
   | { kind: "click"; selector: string; text?: string }
+  /**
+   * The pointer moved onto an element and left there, with no press.
+   *
+   * `at` is how far along its width to sit, 0 to 1, because what a hover shows
+   * often depends on where along the thing the pointer is — the ghost of a text
+   * lands under the pointer, not in the middle of the row.
+   */
+  | { kind: "hover"; selector: string; text?: string; at?: number }
   /** A key press, by `KeyboardEvent.code`. */
   | { kind: "key"; code: string }
   /** Text typed into whatever has focus. */
@@ -411,6 +419,22 @@ export const SHOTS: readonly Shot[] = [
   // `T` adds a text at the playhead and selects it, which swaps the panel to
   // the text's own three tabs. The settle is longer than a zoom's: the field
   // bitmaps are drawn after a 120 ms pause and then fetched.
+  // The outline that follows the pointer along a text row, showing where a
+  // text would land and how long it would be. It only exists while nothing is
+  // pressed, so `hover` is the only step that can reach it — a click would have
+  // added the text before the picture was taken.
+  {
+    id: "timeline-text-ghost",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "hover", selector: "[data-text-row='0']", at: 0.35 },
+      { kind: "settle", ms: 400 },
+    ],
+    clip: "[data-panel='timeline']",
+  },
   {
     id: "editor-text",
     frame: "workspace",
