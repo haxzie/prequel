@@ -351,6 +351,22 @@ export function TimelineStrip({
     [placed],
   );
 
+  /**
+   * A source span as the strip draws it, or null when none of it survives.
+   *
+   * `spanInProject` rather than `projectAt` on each end, and this is the
+   * difference between an outline that shows and one that does not: `projectAt`
+   * answers null for a moment that was cut away, so on a recording trimmed down
+   * to fragments an outline whose far end happened to land in removed footage
+   * vanished entirely. The union across the clips is what a real bar is placed
+   * by, and an outline has to be placed by the same thing or it is promising a
+   * span the editor would not draw.
+   */
+  const toStrip = useCallback(
+    (source: { start: MediaTime; end: MediaTime }) => spanInProject(placed, source),
+    [placed],
+  );
+
   const projectAt = useCallback(
     // A zoom over a stretch that has been cut away has nowhere to be drawn.
     (source: MediaTime): MediaTime | null => toProjectTimeThrough(placed, source),
@@ -399,19 +415,19 @@ export function TimelineStrip({
           : drawing.drawn && pointer !== null
             ? zoomSpanAt(state.project, drawing.at, pointer)
             : zoomSpanAt(state.project, drawing.at);
-      const from = span === null ? null : projectAt(span.start);
-      const to = span === null ? null : projectAt(span.end);
+      const drawn = span === null ? null : toStrip(span);
 
-      if (from === null || to === null) {
+      if (drawn === null) {
         element.style.opacity = "0";
         return;
       }
+      const { start: from, end: to } = drawn;
 
       element.style.left = `${(from / Math.max(duration, 1)) * 100}%`;
       element.style.width = `${((to - from) / Math.max(duration, 1)) * 100}%`;
       element.style.opacity = "1";
     },
-    [state.project, sourceAt, projectAt, timeAt, duration],
+    [state.project, sourceAt, toStrip, timeAt, duration],
   );
 
   /**
@@ -524,8 +540,9 @@ export function TimelineStrip({
       if (!element) return;
 
       const span = copy && textCopySpan(state.project, copy.textId, copy.start, copy.track);
-      const from = span ? projectAt(span.start) : null;
-      const to = span ? projectAt(span.end) : null;
+      const drawn = span ? toStrip(span) : null;
+      const from = drawn?.start ?? null;
+      const to = drawn?.end ?? null;
       if (!copy || from === null || to === null) {
         element.style.opacity = "0";
         return;
@@ -537,7 +554,7 @@ export function TimelineStrip({
       element.style.opacity = "1";
       if (copyGhostLabel.current) copyGhostLabel.current.textContent = copy.label;
     },
-    [state.project, projectAt, duration, textRows],
+    [state.project, toStrip, duration, textRows],
   );
 
   const trackAt = useCallback(
@@ -688,7 +705,7 @@ export function TimelineStrip({
                   duration={duration}
                   spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
                   sourceAt={(clientX) => sourceAt(timeAt(clientX))}
-                  projectAt={projectAt}
+                  toStrip={toStrip}
                   onInteract={media.onInteract}
                   dispatch={dispatch}
                 />
@@ -1712,7 +1729,7 @@ function TextRow({
   duration,
   spanAt,
   sourceAt,
-  projectAt,
+  toStrip,
   onInteract,
   dispatch,
 }: {
@@ -1729,7 +1746,11 @@ function TextRow({
   duration: MediaTime;
   spanAt: (at: MediaTime, to?: MediaTime) => { start: MediaTime; end: MediaTime } | null;
   sourceAt: (clientX: number) => MediaTime;
-  projectAt: (source: MediaTime) => MediaTime | null;
+  /** A source span as the strip draws it — see the note on `toStrip`. */
+  toStrip: (source: {
+    start: MediaTime;
+    end: MediaTime;
+  }) => { start: MediaTime; end: MediaTime } | null;
   onInteract: () => void;
   dispatch: Dispatch<EditorAction>;
 }) {
@@ -1750,13 +1771,13 @@ function TextRow({
         : drawing.drawn && pointer !== null
           ? spanAt(drawing.at, pointer)
           : spanAt(drawing.at);
-    const from = span === null ? null : projectAt(span.start);
-    const to = span === null ? null : projectAt(span.end);
+    const drawn = span === null ? null : toStrip(span);
 
-    if (from === null || to === null) {
+    if (drawn === null) {
       element.style.opacity = "0";
       return;
     }
+    const { start: from, end: to } = drawn;
 
     element.style.left = `${String((from / Math.max(duration, 1)) * 100)}%`;
     element.style.width = `${String(((to - from) / Math.max(duration, 1)) * 100)}%`;
