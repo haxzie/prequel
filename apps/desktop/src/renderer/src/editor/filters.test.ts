@@ -71,6 +71,28 @@ describe("the two shaders", () => {
     }
   });
 
+  it("flags exactly the looks that read the mip chain", () => {
+    // The preview builds the chain only for looks with `blurs`, so a look whose
+    // shader starts sampling a level and is not flagged silently loses its
+    // softness — it falls back to the sharp top level, which looks like the
+    // effect being weak rather than like a missing chain.
+    //
+    // Counted off the source rather than listed, so adding one to a shader and
+    // not to the catalogue fails here. Every other sample is pinned to `0.0`
+    // through `grab`; these are the ones that name a level.
+    const { fragment } = FILTER_SHADER_SOURCE();
+    const levelled = [...fragment.matchAll(/textureLod\(u_scene,[^;]*?,\s*([a-z_][\w]*)\s*\)/g)];
+    const flagged = ALL.filter((id) => FILTERS[id].blurs);
+
+    expect(levelled.length, "shader calls naming a level").toBe(flagged.length);
+    expect(flagged.sort()).toEqual(["bloom", "fisheye"]);
+
+    // The exporter names a level in the same two places, and pins everything
+    // else to the top. Counted, not listed, for the reason above.
+    const msl = [...METAL.matchAll(/\.sample\(smp,[^;]*?level\(([a-z_][\w]*)\)\)/g)];
+    expect(msl.length, "exporter calls naming a level").toBe(flagged.length);
+  });
+
   it("mirrors each shading function by name", () => {
     // Every function in one carries a "Mirrors X" note pointing at the other.
     // This checks the names actually exist on both sides rather than that the

@@ -34,7 +34,7 @@ import {
   type Shape,
   type Size,
 } from "../../../shared/layout";
-import { variantIndex } from "../../../shared/filters";
+import { FILTERS, variantIndex } from "../../../shared/filters";
 import { FILTER_LOOKS, FILTER_SHADER_SOURCE, filterTime } from "./filters";
 
 /** Images the plan names by path — backgrounds, and the pointer. */
@@ -616,14 +616,37 @@ export class WebGlCompositor {
     gl.bindVertexArray(null);
 
     if (plan.filter && filter && scene) {
-      // The mip chain, built from what the items just drew. For every filtered
-      // frame rather than only the looks that sample it: it is a few hundred
-      // microseconds on a texture the GPU already has, and a list here of which
-      // looks blur would be a third hand-kept mirror of the catalogue — the
-      // kind that goes wrong silently the first time a look starts blurring.
+      // Off the framebuffer *first*, and this is not tidiness.
+      //
+      // `generateMipmap` on a texture still attached to the bound framebuffer
+      // is a rendering feedback loop — undefined by the specification, and in
+      // practice a frame that intermittently comes back empty. It showed as the
+      // picture vanishing for a moment whenever anything made the preview
+      // redraw in earnest.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      // Only the looks that read a level other than zero. The rest would pay
+      // for a chain nothing samples, on every frame — and the glow and the fish
+      // eye are the two that do, which `blurs` in the catalogue says. The
+      // filter follows it: a mipmap filter on a texture with no chain is
+      // *incomplete* and samples as black, where plain `LINEAR` on a look that
+      // asks for a level it has not got simply gives it level zero — sharp
+      // rather than blank, which is the failure to have.
+      const blurs = FILTERS[plan.filter.id].blurs;
       gl.bindTexture(gl.TEXTURE_2D, scene.texture);
-      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MIN_FILTER,
+        blurs ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR,
+      );
+      if (blurs) gl.generateMipmap(gl.TEXTURE_2D);
+
       this.drawFilter(gl, filter, scene, plan.filter, plan.frame, at);
+
+      // Unbound before the next frame's items go into it. Left bound, the scene
+      // texture is on unit 0 *and* attached to the framebuffer being drawn
+      // into — the same feedback hazard as above, once per frame.
+      gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
     this.retire(gl);
@@ -730,11 +753,11 @@ export class WebGlCompositor {
     // far edge, which shows as a stripe of the opposite corner along the
     // border. The exporter's sampler is declared the same way.
     //
-    // The minification filter walks the mip chain, which only the glow reads —
-    // see `bloomed` in `filters.ts`. Plain `LINEAR` here would silently serve
-    // every `textureLod` from level 0, which is the smooth blur turning back
-    // into the gapped one with nothing on screen to say why.
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    // The minification filter is set per frame in `draw`, by whether the look
+    // showing reads the mip chain. Left at a mipmap filter here, a frame that
+    // generated no chain would sample an incomplete texture and come back
+    // black.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

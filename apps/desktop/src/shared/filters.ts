@@ -65,6 +65,17 @@ export interface FilterSpec {
    */
   variants: readonly FilterVariant[];
   /**
+   * Whether the shader reads a level of the scene's mip chain other than the
+   * top — the glow spreading highlights, the fish eye losing focus at the rim.
+   *
+   * The preview builds that chain per frame and only for the looks that use it;
+   * the other nine would pay for one nothing samples. Set this on a look whose
+   * shader starts sampling a level and the chain appears; forget to, and it
+   * falls back to the sharp top level rather than to black — see the note in
+   * `webgl.ts`'s `draw`.
+   */
+  blurs: boolean;
+  /**
    * What choosing this look writes alongside its id.
    *
    * Written in one edit with the id, the way `freshFraming` moves the camera
@@ -117,6 +128,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     uses: ["strength", "angle"],
     labels: { strength: "Split", angle: "Direction" },
     variants: [],
+    blurs: false,
     defaults: {
       // Enough to see at a glance on a still frame without reading as a fault.
       // Real lateral aberration is a pixel or two at the corner of a good lens
@@ -146,6 +158,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "sepia", label: "Sepia" },
       { id: "teal-orange", label: "Teal & orange" },
     ],
+    blurs: false,
     defaults: { ...NO_LOOK, filterStrength: 0.7, filterVariant: "warm" },
   },
 
@@ -159,6 +172,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "bayer", label: "Dither" },
     ],
     // Coarse enough to read as a choice. A block a pixel wide is the original
+    blurs: false,
     // picture with the frame time of a filter.
     defaults: { ...NO_LOOK, filterScale: 0.012, filterVariant: "blocks" },
   },
@@ -167,12 +181,19 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     label: "Halftone",
     hint: "Printed dots on a ruled screen.",
     uses: ["strength", "scale", "angle", "tint", "variant"],
-    labels: { strength: "Amount", scale: "Dot pitch", angle: "Screen", tint: "Ink", variant: "Ink set" },
+    labels: {
+      strength: "Amount",
+      scale: "Dot pitch",
+      angle: "Screen",
+      tint: "Ink",
+      variant: "Ink set",
+    },
     variants: [
       { id: "mono", label: "One ink" },
       { id: "duotone", label: "Duotone" },
       { id: "cmyk", label: "CMYK" },
     ],
+    blurs: false,
     defaults: {
       ...NO_LOOK,
       filterStrength: 1,
@@ -196,6 +217,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "bgr-stripe", label: "BGR" },
       { id: "dot-matrix", label: "Dot matrix" },
     ],
+    blurs: false,
     defaults: {
       ...NO_LOOK,
       // Not the whole way. At full strength the grid is the subject and the
@@ -221,6 +243,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "pincushion", label: "Pincushion" },
       { id: "dome", label: "Peephole" },
     ],
+    blurs: true,
     defaults: { ...NO_LOOK, filterStrength: 0.6, filterScale: 0.02, filterVariant: "barrel" },
   },
 
@@ -241,6 +264,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "shadow-mask", label: "Shadow mask" },
       { id: "slot", label: "Slot mask" },
     ],
+    blurs: false,
     defaults: {
       ...NO_LOOK,
       filterStrength: 0.85,
@@ -261,6 +285,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     uses: ["strength", "scale", "animated"],
     labels: { strength: "Wear", scale: "Line height", animated: "Tracking" },
     variants: [],
+    blurs: false,
     defaults: { ...NO_LOOK, filterStrength: 0.7, filterScale: 0.003, filterAnimated: true },
   },
 
@@ -280,6 +305,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "35mm", label: "35mm" },
       { id: "super8", label: "Super 8" },
     ],
+    blurs: false,
     defaults: {
       ...NO_LOOK,
       filterStrength: 0.8,
@@ -297,6 +323,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     uses: ["strength", "scale", "tint"],
     labels: { strength: "Amount", scale: "Radius", tint: "Colour" },
     variants: [],
+    blurs: true,
     defaults: { ...NO_LOOK, filterStrength: 0.6, filterScale: 0.02, filterTint: "#ffffff" },
   },
 
@@ -317,6 +344,7 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       { id: "curtain", label: "Curtain" },
       { id: "leaves", label: "Leaves" },
     ],
+    blurs: false,
     defaults: {
       ...NO_LOOK,
       filterStrength: 0.75,
