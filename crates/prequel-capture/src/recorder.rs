@@ -615,7 +615,24 @@ impl ScreenRecorder {
             .and_then(|thread| thread.join().ok())
             .flatten();
 
-        block_on_stream(|ch| self.stream.stop_with_ch(ch))?;
+        // Not `?`, for the same reason the writers below are all finished
+        // before any error is returned: a stream that will not stop must not
+        // cost the footage that was captured before it. This used to return
+        // before a single `finish` ran, which left three `AVAssetWriter`s
+        // unfinalised — files with no `moov` atom, a recording that sits in the
+        // library, opens, and never decodes.
+        //
+        // `-3808` is not a failure at all. It is SCK saying the stream is
+        // already stopped, which is the state being asked for: it ended itself
+        // because the captured window closed or the display went away, and
+        // nothing here noticed, there being no `SCStreamDelegate` on it.
+        let stopped = match block_on_stream(|ch| self.stream.stop_with_ch(ch)) {
+            Err(e) if already_stopped(&e) => {
+                tracing::warn!("stream had already stopped; finalising the tracks anyway");
+                Ok(())
+            }
+            other => other,
+        };
 
         // Detach the output before finalising so no in-flight callback can
         // touch a writer that is being torn down.
@@ -656,6 +673,10 @@ impl ScreenRecorder {
         let screen = inner.writer.take().map(VideoWriter::finish).transpose();
         let system_audio = finish_audio(system_audio);
         let microphone = finish_audio(microphone);
+
+        // After the writers, never before: whatever went wrong with the stream,
+        // the tracks on disk are now closed and readable.
+        stopped?;
 
         let summary = screen?
             .ok_or_else(|| Error::ScreenCaptureKit("recorder already stopped".to_owned()))?;
@@ -911,6 +932,15 @@ fn build_filter(
     }
 }
 
+/// Whether an `SCStream` refused to stop because it was stopped already.
+///
+/// Matched on the code rather than the message, which is localised. `-3808` is
+/// `SCStreamErrorAttemptToStopStreamState`; the string form is what
+/// `from_ns_error` keeps, there being no code on our side of the bridge.
+fn already_stopped(err: &Error) -> bool {
+    matches!(err, Error::ScreenCaptureKit(text) if text.contains("-3808"))
+}
+
 /// Bridges one of ScreenCaptureKit's completion-handler calls to a blocking one.
 fn block_on_stream(call: impl FnOnce(Box<dyn FnMut(Option<&ns::Error>)>)) -> Result<()> {
     let (tx, rx) = mpsc::channel();
@@ -945,5 +975,30 @@ fn audio_format(sample: &cm::SampleBuf) -> Option<(f64, i32)> {
 impl From<prequel_encode::Error> for Error {
     fn from(value: prequel_encode::Error) -> Self {
         Error::Encode(value.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The error that cost a user their recording: SCK refusing to stop a
+    /// stream that had stopped itself. Recognised here so `stop` can go on and
+    /// close the files rather than return with three writers unfinalised.
+    #[test]
+    fn an_already_stopped_stream_is_not_a_failure() {
+        let err = Error::from_ns_error(
+            &"Error Domain=com.apple.ScreenCaptureKit.SCStreamErrorDomain Code=-3808 \
+              \"Failed to stop a stream that is already stopped or does not exist\"",
+        );
+        assert!(already_stopped(&err));
+    }
+
+    #[test]
+    fn other_stream_errors_still_are() {
+        assert!(!already_stopped(&Error::from_ns_error(
+            &"Code=-3802 something else"
+        )));
+        assert!(!already_stopped(&Error::Timeout(START_TIMEOUT)));
     }
 }
