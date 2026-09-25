@@ -321,10 +321,10 @@ fn a_look_leaves_the_middle_of_the_picture_alone() {
 /// switch does, so a look wired to the wrong arm and a variant that never
 /// reaches its branch both show up as "this frame is identical to the
 /// unfiltered one".
-const EVERY_LOOK: [(FilterKind, &str); 11] = [
+const EVERY_LOOK: [(FilterKind, &str); 17] = [
     (FilterKind::Aberration, ""),
     (FilterKind::Grade, "teal-orange"),
-    (FilterKind::Pixelate, "bayer"),
+    (FilterKind::Dither, ""),
     (FilterKind::Halftone, "cmyk"),
     (FilterKind::Lcd, "dot-matrix"),
     (FilterKind::Fisheye, "dome"),
@@ -333,6 +333,15 @@ const EVERY_LOOK: [(FilterKind, &str); 11] = [
     (FilterKind::Film, "super8"),
     (FilterKind::Bloom, ""),
     (FilterKind::WindowLight, "leaves"),
+    (FilterKind::LostSignal, ""),
+    // All four palettes, not one of them: they are four arms of the switch that
+    // differ only by which span of the colour table they search, so a span
+    // mistyped on one side shows as that palette alone leaving the frame alone.
+    (FilterKind::Pico8, ""),
+    (FilterKind::Gameboy, ""),
+    (FilterKind::C64, ""),
+    (FilterKind::Riso, ""),
+    (FilterKind::Dream, "rim"),
 ];
 
 /// How far apart two frames are, averaged over every channel of every pixel.
@@ -348,12 +357,12 @@ fn distance(a: &Frame, b: &Frame) -> f64 {
 
 #[test]
 fn every_look_in_the_catalogue_changes_the_frame() {
-    // The cheapest guard there is on eleven shaders, and it catches the failure
-    // that costs the most to find by eye: a look whose arm of the switch is
+    // The cheapest guard there is on every shader in the file, and it catches
+    // the failure that costs the most to find by eye: a look whose arm is
     // never reached exports the picture untouched, which in the editor is
     // indistinguishable from "this effect is subtle".
     //
-    // It also proves the Metal library compiles with all eleven in it. A
+    // It also proves the Metal library compiles with all of them in it. A
     // `filters.metal` that will not build leaves `filter_pipeline` as `None`
     // and every frame here comes out unfiltered — so this one assertion covers
     // the whole file.
@@ -373,7 +382,7 @@ fn every_look_in_the_catalogue_changes_the_frame() {
         // a test nobody trusts.
         filter.animated = false;
 
-        let name = format!("prequel-filter-{}", kind.index());
+        let name = format!("prequel-filter-{}-{variant}", kind.index());
         let (dir, frame) = render(&name, Some(filter));
         let moved = distance(&frame, &plain);
 

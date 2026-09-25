@@ -132,13 +132,13 @@ describe("variant numbering", () => {
    */
   const NUMBERS: Partial<Record<FilterId, Record<string, number>>> = {
     grade: { warm: 0, cool: 1, faded: 2, mono: 3, sepia: 4, "teal-orange": 5 },
-    pixelate: { blocks: 0, bayer: 1 },
     halftone: { mono: 0, duotone: 1, cmyk: 2 },
     lcd: { "rgb-stripe": 0, "bgr-stripe": 1, "dot-matrix": 2 },
     fisheye: { barrel: 0, pincushion: 1, dome: 2 },
     crt: { grille: 0, "shadow-mask": 1, slot: 2 },
     film: { "16mm": 0, "35mm": 1, super8: 2 },
     "window-light": { blinds: 0, panes: 1, curtain: 2, leaves: 3 },
+    dream: { mist: 0, halo: 1, rim: 2 },
   };
 
   it("matches the numbers the exporter holds", () => {

@@ -13,8 +13,8 @@
  * ## Why one shared vocabulary rather than leaves per effect
  *
  * Every effect reads from the same six leaves — a strength, a variant, a size,
- * an angle, a tint, and whether the moving parts move. Eleven effects with four
- * leaves each would be forty, thirty-six of them dead for whatever is chosen:
+ * an angle, a tint, and whether the moving parts move. Four leaves each would
+ * be seventy, sixty-six of them dead for whatever is chosen:
  * dead weight in every resolved settings object, every saved preset, and every
  * Reset key table, and forty answers to "is this overridden?" where the user
  * can only see four.
@@ -29,7 +29,7 @@
 export type FilterId =
   | "aberration"
   | "grade"
-  | "pixelate"
+  | "dither"
   | "halftone"
   | "lcd"
   | "fisheye"
@@ -37,7 +37,13 @@ export type FilterId =
   | "vhs"
   | "film"
   | "bloom"
-  | "window-light";
+  | "window-light"
+  | "lost-signal"
+  | "pico8"
+  | "gameboy"
+  | "c64"
+  | "riso"
+  | "dream";
 
 /** One of the shared leaves, named without its `filter` prefix. */
 export type FilterParam = "strength" | "variant" | "scale" | "angle" | "tint" | "animated";
@@ -69,7 +75,7 @@ export interface FilterSpec {
    * top — the glow spreading highlights, the fish eye losing focus at the rim.
    *
    * The preview builds that chain per frame and only for the looks that use it;
-   * the other nine would pay for one nothing samples. Set this on a look whose
+   * the rest would pay for one nothing samples. Set this on a look whose
    * shader starts sampling a level and the chain appears; forget to, and it
    * falls back to the sharp top level rather than to black — see the note in
    * `webgl.ts`'s `draw`.
@@ -100,7 +106,7 @@ export interface FilterDefaults {
 /**
  * How far a shared leaf can be pushed.
  *
- * One range for all eleven rather than one per effect: the leaf is the same
+ * One range for the whole catalogue rather than one per effect: the leaf is the same
  * leaf, and a slider whose ends moved when the look changed would make the
  * number under your finger mean something new every time. What differs between
  * effects is where the *default* sits, which is `defaults` above.
@@ -162,21 +168,37 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
     defaults: { ...NO_LOOK, filterStrength: 0.7, filterVariant: "warm" },
   },
 
-  pixelate: {
-    label: "Pixelate",
-    hint: "Square blocks, or dithered down to two colours.",
-    uses: ["scale", "variant"],
-    labels: { scale: "Block size", variant: "Style" },
+  dream: {
+    label: "Dream",
+    hint: "Soft, hazy and lifted — the picture through a misted lens.",
+    uses: ["strength", "scale", "tint", "animated", "variant"],
+    labels: {
+      strength: "Amount",
+      scale: "Softness",
+      tint: "Colour",
+      animated: "Drift",
+      variant: "Kind",
+    },
     variants: [
-      { id: "blocks", label: "Blocks" },
-      { id: "bayer", label: "Dither" },
+      { id: "mist", label: "Mist" },
+      { id: "halo", label: "Halo" },
+      { id: "rim", label: "Soft edges" },
     ],
-    // Coarse enough to read as a choice. A block a pixel wide is the original
-    blurs: false,
-    // picture with the frame time of a filter.
-    defaults: { ...NO_LOOK, filterScale: 0.012, filterVariant: "blocks" },
+    blurs: true,
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 0.85,
+      // Wide. A diffusion that only reaches a few pixels is a picture slightly
+      // out of focus; what makes this read as haze is the veil crossing whole
+      // shapes, so the radius is four times the leaf rather than the glow's two.
+      filterScale: 0.02,
+      // Blush, which is where the light goes when it has been through
+      // something. A neutral one still softens and reads as a smeared lens.
+      filterTint: "#ffd9e8",
+      filterVariant: "mist",
+      filterAnimated: true,
+    },
   },
-
   halftone: {
     label: "Halftone",
     hint: "Printed dots on a ruled screen.",
@@ -357,13 +379,95 @@ export const FILTERS: Record<FilterId, FilterSpec> = {
       filterVariant: "blinds",
     },
   },
+
+  "lost-signal": {
+    label: "Lost signal",
+    hint: "A picture arriving badly — soft at the edges, blooming, off colour.",
+    uses: ["strength", "scale", "tint", "animated"],
+    labels: { strength: "Wear", scale: "Line height", tint: "Cast", animated: "Drift" },
+    variants: [],
+    // The defocus towards the rim reads off the chain rather than off a ring of
+    // taps, for the reason the fish eye's does.
+    blurs: true,
+    defaults: {
+      ...NO_LOOK,
+      filterStrength: 0.75,
+      filterScale: 0.004,
+      // The amber a dying tube goes. A neutral one is a picture that is merely
+      // soft, and the colour is half of why this reads as a signal rather than
+      // as a lens.
+      filterTint: "#ff8a3c",
+      filterAnimated: true,
+    },
+  },
+
+  dither: {
+    label: "Dither",
+    hint: "Two colours on a coarse grid, the way a one-bit screen had to.",
+    uses: ["scale"],
+    labels: { scale: "Block size" },
+    variants: [],
+    blurs: false,
+    // Coarse enough to read as a choice. A block a pixel wide is the original
+    // picture with the frame time of a filter.
+    defaults: { ...NO_LOOK, filterScale: 0.012 },
+  },
+
+  /**
+   * The four palettes, as four looks rather than one look with a menu.
+   *
+   * They share every line of shader with each other and with the dither above —
+   * what differs is which span of `PALETTE` the search runs over. A menu would
+   * be the truthful shape of the code and the wrong shape of the picker: nobody
+   * chooses "pixelate" and then wonders which machine, they come looking for
+   * the Game Boy. Each tile is a picture of the answer.
+   */
+  pico8: {
+    label: "Pico-8",
+    hint: "Snapped to the sixteen colours of a fantasy console.",
+    uses: ["scale"],
+    labels: { scale: "Block size" },
+    variants: [],
+    blurs: false,
+    defaults: { ...NO_LOOK, filterScale: 0.012 },
+  },
+
+  gameboy: {
+    label: "Game Boy",
+    hint: "Four greens, the way the original handheld had it.",
+    uses: ["scale"],
+    labels: { scale: "Block size" },
+    variants: [],
+    blurs: false,
+    defaults: { ...NO_LOOK, filterScale: 0.012 },
+  },
+
+  c64: {
+    label: "C64",
+    hint: "Snapped to the sixteen colours of a home computer.",
+    uses: ["scale"],
+    labels: { scale: "Block size" },
+    variants: [],
+    blurs: false,
+    defaults: { ...NO_LOOK, filterScale: 0.012 },
+  },
+
+  riso: {
+    label: "Risograph",
+    hint: "Four inks on paper, overprinted.",
+    uses: ["scale"],
+    labels: { scale: "Block size" },
+    variants: [],
+    blurs: false,
+    defaults: { ...NO_LOOK, filterScale: 0.012 },
+  },
 };
 
 /** The looks with a shader behind them, in the order the picker shows them. */
 export const READY: readonly FilterId[] = [
   "aberration",
   "grade",
-  "pixelate",
+  "dream",
   "halftone",
   "lcd",
   "fisheye",
@@ -372,6 +476,15 @@ export const READY: readonly FilterId[] = [
   "film",
   "bloom",
   "window-light",
+  "lost-signal",
+  // The grid's own order, not the table's: the five that snap the picture to a
+  // small set of colours sit together at the end, because choosing between them
+  // is one decision and scrolling past four of them to reach a CRT is not.
+  "dither",
+  "pico8",
+  "gameboy",
+  "c64",
+  "riso",
 ];
 
 /** Whether a look can actually be drawn in this build. */

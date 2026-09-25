@@ -3,6 +3,14 @@
     "width": 676,
     "height": 253
   },
+  "teleprompter-narrow": {
+    "width": 556,
+    "height": 253
+  },
+  "teleprompter-plain": {
+    "width": 676,
+    "height": 248
+  },
   "script-window": {
     "width": 600,
     "height": 520
@@ -71,9 +79,65 @@
     "width": 384,
     "height": 543
   },
+  "cursor-tag": {
+    "width": 1280,
+    "height": 820
+  },
   "inspector-captions": {
     "width": 384,
     "height": 543
+  },
+  "inspector-filters": {
+    "width": 384,
+    "height": 543
+  },
+  "filter-applied": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-crt": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-lcd": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-fisheye": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-bloom": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-halftone": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-window-light": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-lost-signal": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-dream": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-pico8": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-gameboy": {
+    "width": 1280,
+    "height": 820
+  },
+  "filter-dream-halo": {
+    "width": 1280,
+    "height": 820
   },
   "inspector-logo": {
     "width": 384,
@@ -90,6 +154,14 @@
   "inspector-focus": {
     "width": 384,
     "height": 543
+  },
+  "timeline-text-ghost": {
+    "width": 1280,
+    "height": 190
+  },
+  "zz-ghost-with-text": {
+    "width": 1280,
+    "height": 218
   },
   "editor-text": {
     "width": 1280,
@@ -138,9 +210,5 @@
   "upgrade-dialog": {
     "width": 460,
     "height": 612
-  },
-  "teleprompter-plain": {
-    "width": 676,
-    "height": 248
   }
 }

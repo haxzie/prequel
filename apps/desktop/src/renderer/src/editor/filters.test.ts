@@ -43,7 +43,7 @@ const ALL = Object.keys(FILTERS) as FilterId[];
 const SHADER_FN: Record<FilterId, string> = {
   aberration: "aberration",
   grade: "graded",
-  pixelate: "pixelated",
+  dither: "dithered",
   halftone: "halftoned",
   lcd: "panelled",
   fisheye: "bulged",
@@ -52,6 +52,16 @@ const SHADER_FN: Record<FilterId, string> = {
   film: "filmed",
   bloom: "bloomed",
   "window-light": "windowed",
+  "lost-signal": "lost",
+  // The four palettes are four looks drawn by one function, which differs only
+  // by the span of the colour table it is handed. Named four times here rather
+  // than special-cased: the checks below ask a question of every look, and a
+  // look exempted from them is a look nothing asks about.
+  pico8: "snapped",
+  gameboy: "snapped",
+  c64: "snapped",
+  riso: "snapped",
+  dream: "dreamt",
 };
 
 /** One function's source, from its signature to the closing brace in column 0. */
@@ -81,9 +91,9 @@ describe("the two shaders", () => {
   });
 
   it("gives every look an arm in the exporter's switch", () => {
-    // The half that was missing from the export for ten of the eleven looks,
-    // and that no test noticed because the pixel tests compile the crate from
-    // source while the app ships a binary built earlier.
+    // The half that was missing from the export for ten of the looks then in
+    // the catalogue, and that no test noticed because the pixel tests compile
+    // the crate from source while the app ships a binary built earlier.
     for (const id of ALL) {
       const look = FILTER_LOOKS[id];
       expect(METAL, `${id} (${look})`).toContain(`case ${look}:`);
@@ -152,9 +162,15 @@ describe("the two shaders", () => {
       "luma",
       "hash21",
       "resolved",
+      "wrap8",
+      "bayer8",
+      "PALETTE",
       "aberration",
       "graded",
-      "pixelated",
+      "blocked",
+      "dithered",
+      "snapped",
+      "nearest",
       "halftoned",
       "panelled",
       "bulged",
@@ -163,6 +179,8 @@ describe("the two shaders", () => {
       "filmed",
       "bloomed",
       "windowed",
+      "lost",
+      "dreamt",
     ];
     for (const name of shared) {
       expect(fragment, `${name} in the GLSL`).toContain(name);

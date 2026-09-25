@@ -881,7 +881,7 @@ pub struct Placed {
 pub enum FilterKind {
     Aberration,
     Grade,
-    Pixelate,
+    Dither,
     Halftone,
     Lcd,
     Fisheye,
@@ -890,6 +890,12 @@ pub enum FilterKind {
     Film,
     Bloom,
     WindowLight,
+    LostSignal,
+    Pico8,
+    Gameboy,
+    C64,
+    Riso,
+    Dream,
     /// Anything this build has never heard of. Drawn as no filter at all.
     #[serde(other)]
     Unknown,
@@ -906,7 +912,11 @@ impl FilterKind {
         match self {
             Self::Aberration => 0,
             Self::Grade => 1,
-            Self::Pixelate => 2,
+            // 2 was `Pixelate`, whose two-colour arm this is and whose block
+            // arm was dropped. Reused rather than left as a hole: a plan
+            // carries a look's *name*, so nothing outside the shaders ever
+            // sees the number.
+            Self::Dither => 2,
             Self::Halftone => 3,
             Self::Lcd => 4,
             Self::Fisheye => 5,
@@ -915,6 +925,15 @@ impl FilterKind {
             Self::Film => 8,
             Self::Bloom => 9,
             Self::WindowLight => 10,
+            // 11 was `Ascii`, dropped before it shipped. Left unused rather
+            // than closed up: a plan carries a look's *name*, so renumbering
+            // buys nothing and costs four tables agreeing again.
+            Self::LostSignal => 12,
+            Self::Pico8 => 13,
+            Self::Gameboy => 14,
+            Self::C64 => 15,
+            Self::Riso => 16,
+            Self::Dream => 17,
             Self::Unknown => u32::MAX,
         }
     }
@@ -943,15 +962,24 @@ impl FilterKind {
     fn variants(self) -> &'static [&'static str] {
         match self {
             Self::Grade => &["warm", "cool", "faded", "mono", "sepia", "teal-orange"],
-            Self::Pixelate => &["blocks", "bayer"],
             Self::Halftone => &["mono", "duotone", "cmyk"],
             Self::Lcd => &["rgb-stripe", "bgr-stripe", "dot-matrix"],
             Self::Fisheye => &["barrel", "pincushion", "dome"],
             Self::Crt => &["grille", "shadow-mask", "slot"],
             Self::Film => &["16mm", "35mm", "super8"],
             Self::WindowLight => &["blinds", "panes", "curtain", "leaves"],
+            Self::Dream => &["mist", "halo", "rim"],
             // One way to be worn each, so the fallback of 0 is the only answer.
-            Self::Aberration | Self::Vhs | Self::Bloom | Self::Unknown => &[],
+            Self::Aberration
+            | Self::Dither
+            | Self::Vhs
+            | Self::Bloom
+            | Self::LostSignal
+            | Self::Pico8
+            | Self::Gameboy
+            | Self::C64
+            | Self::Riso
+            | Self::Unknown => &[],
         }
     }
 }
@@ -1219,7 +1247,7 @@ mod tests {
     fn the_filter_kinds_match_the_shader() {
         assert_eq!(FilterKind::Aberration.index(), 0);
         assert_eq!(FilterKind::Grade.index(), 1);
-        assert_eq!(FilterKind::Pixelate.index(), 2);
+        assert_eq!(FilterKind::Dither.index(), 2);
         assert_eq!(FilterKind::Halftone.index(), 3);
         assert_eq!(FilterKind::Lcd.index(), 4);
         assert_eq!(FilterKind::Fisheye.index(), 5);
@@ -1228,6 +1256,12 @@ mod tests {
         assert_eq!(FilterKind::Film.index(), 8);
         assert_eq!(FilterKind::Bloom.index(), 9);
         assert_eq!(FilterKind::WindowLight.index(), 10);
+        assert_eq!(FilterKind::LostSignal.index(), 12);
+        assert_eq!(FilterKind::Pico8.index(), 13);
+        assert_eq!(FilterKind::Gameboy.index(), 14);
+        assert_eq!(FilterKind::C64.index(), 15);
+        assert_eq!(FilterKind::Riso.index(), 16);
+        assert_eq!(FilterKind::Dream.index(), 17);
     }
 
     /// The table `variantIndex` in `apps/desktop/src/shared/filters.ts`
@@ -1237,13 +1271,13 @@ mod tests {
     fn the_variant_numbering_matches_the_registry() {
         assert_eq!(FilterKind::Grade.variant_index("warm"), 0);
         assert_eq!(FilterKind::Grade.variant_index("teal-orange"), 5);
-        assert_eq!(FilterKind::Pixelate.variant_index("bayer"), 1);
         assert_eq!(FilterKind::Halftone.variant_index("cmyk"), 2);
         assert_eq!(FilterKind::Lcd.variant_index("dot-matrix"), 2);
         assert_eq!(FilterKind::Fisheye.variant_index("dome"), 2);
         assert_eq!(FilterKind::Crt.variant_index("slot"), 2);
         assert_eq!(FilterKind::Film.variant_index("super8"), 2);
         assert_eq!(FilterKind::WindowLight.variant_index("leaves"), 3);
+        assert_eq!(FilterKind::Dream.variant_index("rim"), 2);
     }
 
     #[test]

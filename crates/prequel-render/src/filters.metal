@@ -157,6 +157,11 @@ static float value_noise(float2 p) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+/// A value wrapped into 0-8, positive whatever the sign going in. See `wrap4`.
+static float wrap8(float v) {
+    return v - 8.0 * floor(v * 0.125);
+}
+
 /// A value wrapped into 0-4, positive whatever the sign going in.
 static float wrap4(float v) {
     // Written as a subtraction rather than through `fmod`: GLSL's `mod` is
@@ -280,28 +285,156 @@ static float bayer(float2 cell) {
     return (m[x + y * 4] + 0.5) * 0.0625;
 }
 
-/// The picture on a coarse grid.
+/// One cell of the 8x8 ordered dither, 0 to 1.
+///
+/// The 4x4 above is sixteen levels, which is plenty to break up a ramp that is
+/// on its way to two colours. Snapping to sixteen *colours* needs finer: with
+/// the coarse matrix the bias itself shows as a visible weave laid over the
+/// picture, because the thing it is dithering between is no longer black and
+/// white but two neighbouring greens.
+///
+/// Mirrors `bayer8` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float bayer8(float2 cell) {
+    const float m[64] = {
+        0.0, 32.0, 8.0, 40.0, 2.0, 34.0, 10.0, 42.0,
+        48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+        12.0, 44.0, 4.0, 36.0, 14.0, 46.0, 6.0, 38.0,
+        60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+        3.0, 35.0, 11.0, 43.0, 1.0, 33.0, 9.0, 41.0,
+        51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+        15.0, 47.0, 7.0, 39.0, 13.0, 45.0, 5.0, 37.0,
+        63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0};
+    int x = int(wrap8(cell.x));
+    int y = int(wrap8(cell.y));
+    return (m[x + y * 8] + 0.5) * 0.015625;
+}
+
+/// Every palette the pixelate look can snap to, end to end.
+///
+/// One array with a span per palette rather than four arrays, because GLSL has
+/// no way to hand a function a different one — a four-arm switch each of whose
+/// arms carries its own copy of the search loop is four copies of the loop.
+/// Written the same way here for the reason everything in this file is: the two
+/// sides are read against each other, so they are laid out the same.
+///
+/// Mirrors `PALETTE` in `apps/desktop/src/renderer/src/editor/filters.ts`,
+/// entry for entry — the two rasterisers agreeing about which colours exist is
+/// the whole of whether an export matches its preview here.
+constant float3 PALETTE[41] = {
+    // Pico-8, 0 to 15.
+    float3(0.0000, 0.0000, 0.0000), float3(0.1137, 0.1686, 0.3255),
+    float3(0.4941, 0.1451, 0.3255), float3(0.0000, 0.5294, 0.3176),
+    float3(0.6706, 0.3216, 0.2118), float3(0.3725, 0.3412, 0.3098),
+    float3(0.7608, 0.7647, 0.7804), float3(1.0000, 0.9451, 0.9098),
+    float3(1.0000, 0.0000, 0.3020), float3(1.0000, 0.6392, 0.0000),
+    float3(1.0000, 0.9255, 0.1529), float3(0.0000, 0.8941, 0.2118),
+    float3(0.1608, 0.6784, 1.0000), float3(0.5137, 0.4627, 0.6118),
+    float3(1.0000, 0.4667, 0.6588), float3(1.0000, 0.8000, 0.6667),
+    // Game Boy, 16 to 19. The four greens of the original panel, not the
+    // Pocket's greys — the greens are what anybody picturing one is picturing.
+    float3(0.0588, 0.2196, 0.0588), float3(0.1882, 0.3843, 0.1882),
+    float3(0.5451, 0.6745, 0.0588), float3(0.6078, 0.7373, 0.0588),
+    // C64, 20 to 35.
+    float3(0.0000, 0.0000, 0.0000), float3(1.0000, 1.0000, 1.0000),
+    float3(0.5333, 0.0000, 0.0000), float3(0.6667, 1.0000, 0.9333),
+    float3(0.8000, 0.2667, 0.8000), float3(0.0000, 0.8000, 0.3333),
+    float3(0.0000, 0.0000, 0.6667), float3(0.9333, 0.9333, 0.4667),
+    float3(0.8667, 0.5333, 0.3333), float3(0.4000, 0.2667, 0.0000),
+    float3(1.0000, 0.4667, 0.4667), float3(0.2000, 0.2000, 0.2000),
+    float3(0.4667, 0.4667, 0.4667), float3(0.6667, 1.0000, 0.4000),
+    float3(0.0000, 0.5333, 1.0000), float3(0.7333, 0.7333, 0.7333),
+    // Risograph, 36 to 40. Four inks and the paper they sit on.
+    float3(0.1647, 0.1647, 0.1647), float3(1.0000, 0.2824, 0.3451),
+    float3(1.0000, 0.8235, 0.2471), float3(0.1059, 0.6039, 0.6667),
+    float3(0.9647, 0.9569, 0.9020)};
+
+/// The nearest colour a machine like that could actually have shown.
+///
+/// The ordered matrix biases the colour *before* it is snapped rather than
+/// choosing between two levels after. That is what keeps a gradient: two
+/// neighbouring cells land either side of the boundary between two entries and
+/// the eye mixes them back. Snapping first and dithering after gives banding
+/// with a pattern in it.
+///
+/// Nearest by squared distance in plain RGB, which is not how anybody sees
+/// colour and is what every machine in this list did. A perceptual metric picks
+/// better colours and picks the wrong ones: the banding and the odd hue jumps
+/// *are* the look.
+///
+/// Mirrors `nearest` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 nearest(float3 c, float2 index, int palette) {
+    // The spans of `PALETTE`. Taken as an argument rather than read off
+    // `variant`, because the four palettes are four *looks* — each has its own
+    // arm of the switch and none of them has a variant to read.
+    int start = 0;
+    int count = 16;
+    if (palette == 1) {
+        start = 16;
+        count = 4;
+    } else if (palette == 2) {
+        start = 20;
+        count = 16;
+    } else if (palette == 3) {
+        start = 36;
+        count = 5;
+    }
+
+    float3 biased = clamp(c + (bayer8(index) - 0.5) * 0.28, 0.0, 1.0);
+
+    float3 best = PALETTE[start];
+    float near = 16.0;
+    // A constant bound with a break, because GLSL wants the trip count where it
+    // can see it and the longest palette here is sixteen.
+    for (int i = 0; i < 16; i++) {
+        if (i >= count) {
+            break;
+        }
+        float3 entry = PALETTE[start + i];
+        float3 apart = biased - entry;
+        float away = dot(apart, apart);
+        if (away < near) {
+            near = away;
+            best = entry;
+        }
+    }
+    return best;
+}
+
+/// Which block of the coarse grid this is, and what colour it found there.
 ///
 /// The colour is taken from the *centre* of each block rather than averaged
 /// over it. An average is the honest downsample and it is the wrong look: it
 /// softens every block against its neighbour, and what makes this read as pixel
 /// art is that each block is one flat colour lifted from somewhere real.
 ///
-/// Mirrors `pixelated` in `apps/desktop/src/renderer/src/editor/filters.ts`.
-static float3 pixelated(texture2d<float> scene, sampler smp,
-                        constant FilterUniforms &u, float2 uv) {
+/// Mirrors `blocked` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 blocked(texture2d<float> scene, sampler smp,
+                      constant FilterUniforms &u, float2 uv, thread float2 &index) {
     float cell = pitch(u);
-    float2 p = centred(u, uv);
-    float2 index = floor(p / cell);
-    float3 c = grab(scene, smp, uv_of(u, (index + 0.5) * cell));
-    if (u.variant == 0) {
-        return c;
-    }
-    // Dithered to two levels on the ordered matrix. Not quite black and not
-    // quite white: a two-colour picture drawn at the extremes reads as a fault
-    // rather than as a screen.
+    index = floor(centred(u, uv) / cell);
+    return grab(scene, smp, uv_of(u, (index + 0.5) * cell));
+}
+
+/// The picture in two colours.
+///
+/// Mirrors `dithered` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 dithered(texture2d<float> scene, sampler smp,
+                       constant FilterUniforms &u, float2 uv) {
+    float2 index;
+    float3 c = blocked(scene, smp, u, uv, index);
+    // Not quite black and not quite white: a two-colour picture drawn at the
+    // extremes reads as a fault rather than as a screen.
     float on = luma(c) > bayer(index) ? 1.0 : 0.0;
     return mix(float3(0.05), float3(0.95), on);
+}
+
+/// The picture in the colours one old machine had.
+///
+/// Mirrors `snapped` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 snapped(texture2d<float> scene, sampler smp,
+                      constant FilterUniforms &u, float2 uv, int palette) {
+    float2 index;
+    return nearest(blocked(scene, smp, u, uv, index), index, palette);
 }
 
 /// How much ink a dot of this coverage puts down, on a screen ruled that way.
@@ -746,6 +879,172 @@ static float3 windowed(texture2d<float> scene, sampler smp,
     return mix(c, mix(shade, sun, lit), u.strength);
 }
 
+/// A picture that arrived badly.
+///
+/// Five things, and it is the combination rather than any one of them: the
+/// frame bends a little, the rim loses focus, the channels come apart as it
+/// does, the highlights bloom, and the whole thing takes a colour it should not
+/// have.
+///
+/// Deliberately not the CRT. That look is a tube — a mask, a grille, phosphors
+/// you can count — and this one is the *signal*, which is why there is no mask
+/// here and why the curve is a third of the tube's. Two looks that both say
+/// "broadcast" have to differ by what they are actually about.
+///
+/// Mirrors `lost` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 lost(texture2d<float> scene, sampler smp,
+                   constant FilterUniforms &u, float2 uv) {
+    float2 p = centred(u, uv);
+    float r2 = dot(p, p);
+    float2 bent = p * (1.0 + 0.07 * r2 * u.strength);
+    float2 at = uv_of(u, bent);
+    // Past the edge there is no picture — not a clamped stripe of the nearest
+    // pixel, which is what a sampler would otherwise give.
+    if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) {
+        return float3(0.0);
+    }
+
+    // How far out this pixel is: 0 in the middle, 1 at the corner.
+    float away = sqrt(r2) / max(length(corner(u)), 0.001);
+
+    // Soft towards the rim, read off the mip chain rather than off a ring of
+    // taps — which is what `blurs` is set for. A handful of point samples
+    // spread wide enough to soften leaves gaps between them and the eye reads
+    // those as grain, the same failure `bulged` documents.
+    float lod = smoothstep(0.20, 1.0, away) * u.strength * 2.6;
+
+    float shorter = min(u.frame.x, u.frame.y);
+    float2 along = bent / max(length(bent), 0.0001);
+    float2 split = along * away * u.strength * 0.012 * shorter / u.frame;
+
+    float3 c;
+    c.r = scene.sample(smp, clamp(at + split, 0.0, 1.0), level(lod)).r;
+    c.g = scene.sample(smp, clamp(at, 0.0, 1.0), level(lod)).g;
+    c.b = scene.sample(smp, clamp(at - split, 0.0, 1.0), level(lod)).b;
+
+    // The glow. Eight taps on the golden-angle spiral off a level of the chain
+    // wide enough that they overlap — `bloomed` is the same idea at sixteen,
+    // which is the budget of a look that does nothing else.
+    float radius = pitch(u) * 8.0;
+    float lvl = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+    float3 glow = float3(0.0);
+    for (int i = 0; i < 8; i++) {
+        float turn = float(i) * 2.399963;
+        float reach = sqrt(float(i) + 0.5) / 2.83;
+        float2 off = float2(cos(turn), sin(turn)) * reach * radius;
+        float3 tap = scene.sample(smp, clamp(uv_of(u, bent + off), 0.0, 1.0), level(lvl)).rgb;
+        glow += tap * smoothstep(0.30, 0.85, luma(tap));
+    }
+    c += glow * 0.125 * u.tint.rgb * u.strength * 0.9;
+
+    // The line structure, faded out where it is finer than the raster.
+    float lines = bent.y / pitch(u);
+    c *= mix(1.0, 0.58 + 0.42 * cos(lines * TAU), resolved(lines) * u.strength);
+
+    // The cast, pulled towards a tinted grey rather than multiplied by the
+    // tint. A multiply leaves the shadows neutral, and the whole point is that
+    // the colour is wrong everywhere rather than only where the picture was
+    // bright.
+    c = mix(c, mix(c, float3(luma(c)) * u.tint.rgb, 0.75), u.strength * 0.55);
+
+    // The corners going, which is where a weak signal loses it first.
+    c *= 1.0 - 0.5 * u.strength * smoothstep(0.35, 1.05, away);
+
+    if (u.time > 0.0) {
+        // A band walking up the picture, and the level breathing under it.
+        // Slow: this is a signal drifting, not a fault repeating.
+        float band = fract(at.y + u.time * 0.11);
+        float hit = clamp(smoothstep(0.06, 0.0, band) + smoothstep(0.94, 1.0, band), 0.0, 1.0);
+        c = mix(c, c * 1.35 + float3(0.05), hit * 0.5 * u.strength);
+        c *= 1.0 + 0.03 * sin(u.time * 2.1);
+    }
+
+    return mix(grab(scene, smp, uv), c, u.strength);
+}
+
+/// The picture through a misted lens.
+///
+/// A blurred copy of the whole frame laid back over the sharp one and
+/// *screened*, with the blacks lifted afterwards. That combination is the
+/// look — it is what a diffusion filter in front of a lens does, and what a
+/// darkroom print does when the same negative is exposed a second time out of
+/// focus.
+///
+/// Deliberately not the glow. That look spreads *highlights* into what is
+/// around them and leaves the rest of the picture exactly as it was, so a frame
+/// wearing it is still a sharp frame. This one softens all of it and regrades
+/// what comes back, and the sharp picture underneath is what stops the result
+/// being a blur.
+///
+/// Mirrors `dreamt` in `apps/desktop/src/renderer/src/editor/filters.ts`.
+static float3 dreamt(texture2d<float> scene, sampler smp,
+                     constant FilterUniforms &u, float2 uv) {
+    float3 sharp = grab(scene, smp, uv);
+
+    // A slow swell, when it moves. Nine seconds to the cycle and a fifth of the
+    // radius: the softness should breathe at about the rate somebody watching
+    // stops noticing they are watching, not at the rate of anything on screen.
+    float swell = u.time > 0.0 ? 1.0 + 0.2 * sin(u.time * 0.7) : 1.0;
+    float radius = pitch(u) * 4.0 * swell;
+
+    // Which level of the chain a tap comes from — a quarter of the radius in
+    // texels, so each tap already averages a footprint that size and twelve of
+    // them overlap instead of leaving holes. The same arithmetic `bloomed`
+    // does, and the same failure it avoids: gaps between wide taps read as
+    // grain.
+    float shorter = min(u.frame.x, u.frame.y);
+    float level_of = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+
+    // Two sums off one ring of taps: all of it, and only what was already
+    // bright. The kinds differ by which of the two they lay back over the
+    // picture, so gathering both costs nothing over gathering either.
+    float3 wide = float3(0.0);
+    float3 bright = float3(0.0);
+    for (int i = 0; i < 12; i++) {
+        float turn = float(i) * 2.399963;
+        float reach = sqrt(float(i) + 0.5) / 3.54;
+        float2 off = float2(cos(turn), sin(turn)) * reach * radius;
+        float3 tap = scene.sample(smp, clamp(uv_of(u, centred(u, uv) + off), 0.0, 1.0),
+                                  level(level_of)).rgb;
+        wide += tap;
+        bright += tap * smoothstep(0.30, 0.85, luma(tap));
+    }
+    wide *= 0.0833333;
+    bright *= 0.0833333;
+
+    float3 veil = wide;
+    if (u.variant == 1) {
+        // The halo: only what was bright bleeds, and it bleeds harder. A
+        // darkroom print rather than a misted lens.
+        veil = bright * 2.1;
+    } else if (u.variant == 2) {
+        // Clear through the middle and gone at the rim, which is what a dream
+        // with one thing in it looks like.
+        float2 p = centred(u, uv);
+        veil = wide * smoothstep(0.15, 0.95, length(p) / max(length(corner(u)), 0.001));
+    }
+
+    // Screened rather than added. Adding clips, and a window that was already
+    // white goes to a flat patch with no edge left in it — the frame loses
+    // exactly the highlight the effect was reaching for. Screen rolls off.
+    float3 c = 1.0 - (1.0 - sharp) * (1.0 - clamp(veil, 0.0, 1.0) * 0.82);
+
+    // Warmed where it is bright, towards whatever the colour is set to. Only
+    // the highlights, because that is where light that has been scattered ends
+    // up.
+    c = mix(c, c * u.tint.rgb, smoothstep(0.30, 1.0, luma(c)) * 0.55);
+
+    // Off saturation a little, then the blacks lifted *and cooled*. Haze is
+    // light scattered into the shadows from everywhere in the room and the sky
+    // is the brightest thing in most rooms, so what fills a shadow is blue —
+    // the same reasoning `windowed` shades on, and the reason a flat grey lift
+    // reads as a washed-out picture rather than as air.
+    c = mix(c, float3(luma(c)), 0.16);
+    c += float3(0.020, 0.026, 0.044);
+
+    return mix(sharp, c, u.strength);
+}
+
 fragment float4 filter_fragment(FilterVertex in [[stage_in]],
                                 constant FilterUniforms &u [[buffer(0)]],
                                 texture2d<float> scene [[texture(0)]]) {
@@ -761,7 +1060,7 @@ fragment float4 filter_fragment(FilterVertex in [[stage_in]],
     switch (u.look) {
         case 0: return aberration(scene, smp, u, in.uv);
         case 1: return float4(graded(u, grab(scene, smp, in.uv)), 1.0);
-        case 2: return float4(pixelated(scene, smp, u, in.uv), 1.0);
+        case 2: return float4(dithered(scene, smp, u, in.uv), 1.0);
         case 3: return float4(halftoned(scene, smp, u, in.uv), 1.0);
         case 4: return float4(panelled(scene, smp, u, in.uv), 1.0);
         case 5: return float4(bulged(scene, smp, u, in.uv), 1.0);
@@ -770,6 +1069,12 @@ fragment float4 filter_fragment(FilterVertex in [[stage_in]],
         case 8: return float4(filmed(scene, smp, u, in.uv), 1.0);
         case 9: return float4(bloomed(scene, smp, u, in.uv), 1.0);
         case 10: return float4(windowed(scene, smp, u, in.uv), 1.0);
+        case 12: return float4(lost(scene, smp, u, in.uv), 1.0);
+        case 13: return float4(snapped(scene, smp, u, in.uv, 0), 1.0);
+        case 14: return float4(snapped(scene, smp, u, in.uv, 1), 1.0);
+        case 15: return float4(snapped(scene, smp, u, in.uv, 2), 1.0);
+        case 16: return float4(snapped(scene, smp, u, in.uv, 3), 1.0);
+        case 17: return float4(dreamt(scene, smp, u, in.uv), 1.0);
         default: break;
     }
 

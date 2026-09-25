@@ -31,7 +31,10 @@
 export const FILTER_LOOKS = {
   aberration: 0,
   grade: 1,
-  pixelate: 2,
+  // 2 was `pixelate`, whose two-colour arm this is and whose block arm was
+  // dropped. Reused rather than left as a hole: a plan carries a look's *name*,
+  // so nothing outside this file and its mirror ever sees the number.
+  dither: 2,
   halftone: 3,
   lcd: 4,
   fisheye: 5,
@@ -40,6 +43,16 @@ export const FILTER_LOOKS = {
   film: 8,
   bloom: 9,
   "window-light": 10,
+  // 11 was `ascii`, which was drawn, looked at and dropped before it
+  // shipped. Left unused rather than closed up: the numbers below it are
+  // written out in three other places, and renumbering them buys nothing a
+  // plan can see — a plan carries a look's *name*.
+  "lost-signal": 12,
+  pico8: 13,
+  gameboy: 14,
+  c64: 15,
+  riso: 16,
+  dream: 17,
 } as const;
 
 /**
@@ -211,6 +224,11 @@ float valueNoise(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+/** A value wrapped into 0-8, positive whatever the sign going in. See \`wrap4\`. */
+float wrap8(float v) {
+  return v - 8.0 * floor(v * 0.125);
+}
+
 /** A value wrapped into 0-4, positive whatever the sign going in. */
 float wrap4(float v) {
   // Written as a subtraction rather than through \`mod\`: GLSL's \`mod\` is
@@ -339,28 +357,167 @@ float bayer(vec2 cell) {
 }
 
 /**
- * The picture on a coarse grid.
+ * One cell of the 8x8 ordered dither, 0 to 1.
+ *
+ * The 4x4 above is sixteen levels, which is plenty to break up a ramp that is
+ * on its way to two colours. Snapping to sixteen *colours* needs finer: with
+ * the coarse matrix the bias itself shows as a visible weave laid over the
+ * picture, because the thing it is dithering between is no longer black and
+ * white but two neighbouring greens.
+ *
+ * Mirrors \`bayer8\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+float bayer8(vec2 cell) {
+  float m[64] = float[64](
+    0.0, 32.0, 8.0, 40.0, 2.0, 34.0, 10.0, 42.0,
+    48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+    12.0, 44.0, 4.0, 36.0, 14.0, 46.0, 6.0, 38.0,
+    60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+    3.0, 35.0, 11.0, 43.0, 1.0, 33.0, 9.0, 41.0,
+    51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+    15.0, 47.0, 7.0, 39.0, 13.0, 45.0, 5.0, 37.0,
+    63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0);
+  int x = int(wrap8(cell.x));
+  int y = int(wrap8(cell.y));
+  return (m[x + y * 8] + 0.5) * 0.015625;
+}
+
+/**
+ * Every palette the pixelate look can snap to, end to end.
+ *
+ * One array with a span per palette rather than four arrays, because GLSL has
+ * no way to hand a function a different one — a four-arm switch each of whose
+ * arms carries its own copy of the search loop is four copies of the loop.
+ *
+ * At file scope rather than inside the function that reads it, which is where
+ * \`bayer\`'s matrix sits. Forty-one vec3s declared per fragment is forty-one
+ * initialisers the compiler has to prove it can hoist, and the small matrix is
+ * where that is obviously free.
+ *
+ * Mirrors \`PALETTE\` in \`crates/prequel-render/src/filters.metal\`, entry for
+ * entry — the two rasterisers agreeing about which colours exist is the whole
+ * of whether an export matches its preview here.
+ */
+const vec3 PALETTE[41] = vec3[41](
+  // Pico-8, 0 to 15.
+  vec3(0.0000, 0.0000, 0.0000), vec3(0.1137, 0.1686, 0.3255),
+  vec3(0.4941, 0.1451, 0.3255), vec3(0.0000, 0.5294, 0.3176),
+  vec3(0.6706, 0.3216, 0.2118), vec3(0.3725, 0.3412, 0.3098),
+  vec3(0.7608, 0.7647, 0.7804), vec3(1.0000, 0.9451, 0.9098),
+  vec3(1.0000, 0.0000, 0.3020), vec3(1.0000, 0.6392, 0.0000),
+  vec3(1.0000, 0.9255, 0.1529), vec3(0.0000, 0.8941, 0.2118),
+  vec3(0.1608, 0.6784, 1.0000), vec3(0.5137, 0.4627, 0.6118),
+  vec3(1.0000, 0.4667, 0.6588), vec3(1.0000, 0.8000, 0.6667),
+  // Game Boy, 16 to 19. The four greens of the original panel, not the Pocket's
+  // greys — the greens are what anybody picturing one is picturing.
+  vec3(0.0588, 0.2196, 0.0588), vec3(0.1882, 0.3843, 0.1882),
+  vec3(0.5451, 0.6745, 0.0588), vec3(0.6078, 0.7373, 0.0588),
+  // C64, 20 to 35.
+  vec3(0.0000, 0.0000, 0.0000), vec3(1.0000, 1.0000, 1.0000),
+  vec3(0.5333, 0.0000, 0.0000), vec3(0.6667, 1.0000, 0.9333),
+  vec3(0.8000, 0.2667, 0.8000), vec3(0.0000, 0.8000, 0.3333),
+  vec3(0.0000, 0.0000, 0.6667), vec3(0.9333, 0.9333, 0.4667),
+  vec3(0.8667, 0.5333, 0.3333), vec3(0.4000, 0.2667, 0.0000),
+  vec3(1.0000, 0.4667, 0.4667), vec3(0.2000, 0.2000, 0.2000),
+  vec3(0.4667, 0.4667, 0.4667), vec3(0.6667, 1.0000, 0.4000),
+  vec3(0.0000, 0.5333, 1.0000), vec3(0.7333, 0.7333, 0.7333),
+  // Risograph, 36 to 40. Four inks and the paper they sit on.
+  vec3(0.1647, 0.1647, 0.1647), vec3(1.0000, 0.2824, 0.3451),
+  vec3(1.0000, 0.8235, 0.2471), vec3(0.1059, 0.6039, 0.6667),
+  vec3(0.9647, 0.9569, 0.9020));
+
+/**
+ * The nearest colour a machine like that could actually have shown.
+ *
+ * The ordered matrix biases the colour *before* it is snapped rather than
+ * choosing between two levels after. That is what keeps a gradient: two
+ * neighbouring cells land either side of the boundary between two entries and
+ * the eye mixes them back. Snapping first and dithering after gives banding
+ * with a pattern in it.
+ *
+ * Nearest by squared distance in plain RGB, which is not how anybody sees
+ * colour and is what every machine in this list did. A perceptual metric picks
+ * better colours and picks the wrong ones: the banding and the odd hue jumps
+ * *are* the look.
+ *
+ * Mirrors \`nearest\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+vec3 nearest(vec3 c, vec2 index, int palette) {
+  // The spans of \`PALETTE\`. Taken as an argument rather than read off
+  // \`u_variant\`, because the four palettes are four *looks* — each has its own
+  // arm of the switch and none of them has a variant to read.
+  int start = 0;
+  int count = 16;
+  if (palette == 1) {
+    start = 16;
+    count = 4;
+  } else if (palette == 2) {
+    start = 20;
+    count = 16;
+  } else if (palette == 3) {
+    start = 36;
+    count = 5;
+  }
+
+  vec3 biased = clamp(c + (bayer8(index) - 0.5) * 0.28, 0.0, 1.0);
+
+  vec3 best = PALETTE[start];
+  float near = 16.0;
+  // A constant bound with a break, because GLSL wants the trip count where it
+  // can see it and the longest palette here is sixteen.
+  for (int i = 0; i < 16; i++) {
+    if (i >= count) {
+      break;
+    }
+    vec3 entry = PALETTE[start + i];
+    vec3 apart = biased - entry;
+    float away = dot(apart, apart);
+    if (away < near) {
+      near = away;
+      best = entry;
+    }
+  }
+  return best;
+}
+
+/**
+ * Which block of the coarse grid this is, and what colour it found there.
  *
  * The colour is taken from the *centre* of each block rather than averaged over
  * it. An average is the honest downsample and it is the wrong look: it softens
  * every block against its neighbour, and what makes this read as pixel art is
  * that each block is one flat colour lifted from somewhere real.
  *
- * Mirrors \`pixelated\` in \`crates/prequel-render/src/filters.metal\`.
+ * Mirrors \`blocked\` in \`crates/prequel-render/src/filters.metal\`.
  */
-vec3 pixelated(vec2 uv) {
+vec3 blocked(vec2 uv, out vec2 index) {
   float cell = pitch();
-  vec2 p = centred(uv);
-  vec2 index = floor(p / cell);
-  vec3 c = grab(uvOf((index + 0.5) * cell));
-  if (u_variant == 0) {
-    return c;
-  }
-  // Dithered to two levels on the ordered matrix. Not quite black and not quite
-  // white: a two-colour picture drawn at the extremes reads as a fault rather
-  // than as a screen.
+  index = floor(centred(uv) / cell);
+  return grab(uvOf((index + 0.5) * cell));
+}
+
+/**
+ * The picture in two colours.
+ *
+ * Mirrors \`dithered\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+vec3 dithered(vec2 uv) {
+  vec2 index;
+  vec3 c = blocked(uv, index);
+  // Not quite black and not quite white: a two-colour picture drawn at the
+  // extremes reads as a fault rather than as a screen.
   float on = luma(c) > bayer(index) ? 1.0 : 0.0;
   return mix(vec3(0.05), vec3(0.95), on);
+}
+
+/**
+ * The picture in the colours one old machine had.
+ *
+ * Mirrors \`snapped\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+vec3 snapped(vec2 uv, int palette) {
+  vec2 index;
+  return nearest(blocked(uv, index), index, palette);
 }
 
 /** How much ink a dot of this coverage puts down, on a screen ruled that way. */
@@ -804,6 +961,167 @@ vec3 windowed(vec2 uv) {
   return mix(c, mix(shade, sun, lit), u_strength);
 }
 
+/**
+ * A picture that arrived badly.
+ *
+ * Five things, and it is the combination rather than any one of them: the frame
+ * bends a little, the rim loses focus, the channels come apart as it does, the
+ * highlights bloom, and the whole thing takes a colour it should not have.
+ *
+ * Deliberately not the CRT. That look is a tube — a mask, a grille, phosphors
+ * you can count — and this one is the *signal*, which is why there is no mask
+ * here and why the curve is a third of the tube's. Two looks that both say
+ * "broadcast" have to differ by what they are actually about.
+ *
+ * Mirrors \`lost\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+vec3 lost(vec2 uv) {
+  vec2 p = centred(uv);
+  float r2 = dot(p, p);
+  vec2 bent = p * (1.0 + 0.07 * r2 * u_strength);
+  vec2 at = uvOf(bent);
+  // Past the edge there is no picture — not a clamped stripe of the nearest
+  // pixel, which is what a sampler would otherwise give.
+  if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) {
+    return vec3(0.0);
+  }
+
+  // How far out this pixel is: 0 in the middle, 1 at the corner.
+  float away = sqrt(r2) / max(length(corner()), 0.001);
+
+  // Soft towards the rim, read off the mip chain rather than off a ring of
+  // taps — which is what \`blurs\` is set for. A handful of point samples spread
+  // wide enough to soften leaves gaps between them and the eye reads those as
+  // grain, the same failure \`bulged\` documents.
+  float lod = smoothstep(0.20, 1.0, away) * u_strength * 2.6;
+
+  float shorter = min(u_frame.x, u_frame.y);
+  vec2 along = bent / max(length(bent), 0.0001);
+  vec2 split = along * away * u_strength * 0.012 * shorter / u_frame;
+
+  vec3 c;
+  c.r = textureLod(u_scene, clamp(at + split, 0.0, 1.0), lod).r;
+  c.g = textureLod(u_scene, clamp(at, 0.0, 1.0), lod).g;
+  c.b = textureLod(u_scene, clamp(at - split, 0.0, 1.0), lod).b;
+
+  // The glow. Eight taps on the golden-angle spiral off a level of the chain
+  // wide enough that they overlap — \`bloomed\` is the same idea at sixteen,
+  // which is the budget of a look that does nothing else.
+  float radius = pitch() * 8.0;
+  float level = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    float turn = float(i) * 2.399963;
+    float reach = sqrt(float(i) + 0.5) / 2.83;
+    vec2 off = vec2(cos(turn), sin(turn)) * reach * radius;
+    vec3 tap = textureLod(u_scene, clamp(uvOf(bent + off), 0.0, 1.0), level).rgb;
+    glow += tap * smoothstep(0.30, 0.85, luma(tap));
+  }
+  c += glow * 0.125 * u_tint * u_strength * 0.9;
+
+  // The line structure, faded out where it is finer than the raster.
+  float lines = bent.y / pitch();
+  c *= mix(1.0, 0.58 + 0.42 * cos(lines * TAU), resolved(lines) * u_strength);
+
+  // The cast, pulled towards a tinted grey rather than multiplied by the tint.
+  // A multiply leaves the shadows neutral, and the whole point is that the
+  // colour is wrong everywhere rather than only where the picture was bright.
+  c = mix(c, mix(c, vec3(luma(c)) * u_tint, 0.75), u_strength * 0.55);
+
+  // The corners going, which is where a weak signal loses it first.
+  c *= 1.0 - 0.5 * u_strength * smoothstep(0.35, 1.05, away);
+
+  if (u_time > 0.0) {
+    // A band walking up the picture, and the level breathing under it. Slow:
+    // this is a signal drifting, not a fault repeating.
+    float band = fract(at.y + u_time * 0.11);
+    float hit = clamp(smoothstep(0.06, 0.0, band) + smoothstep(0.94, 1.0, band), 0.0, 1.0);
+    c = mix(c, c * 1.35 + vec3(0.05), hit * 0.5 * u_strength);
+    c *= 1.0 + 0.03 * sin(u_time * 2.1);
+  }
+
+  return mix(grab(uv), c, u_strength);
+}
+
+/**
+ * The picture through a misted lens.
+ *
+ * A blurred copy of the whole frame laid back over the sharp one and
+ * *screened*, with the blacks lifted afterwards. That combination is the look —
+ * it is what a diffusion filter in front of a lens does, and what a darkroom
+ * print does when the same negative is exposed a second time out of focus.
+ *
+ * Deliberately not the glow. That look spreads *highlights* into what is around
+ * them and leaves the rest of the picture exactly as it was, so a frame wearing
+ * it is still a sharp frame. This one softens all of it and regrades what comes
+ * back, and the sharp picture underneath is what stops the result being a blur.
+ *
+ * Mirrors \`dreamt\` in \`crates/prequel-render/src/filters.metal\`.
+ */
+vec3 dreamt(vec2 uv) {
+  vec3 sharp = grab(uv);
+
+  // A slow swell, when it moves. Nine seconds to the cycle and a fifth of the
+  // radius: the softness should breathe at about the rate somebody watching
+  // stops noticing they are watching, not at the rate of anything on screen.
+  float swell = u_time > 0.0 ? 1.0 + 0.2 * sin(u_time * 0.7) : 1.0;
+  float radius = pitch() * 4.0 * swell;
+
+  // Which level of the chain a tap comes from — a quarter of the radius in
+  // texels, so each tap already averages a footprint that size and twelve of
+  // them overlap instead of leaving holes. The same arithmetic \`bloomed\` does,
+  // and the same failure it avoids: gaps between wide taps read as grain.
+  float shorter = min(u_frame.x, u_frame.y);
+  float level = clamp(log2(max(radius * shorter * 0.25, 1.0)), 0.0, 8.0);
+
+  // Two sums off one ring of taps: all of it, and only what was already bright.
+  // The kinds differ by which of the two they lay back over the picture, so
+  // gathering both costs nothing over gathering either.
+  vec3 wide = vec3(0.0);
+  vec3 bright = vec3(0.0);
+  for (int i = 0; i < 12; i++) {
+    float turn = float(i) * 2.399963;
+    float reach = sqrt(float(i) + 0.5) / 3.54;
+    vec2 off = vec2(cos(turn), sin(turn)) * reach * radius;
+    vec3 tap = textureLod(u_scene, clamp(uvOf(centred(uv) + off), 0.0, 1.0), level).rgb;
+    wide += tap;
+    bright += tap * smoothstep(0.30, 0.85, luma(tap));
+  }
+  wide *= 0.0833333;
+  bright *= 0.0833333;
+
+  vec3 veil = wide;
+  if (u_variant == 1) {
+    // The halo: only what was bright bleeds, and it bleeds harder. A darkroom
+    // print rather than a misted lens.
+    veil = bright * 2.1;
+  } else if (u_variant == 2) {
+    // Clear through the middle and gone at the rim, which is what a dream with
+    // one thing in it looks like.
+    vec2 p = centred(uv);
+    veil = wide * smoothstep(0.15, 0.95, length(p) / max(length(corner()), 0.001));
+  }
+
+  // Screened rather than added. Adding clips, and a window that was already
+  // white goes to a flat patch with no edge left in it — the frame loses
+  // exactly the highlight the effect was reaching for. Screen rolls off.
+  vec3 c = 1.0 - (1.0 - sharp) * (1.0 - clamp(veil, 0.0, 1.0) * 0.82);
+
+  // Warmed where it is bright, towards whatever the colour is set to. Only the
+  // highlights, because that is where light that has been scattered ends up.
+  c = mix(c, c * u_tint, smoothstep(0.30, 1.0, luma(c)) * 0.55);
+
+  // Off saturation a little, then the blacks lifted *and cooled*. Haze is light
+  // scattered into the shadows from everywhere in the room and the sky is the
+  // brightest thing in most rooms, so what fills a shadow is blue — the same
+  // reasoning \`windowed\` shades on, and the reason a flat grey lift reads as a
+  // washed-out picture rather than as air.
+  c = mix(c, vec3(luma(c)), 0.16);
+  c += vec3(0.020, 0.026, 0.044);
+
+  return mix(sharp, c, u_strength);
+}
+
 void main() {
   vec4 colour;
 
@@ -812,7 +1130,7 @@ void main() {
   } else if (u_look == 1) {
     colour = vec4(graded(grab(v_uv)), 1.0);
   } else if (u_look == 2) {
-    colour = vec4(pixelated(v_uv), 1.0);
+    colour = vec4(dithered(v_uv), 1.0);
   } else if (u_look == 3) {
     colour = vec4(halftoned(v_uv), 1.0);
   } else if (u_look == 4) {
@@ -829,6 +1147,18 @@ void main() {
     colour = vec4(bloomed(v_uv), 1.0);
   } else if (u_look == 10) {
     colour = vec4(windowed(v_uv), 1.0);
+  } else if (u_look == 12) {
+    colour = vec4(lost(v_uv), 1.0);
+  } else if (u_look == 13) {
+    colour = vec4(snapped(v_uv, 0), 1.0);
+  } else if (u_look == 14) {
+    colour = vec4(snapped(v_uv, 1), 1.0);
+  } else if (u_look == 15) {
+    colour = vec4(snapped(v_uv, 2), 1.0);
+  } else if (u_look == 16) {
+    colour = vec4(snapped(v_uv, 3), 1.0);
+  } else if (u_look == 17) {
+    colour = vec4(dreamt(v_uv), 1.0);
   } else {
     // A look this build has no shader for draws the frame it was given. The
     // same answer \`FilterKind::Unknown\` gives on the other side, and the same

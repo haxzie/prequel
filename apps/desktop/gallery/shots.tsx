@@ -145,6 +145,10 @@ const LOOK_LABELS = {
   bloom: "Glow",
   halftone: "Halftone",
   "window-light": "Window light",
+  "lost-signal": "Lost signal",
+  dream: "Dream",
+  pico8: "Pico-8",
+  gameboy: "Game Boy",
 };
 
 const EDITOR_READY: Step[] = [
@@ -365,7 +369,23 @@ export const SHOTS: readonly Shot[] = [
   // The LCD earns its place: it shipped sampling each cell's centre, which
   // downsampled the recording by the cell size and left no readable text
   // anywhere in the frame. Nothing asserted caught that — it takes a picture.
-  ...(["crt", "lcd", "fisheye", "bloom", "halftone", "window-light"] as const).map((look) => ({
+  ...(
+    [
+      "crt",
+      "lcd",
+      "fisheye",
+      "bloom",
+      "halftone",
+      "window-light",
+      "lost-signal",
+      "dream",
+      // Two of the four palettes rather than all of them: what a shot can show
+      // that the pixel tests cannot is whether the *snap* looks right, and the
+      // sixteen-colour case and the four-colour one are the two ends of that.
+      "pico8",
+      "gameboy",
+    ] as const
+  ).map((look) => ({
     id: `filter-${look}`,
     frame: "workspace" as const,
     install: install(),
@@ -379,6 +399,26 @@ export const SHOTS: readonly Shot[] = [
     ],
     clip: "frame" as const,
   })),
+  // The dream at its strongest, because the tile the grid shows is its gentlest.
+  // Three kinds sharing one function differ only in which sum they lay back
+  // over the picture, and "is that the halo or the mist" has no answer from a
+  // shot of one of them.
+  {
+    id: "filter-dream-halo",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Filters"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label^="Dream"]' },
+      { kind: "settle", ms: 400 },
+      { kind: "click", selector: 'button[role="radio"][aria-label="Halo"]' },
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
   inspector("inspector-logo", "Logo"),
   // `Z` adds a zoom at the playhead and selects it, which is what swaps the
   // panel to the zoom's own three tabs.

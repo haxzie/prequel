@@ -2025,10 +2025,38 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
   // the set is some version of.
   grade: "linear-gradient(90deg, #4a5b6b 0 34%, #e0c9a6 34% 66%, #4a5b6b 66%)",
 
-  // The same edges, stepped. Drawn as hard stops rather than a gradient,
-  // because the whole of what pixelating does is remove the in-between.
-  pixelate:
-    "linear-gradient(90deg, #4b5563 0 25%, #7b828c 25% 34%, #cbd5e1 34% 66%, #7b828c 66% 75%, #4b5563 75%)",
+  // The same edges, stepped, and only two of them. Drawn as hard stops rather
+  // than a gradient, because the whole of what this does is remove the
+  // in-between.
+  dither: "repeating-conic-gradient(#0d0d0d 0% 25%, #f2f2f2 0% 50%) 0 0 / 5px 5px, " + "#0d0d0d",
+
+  // The four palettes, each drawn in its own colours.
+  //
+  // Nothing clever: a tile whose job is to answer "which machine" has to be the
+  // colours, and any shape laid over them competes with the only information
+  // they carry. Stepped, because the look is a picture with nothing between
+  // these.
+  pico8:
+    "linear-gradient(90deg, #1D2B53 0 20%, #7E2553 20% 40%, #FF004D 40% 60%, " +
+    "#FFA300 60% 80%, #FFF1E8 80%)",
+  gameboy: "linear-gradient(90deg, #0F380F 0 25%, #306230 25% 50%, #8BAC0F 50% 75%, #9BBC0F 75%)",
+  c64:
+    "linear-gradient(90deg, #0000AA 0 20%, #CC44CC 20% 40%, #DD8855 40% 60%, " +
+    "#AAFF66 60% 80%, #BBBBBB 80%)",
+  riso:
+    "linear-gradient(90deg, #2a2a2a 0 20%, #FF4858 20% 40%, #FFD23F 40% 60%, " +
+    "#1B9AAA 60% 80%, #F6F4E6 80%)",
+
+  // The block gone soft and warm, spilling past where it ends, on a field that
+  // never reaches black.
+  //
+  // No hard edge anywhere in it, which is what tells it apart from the glow's
+  // tile: that one is a bright centre with a dark surround, and this one has a
+  // lifted surround because lifting the blacks is half of what it does.
+  dream:
+    "radial-gradient(ellipse 80% 130% at 50% 45%, rgba(255,255,255,0.92) 0 14%, " +
+    "rgba(255,217,232,0.72) 42%, rgba(196,186,214,0.55) 72%, rgba(120,116,150,0.5) 100%), " +
+    "#6a6782",
 
   // An even grid of dots on paper. Tiled with a background-size rather than a
   // repeating-radial-gradient, which draws concentric rings from one centre —
@@ -2082,6 +2110,15 @@ const FILTER_SWATCHES: Partial<Record<FilterId, string>> = {
   "window-light":
     "repeating-linear-gradient(115deg, rgba(255,217,160,0.85) 0 7px, rgba(70,86,120,0.9) 7px 15px), " +
     "#6b7280",
+
+  // Soft at the rim, warm through the middle, with the lines still in it.
+  //
+  // The scanlines are listed first and kept faint. They are what separates this
+  // tile from the glow's, which is otherwise the same bright centre falling
+  // away to a dark edge.
+  "lost-signal":
+    "repeating-linear-gradient(0deg, rgba(0,0,0,0.45) 0 1px, transparent 1px 3px), " +
+    "radial-gradient(ellipse 85% 120% at 50% 50%, #ffd7a8 0 18%, #ff8a3c 45%, #2a1408 85%)",
 };
 
 function WatermarkPanel({
