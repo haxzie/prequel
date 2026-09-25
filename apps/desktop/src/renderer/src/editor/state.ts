@@ -691,10 +691,12 @@ function trackOf(project: Project, textId: string): number {
  * the title goes with it, the same way a zoom does.
  */
 function lanedTexts(placed: readonly PlacedSlice[], lane: readonly TextSlice[]): Laned[] {
-  return lane.flatMap((text) => {
-    const start = toProjectTime(placed, text.at);
-    return start === null ? [] : [{ id: text.id, source: { start, end: start + text.length } }];
-  });
+  return lane
+    .flatMap((text) => {
+      const start = toProjectTime(placed, text.at);
+      return start === null ? [] : [{ id: text.id, source: { start, end: start + text.length } }];
+    })
+    .sort((a, b) => a.source.start - b.source.start);
 }
 
 /** A project span back to what a text stores, or null when it cannot be pinned. */
@@ -951,10 +953,37 @@ function moveText(
   const to = action.track ?? from;
 
   if (to === from) {
-    const span = laneMoved(lanedTexts(placed, lane), action.textId, action.start, limit);
+    // Its own row is no different from any other it could be dropped on, so it
+    // asks the same question — `laneRoom`, over the row without itself in it.
+    // `laneMoved` bounds an entry by the two either side of its own index,
+    // which meant a text could never pass a neighbour along its own row: the
+    // third on a row dragged towards the front stopped dead against the second
+    // and sprang back, and a row could not be reordered at all. Carrying it up
+    // to another row and back was the only way round, which is the tell that
+    // the two paths had drifted. Zooms still go by `laneMoved`: they are
+    // anchored to the footage under them, and `project.zooms` is held sorted.
+    const others = lanedTexts(placed, lane).filter((entry) => entry.id !== action.textId);
+    const span = laneRoom(others, text.length, action.start, limit);
     const place = span && pinned(placed, span);
     if (!place) return state;
-    return editText(state, action.textId, (entry) => ({ ...entry, ...place }));
+
+    // Re-sorted, as the path onto another row already does. A text carried past
+    // its neighbour has changed the row's order, and a row left out of order
+    // would be put back in order by `sanitiseText` on the next load — so the
+    // strip would redraw itself differently from how it was left.
+    return edit(state, (project) => ({
+      ...project,
+      texts: project.texts.map((row, index) =>
+        index === from
+          ? {
+              ...row,
+              slices: row.slices
+                .map((entry) => (entry.id === action.textId ? { ...entry, ...place } : entry))
+                .sort((a, b) => a.at - b.at),
+            }
+          : row,
+      ),
+    }));
   }
 
   // Onto another row: the spare row is allowed, anything past it is not.

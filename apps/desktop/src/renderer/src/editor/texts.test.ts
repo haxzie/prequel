@@ -433,6 +433,10 @@ describe("lanes", () => {
   });
 
   it("moves without changing length or crossing a neighbour", () => {
+    // `laneMoved` is the zoom's rule now, and a zoom stays between the two
+    // either side of it: `project.zooms` is held sorted and `laneTrimmed`
+    // reads its neighbours by index, so one allowed to cross would leave the
+    // list out of order behind it.
     for (let to = -S; to <= D + S; to += S / 10) {
       const moved = laneMoved(lane, "a", to, D)!;
       expect(moved.end - moved.start).toBe(2 * S);
@@ -594,5 +598,67 @@ describe("the clock a ghost is drawn on", () => {
     expect(span).not.toBeNull();
     expect(span.start).toBe(1 * S);
     expect(spanInProject(placedSlices(state.project), span)).toBeNull();
+  });
+});
+
+describe("reordering a row of texts", () => {
+  /** Three texts on one row, with room in front of the first. */
+  function row(): EditorState {
+    let state = initialState(newProject(RECORDING, 30 * S), 30 * S);
+    for (const at of [5 * S, 10 * S, 15 * S]) {
+      state = run(state, { type: "addText", track: 0, at });
+    }
+    return state;
+  }
+
+  const starts = (state: EditorState) =>
+    state.project.texts[0]!.slices.map((text) => textInProject(state.project, text)!.start);
+
+  it("sets up three texts on the one row", () => {
+    expect(starts(row())).toEqual([5 * S, 10 * S, 15 * S]);
+    expect(row().project.texts.filter((track) => track.slices.length > 0)).toHaveLength(1);
+  });
+
+  it("carries the last one to the front", () => {
+    // The bug this is here for: a text could not pass a neighbour along its own
+    // row, so the third one dragged towards the front stopped against the
+    // second and sprang back to where it started.
+    const state = row();
+    const last = state.project.texts[0]!.slices.at(-1)!;
+
+    const moved = run(state, { type: "moveText", textId: last.id, start: 0, track: 0 });
+    expect(textInProject(moved.project, findText(moved.project, last.id)!)!.start).toBe(0);
+    expect(starts(moved)).toEqual([0, 5 * S, 10 * S]);
+  });
+
+  it("carries the first one to the back", () => {
+    const state = row();
+    const first = state.project.texts[0]!.slices[0]!;
+
+    const moved = run(state, { type: "moveText", textId: first.id, start: 26 * S, track: 0 });
+    expect(textInProject(moved.project, findText(moved.project, first.id)!)!.start).toBe(26 * S);
+    expect(starts(moved)).toEqual([10 * S, 15 * S, 26 * S]);
+  });
+
+  it("declines a drop onto another text rather than overlapping it", () => {
+    // Free to travel is not free to land on top: a row never holds two texts
+    // over one moment, and the bar stops following until there is room again.
+    const state = row();
+    const last = state.project.texts[0]!.slices.at(-1)!;
+
+    const moved = run(state, { type: "moveText", textId: last.id, start: 11 * S, track: 0 });
+    expect(starts(moved)).toEqual([5 * S, 10 * S, 15 * S]);
+    expect(canUndo(moved)).toBe(canUndo(state));
+  });
+
+  it("leaves every text its own length", () => {
+    const state = row();
+    const lengths = state.project.texts[0]!.slices.map((text) => text.length);
+    const last = state.project.texts[0]!.slices.at(-1)!;
+
+    const moved = run(state, { type: "moveText", textId: last.id, start: 0, track: 0 });
+    expect(moved.project.texts[0]!.slices.map((text) => text.length).sort()).toEqual(
+      [...lengths].sort(),
+    );
   });
 });
