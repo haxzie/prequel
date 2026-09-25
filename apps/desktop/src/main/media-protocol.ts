@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { protocol } from "electron";
 
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
+import { BITMAP_DIRS } from "./captions.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
@@ -99,6 +100,21 @@ const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
 const TAKE_DIR = /^\d+$/;
 
 /**
+ * The directories inside a recording the route may reach into.
+ *
+ * `BITMAP_DIRS` as well as the takes, and leaving them out is what broke every
+ * caption and every text: those bitmaps have always lived in a subdirectory,
+ * and `mediaUrl` used to encode the separator *into* one segment. When it
+ * started giving the separator a segment of its own — which takes need, since a
+ * `%2F` through Chromium's canonicalisation is not worth finding out about from
+ * a 404 — a caption's URL became three segments too, and a check that only
+ * admitted digits turned every one of them into a file that could not be found.
+ */
+function isSubdirectory(part: string): boolean {
+  return TAKE_DIR.test(part) || (BITMAP_DIRS as readonly string[]).includes(part);
+}
+
+/**
  * Resolves a media URL to a file on disk, or to null.
  *
  * Only the `recording` route resolves a path the renderer supplied, and it is
@@ -162,11 +178,16 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
   }
 
   // Two segments for the first take, whose files sit at the session root, and
-  // three for any take after it — `recording/<name>/2/screen.mp4`. The middle
-  // one may only be a take directory: a digit run and nothing else, so widening
-  // the route by one segment does not widen what it can reach.
+  // three for anything in a subdirectory of the recording — a take past the
+  // first at `recording/<name>/2/screen.mp4`, or a bitmap at
+  // `recording/<name>/texts/<hash>.png`.
+  //
+  // The middle one is checked against a closed set rather than merely being
+  // non-empty, so widening the route by a segment does not widen what it can
+  // reach: a digit run, which is how takes are named, or one of the three
+  // folders bitmaps are written to.
   if (parts.length !== 2 && parts.length !== 3) return null;
-  if (parts.length === 3 && !TAKE_DIR.test(parts[1]!)) return null;
+  if (parts.length === 3 && !isSubdirectory(parts[1]!)) return null;
 
   const fileName = parts.at(-1)!;
   if (!ALLOWED.test(fileName)) return null;

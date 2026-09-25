@@ -110,11 +110,30 @@ describe("resolveMediaPath", () => {
     );
   });
 
-  it("refuses a middle segment that is not a take directory", () => {
-    // The extra segment reaches takes and nothing else. Without the digit check
-    // the widening would rest on the traversal guard alone, which proves only
-    // that a path is *somewhere* under the recordings folder.
+  it("refuses a middle segment that is neither a take nor a bitmap folder", () => {
+    // The extra segment reaches takes and the three bitmap folders, and nothing
+    // else. Without the check the widening would rest on the traversal guard
+    // alone, which proves only that a path is *somewhere* under the recordings
+    // folder.
     const url = `prequel-media://recording/${encodeURIComponent(TAKE)}/notes/screen.mp4`;
+    expect(resolveMediaPath(url, ROOT)).toBeNull();
+  });
+
+  it.each(["captions", "texts", "cursor"])("serves a bitmap out of %s/", (folder) => {
+    // Every caption and every text lives in one of these, and each is three
+    // segments once `mediaUrl` gives the separator a segment of its own. A
+    // route that admitted only digits in the middle turned all of them into
+    // files that could not be found — the bitmaps were written, and nothing
+    // drew — so this is the case that has to be pinned, not just the take.
+    mkdirSync(join(ROOT, TAKE, folder), { recursive: true });
+    writeFileSync(join(ROOT, TAKE, folder, "ecbb9740.png"), BODY);
+
+    const url = mediaUrl(TAKE, `${folder}/ecbb9740.png`);
+    expect(resolveMediaPath(url, ROOT)).toBe(join(ROOT, TAKE, folder, "ecbb9740.png"));
+  });
+
+  it("refuses a traversal out of a bitmap folder", () => {
+    const url = `prequel-media://recording/${encodeURIComponent(TAKE)}/texts/${encodeURIComponent("../../../prequel-media-secret.mp4")}`;
     expect(resolveMediaPath(url, ROOT)).toBeNull();
   });
 
