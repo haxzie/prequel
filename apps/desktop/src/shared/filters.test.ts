@@ -9,7 +9,15 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { FILTERS, READY, filterId, filterSpec, isReady, variantIndex, type FilterId } from "./filters";
+import {
+  FILTERS,
+  READY,
+  filterId,
+  filterSpec,
+  isReady,
+  variantIndex,
+  type FilterId,
+} from "./filters";
 import { DEFAULT_EFFECTS } from "./project";
 
 const ALL = Object.keys(FILTERS) as FilterId[];
@@ -48,7 +56,10 @@ describe("the catalogue", () => {
         expect(spec.defaults.filterVariant, id).toBe("");
         continue;
       }
-      expect(spec.variants.map((v) => v.id), id).toContain(spec.defaults.filterVariant);
+      expect(
+        spec.variants.map((v) => v.id),
+        id,
+      ).toContain(spec.defaults.filterVariant);
     }
   });
 

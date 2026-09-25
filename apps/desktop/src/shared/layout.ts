@@ -1139,7 +1139,8 @@ function planFilter(effects: EffectsSettings): PlanFilter | null {
     // Checked against the look's own list here rather than in the shader, which
     // has no strings to check against. An unknown name comes back as the first
     // variant, so a look is always drawn as *something*.
-    variant: spec.variants[variantIndex(effects.filter as FilterId, effects.filterVariant)]?.id ?? "",
+    variant:
+      spec.variants[variantIndex(effects.filter as FilterId, effects.filterVariant)]?.id ?? "",
     strength: clamp(effects.filterStrength, 0, 1),
     scale: clamp(effects.filterScale, FILTER_SCALE_MIN, FILTER_SCALE_MAX),
     // Degrees in the settings because that is what a dial reads; radians here

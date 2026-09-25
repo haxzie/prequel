@@ -32,6 +32,36 @@ const METAL = readFileSync(
 
 const ALL = Object.keys(FILTERS) as FilterId[];
 
+/**
+ * The shading function each look is drawn by, named the same on both sides.
+ *
+ * Written out rather than derived from the id: `lcd` is drawn by `panelled` and
+ * `bloom` by `bloomed`, so there is no rule to derive, and a look added without
+ * an entry here fails the totality check below rather than quietly skipping
+ * every assertion that walks this map.
+ */
+const SHADER_FN: Record<FilterId, string> = {
+  aberration: "aberration",
+  grade: "graded",
+  pixelate: "pixelated",
+  halftone: "halftoned",
+  lcd: "panelled",
+  fisheye: "bulged",
+  crt: "tubed",
+  vhs: "taped",
+  film: "filmed",
+  bloom: "bloomed",
+  "window-light": "windowed",
+};
+
+/** One function's source, from its signature to the closing brace in column 0. */
+function body(source: string, signature: string): string | null {
+  const at = source.indexOf(signature);
+  if (at < 0) return null;
+  const end = source.indexOf("\n}", at);
+  return end < 0 ? null : source.slice(at, end);
+}
+
 describe("the two shaders", () => {
   it("numbers every look, once", () => {
     // `FILTER_LOOKS` is what the preview sends and `FilterKind::index` is what
@@ -71,26 +101,43 @@ describe("the two shaders", () => {
     }
   });
 
-  it("flags exactly the looks that read the mip chain", () => {
+  it("flags exactly the looks whose shader reads the mip chain", () => {
     // The preview builds the chain only for looks with `blurs`, so a look whose
     // shader starts sampling a level and is not flagged silently loses its
-    // softness — it falls back to the sharp top level, which looks like the
-    // effect being weak rather than like a missing chain.
+    // softness — it falls back to the sharp top level, which reads as the
+    // effect being weak rather than as a missing chain.
     //
-    // Counted off the source rather than listed, so adding one to a shader and
-    // not to the catalogue fails here. Every other sample is pinned to `0.0`
-    // through `grab`; these are the ones that name a level.
+    // Attributed per look rather than counted across the file: the fish eye
+    // names a level three times, once per colour channel, and a count would
+    // have to be kept in step with that by hand.
     const { fragment } = FILTER_SHADER_SOURCE();
-    const levelled = [...fragment.matchAll(/textureLod\(u_scene,[^;]*?,\s*([a-z_][\w]*)\s*\)/g)];
-    const flagged = ALL.filter((id) => FILTERS[id].blurs);
 
-    expect(levelled.length, "shader calls naming a level").toBe(flagged.length);
-    expect(flagged.sort()).toEqual(["bloom", "fisheye"]);
+    for (const [id, fn] of Object.entries(SHADER_FN) as [FilterId, string][]) {
+      const glsl = body(fragment, `vec3 ${fn}(`) ?? body(fragment, `vec4 ${fn}(`);
+      expect(glsl, `${fn} in the GLSL`).not.toBeNull();
+      // Every other sample is pinned to `0.0` through `grab`; these name one.
+      const levelled = /textureLod\(u_scene,[^;]*?,\s*[a-z_]\w*\s*\)/.test(glsl!);
 
-    // The exporter names a level in the same two places, and pins everything
-    // else to the top. Counted, not listed, for the reason above.
-    const msl = [...METAL.matchAll(/\.sample\(smp,[^;]*?level\(([a-z_][\w]*)\)\)/g)];
-    expect(msl.length, "exporter calls naming a level").toBe(flagged.length);
+      expect(levelled, `${id}: shader reads a level`).toBe(FILTERS[id].blurs);
+    }
+  });
+
+  it("has the exporter read a level wherever the preview does", () => {
+    // The same question of the other side. A look softened in one rasteriser
+    // and not the other is the failure this whole pair of files is arranged to
+    // prevent, and it would show only by exporting and comparing.
+    const { fragment } = FILTER_SHADER_SOURCE();
+
+    for (const [id, fn] of Object.entries(SHADER_FN) as [FilterId, string][]) {
+      const glsl = body(fragment, `vec3 ${fn}(`) ?? body(fragment, `vec4 ${fn}(`);
+      const msl = body(METAL, `static float3 ${fn}(`) ?? body(METAL, `static float4 ${fn}(`);
+      expect(msl, `${fn} in the MSL`).not.toBeNull();
+
+      const inGlsl = /textureLod\(u_scene,[^;]*?,\s*[a-z_]\w*\s*\)/.test(glsl!);
+      const inMsl = /\.sample\(smp,[^;]*?level\([a-z_]\w*\)\)/.test(msl!);
+
+      expect(inMsl, `${id}: exporter reads a level`).toBe(inGlsl);
+    }
   });
 
   it("mirrors each shading function by name", () => {

@@ -73,13 +73,7 @@ describe("what a look carries", () => {
     const preset = read();
     const sections = Object.keys(DEFAULT_SETTINGS).filter((section) => section in preset);
 
-    expect(sections.sort()).toEqual([
-      "background",
-      "captions",
-      "effects",
-      "layout",
-      "watermark",
-    ]);
+    expect(sections.sort()).toEqual(["background", "captions", "effects", "layout", "watermark"]);
     expect("audio" in preset).toBe(false);
   });
 
