@@ -551,9 +551,64 @@ export function TimelineStrip({
     [textRows],
   );
 
+  /**
+   * The clip being carried, and the gap it would drop into.
+   *
+   * `before` is the id of the clip it would land in front of, or null for the
+   * end — the same shape `moveSlice` takes, so what the row draws and what the
+   * reducer is told can never be two different answers.
+   */
+  const [carrying, setCarrying] = useState<{ sliceId: string; before: string | null } | null>(null);
+  /** Where the press landed, so a click is not mistaken for a drag. */
+  const pressed = useRef<{ sliceId: string; clientX: number } | null>(null);
+
+  /**
+   * Which gap a pointer at `clientX` is over.
+   *
+   * By midpoint rather than by edge: a clip is dropped *in front of* whichever
+   * one the pointer has not yet passed the middle of, which is what makes the
+   * line land where the eye expects when the pointer is inside a clip rather
+   * than between two.
+   */
+  const gapAt = (clientX: number): string | null => {
+    const at = timeAt(clientX);
+    for (const slice of placed) {
+      if (at < slice.timelineStart + slice.duration / 2) return slice.id;
+    }
+    return null;
+  };
+
+  const onClipDrag = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
+    const from = pressed.current;
+    if (!from || from.sliceId !== slice.id) return;
+    // Past a threshold, or every click that wobbles a pixel becomes a reorder
+    // the user did not ask for.
+    if (!carrying && Math.abs(event.clientX - from.clientX) < REORDER_SLOP) return;
+
+    const before = gapAt(event.clientX);
+    // Only on a change: this runs on every move of the pointer, and setting the
+    // same gap again would re-render the whole row sixty times a second.
+    setCarrying((held) =>
+      held?.sliceId === slice.id && held.before === before ? held : { sliceId: slice.id, before },
+    );
+  };
+
+  const onClipDrop = () => {
+    pressed.current = null;
+    if (!carrying) return;
+    dispatch({ type: "moveSlice", sliceId: carrying.sliceId, before: carrying.before });
+    setCarrying(null);
+  };
+
   const onClipPointerDown = (slice: PlacedSlice, event: PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
     media.onInteract();
+
+    // Captured on the clip itself, so the drag keeps receiving moves once the
+    // pointer has left it — which it does immediately, because reordering means
+    // travelling over the neighbours.
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pressed.current = { sliceId: slice.id, clientX: event.clientX };
 
     // Picking a clip up and scrubbing inside one are two different asks, and
     // which one this is depends on whether the clip was already the one being
@@ -731,6 +786,7 @@ export function TimelineStrip({
                     style={{ width: `${String((slack / Math.max(duration, 1)) * 100)}%` }}
                   />
                 )}
+                {carrying !== null && carrying.before === slice.id && <DropLine />}
                 <Clip
                   slice={slice}
                   duration={duration}
@@ -739,6 +795,9 @@ export function TimelineStrip({
                   contentWidth={contentWidth}
                   cameraSpans={cameraSpans}
                   selected={slice.id === state.selectedSliceId}
+                  carried={carrying?.sliceId === slice.id}
+                  onDrag={(event) => onClipDrag(slice, event)}
+                  onDrop={onClipDrop}
                   onPointerDown={(event) => onClipPointerDown(slice, event)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -763,6 +822,7 @@ export function TimelineStrip({
                 />
               </Fragment>
             ))}
+            {carrying !== null && carrying.before === null && <DropLine />}
           </div>
 
           <div style={{ height: TRACK_GAP }} />
@@ -1254,6 +1314,28 @@ function Shadow({
   );
 }
 
+/**
+ * How far a press has to travel before it is a reorder rather than a click.
+ *
+ * A clip is pressed to select it and to scrub inside it, and a pointer that
+ * moves a pixel while a finger lifts is still a click. Without this every such
+ * press ended somewhere in the order.
+ */
+const REORDER_SLOP = 6;
+
+/** Where a carried clip would land. */
+function DropLine() {
+  return (
+    <div
+      aria-hidden
+      // Negative margins so it sits *in* the gap rather than widening the row:
+      // the clips are laid out by percentage of the duration, and a line that
+      // took width of its own would shorten every one of them while it showed.
+      className="z-10 -mx-px w-0.5 flex-none rounded-full bg-selected"
+    />
+  );
+}
+
 function Clip({
   slice,
   duration,
@@ -1263,6 +1345,9 @@ function Clip({
   cameraSpans,
   selected,
   onPointerDown,
+  onDrag,
+  onDrop,
+  carried,
   onContextMenu,
   onTrim,
   onBeginEdit,
@@ -1277,6 +1362,11 @@ function Clip({
   cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+  /** The body is being dragged along the row, to put the clip somewhere else. */
+  onDrag: (event: PointerEvent<HTMLDivElement>) => void;
+  onDrop: () => void;
+  /** True while this clip is the one being carried. */
+  carried: boolean;
   /** Right-clicked, with the pointer's position so a menu can open under it. */
   onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
   /** An edge has been dragged to a source time. Clamping is the reducer's job. */
@@ -1395,6 +1485,11 @@ function Clip({
         // At `-2` it ends flush with the box and is wholly inside it.
         "outline-2 -outline-offset-2",
         selected ? "outline-slice-ring" : "outline-transparent hover:outline-slice-ring",
+        // Lifted, so the row shows which clip the drop line belongs to. The
+        // clip stays where it is rather than following the pointer: it is the
+        // *order* being chosen, and a clip dragged free of the row would have
+        // to invent a width for a gap that does not exist yet.
+        carried && "opacity-40",
       )}
       style={{
         width: `${(slice.duration / Math.max(duration, 1)) * 100}%`,
@@ -1407,6 +1502,11 @@ function Clip({
         borderWidth: CLIP_EDGE,
       }}
       onPointerDown={onPointerDown}
+      onPointerMove={onDrag}
+      onPointerUp={onDrop}
+      // A drag the system claims mid-gesture gets no `pointerup`, and the row
+      // would keep showing a drop line for a clip nobody is holding.
+      onPointerCancel={onDrop}
       onContextMenu={onContextMenu}
     >
       {/* The recording's frames, as the clip's own backdrop.

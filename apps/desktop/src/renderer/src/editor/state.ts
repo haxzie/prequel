@@ -135,6 +135,16 @@ export type EditorAction =
   | { type: "deleteRange"; source: { start: MediaTime; end: MediaTime } }
   | { type: "trimSlice"; sliceId: string; edge: "start" | "end"; source: MediaTime }
   | { type: "setSliceSpeed"; sliceId: string; speed: number }
+  /**
+   * Moves a clip to sit before `before`, or to the end when it is null.
+   *
+   * By neighbour rather than by index. A drag knows what it was dropped in
+   * front of, and an index has to be read against a list that the drag itself
+   * shortens the moment the clip leaves its old place — off by one in one
+   * direction and not the other, which is the classic way a reorder lands
+   * beside where it was aimed.
+   */
+  | { type: "moveSlice"; sliceId: string; before: string | null }
   /** The words as corrected, or null to go back to the generated transcript. */
   | { type: "setTranscript"; words: TranscriptWord[] | null }
   | {
@@ -376,6 +386,9 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
   switch (action.type) {
     case "split":
     case "deleteSlice":
+    // One drop, however far it was dragged: the order is only read when the
+    // clip is let go, so there is no stream of them to bury the history under.
+    case "moveSlice":
     case "deleteRange":
     case "addZoom":
     case "addZoomNear":
@@ -507,6 +520,9 @@ function apply(
 
     case "setSliceSpeed":
       return setSliceSpeed(state, action);
+
+    case "moveSlice":
+      return moveSlice(state, action);
 
     case "setTranscript":
       // Clearing what is already clear is not an edit: it would bank an undo
@@ -1440,6 +1456,46 @@ function framed(project: Project): Project {
       }),
     })),
   };
+}
+
+/**
+ * Puts a clip somewhere else in the order.
+ *
+ * Only the order changes. A clip keeps the footage it covers, its speed and its
+ * own settings, and `place` derives every position from the order — so nothing
+ * here touches a time.
+ *
+ * That is also what keeps the zooms and the texts where they were put: both are
+ * stored against the *recording's* clock rather than the edit's, so a shot
+ * placed over a moment of footage stays over that moment wherever in the film
+ * the clip ends up. Anchoring them to the timeline instead would have meant
+ * every reorder dragging a zoom onto whatever footage happened to arrive at the
+ * same second.
+ */
+function moveSlice(
+  state: EditorState,
+  action: Extract<EditorAction, { type: "moveSlice" }>,
+): EditorState {
+  const slices = slicesOf(state.project);
+  const from = slices.findIndex((slice) => slice.id === action.sliceId);
+  if (from < 0) return state;
+
+  // Dropped on itself, or into the gap it already fills. Both are no-ops, and
+  // they are answered out here rather than inside `edit` because `edit` banks a
+  // revision whatever the change turns out to be — so a drag that moved nothing
+  // would leave a press of undo that appears to do nothing.
+  if (action.before === action.sliceId) return state;
+  if (action.before === (slices[from + 1]?.id ?? null)) return state;
+
+  const moved = slices[from]!;
+  const rest = slices.filter((slice) => slice.id !== action.sliceId);
+  const at =
+    action.before === null ? rest.length : rest.findIndex((slice) => slice.id === action.before);
+  // A neighbour that is not there any more: dropped at the end rather than
+  // refused, which is where a drag that outran its own list was heading.
+  rest.splice(at < 0 ? rest.length : at, 0, moved);
+
+  return edit(state, (project) => withSlices(project, rest));
 }
 
 function withSlices(project: Project, slices: Slice[]): Project {

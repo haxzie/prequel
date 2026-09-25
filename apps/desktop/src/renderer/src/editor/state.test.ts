@@ -1237,6 +1237,80 @@ describe("adding a zoom at the playhead", () => {
   });
 });
 
+describe("moving a clip", () => {
+  /** Three clips, by splitting twice. */
+  function three() {
+    return run(start(), { type: "split", at: 3 * S }, { type: "split", at: 6 * S });
+  }
+
+  const order = (state: EditorState) => slicesOf(state.project).map((s) => s.id);
+  const shots = (state: EditorState) => state.project.zooms;
+
+  it("puts the clip before the one it was dropped on", () => {
+    const state = three();
+    const [a, b, c] = order(state);
+
+    const moved = run(state, { type: "moveSlice", sliceId: c!, before: a! });
+    expect(order(moved)).toEqual([c, a, b]);
+  });
+
+  it("puts it last when it was dropped past the end", () => {
+    const state = three();
+    const [a, b, c] = order(state);
+
+    const moved = run(state, { type: "moveSlice", sliceId: a!, before: null });
+    expect(order(moved)).toEqual([b, c, a]);
+  });
+
+  it("leaves every clip the footage it covered", () => {
+    // The whole point: only the order changes. A clip that came back with a
+    // different source range would be playing somebody else's footage.
+    const state = three();
+    const before = new Map(slicesOf(state.project).map((s) => [s.id, s.source]));
+    const [, , c] = order(state);
+
+    const moved = run(state, { type: "moveSlice", sliceId: c!, before: null });
+    for (const slice of slicesOf(moved.project)) {
+      expect(slice.source, slice.id).toEqual(before.get(slice.id));
+    }
+  });
+
+  it("leaves the zooms on the footage they were placed over", () => {
+    // Zooms are stored against the recording's clock, not the edit's, so a
+    // reorder must not move one. This is the guarantee the feature rests on —
+    // anchoring them to the timeline would drag every shot onto whatever
+    // footage happened to arrive at the same second.
+    const state = run(three(), { type: "addZoom", at: 7 * S });
+    const before = shots(state).map((zoom) => zoom.source);
+    const [, , c] = order(state);
+
+    const moved = run(state, { type: "moveSlice", sliceId: c!, before: null });
+    expect(shots(moved).map((zoom) => zoom.source)).toEqual(before);
+  });
+
+  it("banks nothing for a drop that changes no order", () => {
+    // Dropped on itself, or into the gap it already fills. An undo step for a
+    // drag that moved nothing is a press of undo that appears to do nothing.
+    const state = three();
+    const [a, b] = order(state);
+
+    expect(run(state, { type: "moveSlice", sliceId: a!, before: a! }).revision).toBe(
+      state.revision,
+    );
+    expect(run(state, { type: "moveSlice", sliceId: a!, before: b! }).revision).toBe(
+      state.revision,
+    );
+  });
+
+  it("is one step back", () => {
+    const state = three();
+    const [a] = order(state);
+    const moved = run(state, { type: "moveSlice", sliceId: a!, before: null });
+
+    expect(order(run(moved, { type: "undo" }))).toEqual(order(state));
+  });
+});
+
 describe("applying a saved look", () => {
   /** A preset that differs from the defaults in every section it carries. */
   function look(over: Partial<ScenePreset> = {}): ScenePreset {
