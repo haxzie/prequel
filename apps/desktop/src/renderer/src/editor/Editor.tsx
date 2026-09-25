@@ -465,6 +465,46 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [],
   );
 
+  /**
+   * Set by both ways of adding a text, and cleared by the seek below.
+   *
+   * A flag and an effect rather than doing the work at the call site: the text
+   * does not exist until the reducer has run, so the seek has to happen on the
+   * render that follows the dispatch. A timeout would also get there, by
+   * guessing at how long a render takes.
+   */
+  const added = useRef(false);
+
+  /**
+   * Puts the playhead where a new text is first fully itself.
+   *
+   * A text begins at the playhead and its entrance begins at nothing, so the
+   * frame you are parked on when you add one is the single frame of its life
+   * where it is invisible — add a title and the picture does not change, which
+   * reads as the feature being broken.
+   *
+   * So the playhead moves to the end of the entrance: the first moment the text
+   * is at rest and wholly on screen. Not played through, which was the earlier
+   * answer to this — starting playback because somebody added a title is a
+   * second thing happening that nobody asked for, and it leaves the playhead
+   * wherever the beat after the entrance ended rather than at a moment that
+   * means anything.
+   */
+  useEffect(() => {
+    if (!added.current) return;
+    added.current = false;
+
+    const text = findText(state.project, state.selectedTextId);
+    if (!text) return;
+    const span = textInProject(state.project, text);
+    if (!span) return;
+
+    // The same halving `textKeys` applies, so a text too short to hold its
+    // whole entrance is met where its entrance actually ends.
+    const enter = Math.min(text.enterMs * 1_000_000, (span.end - span.start) / 2);
+    media.playback.seek(Math.min(span.end, span.start + enter));
+  }, [state.selectedTextId, state.project, media.playback]);
+
   // Drawn against the export frame rather than the editor's, so one set of
   // bitmaps serves the preview and the export and the preview only samples
   // them down. `useExport` lays its plan out in this frame too.
@@ -1042,7 +1082,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     dispatch,
     state,
     () => void addRecording(),
-    () => previewText("enter"),
+    () => {
+      added.current = true;
+    },
   );
 
   useEffect(() => {
@@ -1310,9 +1352,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           canUndo={canUndo(state)}
           onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
           onAddText={() => {
-            // And played in, for the reason the `T` key's own note gives.
             dispatch({ type: "addTextNear", at: media.playback.position() });
-            previewText("enter");
+            // And the playhead follows it — see the effect beside `previewText`.
+            added.current = true;
           }}
           onAddRecording={() => void addRecording()}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
@@ -1959,7 +2001,7 @@ function useShortcuts(
   dispatch: Dispatch<EditorAction>,
   state: EditorState,
   onAddRecording: () => void,
-  /** Plays a freshly added text's entrance — see the note at the `T` key. */
+  /** A text has just been added, so the playhead can go and meet it. */
   onAddedText: () => void,
 ) {
   // Read through a ref so the listener is bound once rather than rebound on
@@ -2020,13 +2062,8 @@ function useShortcuts(
           return;
 
         // Adds a text where the playhead is, for the same reason Z adds a zoom.
-        //
-        // Then plays its entrance. A text begins at the playhead and its
-        // entrance begins at nothing, so the frame you are parked on is the one
-        // frame of its life where it is fully transparent: add a title and
-        // nothing appears, which reads as the feature being broken rather than
-        // as an animation that has not started. Playing it through leaves the
-        // playhead a beat into the hold, with the text at rest and on screen.
+        // The playhead then moves to the end of its entrance — see the effect
+        // beside `previewText`.
         case "KeyT":
           event.preventDefault();
           dispatch({ type: "addTextNear", at: media.playback.position() });
