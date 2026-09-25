@@ -666,19 +666,23 @@ export function AddTextIcon() {
 }
 
 /**
- * Material Symbols `cinematic_blur`: the transport's Add Recording button.
+ * Boxicons `video-plus`: the transport's Add Recording button.
  *
- * A strip of film with somebody on it — another take of the same recording,
- * which is what the button adds. Filled rather than stroked, unlike the two
- * transport glyphs beside it: it is a Material glyph drawn as one solid path,
- * and re-cutting it as strokes would be a second drawing of somebody else's
- * icon, and a worse one. The same 24-unit box, so the three sit on one
- * baseline.
+ * A camera with a plus in it, which is the two halves of what the button does
+ * said plainly. It replaced a strip of film: that read as "video" and not as
+ * *adding* any, which left it saying the same thing as the clip already on the
+ * timeline beside it.
+ *
+ * Filled rather than stroked, unlike the two transport glyphs next to it. It is
+ * drawn as solid paths, and re-cutting it as strokes would be a second drawing
+ * of somebody else's icon, and a worse one. The same 24-unit box, so the three
+ * sit on one baseline.
  */
 export function AddRecordingIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="m4 3l2 4h3L7 3h2l2 4h3l-2-4h2l2 4h3l-2-4h3q.825 0 1.413.588T22 5v14q0 .825-.587 1.413T20 21H4q-.825 0-1.412-.587T2 19V5q0-.825.588-1.412T4 3m4 15h8v-.55q0-1.1-1.1-1.775T12 15t-2.9.675T8 17.45zm5.413-4.587Q14 12.825 14 12t-.587-1.412T12 10t-1.412.588T10 12t.588 1.413T12 14t1.413-.587" />
+      <path d="M11 8H9v3H6v2h3v3h2v-3h3v-2h-3z" />
+      <path d="M18 7c0-1.103-.897-2-2-2H4c-1.103 0-2 .897-2 2v10c0 1.103.897 2 2 2h12c1.103 0 2-.897 2-2v-3.333L22 17V7l-4 3.333zm-1.999 10H4V7h12v5z" />
     </svg>
   );
 }
