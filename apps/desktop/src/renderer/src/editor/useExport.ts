@@ -16,6 +16,7 @@ import {
 } from "../../../shared/contract";
 import {
   buildRenderPlan,
+  textOnClip,
   withWholeTimes,
   type RenderedCue,
   type RenderedText,
@@ -35,7 +36,7 @@ import {
 } from "../../../shared/project";
 import { segmentAt, segmentsOf } from "./segments";
 import { slicesOf } from "./state";
-import type { Slice } from "./timeline";
+import { place, toProjectTime, type Slice } from "./timeline";
 
 /** A finished export, in the form the dialog needs to show and hand it on. */
 export interface ExportResult {
@@ -250,8 +251,23 @@ export function buildSlices(
   tags: CursorTags,
 ): ExportSlice[] {
   const all = slicesOf(project);
+  const laid = place(all);
 
   return all.map((slice, index) => {
+    // Every text resolved onto *this* clip, the way the preview resolves them
+    // onto the one under the playhead. A text is pinned to the recording and
+    // measured in the finished video, and the exporter samples a plan on the
+    // recording's clock — so the crossing happens here, per clip. See
+    // `PlacedText`.
+    const clip = laid[index]!;
+    const rows = project.texts.map((row) =>
+      row.slices.flatMap((text) => {
+        const from = toProjectTime(laid, text.at);
+        if (from === null) return [];
+        const span = textOnClip(from, text.length, clip);
+        return span ? [{ text, span }] : [];
+      }),
+    );
     // Per slice, never hoisted. A recording extended with a take at a different
     // resolution has a different source size either side of the seam, and one
     // pair of dimensions used for every slice would crop take two against take
@@ -317,9 +333,10 @@ export function buildSlices(
           // be a second answer to a question `captionAt` already answers per
           // frame.
           cues.get(captionLook(settings.captions)),
-          // Every row of texts, like the zooms: a text whose span falls
-          // outside this clip never draws, for the reason a cue does not.
-          project.texts,
+          // Only the texts that reach this clip, each carrying its whole life
+          // in this clip's source time so an entrance is timed against its own
+          // beginning rather than restarting at every cut it crosses.
+          rows,
           texts,
         ),
       ),

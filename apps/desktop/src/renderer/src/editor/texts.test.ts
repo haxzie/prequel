@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { MAX_TEXT_TRACKS, newProject } from "../../../shared/project";
+import { DEFAULT_TEXT_LENGTH, MAX_TEXT_TRACKS, newProject } from "../../../shared/project";
 import {
   canUndo,
   editorReducer,
@@ -19,7 +19,9 @@ import {
   laneSpanAt,
   laneSpanNear,
   laneTrimmed,
+  slicesOf,
   textCopySpan,
+  textInProject,
   textSpanNear,
   type EditorAction,
   type EditorState,
@@ -36,8 +38,22 @@ function run(state: EditorState, ...actions: EditorAction[]): EditorState {
   return actions.reduce(editorReducer, state);
 }
 
+/**
+ * Each text's span in the finished video, which is the clock they are measured
+ * on. On these fixtures nothing has been cut, so it reads the same as the
+ * recording's — which is what keeps the numbers below meaning what they did.
+ */
 const spans = (state: EditorState, track = 0) =>
-  (state.project.texts[track]?.slices ?? []).map((text) => [text.source.start, text.source.end]);
+  (state.project.texts[track]?.slices ?? []).map((text) => {
+    const span = textInProject(state.project, text)!;
+    return [span.start, span.end];
+  });
+
+/** One text's span, by row and index. */
+const spanOf = (state: EditorState, track: number, index: number) => {
+  const text = state.project.texts[track]!.slices[index]!;
+  return textInProject(state.project, text)!;
+};
 
 describe("adding a text", () => {
   it("lands where it was pressed, on the row it was pressed on, and is selected", () => {
@@ -249,11 +265,11 @@ describe("moving a text between rows", () => {
     const [[lower], [upper]] = ids(state) as [string[], string[]];
     const after = run(state, { type: "moveText", textId: lower!, start: 0.5 * S, track: 1 });
     expect(ids(after)).toEqual([[], [lower, upper]]);
-    expect(after.project.texts[1]!.slices[0]!.source).toEqual({ start: 0.5 * S, end: 3.5 * S });
+    expect(spanOf(after, 1, 0)).toEqual({ start: 0.5 * S, end: 3.5 * S });
 
     // Too close to the text already there: held back against it, not over it.
     const nudged = run(state, { type: "moveText", textId: lower!, start: 3 * S, track: 1 });
-    expect(nudged.project.texts[1]!.slices[0]!.source).toEqual({ start: 2 * S, end: 5 * S });
+    expect(spanOf(nudged, 1, 0)).toEqual({ start: 2 * S, end: 5 * S });
   });
 
   it("makes the spare row real, and never a row past it", () => {
@@ -295,7 +311,9 @@ describe("moving a text between rows", () => {
       const after = run(state, { type: "moveText", textId: lower!, start: at, track: 1 });
       const row = after.project.texts[1]!.slices;
       for (let index = 1; index < row.length; index += 1) {
-        expect(row[index]!.source.start).toBeGreaterThanOrEqual(row[index - 1]!.source.end);
+        expect(spanOf(after, 1, index).start).toBeGreaterThanOrEqual(
+          spanOf(after, 1, index - 1).end,
+        );
       }
     }
   });
@@ -308,9 +326,7 @@ describe("copying a text by dragging", () => {
   it("lands a copy where it was let go, on the row it was let go on", () => {
     const state = one();
     const after = run(state, { type: "copyText", textId: id(state), start: 6 * S, track: 0 });
-    expect(
-      after.project.texts[0]!.slices.map((text) => [text.source.start, text.source.end]),
-    ).toEqual([
+    expect(spans(after)).toEqual([
       [S, 4 * S],
       [6 * S, 9 * S],
     ]);
@@ -326,7 +342,7 @@ describe("copying a text by dragging", () => {
     const state = one();
     const after = run(state, { type: "copyText", textId: id(state), start: S, track: 1 });
     expect(after.project.texts).toHaveLength(2);
-    expect(after.project.texts[1]!.slices[0]!.source).toEqual({ start: S, end: 4 * S });
+    expect(spanOf(after, 1, 0)).toEqual({ start: S, end: 4 * S });
   });
 
   it("is declined where the ghost would have been declined", () => {
@@ -431,5 +447,78 @@ describe("lanes", () => {
         expect(trimmed.end).toBeLessThanOrEqual(D);
       }
     }
+  });
+});
+
+describe("the two clocks a text is measured on", () => {
+  /**
+   * A recording cut down to fragments, which is the shape the model exists for.
+   *
+   * Split at 2 s and 4 s, then the middle clip deleted: what is left is 0-2 s
+   * and 4-10 s of the recording, playing as 0-8 s of the finished video. A
+   * second of project time past the seam is three seconds of source time.
+   */
+  function cut(): EditorState {
+    const state = run(start(), { type: "split", at: 2 * S }, { type: "split", at: 4 * S });
+    const middle = slicesOf(state.project)[1]!;
+    return run(state, { type: "deleteSlice", sliceId: middle.id });
+  }
+
+  it("gives a new text its whole length however short the clip is", () => {
+    // The bug this model was built for: a three-second text added onto a
+    // two-second clip used to be measured on the recording, so it took the
+    // clip's width and the rest of it sat in footage nobody would ever see.
+    const state = run(cut(), { type: "addText", track: 0, at: 0.5 * S });
+    const text = state.project.texts[0]!.slices[0]!;
+
+    expect(text.length).toBe(DEFAULT_TEXT_LENGTH);
+    // And it reads that long on the strip, running straight over the cut at
+    // two seconds rather than stopping at it.
+    expect(textInProject(state.project, text)).toEqual({ start: 0.5 * S, end: 3.5 * S });
+  });
+
+  it("pins a text to the footage under where it was added", () => {
+    // Added at 3 s of the finished video, which is 5 s of the recording — the
+    // seam at 2 s swallowed two seconds of it.
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+
+    expect(state.project.texts[0]!.slices[0]!.at).toBe(5 * S);
+  });
+
+  it("carries a text with its clip when the order changes", () => {
+    // The half of this that is about the footage. A title pinned to the second
+    // clip travels with it, which is what a callout on a screen recording has
+    // to do — and is why the anchor is on the recording's clock at all.
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+    const [first, second] = slicesOf(state.project).map((slice) => slice.id);
+    const pinnedAt = state.project.texts[0]!.slices[0]!.at;
+
+    const moved = run(state, { type: "moveSlice", sliceId: second!, before: first! });
+    const text = moved.project.texts[0]!.slices[0]!;
+
+    // Pinned to the same frame of the recording, and now reached earlier in
+    // the edit because the clip it is on plays first.
+    expect(text.at).toBe(pinnedAt);
+    expect(textInProject(moved.project, text)!.start).toBe(S);
+  });
+
+  it("keeps a text's length when the clip it sits on is reordered", () => {
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+    const [first, second] = slicesOf(state.project).map((slice) => slice.id);
+    const before = state.project.texts[0]!.slices[0]!.length;
+
+    const moved = run(state, { type: "moveSlice", sliceId: second!, before: first! });
+    expect(moved.project.texts[0]!.slices[0]!.length).toBe(before);
+  });
+
+  it("loses a text whose footage was deleted", () => {
+    // The price of pinning, and the same price a zoom pays: delete the footage
+    // a title was about and the title has nowhere to be.
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+    const text = state.project.texts[0]!.slices[0]!;
+    const onIt = slicesOf(state.project)[1]!;
+
+    const gone = run(state, { type: "deleteSlice", sliceId: onIt.id });
+    expect(textInProject(gone.project, text)).toBeNull();
   });
 });

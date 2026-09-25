@@ -17,6 +17,7 @@ import {
   type PlanSource,
   type Rect,
   type RenderedCue,
+  type PlacedText,
   type RenderedText,
   type RenderPlan,
   type Size,
@@ -142,7 +143,8 @@ export function Preview({
    */
   cues: ReadonlyMap<string, readonly RenderedCue[]>;
   /** The text rows, baked into the plan as overlays. */
-  texts: readonly TextTrack[];
+  /** Each row, resolved onto the clip being drawn — see `PlacedText`. */
+  texts: readonly (readonly PlacedText[])[];
   /** Every text's fields as bitmaps, by text id — the same map the export
       draws from. A text with no entry yet draws nothing. */
   rendered: ReadonlyMap<string, RenderedText>;
@@ -683,8 +685,8 @@ export function Preview({
     const at = media.sourceAt() ?? 0;
     const found: { text: TextSlice; box: Rect }[] = [];
     for (let track = texts.length - 1; track >= 0; track -= 1) {
-      for (const text of texts[track]!.slices) {
-        if (at < text.source.start || at >= text.source.end) continue;
+      for (const { text, span } of texts[track]!) {
+        if (at < span.start || at >= span.end) continue;
         const box = textBlockRect(frame, text, rendered);
         if (box) found.push({ text, box });
       }
@@ -1252,10 +1254,14 @@ export function Preview({
 }
 
 /** The text with this id, if its span holds the moment. */
-function textAt(tracks: readonly TextTrack[], textId: string, at: number): TextSlice | null {
-  for (const track of tracks) {
-    const found = track.slices.find((text) => text.id === textId);
-    if (found) return at >= found.source.start && at < found.source.end ? found : null;
+function textAt(
+  rows: readonly (readonly PlacedText[])[],
+  textId: string,
+  at: number,
+): TextSlice | null {
+  for (const row of rows) {
+    const found = row.find((placed) => placed.text.id === textId);
+    if (found) return at >= found.span.start && at < found.span.end ? found.text : null;
   }
   return null;
 }

@@ -14,6 +14,8 @@ import {
   textBlockRect,
   withWholeTimes,
   type OverlayKey,
+  textOnClip,
+  type PlacedText,
   type PlanItem,
   type RenderedCue,
   type RenderedText,
@@ -28,7 +30,7 @@ const SCREEN: Size = { width: 2560, height: 1440 };
 
 /** A two-field text, over a 4 s stretch. */
 const text = (over: Partial<TextSlice> = {}): TextSlice => ({
-  ...textFromTemplate(textTemplate("title-subtitle"), "text-1", { start: 2 * S, end: 6 * S }),
+  ...textFromTemplate(textTemplate("title-subtitle"), "text-1", { at: 2 * S, length: 4 * S }),
   ...over,
 });
 
@@ -50,6 +52,17 @@ const rendered = (fields = 2): RenderedText => ({
   })),
 });
 
+/**
+ * The rows as the plan wants them: each text resolved onto the clip being
+ * drawn. These fixtures are one whole clip at normal speed, so a text's span in
+ * the finished video reads the same as on the recording — which is what keeps
+ * the numbers in this file meaning what they did.
+ */
+const rows = (tracks: TextTrack[]): PlacedText[][] =>
+  tracks.map((track) =>
+    track.slices.map((text) => ({ text, span: { start: text.at, end: text.at + text.length } })),
+  );
+
 const plan = (tracks: TextTrack[], drawn: Map<string, RenderedText>, cues?: RenderedCue[]) =>
   buildRenderPlan(
     FRAME,
@@ -59,7 +72,7 @@ const plan = (tracks: TextTrack[], drawn: Map<string, RenderedText>, cues?: Rend
     undefined,
     undefined,
     cues,
-    tracks,
+    rows(tracks),
     drawn,
   ).items;
 
@@ -226,5 +239,51 @@ describe("overlayAt", () => {
     const draw = overlayAt(doubled, 4_000)!;
     expect(Number.isFinite(draw.opacity)).toBe(true);
     expect(draw.opacity).toBe(1);
+  });
+});
+
+describe("a text across a cut", () => {
+  /**
+   * Two clips of the recording laid end to end with four seconds cut between
+   * them: 0-2 s and 6-10 s of the footage, playing as 0-6 s of the film.
+   */
+  const CLIPS = [
+    { timelineStart: 0, source: { start: 0, end: 2 * S }, speed: 1 },
+    { timelineStart: 2 * S, source: { start: 6 * S, end: 10 * S }, speed: 1 },
+  ];
+
+  it("reaches both clips a text runs over", () => {
+    // Pinned at 1 s of the recording and three seconds long, so it begins one
+    // second into the film and ends four — a second on the first clip and two
+    // on the second, with the cut in the middle of it.
+    expect(textOnClip(S, 3 * S, CLIPS[0]!)).not.toBeNull();
+    expect(textOnClip(S, 3 * S, CLIPS[1]!)).not.toBeNull();
+  });
+
+  it("gives each clip the text's whole life, not the part that lands there", () => {
+    // The span reaches outside the clip at both ends on purpose. The entrance
+    // is timed against the text's own beginning, so clipping it first would
+    // start the animation again at every cut it crosses.
+    const first = textOnClip(S, 3 * S, CLIPS[0]!)!;
+    expect(first).toEqual({ start: S, end: 4 * S });
+
+    // On the second clip the same three seconds read as 5-8 s of the
+    // recording, because the four seconds cut away are not on its clock.
+    const second = textOnClip(S, 3 * S, CLIPS[1]!)!;
+    expect(second).toEqual({ start: 5 * S, end: 8 * S });
+    expect(second.end - second.start).toBe(first.end - first.start);
+  });
+
+  it("leaves out a clip the text never reaches", () => {
+    // Ends at 2 s of the film, which is exactly where the second clip begins.
+    expect(textOnClip(0, 2 * S, CLIPS[1]!)).toBeNull();
+    expect(textOnClip(5 * S, S, CLIPS[0]!)).toBeNull();
+  });
+
+  it("reads a sped-up clip on its own scale", () => {
+    // Twice the rate covers twice the footage in the same project time, so a
+    // three-second text spans six seconds of the recording under it.
+    const fast = { timelineStart: 0, source: { start: 0, end: 20 * S }, speed: 2 };
+    expect(textOnClip(S, 3 * S, fast)).toEqual({ start: 2 * S, end: 8 * S });
   });
 });

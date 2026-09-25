@@ -38,6 +38,7 @@ import {
 import {
   place,
   spanInProject,
+  toProjectTime,
   toProjectTimeThrough,
   toSourceTime,
   totalDuration,
@@ -730,9 +731,13 @@ export function TimelineStrip({
 
               {state.project.texts.flatMap((row, track) =>
                 row.slices.map((text) => {
-                  const span = spanInProject(placed, text.source);
-                  if (span === null) return null;
-                  const { start: from, end: to } = span;
+                  // Its own width on the strip, not the surviving part of a
+                  // source span: a text is measured in the finished video, so
+                  // it begins where its anchor lands and runs for as long as it
+                  // runs — across a cut if that is where it reaches.
+                  const from = toProjectTime(placed, text.at);
+                  if (from === null) return null;
+                  const to = from + text.length;
 
                   return (
                     <TextBar
@@ -743,8 +748,8 @@ export function TimelineStrip({
                       pixels={((to - from) / Math.max(duration, 1)) * contentWidth}
                       selected={text.id === state.selectedTextId}
                       label={text.fields.map((field) => field.text).join(" — ")}
-                      start={text.source.start}
-                      sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                      start={from}
+                      sourceAt={(clientX) => timeAt(clientX)}
                       trackAt={trackAt}
                       onSelect={() => {
                         media.onInteract();
@@ -782,7 +787,7 @@ export function TimelineStrip({
                           type: "trimText",
                           textId: text.id,
                           edge,
-                          source: sourceAt(timeAt(clientX)),
+                          at: timeAt(clientX),
                         })
                       }
                     />

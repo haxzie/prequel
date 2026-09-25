@@ -239,11 +239,14 @@ export function textTemplate(id: string): TextTemplate {
 export function textFromTemplate(
   template: TextTemplate,
   id: string,
-  span: { start: Ns; end: Ns },
+  /** Where it is pinned on the recording, and how long it shows for in the
+      finished video — see `TextSlice`. */
+  place: { at: Ns; length: Ns },
 ): TextSlice {
   return {
     id,
-    source: { ...span },
+    at: place.at,
+    length: place.length,
     templateId: template.id,
     fields: template.fields.map((field) => ({ ...field, style: { ...field.style } })),
     x: template.x,

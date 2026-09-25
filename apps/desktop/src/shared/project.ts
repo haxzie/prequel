@@ -842,7 +842,30 @@ export interface TextField {
  */
 export interface TextSlice {
   id: string;
-  source: { start: Ns; end: Ns };
+  /**
+   * Where it is pinned, on the **recording's** clock.
+   *
+   * Anchored to the footage rather than to the finished film, so a title stays
+   * over the moment it is about: trim the clip before it, reorder the clips,
+   * and it travels with the shot it annotates. The same reasoning zooms are
+   * stored this way — most texts here are a callout about what is on screen.
+   */
+  at: Ns;
+  /**
+   * How long it is on screen, in the **finished video**.
+   *
+   * The other clock, deliberately, and this pairing is the whole model. A
+   * length in source time means "three seconds of the original recording",
+   * which on an edit cut down to two-second clips is not a thing anybody
+   * wanted: the bar took the width of whatever clip it landed on, the part
+   * hanging past the clip sat in footage nobody would ever see, and the
+   * entrance was spread over time that is never played.
+   *
+   * A length in project time is simply how long the viewer reads it for. It
+   * spans a cut without noticing, and the entrance plays because project time
+   * is continuous by definition.
+   */
+  length: Ns;
   /** Which template it was made from. Kept so the gallery can show it. */
   templateId: string;
   fields: TextField[];
@@ -861,7 +884,11 @@ export interface TextSlice {
   exitMs: number;
 }
 
-/** One row of texts. Sorted by start, and never overlapping. */
+/**
+ * One row of texts. Sorted by where each is pinned, and kept from overlapping
+ * by the reducer — which, unlike the sanitiser, can see the edit a length is
+ * measured against.
+ */
 export interface TextTrack {
   id: string;
   slices: TextSlice[];
@@ -877,6 +904,9 @@ export const MAX_TEXT_TRACKS = 5;
 
 /** How long a text is when it is first dropped on the timeline. */
 export const DEFAULT_TEXT_LENGTH: Ns = 3_000_000_000;
+
+/** The shortest a text may be made, in project time. */
+export const MIN_TEXT_LENGTH: Ns = 200_000_000;
 
 export const DEFAULT_TEXT_STYLE: TextStyle = {
   font: "system",
@@ -969,13 +999,22 @@ function sanitiseText(stored: unknown, duration: Ns, index: number): TextSlice |
     : [];
   if (fields.length === 0) return null;
 
-  const start = clamp(number(source["start"], 0), 0, duration);
-  const end = clamp(number(source["end"], 0), 0, duration);
-  if (end <= start) return null;
+  // Both shapes, because a project saved before the two clocks were separated
+  // carries `source: { start, end }` with *both* on the recording's.
+  //
+  // The old end becomes the new length as it stands, rather than being measured
+  // through the cuts it may cross. A text that spanned cut footage was being
+  // drawn short and played wrong; giving it the length it was authored with is
+  // the repair, not a change of mind about it.
+  const at = clamp(number(text["at"], number(source["start"], 0)), 0, duration);
+  const held = number(text["length"], number(source["end"], 0) - number(source["start"], 0));
+  const length = Math.max(held, MIN_TEXT_LENGTH);
+  if (!Number.isFinite(at) || !Number.isFinite(length)) return null;
 
   return {
     id: typeof text["id"] === "string" ? text["id"] : `text-${index}`,
-    source: { start, end },
+    at,
+    length,
     templateId: typeof text["templateId"] === "string" ? text["templateId"] : "title",
     fields,
     x: clamp(number(text["x"], 0.5), 0, 1),
@@ -1006,11 +1045,16 @@ function sanitiseTexts(stored: unknown, duration: Ns): TextTrack[] {
     const slices = (Array.isArray(track["slices"]) ? (track["slices"] as unknown[]) : [])
       .map((text, index) => sanitiseText(text, duration, row * 1000 + index))
       .filter((text): text is TextSlice => text !== null)
-      .sort((a, b) => a.source.start - b.source.start);
+      .sort((a, b) => a.at - b.at);
 
     return {
       id: typeof track["id"] === "string" ? track["id"] : `texts-${row}`,
-      slices: nonOverlapping(slices),
+      // Only the pathological case is dropped here — two texts pinned to the
+      // very same moment. Whether a row's texts *overlap* is a question about
+      // the finished video, because that is where a length is measured, and
+      // this function has the recording and not the edit. The reducer is where
+      // it is answered, and it has the clips to answer it with.
+      slices: slices.filter((text, index) => index === 0 || text.at > slices[index - 1]!.at),
     };
   });
 

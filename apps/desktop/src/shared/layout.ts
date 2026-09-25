@@ -538,6 +538,57 @@ export interface PlanFilter {
   animated: boolean;
 }
 
+/**
+ * A text, and the whole of it in the source time of the clip being drawn.
+ *
+ * A text is pinned to the recording and measured in the finished video — see
+ * `TextSlice` — and the two rasterisers sample a plan on the *recording's*
+ * clock. So the crossing is made once, per clip, before the plan is built, and
+ * nothing downstream has to know there were ever two clocks.
+ *
+ * `span` is the text's whole life mapped through this clip, not the part of it
+ * that lands here. A text that runs past the end of a clip keeps its entrance
+ * timed against its own beginning; clipping the span first would restart the
+ * animation on every cut it crosses.
+ */
+export interface PlacedText {
+  text: TextSlice;
+  span: { start: number; end: number };
+}
+
+/** Where a clip sits, as `textOnClip` needs to know it. */
+export interface ClipPlacement {
+  /** Project time the clip begins at. */
+  timelineStart: number;
+  source: { start: number; end: number };
+  speed: number;
+}
+
+/**
+ * A text's whole span in one clip's source time, or null when none of it falls
+ * on that clip.
+ *
+ * `projectStart` is where the text begins in the finished video, which the
+ * caller works out from its anchor — this file has one clip and cannot see the
+ * edit the anchor is placed in.
+ *
+ * Within a clip the two clocks are related by a straight line, so the mapping
+ * is the same one `toSourceTime` makes, applied to both ends. The result may
+ * reach outside the clip at either end, which is the point.
+ */
+export function textOnClip(
+  projectStart: number,
+  length: number,
+  clip: ClipPlacement,
+): { start: number; end: number } | null {
+  const span = (clip.source.end - clip.source.start) / Math.max(clip.speed, 0.0001);
+  const clipEnd = clip.timelineStart + span;
+  if (projectStart + length <= clip.timelineStart || projectStart >= clipEnd) return null;
+
+  const at = (project: number) => clip.source.start + (project - clip.timelineStart) * clip.speed;
+  return { start: at(projectStart), end: at(projectStart + length) };
+}
+
 export interface RenderPlan {
   frame: Size;
   /** Drawn in order, back to front. */
@@ -600,7 +651,7 @@ export function buildRenderPlan(
   zooms?: readonly ZoomSlice[],
   enter?: EnterTransition | null,
   cues?: readonly RenderedCue[],
-  texts?: readonly TextTrack[],
+  texts?: readonly (readonly PlacedText[])[],
   rendered?: ReadonlyMap<string, RenderedText>,
 ): RenderPlan {
   const items: PlanItem[] = [];
@@ -1162,20 +1213,19 @@ function planFilter(effects: EffectsSettings): PlanFilter | null {
  */
 function textItems(
   frame: Size,
-  tracks: readonly TextTrack[],
+  rows: readonly (readonly PlacedText[])[],
   rendered: ReadonlyMap<string, RenderedText>,
 ): PlanItem[] {
   const items: PlanItem[] = [];
 
-  for (const track of tracks) {
-    for (const text of track.slices) {
+  for (const row of rows) {
+    for (const { text, span } of row) {
       const drawn = rendered.get(text.id);
       if (!drawn) continue;
 
       const placed = placeText(frame, text, drawn);
       if (!placed) continue;
 
-      const span = { start: text.source.start, end: text.source.end };
       const timing = {
         enter: text.enter,
         exit: text.exit,

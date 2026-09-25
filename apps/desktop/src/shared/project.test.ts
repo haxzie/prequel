@@ -741,9 +741,10 @@ describe("sanitising texts", () => {
   const stored = () =>
     JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S))) as Record<string, unknown>;
 
-  const text = (id: string, start: number, end: number): TextSlice => ({
+  const text = (id: string, at: number, end: number): TextSlice => ({
     id,
-    source: { start, end },
+    at,
+    length: end - at,
     templateId: "title",
     fields: [{ role: "heading", text: id, style: { ...DEFAULT_TEXT_STYLE } }],
     x: 0.5,
@@ -776,22 +777,39 @@ describe("sanitising texts", () => {
     expect(withTexts(JSON.parse(JSON.stringify(tracks)))).toEqual(tracks);
   });
 
-  it("sorts a row and drops whatever overlaps what came before", () => {
+  it("sorts a row by where each text is pinned", () => {
     const rows = withTexts([
       {
         id: "row-0",
         slices: [text("late", 4 * S, 6 * S), text("early", S, 3 * S), text("over", 2 * S, 5 * S)],
       },
     ]);
-    expect(rows[0]!.slices.map((entry) => entry.id)).toEqual(["early", "late"]);
+    // All three kept. Whether two of them overlap is a question about the
+    // finished video, which is where a length is measured, and this function
+    // has the recording — so it orders them and leaves the answer to the
+    // reducer, which can see the edit.
+    expect(rows[0]!.slices.map((entry) => entry.id)).toEqual(["early", "over", "late"]);
   });
 
-  it("clamps to the recording and drops what that empties", () => {
+  it("drops a second text pinned to the very same moment", () => {
+    const rows = withTexts([
+      { id: "row-0", slices: [text("a", 2 * S, 4 * S), text("b", 2 * S, 3 * S)] },
+    ]);
+    expect(rows[0]!.slices.map((entry) => entry.id)).toEqual(["a"]);
+  });
+
+  it("clamps where a text is pinned, and leaves how long it runs alone", () => {
     const rows = withTexts([
       { id: "row-0", slices: [text("past", 12 * S, 14 * S), text("long", 8 * S, 20 * S)] },
     ]);
-    expect(rows[0]!.slices).toHaveLength(1);
-    expect(rows[0]!.slices[0]!.source).toEqual({ start: 8 * S, end: 10 * S });
+    // The anchor is on the recording, so it cannot sit past the end of one.
+    // The length is on the finished video's clock and is not the recording's
+    // business: a text that outruns the end of the edit is simply cut off when
+    // it is drawn, the way one that outruns a clip always was.
+    expect(rows[0]!.slices.map((entry) => [entry.at, entry.length])).toEqual([
+      [8 * S, 12 * S],
+      [10 * S, 2 * S],
+    ]);
   });
 
   it("drops trailing empty rows and caps the count", () => {
@@ -852,11 +870,10 @@ describe("sanitising texts", () => {
 
       for (const track of tracks) {
         for (const [index, slice] of track.slices.entries()) {
-          expect(slice.source.start).toBeGreaterThanOrEqual(0);
-          expect(slice.source.end).toBeLessThanOrEqual(10 * S);
-          expect(slice.source.end).toBeGreaterThan(slice.source.start);
-          if (index > 0)
-            expect(slice.source.start).toBeGreaterThanOrEqual(track.slices[index - 1]!.source.end);
+          expect(slice.at).toBeGreaterThanOrEqual(0);
+          expect(slice.at).toBeLessThanOrEqual(10 * S);
+          expect(slice.length).toBeGreaterThan(0);
+          if (index > 0) expect(slice.at).toBeGreaterThan(track.slices[index - 1]!.at);
           expect(slice.x).toBeGreaterThanOrEqual(0);
           expect(slice.x).toBeLessThanOrEqual(1);
           const style = slice.fields[0]!.style;
@@ -867,5 +884,61 @@ describe("sanitising texts", () => {
         }
       }
     }
+  });
+});
+
+describe("a project written before the two clocks", () => {
+  const S = 1_000_000_000;
+  const RECORDING = "2026-08-11T12-00-00";
+
+  const opened = (texts: unknown) => {
+    const project = JSON.parse(JSON.stringify(newProject(RECORDING, 10 * S))) as Record<
+      string,
+      unknown
+    >;
+    project["texts"] = texts;
+    return sanitiseProject(project, RECORDING, 10 * S)!.texts;
+  };
+
+  /** Exactly what used to be written: both ends on the recording's clock. */
+  const old = (id: string, start: number, end: number) => ({
+    id,
+    source: { start, end },
+    templateId: "title",
+    fields: [{ role: "heading", text: id, style: { ...DEFAULT_TEXT_STYLE } }],
+    x: 0.5,
+    y: 0.5,
+    width: 0.8,
+    align: "centre",
+    gap: 0.02,
+    enter: "fade",
+    exit: "fade",
+    enterMs: 500,
+    exitMs: 500,
+  });
+
+  it("takes the old start as where it is pinned and the old span as how long it runs", () => {
+    const rows = opened([{ id: "row-0", slices: [old("a", 2 * S, 5 * S)] }]);
+
+    expect(rows[0]!.slices[0]!.at).toBe(2 * S);
+    expect(rows[0]!.slices[0]!.length).toBe(3 * S);
+  });
+
+  it("gives back the length it was authored with, not the part that survived", () => {
+    // A text that spanned footage since cut away was being drawn short and
+    // played wrong. Reading the old span as a length restores what whoever
+    // made it asked for, which is the repair — not a change of mind about it.
+    const rows = opened([{ id: "row-0", slices: [old("long", S, 9 * S)] }]);
+
+    expect(rows[0]!.slices[0]!.length).toBe(8 * S);
+  });
+
+  it("reads a text already written on the new clocks unchanged", () => {
+    const rows = opened([
+      { id: "row-0", slices: [{ ...old("a", 2 * S, 5 * S), at: 7 * S, length: 2 * S }] },
+    ]);
+
+    expect(rows[0]!.slices[0]!.at).toBe(7 * S);
+    expect(rows[0]!.slices[0]!.length).toBe(2 * S);
   });
 });

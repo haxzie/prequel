@@ -15,6 +15,7 @@ import {
   clearOverride,
   clearSection,
   DEFAULT_TEXT_LENGTH,
+  MIN_TEXT_LENGTH,
   DEFAULT_ZOOM,
   DEFAULT_ZOOM_LENGTH,
   MAX_SPEED,
@@ -39,6 +40,7 @@ import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
 import {
   place,
+  toProjectTime,
   toProjectTimeThrough,
   toSourceTime,
   totalDuration,
@@ -262,7 +264,8 @@ export type EditorAction =
    * flickers between two rows for as long as the pointer moves.
    */
   | { type: "tidyTexts" }
-  | { type: "trimText"; textId: string; edge: "start" | "end"; source: MediaTime }
+  /** `at` is project time: the edge is dragged on the strip. */
+  | { type: "trimText"; textId: string; edge: "start" | "end"; at: MediaTime }
   | { type: "undo" }
   /**
    * A new drag is starting, so it must not join the previous one's undo entry.
@@ -676,7 +679,38 @@ function trackOf(project: Project, textId: string): number {
 }
 
 /**
+ * A row's texts as the finished video sees them.
+ *
+ * Every question the lane arithmetic answers — does this fit, what is it
+ * bounded by, where is the next gap — is a question about the edit, because
+ * that is the clock a length is measured on. A text is *pinned* to the
+ * recording, so each anchor is resolved through the clips first.
+ *
+ * A text whose anchor was cut away has nowhere to be and is left out. That is
+ * the rule for the whole feature: delete the footage a title was pinned to and
+ * the title goes with it, the same way a zoom does.
+ */
+function lanedTexts(placed: readonly PlacedSlice[], lane: readonly TextSlice[]): Laned[] {
+  return lane.flatMap((text) => {
+    const start = toProjectTime(placed, text.at);
+    return start === null ? [] : [{ id: text.id, source: { start, end: start + text.length } }];
+  });
+}
+
+/** A project span back to what a text stores, or null when it cannot be pinned. */
+function pinned(
+  placed: readonly PlacedSlice[],
+  span: { start: MediaTime; end: MediaTime },
+): { at: MediaTime; length: MediaTime } | null {
+  const at = toSourceTime(placed, span.start);
+  return at === null ? null : { at, length: Math.max(span.end - span.start, MIN_TEXT_LENGTH) };
+}
+
+/**
  * The span a text pressed at `at` on a row would occupy, or null if none would.
+ *
+ * In project time, in and out: `at` is where the pointer is on the strip, and
+ * the answer is what the bar would cover there.
  *
  * `laneSpanAt` over that row. A row one past the last is empty by definition,
  * which is what lets the timeline's spare row take a press.
@@ -689,12 +723,13 @@ export function textSpanAt(
 ): { start: MediaTime; end: MediaTime } | null {
   // One past the last row is the spare row; further than that is nothing.
   if (track < 0 || track > project.texts.length || track >= MAX_TEXT_TRACKS) return null;
-  const lane = project.texts[track]?.slices ?? [];
-  return laneSpanAt(lane, sourceEnd(project), MIN_TEXT_NS, DEFAULT_TEXT_LENGTH, at, to);
+  const placed = placedSlices(project);
+  const lane = lanedTexts(placed, project.texts[track]?.slices ?? []);
+  return laneSpanAt(lane, totalDuration(placed), MIN_TEXT_LENGTH, DEFAULT_TEXT_LENGTH, at, to);
 }
 
 /**
- * Where a text added at the playhead would go, in source time, or null.
+ * Where a text added at the playhead would go, in project time, or null.
  *
  * The first row that has room *at the playhead* — the spare row included,
  * which is what the rows are for: a second title over the same moment goes
@@ -706,18 +741,19 @@ export function textSpanNear(
   project: Project,
   at: MediaTime,
 ): { track: number; span: { start: MediaTime; end: MediaTime } } | null {
-  const duration = sourceEnd(project);
+  const placed = placedSlices(project);
+  const duration = totalDuration(placed);
   const rows = Math.min(project.texts.length + 1, MAX_TEXT_TRACKS);
   for (let track = 0; track < rows; track += 1) {
-    const lane = project.texts[track]?.slices ?? [];
-    const span = laneSpanAt(lane, duration, MIN_TEXT_NS, DEFAULT_TEXT_LENGTH, at);
+    const lane = lanedTexts(placed, project.texts[track]?.slices ?? []);
+    const span = laneSpanAt(lane, duration, MIN_TEXT_LENGTH, DEFAULT_TEXT_LENGTH, at);
     if (span) return { track, span };
   }
 
   const span = laneSpanNear(
-    project.texts[0]?.slices ?? [],
+    lanedTexts(placed, project.texts[0]?.slices ?? []),
     duration,
-    MIN_TEXT_NS,
+    MIN_TEXT_LENGTH,
     DEFAULT_TEXT_LENGTH,
     at,
   );
@@ -733,10 +769,15 @@ function addText(
 ): EditorState {
   const span = textSpanAt(state.project, track, at, to);
   if (!span) return state;
+  // Pinned to whatever footage its beginning lands on — which is what "hooks
+  // into the clip below" means, and all of it that is about the footage. How
+  // long it shows for is the edit's business.
+  const place = pinned(placedSlices(state.project), span);
+  if (!place) return state;
   return placeNewText(
     state,
     track,
-    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), span),
+    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place),
   );
 }
 
@@ -745,14 +786,16 @@ function addTextNear(
   at: MediaTime,
   templateId: string | undefined,
 ): EditorState {
-  const source = toSourceTime(placedSlices(state.project), at);
-  if (source === null) return state;
-  const found = textSpanNear(state.project, source);
+  // `at` is already project time — the playhead's own clock, and the one the
+  // row's spans are measured on.
+  const found = textSpanNear(state.project, at);
   if (!found) return state;
+  const place = pinned(placedSlices(state.project), found.span);
+  if (!place) return state;
   return placeNewText(
     state,
     found.track,
-    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), found.span),
+    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place),
   );
 }
 
@@ -768,7 +811,7 @@ function placeNewText(state: EditorState, track: number, text: TextSlice): Edito
       const texts = project.texts.map((row) => ({ ...row, slices: [...row.slices] }));
       while (texts.length <= track) texts.push({ id: `texts-${String(texts.length)}`, slices: [] });
       const row = texts[track]!;
-      row.slices = [...row.slices, text].sort((a, b) => a.source.start - b.source.start);
+      row.slices = [...row.slices, text].sort((a, b) => a.at - b.at);
       return { ...project, texts };
     }),
     // Selected on the way in, as a zoom is: the point of adding one is to say
@@ -815,14 +858,22 @@ function duplicateText(state: EditorState, textId: string): EditorState {
   if (!source) return state;
   const track = trackOf(state.project, textId);
 
-  const length = source.source.end - source.source.start;
-  const span = textSpanAt(state.project, track, source.source.end, source.source.end + length);
+  const placed = placedSlices(state.project);
+  const from = toProjectTime(placed, source.at);
+  if (from === null) return state;
+
+  // Straight after itself, on the edit's clock — the gap it wants is measured
+  // in the finished video like every other length here.
+  const after = from + source.length;
+  const span = textSpanAt(state.project, track, after, after + source.length);
   if (!span) return state;
+  const place = pinned(placed, span);
+  if (!place) return state;
 
   const copy: TextSlice = {
     ...source,
     id: nextTextId(state),
-    source: span,
+    ...place,
     fields: source.fields.map((field) => ({ ...field, style: { ...field.style } })),
   };
   return placeNewText(state, track, copy);
@@ -843,8 +894,9 @@ export function textCopySpan(
   const text = findText(project, textId);
   if (!text) return null;
   if (track < 0 || track > project.texts.length || track >= MAX_TEXT_TRACKS) return null;
-  const lane = project.texts[track]?.slices ?? [];
-  return laneRoom(lane, text.source.end - text.source.start, start, sourceEnd(project));
+  const placed = placedSlices(project);
+  const lane = lanedTexts(placed, project.texts[track]?.slices ?? []);
+  return laneRoom(lane, text.length, start, totalDuration(placed));
 }
 
 function copyText(
@@ -855,10 +907,13 @@ function copyText(
   const span = textCopySpan(state.project, action.textId, action.start, action.track);
   if (!source || !span) return state;
 
+  const place = pinned(placedSlices(state.project), span);
+  if (!place) return state;
+
   const copy: TextSlice = {
     ...source,
     id: nextTextId(state),
-    source: span,
+    ...place,
     fields: source.fields.map((field) => ({ ...field, style: { ...field.style } })),
   };
   return placeNewText(state, action.track, copy);
@@ -888,23 +943,28 @@ function moveText(
   const text = lane?.find((entry) => entry.id === action.textId);
   if (!lane || !text) return state;
 
-  const limit = Math.min(sourceEnd(state.project), state.duration);
+  // Every span here is on the edit's clock — `action.start` is where the bar
+  // was let go on the strip — and only the answer is pinned back to the
+  // footage. See `lanedTexts`.
+  const placed = placedSlices(state.project);
+  const limit = totalDuration(placed);
   const to = action.track ?? from;
 
   if (to === from) {
-    const moved = laneMoved(lane, action.textId, action.start, limit);
-    if (!moved) return state;
-    return editText(state, action.textId, (entry) => ({ ...entry, source: moved }));
+    const span = laneMoved(lanedTexts(placed, lane), action.textId, action.start, limit);
+    const place = span && pinned(placed, span);
+    if (!place) return state;
+    return editText(state, action.textId, (entry) => ({ ...entry, ...place }));
   }
 
   // Onto another row: the spare row is allowed, anything past it is not.
   if (to < 0 || to > state.project.texts.length || to >= MAX_TEXT_TRACKS) return state;
-  const target = state.project.texts[to]?.slices ?? [];
-  const length = text.source.end - text.source.start;
-  const source = laneRoom(target, length, action.start, limit);
-  if (!source) return state;
+  const target = lanedTexts(placed, state.project.texts[to]?.slices ?? []);
+  const span = laneRoom(target, text.length, action.start, limit);
+  const place = span && pinned(placed, span);
+  if (!place) return state;
 
-  const moved: TextSlice = { ...text, source };
+  const moved: TextSlice = { ...text, ...place };
   return edit(state, (project) => {
     const texts = project.texts.map((row) => ({
       ...row,
@@ -912,7 +972,7 @@ function moveText(
     }));
     while (texts.length <= to) texts.push({ id: `texts-${String(texts.length)}`, slices: [] });
     const row = texts[to]!;
-    row.slices = [...row.slices, moved].sort((a, b) => a.source.start - b.source.start);
+    row.slices = [...row.slices, moved].sort((a, b) => a.at - b.at);
     return { ...project, texts };
   });
 }
@@ -956,29 +1016,36 @@ function trimText(
   const lane = state.project.texts[track]?.slices;
   if (!lane) return state;
 
+  // The edge is dragged on the strip, so it arrives in project time and the
+  // lane is measured there — which is also what makes a trim change the length
+  // and nothing else about where the text is pinned, unless the *start* moved.
+  const placed = placedSlices(state.project);
   const trimmed = laneTrimmed(
-    lane,
+    lanedTexts(placed, lane),
     action.textId,
     action.edge,
-    action.source,
-    sourceEnd(state.project),
-    MIN_TEXT_NS,
+    action.at,
+    totalDuration(placed),
+    MIN_TEXT_LENGTH,
   );
-  if (!trimmed) return state;
-  return editText(state, action.textId, (text) => ({ ...text, source: trimmed }));
+  const place = trimmed && pinned(placed, trimmed);
+  if (!place) return state;
+  return editText(state, action.textId, (text) => ({ ...text, ...place }));
 }
 
 /**
- * Where a text sits in project time, or null when the stretch was cut.
+ * Where a text sits in the finished video, or null when its anchor was cut.
  *
- * `zoomInProject` for a text, and the same reasoning: stored in source time,
- * mapped back through the slices to put the playhead on it.
+ * One conversion and an addition, where a zoom needs its whole span mapped:
+ * only the anchor is on the recording's clock, and the length is already on
+ * this one.
  */
 export function textInProject(
   project: Project,
   text: TextSlice,
 ): { start: MediaTime; end: MediaTime } | null {
-  return zoomInProject(project, text);
+  const start = toProjectTime(placedSlices(project), text.at);
+  return start === null ? null : { start, end: start + text.length };
 }
 
 /**

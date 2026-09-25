@@ -64,6 +64,7 @@ import {
   editorReducer,
   findText,
   initialState,
+  placedSlices,
   slicesOf,
   textInProject,
   textSpanNear,
@@ -74,6 +75,7 @@ import {
 } from "./state";
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
+import { textOnClip, type PlacedText } from "../../../shared/layout";
 import { useEditorPlayback } from "./useEditorPlayback";
 import type { MediaKey } from "./segments";
 import { useExport } from "./useExport";
@@ -740,16 +742,47 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * timeline changes the rows and is cheap, a slider in the panel changes
    * neither until the settle redraws.
    */
+  /**
+   * Every text resolved onto the clip the playhead is on.
+   *
+   * A text is pinned to the recording and measured in the finished video, and
+   * both rasterisers sample a plan on the recording's clock — so the crossing
+   * is made here, once, and nothing below has to know there were two clocks.
+   * See `PlacedText`.
+   *
+   * Against the clip under the playhead because that is the one the preview is
+   * drawing. The export does the same per clip, in `buildSlices`.
+   */
+  const placedTexts = useMemo((): readonly (readonly PlacedText[])[] => {
+    const placed = placedSlices(state.project);
+    const clip = placed.find((slice) => slice.id === media.sliceId) ?? placed[0];
+    if (!clip) return [];
+
+    return state.project.texts.map((row) =>
+      row.slices.flatMap((text) => {
+        const from = toProjectTime(placed, text.at);
+        if (from === null) return [];
+        const span = textOnClip(from, text.length, clip);
+        return span ? [{ text, span }] : [];
+      }),
+    );
+  }, [state.project, media.sliceId]);
+
   const textImages = useMemo(
     () =>
       state.project.texts.flatMap((track) =>
         track.slices.flatMap((text) => {
           const drawn = textBitmaps.rendered.get(text.id);
+          // The window this feeds is compared against source time, and a text
+          // is pinned there — so its anchor is the moment to be near. The reach
+          // either side is `REACH_NS`, which is wider than any text's own
+          // length, so bounding this by the length would only ever narrow a
+          // window that is already generous.
           return drawn
             ? [
                 {
-                  at: text.source.start,
-                  end: text.source.end,
+                  at: text.at,
+                  end: text.at,
                   paths: drawn.fields.map((field) => field.path),
                 },
               ]
@@ -806,12 +839,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     // at the press starts exactly there, and moving the head off the moment
     // just pressed read as the head jumping on its own. Press play and it
     // arrives; scrub and it is there.
-    const at = toSourceTime(placed, media.playback.position());
-    if (at !== null && at >= text.source.start && at < text.source.end) return;
-    const length = text.source.end - text.source.start;
-    const enter = Math.min(text.enterMs * 1_000_000, length / 2);
     const span = textInProject(state.project, text);
-    if (span) media.playback.seek(Math.min(span.start + enter, span.end));
+    if (!span) return;
+    const now = media.playback.position();
+    if (now >= span.start && now < span.end) return;
+    const enter = Math.min(text.enterMs * 1_000_000, text.length / 2);
+    media.playback.seek(Math.min(span.start + enter, span.end));
     // Only on the selection: the text's span moving under the playhead is a
     // drag, and seeking during one would fight the hand doing it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1175,7 +1208,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               cursor={session.cursor}
               zooms={state.project.zooms}
               cues={captions.byLook}
-              texts={state.project.texts}
+              texts={placedTexts}
               rendered={textBitmaps.rendered}
               tags={cursorTags}
               selectedTextId={state.selectedTextId}
