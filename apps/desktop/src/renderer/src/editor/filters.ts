@@ -506,12 +506,29 @@ vec3 bulged(vec2 uv) {
   vec2 edge = corner();
   float fit = 1.0 + k * dot(edge, edge);
   vec2 warped = p * (1.0 + k * r2) / max(fit, 0.05) * (1.0 - u_scale);
-  vec3 c = grab(uvOf(warped));
+
+  // How far out this pixel is: 0 in the middle, 1 at the corner.
+  float away = sqrt(r2) / max(length(edge), 0.001);
+
+  /**
+   * Field curvature — a wide lens does not hold focus out to the rim.
+   *
+   * It is the thing that separates a fish eye from a picture that has merely
+   * been bent: the geometry alone comes out uncannily crisp at the edges, where
+   * real glass of this shape cannot focus the corner and the centre on one
+   * plane at once.
+   *
+   * Read off the mip chain rather than tapped, for the reason the glow is: a
+   * handful of point samples spread wide enough to soften leaves gaps between
+   * them and the eye reads those as grain. Slight on purpose — a shade over one
+   * level at full bulge, so the corner loses its edge rather than its detail.
+   */
+  float lod = smoothstep(0.30, 1.0, away) * u_strength * 1.3;
+  vec3 c = textureLod(u_scene, clamp(uvOf(warped), 0.0, 1.0), lod).rgb;
 
   if (u_variant == 2) {
     // A peephole: heavy fall-off towards the rim and a highlight off to one
     // side, which is what says "glass" rather than "the picture is bent".
-    float away = sqrt(r2) / max(length(edge), 0.001);
     c *= 1.0 - 0.75 * smoothstep(0.35, 1.0, away);
     c += vec3(0.22) * smoothstep(0.30, 0.0, length(p - edge * 0.42));
   }

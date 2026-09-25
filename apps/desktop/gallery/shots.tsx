@@ -133,6 +133,7 @@ function inspector(id: string, label: string, steps: Step[] = []): Shot {
 const LOOK_LABELS = {
   crt: "CRT",
   lcd: "LCD",
+  fisheye: "Fish eye",
   bloom: "Glow",
   halftone: "Halftone",
   "window-light": "Window light",
@@ -356,7 +357,7 @@ export const SHOTS: readonly Shot[] = [
   // The LCD earns its place: it shipped sampling each cell's centre, which
   // downsampled the recording by the cell size and left no readable text
   // anywhere in the frame. Nothing asserted caught that — it takes a picture.
-  ...(["crt", "lcd", "bloom", "halftone", "window-light"] as const).map((look) => ({
+  ...(["crt", "lcd", "fisheye", "bloom", "halftone", "window-light"] as const).map((look) => ({
     id: `filter-${look}`,
     frame: "workspace" as const,
     install: install(),
