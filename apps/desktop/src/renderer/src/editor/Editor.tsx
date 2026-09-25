@@ -1037,7 +1037,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [media],
   );
   useEditorImages(session, state.project, cursorFiles, setImages, markImageSettled);
-  useShortcuts(media, dispatch, state, () => void addRecording());
+  useShortcuts(
+    media,
+    dispatch,
+    state,
+    () => void addRecording(),
+    () => previewText("enter"),
+  );
 
   useEffect(() => {
     if (selected !== null) setPanelOpen(true);
@@ -1303,7 +1309,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           canAddRecording={!exportState.running}
           canUndo={canUndo(state)}
           onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
-          onAddText={() => dispatch({ type: "addTextNear", at: media.playback.position() })}
+          onAddText={() => {
+            // And played in, for the reason the `T` key's own note gives.
+            dispatch({ type: "addTextNear", at: media.playback.position() });
+            previewText("enter");
+          }}
           onAddRecording={() => void addRecording()}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
@@ -1949,6 +1959,8 @@ function useShortcuts(
   dispatch: Dispatch<EditorAction>,
   state: EditorState,
   onAddRecording: () => void,
+  /** Plays a freshly added text's entrance — see the note at the `T` key. */
+  onAddedText: () => void,
 ) {
   // Read through a ref so the listener is bound once rather than rebound on
   // every edit — the selection and tool change constantly.
@@ -1959,6 +1971,8 @@ function useShortcuts(
   // keystrokes ago over the current one.
   const addRecording = useRef(onAddRecording);
   addRecording.current = onAddRecording;
+  const addedText = useRef(onAddedText);
+  addedText.current = onAddedText;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2006,9 +2020,17 @@ function useShortcuts(
           return;
 
         // Adds a text where the playhead is, for the same reason Z adds a zoom.
+        //
+        // Then plays its entrance. A text begins at the playhead and its
+        // entrance begins at nothing, so the frame you are parked on is the one
+        // frame of its life where it is fully transparent: add a title and
+        // nothing appears, which reads as the feature being broken rather than
+        // as an animation that has not started. Playing it through leaves the
+        // playhead a beat into the hold, with the text at rest and on screen.
         case "KeyT":
           event.preventDefault();
           dispatch({ type: "addTextNear", at: media.playback.position() });
+          addedText.current();
           return;
 
         // Records more into this project. Beside Z and T because it is the third
