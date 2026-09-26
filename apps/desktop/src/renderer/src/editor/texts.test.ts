@@ -662,3 +662,49 @@ describe("reordering a row of texts", () => {
     );
   });
 });
+
+describe("a row with nothing left to show", () => {
+  /** 0-2 s and 4-10 s of the recording, playing as 0-8 s of the film. */
+  function cut(): EditorState {
+    const state = run(start(), { type: "split", at: 2 * S }, { type: "split", at: 4 * S });
+    const middle = slicesOf(state.project)[1]!;
+    return run(state, { type: "deleteSlice", sliceId: middle.id });
+  }
+
+  /** A row whose one text is pinned to footage the edit no longer plays. */
+  function orphaned(): EditorState {
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+    const onIt = slicesOf(state.project)[1]!;
+    return run(state, { type: "deleteSlice", sliceId: onIt.id });
+  }
+
+  it("is dropped when the recording is opened", () => {
+    const state = orphaned();
+    // Still there while the session is running: undo has to be able to bring
+    // the footage — and its title — back.
+    expect(state.project.texts).toHaveLength(1);
+
+    // Opened again, it is a row the timeline would draw empty for ever, under
+    // the spare row it conjures for itself.
+    expect(initialState(state.project, 10 * S).project.texts).toEqual([]);
+  });
+
+  it("is kept while anything on it is still on screen", () => {
+    const state = run(cut(), { type: "addText", track: 0, at: 3 * S });
+
+    expect(initialState(state.project, 10 * S).project.texts).toHaveLength(1);
+  });
+
+  it("leaves a row in the middle alone", () => {
+    // Trailing only: a row is where it is because of the rows around it, and
+    // closing the gap would move every text above it down a row.
+    const first = run(cut(), { type: "addText", track: 0, at: 3 * S });
+    const second = run(first, { type: "addText", track: 1, at: 0.5 * S });
+    const onIt = slicesOf(second.project)[1]!;
+    const gone = run(second, { type: "deleteSlice", sliceId: onIt.id });
+
+    const opened = initialState(gone.project, 10 * S).project.texts;
+    expect(opened).toHaveLength(2);
+    expect(opened[0]!.slices).toHaveLength(1);
+  });
+});

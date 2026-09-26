@@ -281,8 +281,14 @@ export function initialState(
   duration: MediaTime = 0,
   seams: readonly MediaTime[] = [],
 ): EditorState {
+  // Tidied on the way in, which is the one place a row can be judged against
+  // the edit: `sanitiseProject` reads the file without the clips and says so
+  // itself. A project that has not been changed is not written back, so this
+  // costs nothing until the next edit saves it.
+  const texts = withoutTrailingUnseen(project);
+
   return {
-    project,
+    project: texts.length === project.texts.length ? project : { ...project, texts },
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
     selectedTextId: null,
@@ -650,7 +656,7 @@ function apply(
       return moveText(state, action);
 
     case "tidyTexts": {
-      const texts = withoutTrailingEmpty(state.project.texts);
+      const texts = withoutTrailingUnseen(state.project);
       // Nothing to tidy is not an edit, or every drop would bump the revision.
       if (texts.length === state.project.texts.length) return state;
       return edit(state, (project) => ({ ...project, texts }));
@@ -836,7 +842,7 @@ function deleteText(state: EditorState, textId: string): EditorState {
   return {
     ...edit(state, (project) => ({
       ...project,
-      texts: withoutTrailingEmpty(withoutText(project.texts, textId)),
+      texts: withoutTrailingUnseen({ ...project, texts: withoutText(project.texts, textId) }),
     })),
     selectedTextId: state.selectedTextId === textId ? null : state.selectedTextId,
   };
@@ -849,9 +855,31 @@ function withoutText(texts: TextTrack[], textId: string): TextTrack[] {
   }));
 }
 
-function withoutTrailingEmpty(texts: TextTrack[]): TextTrack[] {
-  const kept = [...texts];
-  while (kept.length > 0 && kept[kept.length - 1]!.slices.length === 0) kept.pop();
+/**
+ * The rows with the trailing ones dropped, asking the *finished video* whether
+ * a row is empty rather than asking the row.
+ *
+ * A text is pinned to a moment in the recording, so footage the edit no longer
+ * plays takes its texts off the screen with it — cut the clip a title sat on,
+ * and the title is nowhere, while its row stays for ever. What that leaves is a
+ * row with nothing drawn on it, under the spare row the timeline conjures for
+ * itself: two empty rows, one of which cannot be filled by dropping a text on
+ * it, because it already holds one nobody can see.
+ *
+ * Trailing only: a row in the middle is where it is because of the rows around
+ * it, and closing the gap would move every text above it down a row.
+ *
+ * Asked on open and nowhere else. It could be asked after every cut, and it is
+ * deliberately not: a trim is a stream of edits, and a title that left the
+ * picture halfway through a drag would be deleted before the pointer came back.
+ */
+function withoutTrailingUnseen(project: Project): TextTrack[] {
+  const placed = placedSlices(project);
+  const seen = (row: TextTrack): boolean =>
+    row.slices.some((text) => toProjectTime(placed, text.at) !== null);
+
+  const kept = [...project.texts];
+  while (kept.length > 0 && !seen(kept[kept.length - 1]!)) kept.pop();
   return kept;
 }
 
