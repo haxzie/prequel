@@ -105,7 +105,18 @@ export function mergeTake(dir: string, takeDir: string): Merged | null {
     source: base.source,
     duration: at + take.duration,
     tracks: mergeTracks(base.tracks, take.tracks, name, at),
-    takes: [...base.takes, { dir: name, start: at, end: at + take.duration }],
+    takes: [
+      ...base.takes,
+      {
+        dir: name,
+        start: at,
+        end: at + take.duration,
+        // Carried from the take's own table rather than decided here: what this
+        // take is made of is the take's business, and the merge is the same
+        // merge for a recording and for an import.
+        ...(take.takes[0]?.imported ? { imported: true } : {}),
+      },
+    ],
     // Concatenated rather than merged and re-sorted: the take begins where the
     // recording ended, so appending keeps every array in clock order.
     cursor: [...(base.cursor ?? []), ...shiftPoints(take.cursor ?? [], at)],

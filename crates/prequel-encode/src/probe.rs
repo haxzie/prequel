@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use cidre::{av, cm, ns};
+use cidre::{arc, av, cm, ns};
 
 use crate::{Error, Result};
 
@@ -48,23 +48,26 @@ pub struct TrackProbe {
     pub frame_rate: Option<f32>,
 }
 
+/// Both of a file's tracks, either of which may be absent.
+///
+/// [`probe_file`]'s answer is one track, because a session file holds exactly
+/// one. A file from outside the app holds whichever pair it likes, and "does
+/// this have sound at all" is a question an import has to answer before it
+/// writes a manifest: a `system_audio` segment naming a file with no audio
+/// track in it fails the export at `AudioReader`, long after the import looked
+/// like it worked.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MediaProbe {
+    pub video: Option<TrackProbe>,
+    pub audio: Option<TrackProbe>,
+}
+
 /// Probes one media file.
 ///
 /// Reads the first video track if there is one, falling back to the first audio
 /// track — a session file holds exactly one of the two.
 pub fn probe_file(path: &Path) -> Result<TrackProbe> {
-    let url = ns::Url::with_fs_path_str(
-        path.to_str().ok_or_else(|| Error::CreateWriter {
-            path: path.display().to_string(),
-            reason: "path is not valid UTF-8".to_owned(),
-        })?,
-        false,
-    );
-
-    let asset = av::UrlAsset::with_url(&url, None).ok_or_else(|| Error::CreateWriter {
-        path: path.display().to_string(),
-        reason: "could not be opened as a media file".to_owned(),
-    })?;
+    let asset = open(path)?;
 
     // Video first: a session file holds exactly one of the two, and only the
     // video case has dimensions worth reporting.
@@ -74,6 +77,36 @@ pub fn probe_file(path: &Path) -> Result<TrackProbe> {
             path: path.display().to_string(),
             reason: "holds no readable video or audio track".to_owned(),
         })
+}
+
+/// Probes one media file for both of its tracks.
+///
+/// Errors only when the file will not open at all. A file that opens and holds
+/// neither track reports two `None`s, which the caller has to reject on its own
+/// terms — "not a video" is a better message than "could not be opened".
+pub fn probe_media(path: &Path) -> Result<MediaProbe> {
+    let asset = open(path)?;
+
+    Ok(MediaProbe {
+        video: load_probe(&asset, av::MediaType::video(), true),
+        audio: load_probe(&asset, av::MediaType::audio(), false),
+    })
+}
+
+/// Opens a file as an asset, without loading anything off it yet.
+fn open(path: &Path) -> Result<arc::R<av::UrlAsset>> {
+    let url = ns::Url::with_fs_path_str(
+        path.to_str().ok_or_else(|| Error::CreateWriter {
+            path: path.display().to_string(),
+            reason: "path is not valid UTF-8".to_owned(),
+        })?,
+        false,
+    );
+
+    av::UrlAsset::with_url(&url, None).ok_or_else(|| Error::CreateWriter {
+        path: path.display().to_string(),
+        reason: "could not be opened as a media file".to_owned(),
+    })
 }
 
 /// Loads one media type's first track and reads its timing off.

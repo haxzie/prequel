@@ -97,6 +97,7 @@ impl Manifest {
                 dir: String::new(),
                 start: 0,
                 end: duration,
+                imported: false,
             }],
             cursor_baked: self.cursor_baked,
             cursor: self.cursor,

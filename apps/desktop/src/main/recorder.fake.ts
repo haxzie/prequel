@@ -488,6 +488,20 @@ export function createFakeRecorder(): Recorder {
       samples: new Float32Array(0),
     }),
 
+    // A fixed answer, because there is nothing here that can decode a file.
+    // Everything an import does with it — the manifest it writes, the merge, the
+    // clip that lands on the timeline — is exercised by these numbers as well
+    // as by real ones, and a test that needs a different shape passes its own
+    // through `importedManifest`.
+    probeMedia: async () => ({
+      duration: 3_000 * NS_PER_MS,
+      hasVideo: true,
+      hasAudio: true,
+      width: 1920,
+      height: 1080,
+      frameRate: 30,
+    }),
+
     // Reads the manifest the fake itself wrote, so the shape the editor
     // receives matches the native probe's without needing real media.
     probeSession: async (dir) => {

@@ -10,6 +10,7 @@ import type {
   DisplaySafeArea,
   ExportOptions,
   ExportProgress as NativeExportProgress,
+  MediaProbe,
   RecordingResult,
   RecordingState,
   SoundBank,
@@ -27,6 +28,7 @@ import type { PermissionStatus, Target, TargetKind } from "../shared/contract.js
 export type {
   DisplaySafeArea,
   ExportOptions,
+  MediaProbe,
   NativeExportProgress,
   PermissionStatus,
   RecordingResult,
@@ -198,6 +200,17 @@ export interface Recorder {
    * a normal recording.
    */
   probeSession(dir: string): Promise<TrackProbe[]>;
+
+  /**
+   * Reads what one file — any file, from anywhere — actually holds.
+   *
+   * `probeSession`'s opposite number, for the import: that one walks a
+   * directory of files this app wrote and reports one track each, and this one
+   * is handed a file nobody here made and has to say whether it has a picture,
+   * whether it has sound, and how long it runs. Whether it has sound is the
+   * answer that matters most — see `import-video.ts`.
+   */
+  probeMedia(path: string): Promise<MediaProbe>;
 
   /**
    * Plans a recording's typing and click sounds from what it noted.

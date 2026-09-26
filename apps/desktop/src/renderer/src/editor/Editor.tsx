@@ -15,7 +15,7 @@ import {
   type EditorSession,
   type TrackMedia,
 } from "../../../shared/contract";
-import { seamsOf, type MediaTime, type TrackKind } from "../../../shared/manifest";
+import { seamsOf, speechSegments, type MediaTime, type TrackKind } from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
   clickSoundId,
@@ -308,6 +308,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // section. The gallery, which has no addon, gets the section the same way.
   const hasSounds =
     (session.manifest.key_presses?.length ?? 0) > 0 || (session.manifest.clicks?.length ?? 0) > 0;
+
+  // Off the manifest for the same reason, and through the one function that
+  // answers it: a microphone, or a clip imported into this recording. The
+  // transcription asks the same question of the same code, so the panel cannot
+  // be offered over something nothing will listen to.
+  const hasSpeech = useMemo(() => speechSegments(session.manifest).length > 0, [session]);
 
   // The settings the playhead is currently under, which is not necessarily the
   // ones the inspector is showing — the preview follows the video, the panel
@@ -996,6 +1002,55 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   }, [media, session.dir, state.project]);
 
   /**
+   * Brings a video in from outside as another clip on this recording.
+   *
+   * `addRecording`'s twin, and everything it does for the same reasons: the
+   * preview is paused because the copy and the probe are about to take the
+   * disk, the edit is flushed because main is about to append a clip to the
+   * same file, and the component goes quiet on the way out because what it
+   * holds now predates that append.
+   *
+   * Nothing happens for a dismissed picker, which is what `false` means — the
+   * editor is showing exactly what it was, and reloading it would throw away the
+   * playhead and the selection for nothing.
+   */
+  const importVideo = useCallback(async () => {
+    media.playback.pause();
+
+    const saved = await window.prequel.editor.saveProject(session.dir, state.project);
+    if (!saved.ok) {
+      console.error("[editor] could not save before importing a video:", saved.message);
+      return;
+    }
+
+    // Before the call, not after it. Main copies the file in, merges it,
+    // appends a clip to `project.json` and tells this window to read the
+    // recording again — all of it before this promise resolves. Setting the
+    // flag afterwards is too late by a whole reload: the remount unmounts this
+    // component, whose cleanup writes the project it is still holding, and that
+    // project predates the clip main just added.
+    //
+    // Which is exactly what happened. The file copied, the manifest grew, the
+    // transcript picked it up — and the clip was never on the timeline, because
+    // the editor had written the timeline back as it was a moment earlier. The
+    // import looked like it had silently failed.
+    //
+    // `addRecording` sets the same flag on the way out and is safe there: its
+    // reload comes minutes later, when the panel is done.
+    superseded.current = true;
+
+    const result = await window.prequel.editor.importVideo();
+
+    // Nothing was added — a dismissed picker, or a file with no video in it.
+    // This component is still the live one and has to be allowed to save again;
+    // the file dialog is a sheet on this window, so there are no edits made
+    // while it was up to lose.
+    if (!result.ok || !result.value) superseded.current = false;
+
+    if (!result.ok) console.error("[editor] could not import a video:", result.message);
+  }, [media, session.dir, state.project]);
+
+  /**
    * The words as the finished file will have them, for the share page's
    * chapters. Computed live, like `durationMs`: the dialog is what stops the
    * edit changing between the export and the share.
@@ -1259,6 +1314,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               present={present}
               hasCursor={session.cursor !== null}
               hasSounds={hasSounds}
+              hasSpeech={hasSpeech}
               onAudition={media.audition}
               onPlaySample={playSample}
               captions={transcription}
@@ -1378,10 +1434,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           // is the answer for all of them.
           canAddZoom={zoomSpanNear(state.project, 0) !== null}
           canAddText={textSpanNear(state.project, 0) !== null}
-          // Off while an export is running: the recorder and the exporter fight
-          // over the same GPU and the same encoder, and the dock appearing over
-          // a render nobody asked to interrupt is the wrong outcome either way.
-          canAddRecording={!exportState.running}
+          // Off while an export is running. Recording fights the exporter for
+          // the same GPU and the same encoder, and either way of adding a clip
+          // rewrites the project the running export is reading from.
+          canAddClip={!exportState.running}
           canUndo={canUndo(state)}
           onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
           onAddText={() => {
@@ -1390,6 +1446,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             added.current = true;
           }}
           onAddRecording={() => void addRecording()}
+          onImportVideo={() => void importVideo()}
           onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
           onDelete={() => {
             if (state.selectedTextId) {

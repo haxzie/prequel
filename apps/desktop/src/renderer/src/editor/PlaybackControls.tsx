@@ -1,4 +1,4 @@
-import type { Dispatch } from "react";
+import { useEffect, useRef, useState, type Dispatch } from "react";
 
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
@@ -7,6 +7,8 @@ import {
   AddRecordingIcon,
   AddTextIcon,
   AddZoomIcon,
+  ChevronUpIcon,
+  ImportVideoIcon,
   ScissorsIcon,
   PauseIcon,
   PlayIcon,
@@ -56,13 +58,14 @@ export function PlaybackControls({
   media,
   canAddZoom,
   canAddText,
-  canAddRecording,
+  canAddClip,
   canSplit,
   canDelete,
   canUndo,
   onAddZoom,
   onAddText,
   onAddRecording,
+  onImportVideo,
   onSplit,
   onDelete,
   onUndo,
@@ -73,8 +76,8 @@ export function PlaybackControls({
   canAddZoom: boolean;
   /** Some row of texts has room for one. */
   canAddText: boolean;
-  /** Nothing else has the recorder busy, so another take can be added. */
-  canAddRecording: boolean;
+  /** Nothing else has the recording busy, so another clip can be added. */
+  canAddClip: boolean;
   /** A clip is selected, so there is something to cut. */
   canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
@@ -84,6 +87,7 @@ export function PlaybackControls({
   onAddZoom: () => void;
   onAddText: () => void;
   onAddRecording: () => void;
+  onImportVideo: () => void;
   onSplit: () => void;
   onDelete: () => void;
   onUndo: () => void;
@@ -237,22 +241,153 @@ export function PlaybackControls({
             disabled={!canAddText}
             onClick={onAddText}
           />
-          {/* Third in the pill, and the one that leaves the editor: it puts the
-              panel back over the screen so more footage can be recorded into
-              this same project, which arrives as another clip at the end. Here
+          {/* Third in the pill, and the only one of the three that asks a
+              question first: footage can come from the screen or from a file,
+              and both arrive the same way — as another clip at the end. Here
               rather than beside Split and Delete because it adds something to
               the timeline, which is what this group is for. */}
-          <Action
-            label="Add Recording"
-            shortcut="R"
-            Icon={AddRecordingIcon}
-            text
-            disabled={!canAddRecording}
-            onClick={onAddRecording}
+          <AddClip
+            disabled={!canAddClip}
+            onAddRecording={onAddRecording}
+            onImportVideo={onImportVideo}
           />
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Add Clip, and the two places a clip comes from.
+ *
+ * A menu rather than two buttons in the pill. They are the same verb — footage
+ * on the end of the timeline — and spelling both out put three words on a row
+ * whose other two controls are one word each, which read as three unrelated
+ * things rather than as one with a choice in it.
+ *
+ * Upwards, because the transport sits above the timeline at the bottom of the
+ * window and a menu dropped downwards would open off the screen.
+ */
+function AddClip({
+  disabled,
+  onAddRecording,
+  onImportVideo,
+}: {
+  disabled: boolean;
+  onAddRecording: () => void;
+  onImportVideo: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  // Closed the moment it cannot be used. Both choices leave the editor — one
+  // for the panel, one for a file dialog — and a menu left standing over the
+  // window they come back to is a menu nobody asked for.
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const choose = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        title="Add Clip"
+        aria-label="Add Clip"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        className={cn(
+          "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] [&_svg]:size-[15px]",
+          disabled
+            ? "text-editor-muted/40"
+            : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
+          open && "bg-white/10 text-editor-fg",
+        )}
+        onClick={() => setOpen(!open)}
+      >
+        <AddRecordingIcon />
+        <span>Add Clip</span>
+        {/* Smaller and dimmer than the glyph on the other side: it says the
+            button has more behind it, and it is not one of the two things being
+            chosen between. */}
+        <span className="text-editor-muted/60 [&_svg]:size-3">
+          <ChevronUpIcon />
+        </span>
+      </button>
+
+      {open && (
+        <>
+          {/* Click-away, behind the menu and over everything else — the same
+              pair the frame picker uses. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <ul
+            role="menu"
+            className={
+              "absolute right-0 bottom-full z-20 mb-1.5 w-48 rounded-xl border border-editor-line " +
+              "bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+            }
+            // Escape from inside the menu as well as from the trigger: the
+            // pointer is over the list by the time anybody wants out of it.
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              setOpen(false);
+              trigger.current?.focus();
+            }}
+          >
+            {/* The shortcut lives here rather than on the trigger: R records,
+                it does not open this menu, and a key listed on a button it does
+                not press is worse than one nobody finds. */}
+            <MenuItem
+              label="New Recording"
+              shortcut="R"
+              Icon={AddRecordingIcon}
+              onClick={() => choose(onAddRecording)}
+            />
+            <MenuItem
+              label="Import Video"
+              Icon={ImportVideoIcon}
+              onClick={() => choose(onImportVideo)}
+            />
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  label,
+  shortcut,
+  Icon,
+  onClick,
+}: {
+  label: string;
+  shortcut?: string;
+  Icon: () => React.JSX.Element;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        role="menuitem"
+        className={
+          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs " +
+          "text-editor-fg hover:bg-white/10 [&_svg]:size-[15px] [&_svg]:text-editor-muted"
+        }
+        onClick={onClick}
+      >
+        <Icon />
+        <span className="flex-1">{label}</span>
+        {shortcut && <span className="text-editor-muted">{shortcut}</span>}
+      </button>
+    </li>
   );
 }
 

@@ -16,8 +16,10 @@ import {
   fromSeconds,
   onSessionClock,
   parseTranscript,
+  untranscribed,
   type Transcript,
 } from "./transcript.js";
+import { MANIFEST_VERSION, type Manifest } from "./manifest.js";
 
 const RECORDING = "rec-1";
 
@@ -126,5 +128,72 @@ describe("onSessionClock", () => {
     const shifted = onSessionClock(words, { start: fromSeconds(2) });
 
     expect(shifted[0]!.end - shifted[0]!.at).toBe(fromSeconds(1));
+  });
+});
+
+const S = 1_000_000_000;
+
+/** A recording with a microphone, and a clip imported onto the end of it. */
+function recording(): Manifest {
+  return {
+    version: MANIFEST_VERSION,
+    id: RECORDING,
+    started_at: "2026-09-25T10:00:00Z",
+    duration: 14 * S,
+    source: { kind: "display", id: 1, title: "Display", scale_factor: 2 },
+    tracks: [
+      {
+        kind: "microphone",
+        segments: [{ file_name: "mic.m4a", start: 0, end: 10 * S, samples: 0, dropped: 0 }],
+      },
+      {
+        kind: "system_audio",
+        segments: [
+          { file_name: "2/screen.mp4", start: 10 * S, end: 14 * S, samples: 0, dropped: 0 },
+        ],
+      },
+    ],
+    takes: [
+      { dir: "", start: 0, end: 10 * S },
+      { dir: "2", start: 10 * S, end: 14 * S, imported: true },
+    ],
+  };
+}
+
+const parsed = (over: Partial<Transcript> = {}): Transcript =>
+  parseTranscript(transcript(over), RECORDING)!;
+
+describe("untranscribed", () => {
+  it("is everything when nothing has been transcribed", () => {
+    expect(untranscribed(recording(), null).map((segment) => segment.file_name)).toEqual([
+      "mic.m4a",
+      "2/screen.mp4",
+    ]);
+  });
+
+  it("is nothing when everything has been", () => {
+    const covered = parsed({ covered: ["mic.m4a", "2/screen.mp4"] });
+
+    expect(untranscribed(recording(), covered)).toEqual([]);
+  });
+
+  it("is the imported clip when only the microphone was transcribed", () => {
+    // The case this exists for: a recording captioned before the clip was
+    // imported. The words already written are still right — appending never
+    // moves a timestamp — so only the new footage is listened to.
+    const covered = parsed({ covered: ["mic.m4a"] });
+
+    expect(untranscribed(recording(), covered).map((segment) => segment.file_name)).toEqual([
+      "2/screen.mp4",
+    ]);
+  });
+
+  it("reads a transcript written before imports as having covered the microphone", () => {
+    // No `covered` list at all, which is every transcript written before this.
+    // Read as "covered nothing" it would transcribe the whole recording again
+    // on the next open and hand back words it already had.
+    expect(untranscribed(recording(), parsed()).map((segment) => segment.file_name)).toEqual([
+      "2/screen.mp4",
+    ]);
   });
 });

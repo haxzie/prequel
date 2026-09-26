@@ -167,6 +167,12 @@ export interface InspectorProps {
    */
   hasSounds: boolean;
   /**
+   * Whether there is anything here to caption: a microphone, or a clip imported
+   * into the recording — see `speechSegments`. Never the system audio of a take
+   * that was recorded, which is whatever was coming out of the speakers.
+   */
+  hasSpeech: boolean;
+  /**
    * Plays one voice of a profile, so a keyboard can be heard as it is chosen
    * rather than only once the edit is playing.
    */
@@ -504,9 +510,9 @@ export function Inspector(props: InspectorProps) {
       : []),
     ...(props.hasCursor ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }] : []),
     // Only where there is a voice to caption. A recording with no microphone
-    // has nothing to transcribe, and offering the panel anyway would be a
-    // section whose every control is dead.
-    ...(props.present.has("microphone")
+    // and no imported clip has nothing to transcribe, and offering the panel
+    // anyway would be a section whose every control is dead.
+    ...(props.hasSpeech
       ? [{ id: "captions" as const, label: "Captions", Icon: CaptionsIcon }]
       : []),
     // Past the conditional ones, and beside the logo rather than among the

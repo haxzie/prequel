@@ -14,6 +14,7 @@ import {
   ManifestError,
   parseManifest,
   seamsOf,
+  speechSegments,
   trackStart,
 } from "./manifest.js";
 
@@ -199,5 +200,69 @@ describe("parseManifest", () => {
     // A silent audio track produces no file and no entry, so absence is the
     // honest answer — not a zero-length track.
     expect(findTrack(parseManifest(JSON.stringify(sample())), "microphone")).toBeUndefined();
+  });
+});
+
+/**
+ * A recording with a microphone, the system audio it was made with, and a video
+ * imported onto the end of it — which has sound of its own and no microphone.
+ */
+function withAnImport(): Manifest {
+  const base = sample();
+  return {
+    ...base,
+    duration: 14 * S,
+    tracks: [
+      ...base.tracks,
+      {
+        kind: "microphone",
+        segments: [{ file_name: "mic.m4a", start: 0, end: 10 * S, samples: 470, dropped: 0 }],
+      },
+      {
+        kind: "system_audio",
+        segments: [
+          // What was playing through the speakers while somebody recorded.
+          { file_name: "system.m4a", start: 0, end: 10 * S, samples: 470, dropped: 0 },
+          // The imported clip's own sound, inside its video.
+          { file_name: "2/screen.mp4", start: 10 * S, end: 14 * S, samples: 0, dropped: 0 },
+        ],
+      },
+    ],
+    takes: [
+      { dir: "", start: 0, end: 10 * S },
+      { dir: "2", start: 10 * S, end: 14 * S, imported: true },
+    ],
+  };
+}
+
+describe("speechSegments", () => {
+  it("reads the microphone", () => {
+    expect(speechSegments(withAnImport()).map((segment) => segment.file_name)).toContain("mic.m4a");
+  });
+
+  it("reads an imported clip's own sound", () => {
+    // The narration of an imported clip is inside its video and there is no
+    // microphone beside it, so this is the only place its words can come from.
+    expect(speechSegments(withAnImport()).map((segment) => segment.file_name)).toContain(
+      "2/screen.mp4",
+    );
+  });
+
+  it("never reads a recorded take's system audio", () => {
+    // The whole reason the take is marked rather than the track: this is
+    // whatever was coming out of the speakers, and captioning it would put the
+    // words of a video somebody watched into the transcript of their recording.
+    expect(speechSegments(withAnImport()).map((segment) => segment.file_name)).not.toContain(
+      "system.m4a",
+    );
+  });
+
+  it("puts them in clock order", () => {
+    const segments = speechSegments(withAnImport());
+    expect(segments.map((segment) => segment.start)).toEqual([0, 10 * S]);
+  });
+
+  it("finds nothing in a recording with no voice in it", () => {
+    expect(speechSegments(sample())).toEqual([]);
   });
 });

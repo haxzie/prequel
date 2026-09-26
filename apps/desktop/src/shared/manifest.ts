@@ -138,6 +138,17 @@ export interface Take {
   dir?: string;
   start: MediaTime;
   end: MediaTime;
+  /**
+   * A video brought in from outside rather than recorded here.
+   *
+   * Absent on every take a capture wrote, and on every recording made before
+   * importing existed. What reads it is `speechSegments`: an imported clip's
+   * sound is its own — somebody talking over their own screen — where a
+   * recorded take's system audio is whatever happened to be playing, and
+   * captioning that would put the words of a video somebody watched into the
+   * transcript of a recording they made.
+   */
+  imported?: boolean;
 }
 
 /** A rectangle in the display's own points. See `SourceInfo.crop`. */
@@ -427,4 +438,38 @@ export function trackStart(track: Track): MediaTime {
  */
 export function seamsOf(manifest: Manifest): MediaTime[] {
   return manifest.takes.slice(1).map((take) => take.start);
+}
+
+/**
+ * The audio a transcription reads, in clock order.
+ *
+ * Every microphone file, which is the whole of it for a recording nobody has
+ * imported into — a voice track is recorded to be listened to. Plus the sound
+ * of each imported take, which is the file's own: an imported clip has no
+ * microphone, and its narration is inside the video.
+ *
+ * A *recorded* take's system audio is deliberately never here. That is whatever
+ * was coming out of the speakers, and transcribing it would caption a recording
+ * with the words of a video somebody happened to be watching.
+ *
+ * The one definition of "what is there to caption", shared by the editor — which
+ * decides whether to offer the panel at all — and by the transcription itself.
+ * Two answers to that would be a Captions panel over a recording that transcribes
+ * nothing.
+ */
+export function speechSegments(manifest: Manifest): Segment[] {
+  const imported = manifest.takes.filter((take) => take.imported);
+
+  const segments = manifest.tracks.flatMap((track) => {
+    if (track.kind === "microphone") return track.segments;
+    if (track.kind !== "system_audio") return [];
+
+    // By the take it falls in rather than by its file name, which is the
+    // import's own convention and not something this should know.
+    return track.segments.filter((segment) =>
+      imported.some((take) => segment.start >= take.start && segment.start < take.end),
+    );
+  });
+
+  return segments.sort((a, b) => a.start - b.start);
 }

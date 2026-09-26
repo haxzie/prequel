@@ -17,7 +17,7 @@ mod video;
 
 pub use audio::{AudioWriter, AudioWriterConfig, AudioWriterSummary};
 pub use gif::GifWriter;
-pub use probe::{TrackProbe, probe_file};
+pub use probe::{MediaProbe, TrackProbe, probe_file, probe_media};
 pub use time::{host_nanos, host_now};
 pub use video::{VideoCodec, VideoWriter, VideoWriterConfig, VideoWriterSummary};
 

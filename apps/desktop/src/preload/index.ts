@@ -273,6 +273,17 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.editorAddRecording),
 
     /**
+     * Brings a video in from outside as another clip on this recording.
+     *
+     * Main opens the picker, copies the file in and merges it, then tells the
+     * editor to read the recording again — so what comes back is only whether
+     * anything was added. False for a dismissed picker and for a file that held
+     * no video; either way the editor has nothing to do.
+     */
+    importVideo: (): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorImportVideo),
+
+    /**
      * Main says a recording has changed on disk and should be read again.
      *
      * What a finished Add Recording lands on. The route does not change across

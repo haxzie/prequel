@@ -687,6 +687,42 @@ export function AddRecordingIcon() {
   );
 }
 
+/**
+ * Lucide `file-video-2` with an arrow into it: Import Video.
+ *
+ * A file rather than a second camera. Beside `AddRecordingIcon` in the same
+ * menu, the two have to differ at a glance in *where the footage comes from*,
+ * and a plus against an arrow is that difference — one makes footage, the other
+ * brings some in.
+ */
+export function ImportVideoIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v5" />
+      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+      <path d="M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1" />
+      <path d="M2 14h7" />
+      <path d="m6 11-3 3 3 3" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `chevron-down`, upside down: the Add Clip menu opens upwards.
+ *
+ * Drawn pointing the way the menu goes rather than the way a select's arrow
+ * conventionally does — the transport is at the bottom of the window, and an
+ * arrow pointing into the timeline would be pointing at the one place the menu
+ * cannot appear.
+ */
+export function ChevronUpIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={2} aria-hidden="true">
+      <path d="m18 15-6-6-6 6" />
+    </svg>
+  );
+}
+
 /** Lucide `move`: the four-way arrows of a position control. */
 export function MoveIcon() {
   return (

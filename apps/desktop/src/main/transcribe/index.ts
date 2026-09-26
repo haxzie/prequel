@@ -20,11 +20,14 @@ import { toEveryWindow } from "../broadcast.js";
 
 import type { TranscribeProgress } from "../../shared/contract.js";
 import { IPC_CHANNELS } from "../../shared/contract.js";
-import { MANIFEST_FILE_NAME, parseManifest } from "../../shared/manifest.js";
+import type { Manifest } from "../../shared/manifest.js";
+import { MANIFEST_FILE_NAME, findTrack, parseManifest } from "../../shared/manifest.js";
 import {
   TRANSCRIPT_FILE_NAME,
   TRANSCRIPT_VERSION,
   onSessionClock,
+  parseTranscript,
+  untranscribed,
   type Transcript,
 } from "../../shared/transcript.js";
 import { track } from "../analytics.js";
@@ -37,9 +40,15 @@ let running: string | null = null;
 let cancelling: AbortController | null = null;
 
 /**
- * Transcribes a recording's microphone track and writes `transcript.json`.
+ * Transcribes whatever in a recording has not been transcribed yet, and writes
+ * `transcript.json`.
  *
- * Rejects a second one rather than queueing. Two uploads of the same recording
+ * The microphone, and the sound of any clip imported into the recording — see
+ * `speechSegments`. Extending rather than replacing, so adding footage to a
+ * recording that already has captions costs one pass over the new footage
+ * instead of a fresh pass over all of it.
+ *
+ * Rejects a second one rather than queueing. Two of these on the same recording
  * would both write the same file, and the loser would overwrite the winner.
  */
 export async function startTranscribe(dir: string): Promise<void> {
@@ -56,12 +65,20 @@ export async function startTranscribe(dir: string): Promise<void> {
 
   try {
     const manifest = parseManifest(await readFile(join(dir, MANIFEST_FILE_NAME), "utf8"));
-    const mic = manifest.tracks.find((track) => track.kind === "microphone");
 
-    if (!mic) {
+    // What is already on disk, and what it has not listened to. Both, because
+    // footage can be added to a recording that has already been transcribed —
+    // an imported clip, or a second take — and the words already written are
+    // still right: appending never moves an existing timestamp.
+    const existing = await readExisting(dir, manifest.id);
+    const pending = untranscribed(manifest, existing);
+
+    if (pending.length === 0) {
       throw new TranscribeError(
-        "NO_MICROPHONE",
-        "This recording has no microphone track to transcribe.",
+        "NO_SPEECH",
+        existing
+          ? "Everything in this recording has been transcribed already."
+          : "This recording has no microphone or imported clip to transcribe.",
       );
     }
 
@@ -78,15 +95,26 @@ export async function startTranscribe(dir: string): Promise<void> {
       );
     }
 
-    // One pass per segment: a recording extended with another take has one mic
-    // file per take, and each is its own zero-based recording as far as any
-    // provider is concerned.
-    const total = mic.segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
-    const words: Transcript["words"] = [];
+    // One pass per segment: a recording extended with another take has one file
+    // per take, and each is its own zero-based recording as far as any provider
+    // is concerned. An imported clip's file is its video — `AVAudioFile` reads
+    // the sound out of an MP4 with a picture in it, so nothing has to be
+    // extracted first.
+    const total = pending.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
+    const words: Transcript["words"] = [...(existing?.words ?? [])];
     let done = 0;
     let last: TranscribeResult | null = null;
 
-    for (const segment of mic.segments) {
+    // Listened to, and what stopped the rest being listened to. Per segment,
+    // because one file saying nothing must not decide anything about the next:
+    // a take recorded with the microphone muted sits in the middle of plenty of
+    // recordings, and it used to take the whole transcription down with it —
+    // including the imported clip after it, which had a hundred and sixty words
+    // in it. Nothing was written, and the editor tried again on every open.
+    const covered: string[] = [];
+    let failure: unknown = null;
+
+    for (const segment of pending) {
       // The path rather than the bytes: the engine opens the file itself, and
       // reading a half-hour take in only to hand it straight back would be the
       // peak memory of the whole app for nothing.
@@ -94,37 +122,69 @@ export async function startTranscribe(dir: string): Promise<void> {
       const share = total > 0 ? (segment.end - segment.start) / total : 1;
       const base = done;
 
-      const result = await provider.transcribe(audio, controller.signal, (stage, progress) =>
-        // Weighted by how much of the recording this segment is, so the bar
-        // crosses the whole recording once rather than restarting per take.
-        broadcast({
-          stage,
-          progress: progress === null ? null : base + progress * share,
-          error: null,
-        }),
-      );
+      try {
+        const result = await provider.transcribe(audio, controller.signal, (stage, progress) =>
+          // Weighted by how much of the recording this segment is, so the bar
+          // crosses the whole recording once rather than restarting per take.
+          broadcast({
+            stage,
+            progress: progress === null ? null : base + progress * share,
+            error: null,
+          }),
+        );
 
-      // The one clock conversion. The provider measured from the start of this
-      // segment's file, which is zero-based; where that file sits in the
-      // session lives only in the manifest.
-      words.push(...onSessionClock(result.words, segment));
+        // The one clock conversion. The provider measured from the start of this
+        // segment's file, which is zero-based; where that file sits in the
+        // session lives only in the manifest.
+        words.push(...onSessionClock(result.words, segment));
+        covered.push(segment.file_name);
+        last = result;
+      } catch (cause) {
+        // A cancellation is the whole job, not this file.
+        if (controller.signal.aborted) throw cause;
+
+        // Nothing was said in it, which is an answer rather than a failure.
+        // Counted as listened to, so it is not offered again on every open for
+        // the rest of the recording's life.
+        if (cause instanceof TranscribeError && cause.code === "NO_SPEECH") {
+          covered.push(segment.file_name);
+          console.warn(`[transcribe] no speech in ${segment.file_name}`);
+        } else {
+          // A real failure — a file that would not open, a model that went
+          // away. Deliberately *not* covered, so the next open tries it again,
+          // and held in case it turns out to be the only thing that happened.
+          failure ??= cause;
+          console.error(`[transcribe] could not transcribe ${segment.file_name}:`, cause);
+        }
+      }
+
       done = base + share;
-      last = result;
     }
+
+    // Nothing was listened to at all: report whatever stopped it, rather than
+    // writing a transcript that claims the recording is silent.
+    if (covered.length === 0) throw failure ?? new TranscribeError("FAILED", "Nothing to read.");
 
     const transcript: Transcript = {
       version: TRANSCRIPT_VERSION,
       recordingId: manifest.id,
       provider: provider.name,
-      // The last segment's, and every segment ran through the same provider on
-      // the same machine — these describe the engine, not the audio. A track
-      // always has a segment, so the fallbacks are unreachable; interpolated is
-      // the one that makes the editor decline word-by-word highlighting rather
-      // than light the wrong word.
-      model: last?.model ?? "",
-      language: last?.language ?? "",
-      timings: last?.timings ?? "interpolated",
-      words,
+      // Sorted, because a pass that only added the tail is the common case but
+      // not the guaranteed one, and everything downstream walks these in order.
+      // The list of what has been listened to grows with them — see `covered`.
+      // The last segment's, falling back to what the transcript already said —
+      // every segment ran through the same provider on the same machine, so
+      // these describe the engine and not the audio. A pass where every file
+      // was silent has no result of its own to describe, and an older
+      // transcript's answer is the true one there.
+      model: last?.model ?? existing?.model ?? "",
+      language: last?.language ?? existing?.language ?? "",
+      timings: last?.timings ?? existing?.timings ?? "interpolated",
+      words: words.sort((a, b) => a.at - b.at),
+      // What was actually listened to, which is not the same as what was
+      // offered: a file that failed to open is left out so the next open picks
+      // it up again.
+      covered: [...(existing?.covered ?? coveredBefore(manifest, existing)), ...covered],
     };
 
     await writeFile(join(dir, TRANSCRIPT_FILE_NAME), JSON.stringify(transcript, null, 2), "utf8");
@@ -147,6 +207,36 @@ export async function startTranscribe(dir: string): Promise<void> {
     console.error(`transcription failed: ${error.message}`);
     finish({ stage: "failed", progress: null, error });
   }
+}
+
+/**
+ * The transcript beside this recording, or null.
+ *
+ * Read here as well as in `readEditorSession` because this is where it is
+ * extended: what has already been listened to is the only thing that says which
+ * files are left. A transcript that will not parse is null, which transcribes
+ * the recording from the top — the same answer the editor gives it.
+ */
+async function readExisting(dir: string, recordingId: string): Promise<Transcript | null> {
+  try {
+    return parseTranscript(await readFile(join(dir, TRANSCRIPT_FILE_NAME), "utf8"), recordingId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a transcript written before `covered` existed had listened to.
+ *
+ * The microphone, and only the microphone — that is all any of those builds
+ * transcribed. Written out in full on the way past so the next run has a list
+ * rather than this assumption again.
+ */
+function coveredBefore(manifest: Manifest, existing: Transcript | null): string[] {
+  if (!existing) return [];
+
+  const mic = findTrack(manifest, "microphone");
+  return mic?.segments.map((segment) => segment.file_name) ?? [];
 }
 
 /** Asks the running transcription to stop. Safe to call when nothing is running. */

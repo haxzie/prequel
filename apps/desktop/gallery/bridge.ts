@@ -222,6 +222,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       // Nothing to record into. The gallery drives the editor over fixture
       // recordings, and there is no capture pipeline behind this window.
       addRecording: () => ok(null),
+      // And nothing to import into it either: false is "nothing was added",
+      // which is what a dismissed picker answers, so the editor carries on
+      // showing the fixture it already has.
+      importVideo: () => ok(false),
       // Nothing ever changes a fixture on disk, so nothing ever fires this.
       onReload: () => () => undefined,
       // No addon to render one. The preview schedules nothing for a bank it

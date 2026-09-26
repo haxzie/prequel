@@ -161,6 +161,14 @@ pub struct Take {
     pub dir: String,
     pub start: MediaTime,
     pub end: MediaTime,
+    /// A video brought in from outside rather than recorded here.
+    ///
+    /// Never written by a capture — the import writes it, in TypeScript, and
+    /// the merge carries it across. Mirrored here so a manifest that survives a
+    /// round trip through this struct keeps it: dropped, an imported take's
+    /// sound would silently stop being transcribed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub imported: bool,
 }
 
 impl Take {
@@ -498,6 +506,7 @@ mod tests {
                 dir: String::new(),
                 start: 0,
                 end: 10 * S,
+                imported: false,
             }],
             cursor_baked: false,
             clicks: Vec::new(),
@@ -586,6 +595,7 @@ mod tests {
                 dir: String::new(),
                 start: 0,
                 end: 10 * S,
+                imported: false,
             }]
         );
         let screen = parsed.track(TrackKind::Screen).unwrap();

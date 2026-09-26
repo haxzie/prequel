@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { EditorSession } from "../../../shared/contract";
-import type { Transcript } from "../../../shared/transcript";
+import { untranscribed, type Transcript } from "../../../shared/transcript";
 import type { CaptionsState } from "./Inspector";
 
 /** The transcript in force, and everything the captions panel shows about it. */
@@ -38,16 +38,19 @@ export function useTranscription(session: EditorSession): Transcription {
   }, [session]);
 
   /**
-   * Transcribes a recording with a microphone the first time it is opened.
+   * Transcribes whatever has not been transcribed yet, the first time the
+   * recording is opened.
    *
    * Automatic rather than a button, because there is nothing to decide: it runs
    * on this machine, it costs nothing, and a button that everyone presses every
    * time is a step in the way of the thing they came for.
    *
-   * Once per session and only when there is no transcript already — the file on
-   * disk is the record of it having run, so reopening a captioned recording
-   * does not transcribe it again. A failure is not retried automatically
-   * either; reopening the recording is what asks for that.
+   * Once per session, and asked of the transcript rather than of its existence:
+   * a clip imported into a recording that was captioned months ago is footage
+   * nothing has listened to, and "there is a transcript" would call that done.
+   * The answer comes from `untranscribed`, which main asks the same way. A
+   * failure is not retried automatically; reopening the recording is what asks
+   * for that.
    */
   const asked = useRef(false);
 
@@ -56,8 +59,8 @@ export function useTranscription(session: EditorSession): Transcription {
   }, [session.dir]);
 
   useEffect(() => {
-    if (asked.current || session.transcript) return;
-    if (!session.media.some((track) => track.kind === "microphone")) return;
+    if (asked.current) return;
+    if (untranscribed(session.manifest, session.transcript).length === 0) return;
 
     asked.current = true;
     setStage("preparing");
@@ -106,7 +109,11 @@ export function useTranscription(session: EditorSession): Transcription {
 
   return {
     transcript,
-    ready: transcript !== null,
+    // Words, not a file. A recording where every source turned out to be silent
+    // now gets a transcript of its own — that is what stops it being offered for
+    // transcription again on every open — and there is still nothing to caption
+    // with, so the switch stays off and the panel still says so.
+    ready: (transcript?.words.length ?? 0) > 0,
     stage,
     progress,
     error,

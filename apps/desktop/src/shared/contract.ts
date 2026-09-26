@@ -622,6 +622,16 @@ export const IPC_CHANNELS = {
    */
   editorAddRecording: "editor:addRecording",
   /**
+   * Editor renderer → main: bring a video in from outside as another clip.
+   *
+   * `editorAddRecording`'s sibling, and it flushes for the same reason: an
+   * import appends a clip to `project.json` the moment the copy finishes, and a
+   * debounced save landing after that would write the pre-import project back
+   * over it. What comes back says whether anything was added, so the editor can
+   * tell a dismissed picker from a file it could not read.
+   */
+  editorImportVideo: "editor:importVideo",
+  /**
    * Main → the editor: read this recording again.
    *
    * Carries the recording's name so an editor showing a different one ignores

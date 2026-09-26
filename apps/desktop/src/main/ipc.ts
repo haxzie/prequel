@@ -34,6 +34,7 @@ import type {
 import type { Project } from "../shared/project.js";
 import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
+import { chooseVideo, importVideo } from "./import-video.js";
 import type { Teleprompter } from "./teleprompter/index.js";
 import { saveProject } from "./editor-project.js";
 import { isBindable } from "../shared/accelerator.js";
@@ -389,6 +390,33 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
       workspace.flush();
       await flow.extendRecording(dir);
       return null;
+    }),
+  );
+
+  /**
+   * A video from outside, as another clip on this recording.
+   *
+   * The same two flushes `editorAddRecording` does, and the same rule about the
+   * directory: it comes from `workspace`, never from the renderer. The picker is
+   * opened here rather than in the renderer because a renderer cannot open one —
+   * and answering `false` for a dismissed picker is what keeps the editor from
+   * reloading itself for nothing.
+   */
+  ipcMain.handle(IPC_CHANNELS.editorImportVideo, () =>
+    attempt(async () => {
+      const dir = workspace.currentDir;
+      if (!dir) return false;
+
+      const source = await chooseVideo(workspace.browserWindow());
+      if (!source) return false;
+
+      workspace.flush();
+
+      const merged = await importVideo(dir, source);
+      // Reloaded from here, exactly as a finished take is: the editor is holding
+      // a manifest that is now a take out of date, and the route does not change.
+      if (merged) workspace.resumeEditing(dir);
+      return merged !== null;
     }),
   );
 

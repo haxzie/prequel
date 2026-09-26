@@ -10,7 +10,8 @@
  * Deliberately free of any `electron` or Node import: main writes it, the
  * renderer receives it over IPC, and both need the same types.
  */
-import type { MediaTime, Segment } from "./manifest.js";
+import type { Manifest, MediaTime, Segment } from "./manifest.js";
+import { findTrack, speechSegments } from "./manifest.js";
 
 /**
  * Bumped whenever the shape changes incompatibly.
@@ -70,6 +71,21 @@ export interface Transcript {
   language: string;
   timings: Timings;
   words: TranscriptWord[];
+  /**
+   * The audio files these words were read from, by segment name.
+   *
+   * What makes a transcript extendable rather than a thing that is either there
+   * or not. Footage is added to the end of a recording — a second take, or a
+   * video imported into it — and the words already here are still exactly
+   * right, because appending never moves a timestamp. The only question is what
+   * has *not* been listened to, and that cannot be answered from the words: a
+   * clip nobody spoke over and a clip nobody transcribed both have none.
+   *
+   * Absent on every transcript written before this existed, which is read as
+   * "the microphone files" — that is all any of those builds transcribed. See
+   * `untranscribed`.
+   */
+  covered?: string[];
 }
 
 export class TranscriptError extends Error {
@@ -118,7 +134,42 @@ export function parseTranscript(text: string, recordingId: string): Transcript |
     // these in order, and a provider that returns one word out of place would
     // show up as a caption that flickers rather than as bad data.
     words: [...words].sort((a, b) => a.at - b.at),
+    // Left absent rather than defaulted here, so `untranscribed` can tell an
+    // older transcript from one that covered nothing at all.
+    ...(Array.isArray(value.covered) && value.covered.every((name) => typeof name === "string")
+      ? { covered: [...value.covered] }
+      : {}),
   };
+}
+
+/**
+ * The audio with no words for it yet, in clock order.
+ *
+ * The whole of a recording's speech when there is no transcript, and nothing at
+ * all when everything has been listened to — so "should this transcribe?" is
+ * one call, asked the same way by the editor on open and by the transcription
+ * itself.
+ *
+ * A transcript with no `covered` list predates importing, and every build that
+ * wrote one transcribed the microphone and nothing else. Read that way rather
+ * than as "covered nothing", or opening an old recording would transcribe it
+ * again from the top and hand back words it already had.
+ */
+export function untranscribed(manifest: Manifest, transcript: Transcript | null): Segment[] {
+  const speech = speechSegments(manifest);
+  if (!transcript) return speech;
+
+  const covered = new Set(
+    transcript.covered ??
+      speech.filter((segment) => micFiles(manifest).has(segment.file_name)).map((s) => s.file_name),
+  );
+
+  return speech.filter((segment) => !covered.has(segment.file_name));
+}
+
+function micFiles(manifest: Manifest): Set<string> {
+  const mic = findTrack(manifest, "microphone");
+  return new Set(mic?.segments.map((segment) => segment.file_name) ?? []);
 }
 
 /**

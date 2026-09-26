@@ -25,7 +25,10 @@ mod transcribe;
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
 pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};
 pub use logging::set_log_file;
-pub use probe::{CaptureWallpaper, ProbeSession, TrackProbe, capture_wallpaper, probe_session};
+pub use probe::{
+    CaptureWallpaper, MediaProbe, ProbeMedia, ProbeSession, TrackProbe, capture_wallpaper,
+    probe_media, probe_session,
+};
 pub use screen::{DisplaySafeArea, display_safe_area};
 pub use sound::{
     SoundBank, SoundCues, SoundEvents, SoundSample, sound_bank, sound_cues, sound_sample,
@@ -251,6 +254,9 @@ fn write_manifest(
             dir: String::new(),
             start: 0,
             end: duration,
+            // A capture is never an import. The flag exists for the take the
+            // import writes by hand, in TypeScript.
+            imported: false,
         }],
         cursor_baked: plan.cursor_baked,
         // Buttons and where — the editor's automatic zooms are built from when
