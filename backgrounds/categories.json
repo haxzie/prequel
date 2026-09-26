@@ -3,6 +3,7 @@
     { "id": "wallpapers", "label": "Wallpapers" },
     { "id": "aurora", "label": "Aurora" },
     { "id": "softlight", "label": "Soft Light" },
-    { "id": "glass", "label": "Glass" }
+    { "id": "glass", "label": "Glass" },
+    { "id": "anime", "label": "Anime" }
   ]
 }
