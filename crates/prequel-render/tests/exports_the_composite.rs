@@ -157,6 +157,7 @@ fn plan() -> RenderPlan {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
         ],

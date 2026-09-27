@@ -36,6 +36,11 @@ const RADIUS: Record<CameraShape, string> = {
   // wide, and a percentage resolved per axis would round the short edges harder
   // than the long ones.
   portrait: "4px",
+  // A circle on the map. The real outline comes from the recording and changes
+  // every frame, and a map of the frame is about *where* the camera sits — a
+  // silhouette drawn here would be a picture of one moment of the take and wrong
+  // for all the others.
+  blob: "50%",
 };
 
 export function CameraMap({

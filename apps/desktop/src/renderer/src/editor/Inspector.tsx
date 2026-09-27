@@ -109,6 +109,7 @@ import {
   SpeakerIcon,
   SpeedIcon,
   SquircleIcon,
+  BlobIcon,
   StrengthIcon,
   TiltIcon,
   TypingIcon,
@@ -196,6 +197,15 @@ export interface InspectorProps {
   cameraSource: Size | null;
   /** Whether the camera came with a person matte, which the cutout needs. */
   cameraMatte: boolean;
+  /**
+   * Whether the recording fitted an outline, which the shape that follows
+   * somebody needs.
+   *
+   * Its own answer rather than `cameraMatte`: the two were written at different
+   * times, so a recording can have the mask and not the outline. Reading one for
+   * the other would offer a shape that renders as a plain circle.
+   */
+  cameraBlobs: boolean;
   /**
    * Play the selected zoom's span once, to show what a control just changed.
    *
@@ -779,6 +789,7 @@ export function Inspector(props: InspectorProps) {
                   frame={props.frame}
                   cameraSource={props.cameraSource}
                   cameraMatte={props.cameraMatte}
+                  cameraBlobs={props.cameraBlobs}
                   field={field}
                   set={set}
                 />
@@ -1290,6 +1301,7 @@ function CameraPanel({
   frame,
   cameraSource,
   cameraMatte,
+  cameraBlobs,
   field,
   set,
 }: {
@@ -1299,6 +1311,8 @@ function CameraPanel({
   cameraSource: Size | null;
   /** Whether the recording has a person matte beside the camera. */
   cameraMatte: boolean;
+  /** Whether it fitted an outline, which the shape that follows somebody needs. */
+  cameraBlobs: boolean;
   field: FieldProps;
   set: Setter;
 }) {
@@ -1380,6 +1394,19 @@ function CameraPanel({
                 icon: <CutoutIcon />,
                 disabled: !cameraMatte,
               },
+              {
+                value: "blob",
+                label: "Follow me",
+                // Greyed rather than hidden on a recording with no fitted
+                // outline, for the reason the cutout is: the option still says
+                // the shape exists, and the tooltip says why it cannot be had
+                // on this take.
+                title: cameraBlobs
+                  ? "The shape follows you, and opens around a raised hand"
+                  : "This recording was made before the camera could be shaped this way",
+                icon: <BlobIcon />,
+                disabled: !cameraBlobs,
+              },
               { value: "circle", label: "Circle", icon: <CircleIcon /> },
               { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
               { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
@@ -1412,7 +1439,13 @@ function CameraPanel({
         {/* The shape control writes this; the slider is how it is taken off the
           five it offers. A circle is the top of the range rather than a case of
           its own — half the shorter edge is a rounded rectangle with nothing
-          straight left in it. */}
+          straight left in it.
+
+          Under Follow me it is the same word for a different quantity: that
+          shape has no corners, so what is left for "roundness" to mean is how
+          near a circle it stays. At the top it is a gentle egg, and winding it
+          down lets the lobes of the silhouette through. Picking the shape puts
+          it at the top. */}
         <Slider
           icon={<CornerRadiusIcon />}
           label="Roundness"

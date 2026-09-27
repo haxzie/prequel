@@ -9,6 +9,9 @@
  * that missing compiler: the class of mistake that is invisible everywhere
  * else and obvious once named.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { FILTER_SHADER_SOURCE } from "./filters";
@@ -105,5 +108,90 @@ describe.each(PAIRS)("%s", (_name, pair) => {
 
   it("has both stages", () => {
     expect(sources.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+  });
+});
+
+/**
+ * The outline's arithmetic, on both sides.
+ *
+ * The camera shape that follows somebody is the one shape a rasteriser *derives*
+ * rather than being handed: the plan carries circles and each side unions them.
+ * Two slightly different unions is a preview and an export whose outlines differ
+ * where a hand meets a shoulder — visible only by exporting and comparing, and
+ * only on the take that has the hand in it.
+ *
+ * Read from disk rather than imported, for the reason `filters.test.ts` does it:
+ * the MSL is a `.metal` file `include_str!`-ed into a Rust crate, and there is no
+ * import to make.
+ */
+const METAL = readFileSync(
+  join(import.meta.dirname, "../../../../../../crates/prequel-render/src/shaders.metal"),
+  "utf8",
+);
+
+/** A function's body, from its signature to the closing brace of its block. */
+function body(source: string, signature: string): string | null {
+  const at = source.indexOf(signature);
+  if (at < 0) return null;
+  const end = source.indexOf("\n}", at);
+  return end < 0 ? null : source.slice(at, end);
+}
+
+/**
+ * The statements, with everything that is only spelling taken out.
+ *
+ * Comments, whitespace, the two languages' names for the same types and the two
+ * spellings of the same identifier. What is left is the arithmetic, which is what
+ * has to match.
+ */
+const arithmetic = (source: string) =>
+  code(source)
+    .replaceAll(/\bstatic\b/g, "")
+    // MSL passes the whole uniform block in; GLSL declares each uniform at file
+    // scope and takes none. Same values, different way of reaching them.
+    .replaceAll(", constant Uniforms &u", "")
+    // The two languages' names for the two-argument arctangent.
+    .replaceAll(/\batan2\b/g, "atan")
+    .replaceAll(/\bfloat[234]?\b/g, "N")
+    .replaceAll(/\bvec[234]\b/g, "N")
+    .replaceAll(/\bblob_distance\b/g, "blobDistance")
+    .replaceAll(/\bu\.(\w+)/g, (_, name: string) => `u_${name}`)
+    .replaceAll(/\s+/g, " ")
+    .trim();
+
+describe("the outline both rasterisers draw", () => {
+  it("bends by the same series on each side", () => {
+    // The one shape a rasteriser *derives* rather than being handed: the plan
+    // carries six harmonic coefficients and each side turns them into a curve.
+    // Two slightly different curves is a preview and an export whose outlines
+    // disagree — visible only by exporting and comparing.
+    const glsl = body(SHADER_SOURCE().fragment, "float blobDistance(");
+    const msl = body(METAL, "static float blob_distance(");
+
+    expect(glsl, "blobDistance in the GLSL").not.toBeNull();
+    expect(msl, "blob_distance in the MSL").not.toBeNull();
+    expect(arithmetic(glsl!)).toBe(arithmetic(msl!));
+  });
+
+  it("mirrors the outline on each side", () => {
+    // The camera is flipped by flipping its uv, which leaves an outline that
+    // knows nothing about it facing the way the camera did while the person
+    // faces the other. Done on one side only, the preview and the export put the
+    // shape over opposite shoulders.
+    for (const [name, source] of [
+      ["the preview", body(SHADER_SOURCE().fragment, "float blobDistance(")],
+      ["the exporter", body(METAL, "static float blob_distance(")],
+    ] as const) {
+      expect(arithmetic(source!), name).toContain("d.x = -d.x;");
+    }
+  });
+
+  it("chooses the outline by its radius, on each side", () => {
+    // The one that fails silently: a moment with nobody in front of the camera
+    // has a presence of zero, and a side that fell back to the rounded rectangle
+    // there would draw the whole uncropped camera picture across the frame for
+    // as long as they were out of shot.
+    expect(arithmetic(SHADER_SOURCE().fragment)).toContain("u_blob.z > 0.0 ? blobDistance");
+    expect(arithmetic(METAL)).toContain("u_blob.z > 0.0 ? blobDistance");
   });
 });

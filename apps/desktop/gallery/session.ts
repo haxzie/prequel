@@ -13,7 +13,8 @@
  */
 import type { CursorLayer, EditorSession, TrackMedia } from "../src/shared/contract";
 import type { Manifest } from "../src/shared/manifest";
-import { parseManifest, seamsOf } from "../src/shared/manifest";
+import { findTrack, parseManifest, seamsOf } from "../src/shared/manifest";
+import type { BlobTrack } from "../src/shared/layout";
 import type { Project } from "../src/shared/project";
 import {
   FALLBACK_BACKGROUND,
@@ -114,6 +115,7 @@ export async function loadSession(
     manifest,
     media,
     cursor: cursorLayer(manifest),
+    blobs: blobTrack(manifest),
     project: await withBackground(name, project),
     transcript,
     // No addon in the browser to plan them, and nothing here plays sound: a
@@ -136,6 +138,30 @@ function cursorLayer(manifest: Manifest): CursorLayer | null {
     clicks: (manifest.clicks ?? []).map((click) => click.at),
     keys: manifest.keys ?? [],
   };
+}
+
+/** `blobTrack` from `editor-session.ts`. Same rule: null when there is none. */
+function blobTrack(manifest: Manifest): BlobTrack | null {
+  const camera = findTrack(manifest, "camera");
+  if (!camera) return null;
+
+  const samples = camera.segments
+    .flatMap((segment) => segment.matte?.blobs ?? [])
+    .map((sample) => ({
+      at: sample.at,
+      x: sample.x,
+      y: sample.y,
+      h: sample.h,
+      presence: sample.presence,
+    }))
+    .sort((a, b) => a.at - b.at);
+
+  // A track that is never open is not a track. That is a take whose outline was
+  // written by a build that described the shape differently — the manifest reads
+  // those as closed rather than refusing the recording — and a camera left in
+  // this shape on one of them would draw nothing at all, where falling back to a
+  // bubble is what somebody would expect to see.
+  return samples.some((sample) => sample.presence > 0) ? { samples } : null;
 }
 
 /**

@@ -109,6 +109,17 @@ pub enum PlanItem {
         /// drew.
         #[serde(default)]
         matte: bool,
+        /// The camera's outline over time, for the shape that follows somebody.
+        ///
+        /// The second moving thing in a plan, after the pointer, and carried for
+        /// the same reason: it is sampled from the footage rather than decided
+        /// by the arrangement, so it cannot be a rectangle. All this side does is
+        /// interpolate between two of them.
+        ///
+        /// Empty on every other item and on a camera of any other shape, which is
+        /// what leaves `shape` as the outline.
+        #[serde(default)]
+        blobs: Vec<BlobKey>,
     },
     Stroke {
         rect: Rect,
@@ -269,6 +280,30 @@ pub struct Point {
     pub y: f64,
 }
 
+/// The camera's free-form outline at one source time, in output pixels.
+///
+/// A radius that varies with the angle: `radius` is the circle it starts from,
+/// and `h` bends it, as three harmonics — see `Blob` in `prequel-session`. Already
+/// scaled to the look the editor chose, unlike what the recording stores. The centre and the radius
+/// are in *output* pixels rather than the quad's own, because the quad a camera
+/// of this shape is drawn in is cut to the frame before the shader sees it, and
+/// a centre in quad pixels would move by however much was cut off.
+///
+/// Both the centre and the radius come from the editor, which is the only place
+/// that knows where the camera sits and how big it is. Nothing on this side
+/// works out either.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BlobKey {
+    pub at: i64,
+    pub x: f64,
+    pub y: f64,
+    pub radius: f64,
+    pub h: [f64; 6],
+    /// How far open the shape is, 0 to 1. Nothing is drawn at 0.
+    pub presence: f64,
+}
+
+/// One sampled pointer position, in output pixels, at a source time.
 /// One sampled pointer position, in output pixels, at a source time.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct CursorPoint {
@@ -776,6 +811,74 @@ fn corners_of(key: &RectKey) -> [f64; 12] {
     ]
 }
 
+/// The outline as a rectangle's motion carries it.
+///
+/// A zoom shrinks the camera out of its own way by interpolating its rectangle,
+/// and the outline has to go with it: it is in output pixels against the frame,
+/// so left alone it would hold its size and position while the picture shrank
+/// away underneath. The move is a plain scale about the rectangle's own origin,
+/// which is all a shrink ever is here, so the centre and the radius take the
+/// same factor.
+///
+/// Mirrors `movedBlob` in `apps/desktop/src/shared/layout.ts`.
+pub fn moved_blob(blob: BlobKey, from: &Rect, to: &Rect) -> BlobKey {
+    if from.width <= 0.0 || from.height <= 0.0 {
+        return blob;
+    }
+
+    let scale = to.width / from.width;
+    BlobKey {
+        x: to.x + (blob.x - from.x) * scale,
+        y: to.y + (blob.y - from.y) * (to.height / from.height),
+        radius: blob.radius * scale,
+        ..blob
+    }
+}
+
+/// The camera's outline at a source time.
+///
+/// Mirrors `blobAt` in `apps/desktop/src/shared/layout.ts`, and is pinned to it
+/// by the golden-pixel test for the reason `cursor_at` is: it is arithmetic that
+/// has to exist on both sides, because a plan cannot hold an outline per output
+/// frame.
+pub fn blob_at(keys: &[BlobKey], at: i64) -> Option<BlobKey> {
+    let first = keys.first()?;
+    let last = keys.last()?;
+
+    if at <= first.at {
+        return Some(*first);
+    }
+    if at >= last.at {
+        return Some(*last);
+    }
+
+    let high = keys.partition_point(|key| key.at <= at);
+    let a = &keys[high - 1];
+    let b = &keys[high];
+
+    let span = (b.at - a.at) as f64;
+    let t = if span > 0.0 {
+        (at - a.at) as f64 / span
+    } else {
+        0.0
+    };
+
+    let lerp = |from: f64, to: f64| from + (to - from) * t;
+    let mut h = [0.0; 6];
+    for (out, (from, to)) in h.iter_mut().zip(a.h.iter().zip(&b.h)) {
+        *out = lerp(*from, *to);
+    }
+
+    Some(BlobKey {
+        at,
+        x: lerp(a.x, b.x),
+        y: lerp(a.y, b.y),
+        radius: lerp(a.radius, b.radius),
+        h,
+        presence: lerp(a.presence, b.presence),
+    })
+}
+
 /// Where the pointer is at a source time, or None if it is not on screen.
 ///
 /// Mirrors `cursorAt` in `apps/desktop/src/shared/layout.ts`. The two are
@@ -945,10 +1048,7 @@ impl FilterKind {
     /// unrecognised name is 0 — the look's first variant, which is a look,
     /// where refusing would be a blank frame.
     pub fn variant_index(self, name: &str) -> u32 {
-        self.variants()
-            .iter()
-            .position(|v| *v == name)
-            .unwrap_or(0) as u32
+        self.variants().iter().position(|v| *v == name).unwrap_or(0) as u32
     }
 
     /// This look's sub-looks, in the order `FILTERS[id].variants` lists them.

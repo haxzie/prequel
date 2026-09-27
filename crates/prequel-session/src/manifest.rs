@@ -69,6 +69,81 @@ pub struct Matte {
     /// segmenter was still busy, or refused by the encoder. The previous mask
     /// stands in for each, so a small count is invisible.
     pub dropped: u64,
+    /// The mask fitted to circles, for the camera shape that follows somebody.
+    ///
+    /// Beside the matte rather than instead of it: the mask is what cuts the
+    /// background away, and these are what shape the bubble — a recording can
+    /// want either. Empty on every recording made before the fitter existed,
+    /// which the editor reads as a camera whose shape falls back to a circle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blobs: Vec<BlobSample>,
+}
+
+/// The camera's free-form outline at one moment.
+///
+/// A radius that varies with the angle: a circle, plus three harmonics of it —
+/// `r(t) = 1 + h0·cos t + h1·sin t + h2·cos 2t + h3·sin 2t + h4·cos 3t + h5·sin 3t`,
+/// which is what both rasterisers evaluate. The third pair is what makes the
+/// shape lobed rather than merely oval, and how much of it is drawn is the
+/// Roundness control — see `prequel-camera`'s `blob.rs`.
+///
+/// Dimensionless, and *unscaled*: `h` says what shape somebody makes, not how
+/// far from a circle to draw it. The editor decides that — see `BLOB_DEVIATION`
+/// in `shared/layout.ts` — which is what lets the look change for recordings
+/// already made. `x` and `y` are the centre's offset from the middle of the
+/// picture, in fractions of its shorter edge — the way every other size in this
+/// app is measured, and the only way a shape survives a 16:9 → 9:16 frame.
+/// Every field defaulted, and `h` taken at whatever length it arrives.
+///
+/// This shape was reworked more than once before it shipped, and takes recorded
+/// against the versions in between hold circles, or four harmonics, or six. A
+/// sample this build cannot read has to come back as a shape that is simply
+/// closed — because the alternative is `serde` refusing the field, which refuses
+/// the *manifest*, which is a recording that will not export at all over a
+/// camera outline nobody would miss.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Blob {
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    #[serde(default, deserialize_with = "harmonics")]
+    pub h: [f32; 6],
+    /// How far open the shape is, 0 to 1.
+    ///
+    /// Below 1 only while it is closing behind somebody who stepped out of
+    /// frame, or opening again as they come back. Nothing is drawn at 0, which
+    /// is also what a sample from a build that wrote a different shape comes
+    /// back as.
+    #[serde(default)]
+    pub presence: f32,
+}
+
+/// However many harmonics were written, as the six this build draws.
+///
+/// Short is padded and long is truncated, rather than either being an error. See
+/// the note on `Blob`.
+fn harmonics<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<[f32; 6], D::Error> {
+    let written = Vec::<f32>::deserialize(reader)?;
+    let mut h = [0.0; 6];
+    for (slot, value) in h.iter_mut().zip(written) {
+        *slot = value;
+    }
+    Ok(h)
+}
+
+/// The shape at one moment, on the session clock.
+///
+/// Sampled far more slowly than the mask is written — see `BLOB_INTERVAL_NS` in
+/// `prequel-camera` — because both rasterisers interpolate between two of these
+/// and the shape is eased before it is ever stored. A sample per frame would put
+/// tens of thousands of entries in a manifest to describe a curve that moves
+/// like treacle.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BlobSample {
+    pub at: MediaTime,
+    #[serde(flatten)]
+    pub blob: Blob,
 }
 
 /// One take's worth of one track: a file, and where it sits on the session
@@ -478,7 +553,13 @@ mod tests {
             tracks: vec![
                 Track {
                     kind: TrackKind::Screen,
-                    segments: vec![segment(TrackKind::Screen, 0, 10 * S, Some((3456, 2234)), 600)],
+                    segments: vec![segment(
+                        TrackKind::Screen,
+                        0,
+                        10 * S,
+                        Some((3456, 2234)),
+                        600,
+                    )],
                 },
                 Track {
                     kind: TrackKind::Camera,
@@ -489,8 +570,23 @@ mod tests {
                             height: 288,
                             samples: 290,
                             dropped: 4,
+                            blobs: vec![BlobSample {
+                                at: 200_000_000,
+                                blob: Blob {
+                                    x: 0.02,
+                                    y: -0.05,
+                                    h: [0.12, 0.0, -0.04, 0.0, 0.03, 0.0],
+                                    presence: 1.0,
+                                },
+                            }],
                         }),
-                        ..segment(TrackKind::Camera, 200_000_000, 10 * S, Some((1280, 720)), 294)
+                        ..segment(
+                            TrackKind::Camera,
+                            200_000_000,
+                            10 * S,
+                            Some((1280, 720)),
+                            294,
+                        )
                     }],
                 },
                 Track {
@@ -604,7 +700,10 @@ mod tests {
         assert_eq!(screen.segments[0].width, Some(3456));
         // The late mic survives the upgrade; losing it would slide every word
         // of the recording 120 ms early.
-        assert_eq!(parsed.track(TrackKind::Microphone).unwrap().start(), 120_000_000);
+        assert_eq!(
+            parsed.track(TrackKind::Microphone).unwrap().start(),
+            120_000_000
+        );
         assert_eq!(parsed.cursor.len(), 1);
         // No flag in a v1 manifest means the pointer was drawn into the frames.
         assert!(parsed.cursor_baked);
@@ -618,7 +717,13 @@ mod tests {
         let track = Track {
             kind: TrackKind::Camera,
             segments: vec![
-                segment(TrackKind::Camera, 200_000_000, 10 * S, Some((1280, 720)), 294),
+                segment(
+                    TrackKind::Camera,
+                    200_000_000,
+                    10 * S,
+                    Some((1280, 720)),
+                    294,
+                ),
                 Segment {
                     file_name: "2/camera.mp4".to_owned(),
                     ..segment(
@@ -653,7 +758,10 @@ mod tests {
             ],
         };
 
-        assert_eq!(track.segment_at(10 * S - 1).unwrap().file_name, "screen.mp4");
+        assert_eq!(
+            track.segment_at(10 * S - 1).unwrap().file_name,
+            "screen.mp4"
+        );
         assert_eq!(track.segment_at(10 * S).unwrap().file_name, "2/screen.mp4");
         assert_eq!(track.segment_at(16 * S), None);
     }
@@ -693,6 +801,42 @@ mod tests {
             assert_eq!(KeyClass::parse(class.as_str()), Some(class));
         }
         assert_eq!(KeyClass::parse("keycode"), None);
+    }
+
+    #[test]
+    fn a_blob_from_a_build_that_wrote_a_different_shape_reads_as_closed() {
+        // This shape was reworked more than once before it shipped, and takes
+        // recorded against the versions in between hold circles, or four
+        // harmonics, or six. Refusing one refuses the whole manifest, which is a
+        // recording that will not open or export at all over a camera outline
+        // nobody would miss.
+        for written in [
+            // Circles, from the first version.
+            r#"{"at":1,"blobs":[{"x":0.5,"y":0.6,"r":0.2}]}"#,
+            // Four harmonics, from the version that had two.
+            r#"{"at":1,"x":0.1,"y":0.0,"h":[0.1,0.0,0.2,0.0],"presence":1.0}"#,
+            // And more than this build draws, which is the same question asked
+            // of a build yet to come.
+            r#"{"at":1,"x":0.1,"y":0.0,"h":[0.1,0.0,0.2,0.0,0.3,0.0,0.4,0.0],"presence":1.0}"#,
+        ] {
+            let sample: BlobSample =
+                serde_json::from_str(written).expect("an unreadable shape is not a broken take");
+            assert_eq!(sample.at, 1);
+        }
+
+        // The ones that carry no shape this build understands come back closed,
+        // which is what draws nothing.
+        let circles: BlobSample =
+            serde_json::from_str(r#"{"at":1,"blobs":[{"x":0.5,"y":0.6,"r":0.2}]}"#).unwrap();
+        assert_eq!(circles.blob.presence, 0.0);
+        assert_eq!(circles.blob.h, [0.0; 6]);
+
+        // And a longer one keeps the harmonics this build can draw.
+        let longer: BlobSample = serde_json::from_str(
+            r#"{"at":1,"x":0.1,"y":0.0,"h":[0.1,0.0,0.2,0.0,0.3,0.0,0.4,0.0],"presence":1.0}"#,
+        )
+        .unwrap();
+        assert_eq!(longer.blob.h, [0.1, 0.0, 0.2, 0.0, 0.3, 0.0]);
     }
 
     #[test]

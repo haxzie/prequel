@@ -9,6 +9,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  blobAt,
+  movedBlob,
+  type BlobTrack,
   buildRenderPlan,
   withWholeTimes,
   captionAt,
@@ -89,6 +92,376 @@ function image(plan: RenderPlan, source: "screen" | "camera") {
       item.kind === "image" && item.source === source,
   );
 }
+
+describe("the camera shaped by the person in it", () => {
+  /** A fitted outline: leaning right, with a lobe out that way. */
+  const TRACK: BlobTrack = {
+    samples: [
+      { at: 0, x: 0, y: 0, h: [0, 0, 0, 0, 0, 0], presence: 1 },
+      { at: 1_000_000_000, x: 0.1, y: -0.05, h: [0.3, -0.2, 0.1, 0, 0, 0], presence: 1 },
+    ],
+  };
+
+  const plan = (track: BlobTrack | null = TRACK, overrides: Partial<LayoutSettings> = {}) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cameraShape: "blob",
+          cameraCornerRadius: SHAPE_RADIUS.blob,
+          cameraWidth: 0.22,
+          cameraHeight: 0.22,
+          cameraBorderWidth: 0.01,
+          ...overrides,
+        },
+      }),
+      null,
+      undefined,
+      null,
+      undefined,
+      undefined,
+      undefined,
+      track,
+    );
+
+  /** Where the camera's box is, which is where a circle would have been drawn. */
+  const box = () =>
+    placement(
+      LANDSCAPE,
+      { ...DEFAULT_SETTINGS.layout, cameraWidth: 0.22, cameraHeight: 0.22 },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+      "camera",
+    )!.dstRect;
+
+  it("is the size of the bubble, not of the picture behind it", () => {
+    // The shape spills past the box where somebody does, so the *picture* drawn
+    // under it is the whole uncropped camera — several times the box. A radius
+    // taken from that would be a shape the size of the frame, which is the
+    // failure the first version of this shipped with.
+    const item = image(plan(), "camera")!;
+    const { radius } = item.blobs![0]!;
+    const bubble = Math.min(box().width, box().height);
+
+    expect(radius).toBeGreaterThan(bubble * 0.37);
+    expect(radius).toBeLessThan(bubble * 0.55);
+    expect(radius).toBeLessThan(Math.min(item.dstRect.width, item.dstRect.height) / 2);
+  });
+
+  it("never asks for more shape than there is picture to draw it on", () => {
+    // The one that does not look like a bug. A shape larger than the camera
+    // picture is not a larger shape — a fragment shader cannot paint outside its
+    // quad — it is one with the overhang sliced flat, and a circle with its top
+    // and bottom cut off reads as a rounded rectangle rather than as clipping.
+    //
+    // The picture binds rather than the box: a square box crops a 16:9 camera to
+    // a square, so the whole picture at that scale is exactly as tall as the box
+    // while the shape wants that height and room to swell as well.
+    const item = image(plan(), "camera")!;
+    const picture = item.dstRect;
+
+    for (const key of item.blobs!) {
+      // At full swell, which is `BLOB_DEVIATION` — the furthest the editor ever
+      // scales the stored shape to.
+      const reach = key.radius * 1.18;
+      expect(key.x - reach).toBeGreaterThanOrEqual(picture.x - 1e-6);
+      expect(key.x + reach).toBeLessThanOrEqual(picture.x + picture.width + 1e-6);
+      expect(key.y - reach).toBeGreaterThanOrEqual(picture.y - 1e-6);
+      expect(key.y + reach).toBeLessThanOrEqual(picture.y + picture.height + 1e-6);
+    }
+  });
+
+  it("never draws further from a circle than the look allows", () => {
+    // The recording says what shape somebody made; how much of it to show is
+    // decided here, which is what lets the look change for takes already
+    // recorded. A silhouette with enormous harmonics — a hand right out to one
+    // side — has to come back scaled, not drawn as a lobe half the frame across.
+    const wild: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0.9, -0.4, 0.5, 0.2, 0, 0], presence: 1 }],
+    };
+    // At the top of the control, where picking the shape no longer leaves it —
+    // so the allowance being asserted is the one this setting has.
+    const { h } = image(plan(wild, { cameraCornerRadius: 0.5 }), "camera")!.blobs![0]!;
+
+    // The curve can never be further from its circle than its harmonics added
+    // together, which is the bound the scaling works to.
+    const amplitude = Math.hypot(h[0]!, h[1]!) + Math.hypot(h[2]!, h[3]!);
+    expect(amplitude).toBeCloseTo(0.18, 6);
+
+    // And scaled, not clipped: the shape it describes is the one it described.
+    expect(h[1]! / h[0]!).toBeCloseTo(-0.4 / 0.9, 6);
+  });
+
+  it("lobes the shape as the roundness comes down", () => {
+    // What the control is for. Fully round is a gentle egg; wound down it is the
+    // lobed shape the silhouette actually makes — a head over two shoulders is
+    // three lobes, and the third harmonic is what draws them.
+    const lobed: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0.01, 0, 0.02, 0, 0.05, 0.01], presence: 1 }],
+    };
+    const third = (r: number) => {
+      const { h } = image(plan(lobed, { cameraCornerRadius: r }), "camera")!.blobs![0]!;
+      return Math.hypot(h[4]!, h[5]!);
+    };
+
+    // None of it at the top of the control, and more of it the further down it
+    // goes. Picking the shape leaves it halfway, which has some.
+    expect(third(0.5)).toBe(0);
+    expect(third(SHAPE_RADIUS.blob)).toBeGreaterThan(0);
+    expect(third(0)).toBeGreaterThan(third(SHAPE_RADIUS.blob));
+  });
+
+  it("opens halfway down the control, and never at the bottom of the term", () => {
+    // Picking the shape should not land on either extreme: the top is a gentle
+    // egg and the bottom is as lobed as the control goes, and the shape is worth
+    // seeing in between.
+    expect(SHAPE_RADIUS.blob).toBeGreaterThan(0);
+    expect(SHAPE_RADIUS.blob).toBeLessThan(0.5);
+
+    // And the bottom of the control is not the bottom of the lobed term itself.
+    // Drawn at its full strength that term is a rounded triangle, which is not a
+    // setting anybody would keep — so the control's range stops above it.
+    const track: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0, 0, 0, 0, 0.1, 0], presence: 1 }],
+    };
+    const { h } = image(plan(track, { cameraCornerRadius: 0 }), "camera")!.blobs![0]!;
+    const amplified = Math.hypot(h[4]!, h[5]!) / 0.1;
+
+    // Scaled up, because every shape here is — but by less than the gain, which
+    // is what says the term itself was damped on the way.
+    expect(amplified).toBeLessThan(3.96);
+  });
+
+  it("swells further as the roundness comes down", () => {
+    // The lobes arriving is only half of it: a shape that grew a third harmonic
+    // without also deviating further would read as the same bubble with a dent
+    // in it rather than as a different shape.
+    const track: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0.03, 0.01, 0.04, 0, 0.05, 0.01], presence: 1 }],
+    };
+    const spread = (r: number) => {
+      const { h } = image(plan(track, { cameraCornerRadius: r }), "camera")!.blobs![0]!;
+      return Math.hypot(h[0]!, h[1]!) + Math.hypot(h[2]!, h[3]!) + Math.hypot(h[4]!, h[5]!);
+    };
+
+    expect(spread(0)).toBeGreaterThan(spread(0.5) * 1.4);
+  });
+
+  it("exaggerates an ordinary pose rather than drawing a circle", () => {
+    // An ordinary take barely deviates — a real one comes out around 0.06 all
+    // told, which drawn at face value is a circle with a wobble nobody can see.
+    // What the fitter measures is the direction of the character; how much to
+    // show is decided here.
+    const ordinary: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0.02, 0, 0.04, 0, 0, 0], presence: 1 }],
+    };
+    const { h } = image(plan(ordinary), "camera")!.blobs![0]!;
+
+    const amplitude = Math.hypot(h[0]!, h[1]!) + Math.hypot(h[2]!, h[3]!);
+    expect(amplitude).toBeGreaterThan(0.12);
+    // And the shape it describes is still the one it described.
+    expect(h[2]! / h[0]!).toBeCloseTo(2, 6);
+  });
+
+  it("leaves a shape of nothing as nothing", () => {
+    // Somebody perfectly square to the camera. Dividing by an amplitude of
+    // nothing would amplify the difference between two directions they did not
+    // move in, and the curve would spin.
+    const still: BlobTrack = {
+      samples: [{ at: 0, x: 0, y: 0, h: [0, 0, 0, 0, 0, 0], presence: 1 }],
+    };
+    expect(image(plan(still), "camera")!.blobs![0]!.h).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
+  it("places the outline once, not on every rebuild", () => {
+    // A plan is rebuilt on every change, which during a drag is every frame, and
+    // placing an outline is the one part of building one that is not O(1): a
+    // ten-minute take is six thousand samples. Rebuilding them sixty times a
+    // second is a preview that stutters and a shape that flickers, which is
+    // exactly what it did.
+    const first = image(plan(), "camera")!.blobs;
+    expect(image(plan(), "camera")!.blobs).toBe(first);
+
+    // And the harmonics survive the camera moving, which the outline as a whole
+    // cannot: moving it changes where the shape sits and not what shape it is.
+    const moved = image(plan(TRACK, { cameraX: 0.3 }), "camera")!.blobs!;
+    expect(moved).not.toBe(first);
+    expect(moved[0]!.h).toBe(first![0]!.h);
+  });
+
+  it("is the same size at every roundness", () => {
+    // Roundness says nothing about size, so it must not change any. Sized
+    // against the setting's own allowance rather than the widest the shape may
+    // ever be, dragging the slider resized the camera by eight per cent on the
+    // way — a bubble pulsing under a control that does not mention size, which
+    // reads as the preview flickering rather than as anything moving.
+    const radius = (r: number) =>
+      image(plan(TRACK, { cameraCornerRadius: r }), "camera")!.blobs![0]!.radius;
+
+    expect(radius(0)).toBe(radius(0.5));
+    expect(radius(SHAPE_RADIUS.blob)).toBe(radius(0.5));
+  });
+
+  it("hands both rasterisers the outline in output pixels", () => {
+    // Fractions here would be a second answer to where the camera is, worked
+    // out once on each side — the mistake this whole module exists to prevent.
+    // The first sample leans nowhere, so it sits on the box's own centre.
+    const first = image(plan(), "camera")!.blobs![0]!;
+
+    expect(first.x).toBeCloseTo(box().x + box().width / 2, 6);
+    expect(first.y).toBeCloseTo(box().y + box().height / 2, 6);
+  });
+
+  it("leans towards somebody sitting to one side, and no further", () => {
+    // The fitter says how far off-centre they are; how far the shape may follow
+    // them is the bubble's business, because the bubble is where the position
+    // control put it.
+    // Un-mirrored, so the sign of the lean is the sign the fitter wrote. The
+    // camera is mirrored by default, which is its own test below.
+    const leaning = image(plan(TRACK, { cameraMirror: false }), "camera")!.blobs![1]!;
+    const centre = box().x + box().width / 2;
+
+    expect(leaning.x).toBeGreaterThan(centre);
+    expect(leaning.x - centre).toBeLessThan(leaning.radius);
+  });
+
+  it("mirrors the lean with the picture", () => {
+    // The half that does not show on somebody sitting squarely in frame: the
+    // camera is flipped by flipping its uv, so an outline left where the camera
+    // had it sits over the wrong shoulder.
+    const mirrored = image(plan(TRACK, { cameraMirror: true }), "camera")!.blobs![1]!;
+    const plainly = image(plan(TRACK, { cameraMirror: false }), "camera")!.blobs![1]!;
+    const centre = box().x + box().width / 2;
+
+    expect(mirrored.x - centre).toBeCloseTo(-(plainly.x - centre), 6);
+    // Only sideways: flipping is about the vertical axis.
+    expect(mirrored.y).toBeCloseTo(plainly.y, 6);
+  });
+
+  it("draws the whole picture, so a raised hand has somewhere to be", () => {
+    // The box still says where the shape is and how big; it no longer says where
+    // the picture stops. Somebody who swells the shape past its box is outside
+    // the quad otherwise, and a fragment shader cannot paint outside its own
+    // geometry.
+    const { srcRect, dstRect } = image(plan(), "camera")!;
+
+    expect(srcRect).toEqual({ x: 0, y: 0, width: CAMERA.width, height: CAMERA.height });
+    expect(dstRect.width / dstRect.height).toBeCloseTo(CAMERA.width / CAMERA.height, 6);
+  });
+
+  it("wears no shadow and no ring", () => {
+    // Both dress a card edge, and a free-form outline has none. A squircle
+    // shadow under it is the shadow of a card that is not there.
+    //
+    // Counted against the same camera drawn as a circle rather than asserted
+    // absent: the screen wears a frame and a shadow of its own in these
+    // settings, and those belong to the screen recording.
+    const kinds = (shape: LayoutSettings["cameraShape"]) =>
+      plan(TRACK, { cameraShape: shape, cameraCornerRadius: SHAPE_RADIUS[shape] })
+        .items.map((item) => item.kind)
+        .join(",");
+
+    const circle = kinds("circle");
+    expect(circle).toContain("shadow");
+    expect(circle).toContain("stroke");
+
+    // Exactly one of each fewer: the bubble's, not the screen's.
+    const blob = kinds("blob");
+    expect(blob.split("shadow").length).toBe(circle.split("shadow").length - 1);
+    expect(blob.split("stroke").length).toBe(circle.split("stroke").length - 1);
+  });
+
+  it("falls back to its circle on a recording that fitted nothing", () => {
+    // Every recording made before the fitter existed. It has to draw the camera
+    // as a bubble rather than as nothing — and never carry an outline, so a plan
+    // from such a project serialises exactly as it did.
+    for (const track of [null, { samples: [] }]) {
+      const item = image(plan(track), "camera")!;
+      expect("blobs" in item).toBe(false);
+      expect(item.shape.radius).toBeCloseTo(
+        SHAPE_RADIUS.blob * Math.min(item.dstRect.width, item.dstRect.height),
+        6,
+      );
+    }
+  });
+
+  it("gives way to the cutout, which has no outline at all", () => {
+    // Two answers to what shape the camera is. The background being cut away
+    // wins: there is no edge left for an outline to be.
+    const item = image(plan(TRACK, { cameraCutout: true }), "camera")!;
+    expect(item.matte).toBe(true);
+    expect("blobs" in item).toBe(false);
+  });
+
+  it("shrinks out of a zoom's way like any other bubble", () => {
+    // The outline is in output pixels against the frame, so left alone it would
+    // hold its size and position while the picture shrank away underneath. The
+    // rasterisers carry it with the rectangle — see `movedBlob`.
+    const zoomed = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cameraShape: "blob",
+          cameraShrinkOnZoom: true,
+          cameraWidth: 0.22,
+          cameraHeight: 0.22,
+        },
+      }),
+      null,
+      [{ ...DEFAULT_ZOOM, id: "z", source: { start: 0, end: 2_000_000_000 }, level: 2 }],
+      null,
+      undefined,
+      undefined,
+      undefined,
+      TRACK,
+    );
+
+    const item = image(zoomed, "camera")!;
+    expect(item.motion?.length ?? 0).toBeGreaterThan(0);
+
+    // And the outline goes with it: the same scale, about the rectangle's own
+    // origin, which is all a shrink is here.
+    const shrunk = item.motion!.reduce((a, b) => (b.width < a.width ? b : a));
+    const rest = image(zoomed, "camera")!.dstRect;
+    const carried = movedBlob(item.blobs![0]!, rest, shrunk);
+
+    expect(carried.radius / item.blobs![0]!.radius).toBeCloseTo(shrunk.width / rest.width, 6);
+    expect(carried.x).toBeGreaterThanOrEqual(shrunk.x - 1e-6);
+    expect(carried.x).toBeLessThanOrEqual(shrunk.x + shrunk.width + 1e-6);
+  });
+
+  describe("resolved at a moment", () => {
+    const keys = () => image(plan(), "camera")!.blobs!;
+
+    it("holds the first and last sample past either end", () => {
+      // A clip that starts mid-take is drawn with the shape that was there, not
+      // with none.
+      expect(blobAt(keys(), -1_000)).toEqual(keys()[0]!);
+      expect(blobAt(keys(), 9_000_000_000)).toEqual(keys()[1]!);
+    });
+
+    it("runs each harmonic from one sample to the next", () => {
+      // Interpolating the curve itself instead — sampling both and blending the
+      // radii — would need the angle, which the plan has no notion of. These are
+      // six numbers and they blend as six numbers.
+      const half = blobAt(keys(), 500_000_000)!;
+      const [a, b] = [keys()[0]!, keys()[1]!];
+
+      for (const [index, value] of half.h.entries()) {
+        expect(value).toBeCloseTo((a.h[index]! + b.h[index]!) / 2, 6);
+      }
+      expect(half.x).toBeCloseTo((a.x + b.x) / 2, 6);
+    });
+
+    it("has nothing to draw for a track with no samples", () => {
+      expect(blobAt([], 0)).toBeNull();
+    });
+  });
+});
 
 describe("the background", () => {
   it("always fills the whole frame", () => {

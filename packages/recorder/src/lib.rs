@@ -184,12 +184,13 @@ fn write_manifest(
         // The matte rides on the camera segment: it is the one thing that
         // tells the editor the file exists, and the file name is carried
         // here so no reader has to know the constant.
-        entry.segments[0].matte = camera.matte.map(|matte| Matte {
+        entry.segments[0].matte = camera.matte.as_ref().map(|matte| Matte {
             file_name: CAMERA_MATTE_FILE.to_owned(),
             width: matte.width,
             height: matte.height,
             samples: matte.frames,
             dropped: matte.dropped,
+            blobs: matte.blobs.clone(),
         });
         tracks.push(entry);
     }
@@ -945,8 +946,14 @@ impl Task for StopRecording {
             camera_start_ms: camera.map_or(0.0, |c| c.start as f64 / 1_000_000.0),
             camera_width: camera.map_or(0, |c| c.width),
             camera_height: camera.map_or(0, |c| c.height),
-            camera_matte_frames: camera.and_then(|c| c.matte).map_or(0, |m| m.frames as i64),
-            camera_matte_dropped: camera.and_then(|c| c.matte).map_or(0, |m| m.dropped as i64),
+            // By reference: the summary carries the fitted shape, so moving it
+            // out of a borrowed camera no longer compiles.
+            camera_matte_frames: camera
+                .and_then(|c| c.matte.as_ref())
+                .map_or(0, |m| m.frames as i64),
+            camera_matte_dropped: camera
+                .and_then(|c| c.matte.as_ref())
+                .map_or(0, |m| m.dropped as i64),
             camera_error: output.camera.err(),
         })
     }

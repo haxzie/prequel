@@ -17,15 +17,15 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, caption_at, crop_to_frame,
-    cursor_at, overlay_at, rect_at,
+    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at, caption_at, crop_to_frame,
+    cursor_at, moved_blob, overlay_at, rect_at,
 };
 use crate::{Error, Result};
 
 /// Mirrors `FilterUniforms` in `filters.metal`. Field order and padding must
 /// match, for the reason the block below spells out at length.
 ///
-/// Its own block rather than more fields on `Uniforms`: that one is 272 bytes
+/// Its own block rather than more fields on `Uniforms`: that one is 320 bytes
 /// with a hand-derived offset table and a test asserting every offset in it,
 /// and none of this is read by a per-item draw. Keeping them apart is what lets
 /// a look be added without re-deriving the numbers that place a camera.
@@ -57,6 +57,19 @@ struct Uniforms {
     /// bytes long, so putting it here leaves every field after it at exactly
     /// the offset it had before.
     quad: [[f32; 4]; 4],
+    /// The camera's free-form outline for this frame: centre x and y, the radius
+    /// it starts from, and how far open it is.
+    ///
+    /// Output pixels but the last, which is 0 to 1. A radius of zero is every
+    /// draw but that camera, and is what makes `shape` the outline instead.
+    blob: [f32; 4],
+    /// How the radius varies with the angle, as three harmonics: `cos t, sin t,
+    /// cos 2t, sin 2t` and then `cos 3t, sin 3t` with two unused. The third is
+    /// what makes the shape lobed rather than merely oval.
+    ///
+    /// Beside `quad` for the reason `quad` is first: whole 16-byte rows, so every
+    /// field after them keeps the offset it had relative to them.
+    harmonics: [[f32; 4]; 2],
     rect: [f32; 4],
     /// Region of the source texture, normalised as (x, y, w, h).
     ///
@@ -117,13 +130,14 @@ struct Uniforms {
     ///
     /// The scalar tail follows the Metal declaration exactly. Rust aligns
     /// arrays to 4 bytes rather than 16, so the explicit tail below keeps the
-    /// 272-byte block the same size on both sides.
+    /// 320-byte block the same size on both sides.
     alpha: f32,
     /// Non-zero to multiply the sampled picture by the matte at slot 2.
     ///
     /// Follows `alpha` in the Metal block. Only the camera ever sets it.
     matte: u32,
-    /// Padding to 272, which is where MSL puts the end of this struct.
+    /// Padding to the next 16, which is where MSL ends this block. Rust aligns
+    /// `[f32; 4]` to 4 bytes and will not add it itself.
     _tail: [f32; 2],
 }
 
@@ -648,6 +662,10 @@ impl Compositor {
             alpha: 1.0,
             // Un-masked unless a camera item asks otherwise.
             matte: 0,
+            // No outline unless a camera item carries one, which makes `shape`
+            // the shape for every other draw.
+            blob: [0.0; 4],
+            harmonics: [[0.0; 4]; 2],
             _tail: [0.0; 2],
             shape: [0.0, 2.0],
             frame,
@@ -780,6 +798,7 @@ impl Compositor {
                 shape,
                 mirror,
                 matte,
+                blobs,
             } => {
                 let buffer = match source {
                     PlanSource::Screen => screen,
@@ -790,6 +809,34 @@ impl Compositor {
                 };
 
                 alive.push(self.texture_for(buffer, None)?);
+
+                // The outline this frame, interpolated between two samples and
+                // then carried by whatever the rectangle is doing — a zoom
+                // shrinks the camera out of its own way, and a shape that stayed
+                // its own size while the picture shrank away would be a person
+                // drawn small inside an outline fitted to a larger one.
+                //
+                // In output pixels throughout, so the cut below cannot move it.
+                let outline = blob_at(blobs, at as i64).map(|blob| {
+                    moved_blob(
+                        blob,
+                        dst_rect,
+                        &rect_at(motion, at as i64, *dst_rect, 0.0).rect,
+                    )
+                });
+                let blob = outline.map_or([0.0; 4], |blob| {
+                    [
+                        blob.x as f32,
+                        blob.y as f32,
+                        blob.radius as f32,
+                        blob.presence as f32,
+                    ]
+                });
+                let harmonics = outline.map_or([[0.0; 4]; 2], |blob| {
+                    let h = blob.h.map(|value| value as f32);
+                    [[h[0], h[1], h[2], h[3]], [h[4], h[5], 0.0, 0.0]]
+                });
+
                 // A zoom moves, scales and tilts the whole picture over time.
                 let now = rect_at(motion, at as i64, *dst_rect, shape.radius);
                 // Cut to the frame, with the source cropped to match, so a zoom
@@ -832,6 +879,8 @@ impl Compositor {
                         matte: u32::from(
                             *matte && has_matte && matches!(source, PlanSource::Camera),
                         ),
+                        blob,
+                        harmonics,
                         ..base
                     },
                     Some(alive.last().unwrap().texture.as_ref()),
@@ -1407,42 +1456,48 @@ mod tests {
     fn the_uniform_block_matches_the_shader() {
         use std::mem::{align_of, offset_of, size_of};
 
-        // Every `float4` sits on a 16-byte boundary, as MSL requires. The
-        // corner array leads, and is 64 bytes, so everything after it keeps the
-        // offset it had before perspective existed.
+        // Every `float4` sits on a 16-byte boundary, as MSL requires. Two
+        // `float4[4]` arrays lead, 64 bytes each, so everything after them keeps
+        // the offset it had *relative to them* — which is the only property that
+        // matters, and why adding the outline meant moving every number below
+        // rather than reasoning about padding.
         assert_eq!(offset_of!(Uniforms, quad), 0);
-        assert_eq!(offset_of!(Uniforms, rect), 64);
-        assert_eq!(offset_of!(Uniforms, src), 80);
+        assert_eq!(offset_of!(Uniforms, blob), 64);
+        assert_eq!(offset_of!(Uniforms, harmonics), 80);
+        assert_eq!(offset_of!(Uniforms, rect), 112);
+        assert_eq!(offset_of!(Uniforms, src), 128);
         // `focus`, `smear`, `cursor_box` and `cursor_shadow` are `float4`s, so
         // each goes on a 16-byte boundary. The cursor fields sit beside the
         // smear rather than in the tail so their uv units stay next to the
         // other cursor uniform.
-        assert_eq!(offset_of!(Uniforms, focus), 96);
-        assert_eq!(offset_of!(Uniforms, smear), 112);
-        assert_eq!(offset_of!(Uniforms, cursor_box), 128);
-        assert_eq!(offset_of!(Uniforms, cursor_shadow), 144);
-        assert_eq!(offset_of!(Uniforms, texel), 160);
-        assert_eq!(offset_of!(Uniforms, shape), 168);
-        assert_eq!(offset_of!(Uniforms, frame), 176);
-        assert_eq!(offset_of!(Uniforms, color_a), 192);
-        assert_eq!(offset_of!(Uniforms, color_b), 208);
-        assert_eq!(offset_of!(Uniforms, gradient), 224);
-        assert_eq!(offset_of!(Uniforms, mode), 232);
-        assert_eq!(offset_of!(Uniforms, weight), 236);
-        assert_eq!(offset_of!(Uniforms, mirror), 240);
+        assert_eq!(offset_of!(Uniforms, focus), 144);
+        assert_eq!(offset_of!(Uniforms, smear), 160);
+        assert_eq!(offset_of!(Uniforms, cursor_box), 176);
+        assert_eq!(offset_of!(Uniforms, cursor_shadow), 192);
+        assert_eq!(offset_of!(Uniforms, texel), 208);
+        assert_eq!(offset_of!(Uniforms, shape), 216);
+        assert_eq!(offset_of!(Uniforms, frame), 224);
+        assert_eq!(offset_of!(Uniforms, color_a), 240);
+        assert_eq!(offset_of!(Uniforms, color_b), 256);
+        assert_eq!(offset_of!(Uniforms, gradient), 272);
+        assert_eq!(offset_of!(Uniforms, mode), 280);
+        assert_eq!(offset_of!(Uniforms, weight), 284);
+        assert_eq!(offset_of!(Uniforms, mirror), 288);
         // The tail. These are plain scalars on 4-byte boundaries; the explicit
         // layout remains in lockstep with the Metal declaration.
-        assert_eq!(offset_of!(Uniforms, vignette), 244);
-        assert_eq!(offset_of!(Uniforms, soften), 248);
-        assert_eq!(offset_of!(Uniforms, adapt), 252);
+        assert_eq!(offset_of!(Uniforms, vignette), 292);
+        assert_eq!(offset_of!(Uniforms, soften), 296);
+        assert_eq!(offset_of!(Uniforms, adapt), 300);
 
-        // MSL rounds the block to the next 16, so both sides are 272 and the
+        // MSL rounds the block to the next 16, so both sides are 320 and the
         // tail is written out here because Rust would not add it.
-        assert_eq!(offset_of!(Uniforms, alpha), 256);
+        assert_eq!(offset_of!(Uniforms, alpha), 304);
         // `matte` follows `alpha` without changing the field order.
-        assert_eq!(offset_of!(Uniforms, matte), 260);
+        assert_eq!(offset_of!(Uniforms, matte), 308);
+        // The outline's two scalars took the padding the block already had, so
+        // the block is the size it was plus the array and nothing else moved.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 272);
+        assert_eq!(size_of::<Uniforms>(), 320);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in

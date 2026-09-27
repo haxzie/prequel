@@ -10,6 +10,7 @@ import {
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
+  type BlobTrack,
   buildRenderPlan,
   captionAt,
   type EnterTransition,
@@ -95,6 +96,7 @@ export function Preview({
   media,
   images,
   cursor,
+  blobs,
   zooms,
   cues,
   texts,
@@ -131,6 +133,14 @@ export function Preview({
   images: Images;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
+  /**
+   * The camera's fitted outline, or null when this recording has none.
+   *
+   * The whole track rather than the circles for this moment: the plan is built
+   * per clip and holds it, and both rasterisers resolve it per frame — the same
+   * arrangement the pointer's positions are under, and for the same reason.
+   */
+  blobs: BlobTrack | null;
   /** Zoom spans, baked into the plan as a sampled crop. */
   zooms: readonly ZoomSlice[];
   /**
@@ -283,6 +293,7 @@ export function Preview({
     fitted,
     selected,
     cursor,
+    blobs,
     zooms,
     cues,
     texts,
@@ -298,6 +309,7 @@ export function Preview({
     fitted,
     selected,
     cursor,
+    blobs,
     zooms,
     cues,
     texts,
@@ -351,6 +363,7 @@ export function Preview({
         fitted: box,
         selected: ringed,
         cursor: pointer,
+        blobs: blobTrack,
         zooms: shots,
         cues: drawn,
         texts: rows,
@@ -413,6 +426,7 @@ export function Preview({
         rows,
         drawnTexts,
         drawnTags,
+        blobTrack,
       ] as const;
 
       const previous = cached.current;
@@ -444,6 +458,7 @@ export function Preview({
               shown,
               rows,
               drawnTexts,
+              blobTrack,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };

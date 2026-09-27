@@ -15,9 +15,9 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat, OverlayKey,
-    Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, SegmentRef, Shape, Size,
-    SliceMedia, SliceRender, Span, export,
+    AudioMix, BlobKey, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat,
+    OverlayKey, Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, SegmentRef, Shape,
+    Size, SliceMedia, SliceRender, Span, export,
 };
 use prequel_session::{CAMERA_MATTE_FILE, TrackKind};
 
@@ -237,6 +237,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
             },
             mirror: false,
             matte: false,
+            blobs: Vec::new(),
             motion: Vec::new(),
         }],
         filter: None,
@@ -297,6 +298,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
             },
             mirror: true,
             matte: false,
+            blobs: Vec::new(),
         }],
         filter: None,
     };
@@ -373,6 +375,7 @@ fn draws_an_image_background() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
         ],
@@ -613,6 +616,7 @@ fn swaps_the_pointer_image_partway_through() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -705,6 +709,7 @@ fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -834,6 +839,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -943,6 +949,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -1169,6 +1176,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
@@ -1259,6 +1267,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                 },
                 mirror: false,
                 matte: false,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
             PlanItem::Stroke {
@@ -1336,6 +1345,7 @@ fn camera_over_red(matte: bool) -> RenderPlan {
                 },
                 mirror: false,
                 matte,
+                blobs: Vec::new(),
                 motion: Vec::new(),
             },
         ],
@@ -1468,6 +1478,7 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
             },
             mirror: true,
             matte: false,
+            blobs: Vec::new(),
             motion: Vec::new(),
         }],
         filter: None,
@@ -1639,6 +1650,7 @@ fn screen_filling(size: u32) -> RenderPlan {
             },
             mirror: false,
             matte: false,
+            blobs: Vec::new(),
             motion: Vec::new(),
         }],
         filter: None,
@@ -1707,10 +1719,177 @@ fn renders_each_take_from_its_own_file() {
 
     // Either side of the seam, which falls halfway through a two-second export.
     let before = frame_at(&output, FPS - 1);
-    near(before.at(160, 120), (0, 0, 255), "the last frame of take one");
+    near(
+        before.at(160, 120),
+        (0, 0, 255),
+        "the last frame of take one",
+    );
 
     let after = frame_at(&output, FPS);
-    near(after.at(160, 120), (0, 255, 0), "the first frame of take two");
+    near(
+        after.at(160, 120),
+        (0, 255, 0),
+        "the first frame of take two",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The camera's outline: a circle at a known place, with one lobe out to the
+/// right.
+///
+/// `h[0]` is the `cos t` term, so a positive one pushes the curve out along
+/// positive x and pulls it in along negative x by the same amount. That makes
+/// the two sides of the shape tell each other apart, which is the whole point of
+/// the mirror test below.
+fn outlined(mirror: bool) -> RenderPlan {
+    RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                paint: Paint::Solid {
+                    color: "#0000ff".into(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Camera,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 400.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                // Never read where there is an outline. A radius of zero here is
+                // the whole frame, which is exactly what must *not* be drawn.
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror,
+                matte: false,
+                blobs: vec![BlobKey {
+                    at: 0,
+                    x: 160.0,
+                    y: 120.0,
+                    radius: 60.0,
+                    h: [0.4, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    presence: 1.0,
+                }],
+                motion: Vec::new(),
+            },
+        ],
+        filter: None,
+    }
+}
+
+#[test]
+fn bends_the_outline_by_its_harmonics() {
+    // The shape is a radius that varies with the angle, and `h[0]` is the term
+    // that leans it sideways: at 0.4, the curve reaches 84 pixels to the right of
+    // the centre and only 36 to the left. Both are asserted, because a shader
+    // that ignored the harmonics entirely would draw a 60-pixel circle and pass
+    // an assertion that only looked at the narrow side.
+    let dir = scratch("prequel-pixels-blob");
+    let camera = solid(400, [255, 0, 0]);
+    record(&dir, "camera.mp4", 400, 200, &camera);
+    record(&dir, "screen.mp4", 400, 200, &camera);
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![slice(outlined(false))]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    near(frame.at(160, 120), (255, 0, 0), "the middle of the shape");
+    // Out to 84: inside at 75, outside at 95.
+    near(frame.at(235, 120), (255, 0, 0), "inside the lobe");
+    near(frame.at(255, 120), (0, 0, 255), "past the lobe");
+    // In to 36: inside at 25, outside at 45.
+    near(frame.at(135, 120), (255, 0, 0), "inside the narrow side");
+    near(frame.at(115, 120), (0, 0, 255), "past the narrow side");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mirrors_the_outline_with_the_picture() {
+    // The camera is flipped by flipping its uv, which leaves an outline that
+    // knows nothing about it facing the way the camera did while the person
+    // faces the other — an asymmetric shape over the wrong shoulder. It only
+    // shows on a shape that is not symmetric and on somebody who is not sitting
+    // squarely in frame, which is why it survived a first pass.
+    let dir = scratch("prequel-pixels-blob-mirror");
+    let camera = solid(400, [255, 0, 0]);
+    record(&dir, "camera.mp4", 400, 200, &camera);
+    record(&dir, "screen.mp4", 400, 200, &camera);
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![slice(outlined(true))]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // The same two points as above, the other way round.
+    let frame = first_frame(&output);
+    near(frame.at(85, 120), (255, 0, 0), "the lobe, now on the left");
+    near(frame.at(65, 120), (0, 0, 255), "past it");
+    near(
+        frame.at(185, 120),
+        (255, 0, 0),
+        "the narrow side, now on the right",
+    );
+    near(frame.at(205, 120), (0, 0, 255), "past that");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn draws_nothing_where_the_outline_has_closed() {
+    // Somebody who stepped out of frame. Both rasterisers scale the radius by
+    // `presence` precisely so this frame discards — falling back to `shape`
+    // would draw the rectangle underneath, which for this shape is the whole
+    // camera picture flashed across the frame.
+    let dir = scratch("prequel-pixels-blob-empty");
+    let camera = solid(400, [255, 0, 0]);
+    record(&dir, "camera.mp4", 400, 200, &camera);
+    record(&dir, "screen.mp4", 400, 200, &camera);
+
+    let mut plan = outlined(false);
+    if let Some(PlanItem::Image { blobs, .. }) = plan.items.get_mut(1) {
+        blobs[0].presence = 0.0;
+    }
+
+    let output = dir.join("export.mp4");
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    near(frame.at(160, 120), (0, 0, 255), "where the shape was");
+    near(frame.at(60, 60), (0, 0, 255), "and everywhere else");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

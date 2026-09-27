@@ -63,6 +63,43 @@ export interface Matte {
   samples: number;
   /** Camera frames with no mask of their own; the previous mask stands in. */
   dropped: number;
+  /**
+   * The mask fitted to circles, for the camera shape that follows somebody.
+   *
+   * Beside the mask rather than instead of it: the mask is what cuts the
+   * background away and these are what shape the bubble, and a recording can want
+   * either. Absent on every recording made before the fitter existed, which the
+   * editor reads as a camera whose shape falls back to a circle.
+   */
+  blobs?: BlobSample[];
+}
+
+/**
+ * The camera's free-form outline at one moment, on the session clock.
+ *
+ * A radius that varies with the angle: `h` holds three harmonics of it, and the
+ * series both rasterisers evaluate is
+ * `1 + h0·cos t + h1·sin t + h2·cos 2t + h3·sin 2t + h4·cos 3t + h5·sin 3t`.
+ * Three, because three cannot trace a person — see `blob.rs` in
+ * `prequel-camera`.
+ *
+ * Dimensionless but for the centre: `h` is a multiple of whatever radius the
+ * shape is drawn at, which is the camera's own size setting. `x` and `y` are the
+ * centre's offset from the middle of the camera picture, in fractions of its
+ * shorter edge. Turning either into output pixels is `shared/layout.ts`'s job
+ * and nothing else's.
+ *
+ * Sampled at 10 Hz where the mask itself is written every frame: both
+ * rasterisers interpolate between two of these, and the shape is eased before it
+ * is ever stored.
+ */
+export interface BlobSample {
+  at: MediaTime;
+  x: number;
+  y: number;
+  h: number[];
+  /** How far open the shape is, 0 to 1. 0 is nobody in front of the camera. */
+  presence: number;
 }
 
 /**

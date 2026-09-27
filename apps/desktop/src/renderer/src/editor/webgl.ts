@@ -20,12 +20,16 @@
  * export have never quite agreed about shadows. Now they do.
  */
 import {
+  blobAt,
+  movedBlob,
   captionAt,
   overlayAt,
   cropToFrame,
   cursorAt,
   rectAt,
   SHADOW_SPREAD,
+  type BlobKey,
+  type BlobShape,
   type Paint,
   type PlanItem,
   type Rect,
@@ -175,6 +179,19 @@ uniform float u_adapt;
 // sampler pointing wherever it was and never reads it.
 uniform sampler2D u_matte;
 uniform int u_useMatte;
+// The camera's free-form outline for this frame: centre in xy, the radius it
+// starts from in z, and how far open it is in w. Output pixels but the last.
+//
+// Measured against v_screen rather than v_local unlike every other shape here,
+// because the quad a camera of this shape is drawn in is cut to the frame before
+// it is drawn — a centre in the quad's own pixels would move by however much was
+// cut off. A radius of 0 is every draw but that camera.
+uniform vec4 u_blob;
+// How the radius varies with the angle, as three harmonics: (cos t, sin t,
+// cos 2t, sin 2t) and then (cos 3t, sin 3t, unused, unused). The third is what
+// makes the shape lobed rather than merely oval; the editor is what decides how
+// much of it arrives here.
+uniform vec4 u_harmonics[2];
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -264,6 +281,40 @@ vec3 chosen() {
   }
 
   return mix(u_onDark.rgb, u_onLight.rgb, smoothstep(0.42, 0.62, luma / 16.0));
+}
+
+// Distance to the camera's free-form outline, in output pixels. Negative inside,
+// positive outside. Verbatim from the Metal shader.
+//
+// A radius that varies with the angle: a circle, plus three harmonics that lean
+// it, oval it and lobe it. The series matters, not just the idea — two
+// rasterisers evaluating it differently is a preview and an export whose
+// outlines disagree.
+//
+// Not a true signed distance: off the curve it is out by however fast the radius
+// is turning. That only scales the one pixel of feathering at the edge, and the
+// editor keeps the harmonics well under a fifth of it so it stays gentle.
+float blobDistance(vec2 p) {
+  vec2 d = p - u_blob.xy;
+  // The picture is mirrored by flipping its uv, which leaves the outline facing
+  // the way the camera did and the person facing the other. Reflecting the point
+  // we measure from is the same reflection, one line earlier.
+  if (u_mirror != 0) {
+    d.x = -d.x;
+  }
+
+  float t = atan(d.y, d.x);
+  vec4 low = u_harmonics[0];
+  vec4 high = u_harmonics[1];
+  float bend = low.x * cos(t) + low.y * sin(t)
+             + low.z * cos(2.0 * t) + low.w * sin(2.0 * t)
+             + high.x * cos(3.0 * t) + high.y * sin(3.0 * t);
+
+  // Never inside out, whatever the harmonics say. The editor scales them well
+  // inside this, and a plan from anywhere else does not get to fold the curve
+  // through its centre.
+  float radius = u_blob.z * max(1.0 + bend, 0.1) * u_blob.w;
+  return length(d) - radius;
 }
 
 // Signed distance to a superellipse-cornered rectangle. Negative inside,
@@ -387,7 +438,17 @@ float vignette(vec2 screen) {
 void main() {
   vec2 halfSize = u_rect.zw * 0.5;
   vec2 p = v_local - halfSize;
-  float d = shapeDistance(p, halfSize, u_shape.x, u_shape.y);
+  // The outline, when the camera has one, otherwise the rounded rectangle every
+  // other primitive is. In output pixels either way, which is what lets the one
+  // pixel of feathering further down mean the same thing.
+  //
+  // Switched on the outline's own radius, which is above zero only for that
+  // camera. A moment with nobody in front of it has a presence of zero instead,
+  // which makes the radius zero here and draws nothing — where falling back to
+  // the rounded rectangle would draw the whole uncropped camera picture flashed
+  // across the frame.
+  float d = u_blob.z > 0.0 ? blobDistance(v_screen)
+                           : shapeDistance(p, halfSize, u_shape.x, u_shape.y);
 
   // Shadows are the same shape, softened — so the blur follows the silhouette
   // rather than the bounding box.
@@ -513,6 +574,8 @@ interface Program {
   texel: WebGLUniformLocation | null;
   alpha: WebGLUniformLocation | null;
   matte: WebGLUniformLocation | null;
+  blob: WebGLUniformLocation | null;
+  harmonics: WebGLUniformLocation | null;
   useMatte: WebGLUniformLocation | null;
 }
 
@@ -953,6 +1016,14 @@ export class WebGlCompositor {
           src,
           mirror: item.mirror,
           matte: masked,
+          // Resolved here rather than held in the plan, exactly as the pointer's
+          // position is: the plan is built once per clip and this changes every
+          // frame. Then carried by whatever the rectangle is doing, so a zoom
+          // that shrinks the camera out of its own way takes the shape with it.
+          // Both are mirrored in Rust and pinned by the golden-pixel test.
+          ...(item.blobs
+            ? { blob: outlineNow(item.blobs, at, item.dstRect, moment.rect) ?? undefined }
+            : {}),
         });
         drawQuad(gl);
         break;
@@ -1382,6 +1453,18 @@ function moving(
 /** Four zeroed corners: `w` of 0 means "no tilt", read by the vertex shader. */
 const FLAT = new Float32Array(12);
 
+/**
+ * Scratch for the outline's harmonics, filled and handed to the driver.
+ *
+ * One buffer for the life of the compositor rather than one per draw. Every
+ * primitive of every frame passes through `set`, so a fresh typed array here is
+ * a few hundred allocations a second thrown away immediately — which is the sort
+ * of thing that shows as the preview hitching rather than as anything being
+ * slow. Two slots spare: the shader takes two `vec4`s and the third harmonic
+ * only fills half the second.
+ */
+const HARMONICS = new Float32Array(8);
+
 interface Draw {
   rect: Rect;
   shape: Shape;
@@ -1413,6 +1496,20 @@ interface Draw {
   tint?: { onDark: string; onLight: string };
   /** Multiply by the person mask on texture unit 2. Only the camera sets it. */
   matte?: boolean;
+  /**
+   * The camera's outline this frame, in output pixels, already interpolated.
+   *
+   * Left out for every draw but a camera whose shape follows the person. A
+   * `presence` of 0 is not the same thing: it is that camera with nobody in
+   * front of it, which draws nothing.
+   */
+  blob?: BlobShape;
+}
+
+/** The outline this frame, moved by whatever the picture's rectangle is doing. */
+function outlineNow(keys: BlobKey[], at: number, rest: Rect, now: Rect): BlobShape | null {
+  const blob = blobAt(keys, at);
+  return blob && movedBlob(blob, rest, now);
 }
 
 function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
@@ -1472,6 +1569,17 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   gl.uniform4f(p.onLight, onLight[0], onLight[1], onLight[2], onLight[3]);
   gl.uniform1f(p.adapt, draw.tint ? 1 : 0);
   gl.uniform1f(p.vignette, draw.vignette ?? 0);
+
+  // Written every draw rather than only for the camera, because a uniform holds
+  // its value until it is changed — leaving the last camera's outline set would
+  // clip whatever was drawn next into the shape of somebody's shoulders.
+  const blob = draw.blob;
+  gl.uniform4f(p.blob, blob?.x ?? 0, blob?.y ?? 0, blob?.radius ?? 0, blob?.presence ?? 0);
+  const h = blob?.h;
+  for (let k = 0; k < 6; k++) {
+    HARMONICS[k] = h?.[k] ?? 0;
+  }
+  gl.uniform4fv(p.harmonics, HARMONICS);
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -1655,6 +1763,8 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     alpha: at("u_alpha"),
     matte: at("u_matte"),
     useMatte: at("u_useMatte"),
+    blob: at("u_blob"),
+    harmonics: at("u_harmonics"),
   };
 }
 

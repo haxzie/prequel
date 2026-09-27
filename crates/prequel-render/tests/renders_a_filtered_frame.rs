@@ -21,8 +21,8 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, FilterKind, OutputFormat, PlanFilter, PlanItem, PlanSource,
-    Rect, RenderPlan, SegmentRef, Shape, Size, SliceMedia, SliceRender, export,
+    AudioMix, CancelFlag, ExportRequest, FilterKind, OutputFormat, PlanFilter, PlanItem,
+    PlanSource, Rect, RenderPlan, SegmentRef, Shape, Size, SliceMedia, SliceRender, export,
 };
 use prequel_session::TrackKind;
 
@@ -194,6 +194,7 @@ fn plan(filter: Option<PlanFilter>) -> RenderPlan {
             },
             mirror: false,
             matte: false,
+            blobs: Vec::new(),
             motion: Vec::new(),
         }],
         filter,

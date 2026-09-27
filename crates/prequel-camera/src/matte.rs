@@ -17,9 +17,18 @@ use std::thread::JoinHandle;
 
 use cidre::{arc, cf, cv, ns, objc, vn};
 use prequel_encode::{VideoCodec, VideoWriter, VideoWriterConfig};
-use prequel_session::MediaTime;
+use prequel_session::{BlobSample, MediaTime};
 
+use crate::blob::{self, MaskView, Tracker};
 use crate::{Error, Result};
+
+/// How often the mask is fitted to circles.
+///
+/// A tenth of a second, where the mask itself is written every frame. Both
+/// rasterisers interpolate between two samples and the shape is already eased
+/// before it is stored — see `Tracker` — so a faster rate would add manifest
+/// entries without changing a pixel. A ten-minute take is six hundred samples.
+const BLOB_INTERVAL_NS: MediaTime = 100_000_000;
 
 /// Anything that turns a camera frame into a person mask.
 pub trait Segmenter {
@@ -87,7 +96,8 @@ impl Segmenter for VisionSegmenter {
 }
 
 /// What the matte worker wrote, for the manifest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// No longer `Copy`: the summary carries the fitted shape, which is a `Vec`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatteSummary {
     pub frames: u64,
     /// Camera frames with no mask of their own: offered while the segmenter
@@ -96,6 +106,12 @@ pub struct MatteSummary {
     pub dropped: u64,
     pub width: u32,
     pub height: u32,
+    /// The mask fitted to circles, for the shape that follows somebody.
+    ///
+    /// Empty when the camera recorded a matte but nobody was ever in frame,
+    /// which the editor reads the same way as a recording made before the
+    /// fitter existed: a camera whose shape falls back to a circle.
+    pub blobs: Vec<BlobSample>,
 }
 
 /// One camera frame waiting to be segmented.
@@ -272,6 +288,7 @@ fn run(
     let mut sink: Option<Sink> = None;
     let mut origin: Option<MediaTime> = None;
     let mut dropped = 0u64;
+    let mut shape = Shape::default();
 
     for job in rx {
         // The first frame offered is the camera's first frame — the queue is
@@ -280,7 +297,16 @@ fn run(
 
         // A pool per frame: Vision's result array is autoreleased, and a
         // plain thread has no pool, so without this every frame leaks it.
-        let step = objc::ar_pool(|| step(segmenter.as_mut(), &mut sink, path, origin, &job));
+        let step = objc::ar_pool(|| {
+            step(
+                segmenter.as_mut(),
+                &mut sink,
+                path,
+                origin,
+                &job,
+                &mut shape,
+            )
+        });
 
         match step {
             Ok(true) => {}
@@ -308,12 +334,134 @@ fn run(
             dropped,
             width: sink.width,
             height: sink.height,
+            blobs: shape.samples,
         }),
         Err(e) => {
             tracing::warn!("the camera matte could not be finished: {e}");
             None
         }
     }
+}
+
+/// The fitted shape as it is built: the tracker that eases it, and the samples
+/// so far.
+///
+/// Its own struct so `step` takes one parameter rather than three, and so the
+/// tracker's continuity is obviously per recording rather than per frame — the
+/// whole point of it is that it remembers the last sample.
+#[derive(Default)]
+struct Shape {
+    tracker: Tracker,
+    samples: Vec<BlobSample>,
+    last_at: Option<MediaTime>,
+    /// Whether the last sample written was the shape closed. Without it, a
+    /// camera pointed at an empty room writes one sample of nothing ten times a
+    /// second for the length of the recording.
+    closed: bool,
+}
+
+impl Shape {
+    /// Fits this frame if a sample is due.
+    ///
+    /// A failure here is not a failure of the frame: the mask is written either
+    /// way, and a shape missing one sample is interpolated across. So it takes
+    /// `&mut cv::PixelBuf` and swallows a lock that did not come.
+    fn sample(&mut self, mask: &mut cv::PixelBuf, picture: &cv::PixelBuf, at: MediaTime) {
+        if self
+            .last_at
+            .is_some_and(|last| at.saturating_sub(last) < BLOB_INTERVAL_NS)
+        {
+            return;
+        }
+        self.last_at = Some(at);
+
+        // The *camera's* proportions, not the mask's. Vision hands back a fixed
+        // size, so the mask of a widescreen camera is that frame squashed into
+        // 4:3 — and a shape fitted in squashed space is drawn a third too
+        // narrow. See `Grid` in `blob.rs`.
+        let aspect = picture.width() as f32 / picture.height().max(1) as f32;
+        let Ok(fitted) = fit_mask(mask, aspect) else {
+            return;
+        };
+
+        // Eased here rather than in the editor. It has to happen once, on the
+        // side that sees every frame in order — done there instead, the preview
+        // and the export would each hold their own idea of how far the shape had
+        // opened, and agree only when playback started at the same frame.
+        //
+        // Rounded on the way out, to a thousandth. `session.json` is parsed on
+        // every open and once per library tile, and at f32's own precision this
+        // track is several hundred kilobytes for a ten-minute take.
+        let Some(blob) = self.tracker.push(fitted) else {
+            // The shape has closed. One sample says so; for the rest of the time
+            // nobody is in frame it stays shut, and there is nothing to store.
+            if !self.closed {
+                self.closed = true;
+                self.samples.push(BlobSample {
+                    at,
+                    blob: prequel_session::Blob {
+                        x: 0.0,
+                        y: 0.0,
+                        h: [0.0; 6],
+                        presence: 0.0,
+                    },
+                });
+            }
+            return;
+        };
+
+        self.closed = false;
+        self.samples.push(BlobSample {
+            at,
+            blob: prequel_session::Blob {
+                x: round(blob.x),
+                y: round(blob.y),
+                h: blob.h.map(round),
+                presence: round(blob.presence),
+            },
+        });
+    }
+}
+
+/// To a thousandth, for the manifest.
+fn round(value: f32) -> f32 {
+    (value * 1000.0).round() / 1000.0
+}
+
+/// Reads a locked mask into the fitter.
+///
+/// Read-only, because Vision owns the buffer and may hand the same one to a
+/// later request — the same reason `copy_mask_into_luma` locks it that way.
+fn fit_mask(mask: &mut cv::PixelBuf, aspect: f32) -> Result<Option<prequel_session::Blob>> {
+    use cv::pixel_buffer::LockFlags;
+
+    unsafe {
+        mask.lock_base_addr(LockFlags::READ_ONLY)
+            .result()
+            .map_err(|e| Error::Matte(format!("could not lock the mask: {e:?}")))?;
+    }
+
+    let (width, height, stride) = (mask.width(), mask.height(), mask.bytes_per_row());
+    // SAFETY: the buffer is locked for the length of the slice, and the slice is
+    // the rows the buffer actually has — `stride` is its own, not the width's.
+    let fitted = unsafe {
+        let bytes = std::slice::from_raw_parts(mask.base_address().cast::<u8>(), stride * height);
+        blob::fit(
+            &MaskView {
+                bytes,
+                width,
+                height,
+                stride,
+            },
+            aspect,
+        )
+    };
+
+    unsafe {
+        let _ = mask.unlock_lock_base_addr(LockFlags::READ_ONLY);
+    }
+
+    Ok(fitted)
 }
 
 /// One frame: segment, convert, append. `Ok(false)` when the encoder was busy.
@@ -323,8 +471,14 @@ fn step(
     path: &Path,
     origin: MediaTime,
     job: &Job,
+    shape: &mut Shape,
 ) -> std::result::Result<bool, String> {
     let mut mask = segmenter.matte(&job.frame).map_err(|e| e.to_string())?;
+
+    // Before the encoder, so a frame the encoder refuses is still a frame the
+    // shape saw. The mask exists either way, and the tracker's continuity is
+    // what keeps the shape from stepping.
+    shape.sample(&mut mask, &job.frame, job.pts);
 
     let sink = match sink {
         Some(sink) => sink,

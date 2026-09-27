@@ -14,6 +14,24 @@ struct Uniforms {
     // tilted. First in the struct because `float4[4]` is 16-byte aligned and
     // 64 bytes long, so every field after it keeps the offset it had before.
     float4 quad[4];
+    // The camera's free-form outline for this frame: centre in x and y, the
+    // radius it starts from, and how far open it is — all in *output* pixels but
+    // the last, which is 0 to 1.
+    //
+    // Output pixels, and measured from `screen` rather than from `local` unlike
+    // every other shape here, because the quad this camera is drawn in is cut to
+    // the frame before it reaches the shader — a centre in the quad's own pixels
+    // would move by however much was cut off. A radius of 0 is every draw but
+    // that camera, and is what makes `shape` the outline instead.
+    float4 blob;
+    // How the radius varies with the angle, as three harmonics:
+    // (cos t, sin t, cos 2t, sin 2t) and then (cos 3t, sin 3t, unused, unused).
+    // The third is what makes the shape lobed rather than merely oval; the
+    // editor is what decides how much of it arrives here.
+    //
+    // Beside `quad` for the alignment reason `quad` is first: whole 16-byte rows,
+    // so every field after them keeps the offset it had relative to them.
+    float4 harmonics[2];
     // Destination rectangle in output pixels.
     float4 rect;
     // Region of the source texture to sample, normalised 0-1 as (x, y, w, h).
@@ -73,6 +91,10 @@ struct Uniforms {
     // Non-zero to multiply the picture by the person mask at texture 2. In
     // the tail `alpha` opened, so nothing above it moves.
     uint matte;
+    // Padding to the next 16, which is where MSL ends this block. The two slots
+    // the outline briefly used are back to being padding; Rust will not add them
+    // itself, so both sides write them out.
+    float2 _tail;
 };
 
 struct Vertex {
@@ -115,7 +137,41 @@ vertex Vertex composite_vertex(uint id [[vertex_id]],
     return out;
 }
 
-// Signed distance to a superellipse-cornered rectangle.
+// Distance to the camera's free-form outline, in output pixels.
+//
+// Negative inside, positive outside, like `shape_distance`. A radius that varies
+// with the angle: a circle, plus two harmonics that lean it
+// and oval it. Verbatim in `webgl.ts` — the series matters, not just the idea,
+// because two rasterisers evaluating it differently is a preview and an export
+// whose outlines disagree.
+//
+// Not a true signed distance: off the curve it is out by however fast the radius
+// is turning. That only ever scales the one pixel of feathering at the edge, and
+// the editor keeps the harmonics well under a fifth of it so that stays gentle.
+static float blob_distance(float2 p, constant Uniforms &u) {
+    float2 d = p - u.blob.xy;
+    // The picture is mirrored by flipping its uv, which leaves the outline
+    // facing the way the camera did and the person facing the other. Reflecting
+    // the point we measure from is the same reflection, one line earlier.
+    if (u.mirror != 0) {
+        d.x = -d.x;
+    }
+
+    float t = atan2(d.y, d.x);
+    float4 low = u.harmonics[0];
+    float4 high = u.harmonics[1];
+    float bend = low.x * cos(t) + low.y * sin(t)
+               + low.z * cos(2.0 * t) + low.w * sin(2.0 * t)
+               + high.x * cos(3.0 * t) + high.y * sin(3.0 * t);
+
+    // Never inside out, whatever the harmonics say. The editor scales them well
+    // inside this, and a plan from anywhere else does not get to fold the curve
+    // through its own centre.
+    float radius = u.blob.z * max(1.0 + bend, 0.1) * u.blob.w;
+    return length(d) - radius;
+}
+
+// Signed distance to a superellipse-cornered rectangle.// Signed distance to a superellipse-cornered rectangle.
 //
 // Negative inside, positive outside, in pixels. `n == 2` is an ellipse — a
 // circle once the radius reaches half the shorter edge — and `n == 4` is the
@@ -369,7 +425,18 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         return premultiplied(u.colorA.rgb, u.colorA.a / (1.0 + exp(1.702 * away / sigma)));
     }
 
-    float d = shape_distance(p, half_size, u.shape.x, u.shape.y);
+    // The outline, when the camera has one, otherwise the rounded rectangle
+    // every other primitive is. Measured in output pixels either way, which is
+    // what lets the one pixel of feathering below mean the same thing.
+    //
+    // Switched on the outline's own radius, which is above zero only for that
+    // camera. A moment with nobody in front of it has a `presence` of zero
+    // instead, which makes the radius zero here and draws nothing — where
+    // falling back to `shape` would draw the rounded rectangle underneath, and
+    // for this shape that is the whole uncropped camera picture flashed across
+    // the frame.
+    float d = u.blob.z > 0.0 ? blob_distance(in.screen, u)
+                             : shape_distance(p, half_size, u.shape.x, u.shape.y);
 
     if (u.mode == 4) {
         // A stroke lies *inside* the silhouette: the band between the edge and

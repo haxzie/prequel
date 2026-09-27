@@ -1261,6 +1261,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               media={media}
               images={images}
               cursor={session.cursor}
+              blobs={session.blobs}
               zooms={state.project.zooms}
               cues={captions.byLook}
               texts={placedTexts}
@@ -1324,6 +1325,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               frame={state.project.frame}
               cameraSource={cameraSource}
               cameraMatte={cameraMatte}
+              cameraBlobs={session.blobs !== null}
               tab={panelTab}
               onTab={setPanelTab}
               presets={{

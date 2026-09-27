@@ -94,6 +94,57 @@ export interface Shape {
 }
 
 /**
+ * The camera's free-form outline at one moment, in output pixels.
+ *
+ * `BlobShape` rather than `Blob`, which is what the Rust side calls it: `Blob`
+ * is a DOM global, and a file that imported this one and meant the browser's
+ * would get this instead with no error to say so.
+ *
+ * A radius that varies with the angle — `radius` is the circle it starts from,
+ * and `h` holds three harmonics that bend it. Both rasterisers evaluate
+ * `1 + h0·cos t + h1·sin t + h2·cos 2t + h3·sin 2t + h4·cos 3t + h5·sin 3t`.
+ *
+ * The centre is in output pixels and measured against the *frame* rather than
+ * the quad it is drawn in — which is the one place a plan does that. The quad
+ * gets cut to the frame inside each rasteriser, and a centre in its own pixels
+ * would move by however much was cut off.
+ */
+export interface BlobShape {
+  x: number;
+  y: number;
+  radius: number;
+  h: number[];
+  /** How far open the shape is, 0 to 1. Nothing is drawn at 0. */
+  presence: number;
+}
+
+/** The outline at one moment, on the slice's own clock. */
+export interface BlobKey extends BlobShape {
+  at: number;
+}
+
+/**
+ * The camera's outline as the recording fitted it, before any of it is placed.
+ *
+ * Dimensionless but for the centre: `h` is a multiple of whatever radius the
+ * shape is drawn at, and `x`/`y` are the centre's offset from the middle of the
+ * camera picture in fractions of its shorter edge. Turning those into output
+ * pixels is this file's job and no reader's.
+ */
+export interface BlobTrack {
+  samples: readonly BlobSample[];
+}
+
+/** One fitted sample, in the units `prequel-camera` wrote. */
+export interface BlobSample {
+  at: number;
+  x: number;
+  y: number;
+  h: number[];
+  presence: number;
+}
+
+/**
  * One pointer position, already mapped into output pixels.
  *
  * `at` is source time, matching the slice's own range. Mapped here rather than
@@ -246,6 +297,16 @@ export type PlanItem =
        * before the matte existed draws what it drew.
        */
       matte?: boolean;
+      /**
+       * The camera's outline over time, for the shape that follows somebody.
+       *
+       * The second moving thing a plan can hold, after the pointer, and carried
+       * as a track for the same reason: it is sampled from the footage rather
+       * than decided by the arrangement, so it is not a rectangle anything here
+       * can work out. Absent on every other item and on a camera of any other
+       * shape, which is what leaves `shape` as the outline.
+       */
+      blobs?: BlobKey[];
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
@@ -602,7 +663,88 @@ export interface RenderPlan {
 }
 
 /** Superellipse exponent per camera shape. */
-const SHAPE_EXPONENT = { circle: 2, squircle: 4, rounded: 2, wide: 2, portrait: 2 } as const;
+const SHAPE_EXPONENT = {
+  circle: 2,
+  squircle: 4,
+  rounded: 2,
+  wide: 2,
+  portrait: 2,
+  // What `blob` falls back to, which is a circle: the outline comes from the
+  // recording, and a recording made before the fitter existed has none. Never
+  // read where there is a track.
+  blob: 2,
+} as const;
+
+/**
+ * How far the outline may lean out of the box it is drawn in, as a fraction of
+ * its own radius.
+ *
+ * The shape follows somebody within their own camera frame, and the fitter
+ * already caps how far it leans — this is the same cap said in the units the box
+ * is measured in, so a bubble half off the frame cannot be dragged further by
+ * somebody sitting to one side of their webcam.
+ */
+const BLOB_LEAN = 0.35;
+
+/**
+ * How much the stored shape is exaggerated on its way to being drawn, at each
+ * end of the Roundness control.
+ *
+ * Somebody sitting square to a camera is very nearly round: the harmonics of a
+ * real take come out around 0.06 all told, which drawn at face value is a circle
+ * with a wobble nobody can see. So the shape is always exaggerated — what the
+ * fitter measures is the *direction* of the character, and this is how much of
+ * it to show.
+ *
+ * At full roundness it is a gentle egg; wound down it is the lobed shape the
+ * silhouette actually makes. The control is `cameraCornerRadius`, which for
+ * every other shape is a corner radius and for this one is the only thing left
+ * for a word like "roundness" to mean.
+ *
+ * The lobed end is not the strongest the shape could be drawn — it is where the
+ * control's own bottom is, which is a different thing. It first ran to a shape
+ * three times this far from a circle, and the useful part of that range turned
+ * out to be its top two fifths; the rest was a rounded triangle nobody would
+ * choose. So the bottom of the control was moved up to where the range stopped
+ * being useful, and every number here is the old range read at that point.
+ */
+const BLOB_GAIN = { round: 2.6, lobed: 3.96 };
+
+/**
+ * How far from a circle the outline may be drawn, at each end of the control.
+ *
+ * The cap the gain above works against, and the two of them are a pair: capping
+ * alone leaves an ordinary take as a circle because an ordinary take barely
+ * deviates, and amplifying alone turns one big gesture into a lobe half the
+ * frame across.
+ *
+ * The round end is measured rather than chosen. Tracing the reference this shape
+ * was built to match and taking the harmonics of its radius gives 0.03 of lean
+ * and 0.125 of oval — near a circle, plainly not one, 0.16 added together.
+ */
+const BLOB_DEVIATION = { round: 0.18, lobed: 0.276 };
+
+/**
+ * How much of the three-lobed harmonic survives, at each end of the control.
+ *
+ * None of it at full roundness, and two fifths at the other end — not all of it,
+ * which is a rounded triangle and is why the control's bottom stops short of the
+ * term's full strength. That term is the whole difference between an egg and the
+ * lobed shape, because a head over two shoulders — or a head with a hand up
+ * beside it — is three lobes, and the third harmonic is precisely what draws
+ * three lobes.
+ */
+const BLOB_LOBES = { round: 0.0, lobed: 0.4 };
+
+/**
+ * The corner radius that counts as fully round, which the control's top is.
+ *
+ * Half the shorter edge: the degenerate rounded rectangle that is a circle, and
+ * the same number `SHAPE_RADIUS.circle` holds. Written out rather than imported
+ * because `project.ts` already imports `placement` from here, and a value
+ * crossing back the other way would be a cycle.
+ */
+const BLOB_ROUNDEST = 0.5;
 
 /**
  * How tall `portrait` stands, per unit of width.
@@ -653,6 +795,7 @@ export function buildRenderPlan(
   cues?: readonly RenderedCue[],
   texts?: readonly (readonly PlacedText[])[],
   rendered?: ReadonlyMap<string, RenderedText>,
+  blobs?: BlobTrack | null,
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -910,8 +1053,30 @@ export function buildRenderPlan(
     const cutout = layout.cameraCutout;
     const camera = sources.camera;
     const whole: Rect = { x: 0, y: 0, width: camera.width, height: camera.height };
-    const shown = cutout ? uncropped(dstRect, srcRect, camera) : dstRect;
-    const shape: Shape = cutout
+
+    /**
+     * Or the outline the recording fitted to them, which is the same idea taken
+     * further: the background stays, and the *shape* is what follows.
+     *
+     * Needs a track beside the camera, which every recording made since the
+     * fitter existed has. Without one the shape falls back to its circle rather
+     * than drawing nothing — a recording that predates the feature is not a
+     * recording with a broken camera.
+     *
+     * Never both. A cutout has no outline at all — there is no edge left for one
+     * to be — so the background being cut away wins and this is ignored while it
+     * is on.
+     */
+    const outline =
+      !cutout && layout.cameraShape === "blob" && blobs && blobs.samples.length > 0 ? blobs : null;
+
+    // The whole picture, for both. The outline roams over all of it — that is the
+    // point of it, and a hand raised out of the bubble's box has to have
+    // somewhere to be drawn — so the box sets where and at what size the person
+    // appears and no longer where the picture stops.
+    const spilling = cutout || outline !== null;
+    const shown = spilling ? uncropped(dstRect, srcRect, camera) : dstRect;
+    const shape: Shape = spilling
       ? { radius: 0, exponent: 2 }
       : {
           radius: radiusFor(layout, Math.min(dstRect.width, dstRect.height)),
@@ -927,7 +1092,7 @@ export function buildRenderPlan(
     // own numbers.
     const against = slot.card ? unit : Math.min(dstRect.width, dstRect.height);
     const blur = background.shadowBlur * against;
-    const spread = cutout ? 0 : (blur / 2) * SHADOW_SPREAD;
+    const spread = spilling ? 0 : (blur / 2) * SHADOW_SPREAD;
 
     /**
      * The camera's own ring, outside its own picture.
@@ -942,7 +1107,7 @@ export function buildRenderPlan(
      * out of a zoom's way is `cameraKeys`' business, and it is not this number —
      * see the note on the ring's own track.
      */
-    const border = cutout ? 0 : layout.cameraBorderWidth * unit;
+    const border = spilling ? 0 : layout.cameraBorderWidth * unit;
     const outer = grow(dstRect, border);
     const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
 
@@ -967,10 +1132,10 @@ export function buildRenderPlan(
         return {
           // The shrunken box is the same crop at a smaller scale, so the
           // whole source follows it through the same uncropping.
-          rect: cutout ? uncropped(box, srcRect, camera) : box,
+          rect: spilling ? uncropped(box, srcRect, camera) : box,
           // Measured off the box it is on, not off the resting one: a bubble
           // whose corners stayed put as it shrank would change shape on the way.
-          radius: cutout ? 0 : radiusFor(layout, Math.min(box.width, box.height)),
+          radius: spilling ? 0 : radiusFor(layout, Math.min(box.width, box.height)),
         };
       },
       spread,
@@ -979,7 +1144,7 @@ export function buildRenderPlan(
       enter
         ? {
             from: leaving
-              ? cutout
+              ? spilling
                 ? uncropped(reshaped(leaving.dstRect, dstRect), srcRect, camera)
                 : reshaped(leaving.dstRect, dstRect)
               : nothingAt(shown),
@@ -992,7 +1157,7 @@ export function buildRenderPlan(
 
     const moving = motion.length > 0 ? { motion } : {};
 
-    if (!cutout && background.shadowOpacity > 0) {
+    if (!spilling && background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
         // Cast by the bubble *and* its ring, the same rule the screen follows:
@@ -1013,12 +1178,28 @@ export function buildRenderPlan(
     items.push({
       kind: "image",
       source: "camera",
-      srcRect: cutout ? whole : srcRect,
+      srcRect: spilling ? whole : srcRect,
       dstRect: shown,
       shape,
       mirror: layout.cameraMirror,
       ...moving,
       ...(cutout ? { matte: true } : {}),
+      ...(outline
+        ? {
+            blobs: placedBlobs(
+              outline,
+              dstRect,
+              shown,
+              layout.cameraMirror,
+              // The Roundness control, which for this shape is the only thing a
+              // word like that can still mean: there are no corners on it. Read
+              // off the same leaf every other shape reads a corner radius from,
+              // so a recording with no outline still falls back to a bubble of
+              // exactly that roundness.
+              clamp(layout.cameraCornerRadius / BLOB_ROUNDEST, 0, 1),
+            ),
+          }
+        : {}),
     });
 
     if (border > 0) {
@@ -4456,6 +4637,66 @@ function blurAt(word: CaptionWord, at: number): number {
 }
 
 /**
+ * The outline as a rectangle's motion carries it.
+ *
+ * A zoom shrinks the camera out of its own way by interpolating its rectangle,
+ * and the outline has to go with it: it is in output pixels against the frame,
+ * so left alone it would hold its size and position while the picture shrank
+ * away underneath. The move is a plain scale about the rectangle's own origin,
+ * which is all a shrink ever is here, so the centre and the radius take the same
+ * factor.
+ *
+ * Mirrored by `moved_blob` in `crates/prequel-render/src/plan.rs`.
+ */
+export function movedBlob(blob: BlobShape, from: Rect, to: Rect): BlobShape {
+  if (from.width <= 0 || from.height <= 0) return blob;
+
+  const scale = to.width / from.width;
+  return {
+    ...blob,
+    x: to.x + (blob.x - from.x) * scale,
+    y: to.y + (blob.y - from.y) * (to.height / from.height),
+    radius: blob.radius * scale,
+  };
+}
+
+/**
+ * The camera's outline at a moment.
+ *
+ * Shared by both rasterisers through the plan, exactly as `cursorAt` is, and
+ * mirrored by `blob_at` in `crates/prequel-render/src/plan.rs`. Linear between
+ * samples because the track is fitted at 10 Hz and playback is not.
+ */
+export function blobAt(keys: readonly BlobKey[], at: number): BlobShape | null {
+  if (keys.length === 0) return null;
+  if (at <= keys[0]!.at) return keys[0]!;
+
+  const last = keys[keys.length - 1]!;
+  if (at >= last.at) return last;
+
+  let low = 0;
+  let high = keys.length - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (keys[mid]!.at <= at) low = mid;
+    else high = mid;
+  }
+
+  const a = keys[low]!;
+  const b = keys[high]!;
+  const span = b.at - a.at;
+  const t = span > 0 ? (at - a.at) / span : 0;
+
+  return {
+    x: lerp(a.x, b.x, t),
+    y: lerp(a.y, b.y, t),
+    radius: lerp(a.radius, b.radius, t),
+    h: a.h.map((value, index) => lerp(value, b.h[index] ?? 0, t)),
+    presence: lerp(a.presence, b.presence, t),
+  };
+}
+
+/**
  * Where the pointer is at a moment, or null if it is not on screen.
  *
  * Shared by both rasterisers through the plan rather than by being written
@@ -5267,6 +5508,217 @@ function place(
  * round the bubble is, and the one that lost was always the radius somebody had
  * dragged: it snapped back the next time the shape control was touched.
  */
+/**
+ * The fitted outline in output pixels: where it sits, and how big.
+ *
+ * The one conversion, and it is here for the same reason every other one is —
+ * the rasterisers are handed numbers to draw with, never fractions to work out.
+ * The fitter says what shape somebody makes and how far off-centre they are; the
+ * box says where the camera is and how big. Neither knows the other, and this is
+ * where they meet.
+ *
+ * `h` passes through untouched: it is a multiple of the radius, so it is already
+ * in whatever units the radius ends up in.
+ */
+/**
+ * The last outline placed, and what it was placed from.
+ *
+ * A plan is rebuilt on every change — which during a drag is every frame — and
+ * placing an outline is the one part of building one that is not O(1): a
+ * ten-minute take is six thousand samples, and mapping them cost 0.8 ms and some
+ * eighteen thousand allocations per build against 0.01 ms for the whole of the
+ * rest. Sixty of those a second is a preview that stutters and a shape that
+ * flickers, which is exactly what it did.
+ *
+ * One entry, because a plan has one camera. Compared by value rather than by
+ * identity: the boxes are computed fresh every build and are never the same
+ * object twice, while the numbers in them change only when somebody moves
+ * something.
+ */
+let lastPlaced: { key: readonly unknown[]; blobs: BlobKey[] } | null = null;
+
+/**
+ * The last set of bent harmonics, and what bent them.
+ *
+ * A second cache inside the first, and it earns its keep on the one path the
+ * first cannot help with: dragging the camera. That moves the box every frame,
+ * so the outline is placed again every frame — but *where* the shape sits and
+ * *what* shape it is are independent, and only the first of them moved. Without
+ * this, dragging rebuilt six thousand harmonic arrays a frame to arrive at
+ * exactly the numbers it already had.
+ *
+ * Handed out by reference. Nothing downstream writes to these — both
+ * rasterisers only ever read them, and `blobAt` builds its own array to
+ * interpolate into.
+ */
+let lastShapes: { track: BlobTrack; roundness: number; shapes: number[][] } | null = null;
+
+/** Every sample's harmonics, bent for this roundness. */
+function bentShapes(track: BlobTrack, look: Look, roundness: number): number[][] {
+  if (lastShapes && lastShapes.track === track && lastShapes.roundness === roundness) {
+    return lastShapes.shapes;
+  }
+
+  const shapes = track.samples.map((sample) => shown(sample.h, look));
+  lastShapes = { track, roundness, shapes };
+  return shapes;
+}
+
+/** The Roundness control resolved to the three numbers it moves. */
+interface Look {
+  gain: number;
+  deviation: number;
+  lobes: number;
+}
+
+function placedBlobs(
+  track: BlobTrack,
+  box: Rect,
+  picture: Rect,
+  mirror: boolean,
+  roundness: number,
+): BlobKey[] {
+  const key = [
+    track,
+    box.x,
+    box.y,
+    box.width,
+    box.height,
+    picture.x,
+    picture.y,
+    picture.width,
+    picture.height,
+    mirror,
+    roundness,
+  ] as const;
+
+  if (
+    lastPlaced &&
+    lastPlaced.key.length === key.length &&
+    lastPlaced.key.every((value, index) => value === key[index])
+  ) {
+    return lastPlaced.blobs;
+  }
+
+  const blobs = placeBlobs(track, box, picture, mirror, roundness);
+  lastPlaced = { key, blobs };
+  return blobs;
+}
+
+function placeBlobs(
+  track: BlobTrack,
+  box: Rect,
+  picture: Rect,
+  mirror: boolean,
+  roundness: number,
+): BlobKey[] {
+  // The three numbers the control moves, worked out once. How far the shape may
+  // swell decides how big it may be as well as how it is drawn, so they have to
+  // come from the same place — reserving room for the most lobed setting at
+  // every setting would leave the roundest one drawn smaller than it needs to be.
+  const at = (ends: { round: number; lobed: number }) =>
+    ends.lobed + (ends.round - ends.lobed) * roundness;
+  const look: Look = { gain: at(BLOB_GAIN), deviation: at(BLOB_DEVIATION), lobes: at(BLOB_LOBES) };
+  const shapes = bentShapes(track, look, roundness);
+
+  /**
+   * As big as fits, which is not as big as the box.
+   *
+   * The shape is a mask over the camera picture, and a fragment shader cannot
+   * paint where its quad is not — so a shape larger than the picture is not a
+   * larger shape, it is one with the overhang sliced flat. That is worth
+   * spelling out because it does not look like clipping: a circle with its top
+   * and bottom cut off reads as a rounded rectangle, and for a while every
+   * version of this shape drew the same suspiciously square silhouette however
+   * the fitter changed.
+   *
+   * The picture binds rather than the box because a square box crops a 16:9
+   * camera to a square, and the whole picture laid down at that scale is the
+   * same height as the box and no taller — while the shape wants that height
+   * *plus* room to swell.
+   */
+  // Against the widest the shape may *ever* be, not the widest this setting
+  // allows. Sized against the setting, dragging the Roundness slider resized the
+  // camera by eight per cent on the way — the bubble pulsing under a control
+  // that says nothing about size, which reads as the preview flickering rather
+  // than as anything moving.
+  const room = Math.min(picture.width, picture.height) / 2 / (1 + BLOB_DEVIATION.lobed);
+  const radius = Math.min(Math.min(box.width, box.height) / 2, room);
+
+  // How far the shape reaches at full swell, which is what has to stay on the
+  // picture.
+  const reach = radius * (1 + BLOB_DEVIATION.lobed);
+  const centreX = box.x + box.width / 2;
+  const centreY = box.y + box.height / 2;
+
+  // Measured off the picture's shorter edge, because that is the edge the fitter
+  // measured the lean off.
+  const edge = Math.min(picture.width, picture.height);
+
+  return track.samples.map((sample, index) => {
+    // Mirrored with the picture. The camera is flipped by flipping its uv, so a
+    // lean left where the camera had it leans right once it is drawn — the shape
+    // sitting over the wrong shoulder. The shape's own bends are reflected
+    // inside the shaders, where the mirror flag already is.
+    const dx = mirror ? -sample.x : sample.x;
+    return {
+      at: sample.at,
+      // Leaning as far as the fitter asked, and never off the picture. Clamping
+      // the centre rather than shrinking the shape: a bubble that got smaller as
+      // somebody leaned would read as the camera pulling away from them.
+      x: clamp(centreX + dx * edge, picture.x + reach, picture.x + picture.width - reach),
+      y: clamp(centreY + sample.y * edge, picture.y + reach, picture.y + picture.height - reach),
+      radius,
+      h: shapes[index]!,
+      presence: sample.presence,
+    };
+  });
+}
+
+/**
+ * The stored shape, exaggerated to how far from a circle it is drawn.
+ *
+ * `look` is the Roundness control resolved to its three numbers. The shape is
+ * the one the recording fitted whichever end it is at — what changes is how much
+ * of it is drawn.
+ *
+ * Amplified and then capped, rather than either alone. Capping alone leaves an
+ * ordinary take as a circle, because an ordinary take barely deviates;
+ * amplifying alone turns one big gesture into a lobe half the frame across.
+ *
+ * The cap is measured against the sum of the amplitudes rather than by walking
+ * the curve. The curve can never be further from its circle than its harmonics
+ * added together, so this is the conservative answer and it costs three square
+ * roots instead of a few dozen cosines on every sample of every plan.
+ */
+function shown(h: readonly number[], look: Look): number[] {
+  // The lobes damped first, so what is capped below is the shape that will
+  // actually be drawn. Damped afterwards it would be the *undamped* amplitude
+  // that ate the allowance, and winding the roundness up would quietly shrink
+  // the rest of the shape as well as the lobes.
+  //
+  // Damped in place in the array being returned, rather than into one array and
+  // then out into another. This runs once per sample of a track that can be six
+  // thousand long, and two throwaway arrays each is what a preview's frame
+  // budget goes on.
+  const bent = h.map((value, index) => (index >= 4 ? value * look.lobes : value));
+
+  let amplitude = 0;
+  for (let k = 0; k < bent.length; k += 2) {
+    amplitude += Math.hypot(bent[k] ?? 0, bent[k + 1] ?? 0);
+  }
+
+  // A shape of nothing stays nothing. Dividing by it would be amplifying the
+  // difference between two directions nobody moved in, and the curve would spin.
+  if (amplitude <= 1e-6) return bent;
+
+  const scale = Math.min(look.gain, look.deviation / amplitude);
+  for (let k = 0; k < bent.length; k++) {
+    bent[k]! *= scale;
+  }
+  return bent;
+}
+
 function radiusFor(layout: LayoutSettings, edge: number): number {
   return layout.cameraCornerRadius * edge;
 }

@@ -9,10 +9,12 @@
 //! [`prequel_session::SharedClock`], so their timestamps land on a common
 //! timeline and pausing one pauses both.
 
+mod blob;
 mod devices;
 mod matte;
 mod recorder;
 
+pub use blob::HARMONICS;
 pub use devices::{CameraDevice, list_cameras};
 pub use matte::{MatteSummary, MatteWorker, Segmenter, VisionSegmenter};
 pub use recorder::{

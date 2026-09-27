@@ -20,7 +20,8 @@ import type {
 import { dialog, shell, type BrowserWindow } from "electron";
 
 import type { Manifest, TrackKind } from "../shared/manifest.js";
-import { MANIFEST_FILE_NAME, parseManifest, seamsOf } from "../shared/manifest.js";
+import { MANIFEST_FILE_NAME, findTrack, parseManifest, seamsOf } from "../shared/manifest.js";
+import type { BlobTrack } from "../shared/layout.js";
 import type { CursorLayer } from "../shared/contract.js";
 import { CURSOR_FILES } from "../shared/contract.js";
 import type { Project } from "../shared/project.js";
@@ -103,6 +104,7 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     manifest,
     media,
     cursor: cursorLayer(dir, manifest),
+    blobs: blobTrack(manifest),
     project: await withBackground(
       dir,
       loadProject(
@@ -313,6 +315,43 @@ function cursorLayer(dir: string, manifest: Manifest): CursorLayer | null {
     clicks: (manifest.clicks ?? []).map((click) => click.at),
     keys: manifest.keys ?? [],
   };
+}
+
+/**
+ * The camera's fitted outline, across every take, on one session clock.
+ *
+ * Null rather than an empty track when there is nothing to draw, so the shape
+ * control can say why it is unavailable instead of offering a shape that renders
+ * as a circle. A recording made before the fitter existed has no samples, and one
+ * whose camera never opened has no matte at all.
+ *
+ * The samples already carry session-clock times — the fitter reads the camera's
+ * own pts, and a take's camera is timestamped on the shared clock — so the takes
+ * only have to be laid end to end in the order the manifest holds them. Sorted
+ * rather than trusted: `blobAt` binary-searches the track, and one take's
+ * samples ahead of another's would be found by neither.
+ */
+function blobTrack(manifest: Manifest): BlobTrack | null {
+  const camera = findTrack(manifest, "camera");
+  if (!camera) return null;
+
+  const samples = camera.segments
+    .flatMap((segment) => segment.matte?.blobs ?? [])
+    .map((sample) => ({
+      at: sample.at,
+      x: sample.x,
+      y: sample.y,
+      h: sample.h,
+      presence: sample.presence,
+    }))
+    .sort((a, b) => a.at - b.at);
+
+  // A track that is never open is not a track. That is a take whose outline was
+  // written by a build that described the shape differently — the manifest reads
+  // those as closed rather than refusing the recording — and a camera left in
+  // this shape on one of them would draw nothing at all, where falling back to a
+  // bubble is what somebody would expect to see.
+  return samples.some((sample) => sample.presence > 0) ? { samples } : null;
 }
 
 /**

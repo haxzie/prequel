@@ -21,7 +21,7 @@ import type {
   TrackKind,
   TypingSample,
 } from "./manifest.js";
-import type { CursorTrack, RenderPlan } from "./layout.js";
+import type { BlobTrack, CursorTrack, RenderPlan } from "./layout.js";
 import type { Project } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
@@ -1574,6 +1574,19 @@ export interface EditorSession {
    * which is that it has no layer to offer.
    */
   cursor: CursorLayer | null;
+  /**
+   * The camera's fitted outline, or null when the recording has none.
+   *
+   * Null covers a recording made before the fitter existed and one whose camera
+   * was switched off — from the editor's side those are the same thing, which is
+   * that the shape that follows somebody has nothing to follow and the control
+   * for it has to say so.
+   *
+   * Built in main rather than read from the manifest by the renderer, for the
+   * reason the pointer's layer is: several takes each fitted their own camera,
+   * and stitching them onto one session clock is main's job.
+   */
+  blobs: BlobTrack | null;
   /** The edit, loaded from `project.json` or freshly made. */
   project: Project;
   /**

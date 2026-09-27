@@ -58,7 +58,8 @@ impl CameraOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Not `Copy`: the matte carries its fitted shape, which is a `Vec`.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CameraSummary {
     pub frames: u64,
     /// Nanoseconds of media, with paused spans already removed.

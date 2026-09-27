@@ -338,6 +338,11 @@ export function buildSlices(
           // beginning rather than restarting at every cut it crosses.
           rows,
           texts,
+          // The outline the recording fitted, for a camera shaped by it. Whole
+          // track rather than this clip's slice of it: `blobAt` holds the first
+          // and last sample past either end, so a clip that starts mid-take is
+          // drawn with the shape that was there.
+          session.blobs,
         ),
       ),
       speed: slice.speed,

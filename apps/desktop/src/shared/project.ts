@@ -73,12 +73,21 @@ export type LayoutPreset =
 /**
  * `wide` keeps the camera's own proportions and only rounds its corners,
  * `portrait` stands the same crop on end for a frame that is taller than it is
- * wide; every other shape is square. The shape sets the corner radius and nothing else —
+ * wide; every other shape is square.
+ *
+ * `blob` is the exception to everything below: its outline comes from the
+ * recording rather than from a radius — the person matte fitted to a handful of
+ * circles, melted together, so the shape follows somebody and opens around a
+ * raised hand instead of cropping it. It still writes a radius, because a
+ * recording made before the fitter existed has no outline to draw and falls back
+ * to the circle that radius describes.
+ *
+ * Every other shape sets the corner radius and nothing else —
  * picking one writes `cameraWidth`, and the geometry reads that. Deriving the
  * width from the shape instead would mean a resized bubble snapped back to a
  * square the next time anyone touched the shape control.
  */
-export type CameraShape = "circle" | "squircle" | "rounded" | "wide" | "portrait";
+export type CameraShape = "circle" | "squircle" | "rounded" | "wide" | "portrait" | "blob";
 
 /**
  * The corner radius each shape stands for, as a fraction of the bubble's
@@ -102,6 +111,17 @@ export const SHAPE_RADIUS: Record<CameraShape, number> = {
   rounded: 0.18,
   wide: 0.12,
   portrait: 0.12,
+  // Halfway, which for this shape is not a corner radius at all: it is where
+  // the Roundness control starts, and half is the useful middle of it — a
+  // gentle egg at the top, lobed at the bottom, and no reason to open at either
+  // extreme. See `BLOB_GAIN` in `shared/layout.ts`.
+  //
+  // It is still read as a corner radius on a recording with no fitted outline,
+  // where the shape falls back to a bubble. That only happens to a saved look
+  // carried onto an older recording — the shape cannot be picked on one — and a
+  // rounded bubble is a better answer there than a circle pretending nothing is
+  // missing.
+  blob: 0.25,
 };
 
 export interface LayoutSettings {

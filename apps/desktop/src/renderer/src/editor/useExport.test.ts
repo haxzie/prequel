@@ -63,6 +63,7 @@ function session(): EditorSession {
     manifest: manifest(),
     media: media(),
     cursor: null,
+    blobs: null,
     project: project(),
     transcript: null,
     sound: null,
