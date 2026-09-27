@@ -110,6 +110,7 @@ import {
   SpeedIcon,
   SquircleIcon,
   BlobIcon,
+  TrashIcon,
   StrengthIcon,
   TiltIcon,
   TypingIcon,
@@ -1848,6 +1849,11 @@ function FiltersPanel({
               onClick={() => choose(id)}
             >
               <span className={FILTER_SWATCH} style={{ background: FILTER_SWATCHES[id] }} />
+              {effects.filter === id && (
+                <span className={FILTER_EDIT} aria-hidden>
+                  <PencilIcon />
+                </span>
+              )}
               <span className={FILTER_LABEL}>{FILTERS[id].label}</span>
             </button>
           ))}
@@ -1915,6 +1921,35 @@ function FilterOptions({
           />
 
           <span className="min-w-0 flex-1 truncate text-[13px] text-editor-fg">{spec.label}</span>
+
+          {/* Taking the look off, from the one place that is only ever reached
+              with a look on. The grid can do it too — None is a tile like any
+              other — but getting back to the grid to press it is the long way
+              round from here, and these controls are where somebody decides
+              they do not want it after all.
+
+              Muted until reached for, then red: the same treatment the scene
+              presets' delete gets, rather than a button sitting shouting beside
+              the name of the thing it removes. */}
+          <button
+            type="button"
+            aria-label="Remove filter"
+            title="Remove filter"
+            className={cn(
+              "grid size-7 flex-none place-items-center rounded-md text-editor-muted",
+              "transition-colors hover:bg-cut/20 hover:text-cut [&_svg]:size-4",
+            )}
+            onClick={() => {
+              set("effects", "filter", null);
+              // And back to the grid. The look's own controls are what this
+              // view is, and with no look there are none — left here it would
+              // fall through to the grid anyway, one frame later and by
+              // accident rather than because anybody said so.
+              onBack();
+            }}
+          >
+            <TrashIcon />
+          </button>
         </div>
       </Section>
 
@@ -2032,6 +2067,32 @@ const FILTER_CHOSEN = "ring-2 ring-selected ring-inset";
 const FILTER_SWATCH = "block h-10 w-full rounded-[3px] overflow-hidden";
 
 const FILTER_LABEL = "text-[9px] leading-tight text-editor-muted text-center";
+
+/**
+ * The pencil on the look that is on.
+ *
+ * Always there rather than on hover, and it is the one tile where that is
+ * right: the ring already says which look is chosen, and this says the tile
+ * does something *else* now — tapping it opens the look's own controls rather
+ * than choosing it again. A hover-only badge would be a second action nobody
+ * knew was there.
+ *
+ * Frosted, on the same black wash the scene presets' menu button uses, because
+ * it sits over a swatch whose colour is the whole point of the tile and is
+ * different on every one of them. A solid chip would be a hole punched in the
+ * picture it is annotating.
+ *
+ * Laid over the swatch rather than the cell: the cell is padded and carries a
+ * label underneath, so centring on it would put the pencil over the words.
+ * `top-2` is that padding, `h-10` the swatch's own height.
+ *
+ * Nothing to click. The whole tile is the button, and a badge that swallowed
+ * the press would leave a dead spot in the middle of it.
+ */
+const FILTER_EDIT =
+  "pointer-events-none absolute inset-x-0 top-2 grid h-10 place-items-center " +
+  "[&>svg]:size-3.5 [&>svg]:rounded-full [&>svg]:bg-black/55 [&>svg]:p-[3px] " +
+  "[&>svg]:box-content [&>svg]:text-white/90 [&>svg]:backdrop-blur-sm";
 
 /**
  * A pale block on a dark field: a picture with nothing done to it.
