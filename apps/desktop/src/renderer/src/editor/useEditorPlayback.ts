@@ -493,12 +493,29 @@ export function useEditorPlayback(
       // trim. Their project times are stale; the next tick arms afresh.
       mixer.cancelScheduled();
       scheduler.reset();
-      // Which element is showing what is about to be recomputed from scratch,
-      // and a key left over from the previous session names an element that no
-      // longer exists.
-      active.current.clear();
     };
   }, [session, placed, duration, playback, tracks, mixer, scheduler, cues]);
+
+  /**
+   * Which element is showing what, forgotten when the recording changes.
+   *
+   * Not when the loop above restarts, which is a different and far more common
+   * event: its dependencies include the slices, so *any* per-clip edit — one
+   * step of a slider drag — tears it down and builds it again. Cleared there,
+   * every one of those restarts looked like a fresh session, so the next tick
+   * answered "this element has never been near this moment" for every track and
+   * hard-seeked the decoder.
+   *
+   * A seek drops `readyState` for the two or three frames it takes to decode
+   * again. `isReady` answers no for those, the layer leaves the plan, and since
+   * the background is an item of its own the preview flashes the wallpaper on
+   * its own — once per settings change, which during a drag is once per frame.
+   *
+   * Keeping the map across a restart is also the more correct answer: a slice
+   * edit that genuinely moves the playhead into a different take still changes
+   * the key, and `crossed` still says so.
+   */
+  useEffect(() => () => active.current.clear(), [session]);
 
   const register = useCallback(
     (key: MediaKey) => (element: HTMLMediaElement | null) => {
