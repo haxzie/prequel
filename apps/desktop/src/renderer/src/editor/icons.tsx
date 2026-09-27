@@ -201,11 +201,21 @@ export function FocusIcon() {
   );
 }
 
-/** Lucide `mouse-pointer-2`. */
+/**
+ * Iconoir `cursor-pointer`, supplied for this panel.
+ *
+ * Drawn on the shared stroke rather than its own: it arrives at 1.5 and
+ * everything else here is 2, and a pointer a third lighter than the icons beside
+ * it reads as disabled rather than as a different shape. Its path is verbatim.
+ *
+ * One glyph for the pointer everywhere it appears — the panel, the style
+ * control, a zoom that follows it, and its lane on the timeline — because they
+ * all name the same thing.
+ */
 export function CursorIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">
-      <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
+      <path d="M19.503 9.97c1.204.489 1.112 2.224-.137 2.583l-6.305 1.813l-2.88 5.895c-.571 1.168-2.296.957-2.569-.314L4.677 6.257A1.369 1.369 0 0 1 6.53 4.7z" />
     </svg>
   );
 }
@@ -239,12 +249,25 @@ export function ScreenIcon() {
   );
 }
 
-/** Lucide `video`. */
+/**
+ * Boxicons `face`, supplied for this panel. A person, not a camcorder.
+ *
+ * What this names is the person in the recording rather than the hardware that
+ * caught them — every control it sits on is about how they are framed, shaped
+ * and lit. Filled rather than stroked, which is what keeps it legible at the
+ * 3px it is drawn at inside a clip on the timeline; the stroked camcorder it
+ * replaces needed a thinner stroke there to avoid filling in.
+ *
+ * Not the dock's `CameraIcon`, which is a different glyph in a different file:
+ * that one is half of an on/off pair on a device menu, and there it really is
+ * the hardware being switched.
+ */
 export function CameraIcon() {
   return (
-    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
-      <path d="m22 8-6 4 6 4V8Z" />
-      <rect width="14" height="12" x="2" y="6" rx="2" />
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.486 2 2 6.486 2 12s4.486 10 10 10s10-4.486 10-10S17.514 2 12 2m0 2c3.213 0 5.982 1.908 7.254 4.648a8 8 0 0 1-.895-.498c-.409-.258-.873-.551-1.46-.772c-.669-.255-1.4-.378-2.234-.378s-1.565.123-2.234.377c-.587.223-1.051.516-1.472.781c-.378.237-.703.443-1.103.594C9.41 8.921 8.926 9 8.33 9c-.595 0-1.079-.079-1.524-.248c-.4-.151-.728-.358-1.106-.598c-.161-.101-.34-.208-.52-.313C6.587 5.542 9.113 4 12 4m0 16c-4.411 0-8-3.589-8-8c0-.81.123-1.59.348-2.327c.094.058.185.11.283.173c.411.26.876.554 1.466.776c.669.255 1.399.378 2.233.378c.833 0 1.564-.123 2.235-.377c.587-.223 1.051-.516 1.472-.781c.378-.237.703-.443 1.103-.595c.445-.168.929-.247 1.525-.247s1.08.079 1.525.248c.399.15.725.356 1.114.602c.409.258.873.551 1.46.773c.363.138.748.229 1.153.291c.049.357.083.717.083 1.086c0 4.411-3.589 8-8 8" />
+      <circle cx="8.5" cy="13.5" r="1.5" />
+      <circle cx="15.5" cy="13.5" r="1.5" />
     </svg>
   );
 }
