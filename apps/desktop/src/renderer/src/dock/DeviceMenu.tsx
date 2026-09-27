@@ -9,10 +9,11 @@ import { cn } from "../lib/cn";
 import { ChevronIcon } from "./icons";
 import { IconButton } from "./IconButton";
 
-/** The dot's colour per state. Amber for a live mic, green for a running
-    camera — a mic that is merely on is not the same as one that is hearing you. */
+/** The dot's colour per state. One green for both: a device that is on is a
+    device that is on, whichever it is, and the level meter beside a microphone
+    is what says whether it can hear you. */
 const STATUS_COLOUR: Record<DeviceStatus, Record<"camera" | "microphone", string>> = {
-  on: { camera: "bg-dot-on", microphone: "bg-dot-live" },
+  on: { camera: "bg-dot-on", microphone: "bg-dot-on" },
   off: { camera: "bg-dot-off", microphone: "bg-dot-off" },
   error: { camera: "bg-dock-record", microphone: "bg-dock-record" },
 };

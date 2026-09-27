@@ -67,7 +67,6 @@
   --color-dock-record: var(--dock-record);
   --color-dock-warn: var(--dock-warn);
   --color-dot-on: var(--dot-on);
-  --color-dot-live: var(--dot-live);
   --color-dot-off: var(--dot-off);
 
   --color-prompter-bg: var(--prompter-bg);
@@ -526,7 +525,7 @@ body {
   /* Play. The same green again, and still its own token: "playback will start"
      and "this switch is on" are not the same idea, and one name shared between
      them would make retuning either retune both — the reason `--dock-warn`
-     below is not `--dot-live`. */
+     below is not `--dot-on`. */
   --play: #30a46c;
 }
 
@@ -606,13 +605,11 @@ body {
   --dock-selected: var(--selected);
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
-  /* A missing permission. The same amber as `--dot-live` below, and a token of
-     its own rather than that one reused: the panel should hold one amber, but
-     "a microphone is hearing you" and "something is wrong" are not the same
-     idea, and a shared name would make changing either of them change both. */
+  /* A missing permission, and now the panel's only amber: a device that is on
+     is green whichever it is, so the one warm colour left in here means
+     something is wrong and nothing else. */
   --dock-warn: #f0b429;
   --dot-on: #34c759;
-  --dot-live: #f0b429;
   --dot-off: #6f757c;
 }
 
