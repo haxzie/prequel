@@ -204,6 +204,26 @@ describe("splitting", () => {
     expect(slicesOf(state.project)).toHaveLength(1);
   });
 
+  it("cuts a sped-up clip where the playhead is, not where the source clock is", () => {
+    // Two seconds into a 2x clip is four seconds of footage in. Taking the
+    // offset unscaled cut at two, which reads as a blade that lands somewhere
+    // other than the line it drew.
+    const only = slicesOf(start().project)[0]!;
+    const state = run(
+      start(),
+      { type: "setSliceSpeed", sliceId: only.id, speed: 2 },
+      { type: "split", at: 2 * S },
+    );
+    const slices = slicesOf(state.project);
+
+    expect(slices.map((slice) => slice.source)).toEqual([
+      { start: 0, end: 4 * S },
+      { start: 4 * S, end: 10 * S },
+    ]);
+    // And the cut sits under the playhead in the edit, which is what was seen.
+    expect(placedSlices(state.project)[1]!.timelineStart).toBe(2 * S);
+  });
+
   it("cuts the right slice when there are already several", () => {
     const state = run(start(), { type: "split", at: 4 * S }, { type: "split", at: 7 * S });
     const slices = slicesOf(state.project);

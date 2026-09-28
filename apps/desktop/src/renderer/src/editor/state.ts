@@ -1519,7 +1519,10 @@ export function splitPointAt(
   );
   if (!slice) return null;
 
-  const source = slice.source.start + (at - slice.timelineStart);
+  // Scaled by `speed`, as `toSourceTime` does: a second of project time covers
+  // `speed` seconds of footage, so on a sped-up clip the unscaled offset lands
+  // short and the cut appears somewhere other than the playhead.
+  const source = slice.source.start + (at - slice.timelineStart) * slice.speed;
   if (source - slice.source.start < MIN_SLICE_NS) return null;
   if (slice.source.end - source < MIN_SLICE_NS) return null;
 
