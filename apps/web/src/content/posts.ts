@@ -59,6 +59,152 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "screen-charm-alternatives",
+    title: "The best Screen Charm alternatives for Mac",
+    excerpt:
+      "Screen Charm is free to record with and charges $79 to let the file out. We tried the six tools people move to, with the prices checked and the complaints linked, and here is where each one fits.",
+    date: "2026-09-28",
+    tag: "Comparison",
+    readingMinutes: 13,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "What is the best Screen Charm alternative?",
+        answer:
+          "Prequel, if what sent you looking was the export sitting behind the $79 licence. It does the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps. It is $29 once or $9 a month, and the seven-day trial is the whole app with export included, so a video you make in that week is yours either way.",
+      },
+      {
+        question: "How much does Screen Charm cost?",
+        answer:
+          "$79, once, with no subscription and no renewal. That covers up to three Macs and comes with a 14-day money-back guarantee. There is one tier and no free plan: the app is free to download and record with, and exporting the finished video needs the $79 purchase. Checked on 28 September 2026.",
+      },
+      {
+        question: "Can you export from Screen Charm for free?",
+        answer:
+          "No. Screen Charm's own FAQ says the app is free to download and use for recording, and that exporting the finished video requires the one-time $79 purchase. There is no time limit on that free period, so you can record and edit for as long as you like, and the file stays inside the app until you pay. Prequel's seven-day trial includes export, with no watermark.",
+      },
+      {
+        question: "Does Screen Charm work on an Intel Mac?",
+        answer:
+          "No. Screen Charm requires an Apple Silicon Mac and macOS Sonoma 14.0 or later, and its FAQ states that Intel Macs are not supported. Prequel has the same requirement. If you are on an Intel Mac, OBS Studio runs on macOS 12 and later on both chips, and QuickTime Player is already installed.",
+      },
+      {
+        question: "What happens to the recordings I already made in Screen Charm?",
+        answer:
+          "Screen Charm project files are its own format and do not open anywhere else, so anything you have already exported as an MP4 is what moves with you. An exported video has its zooms burned in, so there is nothing left to re-time; what you can do is re-record the take in the new app, which for a two-minute demo is usually quicker than fighting a finished file.",
+      },
+      {
+        question: "Is Screen Charm still worth buying?",
+        answer:
+          "If you want one payment, no renewal, and a recorder that puts a zoom on every click with motion blur, a MacBook frame and blur regions, then yes, $79 buys that and the maker ships often. Where it stops is the cheaper end of the same category and anything needing more than one person: there is no team side, no zoom on what you type, and the export is locked until you have paid.",
+      },
+      {
+        question: "What is the cheapest Screen Charm alternative?",
+        answer:
+          "Free ones exist: OBS Studio is free and open source under GPL-2.0, QuickTime Player is built into macOS, and Cap is free for personal use. None of them edits the recording for you. The cheapest tool that does the automatic pass is Prequel at $29 once, or $9 a month, which is under half of Screen Charm's $79 and under Screen Studio's $29 a month.",
+      },
+    ],
+  },
+  {
+    slug: "cap-alternatives",
+    title: "The best Cap alternatives for Mac",
+    excerpt:
+      "Cap is free for personal use, and a recording made for work needs a paid licence. We tried the six tools people move to, with the prices checked and the complaints linked, and here is where each one fits.",
+    date: "2026-09-28",
+    tag: "Comparison",
+    readingMinutes: 13,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "What is the best Cap alternative?",
+        answer:
+          "On a Mac, Prequel. The editor opens with the pass already made, the zooms follow your typing as well as your clicks, and export runs at up to 4K and 120 fps where Cap stops at 4K 60. Both plans are the whole app with no personal-use clause, so a recording made for work needs nothing extra. It is $29 once or $9 a month, where Cap's $29 buys twelve months.",
+      },
+      {
+        question: "Is Cap free?",
+        answer:
+          "Free for personal use. The desktop app records locally with no time limit and exports at 4K 60 on the free plan. Using it commercially needs the Desktop Licence at $29 a year or $58 once, or Cap Pro at $12 per user a month. Shareable links stop at five minutes on the free plan and on the $29 licence; only Cap Pro lifts that. Checked on 28 September 2026.",
+      },
+      {
+        question: "Is Cap really open source?",
+        answer:
+          "Yes. The repository is under AGPLv3, with the camera and capture crates under MIT, and the whole service can be self-hosted with Docker Compose. What the licence does not give you is free commercial use of the desktop app, which is a separate paid licence. Prequel publishes its source on GitHub too, under FSL-1.1-ALv2, which becomes Apache 2.0 two years after each release.",
+      },
+      {
+        question: "Does Cap have automatic zoom?",
+        answer:
+          "Yes, since version 0.6 in September 2026. Cap generates zooms from recorded click data and also offers manual keyframes from 1x to 4.5x. It does not zoom on what you type, which Screen Studio and Prequel both do. Cap's zooms are a starting point you open and adjust in the editor.",
+      },
+      {
+        question: "Why does Cap limit shareable links to five minutes?",
+        answer:
+          "The five-minute cap is on cloud share links, and it applies to the free plan and to the $29-a-year Desktop Licence, which also allows 20 links a month. Local recording has no time limit on any tier. Cap Pro at $12 per user a month makes shares unlimited. Prequel has no cap on the length of a take or on a shared recording.",
+      },
+      {
+        question: "How much does Cap cost compared to the alternatives?",
+        answer:
+          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence, and $12 per user a month for Cap Pro. Screen Studio is $29 a month or $9 a month billed yearly. Loom is free up to five-minute videos, then $18 per user a month. Prequel is $29 once or $9 a month. Read off each vendor's page on 28 September 2026.",
+      },
+      {
+        question: "Can I move my Cap recordings somewhere else?",
+        answer:
+          "Anything you exported from Studio mode is a plain MP4 and moves anywhere. Caps you uploaded for a link live with whichever storage provider you had set, which may be Cap's cloud, your own S3 bucket or Google Drive, and you download them from there. Cap project files are its own format and do not open in another editor.",
+      },
+      {
+        question: "Should I stay on Cap?",
+        answer:
+          "Stay if your team is on Windows or Linux as well as Macs, if you want to read and self-host the code, or if shares have to sit in your own S3 bucket. Nothing else in this category does all three. Move if you are on a Mac, want the edit done for you, and would rather not track a separate commercial licence.",
+      },
+    ],
+  },
+  {
+    slug: "screen-studio-vs-cap",
+    title: "Screen Studio vs Cap: which screen recorder should you use?",
+    excerpt:
+      "Screen Studio makes the recording look finished and Cap makes it free to start and yours to host. We put the two head to head on what each does, what people say about each, and a feature table with Prequel in the third column.",
+    date: "2026-09-28",
+    tag: "Comparison",
+    readingMinutes: 13,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "Is Cap a good Screen Studio alternative?",
+        answer:
+          "It is the closest free one. Since version 0.6 in September 2026 Cap generates zooms from click data, smooths the cursor, cuts the camera out of its background on macOS and has 3D scenes with perspective and focus blur. What it does not do is zoom on what you type, record an iPhone, or export above 4K 60, and its free tier is licensed for personal use only.",
+      },
+      {
+        question: "How much does Cap cost compared to Screen Studio?",
+        answer:
+          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence that adds commercial rights, and $12 per user a month for Cap Pro. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier. Prequel is $29 once or $9 a month. Read off each vendor's own page on 28 September 2026.",
+      },
+      {
+        question: "Does Screen Studio have a free version?",
+        answer:
+          "No. Screen Studio has no free tier, and a finished recording cannot be exported until the month is paid. It withdrew its one-time licence in October 2025 and sells subscriptions only. Cap is free for personal use, and Prequel has a seven-day trial with the whole app in it, export included and no watermark.",
+      },
+      {
+        question: "Which one runs on Windows?",
+        answer:
+          "Cap. It runs on macOS 13.1 and later on Apple Silicon and Intel, on Windows, and on Linux as a .deb, AppImage, RPM or Pacman package. Screen Studio is macOS only and its own FAQ still carries an entry titled 'Is the Windows version ready?'. Prequel is Mac only, on Apple Silicon with macOS 14 or later.",
+      },
+      {
+        question: "Can I self-host Cap?",
+        answer:
+          "Yes. Cap can be fully self-hosted on your own infrastructure using Docker Compose, and on Cap Pro a share can point at your own S3-compatible bucket or Google Drive with a custom domain. Screen Studio has no self-hosted option; its share links sit on Screen Studio's own pages with their branding and a 30-minute cap.",
+      },
+      {
+        question: "Which one gives the better-looking video?",
+        answer:
+          "Screen Studio, of the two, and by less than it used to be. Its zooms follow clicks and typing where Cap's follow clicks only, and it has four years of polish on the cursor work. Both stop at 4K 60. Prequel does the same first pass, adds a perspective tilt and focus falling away from the subject, and exports at up to 4K 120.",
+      },
+      {
+        question: "Is there a lifetime licence for either?",
+        answer:
+          "Cap sells one: $58 for a Desktop Licence that never renews, covering commercial use and unlimited local recording, with shares still capped at five minutes. Screen Studio withdrew its one-time licence in October 2025 and there is no way to buy one now. Prequel sells a $29 lifetime licence alongside the $9 monthly plan.",
+      },
+    ],
+  },
+  {
     slug: "screen-studio-vs-loom",
     title: "Screen Studio vs Loom: which screen recorder should you use on a Mac?",
     excerpt:

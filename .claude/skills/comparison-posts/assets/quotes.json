@@ -27,8 +27,8 @@
       "where": "r/productivity",
       "author": "u/darksurfer007",
       "age": "Mar 2026",
-      "title": "Loom\u2019s 5-minute free video limit \u2014 how do you deal with it?",
-      "body": "I keep running into Loom\u2019s free plan limits \u2014 5-minute max videos is killing my workflow.\n\nI\u2019ve seen other alternatives, but many are either too limited, too expensive, or lack privacy.",
+      "title": "Loom’s 5-minute free video limit — how do you deal with it?",
+      "body": "I keep running into Loom’s free plan limits — 5-minute max videos is killing my workflow.\n\nI’ve seen other alternatives, but many are either too limited, too expensive, or lack privacy.",
       "score": "3",
       "comments": "5",
       "url": "https://www.reddit.com/r/productivity/comments/1s1l3k3/looms_5minute_free_video_limit_how_do_you_deal/"
@@ -46,7 +46,7 @@
       "author": "u/smarties89",
       "age": "May 2024",
       "title": "Loom alternatives",
-      "body": "We implemented video feedback in our remote team. We expected good results, but Loom crippled our progress. The recording was choppy and we had to download its application to use it, and it still crashed a lot.\n\nFirstly, Loom\u2019s free version only allows a 5-minute recording that's so insufficient, especially when working in a remote team environment.",
+      "body": "We implemented video feedback in our remote team. We expected good results, but Loom crippled our progress. The recording was choppy and we had to download its application to use it, and it still crashed a lot.\n\nFirstly, Loom’s free version only allows a 5-minute recording that's so insufficient, especially when working in a remote team environment.",
       "score": "46",
       "comments": "219",
       "url": "https://www.reddit.com/r/Entrepreneur/comments/1cqx3r3/loom_alternatives/"
@@ -82,7 +82,7 @@
       "author": "u/Huy--11",
       "age": "Sep 2025",
       "title": "Looking for a ScreenStudio alternative because their price is insane",
-      "body": "So they charge $108 a year, and the other option is $29 a month. These prices are more expensive than Cursor or almost any other software.\n\nAll I really need is simple screen recording with mouse animations, that\u2019s it. But at this price, it feels too much expensive.",
+      "body": "So they charge $108 a year, and the other option is $29 a month. These prices are more expensive than Cursor or almost any other software.\n\nAll I really need is simple screen recording with mouse animations, that’s it. But at this price, it feels too much expensive.",
       "score": "23",
       "comments": "85",
       "url": "https://www.reddit.com/r/macapps/comments/1n6ica3/looking_for_a_screenstudio_alternative_because/"
@@ -118,7 +118,7 @@
       "author": "u/BoxRemarkable4776",
       "age": "Jul 2026",
       "title": "i can't find a windows screen studio / clueso / trupeer cheap alternative",
-      "body": "A friend of mine uses Screen Studio and the results look great, but I don\u2019t have a Mac, and I can\u2019t really afford the expensive subscriptions that most of the best alternatives charge.",
+      "body": "A friend of mine uses Screen Studio and the results look great, but I don’t have a Mac, and I can’t really afford the expensive subscriptions that most of the best alternatives charge.",
       "score": "5",
       "comments": "15",
       "url": "https://www.reddit.com/r/screenrecorders/comments/1va6rp2/i_cant_find_a_windows_screen_studio_clueso/"
@@ -205,7 +205,7 @@
       "author": "u/New-Ad7020",
       "age": "Aug 2026",
       "title": "Loom price increase - any alternatives?",
-      "body": "Then I got the email today that the price of Loom is nearly doubling for my small business and there are no more Creator Lite seats. Based on our seats today, that\u2019s a 10x increase. Loom has been a tool I use daily for years!",
+      "body": "Then I got the email today that the price of Loom is nearly doubling for my small business and there are no more Creator Lite seats. Based on our seats today, that’s a 10x increase. Loom has been a tool I use daily for years!",
       "score": "6",
       "comments": "6",
       "url": "https://www.reddit.com/r/alternativeto/comments/1w1o09o/loom_price_increase_any_alternatives/"
@@ -241,7 +241,7 @@
       "author": "u/Professional_0605",
       "age": "Jan 2026",
       "title": "What are good alternatives to Loom for creating quick training or walkthrough videos?",
-      "body": "The free version only allows 5-minute recordings, which is barely enough for any proper product explainer. There\u2019s also a 25-video limit, and we hit that without even trying.\n\nI\u2019m not against paying for tools, but Loom\u2019s $18 per month plan hasn\u2019t justified itself for us. The app still crashes, Loom AI is buggy and lags often",
+      "body": "The free version only allows 5-minute recordings, which is barely enough for any proper product explainer. There’s also a 25-video limit, and we hit that without even trying.\n\nI’m not against paying for tools, but Loom’s $18 per month plan hasn’t justified itself for us. The app still crashes, Loom AI is buggy and lags often",
       "score": "12",
       "comments": "55",
       "url": "https://www.reddit.com/r/Entrepreneur/comments/1q88pep/what_are_good_alternatives_to_loom_for_creating/"
@@ -329,6 +329,93 @@
       "score": "2",
       "comments": "33",
       "url": "https://www.reddit.com/r/macapps/comments/1qkycf7/screen_studio_alternative/"
+    }
+  },
+  {
+    "slug": "cap-open-source-screenstudio",
+    "where": "r/macapps",
+    "title": "Open Source ScreenStudio: cap.so!",
+    "url": "https://www.reddit.com/r/macapps/comments/1gawirw/open_source_screenstudio_capso/",
+    "rendered": "2026-09-28",
+    "card": {
+      "kind": "reddit",
+      "where": "r/macapps",
+      "author": "u/lostpx",
+      "age": "Oct 2024",
+      "title": "Open Source ScreenStudio: cap.so!",
+      "body": "From their website:\n\nBeautiful, shareable screen recordings.\n\nCap is the open source alternative to Loom. Lightweight, powerful, and stunning. Record and share in seconds.\n\nWith the recent price hike for ScreenStudio, might be worth checking out. I haven‘t installed it myself just yet but will do so today.",
+      "score": "83",
+      "comments": "26",
+      "url": "https://www.reddit.com/r/macapps/comments/1gawirw/open_source_screenstudio_capso/"
+    }
+  },
+  {
+    "slug": "cap-open-source-loom-hn",
+    "where": "Hacker News",
+    "title": "Show HN: I made an open-source Loom alternative",
+    "url": "https://news.ycombinator.com/item?id=40338275",
+    "rendered": "2026-09-28",
+    "card": {
+      "kind": "hn",
+      "where": "Hacker News",
+      "author": "mcilroy",
+      "age": "May 2024",
+      "title": "Show HN: I made an open-source Loom alternative",
+      "score": "351",
+      "comments": "177",
+      "url": "https://news.ycombinator.com/item?id=40338275"
+    }
+  },
+  {
+    "slug": "screen-charm-show-hn",
+    "where": "Hacker News",
+    "title": "Show HN: Mac screen recorder that adds zoom animations from click data",
+    "url": "https://news.ycombinator.com/item?id=48461381",
+    "rendered": "2026-09-28",
+    "card": {
+      "kind": "hn",
+      "where": "Hacker News",
+      "author": "snazarov92",
+      "age": "Jun 2026",
+      "title": "Show HN: Mac screen recorder that adds zoom animations from click data",
+      "body": "Hi HN, I started building my product around 2 years ago as a Chrome extension. After releasing it, I realized I would never reach the quality of desktop apps, so at the beginning of 2025 I pivoted to a macOS app. I spent 3 months rewriting the codebase for Electron.",
+      "score": "3",
+      "url": "https://news.ycombinator.com/item?id=48461381"
+    }
+  },
+  {
+    "slug": "debut-try-before-you-buy-hn",
+    "where": "Hacker News",
+    "title": "Show HN: Debut – A $25 Screen Studio alternative for macOS",
+    "url": "https://news.ycombinator.com/item?id=46506458",
+    "rendered": "2026-09-28",
+    "card": {
+      "kind": "hn",
+      "where": "Hacker News",
+      "author": "ben_hrris",
+      "age": "Jan 2026",
+      "title": "Show HN: Debut – A $25 Screen Studio alternative for macOS",
+      "body": "Hey, I built Debut because I wanted Screen Studio's polish without the price tag.\n\nIt does smooth cursor animations, automatic zoom effects, and clean exports: basically the stuff that makes screen recordings look professional without hours in a video editor.",
+      "score": "7",
+      "comments": "4",
+      "url": "https://news.ycombinator.com/item?id=46506458"
+    }
+  },
+  {
+    "slug": "screen-studio-web-alternative-hn",
+    "where": "Hacker News",
+    "title": "Show HN: I made a web-based, free alternative to Screen Studio",
+    "url": "https://news.ycombinator.com/item?id=43816419",
+    "rendered": "2026-09-28",
+    "card": {
+      "kind": "hn",
+      "where": "Hacker News",
+      "author": "johnwheeler",
+      "age": "Apr 2025",
+      "title": "Show HN: I made a web-based, free alternative to Screen Studio",
+      "score": "462",
+      "comments": "117",
+      "url": "https://news.ycombinator.com/item?id=43816419"
     }
   }
 ]
