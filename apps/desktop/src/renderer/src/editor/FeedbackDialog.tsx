@@ -125,6 +125,21 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
         aria-label="Report a bug"
         className="relative flex w-[400px] flex-col overflow-hidden rounded-2xl border border-editor-line bg-editor-panel shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
       >
+        {/* In the corner rather than under the Send button. A full-width
+            Cancel at the bottom of a dialog whose one job is to be typed into
+            gives the way out the same weight as the way through, and it was
+            the last thing the eye reached on its way down to the button that
+            matters. Escape still does the same thing. */}
+        <button
+          type="button"
+          aria-label="Close"
+          title="Close"
+          className="absolute top-3 right-3 z-10 grid size-7 place-items-center rounded-full text-editor-muted transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+          onClick={onClose}
+        >
+          <CloseIcon />
+        </button>
+
         <div className="flex flex-col px-5 pt-5 pb-4">
           <div className="flex items-center gap-2.5">
             <span className="grid size-8 place-items-center rounded-xl border border-white/12 bg-white/8 text-white [&_svg]:size-4">
@@ -221,15 +236,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
                   Opens your browser to sign in, then sends this
                 </p>
               )}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="mt-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
-              >
-                <CloseIcon />
-                Cancel
-              </button>
             </>
           )}
 
