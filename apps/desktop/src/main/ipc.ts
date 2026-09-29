@@ -46,6 +46,7 @@ import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
+import { sendFeedback } from "./feedback.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
@@ -485,6 +486,13 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
   ipcMain.handle(IPC_CHANNELS.authSignOut, () => attempt(() => signOut()));
 
   ipcMain.handle(IPC_CHANNELS.authOpenDashboard, () => attempt(() => openDashboard()));
+
+  // Wrapped in `attempt` and awaited to the end, unlike the sign-in above: the
+  // dialog holds its Send button until this answers, and the answer is the
+  // whole point — a report that did not arrive must not read as one that did.
+  ipcMain.handle(IPC_CHANNELS.feedbackSend, (_event, message: string, withLog: boolean) =>
+    attempt(() => sendFeedback(message, withLog)),
+  );
 
   // ── updates ─────────────────────────────────────────────────────────────
   ipcMain.handle(IPC_CHANNELS.updateState, () => updateState());

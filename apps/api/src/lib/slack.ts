@@ -105,15 +105,21 @@ export async function personByTeam(db: Database, teamId: string): Promise<Person
 }
 
 /**
- * Posts one message, and never throws.
+ * Posts one message and says whether it arrived. Never throws.
  *
- * Awaited only where there is no execution context to hang it off — the Better
- * Auth `user.create.after` hook, which is handed neither. Everywhere else use
- * `notify`, which does not make a request wait on Slack.
+ * The boolean is for the one caller that is somebody waiting rather than
+ * something being told: a bug report is typed into a box and pressed Send, and
+ * a dialog that says "Sent" over a message Slack refused is the failure this
+ * whole file is otherwise arranged to tolerate. Every other caller is telling
+ * us about something that already happened and ignores it.
+ *
+ * An unconfigured feed is `false` rather than `true`: nothing was delivered,
+ * and only the caller knows whether that is the normal quiet of a fork or a
+ * message somebody is owed an answer about.
  */
-export async function post(env: Env, feed: SlackFeed, text: string): Promise<void> {
+export async function deliver(env: Env, feed: SlackFeed, text: string): Promise<boolean> {
   const url = webhookFor(env, feed);
-  if (!url) return;
+  if (!url) return false;
 
   try {
     const response = await fetch(url, {
@@ -129,9 +135,23 @@ export async function post(env: Env, feed: SlackFeed, text: string): Promise<voi
     if (!response.ok) {
       console.error(`slack: ${feed} answered ${String(response.status)}`);
     }
+
+    return response.ok;
   } catch (cause) {
     console.error(`slack: could not reach ${feed}`, cause);
+    return false;
   }
+}
+
+/**
+ * Posts one message, and never throws.
+ *
+ * Awaited only where there is no execution context to hang it off — the Better
+ * Auth `user.create.after` hook, which is handed neither. Everywhere else use
+ * `notify`, which does not make a request wait on Slack.
+ */
+export async function post(env: Env, feed: SlackFeed, text: string): Promise<void> {
+  await deliver(env, feed, text);
 }
 
 /**

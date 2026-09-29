@@ -397,6 +397,13 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       onChange: subscribe<AuthState>("auth"),
     },
 
+    // Always succeeds. The gallery is for looking at the dialog's three states,
+    // and the failing one is reached by changing the fixture rather than by
+    // waiting on a network this has none of.
+    feedback: {
+      send: () => ok(undefined),
+    },
+
     update: {
       state: () => Promise.resolve(state.update),
       check: () => Promise.resolve(state.update),

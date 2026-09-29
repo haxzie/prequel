@@ -21,6 +21,8 @@ import { schema } from "@prequel/db";
 import { database } from "../db.ts";
 import { bearerToken, deviceToken, id, sha256, timingSafeEqual } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
+import { sweep, take } from "../lib/rate-limit.ts";
+import { deliver, describe, personById } from "../lib/slack.ts";
 import { trialEndsAt } from "../lib/trial.ts";
 import { authenticate, type AppContext } from "../middleware.ts";
 
@@ -28,6 +30,27 @@ const desktop = new Hono<AppContext>();
 
 /** Five minutes: the time between pressing the button and the app being open. */
 const CODE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * The longest bug report this will take.
+ *
+ * Slack truncates a message around 40 KB and reads badly long before that. This
+ * is roughly a screen of typing, which is more than anybody writes into a box in
+ * a dialog and far less than a pasted log.
+ */
+const MAX_FEEDBACK = 4_000;
+
+/**
+ * The most of a log one report may carry.
+ *
+ * The app sends the last 12 KB and this leaves room around it, rather than
+ * matching exactly: a cap the client sits precisely on is one that starts
+ * refusing reports the day either number is changed on its own.
+ */
+const MAX_LOG = 16_000;
+
+/** Enough for somebody having a bad afternoon; not enough to flood the channel. */
+const FEEDBACK_ALLOWANCE = { limit: 10, windowSeconds: 60 * 60 };
 
 const Authorize = z.object({
   /** base64url(SHA-256(verifier)), from the app. Opaque to the browser. */
@@ -235,6 +258,93 @@ desktop.post("/revoke", authenticate, async (c) => {
 
   const { userId, teamId } = c.get("identity");
   captureServer(c.env, c.executionCtx, { event: "device_revoked", userId, teamId });
+
+  return c.json({ ok: true });
+});
+
+/**
+ * A bug report, typed into the editor and read by a person.
+ *
+ * Straight to Slack and nowhere else. There is no table behind this on purpose:
+ * a report is only worth anything while somebody is still reading it, and a
+ * `feedback` row nobody queries is a place for reports to go and be lost. If
+ * that changes, the channel is the archive.
+ *
+ * **Awaited, unlike every other Slack call in this Worker.** `notify` is for
+ * telling somewhere about something that already happened, where the request
+ * must not wait; this is a person watching a dialog for the word "Sent", and
+ * answering 200 over a message Slack refused is the one outcome worse than an
+ * error. So `deliver`, and its verdict is the response.
+ *
+ * Behind `authenticate` without `requireTeam`: a report needs somebody to reply
+ * to, which is the whole point of the button, and it needs no team at all.
+ */
+const Feedback = z.object({
+  message: z.string().trim().min(1).max(MAX_FEEDBACK),
+  /**
+   * The build it was written on.
+   *
+   * The single most useful line in any report and the one nobody remembers to
+   * include, so the app sends it rather than asking. Optional, because an older
+   * build that learns this endpoint later should still be able to reach it.
+   */
+  version: z.string().min(1).max(32).optional(),
+  /**
+   * The end of `main.log`, when it was asked for.
+   *
+   * Sent already redacted — the app runs it through the same function that
+   * cleans an error report, so `/Users/dana` never arrives here in the first
+   * place. This is not the place to redact it: by the time a string has crossed
+   * the wire the account name has already left the Mac.
+   */
+  log: z.string().max(MAX_LOG).optional(),
+});
+
+desktop.post("/feedback", authenticate, async (c) => {
+  const parsed = Feedback.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ message: "Write something first." }, 400);
+
+  const db = c.get("db");
+  const { userId, teamId } = c.get("identity");
+
+  // Per account rather than per install: the limit is against somebody holding
+  // the key down in the box, and a report is cheap enough that anything a
+  // person types by hand is comfortably inside it.
+  if (!(await take(db, `feedback:${userId}`, FEEDBACK_ALLOWANCE))) {
+    return c.json({ message: "That is a lot of reports. Try again a bit later." }, 429);
+  }
+
+  c.executionCtx.waitUntil(sweep(db, FEEDBACK_ALLOWANCE.windowSeconds));
+
+  const person = await personById(db, userId);
+  const { message, version, log } = parsed.data;
+
+  // Quoted with `>` so a report several lines long stays one block in the
+  // channel rather than running into whatever is posted next.
+  const quoted = message
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
+  // The log after the words, fenced, so the report reads first and the tail is
+  // something to scroll into rather than past. Slack takes 40 KB in a message
+  // and both halves are capped well inside it.
+  const attached = log ? `\n\`\`\`\n${log}\n\`\`\`` : "";
+
+  const sent = await deliver(
+    c.env,
+    "events",
+    `*Bug report* — ${describe(person)}${version ? ` on ${version}` : ""}\n${quoted}${attached}`,
+  );
+
+  if (!sent) {
+    // 503 rather than 500: nothing is broken here — the deployment may simply
+    // have no webhook — and what the app says is "we could not send this",
+    // which is true and leaves the text in the box to try again.
+    return c.json({ message: "Couldn't send that just now. Please try again." }, 503);
+  }
+
+  captureServer(c.env, c.executionCtx, { event: "feedback_sent", userId, teamId });
 
   return c.json({ ok: true });
 });

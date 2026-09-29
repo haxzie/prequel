@@ -35,12 +35,13 @@ import {
 import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { FolderIcon, TrashIcon, WandIcon } from "./icons";
+import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
 import { mergeWords, realignWords, survivingWords, wordsWithin } from "./captionText";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
+import { FeedbackDialog } from "./FeedbackDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
@@ -284,6 +285,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * sitting over it. Only one of the two is ever open.
    */
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  /** The bug report box. Opens over whatever is on screen and blocks nothing. */
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { entitlement, check: checkLicence } = useLicence();
   /** A still of the composition, taken when the export dialog opens. */
   const [poster, setPoster] = useState<string | null>(null);
@@ -304,10 +307,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
   const media = useEditorPlayback(session, slices);
-
-  // Off the manifest, so it is fixed for the recording. Recomputing it per
-  // render would rebuild an array of every click on every slider drag.
-  const autoMoments = useMemo(() => momentsOf(session), [session]);
 
   const present = useMemo(
     () => new Set<TrackKind>(session.media.map((track) => track.kind)),
@@ -1230,31 +1229,19 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       onBack={onBack}
       actions={
         <>
-          {/* Runs the automatic pass again over the edit as it stands. Enabled
-              only when the recording gave it something to work from — with no
-              clicks and no typing there is nothing to find, and a button that
-              visibly does nothing is worse than one that says it cannot. */}
+          {/* Text as well as the glyph, unlike every other button on this bar.
+              The others are things somebody came here to do and will find by
+              looking; this one has to be noticed by somebody who was not
+              looking for it, in the moment the app has just done something
+              wrong. An unlabelled bug is a button nobody presses. */}
           <button
             type="button"
-            disabled={autoMoments.length === 0}
-            title={
-              autoMoments.length === 0
-                ? "Nothing to work from: this recording has no clicks or typing"
-                : "Add zooms for anything not already covered"
-            }
-            aria-label="Add zooms automatically"
-            className="no-drag grid size-7 place-items-center rounded-lg text-editor-muted hover:bg-white/10 hover:text-editor-fg disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4"
-            onClick={() =>
-              dispatch({
-                type: "setZooms",
-                zooms: augmentZooms(state.project.zooms, autoMoments, {
-                  duration: session.manifest.duration,
-                  hasCursor: session.cursor !== null,
-                }),
-              })
-            }
+            title="Tell us what went wrong"
+            className="no-drag flex flex-none items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+            onClick={() => setFeedbackOpen(true)}
           >
-            <WandIcon />
+            <BugIcon />
+            Found a bug?
           </button>
           <button
             type="button"
@@ -1603,6 +1590,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           onClose={() => setUpgradeOpen(false)}
         />
       )}
+
+      {/* Unmounted when closed, like the two below it: what was typed into a
+          dismissed report is not something to keep and offer back later. */}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
 
       {exportOpen && (
         <ExportDialog

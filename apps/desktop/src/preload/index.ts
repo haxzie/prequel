@@ -629,6 +629,18 @@ const api = {
       subscribe(IPC_CHANNELS.authChanged, listener),
   },
 
+  feedback: {
+    /**
+     * Sends a bug report, and answers only once somebody can read it.
+     *
+     * The result is the dialog's whole answer: it resolves after the report has
+     * reached the channel, and fails with the reason when it has not. A window
+     * that said "Sent" on the request leaving would be saying it about nothing.
+     */
+    send: (message: string, withLog: boolean): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.feedbackSend, message, withLog),
+  },
+
   update: {
     /** How far along an update is, including the version running now. */
     state: (): Promise<UpdateState> => ipcRenderer.invoke(IPC_CHANNELS.updateState),

@@ -779,6 +779,14 @@ export const IPC_CHANNELS = {
   licencePrompted: "licence:prompted",
   /** Main → renderer broadcast, when the verdict changes under a window. */
   licenceChanged: "licence:changed",
+  /**
+   * Sends a bug report typed into the editor.
+   *
+   * In main like every other remote call — the renderer's CSP forbids the
+   * network — and it answers only once the report has actually been delivered,
+   * because the dialog's whole job is to say whether somebody will read it.
+   */
+  feedbackSend: "feedback:send",
   /** Uploads a finished export and answers with a link. */
   shareStart: "share:start",
   shareCancel: "share:cancel",
