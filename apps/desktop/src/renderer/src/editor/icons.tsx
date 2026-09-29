@@ -83,6 +83,37 @@ export function WandIcon() {
   );
 }
 
+/**
+ * Work going on, with nothing to say about how much is left.
+ *
+ * A quarter of the ring drawn over the whole of it: a full circle rotating is a
+ * circle standing still, and the gap is the only thing that makes the spin
+ * legible. Sized by CSS like the rest, so it can stand in for whichever glyph
+ * it replaces without the button changing shape.
+ */
+export function SpinnerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="animate-spin" aria-hidden="true">
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        className="opacity-25"
+      />
+      <path
+        d="M12 3a9 9 0 0 1 9 9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function ExportIcon() {
   return (
     <svg

@@ -5,7 +5,7 @@
  * that a second Export press cannot start a competing render and a closed
  * window cannot leave one running with nobody listening.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -277,6 +277,19 @@ export async function cancelExport(): Promise<void> {
 
 function finish(update: ExportProgress): void {
   running = null;
+
+  // Read here, once, while the path is certainly still what was written. The
+  // dialog names the file's size beside it, and a renderer cannot ask: it can
+  // only reach the export through `prequel-media:`. A failed stat is left
+  // undefined rather than reported — a size is a detail on a successful
+  // export, and nothing about it should be able to turn one into a failure.
+  if (update.stage === "done" && update.outputPath) {
+    try {
+      update.bytes = statSync(update.outputPath).size;
+    } catch {
+      update.bytes = undefined;
+    }
+  }
 
   track(`export_${update.stage}`, {
     took_ms: startedAt ? Date.now() - startedAt : null,

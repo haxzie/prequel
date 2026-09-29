@@ -268,6 +268,18 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const selected = state.selectedSliceId ?? state.selectedZoomId ?? state.selectedTextId;
   const [exportOpen, setExportOpen] = useState(false);
   /**
+   * Whether the dialog is open *now*, for the licence reply to read.
+   *
+   * Written during render rather than in an effect: the reply lands outside
+   * React's own sequencing and a state value closed over by the press that
+   * started it would answer for the moment the button went down, not the
+   * moment the server answered.
+   */
+  const exportOpenNow = useRef(exportOpen);
+  exportOpenNow.current = exportOpen;
+  /** True while the Export press is waiting on the licence check. */
+  const [checking, setChecking] = useState(false);
+  /**
    * The upgrade prompt, which stands in for the export dialog rather than
    * sitting over it. Only one of the two is ever open.
    */
@@ -1090,29 +1102,62 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   }, [upgradeOpen, entitlement, showExport]);
 
   /**
-   * What the Export button actually does: ask whether it may, then do it.
+   * What the Export button actually does: open on what is known, then confirm.
    *
    * The licence is checked here rather than watched continuously, because this
    * is the one moment the answer decides anything — and it is the moment
    * somebody has just paid on the website and come back. A stale "expired"
-   * shown to a paying customer is the worst version of this feature, and it
-   * costs one request against a click that already waits for a frame.
+   * shown to a paying customer is the worst version of this feature.
+   *
+   * The dialog no longer waits for that answer. `apiFetch` has no timeout, so
+   * the request takes as long as the network takes: on a slow connection the
+   * Export button sat there for several seconds with nothing on screen, which
+   * reads as a press that missed. The already-known entitlement opens the
+   * dialog immediately — it is the same answer in all but the rarest case —
+   * and the reply swaps in the upgrade prompt if it disagrees.
    */
-  const openExport = async () => {
-    const licence = await checkLicence();
+  const openExport = () => {
+    const known = mayExport(entitlement);
+    if (known) void showExport();
+    // The button says so only where the wait is visible — with the dialog
+    // already up, a spinner on a control behind it has nothing to report to
+    // anybody. This is the refused-from-cache path, where the press does
+    // nothing at all until the server answers.
+    else setChecking(true);
 
-    if (!mayExport(licence)) {
-      setUpgradeOpen(true);
-      // Reported here rather than from a mount effect inside `UpgradeDialog`,
-      // which would keep the dialog the pure presentational thing it is and
-      // then have to re-derive the status from a prop that lags this answer by
-      // a render. This is the only path that opens it, and the moment the
-      // verdict arrives is the moment it is true.
-      window.prequel.licence.prompted();
-      return;
-    }
+    void checkLicence()
+      .then((licence) => {
+        if (mayExport(licence)) {
+          // Refused from what was cached, allowed by the server: somebody who
+          // has just paid, which is exactly the case the check exists for.
+          if (!known) void showExport();
+          return;
+        }
 
-    await showExport();
+        // Nothing to correct if the dialog has already been closed — the press
+        // this answers is over, and an upgrade prompt appearing by itself
+        // seconds later belongs to no click at all.
+        if (known && !exportOpenNow.current) return;
+
+        setExportOpen(false);
+        setUpgradeOpen(true);
+        // Reported here rather than from a mount effect inside `UpgradeDialog`,
+        // which would keep the dialog the pure presentational thing it is and
+        // then have to re-derive the status from a prop that lags this answer
+        // by a render. This is the only path that opens it, and the moment the
+        // verdict arrives is the moment it is true.
+        window.prequel.licence.prompted();
+      })
+      // A check that cannot be made leaves the cached verdict standing, which
+      // is main's own policy for an unreachable server. Refused is what was
+      // already known here, so this press gets the same prompt it would have
+      // got — and never a button that spins for ever.
+      .catch(() => {
+        if (known) return;
+        setUpgradeOpen(true);
+        window.prequel.licence.prompted();
+      })
+      .finally(() => setChecking(false));
   };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
@@ -1220,7 +1265,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           >
             <TrashIcon />
           </button>
-          <ExportButton onOpen={() => void openExport()} />
+          <ExportButton busy={checking} onOpen={openExport} />
         </>
       }
     >

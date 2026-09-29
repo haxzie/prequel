@@ -52,6 +52,14 @@ export interface ExportResult {
    * shows nothing at all.
    */
   isGif: boolean;
+  /**
+   * How big the file is, in bytes, or null when main could not read it.
+   *
+   * Null rather than zero: "not known" and "empty" are the same number, and the
+   * dialog says nothing at all in the first case rather than claiming 0 bytes
+   * for a file that plays.
+   */
+  bytes: number | null;
 }
 
 export interface ExportState {
@@ -192,6 +200,7 @@ export function useExport(
       // save dialog put it, which is nowhere the recordings route can reach.
       url: exportUrl(name),
       isGif: name.endsWith(".gif"),
+      bytes: progress.bytes ?? null,
     };
   }, [session, progress]);
 

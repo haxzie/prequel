@@ -890,6 +890,15 @@ export interface ExportProgress {
   framesTotal: number;
   outputPath: string | null;
   error: { code: string | null; message: string } | null;
+  /**
+   * How big the finished file is, in bytes. Present only on `done`.
+   *
+   * Measured in main, where the file is. The renderer cannot stat a path — it
+   * only ever sees the export through `prequel-media:` — and asking for the
+   * size over HEAD afterwards would put a second round trip between the export
+   * landing and the dialog being able to say anything about it.
+   */
+  bytes?: number;
 }
 
 /**

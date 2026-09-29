@@ -269,6 +269,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
               framesTotal: total,
               outputPath: stage === "done" ? path : null,
               error: null,
+              // A size the finished view can print. Main stats the real file;
+              // there is none here, and a shot with the size missing would not
+              // be showing the row the docs are for.
+              bytes: stage === "done" ? 15_400_000 : undefined,
             });
           setTimeout(() => step(0, "preparing"), 50);
           setTimeout(() => step(200, "rendering"), 200);
