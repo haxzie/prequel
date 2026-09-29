@@ -14,6 +14,7 @@
     "dev:desktop": "dotenv -e .env -- turbo run dev --filter=@prequel/desktop",
     "build": "dotenv -e .env -- turbo run build",
     "ship": "dotenv -e .env -- pnpm --filter @prequel/desktop ship",
+    "ship:prod": "dotenv -e .env.production -- pnpm --filter @prequel/desktop ship",
     "test": "pnpm test:rust && turbo run test",
     "test:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --workspace",
     "typecheck": "turbo run typecheck",
