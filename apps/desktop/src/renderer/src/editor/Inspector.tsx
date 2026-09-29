@@ -3234,7 +3234,7 @@ function AudioPanel({
           {/* No override dot and no `field(…)`: this one is the recording's,
               not the clip's — see `Project.micDenoise`. Changing it writes a
               file, which is why it is three buttons and not a fader. */}
-          <Field icon={<WandIcon />} label="Clean up">
+          <Field icon={<WandIcon />} label="Noise reduction">
             <Segmented<MicDenoise>
               value={micDenoise}
               disabled={audio.micMuted}
@@ -3254,15 +3254,13 @@ function AudioPanel({
               onChange={onMicDenoise}
             />
           </Field>
-          {denoise.working && (
-            <p className="text-[11px] text-editor-muted">Cleaning the microphone…</p>
-          )}
+          {denoise.working && <p className="text-[11px] text-editor-muted">Reducing the noise…</p>}
           {/* Said plainly, because the fallback is the microphone exactly as it
               was recorded — which is indistinguishable from the control having
               done nothing. */}
           {denoise.error && !denoise.working && (
             <p className="text-[11px] text-editor-danger">
-              Couldn’t clean the microphone. Playing it as recorded.
+              Couldn’t reduce the noise. Playing the microphone as recorded.
             </p>
           )}
         </Section>
