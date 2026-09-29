@@ -12,9 +12,11 @@
 import { screen, type BrowserWindow, type Display, type Rectangle } from "electron";
 
 import {
+  DEFAULT_PREFERENCES,
   IPC_CHANNELS,
   PANEL_INSET,
   TELEPROMPTER_EXIT_MS,
+  TELEPROMPTER_MAX_LINES,
   TELEPROMPTER_TOP_GAP,
   TELEPROMPTER_WIDTHS,
   teleprompterHeight,
@@ -53,6 +55,9 @@ export class TeleprompterWindow {
   private window: BrowserWindow | null = null;
   private size: TeleprompterSize = "medium";
   private width: TeleprompterWidth = "normal";
+  private lines = DEFAULT_PREFERENCES.teleprompterLines;
+  /** Whether the resize handle is being held — see `IPC_CHANNELS.teleprompterGrab`. */
+  private grabbed = false;
   /** The notch the island was last laid out around; null for a plain top edge. */
   private notch: Notch | null = null;
   /** The display asked for by name, or null to follow the camera. */
@@ -132,6 +137,9 @@ export class TeleprompterWindow {
 
   /** Slides the island up, then hides the window. */
   hide(): void {
+    // An island hidden mid-drag never sends the release, and a latch left set
+    // would make the whole of the next show take the mouse.
+    this.grabbed = false;
     this.stopWatchingCursor?.();
     this.stopWatchingCursor = null;
     // `?.` covers "never opened", not "already destroyed", which a quit leaves.
@@ -156,11 +164,27 @@ export class TeleprompterWindow {
     );
   }
 
-  /** Notes a new text size, width or display; `show` re-places the window. */
-  setShape(size: TeleprompterSize, width: TeleprompterWidth, display: string | null): void {
+  /** Notes a new text size, width, height or display; `show` re-places the window. */
+  setShape(
+    size: TeleprompterSize,
+    width: TeleprompterWidth,
+    lines: number,
+    display: string | null,
+  ): void {
     this.size = size;
     this.width = width;
+    this.lines = lines;
     this.chosen = display;
+  }
+
+  /**
+   * Notes that the handle is held, or has been let go.
+   *
+   * Nothing is redrawn: this only widens the hit test, so the poll keeps the
+   * window taking the mouse while the pointer is dragged below the panel.
+   */
+  setGrabbed(grabbed: boolean): void {
+    this.grabbed = grabbed;
   }
 
   browserWindow(): BrowserWindow | null {
@@ -168,6 +192,7 @@ export class TeleprompterWindow {
   }
 
   destroy(): void {
+    this.grabbed = false;
     this.stopWatchingCursor?.();
     this.stopWatchingCursor = null;
     if (this.exit) clearTimeout(this.exit);
@@ -196,7 +221,7 @@ export class TeleprompterWindow {
     this.notch = this.notchOf(display);
 
     const width = TELEPROMPTER_WIDTHS.wide + PANEL_INSET * 2;
-    const island = teleprompterHeight("large", this.notch?.height ?? 0);
+    const island = teleprompterHeight("large", this.notch?.height ?? 0, TELEPROMPTER_MAX_LINES);
     const top = this.notch ? 0 : PANEL_INSET;
 
     return {
@@ -243,9 +268,12 @@ export class TeleprompterWindow {
    * the largest; the window's own edges say nothing about where it is.
    */
   private overIsland(bounds: Rectangle, point: { x: number; y: number }): boolean {
+    // A held handle owns the mouse until it is let go, wherever it has been
+    // dragged to — including below the panel, which is the whole point of it.
+    if (this.grabbed) return true;
     const top = this.notch ? 0 : PANEL_INSET;
     const width = TELEPROMPTER_WIDTHS[this.width];
-    const height = teleprompterHeight(this.size, this.notch?.height ?? 0);
+    const height = teleprompterHeight(this.size, this.notch?.height ?? 0, this.lines);
     const left = bounds.x + (bounds.width - width) / 2;
     return (
       point.x >= left &&

@@ -20,7 +20,11 @@ import type {
   TeleprompterSize,
   TeleprompterWidth,
 } from "../shared/contract.js";
-import { DEFAULT_PREFERENCES } from "../shared/contract.js";
+import {
+  DEFAULT_PREFERENCES,
+  TELEPROMPTER_MAX_LINES,
+  TELEPROMPTER_MIN_LINES,
+} from "../shared/contract.js";
 
 const SCREEN_MODES: ScreenMode[] = ["screen", "window", "area"];
 const AFTER_RECORDING: AfterRecording[] = ["editor", "finder", "nothing"];
@@ -129,6 +133,7 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
       value.teleprompterWidth,
       DEFAULT_PREFERENCES.teleprompterWidth,
     ),
+    teleprompterLines: lines(value.teleprompterLines),
     teleprompterSpeed: speed(value.teleprompterSpeed),
     teleprompterDisplay:
       typeof value.teleprompterDisplay === "string" ? value.teleprompterDisplay : null,
@@ -139,6 +144,14 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
 /** The value if it is one of the allowed ones, else the default. */
 function oneOf<T extends string>(allowed: T[], value: unknown, fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** Whole lines within range. A half-line, from a drag that rounded badly, reaches this. */
+function lines(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_PREFERENCES.teleprompterLines;
+  }
+  return Math.min(Math.max(Math.round(value), TELEPROMPTER_MIN_LINES), TELEPROMPTER_MAX_LINES);
 }
 
 /** Whole words per minute within range. */

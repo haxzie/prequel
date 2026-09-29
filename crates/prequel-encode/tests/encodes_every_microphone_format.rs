@@ -65,7 +65,7 @@ fn write_tone(path: &PathBuf, rate: f64, channels: i32) -> Result<(), String> {
             }
         }
         writer
-            .append_pcm(&samples, rate, (i + 1) * 100_000_000)
+            .append_pcm(&samples, rate)
             .map_err(|e| e.to_string())?;
     }
 

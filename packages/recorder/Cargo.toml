@@ -17,6 +17,7 @@ prequel-keysound = { workspace = true }
 prequel-render = { workspace = true }
 prequel-session = { workspace = true }
 prequel-speech = { workspace = true }
+prequel-voice = { workspace = true }
 napi = { version = "3", default-features = false, features = ["napi8"] }
 napi-derive = "3"
 serde = { workspace = true }

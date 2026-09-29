@@ -383,6 +383,18 @@ export interface BackgroundSettings {
   shadowY: number;
 }
 
+/**
+ * How hard the microphone is cleaned up before anything hears it.
+ *
+ * Three states rather than a slider, because each one is a file: the pass runs
+ * offline and writes a track beside the recording — see `crates/prequel-voice`
+ * for why it cannot be a filter on the way out — so a value that moved
+ * continuously would be a render per pixel dragged.
+ */
+export type MicDenoise = "off" | "light" | "strong";
+
+export const MIC_DENOISE: MicDenoise[] = ["off", "light", "strong"];
+
 export interface AudioSettings {
   micVolume: number;
   micMuted: boolean;
@@ -1177,6 +1189,19 @@ export interface Project {
   texts: TextTrack[];
   output: OutputSettings;
   /**
+   * Whether the microphone is cleaned up, and how hard.
+   *
+   * On the project rather than in `defaults.audio`, where every other sound
+   * setting lives, because it is not a mix value: each level is a whole second
+   * file written beside the recording, and one slice of a take cannot play a
+   * different file from the next without the preview holding a decoder for
+   * each. Recording-wide is also what somebody means by it.
+   *
+   * Absent on every project saved before this existed, which read back as
+   * `"off"` — exactly what they sounded like.
+   */
+  micDenoise: MicDenoise;
+  /**
    * The words as corrected in the captions panel, or null to caption from the
    * recording's own transcript.
    *
@@ -1633,6 +1658,7 @@ export function newProject(
       },
     ],
     output: { fps: 60, format: "h264", shortEdge: null },
+    micDenoise: "off",
     transcript: null,
   };
 }
@@ -1872,6 +1898,12 @@ export function sanitiseProject(
       },
     ],
     output: outputSettings(stored.output),
+    // Normalised rather than spread: a level this build does not know would
+    // otherwise sit in the project asking main for a file that can never be
+    // made, and the editor would spin on every open.
+    micDenoise: MIC_DENOISE.includes(stored.micDenoise as MicDenoise)
+      ? (stored.micDenoise as MicDenoise)
+      : "off",
     transcript: sanitiseTranscriptEdit(stored.transcript),
   };
 }

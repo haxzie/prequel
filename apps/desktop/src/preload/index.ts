@@ -6,6 +6,7 @@ import type {
   AppInfo,
   AuthState,
   BackgroundImage,
+  CleanTrack,
   DockMenu,
   DockMenuPick,
   DockState,
@@ -58,6 +59,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 export type {
   AppInfo,
   BackgroundImage,
+  CleanTrack,
   DockMenu,
   DockMenuPick,
   DockState,
@@ -205,6 +207,8 @@ const api = {
     togglePause: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.teleprompterTogglePause),
     /** One-way: the island has mounted and wants its first position. */
     ready: (): void => ipcRenderer.send(IPC_CHANNELS.teleprompterReady),
+    /** One-way: the resize handle is held, so the island keeps the mouse. */
+    grab: (grabbed: boolean): void => ipcRenderer.send(IPC_CHANNELS.teleprompterGrab, grabbed),
 
     /** Subscribes to the script, pause and listening state. Returns an unsubscribe function. */
     onChange: (listener: (state: TeleprompterState) => void): (() => void) =>
@@ -312,6 +316,20 @@ const api = {
     /** Persists the edit. Debounced by the renderer, which owns it. */
     saveProject: (dir: string, project: Project): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorSaveProject, dir, project),
+
+    /**
+     * The cleaned version of one microphone file, made if it is not there.
+     *
+     * Cheap to ask twice: main answers a file that already exists with a
+     * `stat`, so the editor can call this on every settings change and every
+     * reopen without deciding which of them is the first.
+     */
+    cleanMic: (
+      dir: string,
+      file: string,
+      level: "light" | "strong",
+    ): Promise<IpcResult<CleanTrack>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorCleanMic, dir, file, level),
 
     /** Copies the current desktop picture into the recording. */
     wallpaper: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>

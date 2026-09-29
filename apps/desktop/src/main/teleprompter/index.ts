@@ -104,6 +104,7 @@ export class Teleprompter {
     this.deps.island.setShape(
       preferences.teleprompterSize,
       preferences.teleprompterWidth,
+      preferences.teleprompterLines,
       preferences.teleprompterDisplay,
     );
     const wasVisible = this.deps.island.isVisible;
@@ -123,6 +124,17 @@ export class Teleprompter {
     // The engine runs only for the length of a take — see `recordingStarted`
     // — so this is for a mode changed mid-take, not for a fresh show.
     if (this.recording) this.runEngine(preferences.teleprompterMode);
+  }
+
+  /**
+   * The island's resize handle is held, or has been let go.
+   *
+   * Straight through to the window: the height itself arrives as a preference
+   * like any other, and this is only about which window takes the mouse while
+   * the pointer is below the panel.
+   */
+  grab(grabbed: boolean): void {
+    this.deps.island.setGrabbed(grabbed);
   }
 
   hide(): void {

@@ -285,6 +285,25 @@ export interface Recorder {
   cancelTranscribe(): void;
 
   /**
+   * Whether this machine has Apple's voice isolation unit.
+   *
+   * macOS 13 and up, and the app needs 14 — so this is only false if the
+   * component is ever dropped. Asked anyway, because the editor draws a
+   * control either way and a control that does nothing is worse than none.
+   */
+  canEnhanceVoice(): boolean;
+
+  /**
+   * Cleans a microphone track into a second file, and says how many
+   * milliseconds of audio it wrote.
+   *
+   * A promise rather than `startExport`'s thread-and-callback: it renders
+   * about ninety times faster than real time, so the longest take anyone has
+   * is seconds of work with no fraction worth drawing.
+   */
+  enhanceVoice(input: string, output: string, level: "Light" | "Strong"): Promise<number>;
+
+  /**
    * Starts listening to the microphone and reporting what is heard, live.
    *
    * For the teleprompter. The same on-device engines as `startTranscribe`,

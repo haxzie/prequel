@@ -197,6 +197,8 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       ready: () => {
         setTimeout(() => emit("teleprompterPosition", state.teleprompterPosition), 0);
       },
+      // No window to keep clickable here, so the latch has nothing to set.
+      grab: noop("teleprompter.grab"),
       onChange: subscribe<TeleprompterState>("teleprompter"),
       onVisible: subscribe<boolean>("teleprompterVisible"),
       onPosition: subscribe<TeleprompterPosition>("teleprompterPosition"),
@@ -247,6 +249,16 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       // The edit is not saved anywhere: the fixture recording's `project.json`
       // must come out of a run exactly as it went in.
       saveProject: () => ok(undefined),
+
+      // No addon here, so there is no cleaned track to point at. Refused
+      // rather than answered with the raw file: the editor shows the failure,
+      // which is the honest picture of a gallery shot with no audio unit.
+      cleanMic: () =>
+        Promise.resolve({
+          ok: false as const,
+          code: "DENOISE_FAILED",
+          message: "the gallery cannot clean audio",
+        }),
       wallpaper: () => ok(null),
       pickImage: () => ok(null),
       pickWatermark: () => ok(null),

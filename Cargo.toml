@@ -19,6 +19,7 @@ prequel-encode = { path = "crates/prequel-encode" }
 prequel-keysound = { path = "crates/prequel-keysound" }
 prequel-render = { path = "crates/prequel-render" }
 prequel-speech = { path = "crates/prequel-speech" }
+prequel-voice = { path = "crates/prequel-voice" }
 
 # Apple framework bindings. cidre covers ScreenCaptureKit, AVFoundation,
 # VideoToolbox and CoreMedia with one shared type system, so CMSampleBuffers

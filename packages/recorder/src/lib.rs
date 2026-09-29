@@ -21,6 +21,7 @@ mod probe;
 mod screen;
 mod sound;
 mod transcribe;
+mod voice;
 
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
 pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};

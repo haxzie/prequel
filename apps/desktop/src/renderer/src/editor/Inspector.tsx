@@ -33,6 +33,7 @@ import {
   type CaptionSettings,
   type LayoutPreset,
   type LayoutSettings,
+  type MicDenoise,
   type SettingsSection,
   type SliceSettings,
   type TextStyle,
@@ -84,6 +85,7 @@ import {
   LevelIcon,
   LinesIcon,
   MicIcon,
+  WandIcon,
   MirrorIcon,
   OffsetIcon,
   OpacityIcon,
@@ -174,6 +176,13 @@ export interface InspectorProps {
    * that was recorded, which is whatever was coming out of the speakers.
    */
   hasSpeech: boolean;
+  /**
+   * How the microphone clean-up is getting on — see `useCleanMic`.
+   *
+   * The level itself is read off the project, like the frame: it is one
+   * setting for the whole recording rather than a per-clip override.
+   */
+  denoise: { working: boolean; error: string | null };
   /**
    * Plays one voice of a profile, so a keyboard can be heard as it is chosen
    * rather than only once the edit is playing.
@@ -803,6 +812,9 @@ export function Inspector(props: InspectorProps) {
                   hasSounds={props.hasSounds}
                   field={field}
                   set={set}
+                  denoise={props.denoise}
+                  micDenoise={state.project.micDenoise}
+                  onMicDenoise={(level) => dispatch({ type: "setMicDenoise", level })}
                   onAudition={props.onAudition}
                   onPlaySample={props.onPlaySample}
                 />
@@ -3155,6 +3167,9 @@ function AudioPanel({
   hasSounds,
   field,
   set,
+  denoise,
+  micDenoise,
+  onMicDenoise,
   onAudition,
   onPlaySample,
 }: {
@@ -3163,6 +3178,9 @@ function AudioPanel({
   hasSounds: boolean;
   field: FieldProps;
   set: Setter;
+  denoise: { working: boolean; error: string | null };
+  micDenoise: MicDenoise;
+  onMicDenoise: (level: MicDenoise) => void;
   onAudition: (bus: "keys" | "clicks", profile: string) => void;
   onPlaySample: (profile: string, volume: number) => void;
 }) {
@@ -3212,6 +3230,41 @@ function AudioPanel({
             disabled={audio.micMuted}
             onChange={(value) => set("audio", "micVolume", value)}
           />
+
+          {/* No override dot and no `field(…)`: this one is the recording's,
+              not the clip's — see `Project.micDenoise`. Changing it writes a
+              file, which is why it is three buttons and not a fader. */}
+          <Field icon={<WandIcon />} label="Clean up">
+            <Segmented<MicDenoise>
+              value={micDenoise}
+              disabled={audio.micMuted}
+              options={[
+                { value: "off", label: "Off", title: "Use the microphone as recorded" },
+                {
+                  value: "light",
+                  label: "Light",
+                  title: "Take the room down and leave the voice alone",
+                },
+                {
+                  value: "strong",
+                  label: "Strong",
+                  title: "Remove everything that is not your voice",
+                },
+              ]}
+              onChange={onMicDenoise}
+            />
+          </Field>
+          {denoise.working && (
+            <p className="text-[11px] text-editor-muted">Cleaning the microphone…</p>
+          )}
+          {/* Said plainly, because the fallback is the microphone exactly as it
+              was recorded — which is indistinguishable from the control having
+              done nothing. */}
+          {denoise.error && !denoise.working && (
+            <p className="text-[11px] text-editor-danger">
+              Couldn’t clean the microphone. Playing it as recorded.
+            </p>
+          )}
         </Section>
       )}
 

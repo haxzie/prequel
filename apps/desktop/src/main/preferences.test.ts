@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { DEFAULT_PREFERENCES } from "../shared/contract.js";
+import {
+  DEFAULT_PREFERENCES,
+  TELEPROMPTER_MAX_LINES,
+  TELEPROMPTER_MIN_LINES,
+} from "../shared/contract.js";
 import { Preferences } from "./preferences.js";
 
 const SCRATCH = mkdtempSync(join(tmpdir(), "prequel-prefs-"));
@@ -114,6 +118,34 @@ describe("Preferences", () => {
     // Above three hundred nobody can read it; a hand-edited thousand would
     // fling the script past before the countdown ends.
     expect(prefs.teleprompterSpeed).toBe(300);
+  });
+
+  it("clamps a dragged prompter height, and rounds a half line away", () => {
+    // The handle drags in whole lines, so a fraction only reaches the file by
+    // hand — but a height of 40 lines would cover the top of whatever is being
+    // recorded, and one of zero would be a panel with no script in it.
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ teleprompterLines: 40 }));
+    expect(new Preferences(file).get().teleprompterLines).toBe(TELEPROMPTER_MAX_LINES);
+
+    const short = freshFile();
+    writeFileSync(short, JSON.stringify({ teleprompterLines: 0 }));
+    expect(new Preferences(short).get().teleprompterLines).toBe(TELEPROMPTER_MIN_LINES);
+
+    const half = freshFile();
+    writeFileSync(half, JSON.stringify({ teleprompterLines: 4.5 }));
+    expect(new Preferences(half).get().teleprompterLines).toBe(5);
+  });
+
+  it("reads a prompter written before the handle existed at its old height", () => {
+    // Every preferences file in existence lacks the key, and the island they
+    // have been looking at is four lines tall. Absent has to keep being four.
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ teleprompter: true }));
+    expect(new Preferences(file).get().teleprompterLines).toBe(
+      DEFAULT_PREFERENCES.teleprompterLines,
+    );
+    expect(DEFAULT_PREFERENCES.teleprompterLines).toBe(4);
   });
 
   it("reads a file written before the keyboard switch existed as switched on", () => {

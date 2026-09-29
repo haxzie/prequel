@@ -428,6 +428,14 @@ export function createFakeRecorder(): Recorder {
 
     cancelTranscribe: () => undefined,
 
+    // No audio unit behind the fake. Reported as absent rather than as a pass
+    // that writes nothing, so the editor hides the control instead of offering
+    // one that leaves the track exactly as it was.
+    canEnhanceVoice: () => false,
+
+    enhanceVoice: () =>
+      Promise.reject(new Error("DENOISE_FAILED: the fake recorder cannot clean audio")),
+
     // No microphone behind the fake. Reported as no model rather than as a
     // silent success, so the island says auto-scroll is what it will do.
     startListening: (_options, onUpdate) => {

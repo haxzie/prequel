@@ -152,7 +152,7 @@ export interface RecordingPreferences {
   /**
    * Whether the prompter shows while the panel is up.
    *
-   * Five flat leaves rather than a `teleprompter: {…}` group, for the reason
+   * Flat leaves rather than a `teleprompter: {…}` group, for the reason
    * every setting here is flat: a group makes "is this set?" mean "is
    * anything in this group set?", and every per-control reset goes wrong.
    */
@@ -160,6 +160,15 @@ export interface RecordingPreferences {
   teleprompterMode: TeleprompterMode;
   teleprompterSize: TeleprompterSize;
   teleprompterWidth: TeleprompterWidth;
+  /**
+   * Lines of script on show, between `TELEPROMPTER_MIN_LINES` and
+   * `TELEPROMPTER_MAX_LINES`. Dragged by the handle under the island.
+   *
+   * Separate from `teleprompterSize`, which sets how big the text is: the two
+   * answer different questions — how far away can I read it, and how much of
+   * what is coming do I want to see.
+   */
+  teleprompterLines: number;
   /** Words per minute, for auto-scroll. Speech runs 120–160. */
   teleprompterSpeed: number;
   /**
@@ -202,6 +211,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   teleprompterMode: "voice",
   teleprompterSize: "medium",
   teleprompterWidth: "normal",
+  teleprompterLines: 4,
   teleprompterSpeed: 140,
   teleprompterDisplay: null,
   welcomed: false,
@@ -233,8 +243,18 @@ export const TELEPROMPTER_SIZES: Record<TeleprompterSize, number> = {
   large: 24,
 };
 
-/** How many lines of script the island shows. */
-export const TELEPROMPTER_LINES = 4;
+/**
+ * How many lines of script the island shows, at each end of the handle.
+ *
+ * The height is dragged in whole lines rather than pixels: a line is the unit
+ * the reader actually gets, and a height between two of them would show a
+ * band of a line sliced off at the fade, which reads as a clipped panel
+ * rather than a chosen size. Two is the fewest that still shows what comes
+ * next — the reading line plus one — and eight is where the island starts
+ * covering the top of what is being recorded.
+ */
+export const TELEPROMPTER_MIN_LINES = 2;
+export const TELEPROMPTER_MAX_LINES = 8;
 
 /** Line height as a multiple of the text size. */
 export const TELEPROMPTER_LEADING = 1.35;
@@ -265,8 +285,12 @@ export const TELEPROMPTER_TOP_GAP = 8;
  * line or leaves a dead band under the footer. `notchHeight` is the strip the
  * island shares with the notch on a display that has one, and zero elsewhere.
  */
-export function teleprompterHeight(size: TeleprompterSize, notchHeight: number): number {
-  const text = TELEPROMPTER_LINES * TELEPROMPTER_SIZES[size] * TELEPROMPTER_LEADING;
+export function teleprompterHeight(
+  size: TeleprompterSize,
+  notchHeight: number,
+  lines: number,
+): number {
+  const text = lines * TELEPROMPTER_SIZES[size] * TELEPROMPTER_LEADING;
   return Math.round(notchHeight + TELEPROMPTER_PADDING * 2 + text + TELEPROMPTER_FOOTER);
 }
 
@@ -566,6 +590,17 @@ export const IPC_CHANNELS = {
    */
   teleprompterReady: "teleprompter:ready",
   /**
+   * Island → main, one-way: the resize handle is held, or has been let go.
+   *
+   * The island is click-through everywhere the panel is not, decided by
+   * polling the cursor against the panel's drawn height — so dragging the
+   * handle *downwards* takes the cursor past that height and the window goes
+   * click-through mid-drag, which drops the pointer and leaves the height
+   * wherever it had got to. While the handle is held the hit test answers
+   * yes for the whole window instead.
+   */
+  teleprompterGrab: "teleprompter:grab",
+  /**
    * Main → the island only: it is being shown, or is about to be hidden.
    *
    * The island slides down on show and up on hide, and the renderer stays
@@ -641,6 +676,14 @@ export const IPC_CHANNELS = {
    */
   editorReload: "editor:reload",
   editorSaveProject: "editor:saveProject",
+  /**
+   * Editor → main: the cleaned version of this microphone file, please.
+   *
+   * Makes it if it is not already on disk, and answers with the name and URL
+   * either way — so the editor asks the same question on a settings change and
+   * on a reopen, and only the first one costs anything.
+   */
+  editorCleanMic: "editor:cleanMic",
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
   editorPickWatermark: "editor:pickWatermark",
@@ -1690,6 +1733,19 @@ export interface TrackMedia {
    * wherever `matteUrl` is.
    */
   matteFile: string | null;
+}
+
+/**
+ * Where the cleaned version of a microphone track is.
+ *
+ * Both forms, for the reason `matteUrl` and `matteFile` are both carried: the
+ * renderer fetches the URL to play it, and the export hands the name to Rust
+ * to open.
+ */
+export interface CleanTrack {
+  /** Relative to the recording's directory, the way `TrackMedia.file` is. */
+  file: string;
+  url: string;
 }
 
 /**

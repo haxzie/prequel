@@ -37,6 +37,7 @@ import type { CaptureFlow } from "./capture-flow.js";
 import { chooseVideo, importVideo } from "./import-video.js";
 import type { Teleprompter } from "./teleprompter/index.js";
 import { saveProject } from "./editor-project.js";
+import { cleanMic } from "./voice.js";
 import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
 import { setToggleShortcut } from "./shortcuts.js";
@@ -243,10 +244,22 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
   // pull, so the position is never in the broadcast state.
   ipcMain.on(IPC_CHANNELS.teleprompterReady, () => teleprompter.ready());
 
+  // One-way, and deliberately not a preference: the handle being held changes
+  // nothing that is drawn or stored, only which window the mouse lands on.
+  ipcMain.on(IPC_CHANNELS.teleprompterGrab, (_event, grabbed: boolean) =>
+    teleprompter.grab(grabbed),
+  );
+
   // ── the editor ───────────────────────────────────────────────────────────
   //
   // Debounced by the renderer, which owns the edit — see `editor/state.ts` for
   // why the project does not live in main.
+  ipcMain.handle(
+    IPC_CHANNELS.editorCleanMic,
+    (_event, dir: string, file: string, level: "light" | "strong") =>
+      attempt(() => cleanMic(dir, file, level)),
+  );
+
   ipcMain.handle(IPC_CHANNELS.editorSaveProject, (_event, dir: string, project: Project) =>
     attempt(() => saveProject(dir, project)),
   );

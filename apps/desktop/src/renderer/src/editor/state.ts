@@ -124,6 +124,7 @@ export type EditorAction =
   | { type: "select"; sliceId: string | null }
   | { type: "setFrame"; frame: Project["frame"] }
   | { type: "setOutput"; output: Project["output"] }
+  | { type: "setMicDenoise"; level: Project["micDenoise"] }
   | { type: "split"; at: MediaTime }
   | { type: "deleteSlice"; sliceId: string }
   /**
@@ -514,6 +515,12 @@ function apply(
     // repeated cost nobody reports.
     case "setOutput":
       return edit(state, (project) => ({ ...project, output: action.output }));
+
+    // On the project rather than a slice's overrides: the level names a file
+    // beside the recording, and one clip of a take cannot play a different one
+    // — see `Project.micDenoise`.
+    case "setMicDenoise":
+      return edit(state, (project) => ({ ...project, micDenoise: action.level }));
 
     case "split":
       return splitSlices(state, action.at);

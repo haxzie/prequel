@@ -113,7 +113,7 @@ fn record_audio(dir: &Path) {
     }
 
     writer
-        .append_pcm(&samples, 48_000.0, 4 * S)
+        .append_pcm(&samples, 48_000.0)
         .expect("append the source audio");
     writer.finish().expect("finish the source audio");
 }

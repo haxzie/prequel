@@ -1,0 +1,13 @@
+[package]
+name = "prequel-voice"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+prequel-encode = { workspace = true }
+cidre = { workspace = true, features = ["av", "at", "cat", "cm", "ns"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }

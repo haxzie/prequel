@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 
 import {
+  DEFAULT_PREFERENCES,
   DOCK_HEADROOM,
   PANEL_HEIGHT,
   PANEL_INSET,
@@ -151,7 +152,11 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
             width:
               TELEPROMPTER_WIDTHS[kind === "island-narrow" ? "narrow" : "normal"] + PANEL_INSET * 2,
             height:
-              teleprompterHeight("medium", notch?.height ?? 0) +
+              teleprompterHeight(
+                "medium",
+                notch?.height ?? 0,
+                DEFAULT_PREFERENCES.teleprompterLines,
+              ) +
               PANEL_INSET +
               (notch ? 0 : PANEL_INSET),
           }}

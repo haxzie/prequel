@@ -77,6 +77,7 @@ import {
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
 import { textOnClip, type PlacedText } from "../../../shared/layout";
+import { useCleanMic } from "./useCleanMic";
 import { useEditorPlayback } from "./useEditorPlayback";
 import type { MediaKey } from "./segments";
 import { useExport } from "./useExport";
@@ -306,7 +307,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   }, [session]);
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
-  const media = useEditorPlayback(session, slices);
+
+  // The microphone the editor actually plays: the recorded track, or the
+  // cleaned one beside it. Swapped here rather than in three places, because
+  // the preview, the waveforms and the export all read the same `media` list
+  // — see `useCleanMic`.
+  const clean = useCleanMic(session, state.project.micDenoise);
+  const heard = clean.session;
+  const media = useEditorPlayback(heard, slices);
 
   const present = useMemo(
     () => new Set<TrackKind>(session.media.map((track) => track.kind)),
@@ -928,7 +936,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   };
 
   const exportState = useExport(
-    session,
+    heard,
     state.project,
     state.project.output,
     captions,
@@ -1160,7 +1168,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
-  const peaks = useWaveforms(session.media, session.manifest.duration);
+  const peaks = useWaveforms(heard.media, heard.manifest.duration);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
   const filmstrip = useFilmstrip(session.media, session.manifest.duration, CLIP_FRAME_H);
@@ -1348,6 +1356,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               hasCursor={session.cursor !== null}
               hasSounds={hasSounds}
               hasSpeech={hasSpeech}
+              denoise={{ working: clean.working, error: clean.error }}
               onAudition={media.audition}
               onPlaySample={playSample}
               captions={transcription}

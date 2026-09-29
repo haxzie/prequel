@@ -94,6 +94,9 @@ pub struct AudioWriter {
     realtime: bool,
     /// Kept so `append_pcm` can describe the buffers it builds.
     channels: i32,
+    /// Frames appended through `append_pcm`, which is where its timestamps
+    /// come from. Untouched by `append`, whose caller gives its own.
+    frames: u64,
 }
 
 impl AudioWriter {
@@ -143,6 +146,7 @@ impl AudioWriter {
             dropped_not_ready: 0,
             realtime: config.realtime,
             channels: config.channels,
+            frames: 0,
         })
     }
 
@@ -204,28 +208,34 @@ impl AudioWriter {
         Ok(true)
     }
 
-    /// Appends raw interleaved `f32` PCM as one buffer.
+    /// Appends raw interleaved `f32` PCM.
     ///
     /// The export path: the mixer works on plain sample slices, so the encoder
     /// has to be handed one rather than a `CMSampleBuffer` that came from a
     /// capture. Building the buffer by hand is the price of mixing in Rust —
     /// and mixing in Rust is what keeps the exported sound identical to the
     /// preview, which multiplies the same numbers in WebAudio.
-    pub fn append_pcm(
-        &mut self,
-        samples: &[f32],
-        sample_rate: f64,
-        duration: MediaTime,
-    ) -> Result<()> {
+    ///
+    /// Buffers follow each other: the timestamp comes from the frames already
+    /// appended, so a track can be written in chunks without the caller
+    /// keeping a clock. It used to take the running time as an argument and
+    /// stamp every buffer at zero regardless, which a single append could not
+    /// tell apart from working.
+    pub fn append_pcm(&mut self, samples: &[f32], sample_rate: f64) -> Result<()> {
         if samples.is_empty() {
             return Ok(());
         }
 
+        let frames = samples.len() as u64 / self.channels.max(1) as u64;
+        let at = (self.frames as f64 / sample_rate * 1e9) as MediaTime;
+
         let sample = pcm_sample_buf(samples, sample_rate, self.channels)?;
-        self.append(&sample, 0)?;
-        // Recorded so `finish` can end the session past the last sample rather
-        // than exactly on it, which would clip the tail.
-        self.last_pts = Some(duration);
+        self.append(&sample, at)?;
+
+        self.frames += frames;
+        // Past the last sample rather than on it, or `finish` ends the session
+        // one buffer early and clips the tail.
+        self.last_pts = Some((self.frames as f64 / sample_rate * 1e9) as MediaTime);
         Ok(())
     }
 

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   TELEPROMPTER_FOOTER,
   TELEPROMPTER_LEADING,
-  TELEPROMPTER_LINES,
+  TELEPROMPTER_MAX_LINES,
+  TELEPROMPTER_MIN_LINES,
   TELEPROMPTER_PADDING,
   TELEPROMPTER_SIZES,
   TELEPROMPTER_WIDTHS,
@@ -16,6 +17,7 @@ import { tokenise, type ScriptWord } from "../../../shared/teleprompter";
 import { useDock } from "../hooks/useDock";
 import { useTeleprompter, useTeleprompterPosition } from "../hooks/useTeleprompter";
 import { cn } from "../lib/cn";
+import { linesFromDrag } from "./grip";
 import { CloseIcon, PencilIcon } from "../dock/icons";
 
 /**
@@ -81,7 +83,12 @@ export function Teleprompter() {
 
   const size = TELEPROMPTER_SIZES[preferences.teleprompterSize];
   const lineHeight = size * TELEPROMPTER_LEADING;
-  const viewportHeight = TELEPROMPTER_LINES * lineHeight;
+  // What the handle is dragging right now, or null when it is not held. The
+  // drag is drawn from here rather than waiting for the preference to come
+  // back through main, which would put an IPC round trip inside the gesture.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const lines = dragging ?? preferences.teleprompterLines;
+  const viewportHeight = lines * lineHeight;
   const mode = preferences.teleprompterMode;
   const settleMs =
     mode === "timed" ? Math.min(600, 60_000 / preferences.teleprompterSpeed) : FOLLOW_MS;
@@ -185,6 +192,53 @@ export function Teleprompter() {
   }, [words, paint, layout, motion.count, islandWidth]);
 
   /**
+   * Dragging the island taller or shorter.
+   *
+   * Held in whole lines, so the panel lands where a line lands and the reader
+   * never gets a sliced row. The preference is written on every line the drag
+   * crosses rather than once on release: main hit-tests the cursor against the
+   * height it was last told, and a drag that only reported at the end would
+   * spend its whole length being tested against the height it started at.
+   */
+  const grip = useRef<{ y: number; lines: number } | null>(null);
+
+  const onGripDown = (event: React.PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    grip.current = { y: event.clientY, lines };
+    setDragging(lines);
+    window.prequel.teleprompter.grab(true);
+  };
+
+  const onGripMove = (event: React.PointerEvent<HTMLElement>) => {
+    const from = grip.current;
+    if (!from) return;
+    const next = linesFromDrag(from.lines, event.clientY - from.y, lineHeight);
+    if (next === dragging) return;
+    setDragging(next);
+    void window.prequel.dock.updatePreferences({ teleprompterLines: next });
+  };
+
+  const onGripUp = (event: React.PointerEvent<HTMLElement>) => {
+    if (!grip.current) return;
+    grip.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    // Back to the preference, which the drag has already brought level with
+    // what is on screen — so nothing moves as the hand lets go.
+    setDragging(null);
+    window.prequel.teleprompter.grab(false);
+  };
+
+  // An island hidden mid-drag — the panel closing, the take starting — leaves
+  // main latched on to a handle nobody is holding.
+  useEffect(
+    () => () => {
+      if (grip.current) window.prequel.teleprompter.grab(false);
+    },
+    [],
+  );
+
+  /**
    * Scrolling by hand.
    *
    * The text follows the wheel at once, and when it stops the word now on the
@@ -250,8 +304,15 @@ export function Teleprompter() {
             // largest, so a change of either is a transition and not a
             // window resize. Main's hit-test uses the same two numbers.
             width: islandWidth,
-            height: teleprompterHeight(preferences.teleprompterSize, notch?.height ?? 0),
-            transition: `width ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1), height ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
+            height: teleprompterHeight(preferences.teleprompterSize, notch?.height ?? 0, lines),
+            // No height transition while the handle is held: a 260 ms ease on
+            // every line the drag crosses lags the pointer by a quarter of a
+            // second, and the panel arrives where the hand left a step ago.
+            transition:
+              `width ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1)` +
+              (dragging === null
+                ? `, height ${String(RESHAPE_MS)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
+                : ""),
           } as React.CSSProperties
         }
         onTransitionEnd={(event) => {
@@ -325,7 +386,7 @@ export function Teleprompter() {
                 // Room for the first line to sit on the reading row, and the
                 // last — so every line can be the one being read.
                 paddingTop: lineHeight * READING_LINE,
-                paddingBottom: lineHeight * (TELEPROMPTER_LINES - 1 - READING_LINE),
+                paddingBottom: lineHeight * Math.max(lines - 1 - READING_LINE, 0),
                 transition: `transform ${String(settleMs)}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
               }}
             >
@@ -365,6 +426,40 @@ export function Teleprompter() {
             </span>
           )}
         </footer>
+
+        {/* The grip: drag the island taller or shorter.
+            Its hit area is the strip across the bottom of the panel, twice the
+            height of the bar drawn in it — a four-pixel target is one a hand
+            has to aim at, and this one sits at the very edge of a window that
+            is click-through a pixel below. Faint until the cursor is on the
+            island, so it is there to be found without being a control the
+            reader keeps noticing mid-sentence. */}
+        <div
+          role="separator"
+          aria-label="Drag to resize the teleprompter"
+          aria-orientation="horizontal"
+          aria-valuenow={lines}
+          aria-valuemin={TELEPROMPTER_MIN_LINES}
+          aria-valuemax={TELEPROMPTER_MAX_LINES}
+          className={cn(
+            "no-drag absolute inset-x-0 bottom-0 grid h-3 cursor-ns-resize place-items-center",
+            "group/grip",
+          )}
+          onPointerDown={onGripDown}
+          onPointerMove={onGripMove}
+          onPointerUp={onGripUp}
+          onPointerCancel={onGripUp}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-1 w-9 rounded-full transition-colors",
+              dragging === null
+                ? "bg-prompter-muted/35 group-hover/grip:bg-prompter-muted/70"
+                : "bg-prompter-fg/80",
+            )}
+          />
+        </div>
       </div>
     </div>
   );

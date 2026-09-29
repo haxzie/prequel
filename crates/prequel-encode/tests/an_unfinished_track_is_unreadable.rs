@@ -22,7 +22,6 @@ const CHANNELS: i32 = 1;
 /// A quarter of a second — long enough to be a real AAC track rather than a
 /// file the encoder could reasonably answer nothing for.
 const SAMPLES: usize = 12_000;
-const DURATION_NS: u64 = 250_000_000;
 
 /// A sine tone, so the encoder has genuine content rather than silence.
 fn tone() -> Vec<f32> {
@@ -41,7 +40,7 @@ fn written(path: &PathBuf) -> AudioWriter {
     let config = AudioWriterConfig::new(SAMPLE_RATE, CHANNELS).offline();
     let mut writer = AudioWriter::create(path, &config).expect("create the writer");
     writer
-        .append_pcm(&tone(), SAMPLE_RATE, DURATION_NS)
+        .append_pcm(&tone(), SAMPLE_RATE)
         .expect("append samples");
     writer
 }
