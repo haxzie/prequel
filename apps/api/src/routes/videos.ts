@@ -17,7 +17,20 @@ import { languageTag } from "../lib/captions.ts";
 import { retryChaptersIfDue, storeChapters } from "../lib/chapters.ts";
 import { id, slug } from "../lib/ids.ts";
 import { captureServer } from "../lib/posthog.ts";
-import { posterKey, signedPlayback, signedUpload, transcriptKey, videoKey } from "../lib/r2.ts";
+import {
+  abortUpload,
+  completeUpload,
+  createUpload,
+  PART_SIZE,
+  posterKey,
+  signedPlayback,
+  signedUpload,
+  signedUploadPart,
+  transcriptKey,
+  videoKey,
+  worthSplitting,
+  type UploadedPart,
+} from "../lib/r2.ts";
 import { describe, notify, personById } from "../lib/slack.ts";
 import { authenticate, requireTeam, type AppContext } from "../middleware.ts";
 
@@ -43,6 +56,37 @@ const Create = z.object({
   fps: z.number().int().positive().max(240).optional(),
   /** The Quality picker: the shorter edge in pixels, or null for the frame's own size. */
   shortEdge: z.number().int().positive().nullable().optional(),
+  /**
+   * Whether the client wants to send the bytes in parts.
+   *
+   * Absent means one PUT, because that is what every app built before parts
+   * existed does and those must go on working — an old build asks for an upload
+   * and gets `uploadUrl` exactly as it always did. A new one asks for parts and
+   * gets `uploadId` and `partSize` instead.
+   */
+  multipart: z.boolean().default(false),
+});
+
+/**
+ * Which parts the client wants somewhere to put.
+ *
+ * A range rather than the whole list at once. A signature lasts an hour and a
+ * long upload on a slow uplink outlives that, so URLs for the end of a file
+ * minted at the start would have expired by the time the client reached them.
+ */
+const Parts = z.object({
+  from: z.number().int().positive(),
+  to: z.number().int().positive(),
+});
+
+/** How many part URLs one request may ask for. */
+const MAX_PARTS_PER_REQUEST = 20;
+
+const Complete = z.object({
+  /** Absent for a single-PUT upload, which has nothing to assemble. */
+  parts: z
+    .array(z.object({ partNumber: z.number().int().positive(), etag: z.string().min(1) }))
+    .optional(),
 });
 
 /** The team's library, newest first. */
@@ -224,6 +268,16 @@ videos.post("/", async (c) => {
     ? posterKey(teamId!, videoId, body.posterContentType)
     : null;
 
+  // Before the row, because the row stores the id it hands back and a row
+  // written first would have to be undone if this failed.
+  // The client asks; the size decides. A file too small to reach a second part
+  // is refused by R2 at `complete` if it is split, and gains nothing from being
+  // split even if it were not — see `worthSplitting`.
+  const uploadId =
+    body.multipart && worthSplitting(body.sizeBytes)
+      ? await createUpload(c.env, key, body.contentType)
+      : null;
+
   await db.insert(schema.video).values({
     id: videoId,
     slug: slug(),
@@ -232,6 +286,7 @@ videos.post("/", async (c) => {
     title: body.title,
     status: "uploading",
     objectKey: key,
+    uploadId,
     posterKey: poster,
     contentType: body.contentType,
     sizeBytes: body.sizeBytes,
@@ -243,11 +298,99 @@ videos.post("/", async (c) => {
   });
 
   const [uploadUrl, posterUploadUrl] = await Promise.all([
-    signedUpload(c.env, key, body.contentType),
+    // Not minted for a multipart upload: there is no one URL to PUT the file
+    // to, and handing back both would let a client send the whole object over
+    // the top of the parts it is also sending.
+    uploadId ? null : signedUpload(c.env, key, body.contentType),
     poster && body.posterContentType ? signedUpload(c.env, poster, body.posterContentType) : null,
   ]);
 
-  return c.json({ id: videoId, uploadUrl, posterUploadUrl });
+  return c.json({
+    id: videoId,
+    uploadUrl,
+    posterUploadUrl,
+    uploadId,
+    // Told, not chosen. Every part but the last has to be exactly this or the
+    // whole upload is refused at the end — see `PART_SIZE`.
+    partSize: uploadId ? PART_SIZE : null,
+  });
+});
+
+/**
+ * Somewhere to put the next few parts.
+ *
+ * Bounded per request and checked against the row's own upload, so an expired
+ * or already-finished share cannot be handed fresh URLs to write through.
+ */
+videos.post("/:id/upload/parts", async (c) => {
+  const db = c.get("db");
+  const { teamId } = c.get("identity");
+
+  const parsed = Parts.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ message: "That isn't a range of parts." }, 400);
+
+  const { from, to } = parsed.data;
+  if (to < from || to - from + 1 > MAX_PARTS_PER_REQUEST) {
+    return c.json({ message: "Ask for fewer parts at a time." }, 400);
+  }
+
+  const [row] = await db
+    .select()
+    .from(schema.video)
+    .where(and(eq(schema.video.id, c.req.param("id")), eq(schema.video.teamId, teamId!)))
+    .limit(1);
+
+  if (!row) return c.json({ message: "No such upload." }, 404);
+  // Asked before the upload id, not after. Finishing a share clears the id, so
+  // the other order answers "no such upload" for one that exists and is simply
+  // already done — which reads as the share having been lost.
+  if (row.status !== "uploading") return c.json({ message: "That upload is finished." }, 409);
+  if (!row.uploadId) return c.json({ message: "No such upload." }, 404);
+
+  const urls = await Promise.all(
+    Array.from({ length: to - from + 1 }, (_, index) =>
+      signedUploadPart(c.env, row.objectKey, row.uploadId!, from + index).then((url) => ({
+        partNumber: from + index,
+        url,
+      })),
+    ),
+  );
+
+  return c.json({ parts: urls });
+});
+
+/**
+ * Gives up on an upload, and takes the parts with it.
+ *
+ * Called when a share is cancelled or fails for good. Unlike a single PUT —
+ * which leaves nothing behind when it breaks — the parts of an abandoned
+ * multipart upload sit in the bucket, invisible to everyone and billed to the
+ * team, until something names the upload they belong to. This is that something.
+ *
+ * The app cannot be relied on to reach here: it can be force quit, and the Mac
+ * can lose power. A bucket lifecycle rule for incomplete multipart uploads is
+ * the backstop, and this is the tidy path rather than the only one.
+ */
+videos.delete("/:id/upload", async (c) => {
+  const db = c.get("db");
+  const { teamId } = c.get("identity");
+
+  const [row] = await db
+    .select()
+    .from(schema.video)
+    .where(and(eq(schema.video.id, c.req.param("id")), eq(schema.video.teamId, teamId!)))
+    .limit(1);
+
+  if (!row) return c.json({ message: "No such recording." }, 404);
+
+  if (row.uploadId) await abortUpload(c.env, row.objectKey, row.uploadId);
+
+  await db
+    .update(schema.video)
+    .set({ status: "failed", uploadId: null, updatedAt: new Date() })
+    .where(eq(schema.video.id, row.id));
+
+  return c.json({ ok: true });
 });
 
 /**
@@ -270,6 +413,41 @@ videos.post("/:id/complete", async (c) => {
 
   if (!row) return c.json({ message: "No such recording." }, 404);
 
+  // The parts, assembled into the object, before anything asks whether the
+  // object is there — until this runs a multipart upload has no object at all,
+  // only parts, and the HEAD below would report an upload that never finished.
+  if (row.uploadId) {
+    const parsed = Complete.safeParse(await c.req.json().catch(() => null));
+    const parts: UploadedPart[] = parsed.success ? (parsed.data.parts ?? []) : [];
+
+    if (parts.length === 0) {
+      await abortUpload(c.env, row.objectKey, row.uploadId);
+      await db
+        .update(schema.video)
+        .set({ status: "failed", uploadId: null, updatedAt: new Date() })
+        .where(eq(schema.video.id, row.id));
+
+      return c.json({ message: "The upload didn't finish." }, 400);
+    }
+
+    try {
+      await completeUpload(c.env, row.objectKey, row.uploadId, parts);
+    } catch (cause) {
+      // A refused assembly is the end of this upload: the parts are wrong, or
+      // one of them never arrived, and neither is something a retry of this
+      // call would mend. Aborted rather than left, or they are storage nobody
+      // can see and the team is paying for.
+      console.error("videos: could not assemble an upload", cause);
+      await abortUpload(c.env, row.objectKey, row.uploadId);
+      await db
+        .update(schema.video)
+        .set({ status: "failed", uploadId: null, updatedAt: new Date() })
+        .where(eq(schema.video.id, row.id));
+
+      return c.json({ message: "The upload didn't finish." }, 400);
+    }
+  }
+
   const object = await c.env.MEDIA.head(row.objectKey);
 
   if (!object) {
@@ -283,7 +461,14 @@ videos.post("/:id/complete", async (c) => {
 
   await db
     .update(schema.video)
-    .set({ status: "ready", sizeBytes: object.size, updatedAt: new Date() })
+    .set({
+      status: "ready",
+      // Cleared on the way through: the upload is finished, and an id left on a
+      // ready row is one `DELETE /upload` could still be pointed at.
+      uploadId: null,
+      sizeBytes: object.size,
+      updatedAt: new Date(),
+    })
     .where(eq(schema.video.id, row.id));
 
   // The authoritative share. The app reports one of its own, but only this point

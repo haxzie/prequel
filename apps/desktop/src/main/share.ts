@@ -22,8 +22,24 @@ import { log } from "./log.js";
 
 interface Created {
   id: string;
-  uploadUrl: string;
+  /** Null when the bytes go up in parts — there is no single URL for the file. */
+  uploadUrl: string | null;
   posterUploadUrl: string | null;
+  /** Null from an API that predates parts, and from a single-PUT upload. */
+  uploadId: string | null;
+  /** How big every part but the last must be. Decided by the API, not here. */
+  partSize: number | null;
+}
+
+interface PartUrl {
+  partNumber: number;
+  url: string;
+}
+
+/** One part, as the API needs it back to assemble the object. */
+interface UploadedPart {
+  partNumber: number;
+  etag: string;
 }
 
 /**
@@ -35,6 +51,39 @@ interface Created {
  */
 let current: { path: string; abort: AbortController } | null = null;
 
+/**
+ * How many times one part is offered before the share gives up.
+ *
+ * Four, and the number is measured rather than chosen. A real upload from a
+ * machine whose network corrupts TLS records hit `bad record mac` on *both*
+ * runs of a three-part share — so the fault is close to per-upload rather than
+ * occasional, and a long recording is not three parts but seventy. At that rate
+ * some part will fail twice in a row, and two attempts would end the share
+ * there having sent almost all of it.
+ *
+ * Affordable precisely because it is per part: a fourth attempt costs eight
+ * mebibytes, where before the upload was split it would have cost the whole
+ * recording.
+ *
+ * Only a fault on the wire is worth repeating. A refusal — an expired
+ * signature, a body too large — arrives as `ApiError` and will say exactly the
+ * same thing the fourth time.
+ */
+const UPLOAD_ATTEMPTS = 4;
+
+/** A moment for a blip to pass before the bytes go again. */
+const RETRY_PAUSE_MS = 1_000;
+
+/**
+ * How many part URLs are fetched at a time.
+ *
+ * Not all of them up front. A signature is good for an hour, and the last part
+ * of a long upload on a slow uplink is reached well after that — so URLs minted
+ * at the start would have expired by the time they were used, and the upload
+ * would fail at the end having sent nearly everything.
+ */
+const PART_BATCH = 10;
+
 export async function startShare(share: ShareRequest): Promise<void> {
   if (current) throw new ApiError("ALREADY_SHARING", "Something is already uploading.");
 
@@ -43,6 +92,11 @@ export async function startShare(share: ShareRequest): Promise<void> {
 
   const abort = new AbortController();
   current = { path: share.path, abort };
+
+  // Held outside the try so the failure path can name the upload it has to
+  // throw away. Parts already sent are storage nobody can see and the team is
+  // paying for, and only the id they belong to can reach them.
+  let abandoned: Created | null = null;
 
   try {
     broadcast({ path: share.path, stage: "preparing", bytesSent: 0, bytesTotal: 0 });
@@ -67,8 +121,13 @@ export async function startShare(share: ShareRequest): Promise<void> {
         fps: share.fps,
         shortEdge: share.shortEdge,
         posterContentType: poster?.contentType,
+        // An API that has never heard of this ignores it and answers with a
+        // single upload URL, which is the path that has always existed.
+        multipart: true,
       }),
     });
+
+    abandoned = created;
 
     // The poster first, and its failure is not fatal. A library entry with no
     // thumbnail is worth having; a share that failed because a 40 KB still
@@ -111,9 +170,28 @@ export async function startShare(share: ShareRequest): Promise<void> {
 
     broadcast({ path: share.path, stage: "uploading", bytesSent: 0, bytesTotal: size });
 
-    await putFile(created.uploadUrl, share.path, size, contentType, abort.signal, (sent) => {
+    const progress = (sent: number) =>
       broadcast({ path: share.path, stage: "uploading", bytesSent: sent, bytesTotal: size });
-    });
+
+    const parts =
+      created.uploadId && created.partSize
+        ? await uploadInParts(
+            created.id,
+            token,
+            share.path,
+            size,
+            created.partSize,
+            abort.signal,
+            progress,
+          )
+        : await uploadWhole(
+            created.uploadUrl,
+            share.path,
+            size,
+            contentType,
+            abort.signal,
+            progress,
+          );
 
     broadcast({ path: share.path, stage: "finalising", bytesSent: size, bytesTotal: size });
 
@@ -121,6 +199,9 @@ export async function startShare(share: ShareRequest): Promise<void> {
       method: "POST",
       token,
       signal: abort.signal,
+      // The parts, so the API can assemble them. A single-PUT upload has none
+      // and the API asks for none.
+      ...(parts ? { body: JSON.stringify({ parts }) } : {}),
     });
 
     // A second go, now that the bytes are through. The first attempt failed
@@ -150,11 +231,24 @@ export async function startShare(share: ShareRequest): Promise<void> {
 
     if (!cancelled) console.error("[share] upload failed:", cause);
 
+    // The parts that did arrive, thrown away. They are invisible to everybody
+    // and billed to the team until the upload they belong to is aborted, and
+    // this is the only place still holding its id. Cancelled counts: somebody
+    // who changed their mind should not be left paying for half a video.
+    //
+    // Never allowed to replace the failure that got here. An abort that fails
+    // is a tidying job the bucket's own lifecycle rule will finish; the error
+    // above is the one worth reporting.
+    if (abandoned?.uploadId) {
+      try {
+        await apiFetch(`/v1/videos/${abandoned.id}/upload`, { method: "DELETE", token });
+      } catch (second) {
+        console.warn("[share] the abandoned upload could not be thrown away:", second);
+      }
+    }
+
     track(cancelled ? "share_cancelled" : "share_failed", {
-      // The code, not the message. `ApiError` codes are ours and finite —
-      // QUOTA_EXCEEDED, SIGNED_OUT, UPLOAD_403 — where a message can carry a
-      // presigned URL or a path in it.
-      code: cause instanceof ApiError ? cause.code : null,
+      code: codeOf(cause),
     });
 
     broadcast({
@@ -165,8 +259,8 @@ export async function startShare(share: ShareRequest): Promise<void> {
       error: cancelled
         ? null
         : {
-            code: cause instanceof ApiError ? cause.code : null,
-            message: cause instanceof Error ? cause.message : "That recording didn't upload.",
+            code: codeOf(cause),
+            message: messageOf(cause),
           },
     });
   } finally {
@@ -204,16 +298,195 @@ function decodePoster(poster: string | null): { bytes: Buffer; contentType: stri
   }
 }
 
+/**
+ * What to call a failure, for analytics and for the dialog.
+ *
+ * The code, never the message. `ApiError` codes are ours and finite —
+ * QUOTA_EXCEEDED, SIGNED_OUT, UPLOAD_403 — where a message can carry a
+ * presigned URL or a path in it.
+ *
+ * Below those, a failure is whatever Node called it: ECONNRESET, EPROTO,
+ * ENOTFOUND, ERR_SSL_SSLV3_ALERT_BAD_RECORD_MAC. That set is finite and says
+ * nothing about the person either, and reporting `null` for all of it is the
+ * difference between "a share failed" and "shares are failing on TLS" — the
+ * only share failure in two months arrived as `null` and said nothing at all.
+ */
+function codeOf(cause: unknown): string | null {
+  if (cause instanceof ApiError) return cause.code;
+
+  const code = (cause as { code?: unknown } | null | undefined)?.code;
+  return typeof code === "string" ? code : null;
+}
+
+/**
+ * What the dialog says when a share does not finish.
+ *
+ * An `ApiError`'s message is ours and was written to be read — "This team is
+ * out of storage", "Sign in to share a recording". Anything else is a socket or
+ * a filesystem talking, and those are addressed to nobody: a failed share
+ * showed somebody `SSLV3_ALERT_BAD_RECORD_MAC ... alert number 20`, which names
+ * the record layer of a protocol and asks them to do nothing about it.
+ *
+ * Two outcomes rather than one, because the advice differs. A connection that
+ * broke is worth trying again; an export moved or deleted since it was made is
+ * not, and "try again" there sends somebody round a loop that cannot end.
+ *
+ * No detail is lost. `console.error` puts the whole error in the log, cause and
+ * all, which is where a record-layer alert is actually worth having.
+ */
+function messageOf(cause: unknown): string {
+  if (cause instanceof ApiError) return cause.message;
+
+  const code = (cause as { code?: unknown } | null | undefined)?.code;
+  if (code === "ENOENT" || code === "EACCES" || code === "EPERM") {
+    return "That export isn't where it was. It may have been moved or deleted.";
+  }
+
+  return "The upload was interrupted. Check your connection and try again.";
+}
+
+/**
+ * One stretch of the file, offered again if the first attempt died on the wire.
+ *
+ * The retry is the whole point of splitting an upload up: a part that breaks is
+ * re-sent on its own, so a network that drops for a moment costs eight
+ * mebibytes instead of the entire recording.
+ *
+ * Exported for its own test — what has to be true is that a broken connection
+ * is retried and a refusal is not, and neither is visible from outside: a
+ * retried upload and one that worked first time end identically.
+ */
+export async function upload(
+  url: string,
+  path: string,
+  start: number,
+  length: number,
+  contentType: string,
+  signal: AbortSignal,
+  onProgress: (bytesSentOfThisRange: number) => void,
+): Promise<string | null> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await putRange(url, path, start, length, contentType, signal, onProgress);
+    } catch (cause) {
+      if (signal.aborted || cause instanceof ApiError || attempt >= UPLOAD_ATTEMPTS) throw cause;
+
+      console.warn("[share] the upload broke, offering the bytes again:", cause);
+
+      // Back to nothing sent of this range, because the next attempt starts at
+      // its first byte. A bar left where it stopped would be claiming progress
+      // that is no longer on the server.
+      onProgress(0);
+
+      await new Promise((resume) => setTimeout(resume, RETRY_PAUSE_MS));
+
+      // Cancelled while waiting. `putRange` listens for an abort that has not
+      // happened yet, so handing it a signal already aborted would upload the
+      // whole range with nothing left able to stop it.
+      if (signal.aborted) throw cause;
+    }
+  }
+}
+
+/**
+ * The whole file as one PUT, which is what an older API asks for.
+ *
+ * Kept rather than removed. The app and the Worker are deployed separately, and
+ * a build that could only upload in parts would be unable to share at all
+ * against an API that had not shipped yet.
+ */
+async function uploadWhole(
+  url: string | null,
+  path: string,
+  size: number,
+  contentType: string,
+  signal: AbortSignal,
+  onProgress: (bytesSent: number) => void,
+): Promise<null> {
+  if (!url) throw new ApiError("NO_UPLOAD_URL", "That recording didn't upload.");
+
+  await upload(url, path, 0, size, contentType, signal, onProgress);
+  return null;
+}
+
+/**
+ * The file, a part at a time, reporting what landed.
+ *
+ * Sequential on purpose. Parts could go several at once and the upload would be
+ * faster for it, but that is a separate change with its own way of going wrong
+ * — and the reason this exists is a network that breaks, where filling the
+ * uplink with three streams is not obviously the kind thing to do.
+ *
+ * The URLs are fetched a batch at a time rather than all at once; see
+ * `PART_BATCH` for why minting them up front does not work.
+ */
+async function uploadInParts(
+  videoId: string,
+  token: string,
+  path: string,
+  size: number,
+  partSize: number,
+  signal: AbortSignal,
+  onProgress: (bytesSent: number) => void,
+): Promise<UploadedPart[]> {
+  const total = Math.max(1, Math.ceil(size / partSize));
+  const done: UploadedPart[] = [];
+  // What every completed part adds up to, so a part being retried can report
+  // against it without the bar losing the ground already won.
+  let settled = 0;
+
+  for (let first = 1; first <= total; first += PART_BATCH) {
+    const last = Math.min(first + PART_BATCH - 1, total);
+
+    const { parts: urls } = await apiFetch<{ parts: PartUrl[] }>(
+      `/v1/videos/${videoId}/upload/parts`,
+      { method: "POST", token, signal, body: JSON.stringify({ from: first, to: last }) },
+    );
+
+    for (const { partNumber, url } of urls) {
+      const start = (partNumber - 1) * partSize;
+      // The last part is the remainder, and is the only one allowed to be a
+      // different size — see `PART_SIZE` in the API. Computing it as `partSize`
+      // would read past the end of the file and send a short body under a
+      // `content-length` that promised more, which hangs rather than errors.
+      const length = Math.min(partSize, size - start);
+
+      const etag = await upload(
+        url,
+        path,
+        start,
+        length,
+        "application/octet-stream",
+        signal,
+        (sent) => onProgress(settled + sent),
+      );
+
+      if (!etag) {
+        // R2 answers every part with one. Without it there is nothing to
+        // assemble the object from, and carrying on would upload the whole
+        // file and fail at the end with the parts already paid for.
+        throw new ApiError("NO_ETAG", "That recording didn't upload.");
+      }
+
+      done.push({ partNumber, etag });
+      settled += length;
+      onProgress(settled);
+    }
+  }
+
+  return done;
+}
+
 function put(url: string, body: Buffer, contentType: string, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const req = requestFor(url, contentType, body.byteLength, resolve, reject);
+    const req = requestFor(url, contentType, body.byteLength, () => resolve(), reject);
     signal.addEventListener("abort", () => req.destroy(new Error("cancelled")), { once: true });
     req.end(body);
   });
 }
 
 /**
- * Streams a file to a presigned URL, reporting bytes as they go.
+ * Streams one stretch of a file to a presigned URL, reporting bytes as they go.
  *
  * `node:https` rather than `fetch`, and the reason is the progress callback:
  * `fetch` gives no way to observe an upload in flight, and an export can be
@@ -223,19 +496,27 @@ function put(url: string, body: Buffer, contentType: string, signal: AbortSignal
  * The length is sent explicitly. A presigned PUT is signed over the headers, and
  * chunked transfer encoding — which is what Node uses without a `content-length`
  * — makes S3 reject the signature as invalid.
+ *
+ * Hands back the object's ETag, which is how a part is named when the upload is
+ * assembled. Null for anything that answers without one, which a whole-file PUT
+ * is allowed to do and a part is not.
  */
-function putFile(
+function putRange(
   url: string,
   path: string,
-  size: number,
+  start: number,
+  length: number,
   contentType: string,
   signal: AbortSignal,
   onProgress: (bytesSent: number) => void,
-): Promise<void> {
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
-    const req = requestFor(url, contentType, size, resolve, reject);
+    const req = requestFor(url, contentType, length, resolve, reject);
 
-    const stream = createReadStream(path);
+    // Inclusive at both ends, which is what `createReadStream` means by `end` —
+    // off by one here sends a byte too few under a `content-length` that
+    // promised more, and the request hangs rather than failing.
+    const stream = createReadStream(path, { start, end: start + length - 1 });
     let sent = 0;
     let reported = 0;
 
@@ -244,7 +525,7 @@ function putFile(
 
       // Throttled to whole percent. The dialog writes this straight to the DOM,
       // and a 64 KB read on a fast uplink fires thousands of times a second.
-      const percent = Math.floor((sent / size) * 100);
+      const percent = Math.floor((sent / length) * 100);
       if (percent > reported) {
         reported = percent;
         onProgress(sent);
@@ -270,7 +551,7 @@ function requestFor(
   url: string,
   contentType: string,
   length: number,
-  resolve: () => void,
+  resolve: (etag: string | null) => void,
   reject: (error: Error) => void,
 ) {
   const target = new URL(url);
@@ -291,7 +572,12 @@ function requestFor(
       // up as the *next* upload hanging rather than this one failing.
       response.resume();
 
-      if (status >= 200 && status < 300) resolve();
+      // The quotes R2 wraps an ETag in are left on. They are part of the value
+      // everywhere S3 speaks of it, and the API strips them once on the way
+      // into the assembly rather than each end guessing whether the other did.
+      const etag = response.headers["etag"];
+
+      if (status >= 200 && status < 300) resolve(typeof etag === "string" ? etag : null);
       else reject(new ApiError(`UPLOAD_${status}`, `The upload was refused (${status}).`));
     },
   );

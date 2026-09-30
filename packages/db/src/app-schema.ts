@@ -66,6 +66,19 @@ export const video = sqliteTable(
       .notNull()
       .default("uploading"),
     objectKey: text("object_key").notNull(),
+    /**
+     * The multipart upload the bytes are arriving in, while they are arriving.
+     *
+     * Null for a share sent as one PUT — which is every share made by an app
+     * older than the one that split them, and those keep working.
+     *
+     * Kept because both ends of a multipart upload need it and neither can
+     * derive it: `complete` has to name the upload it is finishing, and `abort`
+     * has to name the one it is throwing away. An upload left with parts in it
+     * and nobody holding the id is storage nobody can see and everybody pays
+     * for, so this is also what makes the cleanup possible at all.
+     */
+    uploadId: text("upload_id"),
     posterKey: text("poster_key"),
     contentType: text("content_type").notNull(),
     sizeBytes: integer("size_bytes").notNull(),

@@ -57,6 +57,13 @@
       "when": 1789358850054,
       "tag": "0007_export_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790758527570,
+      "tag": "0008_dark_carnage",
+      "breakpoints": true
     }
   ]
 }

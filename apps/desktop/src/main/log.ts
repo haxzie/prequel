@@ -94,7 +94,7 @@ function write(level: LogLevel, message: string): void {
 
 /** Errors carry a stack; everything else is JSON, falling back to `String`. */
 function format(value: unknown): string {
-  if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`;
+  if (value instanceof Error) return stackOf(value);
   if (typeof value === "string") return value;
 
   try {
@@ -103,6 +103,30 @@ function format(value: unknown): string {
     return String(value);
   }
 }
+
+/**
+ * An error's stack, and the stack of whatever caused it.
+ *
+ * `error.stack` stops at the error itself: a `cause` is not in it. Everything
+ * the network can do to a request arrives in `api.ts` as one `ApiError`, so
+ * without this a share that died on a TLS record the far end would not verify
+ * was logged as "Couldn't reach Prequel. Check your connection." and nothing
+ * else — the line naming what actually happened is exactly the line dropped.
+ *
+ * Depth-limited rather than walked to the end. A chain is normally one deep,
+ * and an error that causes itself through a wrapper would otherwise write until
+ * the disk filled.
+ */
+function stackOf(error: Error, depth = 0): string {
+  const own = error.stack ?? `${error.name}: ${error.message}`;
+  const cause = (error as { cause?: unknown }).cause;
+
+  if (depth >= MAX_CAUSE_DEPTH || !(cause instanceof Error)) return own;
+
+  return `${own}\ncaused by: ${stackOf(cause, depth + 1)}`;
+}
+
+const MAX_CAUSE_DEPTH = 3;
 
 /** Keeps one previous log, so a crash-on-launch loop cannot erase the cause. */
 function rollOver(): void {

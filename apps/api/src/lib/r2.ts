@@ -75,6 +75,136 @@ export async function signedUpload(env: Env, key: string, contentType: string): 
   return signed.url;
 }
 
+/**
+ * How much of a file goes in one part.
+ *
+ * Eight mebibytes. The number decides what a broken connection costs: the whole
+ * point of splitting an upload is that a part which dies is re-sent on its own,
+ * so a smaller part is a cheaper mistake and a larger one is fewer requests.
+ * Eight puts a 572 MB export in 72 parts and a retry at about ten seconds on a
+ * domestic uplink, and the Class A operations that buys are pennies.
+ *
+ * **Every part but the last must be exactly this size.** R2 enforces it when
+ * the upload is completed rather than as each part arrives, so a client that
+ * sizes them differently uploads the entire file successfully and is refused at
+ * the very end — which is the most expensive possible moment to find out. The
+ * client is told this number rather than choosing one.
+ *
+ * It is also comfortably over R2's own minimum for a part that is not the last,
+ * which is the other half of the same rule — see `worthSplitting`.
+ */
+export const PART_SIZE = 8 * 1024 * 1024;
+
+/**
+ * Whether a file of this size should go up in parts at all.
+ *
+ * R2 refuses a part that is not the last and is under its minimum — the error
+ * is `Your proposed upload is smaller than the minimum allowed object size`,
+ * and like the equal-size rule it arrives at `complete`, after every byte has
+ * been sent. So a small share split into parts uploads perfectly and fails at
+ * the end, which is exactly the shape of failure this whole feature exists to
+ * remove.
+ *
+ * Anything that does not reach a second part has nothing to gain from being
+ * split anyway: a file under one part is one PUT either way, and one PUT is the
+ * path that has always worked.
+ */
+export function worthSplitting(sizeBytes: number): boolean {
+  return sizeBytes > PART_SIZE;
+}
+
+/**
+ * Starts a multipart upload and says what to call it.
+ *
+ * Through the binding rather than the S3 API, which is a choice worth naming:
+ * an upload can be driven from either interface once it exists, so the parts
+ * still arrive as presigned S3 PUTs from the desktop app while this Worker
+ * creates and finishes it with no signing and no XML to parse. The three
+ * lifecycle calls are kept together here so that moving them to the S3 API, if
+ * that interoperability ever stops holding, is this file and nothing else.
+ */
+export async function createUpload(env: Env, key: string, contentType: string): Promise<string> {
+  const upload = await env.MEDIA.createMultipartUpload(key, {
+    httpMetadata: { contentType },
+  });
+
+  return upload.uploadId;
+}
+
+/**
+ * A URL the client may PUT one part of an upload to.
+ *
+ * The part number and the upload id travel in the query, and are therefore
+ * covered by the signature: a URL for part 3 cannot be turned into a URL for
+ * part 4 by editing it.
+ */
+export async function signedUploadPart(
+  env: Env,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+): Promise<string> {
+  const url = new URL(objectUrl(env, key));
+  url.searchParams.set("partNumber", String(partNumber));
+  url.searchParams.set("uploadId", uploadId);
+  url.searchParams.set("X-Amz-Expires", String(UPLOAD_TTL));
+
+  const signed = await client(env).sign(new Request(url, { method: "PUT" }), {
+    aws: { signQuery: true },
+  });
+
+  return signed.url;
+}
+
+/** One part, as the client reports it having landed. */
+export interface UploadedPart {
+  partNumber: number;
+  etag: string;
+}
+
+/**
+ * Assembles the parts into the object.
+ *
+ * Sorted here rather than trusted in the order they arrived: the client may
+ * upload parts in any order, and R2 assembles them in the order this list gives
+ * — so a list out of order produces a file whose middle is shuffled, which
+ * completes successfully and plays as corruption.
+ *
+ * The quotes R2 puts around an ETag are stripped. A part reported as `"abc"`
+ * and offered back as `"\"abc\""` is not the same string, and the upload is
+ * refused for a mismatch that is pure punctuation.
+ */
+export async function completeUpload(
+  env: Env,
+  key: string,
+  uploadId: string,
+  parts: UploadedPart[],
+): Promise<void> {
+  const upload = env.MEDIA.resumeMultipartUpload(key, uploadId);
+
+  await upload.complete(
+    [...parts]
+      .sort((a, b) => a.partNumber - b.partNumber)
+      .map((part) => ({ partNumber: part.partNumber, etag: part.etag.replace(/^"|"$/g, "") })),
+  );
+}
+
+/**
+ * Throws away an upload and the parts already in it.
+ *
+ * Never fatal to the caller. The parts are storage the team is paying for and
+ * cannot see, so this is worth attempting on every path that gives up — but an
+ * abort that itself fails must not replace the error that caused it, which is
+ * the one worth reporting.
+ */
+export async function abortUpload(env: Env, key: string, uploadId: string): Promise<void> {
+  try {
+    await env.MEDIA.resumeMultipartUpload(key, uploadId).abort();
+  } catch (cause) {
+    console.error("r2: could not abort a multipart upload", cause);
+  }
+}
+
 /** A URL anybody may GET the object from, until it expires. */
 export async function signedPlayback(env: Env, key: string): Promise<string> {
   const url = new URL(objectUrl(env, key));

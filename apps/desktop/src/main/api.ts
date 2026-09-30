@@ -36,8 +36,10 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly status = 0,
+    /** What went wrong underneath, where this is standing in for something. */
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ApiError";
   }
 }
@@ -64,8 +66,14 @@ export async function apiFetch<T>(
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...rest.headers,
     },
-  }).catch(() => {
-    throw new ApiError("OFFLINE", "Couldn't reach Prequel. Check your connection.", 0);
+  }).catch((cause: unknown) => {
+    // Carrying the cause, not replacing it. Every network fault reaches here as
+    // one opaque `TypeError` — a dropped connection, a DNS failure, a TLS
+    // record the far end would not verify are the same thing to `fetch` — and
+    // throwing that away is how a failed share came to be logged as "check your
+    // connection" with no way to tell which of those it had been. The message
+    // stays the one a person reads; `log.ts` unwraps the rest.
+    throw new ApiError("OFFLINE", "Couldn't reach Prequel. Check your connection.", 0, { cause });
   });
 
   const body = (await response.json().catch(() => null)) as

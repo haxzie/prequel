@@ -1,0 +1,1 @@
+ALTER TABLE `video` ADD `upload_id` text;

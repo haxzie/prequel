@@ -80,6 +80,35 @@ function create(sizeBytes: number, posterContentType?: "image/png" | "image/jpeg
   });
 }
 
+/**
+ * A part big enough for R2 to accept as one that is not the last.
+ *
+ * Its minimum is real and is enforced at `complete` — a smaller one uploads
+ * fine and is refused after every byte has been sent. Held as a constant so the
+ * tests below read as "a legal part" rather than as an arbitrary large number.
+ */
+const A_PART = 5 * 1024 * 1024;
+
+/** A share whose bytes are going up in parts. */
+async function createMultipart(sizeBytes = A_PART * 3) {
+  const response = await call("/v1/videos", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "A recording",
+      contentType: "video/mp4",
+      sizeBytes,
+      multipart: true,
+    }),
+  });
+
+  return (await response.json()) as {
+    id: string;
+    uploadId: string;
+    partSize: number;
+    uploadUrl: string | null;
+  };
+}
+
 describe("POST /v1/videos", () => {
   it("returns somewhere to put the bytes", async () => {
     const response = await create(500);
@@ -815,5 +844,212 @@ describe("GET /p/:slug", () => {
     // pays for storage R2 is no longer holding.
     expect((await create(900)).status).toBe(200);
     expect(await env.MEDIA.head(`videos/org1/${id}.mp4`)).toBeNull();
+  });
+});
+
+describe("an upload sent in parts", () => {
+  // The fixture team has a thousand bytes of storage, which is what makes the
+  // quota tests above readable — and is smaller than a single legal part. These
+  // tests are about assembling an upload, not about the quota.
+  beforeEach(async () => {
+    await env.DB.prepare("UPDATE organization SET storage_quota_bytes = ? WHERE id = 'org1'")
+      .bind(A_PART * 100)
+      .run();
+  });
+
+  it("is given an upload to put them in, and no single URL", async () => {
+    const body = await createMultipart();
+
+    expect(body.uploadId).toBeTruthy();
+    expect(body.partSize).toBeGreaterThan(0);
+    // Both would let a client send the whole object over the top of the parts
+    // it is also sending, which is two uploads racing for one key.
+    expect(body.uploadUrl).toBeNull();
+  });
+
+  it("is not split when the file is too small to have a second part", async () => {
+    // R2 refuses a part that is not the last and is under its minimum, and says
+    // so at `complete` — after every byte has been sent. A short GIF asked to
+    // go up in parts would upload perfectly and fail at the very end.
+    const response = await call("/v1/videos", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "A short one",
+        contentType: "image/gif",
+        sizeBytes: 100,
+        multipart: true,
+      }),
+    });
+
+    const body = (await response.json()) as { uploadUrl: string | null; uploadId: string | null };
+    expect(body.uploadId).toBeNull();
+    expect(body.uploadUrl).toContain("X-Amz-Signature");
+  });
+
+  it("leaves an older app with exactly what it had", async () => {
+    // The app and this Worker deploy separately, and a build in somebody's
+    // Applications folder today knows nothing about parts. It must go on
+    // sharing.
+    const body = (await (await create(100)).json()) as {
+      uploadUrl: string;
+      uploadId: null;
+      partSize: null;
+    };
+
+    expect(body.uploadUrl).toContain("X-Amz-Signature");
+    expect(body.uploadId).toBeNull();
+    expect(body.partSize).toBeNull();
+  });
+
+  it("hands back a signed URL per part, naming the part and the upload", async () => {
+    const { id, uploadId } = await createMultipart();
+
+    const response = await call(`/v1/videos/${id}/upload/parts`, {
+      method: "POST",
+      body: JSON.stringify({ from: 1, to: 3 }),
+    });
+
+    const { parts } = (await response.json()) as { parts: { partNumber: number; url: string }[] };
+    expect(parts.map((part) => part.partNumber)).toEqual([1, 2, 3]);
+
+    // In the query, and therefore covered by the signature: a URL for part 1
+    // cannot be edited into a URL for part 2.
+    expect(parts[0]!.url).toContain("partNumber=1");
+    expect(parts[0]!.url).toContain(encodeURIComponent(uploadId));
+    expect(parts[0]!.url).toContain("X-Amz-Signature");
+  });
+
+  it("refuses to mint an unbounded number of URLs at once", async () => {
+    const { id } = await createMultipart();
+
+    const response = await call(`/v1/videos/${id}/upload/parts`, {
+      method: "POST",
+      body: JSON.stringify({ from: 1, to: 5000 }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("will not mint more parts for a share that is finished", async () => {
+    const { id, uploadId } = await createMultipart();
+    const key = `videos/org1/${id}.mp4`;
+
+    const part = await env.MEDIA.resumeMultipartUpload(key, uploadId).uploadPart(
+      1,
+      new Uint8Array(A_PART),
+    );
+    await call(`/v1/videos/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ parts: [{ partNumber: 1, etag: part.etag }] }),
+    });
+
+    const response = await call(`/v1/videos/${id}/upload/parts`, {
+      method: "POST",
+      body: JSON.stringify({ from: 2, to: 2 }),
+    });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("assembles the parts into the object", async () => {
+    const { id, uploadId } = await createMultipart();
+    const key = `videos/org1/${id}.mp4`;
+
+    // Uploaded the way the desktop app does it, then handed back the same way:
+    // a part number and the ETag the store answered with.
+    // The first is a full part; the last is the remainder, and is the only one
+    // allowed to be any size at all.
+    const upload = env.MEDIA.resumeMultipartUpload(key, uploadId);
+    const one = await upload.uploadPart(1, new Uint8Array(A_PART));
+    const two = await upload.uploadPart(2, new Uint8Array(40));
+
+    const response = await call(`/v1/videos/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({
+        parts: [
+          { partNumber: 2, etag: two.etag },
+          { partNumber: 1, etag: one.etag },
+        ],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    // The object exists only because the parts were assembled — before
+    // `complete` there is no object at all, only parts, which is why the HEAD
+    // cannot run first.
+    const object = await env.MEDIA.head(key);
+    expect(object?.size).toBe(A_PART + 40);
+
+    const row = await env.DB.prepare("SELECT status, upload_id FROM video WHERE id = ?")
+      .bind(id)
+      .first<{ status: string; upload_id: string | null }>();
+    // The id is cleared: a finished share is not one `DELETE /upload` may be
+    // pointed at.
+    expect(row).toEqual({ status: "ready", upload_id: null });
+  });
+
+  it("orders the parts itself rather than trusting the order they arrive in", async () => {
+    // R2 assembles a multipart upload in the order the list gives, so a list
+    // out of order produces a file whose middle is shuffled — which completes
+    // successfully and plays as corruption. The test above hands them back
+    // reversed on purpose; this pins why.
+    const { id, uploadId } = await createMultipart();
+    const key = `videos/org1/${id}.mp4`;
+
+    const upload = env.MEDIA.resumeMultipartUpload(key, uploadId);
+    const one = await upload.uploadPart(1, new TextEncoder().encode("A".repeat(A_PART)));
+    const two = await upload.uploadPart(2, new TextEncoder().encode("B".repeat(40)));
+
+    await call(`/v1/videos/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({
+        parts: [
+          { partNumber: 2, etag: two.etag },
+          { partNumber: 1, etag: one.etag },
+        ],
+      }),
+    });
+
+    const text = await (await env.MEDIA.get(key))!.text();
+    expect(text.startsWith("A")).toBe(true);
+    expect(text.endsWith("B")).toBe(true);
+  });
+
+  it("throws the parts away when the client completes with none", async () => {
+    const { id, uploadId } = await createMultipart();
+    const key = `videos/org1/${id}.mp4`;
+    await env.MEDIA.resumeMultipartUpload(key, uploadId).uploadPart(1, new Uint8Array(A_PART));
+
+    const response = await call(`/v1/videos/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ parts: [] }),
+    });
+
+    expect(response.status).toBe(400);
+
+    const row = await env.DB.prepare("SELECT status, upload_id FROM video WHERE id = ?")
+      .bind(id)
+      .first<{ status: string; upload_id: string | null }>();
+    expect(row).toEqual({ status: "failed", upload_id: null });
+  });
+
+  it("can be abandoned, so nobody pays for parts they cannot see", async () => {
+    // Unlike a single PUT, which leaves nothing behind when it breaks, the
+    // parts of an abandoned multipart upload sit in the bucket billed to the
+    // team until the upload they belong to is aborted.
+    const { id, uploadId } = await createMultipart();
+    const key = `videos/org1/${id}.mp4`;
+    await env.MEDIA.resumeMultipartUpload(key, uploadId).uploadPart(1, new Uint8Array(A_PART));
+
+    expect((await call(`/v1/videos/${id}/upload`, { method: "DELETE" })).status).toBe(200);
+
+    const row = await env.DB.prepare("SELECT status, upload_id FROM video WHERE id = ?")
+      .bind(id)
+      .first<{ status: string; upload_id: string | null }>();
+    expect(row).toEqual({ status: "failed", upload_id: null });
+
+    // And the upload really is gone: completing it now cannot succeed.
+    await expect(env.MEDIA.resumeMultipartUpload(key, uploadId).complete([])).rejects.toThrow();
   });
 });
