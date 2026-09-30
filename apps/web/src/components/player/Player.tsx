@@ -114,6 +114,15 @@ export function Player({
   const clock = useRef<HTMLSpanElement>(null);
 
   const [playing, setPlaying] = useState(false);
+  /**
+   * Whether the picture is waiting on bytes rather than on the viewer.
+   *
+   * There was no such state, and with nothing to show for it a slow link was
+   * indistinguishable from a broken one: a poster, a play button, and no sign
+   * that anything was happening. It matters most on the first press, where the
+   * browser may still be fetching the index before it can decode a frame.
+   */
+  const [buffering, setBuffering] = useState(false);
   /** Whether play has ever been pressed. The poster and the big button go on the first press. */
   const [started, setStarted] = useState(false);
   const [duration, setDuration] = useState(durationMs / 1000);
@@ -239,6 +248,33 @@ export function Player({
     if (!element) return;
     if (element.paused) void element.play().catch(() => undefined);
     else element.pause();
+  }, []);
+
+  /**
+   * Whether the video was playing when the pointer went down on the bar.
+   *
+   * The scrub pauses so the playhead does not chase the pointer, and this is
+   * what puts it back. Without it the pause was permanent: dragging the bar
+   * stopped the video, and pressing play again was the only way out.
+   */
+  const resumeAfterScrub = useRef(false);
+
+  const scrubStart = useCallback(() => {
+    const element = video.current;
+    if (!element) return;
+
+    resumeAfterScrub.current = !element.paused;
+    element.pause();
+  }, []);
+
+  const scrubEnd = useCallback(() => {
+    if (!resumeAfterScrub.current) return;
+
+    resumeAfterScrub.current = false;
+    // Rejected when the tab has taken autoplay permission away mid-drag, which
+    // is not a failure worth surfacing — the video is paused and the button
+    // says so.
+    void video.current?.play().catch(() => undefined);
   }, []);
 
   const seekTo = useCallback(
@@ -508,7 +544,20 @@ export function Player({
     // `progress` is how the buffered range grows while paused; the loop covers
     // it otherwise.
     onProgress: paint,
-    onSeeked: paint,
+    onSeeked: () => {
+      setBuffering(false);
+      paint();
+    },
+    // Waiting on the network, both of them: `waiting` is the decoder running
+    // dry mid-play, `stalled` is the fetch itself going quiet. Either is the
+    // viewer watching a still picture wondering whether to reload.
+    onWaiting: () => setBuffering(true),
+    onStalled: () => setBuffering(true),
+    // Cleared by anything that proves bytes arrived. `canplay` covers the
+    // first press, `playing` a recovery mid-video, and `seeked` a scrub that
+    // landed somewhere already buffered.
+    onCanPlay: () => setBuffering(false),
+    onPlaying: () => setBuffering(false),
     onVolumeChange: () => {
       const element = video.current!;
       setMuted(element.muted);
@@ -588,6 +637,20 @@ export function Player({
         </button>
       )}
 
+      {/* Only once play has been pressed. Before that the poster and the big
+          button are the whole interface, and a spinner over them would be the
+          player fretting about a download nobody has asked for — `preload` is
+          `metadata`, so it is barely fetching anything yet. */}
+      {started && buffering && (
+        <div
+          className="pointer-events-none absolute inset-0 grid place-items-center"
+          role="status"
+          aria-label="Loading"
+        >
+          <span className="size-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        </div>
+      )}
+
       {/* What a key just did, for the moment it takes to see it. Keyed so two
           presses in a row restart the fade rather than sharing one. */}
       {flash && (
@@ -620,7 +683,8 @@ export function Player({
           chapters={chapters}
           duration={duration}
           onSeek={seekTo}
-          onScrubStart={() => video.current?.pause()}
+          onScrubStart={scrubStart}
+          onScrubEnd={scrubEnd}
           label={title}
         />
 

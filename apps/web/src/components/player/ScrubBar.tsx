@@ -30,6 +30,7 @@ export function ScrubBar({
   label,
   onSeek,
   onScrubStart,
+  onScrubEnd,
 }: {
   ref?: Ref<ScrubBarHandle>;
   chapters: readonly Chapter[];
@@ -39,6 +40,15 @@ export function ScrubBar({
   onSeek: (seconds: number) => void;
   /** The pointer went down on the bar. The player pauses so the drag is a scrub, not a chase. */
   onScrubStart: () => void;
+  /**
+   * The pointer came up. The player resumes if it was playing when the drag
+   * began.
+   *
+   * Paired with `onScrubStart` and not optional. Pausing to scrub and never
+   * saying the scrub ended is how dragging the bar came to stop the video for
+   * good — the player did exactly what it was told and was told only half of it.
+   */
+  onScrubEnd: () => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const tip = useRef<HTMLDivElement>(null);
@@ -135,7 +145,10 @@ export function ScrubBar({
     if (!dragging.current) return;
     dragging.current = false;
     root.current?.releasePointerCapture(event.pointerId);
+    // Seek first, then resume: playing from where the pointer left the bar
+    // rather than from wherever the last move event happened to land.
     onSeek(fractionAt(event) * state.current.duration);
+    onScrubEnd();
   };
 
   return (
