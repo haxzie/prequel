@@ -28,6 +28,7 @@ import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
 import { thumbnailPath } from "./backgrounds.js";
+import { exportId, exportPath, exportThumbnailPath } from "./exports.js";
 import { fontPath } from "./fonts.js";
 import { cardPath } from "./scene-presets.js";
 import { SESSIONS_DIR } from "./session.js";
@@ -46,7 +47,7 @@ export function mediaUrl(dir: string, fileName: string): string {
 }
 
 /**
- * Exports this run has written, by file name.
+ * Exports this run has written, by id.
  *
  * An export goes wherever the save dialog pointed — the Desktop, an external
  * drive, anywhere — and the renderer still has to show it, which it can only do
@@ -56,6 +57,10 @@ export function mediaUrl(dir: string, fileName: string): string {
  *
  * So this is an allow-list rather than a resolver. Nothing a renderer sends can
  * name a file main did not itself write.
+ *
+ * By id and not by name: two exports in two folders can share a basename, and
+ * keyed by name the second would be served for the first. `exports.ts` has the
+ * longer note.
  */
 const written = new Map<string, string>();
 
@@ -66,8 +71,8 @@ const written = new Map<string, string>();
  * early is a 404 that reads as a broken preview.
  */
 export function publishExport(path: string): string {
-  written.set(basename(path), path);
-  return exportUrl(basename(path));
+  written.set(exportId(path), path);
+  return exportUrl(exportId(path), basename(path));
 }
 
 /**
@@ -170,11 +175,27 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
     return kind === "mine" ? cardPath(name) : null;
   }
 
-  // A finished export, by name. Exact match against what main registered —
-  // there is no path here to traverse, because the renderer never supplies one.
+  // A finished export, by id. Exact match against what main registered — there
+  // is no path here to traverse, because the renderer never supplies one. The
+  // name is carried only so an extension this scheme does not serve can be
+  // refused; which file it is comes entirely from the id.
+  //
+  // The ledger is the fallback, and it is what makes the Exports pane work at
+  // all: the map above holds what *this run* wrote, and the pane lists every
+  // export ever made.
   if (parsed.host === "export") {
+    if (parts.length !== 2) return null;
+    const [id, name] = parts as [string, string];
+    if (!ALLOWED.test(name)) return null;
+    return written.get(id) ?? exportPath(id);
+  }
+
+  // The cached still for one of those. A fixed directory and a bare id, so
+  // there is nothing here to traverse either — `exportThumbnailPath` answers
+  // null for anything that is not an id this app wrote.
+  if (parsed.host === "export-thumb") {
     if (parts.length !== 1) return null;
-    return written.get(parts[0]!) ?? null;
+    return exportThumbnailPath(parts[0]!);
   }
 
   // Two segments for the first take, whose files sit at the session root, and

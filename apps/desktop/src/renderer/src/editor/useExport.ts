@@ -23,7 +23,6 @@ import {
   type Size,
 } from "../../../shared/layout";
 import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
-import { exportUrl } from "../../../shared/media-url";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
   captionLook,
@@ -191,14 +190,18 @@ export function useExport(
   // Held against the progress rather than in state of its own: "done" already
   // carries the path, and a second copy could disagree with it after a retry.
   const result = useMemo((): ExportResult | null => {
-    if (!session || progress?.stage !== "done" || !progress.outputPath) return null;
+    if (!session || progress?.stage !== "done" || !progress.outputPath || !progress.url) {
+      return null;
+    }
 
     const name = progress.outputPath.split("/").pop() ?? "";
     return {
       path: progress.outputPath,
-      // By name, through the scheme's `export` route — the file is wherever the
-      // save dialog put it, which is nowhere the recordings route can reach.
-      url: exportUrl(name),
+      // Handed over with the progress rather than built here. The file is
+      // wherever the save dialog put it — nowhere the recordings route can
+      // reach — so the `export` route is an allow-list keyed by an id only
+      // main knows, and a URL assembled in the renderer can only 404.
+      url: progress.url,
       isGif: name.endsWith(".gif"),
       bytes: progress.bytes ?? null,
     };

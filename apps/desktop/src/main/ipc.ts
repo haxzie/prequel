@@ -48,6 +48,12 @@ import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { sendFeedback } from "./feedback.js";
+import {
+  dragExport as dragListedExport,
+  listExports,
+  openExport,
+  saveExportThumbnail,
+} from "./exports.js";
 import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
@@ -466,6 +472,21 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
     attempt(() => saveFilmstrip(dir, dataUrl)),
   );
 
+  // ── finished exports ─────────────────────────────────────────────────────
+  //
+  // Tagged like the library's own listing, and for the same reason: the pane
+  // reads `result.ok` before `result.value`, so a bare array here is an empty
+  // pane over a ledger with a hundred entries in it.
+  ipcMain.handle(IPC_CHANNELS.exportsList, () => attempt(() => listExports()));
+
+  ipcMain.handle(IPC_CHANNELS.exportsOpen, (_event, path: string) =>
+    attempt(() => openExport(path)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.exportsSaveThumbnail, (_event, path: string, dataUrl: string) =>
+    attempt(() => saveExportThumbnail(path, dataUrl)),
+  );
+
   // The sheet hangs off the window that asked, so it cannot open behind the
   // editor it belongs to.
   ipcMain.handle(IPC_CHANNELS.exportChoose, (event, format: ExportFormat) =>
@@ -554,6 +575,13 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
   // `removeIpc`'s `removeAllListeners`, which `removeHandler` does not cover.
   ipcMain.on(IPC_CHANNELS.exportDrag, (event, path: string, icon: string) => {
     dragExport(event.sender, path, icon);
+  });
+
+  // The same, for a row in the Exports pane. A channel of its own rather than
+  // the one above because the icon comes from somewhere else: the pane holds a
+  // URL for the cached still and not its bytes, so main reads the file.
+  ipcMain.on(IPC_CHANNELS.exportsDrag, (event, path: string) => {
+    dragListedExport(event.sender, path);
   });
 }
 

@@ -192,6 +192,14 @@ export interface RecordingPreferences {
    * already granted everything.
    */
   welcomed: boolean;
+  /**
+   * How the Exports pane lays its files out.
+   *
+   * Kept here rather than in the window, because the window is reloaded — by a
+   * navigation, by a rebuild in dev — and a layout that resets every time reads
+   * as the toggle not having worked. Flat, like every leaf in this file.
+   */
+  exportsView: ExportsView;
 }
 
 export const DEFAULT_PREFERENCES: RecordingPreferences = {
@@ -215,6 +223,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   teleprompterSpeed: 140,
   teleprompterDisplay: null,
   welcomed: false,
+  exportsView: "list",
 };
 
 /**
@@ -746,6 +755,28 @@ export const IPC_CHANNELS = {
   /** Renderer → main: cache a hover preview the grid just made. */
   projectsSaveFilmstrip: "projects:saveFilmstrip",
   /**
+   * Every export this Mac has written, newest first.
+   *
+   * Its own ledger rather than a folder scan: an export goes wherever the save
+   * dialog pointed — Downloads, the Desktop, an external drive — so there is no
+   * one directory to read, and the only record that a file was ever an export
+   * is the one main keeps when it writes one.
+   */
+  exportsList: "exports:list",
+  /** Renderer → main: open a finished export in whatever plays it. */
+  exportsOpen: "exports:open",
+  /** Renderer → main: cache a still the Exports pane just made. */
+  exportsSaveThumbnail: "exports:saveThumbnail",
+  /**
+   * Renderer → main, one-way: hands a listed export to a native drag.
+   *
+   * `on` and not `handle`, for the reason `export:drag` is — `startDrag` only
+   * takes hold while the mouse is still down. No icon comes with it: main
+   * already has the cached thumbnail, and the renderer only ever holds a URL
+   * for it rather than the bytes Electron needs.
+   */
+  exportsDrag: "exports:drag",
+  /**
    * Main → renderer: show this pane of the library.
    *
    * The tray's Settings item is the only sender. Everything else about which
@@ -950,6 +981,15 @@ export interface ExportProgress {
    * landing and the dialog being able to say anything about it.
    */
   bytes?: number;
+  /**
+   * A `prequel-media:` URL for the finished file. Present only on `done`.
+   *
+   * Built in main, because only main knows the id the export route registered
+   * the file under — an export lives wherever the save dialog pointed, so the
+   * route is an allow-list rather than a resolver and the renderer has no way
+   * to name an entry in it.
+   */
+  url?: string;
 }
 
 /**
@@ -1811,6 +1851,67 @@ export interface ProjectSummary {
 export const FILMSTRIP_FRAMES = 6;
 
 /**
+ * One finished export, as the Exports pane lists it.
+ *
+ * Every field is read in main. The renderer cannot stat a path, cannot open a
+ * file and cannot reach anything outside `prequel-media:` — so the size, the
+ * age and both URLs are worked out where the file is, and the path travels
+ * only so it can be handed straight back for a reveal, a drag or an open.
+ */
+export interface ExportSummary {
+  /** Absolute path, which is what Finder, the pasteboard and the drag take. */
+  path: string;
+  /** The file's own name, which is what the row is labelled with. */
+  name: string;
+  /**
+   * The folder it is in, written the way a Mac writes one — `~/Downloads`.
+   *
+   * Its own field rather than left for the renderer to cut out of `path`,
+   * because the home directory has to be found to abbreviate it and a renderer
+   * has no way to ask. It is the column that answers the question this pane
+   * exists for: exports scatter across Downloads, the Desktop and wherever
+   * else the save sheet was last pointed, and which one this went to is the
+   * thing nobody remembers a week later.
+   */
+  folder: string;
+  /** Epoch milliseconds, newest first. When the export finished. */
+  createdAt: number;
+  /**
+   * How long the file runs, in milliseconds, or null.
+   *
+   * Worked out from what the exporter actually wrote — the frames it rendered
+   * over the rate it rendered them at — rather than from the recording's own
+   * length, which is a different number the moment anything is cut out or a
+   * clip is sped up.
+   *
+   * Null for an export written before this was recorded. The column shows a
+   * dash rather than a zero: "not known" and "instant" are the same number,
+   * and one of the two is a lie about a video that plays for a minute.
+   */
+  durationMs: number | null;
+  /** How big the file is now, re-read on every listing rather than stored. */
+  bytes: number;
+  /**
+   * Whether this is a GIF, which is shown as a picture rather than played.
+   *
+   * Read off the extension in main for the reason the export dialog reads it
+   * off the extension: a `<video>` pointed at a GIF shows nothing at all.
+   */
+  isGif: boolean;
+  /** A `prequel-media:` URL for the file, which is the only way to show it. */
+  url: string;
+  /**
+   * A `prequel-media:` URL for the cached thumbnail, or null when there is
+   * none yet. The pane makes the missing ones and asks main to keep them,
+   * exactly as the Projects grid does with its posters.
+   */
+  thumbnail: string | null;
+}
+
+/** Whether the Exports pane is a column of rows or a grid of tiles. */
+export type ExportsView = "list" | "grid";
+
+/**
  * Which pane of the app window's library is showing.
  *
  * Not a route. The window loads `/workspace` and is told what to show, for the
@@ -1820,7 +1921,7 @@ export const FILMSTRIP_FRAMES = 6;
  * The account is deliberately absent. It is reported at the foot of the sidebar
  * rather than being a pane, so there is nothing for anything to ask to be shown.
  */
-export type WorkspaceSection = "projects" | "settings";
+export type WorkspaceSection = "projects" | "exports" | "settings";
 
 /**
  * How far along an update is.

@@ -24,6 +24,7 @@ import type {
   DockState,
   Entitlement,
   ExportProgress,
+  ExportSummary,
   IpcResult,
   PermissionState,
   ProjectSummary,
@@ -35,7 +36,7 @@ import type { ScenePreset } from "../src/shared/scene-presets";
 import { sanitiseScenePresets } from "../src/shared/scene-presets";
 import type { EditorSession } from "../src/shared/contract";
 import * as fixtures from "./fixtures";
-import { exportUrl } from "./media-url";
+import { exportThumbnailUrl, exportUrl } from "./media-url";
 import { loadSession } from "./session";
 
 export interface Fixtures {
@@ -51,6 +52,8 @@ export interface Fixtures {
   loginItem: boolean | null;
   /** Where the export dialog says the file went. */
   exportPath: string;
+  /** What the Exports pane lists. */
+  exports: ExportSummary[];
 }
 
 export const DEFAULT_FIXTURES: Fixtures = {
@@ -64,7 +67,17 @@ export const DEFAULT_FIXTURES: Fixtures = {
   appInfo: fixtures.APP_INFO,
   loginItem: true,
   exportPath: "/Users/you/Desktop/Prequel demo.mp4",
+  exports: fixtures.EXPORTS,
 };
+
+/**
+ * The id the pretend export is registered under.
+ *
+ * Any string does: the gallery's media server answers every `export` URL with
+ * the fixture recording's screen track, because there is nothing rendered here
+ * to play back.
+ */
+const EXPORT_ID = "gallery";
 
 type Listener = (value: never) => void;
 
@@ -280,6 +293,9 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
               framesDone,
               framesTotal: total,
               outputPath: stage === "done" ? path : null,
+              // The URL comes from main in the real app, because only main
+              // knows the id the file was registered under.
+              url: stage === "done" ? exportUrl(EXPORT_ID, path.split("/").pop() ?? "") : undefined,
               error: null,
               // A size the finished view can print. Main stats the real file;
               // there is none here, and a shot with the size missing would not
@@ -385,6 +401,16 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       delete: () => ok(false),
       savePoster: () => ok(undefined),
       saveFilmstrip: () => ok(undefined),
+    },
+
+    exports: {
+      list: () => ok(state.exports),
+      open: (path) => {
+        console.warn("[bridge] exports.open", path);
+        return ok(undefined);
+      },
+      saveThumbnail: () => ok(undefined),
+      drag: () => {},
     },
 
     workspace: {

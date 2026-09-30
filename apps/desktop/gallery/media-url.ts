@@ -19,8 +19,12 @@ export function mediaUrl(recording: string, fileName: string): string {
   return `${ROOT}/recording/${encodeURIComponent(recording)}/${encodeURIComponent(fileName)}`;
 }
 
-export function exportUrl(fileName: string): string {
-  return `${ROOT}/export/${encodeURIComponent(fileName)}`;
+export function exportUrl(id: string, fileName: string): string {
+  return `${ROOT}/export/${encodeURIComponent(id)}/${encodeURIComponent(fileName)}`;
+}
+
+export function exportThumbnailUrl(id: string): string {
+  return `${ROOT}/export-thumb/${encodeURIComponent(id)}.jpg`;
 }
 
 export function backgroundUrl(fileName: string): string {
@@ -51,6 +55,7 @@ const shape = {
   MEDIA_SCHEME,
   mediaUrl,
   exportUrl,
+  exportThumbnailUrl,
   backgroundUrl,
   scenePresetUrl,
   assetUrl,

@@ -159,6 +159,11 @@ function resolveMedia(pathname: string, options: GalleryOptions): string | null 
     return join(options.recordings, options.recording, "screen.mp4");
   }
 
+  // And its cached still, which the same recording's poster stands in for.
+  if (host === "export-thumb") {
+    return join(options.recordings, options.recording, "poster.jpg");
+  }
+
   return null;
 }
 

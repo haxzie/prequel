@@ -36,12 +36,31 @@ export function mediaUrl(recording: string, fileName: string): string {
  * directory — an export is saved wherever the save dialog pointed, and the
  * traversal guard the `recording` route relies on cannot cover a path outside
  * the root it checks against. So this route resolves nothing: main registers
- * the file it has just written by name, and a name that was never registered
- * is not a path to be sanitised, it is a request for something that does not
- * exist.
+ * the file it has just written, and an id that was never registered is not a
+ * path to be sanitised, it is a request for something that does not exist.
+ *
+ * The id, not the name, is what identifies the file — the name is carried
+ * alongside it only so the handler can refuse an extension it does not serve
+ * and so a URL in the inspector says what it is. Exports are named for the
+ * moment they were written and can be renamed in the save sheet, so two of
+ * them sharing a basename in two folders is ordinary; keyed by name, the
+ * second would be served for the first, which is a preview of the wrong video
+ * and a drag of the wrong file.
  */
-export function exportUrl(fileName: string): string {
-  return `${MEDIA_SCHEME}://export/${encodeURIComponent(fileName)}`;
+export function exportUrl(id: string, fileName: string): string {
+  return `${MEDIA_SCHEME}://export/${encodeURIComponent(id)}/${encodeURIComponent(fileName)}`;
+}
+
+/**
+ * A URL for the cached still of a finished export.
+ *
+ * Its own host rather than a file beside the export, which is what the Projects
+ * grid does with its posters. An export is a file the user has been handed —
+ * it goes into Slack, into a folder they keep — and dropping a `poster.jpg`
+ * next to it would be this app leaving litter in someone else's directory.
+ */
+export function exportThumbnailUrl(id: string): string {
+  return `${MEDIA_SCHEME}://export-thumb/${encodeURIComponent(id)}.jpg`;
 }
 
 /**

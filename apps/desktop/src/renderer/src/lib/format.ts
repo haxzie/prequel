@@ -69,6 +69,25 @@ export function formatTimeAgo(epochMs: number, now = Date.now()): string {
   });
 }
 
+/**
+ * A file's size, in the units a Mac shows.
+ *
+ * Powers of 1000 and not 1024, which is what Finder reports — a dialog that
+ * says 15.4MB beside a file Finder calls 16.1MB reads as the wrong file.
+ *
+ * One formatter for the export dialog and the Exports pane, which show the
+ * same file minutes apart. Two roundings of one number is the same bug as two
+ * timecodes: whichever is read second looks wrong.
+ */
+export function formatFileSize(bytes: number): string {
+  const mb = bytes / 1_000_000;
+  if (mb >= 1000) return `${(mb / 1000).toFixed(1)}GB`;
+  if (mb >= 1) return `${mb.toFixed(1)}MB`;
+  // Rounded up rather than down, so a file that exists is never reported as
+  // 0KB — which reads as an export that wrote nothing.
+  return `${String(Math.max(1, Math.round(bytes / 1000)))}KB`;
+}
+
 function plural(count: number, word: string): string {
   return count === 1 ? word : `${word}s`;
 }

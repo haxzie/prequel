@@ -16,7 +16,7 @@
 import { lazy, type ReactNode } from "react";
 
 import { IDLE_SESSION } from "../src/shared/contract";
-import { createBridge, type Fixtures } from "./bridge";
+import { createBridge, DEFAULT_FIXTURES, type Fixtures } from "./bridge";
 import { DISPLAY, SAFARI, permissions } from "./fixtures";
 
 const Dock = lazy(() => import("../src/renderer/src/dock/Dock").then((m) => ({ default: m.Dock })));
@@ -37,6 +37,9 @@ const Teleprompter = lazy(() =>
     default: m.Teleprompter,
   })),
 );
+
+/** The same Mac, with the Exports pane set to tiles rather than rows. */
+const GRID_PREFERENCES = { ...DEFAULT_FIXTURES.dock.preferences, exportsView: "grid" } as const;
 
 export type ShotFrameKind =
   | "workspace"
@@ -288,6 +291,24 @@ export const SHOTS: readonly Shot[] = [
     install: install(),
     render: () => <Library section="projects" onSection={() => {}} onOpen={() => {}} />,
     steps: [{ kind: "settle", ms: 800 }],
+    clip: "frame",
+  },
+  {
+    id: "exports",
+    frame: "workspace",
+    install: install(),
+    render: () => <Library section="exports" onSection={() => {}} onOpen={() => {}} />,
+    steps: [{ kind: "settle", ms: 500 }],
+    clip: "frame",
+  },
+  {
+    id: "exports-grid",
+    frame: "workspace",
+    install: install({
+      dock: { ...DEFAULT_FIXTURES.dock, preferences: GRID_PREFERENCES },
+    }),
+    render: () => <Library section="exports" onSection={() => {}} onOpen={() => {}} />,
+    steps: [{ kind: "settle", ms: 500 }],
     clip: "frame",
   },
   {

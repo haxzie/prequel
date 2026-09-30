@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 import type { WorkspaceSection } from "../../../shared/contract";
 import { cn } from "../lib/cn";
-import { FolderIcon } from "../editor/icons";
+import { ExportIcon, FolderIcon } from "../editor/icons";
+import { Exports } from "../exports/Exports";
 import { Projects } from "../projects/Projects";
 import { ExternalIcon, GeneralIcon } from "../settings/icons";
 import { SettingsPane } from "../settings/Settings";
@@ -24,6 +25,7 @@ import { PaneHeader } from "./PaneHeader";
  */
 const SECTIONS = [
   { id: "projects", label: "Projects", Icon: FolderIcon },
+  { id: "exports", label: "Exports", Icon: ExportIcon },
   { id: "settings", label: "Settings", Icon: GeneralIcon },
 ] as const satisfies readonly {
   id: WorkspaceSection;
@@ -114,6 +116,10 @@ export function Library({
       <main className="flex min-w-0 flex-1 flex-col bg-editor-scrim">
         {section === "projects" ? (
           <Projects onOpen={onOpen} />
+        ) : section === "exports" ? (
+          // Not wrapped in `Pane`: that caps the measure at 28rem for a column
+          // of settings, and this pane is a grid that should fill the window.
+          <Exports />
         ) : (
           <Pane icon={<GeneralIcon />} title="Settings">
             <SettingsPane />

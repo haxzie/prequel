@@ -24,6 +24,7 @@ import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
 import { toEveryWindow } from "./broadcast.js";
 import { redact } from "./errors.js";
+import { recordExport } from "./exports.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
 import { getRecorder } from "./recorder.js";
@@ -128,6 +129,17 @@ export async function chooseExportTarget(
 let startedAt = 0;
 
 /**
+ * The rate the export in progress is being written at.
+ *
+ * Kept beside `startedAt` and for a related reason: how long the finished file
+ * runs is the frames the exporter wrote over this, and by the time the last
+ * progress arrives the request that named it is long gone. It is the only way
+ * main can know a video's length — a packaged app has no `ffprobe`, and the one
+ * process here that can open a video is the renderer.
+ */
+let runningFps = 0;
+
+/**
  * Starts an export.
  *
  * Rejects a second one rather than queueing: there is one GPU and one encoder,
@@ -146,6 +158,7 @@ export async function startExport(request: ExportRequest): Promise<void> {
   const output = request.output;
   running = request.dir;
   startedAt = Date.now();
+  runningFps = request.fps;
 
   track("export_started", {
     format: request.format,
@@ -315,13 +328,40 @@ function finish(update: ExportProgress): void {
   // Registered before the progress goes out, not after: the renderer shows the
   // finished file the moment it hears "done", and it can only reach it through
   // `prequel-media:` — a URL published a tick late is a preview that 404s.
-  if (update.stage === "done" && update.outputPath) publishExport(update.outputPath);
+  //
+  // The URL travels with the progress rather than being rebuilt in the
+  // renderer. Only main knows the id the file was registered under, and an
+  // export is reachable by nothing else.
+  //
+  // Recorded in the same breath, because this is the only moment anything knows
+  // the file was an export: it is written wherever the save dialog pointed, and
+  // from then on it is an ordinary video in an ordinary folder.
+  if (update.stage === "done" && update.outputPath) {
+    update.url = publishExport(update.outputPath);
+    recordExport(update.outputPath, duration(update.framesTotal));
+  }
 
   // Nothing is revealed here. The export dialog offers Show in Finder beside
   // the finished file, and opening Finder on its own used to pull focus out of
   // the editor the moment a render finished — often minutes after the user had
   // moved on to something else.
   broadcast(update);
+}
+
+/**
+ * How long the finished file runs, in milliseconds, or null.
+ *
+ * The frames written over the rate they were written at, which is exact: it is
+ * the file's own length, not the recording's, so everything cut out and every
+ * clip sped up is already accounted for.
+ *
+ * Null rather than zero when either number is missing, which is what the
+ * cancelled and failed paths carry — a length of nothing would be shown as
+ * `0:00` beside a video that plays.
+ */
+function duration(frames: number): number | null {
+  if (!runningFps || !frames) return null;
+  return Math.round((frames / runningFps) * 1000);
 }
 
 /**

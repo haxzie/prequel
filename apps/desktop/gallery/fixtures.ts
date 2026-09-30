@@ -11,6 +11,7 @@ import type {
   AuthState,
   DockState,
   Entitlement,
+  ExportSummary,
   PermissionState,
   RecordingPreferences,
   Target,
@@ -18,6 +19,7 @@ import type {
   UpdateState,
 } from "../src/shared/contract";
 import { DEFAULT_PREFERENCES, IDLE_SESSION, IDLE_UPDATE } from "../src/shared/contract";
+import { exportThumbnailUrl, exportUrl } from "./media-url";
 
 /** The built-in display of a 14" MacBook Pro, which is what most takes are of. */
 export const DISPLAY: Target = {
@@ -101,6 +103,58 @@ export const AUTH: AuthState = {
 export const TRIAL: Entitlement = { status: "trial", daysLeft: 5 };
 
 export const UPDATE: UpdateState = { ...IDLE_UPDATE, current: "0.0.21" };
+
+/**
+ * A week of exports, as the Exports pane lists them.
+ *
+ * Every one points at the fixture recording's own screen track and poster —
+ * the gallery renders nothing, so what the pane plays and shows has to already
+ * exist. The ages are relative so a shot taken next month still reads as a
+ * library somebody has been using rather than one abandoned in 2026.
+ */
+export const EXPORTS: ExportSummary[] = [
+  {
+    name: "Onboarding walkthrough.mp4",
+    folder: "Desktop",
+    minutesAgo: 18,
+    seconds: 154,
+    bytes: 42_300_000,
+  },
+  {
+    name: "Export 2026-09-28 16-04-11.mp4",
+    folder: "Downloads",
+    minutesAgo: 320,
+    seconds: 47,
+    bytes: 15_400_000,
+  },
+  { name: "Bug report.gif", folder: "Desktop", minutesAgo: 1_500, seconds: 9, bytes: 4_120_000 },
+  {
+    name: "Release notes v12.mp4",
+    folder: "Documents/Launch",
+    minutesAgo: 4_300,
+    seconds: 3_742,
+    bytes: 128_900_000,
+  },
+  {
+    // No length: an export written before the app started keeping them, which
+    // is every export anybody already has.
+    name: "Export 2026-09-21 09-12-40.mp4",
+    folder: "Downloads",
+    minutesAgo: 12_000,
+    seconds: 0,
+    bytes: 8_900_000,
+  },
+].map((entry, index) => ({
+  path: `/Users/you/${entry.folder}/${entry.name}`,
+  name: entry.name,
+  folder: `~/${entry.folder}`,
+  createdAt: Date.now() - entry.minutesAgo * 60_000,
+  durationMs: entry.seconds === 0 ? null : entry.seconds * 1000,
+  bytes: entry.bytes,
+  isGif: entry.name.endsWith(".gif"),
+  url: exportUrl(String(index), entry.name),
+  thumbnail: exportThumbnailUrl(String(index)),
+}));
 
 export const APP_INFO: AppInfo = {
   name: "Prequel",

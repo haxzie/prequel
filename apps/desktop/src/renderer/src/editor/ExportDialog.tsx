@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AuthState, ExportFormat, ShareTranscript } from "../../../shared/contract";
 import { GIF_MAX_SHORT_EDGE, type OutputSettings } from "../../../shared/project";
 import { cn } from "../lib/cn";
+import { formatFileSize } from "../lib/format";
 import { useAuth } from "../hooks/useAuth";
 import { CheckIcon, CloseIcon, CopyIcon, FolderIcon, LinkIcon } from "./icons";
 import { capturePoster } from "./poster";
@@ -554,7 +555,9 @@ function Finished({
         <span className="min-w-0 flex-1 truncate" title={result.path}>
           Exported {name}
         </span>
-        {result.bytes !== null && <span className="tabular-nums">{fileSize(result.bytes)}</span>}
+        {result.bytes !== null && (
+          <span className="tabular-nums">{formatFileSize(result.bytes)}</span>
+        )}
       </div>
 
       {/* Edge to edge and split by a rule, so the pair reads as one row of
@@ -775,21 +778,6 @@ function shareLabel(status: AuthState["status"], share: ShareState, pendingShare
     return pendingShare ? "Waiting for your browser…" : "Sign in to share";
 
   return share.error ? "Try again" : "Share video";
-}
-
-/**
- * A file's size, in the units a Mac shows.
- *
- * Powers of 1000 and not 1024, which is what Finder reports — a dialog that
- * says 15.4MB beside a file Finder calls 16.1MB reads as the wrong file.
- */
-function fileSize(bytes: number): string {
-  const mb = bytes / 1_000_000;
-  if (mb >= 1000) return `${(mb / 1000).toFixed(1)}GB`;
-  if (mb >= 1) return `${mb.toFixed(1)}MB`;
-  // Rounded up rather than down, so a file that exists is never reported as
-  // 0KB — which reads as an export that wrote nothing.
-  return `${String(Math.max(1, Math.round(bytes / 1000)))}KB`;
 }
 
 /**

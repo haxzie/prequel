@@ -15,6 +15,7 @@ import type {
   ExportFormat,
   ExportProgress,
   ExportRequest,
+  ExportSummary,
   IpcResult,
   PermissionId,
   PermissionState,
@@ -68,6 +69,7 @@ export type {
   ExportFormat,
   ExportProgress,
   ExportRequest,
+  ExportSummary,
   IpcResult,
   PermissionId,
   PermissionState,
@@ -570,6 +572,43 @@ const api = {
     /** The same for the hover preview, which is made on the first hover. */
     saveFilmstrip: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsSaveFilmstrip, dir, dataUrl),
+  },
+
+  /**
+   * Every video this Mac has exported.
+   *
+   * Whole rather than paged, unlike the recordings: an entry is read with one
+   * `stat` where a recording costs four syscalls, and the ledger is capped.
+   */
+  exports: {
+    list: (): Promise<IpcResult<ExportSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.exportsList),
+
+    /**
+     * Opens the file in whatever the Mac plays it with.
+     *
+     * A renderer cannot do this for itself — it can only reach an export
+     * through `prequel-media:`, which plays it inside the app rather than
+     * handing it to QuickTime.
+     */
+    open: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportsOpen, path),
+
+    /** Caches a still the pane made, so the next open does not have to. */
+    saveThumbnail: (path: string, dataUrl: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportsSaveThumbnail, path, dataUrl),
+
+    /**
+     * Starts a native drag carrying the export, so a row can be dropped into
+     * Finder, Slack or anywhere else that takes a file.
+     *
+     * `send` rather than `invoke`, and called straight from `dragstart`, for
+     * the reason the editor's own drag is: `webContents.startDrag` only takes
+     * hold while the mouse is still down. No icon travels with it — main reads
+     * the cached still, which the renderer only has a URL for.
+     */
+    drag: (path: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.exportsDrag, path);
+    },
   },
 
   /**

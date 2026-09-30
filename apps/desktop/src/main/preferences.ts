@@ -14,6 +14,7 @@ import { app } from "electron";
 import { normaliseAccelerator } from "../shared/accelerator.js";
 import type {
   AfterRecording,
+  ExportsView,
   RecordingPreferences,
   ScreenMode,
   TeleprompterMode,
@@ -31,6 +32,7 @@ const AFTER_RECORDING: AfterRecording[] = ["editor", "finder", "nothing"];
 const TELEPROMPTER_MODES: TeleprompterMode[] = ["voice", "timed", "manual"];
 const TELEPROMPTER_SIZES: TeleprompterSize[] = ["small", "medium", "large"];
 const TELEPROMPTER_WIDTHS: TeleprompterWidth[] = ["narrow", "normal", "wide"];
+const EXPORTS_VIEWS: ExportsView[] = ["list", "grid"];
 
 /** Long enough to get out of the way, short enough not to be a wait. */
 const MAX_COUNTDOWN = 10;
@@ -138,6 +140,7 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     teleprompterDisplay:
       typeof value.teleprompterDisplay === "string" ? value.teleprompterDisplay : null,
     welcomed: value.welcomed ?? DEFAULT_PREFERENCES.welcomed,
+    exportsView: oneOf(EXPORTS_VIEWS, value.exportsView, DEFAULT_PREFERENCES.exportsView),
   };
 }
 
