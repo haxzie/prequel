@@ -1,22 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { FILMSTRIP_FRAMES, type ProjectSummary } from "../../../shared/contract";
+import { type ProjectSummary } from "../../../shared/contract";
 import { formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon } from "../editor/icons";
 import { PaneHeader } from "../workspace/PaneHeader";
 import { PencilIcon } from "./icons";
-import { useFilmstrip } from "./useFilmstrip";
 import { usePosters } from "./usePosters";
-
-/**
- * How long each frame of the hover preview stays up.
- *
- * Slow enough to see what is in it — these are frames from minutes apart, not
- * playback — and fast enough that a whole recording has gone past before anyone
- * decides the tile is not moving.
- */
-const FRAME_MS = 700;
 
 /**
  * Every recording on this Mac.
@@ -25,6 +15,11 @@ const FRAME_MS = 700;
  * the screen, and a column of timestamps is a column of things that all look
  * the same. The thumbnail is doing the work here; the name and the age are
  * there to tell two similar-looking takes apart.
+ *
+ * The tile is a still and stays one. It used to flick through six frames under
+ * the pointer, which put a grid of takes in motion the moment the pointer
+ * crossed it — a library is a thing to read, and every tile animating as you
+ * pass over them is the opposite of that.
  */
 /**
  * How many recordings a page holds.
@@ -246,64 +241,18 @@ function Card({
   onCancelRename: () => void;
   onDelete: () => void;
 }) {
-  /**
-   * Whether the pointer is over this tile, and whether it ever has been.
-   *
-   * The second outlives the first on purpose: leaving the strip mounted keeps
-   * it decoded, so coming back to a tile is instant. Mounting it before the
-   * first hover would mean every tile in the library holding a decoded strip
-   * to show a still.
-   */
-  const [hovering, setHovering] = useState(false);
-  const [warm, setWarm] = useState(false);
-
-  const strip = useFilmstrip(project.dir, project.filmstrip, hovering);
-  const stripRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const element = stripRef.current;
-    if (!hovering || !strip || !element) return;
-
-    let frame = 0;
-    // Written straight to the element rather than through state: a timer that
-    // re-rendered would rebuild the card's label, its two actions and its
-    // field to move a background by a fixed step.
-    const show = () => {
-      element.style.backgroundPosition = `${((frame / (FILMSTRIP_FRAMES - 1)) * 100).toFixed(4)}% 0`;
-    };
-
-    show();
-    const timer = window.setInterval(() => {
-      frame = (frame + 1) % FILMSTRIP_FRAMES;
-      show();
-    }, FRAME_MS);
-
-    return () => window.clearInterval(timer);
-  }, [hovering, strip]);
-
   return (
     <div className="group flex flex-col gap-2">
       {/* The whole thumbnail is the button, and the actions sit over it rather
           than inside it: nesting a button inside a button is invalid, and the
           browser resolves it by dropping one of the two. */}
-      <div
-        className="relative"
-        onPointerEnter={() => {
-          setHovering(true);
-          setWarm(true);
-        }}
-        onPointerLeave={() => setHovering(false)}
-      >
+      <div className="relative">
         <button
           type="button"
           onClick={onOpen}
           title={`Open ${project.name}`}
           className={cn(
-            // `relative`, so the hover strip's `inset-0` resolves against this
-            // button and is clipped by its rounding. Against the wrapper
-            // outside it — the next positioned ancestor — the strip covers the
-            // border and squares off all four corners the moment it fades in.
-            "relative block w-full overflow-hidden rounded-xl border border-editor-line bg-editor-panel",
+            "block w-full overflow-hidden rounded-xl border border-editor-line bg-editor-panel",
             "aspect-video transition-[border-color,opacity] hover:border-editor-accent/60",
           )}
         >
@@ -311,8 +260,10 @@ function Card({
             <img
               src={poster}
               alt=""
-              // `cover`, so a grid of takes at different aspect ratios reads as
-              // a grid rather than as a row of differently-shaped pictures.
+              // `cover`, so a grid of projects at different aspect ratios reads
+              // as a grid rather than as a row of differently-shaped pictures.
+              // A portrait project is shown cropped to the tile; its shape is on
+              // the card it opens, not here.
               className="size-full object-cover"
             />
           ) : (
@@ -321,27 +272,6 @@ function Card({
             <span className="grid size-full place-items-center text-editor-muted/40 [&_svg]:size-6">
               <FolderIcon />
             </span>
-          )}
-
-          {/* The frames, as one strip moved sideways. Over the poster rather
-              than instead of it, so a tile whose strip is still being made
-              keeps its picture instead of going blank under the pointer. */}
-          {warm && strip && (
-            <div
-              ref={stripRef}
-              aria-hidden="true"
-              style={{
-                backgroundImage: `url("${strip}")`,
-                // The strip is `FILMSTRIP_FRAMES` frames wide, so this sizes one
-                // of them to the tile — and a percentage background position
-                // then steps between frames exactly, whatever the tile's size.
-                backgroundSize: `${String(FILMSTRIP_FRAMES * 100)}% 100%`,
-              }}
-              className={cn(
-                "absolute inset-0 transition-opacity duration-150",
-                hovering ? "opacity-100" : "opacity-0",
-              )}
-            />
           )}
         </button>
 

@@ -22,7 +22,7 @@ import type {
   TypingSample,
 } from "./manifest.js";
 import type { BlobTrack, CursorTrack, RenderPlan } from "./layout.js";
-import type { Project } from "./project.js";
+import type { Project, SliceSettings } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
 export type { RecordingResult };
@@ -752,8 +752,15 @@ export const IPC_CHANNELS = {
   projectsDelete: "projects:delete",
   /** Renderer → main: cache a still the grid just made. */
   projectsSavePoster: "projects:savePoster",
-  /** Renderer → main: cache a hover preview the grid just made. */
-  projectsSaveFilmstrip: "projects:saveFilmstrip",
+  /**
+   * Everything the grid needs to draw one recording as its edit looks.
+   *
+   * Deliberately not `editorSession`: that one enters the recording in
+   * `workspace` — which is what the held save and the flush on leaving hang
+   * off — so asking for it a dozen times to draw a dozen tiles would have the
+   * library claim to be editing every one of them.
+   */
+  projectsComposition: "projects:composition",
   /**
    * Every export this Mac has written, newest first.
    *
@@ -1824,31 +1831,49 @@ export interface ProjectSummary {
   createdAt: number;
   /**
    * A `prequel-media:` URL for the cached still, or null when there is none
-   * yet. The grid makes the missing ones and asks main to keep them.
+   * yet — or when the one on disk is older than the edit it pictures. The grid
+   * makes the missing ones and asks main to keep them.
    */
   poster: string | null;
-  /**
-   * A `prequel-media:` URL for the hover preview, or null when there is none.
-   *
-   * `FILMSTRIP_FRAMES` frames from across the recording, side by side in one
-   * image. Made on the first hover rather than with the rest of the grid: it
-   * costs a seek per frame, and a library of forty takes is thirty-nine of them
-   * nobody pointed at.
-   */
-  filmstrip: string | null;
 }
 
 /**
- * How many frames a filmstrip holds.
+ * One recording's edit, reduced to what it takes to draw a single frame of it.
  *
- * Read by both sides of the strip — the renderer that draws one and the one
- * that flicks through it — and the two must agree exactly or the preview shows
- * a seam down the middle of every frame.
+ * The library's tile used to be a frame of the raw screen track, which is the
+ * one picture the recording does not end up looking like: no background, no
+ * padding, no camera, the wrong aspect ratio. This is what the tile composites
+ * instead — the same `buildRenderPlan` the preview and the exporter run,
+ * against the recording's own settings.
  *
- * Six is about two seconds at the rate the grid flicks through them, which is
- * as long as anyone holds still over a tile.
+ * Small on purpose. `EditorSession` carries the cursor samples, the transcript
+ * and the sound plan, none of which a still needs, and a page of the grid is a
+ * dozen of these.
  */
-export const FILMSTRIP_FRAMES = 6;
+export interface ProjectComposition {
+  /**
+   * Output pixels. Zero when the frame is automatic, which means "the size of
+   * the screen track" — the renderer has the decoded video and main does not,
+   * so it fills that in the way `useAutoFrame` does.
+   */
+  frame: { width: number; height: number; auto: boolean };
+  /** Resolved for the clip the still is taken from, defaults and all. */
+  settings: SliceSettings;
+  /** The screen track, seeked to seconds into its own file. */
+  screen: { url: string; at: number } | null;
+  /**
+   * The camera, when the recording has one. `at` is that file's own clock:
+   * session media is zero-based, so the track's late start is taken off here
+   * and never probed from the file.
+   */
+  camera: { url: string; matteUrl: string | null; at: number } | null;
+  /**
+   * The pictures the plan names by path — the background, the logo — with the
+   * URL to fetch each one over. Keyed by path, because that is the name the
+   * plan uses and so the key the compositor looks up.
+   */
+  images: { path: string; url: string }[];
+}
 
 /**
  * One finished export, as the Exports pane lists it.

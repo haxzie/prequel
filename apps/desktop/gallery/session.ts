@@ -11,7 +11,13 @@
  * falls back to the manifest when it cannot; the manifest is what this uses,
  * which is the fallback path and is honest for a finished recording.
  */
-import type { CursorLayer, EditorSession, TrackMedia } from "../src/shared/contract";
+import type {
+  CursorLayer,
+  EditorSession,
+  ProjectComposition,
+  TrackMedia,
+} from "../src/shared/contract";
+import { composition } from "../src/shared/composition";
 import type { Manifest } from "../src/shared/manifest";
 import { findTrack, parseManifest, seamsOf } from "../src/shared/manifest";
 import type { BlobTrack } from "../src/shared/layout";
@@ -183,4 +189,18 @@ async function withBackground(name: string, project: Project): Promise<Project> 
       background: { ...project.defaults.background, background: FALLBACK_BACKGROUND },
     },
   };
+}
+
+/**
+ * The library tile's composition, for a fixture recording.
+ *
+ * Through `loadSession` rather than a second reader: the tile draws the
+ * recording's *saved* edit, which is the same project the editor shot opens,
+ * and the arithmetic that picks the frame is the one main uses.
+ */
+export async function loadComposition(name: string): Promise<ProjectComposition | null> {
+  const session = await loadSession(name, { saved: true });
+  if (!session) return null;
+
+  return composition(session.manifest, session.project, (file) => mediaUrl(name, file));
 }

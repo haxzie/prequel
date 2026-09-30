@@ -25,15 +25,6 @@ const AT = 0.25;
 const MAX_WIDTH = 1280;
 
 /**
- * The widest one frame of a filmstrip is written.
- *
- * A tile is about 220 points across, so this is already generous at 2×. The
- * strip holds `FILMSTRIP_FRAMES` of these side by side and a poster's 1280
- * would make one image several times the size of the still it previews.
- */
-const STRIP_FRAME_WIDTH = 480;
-
-/**
  * JPEG, not PNG.
  *
  * A 2560×1440 PNG of a screen recording runs to several megabytes, and this
@@ -41,7 +32,7 @@ const STRIP_FRAME_WIDTH = 480;
  * it is uploaded. At this quality the same frame is tens of kilobytes and no
  * worse to look at behind a play button.
  */
-const QUALITY = 0.82;
+export const QUALITY = 0.82;
 
 /** Long enough for a local file to decode, short enough not to hold up a share. */
 const TIMEOUT_MS = 5_000;
@@ -50,7 +41,7 @@ const TIMEOUT_MS = 5_000;
  * How often a seek is asked whether it has landed.
  *
  * The floor on what one frame costs, so it is kept well under a rendered
- * frame's worth: a filmstrip pays it six times over.
+ * frame's worth: a library filling in its tiles pays it once per recording.
  */
 const POLL_MS = 20;
 
@@ -69,59 +60,6 @@ export async function capturePoster(url: string, isGif: boolean): Promise<string
   } catch (cause) {
     console.warn("[poster] could not take a still:", cause);
     return null;
-  }
-}
-
-/**
- * Frames from across the whole recording, as one wide image.
- *
- * One image rather than `count` of them because of what reads it: the grid
- * flicks between these on a timer, and separate URLs would be separate
- * requests, each able to arrive after the frame that follows it. A strip is
- * shown by moving a background that is already decoded, which cannot tear and
- * cannot arrive late.
- *
- * Null on anything that will not decode, for the same reason `capturePoster`
- * answers that way: a tile without a hover preview is a tile, and a tile that
- * threw is a grid that did not draw.
- */
-export async function captureFilmstrip(url: string, count: number): Promise<string | null> {
-  let video: HTMLVideoElement | null = null;
-
-  try {
-    video = await openVideo(url);
-    const { duration, videoWidth, videoHeight } = video;
-    // A track still being finalised reports Infinity or NaN, and every seek
-    // below would be to a time that does not exist.
-    if (!Number.isFinite(duration) || duration <= 0 || videoWidth === 0 || videoHeight === 0) {
-      return null;
-    }
-
-    const scale = Math.min(1, STRIP_FRAME_WIDTH / videoWidth);
-    const width = Math.round(videoWidth * scale);
-    const height = Math.round(videoHeight * scale);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width * count;
-    canvas.height = height;
-
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-
-    for (let index = 0; index < count; index += 1) {
-      // The middle of each slice rather than its edge: the last frame of a
-      // recording is the mouse travelling to the stop button, and the first is
-      // whatever was on screen before the take had begun.
-      await seek(video, (duration * (index + 0.5)) / count);
-      context.drawImage(video, index * width, 0, width, height);
-    }
-
-    return canvas.toDataURL("image/jpeg", QUALITY);
-  } catch (cause) {
-    console.warn("[poster] could not take a filmstrip:", cause);
-    return null;
-  } finally {
-    release(video);
   }
 }
 
@@ -204,7 +142,7 @@ async function videoPoster(url: string): Promise<string | null> {
  * throws a `SecurityError` instead of returning anything. The protocol already
  * answers with `Access-Control-Allow-Origin: *`, so the request itself is fine.
  */
-function openVideo(url: string): Promise<HTMLVideoElement> {
+export function openVideo(url: string): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
 
@@ -242,13 +180,13 @@ function openVideo(url: string): Promise<HTMLVideoElement> {
  * `seeked` is no better as the only signal. It is reliable for the first seek
  * of a file and not for the fifth, where a jump into a part that is not
  * buffered can leave the element seeking with no event either way — which is
- * what left the hover strips failing after the posters had been fixed.
+ * what left a run of seeks failing after the first had been fixed.
  *
  * The two properties answer the question directly: `seeking` is false once the
  * playhead has arrived, and `HAVE_CURRENT_DATA` is Chromium saying there is a
  * frame at that position for `drawImage` to take. Neither can go missing.
  */
-function seek(video: HTMLVideoElement, time: number): Promise<void> {
+export function seek(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const ready = window.setInterval(() => {
       if (video.seeking || video.readyState < video.HAVE_CURRENT_DATA) return;
@@ -269,7 +207,7 @@ function seek(video: HTMLVideoElement, time: number): Promise<void> {
 }
 
 /** Drops the element's hold on the file. Safe on one that never opened. */
-function release(video: HTMLVideoElement | null): void {
+export function release(video: HTMLVideoElement | null): void {
   if (!video) return;
   video.onerror = null;
   video.onseeked = null;

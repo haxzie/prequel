@@ -167,6 +167,18 @@ function resolveMedia(pathname: string, options: GalleryOptions): string | null 
   return null;
 }
 
+/** `freshPoster` from `main/projects.ts`: is the still older than the edit? */
+function fresh(dir: string): boolean {
+  try {
+    const poster = statSync(join(dir, "poster.jpg")).mtimeMs;
+    return poster >= statSync(join(dir, "project.json")).mtimeMs;
+  } catch {
+    // No `project.json`: nobody has edited this recording, and its still is as
+    // current as it will ever be.
+    return true;
+  }
+}
+
 /**
  * The fixture endpoints: the JSON the bridge needs to build an `EditorSession`
  * and the library grid, read straight off disk.
@@ -185,7 +197,8 @@ function fixture(pathname: string, options: GalleryOptions): unknown | null {
 
   if (pathname === "/fixture/recordings.json") {
     // Only recordings with a poster: the grid makes missing posters itself,
-    // which is a seek per card and a screenshot that never settles.
+    // which is a decode and a WebGL draw per card and a screenshot that never
+    // settles.
     if (!existsSync(options.recordings)) return [];
     return readdirSync(options.recordings)
       .filter((name) => existsSync(join(options.recordings, name, "poster.jpg")))
@@ -206,8 +219,11 @@ function fixture(pathname: string, options: GalleryOptions): unknown | null {
           dir,
           name: title,
           createdAt,
-          poster: media("poster.jpg"),
-          filmstrip: existsSync(join(dir, "filmstrip.jpg")) ? media("filmstrip.jpg") : null,
+          // Null once the edit is newer than the still, exactly as
+          // `listProjects` reports it: the tile pictures the composition, so an
+          // edit is a picture out of date. A fixture with a stale poster is
+          // therefore a card that composes itself while the shot is taken.
+          poster: fresh(dir) ? media("poster.jpg") : null,
         };
       })
       .sort((a, b) => b.createdAt - a.createdAt);

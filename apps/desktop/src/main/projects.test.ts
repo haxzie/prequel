@@ -140,6 +140,20 @@ describe("listProjects", () => {
     // the recordings folder and refuses anything landing outside.
     expect(entry(dir)?.poster).toBe(`prequel-media://recording/posted/${POSTER_FILE_NAME}`);
   });
+
+  it("forgets a poster the edit is newer than", () => {
+    // The tile pictures the composition, so an edit makes every still of it out
+    // of date. Reported as no poster at all, which is what sends the grid off
+    // to take another one.
+    const dir = recording("re-edited");
+    writeFileSync(join(dir, POSTER_FILE_NAME), "");
+
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(join(dir, POSTER_FILE_NAME), old, old);
+    writeFileSync(join(dir, PROJECT_FILE_NAME), JSON.stringify({ name: "Edited" }));
+
+    expect(entry(dir)?.poster).toBeNull();
+  });
 });
 
 describe("renameProject", () => {

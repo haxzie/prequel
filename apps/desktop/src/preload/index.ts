@@ -20,6 +20,7 @@ import type {
   PermissionId,
   PermissionState,
   PermissionStatus,
+  ProjectComposition,
   ProjectPage,
   ProjectSummary,
   RecordingPreferences,
@@ -74,6 +75,7 @@ export type {
   PermissionId,
   PermissionState,
   PermissionStatus,
+  ProjectComposition,
   ProjectSummary,
   RecordingPreferences,
   ScreenMode,
@@ -569,9 +571,14 @@ const api = {
     savePoster: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsSavePoster, dir, dataUrl),
 
-    /** The same for the hover preview, which is made on the first hover. */
-    saveFilmstrip: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.projectsSaveFilmstrip, dir, dataUrl),
+    /**
+     * The edit, reduced to the one frame a tile draws.
+     *
+     * Null for a directory holding no readable recording, which is a tile that
+     * keeps its placeholder rather than a failure.
+     */
+    composition: (dir: string): Promise<IpcResult<ProjectComposition | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsComposition, dir),
   },
 
   /**
