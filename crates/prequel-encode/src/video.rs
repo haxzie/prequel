@@ -30,6 +30,13 @@ pub struct VideoWriterConfig {
     pub width: u32,
     pub height: u32,
     pub codec: VideoCodec,
+    /// Whether the file will be played over a network before it is fully
+    /// downloaded.
+    ///
+    /// Off by default, which is right for a recording: those are read from the
+    /// disk they were written to, and the flag costs time at `finish` for
+    /// nothing. On for an export, which is the file people share a link to.
+    pub streaming: bool,
     /// Whether frames arrive at capture rate.
     ///
     /// Live capture (`true`) must never block: if the encoder falls behind,
@@ -55,6 +62,7 @@ impl VideoWriterConfig {
             width,
             height,
             codec: VideoCodec::default(),
+            streaming: false,
             realtime: true,
             audio: None,
         }
@@ -74,6 +82,23 @@ impl VideoWriterConfig {
     /// Switches to offline mode: no frame is dropped, appends wait instead.
     pub fn offline(mut self) -> Self {
         self.realtime = false;
+        self
+    }
+
+    /// Lays the file out so it can be played before it has all arrived.
+    ///
+    /// Moves the `moov` atom — the index naming where every sample is — from
+    /// the end of the file to the front. A player can draw nothing at all until
+    /// it has that, so with `moov` last a browser opening a share link has to
+    /// find and fetch the tail of the file before the first frame: on a 20 MB
+    /// export that is the difference between playing at once and a blank player
+    /// for several seconds.
+    ///
+    /// Not free. `AVAssetWriter` cannot know the index until the samples are
+    /// written, so `finish` rewrites the file to put it first — which is why
+    /// this is asked for rather than assumed, and why a capture does not ask.
+    pub fn for_streaming(mut self) -> Self {
+        self.streaming = true;
         self
     }
 
@@ -133,6 +158,12 @@ impl VideoWriter {
                 path: path.display().to_string(),
                 reason: format!("{e:?}"),
             })?;
+
+        // Before any input is added and long before writing starts:
+        // `AVAssetWriter` reads this when it begins, and setting it afterwards
+        // is ignored without complaint — the file comes out with `moov` at the
+        // end and nothing anywhere says why.
+        writer.set_should_optimize_for_network_use(config.streaming);
 
         let settings = video_settings(width, height, config.codec);
         let mut input = av::asset::WriterInput::with_media_type_and_output_settings(

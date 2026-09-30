@@ -261,6 +261,11 @@ impl Sink {
                 codec: VideoCodec::H264,
                 // Live, like the camera: a saturated encoder drops the mask
                 // rather than stalling the segmenter behind it.
+                // Read back from the disk it was written to, never streamed,
+                // so the rewrite `for_streaming` costs at `finish` would buy
+                // this nothing — and stopping a capture is the one moment the
+                // app cannot afford to be slow.
+                streaming: false,
                 realtime: true,
                 audio: None,
             },

@@ -484,6 +484,11 @@ impl ScreenRecorder {
                 // source to its own file so the mix can be changed after the
                 // fact; only the export muxes them together.
                 // Live capture: never block ScreenCaptureKit's delivery queue.
+                // Read back from the disk it was written to, never streamed,
+                // so the rewrite `for_streaming` costs at `finish` would buy
+                // this nothing — and stopping a capture is the one moment the
+                // app cannot afford to be slow.
+                streaming: false,
                 realtime: true,
                 audio: None,
             },

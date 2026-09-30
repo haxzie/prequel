@@ -453,6 +453,10 @@ impl Sink {
                 &{
                     let config = VideoWriterConfig::new(request.width, request.height)
                         .with_codec(format.codec())
+                        // An export is the file people put behind a link, and a
+                        // player can draw nothing until it has the index — see
+                        // `for_streaming`.
+                        .for_streaming()
                         .offline();
                     if has_audio {
                         // Offline here too: a busy encoder must not silently drop
