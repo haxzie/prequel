@@ -1,6 +1,6 @@
 {
   "name": "@prequel/desktop",
-  "version": "0.0.32",
+  "version": "0.0.33",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
