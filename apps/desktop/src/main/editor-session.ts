@@ -365,7 +365,7 @@ function blobTrack(manifest: Manifest): BlobTrack | null {
  * Only the project defaults are repaired. A slice that overrides its background
  * was set deliberately, and quietly rewriting it would undo a decision.
  */
-async function withBackground(dir: string, project: Project): Promise<Project> {
+export async function withBackground(dir: string, project: Project): Promise<Project> {
   const background = project.defaults.background.background;
   if (background.kind !== "image") return project;
 

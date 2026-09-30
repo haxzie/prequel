@@ -48,7 +48,8 @@ import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { sendFeedback } from "./feedback.js";
-import { listProjects, renameProject, saveFilmstrip, savePoster } from "./projects.js";
+import { listProjects, renameProject, savePoster } from "./projects.js";
+import { readComposition } from "./project-composition.js";
 import { RECORDINGS_DIR, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
 import { catalogue as fontsCatalogue, ensureFont } from "./fonts.js";
@@ -462,8 +463,8 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
     attempt(() => savePoster(dir, dataUrl)),
   );
 
-  ipcMain.handle(IPC_CHANNELS.projectsSaveFilmstrip, (_event, dir: string, dataUrl: string) =>
-    attempt(() => saveFilmstrip(dir, dataUrl)),
+  ipcMain.handle(IPC_CHANNELS.projectsComposition, (_event, dir: string) =>
+    attempt(() => readComposition(dir)),
   );
 
   // The sheet hangs off the window that asked, so it cannot open behind the

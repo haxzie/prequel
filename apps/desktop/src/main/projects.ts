@@ -28,15 +28,6 @@ import { insideRecordings, SESSIONS_DIR } from "./session.js";
 export const POSTER_FILE_NAME = "poster.jpg";
 
 /**
- * The cached hover preview, beside the recording it is of.
- *
- * One image holding every frame of the preview rather than a folder of them:
- * the grid shows it by moving a background, so a strip is one request and one
- * decode where separate files would be several of each, arriving out of order.
- */
-export const FILMSTRIP_FILE_NAME = "filmstrip.jpg";
-
-/**
  * One page of recordings, newest first.
  *
  * A directory only counts if it holds a manifest: an interrupted take can leave
@@ -46,8 +37,8 @@ export const FILMSTRIP_FILE_NAME = "filmstrip.jpg";
  * **Sorted by folder name, and paged before anything is read.** Every take is
  * called `Prequel <date> <time>`, so the names sort chronologically as strings
  * and the newest page can be picked out of a `readdir` alone. That is the whole
- * point: this used to stat a manifest, look for a poster, look for a filmstrip
- * and read a `project.json` for *every* recording on disk before it could
+ * point: this used to stat a manifest, look for a poster and read a
+ * `project.json` for *every* recording on disk before it could
  * return the twelve the grid was about to draw, on the main process, with the
  * tray and the panel waiting behind it. Four syscalls a take is nothing at
  * twenty and a visible stall at a thousand.
@@ -91,10 +82,7 @@ export function listProjects(
         dir: path,
         name: displayName(path),
         createdAt: statSync(join(path, MANIFEST_FILE_NAME)).mtimeMs,
-        poster: existsSync(join(path, POSTER_FILE_NAME)) ? mediaUrl(name, POSTER_FILE_NAME) : null,
-        filmstrip: existsSync(join(path, FILMSTRIP_FILE_NAME))
-          ? mediaUrl(name, FILMSTRIP_FILE_NAME)
-          : null,
+        poster: freshPoster(path) ? mediaUrl(name, POSTER_FILE_NAME) : null,
       });
     } catch {
       // No manifest, or unreadable. Not a recording we can open.
@@ -105,6 +93,33 @@ export function listProjects(
   // page is a slice of that. Sorting again on `createdAt` would undo it for the
   // one recording whose manifest was rewritten after it was made.
   return { projects, total };
+}
+
+/**
+ * Whether the cached still is still the edit's picture.
+ *
+ * The tile draws the recording as its settings compose it, so an edit makes
+ * every still of it out of date — a background changed, the camera moved, the
+ * frame turned portrait. Compared by mtime rather than tracked, because the two
+ * files are the whole state: a poster older than the `project.json` beside it is
+ * a picture of an edit that no longer exists, and the grid simply takes another.
+ *
+ * A recording nobody has edited has no `project.json` at all, and its poster is
+ * as current as it will ever be.
+ */
+function freshPoster(dir: string): boolean {
+  let poster: number;
+  try {
+    poster = statSync(join(dir, POSTER_FILE_NAME)).mtimeMs;
+  } catch {
+    return false;
+  }
+
+  try {
+    return poster >= statSync(join(dir, PROJECT_FILE_NAME)).mtimeMs;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -169,11 +184,6 @@ export function renameProject(dir: string, name: string, root = SESSIONS_DIR): v
  */
 export function savePoster(dir: string, dataUrl: string, root = SESSIONS_DIR): void {
   writeCachedImage(dir, POSTER_FILE_NAME, dataUrl, root);
-}
-
-/** The same, for the strip of frames a tile flicks through on hover. */
-export function saveFilmstrip(dir: string, dataUrl: string, root = SESSIONS_DIR): void {
-  writeCachedImage(dir, FILMSTRIP_FILE_NAME, dataUrl, root);
 }
 
 function writeCachedImage(dir: string, fileName: string, dataUrl: string, root: string): void {

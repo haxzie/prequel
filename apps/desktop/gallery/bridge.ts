@@ -35,8 +35,8 @@ import type { ScenePreset } from "../src/shared/scene-presets";
 import { sanitiseScenePresets } from "../src/shared/scene-presets";
 import type { EditorSession } from "../src/shared/contract";
 import * as fixtures from "./fixtures";
-import { exportUrl } from "./media-url";
-import { loadSession } from "./session";
+import { exportUrl, recordingName } from "./media-url";
+import { loadComposition, loadSession } from "./session";
 
 export interface Fixtures {
   dock: DockState;
@@ -384,7 +384,7 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       rename: () => ok(undefined),
       delete: () => ok(false),
       savePoster: () => ok(undefined),
-      saveFilmstrip: () => ok(undefined),
+      composition: async (dir: string) => ok(await loadComposition(recordingName(dir))),
     },
 
     workspace: {
