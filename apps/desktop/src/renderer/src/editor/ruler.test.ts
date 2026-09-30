@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { fitZoom, formatTick, tickInterval, ticks } from "./ruler";
+import { fitZoom, formatTick, openingZoom, tickInterval, ticks } from "./ruler";
 
 const S = 1_000_000_000;
 
@@ -106,6 +106,53 @@ describe("fitZoom", () => {
         expect(marks.length).toBeGreaterThan(2);
         expect(marks.filter((mark) => mark.label !== undefined).length).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+describe("openingZoom", () => {
+  /** Two `w-3` grips — `HANDLE_ROOM` in `TimelineStrip`. */
+  const GRIPS = 24;
+  /** Both grips and a strip of bar between them — `GRAB_ROOM`. */
+  const GRAB = GRIPS + 12;
+  /** The shortest shot the first cut makes — `MIN_SPAN` in `autoedit.ts`. */
+  const SHORTEST = 2.8;
+  /** `OPENING_ZOOM`, derived the same way. */
+  const FLOOR = GRAB / SHORTEST;
+
+  it("opens a short recording whole", () => {
+    // Nothing is gained by holding room open past the end of the edit, so an
+    // edit that already reads at the fit zoom still opens fitted.
+    for (const seconds of [3, 20, 60]) {
+      expect(openingZoom(seconds * S, 1100, FLOOR)).toBe(fitZoom(seconds * S, 1100));
+    }
+  });
+
+  it("leaves the shortest automatic zoom room for both its grips", () => {
+    // The failure this exists for: fitted, an eight-minute recording drew every
+    // zoom narrower than the two handles on it, so the press landed on the end
+    // grip rather than on the bar and the drag trimmed instead of moving.
+    // Checked at every width the editor opens at, including a narrow window
+    // with the inspector out, and at lengths well past anyone's patience.
+    // Strictly greater: a bar exactly as wide as its grips has no middle left
+    // to press, which is the failure arrived at from a pixel further out.
+    for (const width of [640, 900, 1100, 1600, 2400]) {
+      for (const seconds of [90, 500, 1800, 7200]) {
+        const room = SHORTEST * openingZoom(seconds * S, width, FLOOR);
+
+        expect(room).toBeGreaterThan(GRIPS);
+      }
+    }
+  });
+
+  it("never opens finer than the strip can be zoomed out to", () => {
+    // `pxPerSecond` clamps the opening scale up to `fit`, so an opening zoom
+    // below it would be discarded — and a floor that only ever applied to long
+    // recordings would be silently doing nothing on short ones.
+    for (const seconds of [1, 30, 498]) {
+      expect(openingZoom(seconds * S, 1100, FLOOR)).toBeGreaterThanOrEqual(
+        Math.min(fitZoom(seconds * S, 1100), FLOOR),
+      );
     }
   });
 });

@@ -26,7 +26,7 @@ import {
   TypingIcon,
   ZoomIcon,
 } from "./icons";
-import { fitZoom, ticks } from "./ruler";
+import { fitZoom, openingZoom, ticks } from "./ruler";
 import {
   slicesOf,
   textCopySpan,
@@ -141,6 +141,54 @@ const MAX_ZOOM = 800;
 const ZOOM_STEP = 1.3;
 
 /**
+ * Room a bar needs before it is worth drawing grips on, in pixels.
+ *
+ * Two `w-3` handles, which is what they measure — see `Handle`. Below it they
+ * would sit on top of each other, and the one drawn second wins the press: a
+ * bar too narrow to trim is no reason for it to be impossible to *move*.
+ */
+const HANDLE_ROOM = 24;
+
+/**
+ * The shortest shot the first cut makes, in seconds.
+ *
+ * Mirrors `MIN_SPAN` in `shared/autoedit.ts`. Held as a number here rather than
+ * imported because it is being read for something else entirely — the narrowest
+ * bar the zoom row can be asked to draw — and sharing the constant would make
+ * the automatic pass's taste a reason to change the strip's scale.
+ */
+const SHORTEST_SHOT = 2.8;
+
+/**
+ * Room a bar needs to be worth having at all, in pixels.
+ *
+ * Both grips and something between them. A bar exactly as wide as its two
+ * handles is all edge and no middle: there is nowhere left to press that means
+ * "move this" rather than "retime this end", which is the same trap as two
+ * grips on top of each other reached from a pixel further out.
+ */
+const GRAB_ROOM = HANDLE_ROOM + 12;
+
+/**
+ * The finest scale the strip opens at, in pixels per second.
+ *
+ * It opened fitted, whatever the recording's length, on the reasoning that
+ * seeing all of it is the right first view. That is true of the clips and false
+ * of everything annotating them: fitting eight minutes into the strip is about
+ * two pixels a second, so the shortest shot the first cut makes came out six
+ * pixels wide — a bar narrower than either of the two grips on it. Pressing a
+ * zoom to move it landed on the end grip and trimmed it instead, and on a long
+ * recording that was every zoom in the row.
+ *
+ * Enough that the shortest of those shots clears `GRAB_ROOM`, which is the width
+ * where the row becomes usable rather than merely visible. How much of the
+ * recording that leaves in view is the window's business; the whole of it is
+ * still one keystroke away, because `fit` is unchanged as the floor for zooming
+ * out.
+ */
+const OPENING_ZOOM = GRAB_ROOM / SHORTEST_SHOT;
+
+/**
  * The edit, as a strip.
  *
  * One row: screen, camera and both audio tracks were recorded together and are
@@ -241,7 +289,7 @@ export function TimelineStrip({
   /** The hover line's own timecode. Written by `showShadow`. */
   const shadowTime = useRef<HTMLSpanElement>(null);
   const [width, setWidth] = useState(0);
-  /** Null means "fit the whole edit", which is what an editor should open on. */
+  /** Null means "nobody has chosen a zoom yet" — see `OPENING_ZOOM`. */
   const [zoom, setZoom] = useState<number | null>(null);
 
   // Measured rather than assumed: the fit zoom depends on how much room the
@@ -272,7 +320,7 @@ export function TimelineStrip({
   // number changed was the ruler, which went on choosing its tick interval for
   // a zoom the layout was not using and ended up with no ticks inside the
   // recording at all. An empty ruler over a full-width strip.
-  const pxPerSecond = Math.max(zoom ?? fit, fit);
+  const pxPerSecond = Math.max(zoom ?? openingZoom(duration, width, OPENING_ZOOM), fit);
   const contentWidth = Math.max(width, (duration / NS_PER_SECOND) * pxPerSecond);
 
   // Pushed in on change rather than measured inside the playback loop, which
@@ -942,6 +990,7 @@ export function TimelineStrip({
                   key={zoom.id}
                   left={(from / Math.max(duration, 1)) * 100}
                   width={((to - from) / Math.max(duration, 1)) * 100}
+                  room={((to - from) / NS_PER_SECOND) * pxPerSecond}
                   selected={zoom.id === state.selectedZoomId}
                   target={zoom.target}
                   level={zoom.level}
@@ -2075,6 +2124,7 @@ function ZoomGhost({ ref }: { ref: RefObject<HTMLDivElement | null> }) {
 function Zoom({
   left,
   width,
+  room,
   selected,
   target,
   level,
@@ -2088,6 +2138,9 @@ function Zoom({
 }: {
   left: number;
   width: number;
+  /** How wide the bar actually comes out, in pixels, which decides whether it
+      has room for grips — see `GRAB_ROOM`. */
+  room: number;
   selected: boolean;
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
@@ -2181,20 +2234,31 @@ function Zoom({
         <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
       </span>
 
-      <Handle
-        edge="start"
-        grip="bg-zoom-edge"
-        selected={selected}
-        onPointerDown={grabEdge("start")}
-        onPointerMove={moveEdge("start")}
-      />
-      <Handle
-        edge="end"
-        grip="bg-zoom-edge"
-        selected={selected}
-        onPointerDown={grabEdge("end")}
-        onPointerMove={moveEdge("end")}
-      />
+      {/* Only where both fit with bar left between them. A zoom narrower than
+          its two grips draws them on top of each other and the second one wins
+          the press, so every drag trimmed the end of a short zoom instead of
+          moving it. Dropped rather than shrunk: a three-pixel grip is not
+          something anyone can aim at, and the bar stays draggable without
+          them. Trimming a zoom this short means zooming the strip in, which is
+          the bargain every other fine edit makes. */}
+      {room >= GRAB_ROOM && (
+        <>
+          <Handle
+            edge="start"
+            grip="bg-zoom-edge"
+            selected={selected}
+            onPointerDown={grabEdge("start")}
+            onPointerMove={moveEdge("start")}
+          />
+          <Handle
+            edge="end"
+            grip="bg-zoom-edge"
+            selected={selected}
+            onPointerDown={grabEdge("end")}
+            onPointerMove={moveEdge("end")}
+          />
+        </>
+      )}
     </div>
   );
 }

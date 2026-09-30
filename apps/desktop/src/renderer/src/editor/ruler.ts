@@ -93,3 +93,19 @@ export function fitZoom(duration: MediaTime, width: number): number {
   if (duration <= 0 || width <= 0) return 1;
   return width / (duration / NS_PER_SECOND);
 }
+
+/**
+ * Pixels per second the strip opens on, never finer than `floor`.
+ *
+ * The fit zoom for a short edit and `floor` for a long one, which is the whole
+ * point: fitting a long recording makes every bar annotating it narrower than
+ * the grips drawn on it. See `OPENING_ZOOM` in `TimelineStrip` for where the
+ * floor comes from.
+ *
+ * Never below fit, so a short recording opens whole rather than padded out with
+ * room it does not use — and how much of a long one is in view is left to the
+ * window's width, which is the only thing that knows how much will read.
+ */
+export function openingZoom(duration: MediaTime, width: number, floor: number): number {
+  return Math.max(fitZoom(duration, width), floor);
+}
