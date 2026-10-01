@@ -437,9 +437,24 @@ export const KEY_SOUNDS = [
   { id: "phone", label: "iPhone" },
 ] as const;
 
+/**
+ * The click sounds the editor offers, quietest first.
+ *
+ * Ordered by how much of a recording they take up rather than by family: the
+ * first five can be left on under a voiceover, and `Pop` and `Quack` are last
+ * because they are jokes. Same id contract as `KEY_SOUNDS`.
+ */
 export const CLICK_SOUNDS = [
+  { id: "hush", label: "Hush" },
   { id: "soft", label: "Soft" },
+  { id: "walnut", label: "Walnut" },
+  { id: "tok", label: "Tok" },
+  { id: "beige", label: "Beige" },
   { id: "mechanical", label: "Mechanical" },
+  { id: "pebble", label: "Pebble" },
+  { id: "tink", label: "Tink" },
+  { id: "pop", label: "Pop" },
+  { id: "quack", label: "Quack" },
 ] as const;
 
 /** A stored keyboard id, or `"off"` for one this build does not know. */

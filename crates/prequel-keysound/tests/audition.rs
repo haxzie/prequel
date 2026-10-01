@@ -60,9 +60,35 @@ fn phrase() -> Vec<KeyPress> {
     presses
 }
 
+/// Clicking at a real cadence: singles far enough apart to hear each one whole,
+/// then a double click, then two more. What a click profile has to survive is
+/// being heard repeatedly, which one click cannot show.
+fn clicking() -> Vec<MediaTime> {
+    [300, 900, 1_500, 2_100, 2_230, 2_900, 3_400]
+        .iter()
+        .map(|ms| ms * MS)
+        .collect()
+}
+
 fn render(keys: &Bank, clicks: &Bank) -> Vec<f32> {
-    let planned = cues(&phrase(), &[4_200 * MS, 4_600 * MS], "audition");
-    let total = ((5_500 * MS) as f64 / 1e9 * f64::from(SAMPLE_RATE)) as usize;
+    render_plan(keys, clicks, &phrase(), &[4_200 * MS, 4_600 * MS], 5_500)
+}
+
+/// Clicks on their own: no typing under them, so the click is all there is to
+/// listen to.
+fn render_clicking(clicks: &Bank) -> Vec<f32> {
+    render_plan(clicks, clicks, &[], &clicking(), 4_000)
+}
+
+fn render_plan(
+    keys: &Bank,
+    clicks: &Bank,
+    presses: &[KeyPress],
+    click_at: &[MediaTime],
+    length_ms: MediaTime,
+) -> Vec<f32> {
+    let planned = cues(presses, click_at, "audition");
+    let total = ((length_ms * MS) as f64 / 1e9 * f64::from(SAMPLE_RATE)) as usize;
     let mut out = vec![0.0f32; total * 2];
     for cue in planned {
         let bank = if cue.kind == CueKind::Click {
@@ -125,4 +151,13 @@ fn writes_an_audition_of_every_profile() {
     let path = dir.join("clicks-mechanical.wav");
     write_wav(&path, &render(&Bank::keys(KeyProfile::Thock), &mechanical));
     eprintln!("wrote {}", path.display());
+
+    // Every click sound, on its own. Ten of them now, and the spectral tests
+    // only pin that they are far enough apart to be different sounds — whether
+    // each is the sound it is named after is this file's job.
+    for profile in ClickProfile::ALL {
+        let path = dir.join(format!("click-{}.wav", profile.id()));
+        write_wav(&path, &render_clicking(&Bank::clicks(profile)));
+        eprintln!("wrote {}", path.display());
+    }
 }
