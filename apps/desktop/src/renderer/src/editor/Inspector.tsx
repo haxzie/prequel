@@ -49,7 +49,6 @@ import { cn } from "../lib/cn";
 import { CursorPicker } from "./controls/CursorPicker";
 import { EasingPad } from "./controls/EasingPad";
 import { FontPicker } from "./controls/FontPicker";
-import { ScrollFade } from "./controls/ScrollFade";
 import { Field, Section } from "./controls/Field";
 import { LayoutPicker } from "./controls/LayoutPicker";
 import { PerspectivePad } from "./controls/PerspectivePad";
@@ -432,7 +431,6 @@ export function Inspector(props: InspectorProps) {
               key={zoomTab}
               className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
             >
-              <ScrollFade className="sticky top-0 z-10" />
               <div className="flex min-w-0 flex-1 flex-col animate-view-in">
                 {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
                 {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
@@ -492,7 +490,6 @@ export function Inspector(props: InspectorProps) {
               key={`${textTab}:${text.id}`}
               className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
             >
-              <ScrollFade className="sticky top-0 z-10" />
               <div className="flex min-w-0 flex-1 flex-col animate-view-in">
                 {textTab === "text" && <TextContentPanel {...panel} />}
                 {textTab === "style" && <TextStylePanel {...panel} />}
@@ -727,10 +724,6 @@ export function Inspector(props: InspectorProps) {
               ownsScroll ? "min-h-0 overflow-hidden" : "overflow-y-auto",
             )}
           >
-            {/* The panel draws its own where it owns the scrolling, under its
-                own tabs rather than at the top of this box. */}
-            {!ownsScroll && <ScrollFade className="sticky top-0 z-10" />}
-
             {/* The panel's content, faded in on the way to a new one.
                 `animate-view-in` is the dock's own swap, reused: opacity and
                 nothing else, which matters more here than it does there. A
@@ -2907,7 +2900,14 @@ function BackgroundPanel({
           No icons either. Three words that short are read as words, and a glyph
           beside each one was a second thing to look at saying nothing the word
           did not. */}
-      <div className="flex-none px-4 pt-3 pb-2">
+      {/* A rule under the row, and a hard edge for the list below it.
+          There was a progressive blur here — content softening as it passed out
+          of sight — which is the right answer when a list runs *under* its
+          controls and no answer at all now that it stops at them. What is left
+          to say is where one thing ends and the next begins, and a line says
+          that in a pixel without putting a gradient over the first row of
+          swatches. */}
+      <div className="flex-none border-b border-editor-line px-4 pt-3 pb-2">
         <Tabs
           value={style}
           options={[
@@ -2920,10 +2920,6 @@ function BackgroundPanel({
       </div>
 
       <div className="sleek-scrollbar relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-1 pb-4">
-        {/* Hung at the top of this list rather than at the top of the panel:
-            what passes out of sight here passes under the tab row, so the blur
-            belongs at the list's own edge. */}
-        <ScrollFade className="sticky top-0 z-10" />
         {/* Each grid is passed the applied value only when it is that grid's own
           style. Otherwise nothing is marked as chosen — a colour highlighted
           while the frame is showing an image would be claiming something
@@ -3547,7 +3543,10 @@ function PanelHeader({
     // bring their own — two rules a few pixels apart read as a boxed-in strip
     // rather than as a heading over its content.
     // `relative`, because the confirmation hangs off the button below.
-    <header className="relative flex flex-none items-center gap-2.5 px-3 py-2.5">
+    // A rule along the bottom. The list below this is cut off against it
+    // rather than faded under it — see the note where the tab row carries the
+    // same line — so the edge has to be drawn rather than implied.
+    <header className="relative flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
       {onBack && (
         <button
           type="button"

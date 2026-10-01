@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useTooltip } from "../../components/Tooltip";
 import { cn } from "../../lib/cn";
 import { ChevronDownIcon } from "../icons";
-import { ScrollFade } from "./ScrollFade";
 import { ColorPicker } from "./ColorPicker";
 
 /**
@@ -507,8 +506,13 @@ export function ToggleField({
         aria-checked={value}
         title={title}
         disabled={disabled}
+        // No fill behind the label. A slider carries one because the fill *is*
+        // the reading — it is how far along the track the value sits — and a
+        // switch has no such thing to show: the track was a trough with nothing
+        // in it, borrowed from a control that needed one. The whole row is still
+        // the target, and the hover is what says so.
         className={cn(
-          "flex flex-1 items-center justify-between gap-2 rounded-md bg-white/5 px-2.5",
+          "flex flex-1 items-center justify-between gap-2 rounded-md px-2.5",
           CONTROL_H,
           "text-left disabled:cursor-default",
           !disabled && "hover:bg-white/8",
