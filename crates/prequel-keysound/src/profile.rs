@@ -72,14 +72,42 @@ impl From<KeyClass> for CueKind {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mode {
     pub hz: f32,
+    /// Where `hz` has arrived by the end of the mode's T60. Equal to `hz` for
+    /// everything struck, which is nearly everything: a rigid body cannot
+    /// change pitch while it rings, and a table that let one would be
+    /// describing something other than an impact. Set it apart from `hz` and
+    /// the mode stops being a resonance and becomes a played tone — see
+    /// `synth::strike`, which renders the two differently.
+    pub to_hz: f32,
     /// Time to fall 60 dB, in milliseconds — the acoustician's decay figure.
     pub t60_ms: f32,
-    /// Relative level, linear.
+    /// Relative level, linear. For a struck mode this is scaled by how hard
+    /// the contact drives that frequency; for a glided one it is the tone's
+    /// own amplitude, because nothing is driving it.
     pub gain: f32,
 }
 
 const fn mode(hz: f32, t60_ms: f32, gain: f32) -> Mode {
-    Mode { hz, t60_ms, gain }
+    Mode {
+        hz,
+        to_hz: hz,
+        t60_ms,
+        gain,
+    }
+}
+
+/// A tone that bends from `hz` to `to_hz` as it fades.
+///
+/// Only two things here need it, and neither is a body being hit: a bubble
+/// rises as it collapses (Minnaert), and a duck's quack falls as the bird runs
+/// out of breath. Modelling either as a struck resonance gets a bell.
+const fn glide(hz: f32, to_hz: f32, t60_ms: f32, gain: f32) -> Mode {
+    Mode {
+        hz,
+        to_hz,
+        t60_ms,
+        gain,
+    }
 }
 
 /// Whether the profile is a keyboard or a mouse — which sub-events a press has.
@@ -203,20 +231,56 @@ impl KeyProfile {
     }
 }
 
-/// Mice the editor offers.
+/// Click sounds the editor offers.
+///
+/// Ten, and the spread matters more than the count: a click is heard a couple
+/// of hundred times in a three-minute recording, under a voice, and a viewer
+/// cannot turn it down separately from the narration. So most of these sit low
+/// or sit brief — energy between 1 and 4 kHz is where consonants live and is
+/// the expensive place to put a sound that repeats. `Hush` through `Walnut`
+/// are the ones to leave on while talking; `Tink` and `Pebble` are short
+/// enough not to matter; `Pop` and `Quack` are not for a serious recording and
+/// are not pretending to be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClickProfile {
     Soft,
     Mechanical,
+    Hush,
+    Walnut,
+    Beige,
+    Tok,
+    Pebble,
+    Tink,
+    Pop,
+    Quack,
 }
 
 impl ClickProfile {
-    pub const ALL: [ClickProfile; 2] = [ClickProfile::Soft, ClickProfile::Mechanical];
+    pub const ALL: [ClickProfile; 10] = [
+        ClickProfile::Soft,
+        ClickProfile::Mechanical,
+        ClickProfile::Hush,
+        ClickProfile::Walnut,
+        ClickProfile::Beige,
+        ClickProfile::Tok,
+        ClickProfile::Pebble,
+        ClickProfile::Tink,
+        ClickProfile::Pop,
+        ClickProfile::Quack,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             ClickProfile::Soft => "soft",
             ClickProfile::Mechanical => "mechanical",
+            ClickProfile::Hush => "hush",
+            ClickProfile::Walnut => "walnut",
+            ClickProfile::Beige => "beige",
+            ClickProfile::Tok => "tok",
+            ClickProfile::Pebble => "pebble",
+            ClickProfile::Tink => "tink",
+            ClickProfile::Pop => "pop",
+            ClickProfile::Quack => "quack",
         }
     }
 
@@ -228,6 +292,14 @@ impl ClickProfile {
         match self {
             ClickProfile::Soft => &CLICK_SOFT,
             ClickProfile::Mechanical => &CLICK_MECHANICAL,
+            ClickProfile::Hush => &CLICK_HUSH,
+            ClickProfile::Walnut => &CLICK_WALNUT,
+            ClickProfile::Beige => &CLICK_BEIGE,
+            ClickProfile::Tok => &CLICK_TOK,
+            ClickProfile::Pebble => &CLICK_PEBBLE,
+            ClickProfile::Tink => &CLICK_TINK,
+            ClickProfile::Pop => &CLICK_POP,
+            ClickProfile::Quack => &CLICK_QUACK,
         }
     }
 }
@@ -450,6 +522,197 @@ static CLICK_SOFT: Profile = Profile {
     overrides: &[],
 };
 
+/// `CLICK_SOFT` with the lid shut: a silenced switch through a soft shell,
+/// almost nothing above 2 kHz. The one to leave on under a voiceover — it
+/// reads as a click without competing with a consonant.
+static CLICK_HUSH: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 2.2,
+    contact_lowpass_hz: 2_200.0,
+    modes: &[mode(560.0, 12.0, 1.0), mode(1_250.0, 7.0, 0.45)],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -5.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A switch in a small hardwood shell. Wood is light and stiff and loses much
+/// less per cycle than ABS, so the body rings four times longer than the
+/// plastic ones here and does it low — a warm knock rather than a tick.
+static CLICK_WALNUT: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 1.9,
+    contact_lowpass_hz: 3_000.0,
+    modes: &[
+        mode(300.0, 45.0, 1.0),
+        mode(680.0, 28.0, 0.45),
+        mode(1_450.0, 14.0, 0.18),
+        mode(2_600.0, 7.0, 0.06),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A beige office mouse, twenty years old. A thin hollow ABS shell over a cheap
+/// switch: boxy and mid-forward, with the highs still on it because there is no
+/// foam, no lube and no mass anywhere in it.
+///
+/// The fundamental is deliberately weak. A shell that thin has very little
+/// surface to move air with at 800 Hz, and giving it a strong low mode put this
+/// within a few per cent of `Soft` on both brightness and length — two names for
+/// one sound, which is a longer menu and not a wider choice.
+static CLICK_BEIGE: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 1.0,
+    contact_lowpass_hz: 7_500.0,
+    modes: &[
+        mode(820.0, 18.0, 0.35),
+        mode(1_750.0, 16.0, 1.0),
+        mode(3_250.0, 9.0, 0.8),
+        mode(5_400.0, 5.0, 0.35),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A knock on a short closed tube. The second mode is twice the first because
+/// that is what a tube does, and a clear octave above the fundamental is what
+/// makes this one read as a pitch rather than a noise.
+static CLICK_TOK: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 1.3,
+    contact_lowpass_hz: 4_200.0,
+    modes: &[
+        mode(640.0, 30.0, 1.0),
+        mode(1_280.0, 16.0, 0.5),
+        mode(2_450.0, 8.0, 0.2),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// Two small stones. Dense and tiny: high modes that are gone in a few
+/// milliseconds, which is how it stays out of the way despite being bright.
+static CLICK_PEBBLE: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 0.55,
+    contact_lowpass_hz: 10_500.0,
+    modes: &[
+        mode(3_100.0, 5.0, 0.5),
+        mode(5_000.0, 2.5, 1.0),
+        mode(7_600.0, 1.5, 0.4),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A pin on a steel plate. One high-Q mode doing almost all of it — steel at a
+/// T60 of 55 ms against plastic's 10 — over a tiny body thud for the contact
+/// itself. The brightest of the ten.
+///
+/// Steel would happily ring three times this long, and at 5 kHz it was held
+/// against a voice for 190 ms, which is sibilance territory and the one place a
+/// repeating sound must not sit. Damped to where it still reads as metal.
+static CLICK_TINK: Profile = Profile {
+    mechanism: Mechanism::Mouse,
+    excite_tau_ms: 0.5,
+    contact_lowpass_hz: 11_000.0,
+    modes: &[
+        mode(1_900.0, 5.0, 0.25),
+        mode(5_200.0, 55.0, 1.0),
+        mode(7_800.0, 22.0, 0.3),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A bubble surfacing.
+///
+/// A bubble's frequency *rises* as it collapses — Minnaert's result, pitch
+/// going as the inverse of the radius — which is the whole character of the
+/// sound and why this is a glide and not a struck mode. `Tap` because a bubble
+/// has no release: there is no slider to come back up.
+static CLICK_POP: Profile = Profile {
+    mechanism: Mechanism::Tap,
+    excite_tau_ms: 0.8,
+    contact_lowpass_hz: 4_000.0,
+    modes: &[
+        glide(420.0, 1_250.0, 55.0, 1.0),
+        glide(840.0, 2_500.0, 25.0, 0.18),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: 0.0,
+    release_delay_ms: (0.0, 0.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A duck.
+///
+/// Not a struck body at all: a quack is voiced, which means a buzzy harmonic
+/// stack rather than a handful of unrelated resonances. Six harmonics of one
+/// fundamental, all falling by the same ratio so they stay harmonic — a mallard
+/// hen's quack drops about a third as she runs out of breath, and a stack that
+/// held its pitch would read as a car horn. The loudest partial is the third,
+/// not the first: that 1.5 kHz emphasis is the nasal formant, and it is what
+/// separates a quack from a hum. Higher partials die first, as they do in
+/// anything voiced.
+///
+/// `Tap`, for the same reason as `Pop`, and because `Tap` drives its modes with
+/// a clean pulse rather than noise — a random burst would ring six harmonics in
+/// a different balance on every variant, so every click would be a different
+/// bird.
+static CLICK_QUACK: Profile = Profile {
+    mechanism: Mechanism::Tap,
+    excite_tau_ms: 1.0,
+    contact_lowpass_hz: 5_000.0,
+    modes: &[
+        glide(520.0, 360.0, 200.0, 0.55),
+        glide(1_040.0, 720.0, 180.0, 0.9),
+        glide(1_560.0, 1_080.0, 160.0, 1.0),
+        glide(2_080.0, 1_440.0, 120.0, 0.6),
+        glide(2_600.0, 1_800.0, 90.0, 0.3),
+        glide(3_120.0, 2_160.0, 60.0, 0.15),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    release_db: 0.0,
+    release_delay_ms: (0.0, 0.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,6 +727,73 @@ mod tests {
         }
         assert_eq!(KeyProfile::from_id("off"), None);
         assert_eq!(ClickProfile::from_id(""), None);
+    }
+
+    /// What makes a quack a quack rather than a horn or a hum: the partials are
+    /// harmonics of one fundamental, they all fall by the same ratio so they
+    /// stay harmonics, and the loudest of them is not the first.
+    #[test]
+    fn the_quack_is_a_falling_harmonic_stack() {
+        let modes = CLICK_QUACK.modes;
+        let (f0, to0) = (modes[0].hz, modes[0].to_hz);
+        assert!(to0 < f0, "a quack falls");
+
+        for (index, mode) in modes.iter().enumerate() {
+            let harmonic = (index + 1) as f32;
+            assert!(
+                (mode.hz - f0 * harmonic).abs() < 1.0,
+                "partial {harmonic} starts at {} not {}",
+                mode.hz,
+                f0 * harmonic
+            );
+            // The same ratio at every partial. Bending them by different
+            // amounts would pull the stack inharmonic part way through, which
+            // is a sound no bird makes.
+            assert!(
+                (mode.to_hz - to0 * harmonic).abs() < 1.0,
+                "partial {harmonic} lands on {} not {}",
+                mode.to_hz,
+                to0 * harmonic
+            );
+        }
+
+        let loudest = modes
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.gain.total_cmp(&b.1.gain))
+            .map(|(index, _)| index)
+            .unwrap();
+        assert!(loudest > 0, "the nasal formant is not the fundamental");
+    }
+
+    /// Everything else is struck, and a struck body holds its pitch. A stray
+    /// `to_hz` is the easy mistake here — it turns a resonance into a tone with
+    /// nothing in the table to say so.
+    #[test]
+    fn only_the_bending_sounds_bend() {
+        let bending = [ClickProfile::Pop.id(), ClickProfile::Quack.id()];
+        let tables = KeyProfile::ALL
+            .into_iter()
+            .map(|p| (p.id(), p.table()))
+            .chain(ClickProfile::ALL.into_iter().map(|p| (p.id(), p.table())));
+
+        for (id, profile) in tables {
+            let every_mode = profile
+                .modes
+                .iter()
+                .chain(profile.ping.iter())
+                .chain(profile.jacket.unwrap_or(&[]))
+                .chain(profile.overrides.iter().flat_map(|sound| sound.modes));
+            for mode in every_mode {
+                let bends = mode.hz != mode.to_hz;
+                assert_eq!(
+                    bends,
+                    bending.contains(&id),
+                    "{id} at {} Hz: bends = {bends}",
+                    mode.hz
+                );
+            }
+        }
     }
 
     #[test]

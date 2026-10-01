@@ -123,9 +123,18 @@ pub fn render_voice(
         .map(|sound| sound.modes)
         .unwrap_or(profile.modes)
         .iter()
-        .map(|mode| Mode {
-            hz: mode.hz * ratio * rng.around(detune),
-            ..*mode
+        // Both ends of a glide move together, so a detuned variant bends by the
+        // same interval from a different starting note. Detuning only `hz`
+        // would change the interval per variant — and would turn every
+        // non-gliding mode into a slight glide, since `to_hz` would be left at
+        // the table's undetuned figure.
+        .map(|mode| {
+            let shift = rng.around(detune);
+            Mode {
+                hz: mode.hz * ratio * shift,
+                to_hz: mode.to_hz * ratio * shift,
+                ..*mode
+            }
         })
         .collect();
     let tau = profile.excite_tau_ms * rng.around(TAU_SPREAD);
@@ -157,9 +166,13 @@ pub fn render_voice(
             if let Some(jacket) = profile.jacket {
                 let jacket: Vec<Mode> = jacket
                     .iter()
-                    .map(|mode| Mode {
-                        hz: mode.hz * rng.around(DETUNE),
-                        ..*mode
+                    .map(|mode| {
+                        let shift = rng.around(DETUNE);
+                        Mode {
+                            hz: mode.hz * shift,
+                            to_hz: mode.to_hz * shift,
+                            ..*mode
+                        }
                     })
                     .collect();
                 strike(
@@ -204,8 +217,10 @@ pub fn render_voice(
             // relative to the body that the table can reason about.
             let mut release_body = body.clone();
             if let Some(ping) = profile.ping {
+                let shift = rng.around(DETUNE);
                 release_body.push(Mode {
-                    hz: ping.hz * rng.around(DETUNE),
+                    hz: ping.hz * shift,
+                    to_hz: ping.to_hz * shift,
                     ..ping
                 });
             }
@@ -308,6 +323,13 @@ fn strike(
     for mode in modes {
         // T60 to a time constant: 60 dB is a factor of 1000 in amplitude.
         let decay_samples = f64::from(mode.t60_ms) * f64::from(rate) / 1_000.0 / 1000f64.ln();
+
+        // A mode that bends is not a resonance and is not driven by the burst.
+        if mode.to_hz != mode.hz {
+            bend(out, start, level, mode, decay_samples, tau_samples, rate);
+            continue;
+        }
+
         let r = (-1.0 / decay_samples).exp();
         let omega = 2.0 * std::f64::consts::PI * f64::from(mode.hz) / f64::from(rate);
         let a1 = 2.0 * r * omega.cos();
@@ -330,6 +352,52 @@ fn strike(
             y1 = y;
             *sample += (gain * y) as f32;
         }
+    }
+}
+
+/// Adds a played tone that bends from `hz` to `to_hz` as it fades.
+///
+/// A resonator cannot do this. Its two poles are fixed the moment `a1` and `a2`
+/// are computed, and walking them while it rings modulates the level — the
+/// `sin(ω)` scaling above moves with the pitch — as well as risking a pole
+/// outside the unit circle. A phase accumulator has neither problem: the
+/// frequency is whatever the ramp says on that sample, and the amplitude is the
+/// envelope and nothing else.
+///
+/// The attack is the contact time, which is the one thing this shares with an
+/// impact. A sinusoid that starts at full amplitude on sample zero is a step,
+/// and the step is an audible tick in front of the sound it was supposed to be.
+///
+/// The bend runs over the mode's T60, linear in frequency: by the time a mode is
+/// inaudible it has finished bending, so the figure in the table is the pitch a
+/// listener actually arrives at.
+fn bend(
+    out: &mut [f32],
+    start: usize,
+    level: f32,
+    mode: &Mode,
+    decay_samples: f64,
+    attack_samples: f32,
+    rate: f32,
+) {
+    // Where the tone has fallen 80 dB, the same bound the resonators run to.
+    let run = (decay_samples * 80.0 / 20.0 * 10f64.ln()) as usize;
+    let end = (start + run).min(out.len());
+    let span = f64::from(mode.t60_ms) * f64::from(rate) / 1_000.0;
+    // A zero-length attack would divide by zero and a sub-sample one cannot be
+    // heard anyway.
+    let attack = f64::from(attack_samples).max(1.0);
+    let from = f64::from(mode.hz);
+    let sweep = f64::from(mode.to_hz) - from;
+    let gain = f64::from(level * mode.gain);
+
+    let mut phase = 0.0f64;
+    for (n, sample) in out[start..end].iter_mut().enumerate() {
+        let n = n as f64;
+        let envelope = (-n / decay_samples).exp() * (1.0 - (-n / attack).exp());
+        *sample += (gain * envelope * phase.sin()) as f32;
+        phase +=
+            2.0 * std::f64::consts::PI * (from + sweep * (n / span).min(1.0)) / f64::from(rate);
     }
 }
 
@@ -472,6 +540,151 @@ mod tests {
                         "{name}/{kind:?}/{seed} ends at {last}"
                     );
                 }
+            }
+        }
+    }
+
+    /// The dominant frequency of a window, by counting sign changes. Crude, and
+    /// only meaningful on something close to a single sinusoid — which is what
+    /// the bend test builds on purpose, so that the figure it reads back is the
+    /// ramp and not a chord.
+    fn zero_crossing_hz(slice: &[f32]) -> f32 {
+        let crossings = slice
+            .windows(2)
+            .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+            .count();
+        crossings as f32 / 2.0 / (slice.len() as f32 / SAMPLE_RATE as f32)
+    }
+
+    fn window(voice: &Voice, from_ms: f32, to_ms: f32) -> &[f32] {
+        let at = |ms: f32| voice.onset + (SAMPLE_RATE as f32 * ms / 1_000.0) as usize;
+        &voice.samples[at(from_ms).min(voice.samples.len())..at(to_ms).min(voice.samples.len())]
+    }
+
+    /// A bent mode is where it says it is, at both ends.
+    ///
+    /// One mode, one octave up over its T60, read back by counting zero
+    /// crossings at each end. The thing this guards is that `bend` ramps the
+    /// *frequency* and not the phase increment or the period — all three are a
+    /// one-line change apart and two of them land on the wrong note.
+    #[test]
+    fn a_bent_mode_arrives_where_the_table_sends_it() {
+        const T60_MS: f32 = 200.0;
+        let profile = Profile {
+            mechanism: Mechanism::Tap,
+            excite_tau_ms: 1.0,
+            contact_lowpass_hz: 8_000.0,
+            modes: &[Mode {
+                hz: 400.0,
+                to_hz: 800.0,
+                t60_ms: T60_MS,
+                gain: 1.0,
+            }],
+            ping: None,
+            jacket: None,
+            touch_db: 0.0,
+            release_db: 0.0,
+            release_delay_ms: (0.0, 0.0),
+            long_key_ratio: 1.0,
+            overrides: &[],
+        };
+        let voice = render_voice(&profile, CueKind::Click, 0, SAMPLE_RATE);
+
+        // Linear in frequency over the T60, so the pitch at the middle of a
+        // window is 400 Hz plus 400 by how far through that window sits.
+        let expected = |ms: f32| 400.0 + 400.0 * ms / T60_MS;
+        for (from, to) in [(4.0, 24.0), (60.0, 90.0), (150.0, 190.0)] {
+            let want = expected((from + to) / 2.0);
+            let got = zero_crossing_hz(window(&voice, from, to));
+            // The loosest part of this is TAP_DETUNE, which moves the whole
+            // ramp by up to 1.2 %; the window's own width accounts for the rest.
+            assert!(
+                (got - want).abs() < want * 0.08,
+                "{from}–{to} ms reads {got} Hz, expected about {want}"
+            );
+        }
+    }
+
+    /// A bubble rises and a duck falls, and neither is something a struck body
+    /// can do. Measured as a pitch, not a centroid: a centroid would fall for
+    /// the quack anyway, because its upper partials die first, and so would pass
+    /// with the bend deleted.
+    #[test]
+    fn the_bubble_rises_and_the_duck_falls() {
+        let pop = render_voice(ClickProfile::Pop.table(), CueKind::Click, 0, SAMPLE_RATE);
+        let (early, late) = (
+            zero_crossing_hz(window(&pop, 2.0, 12.0)),
+            zero_crossing_hz(window(&pop, 35.0, 50.0)),
+        );
+        assert!(late > early * 1.5, "pop went {early} Hz to {late} Hz");
+
+        let quack = render_voice(ClickProfile::Quack.table(), CueKind::Click, 0, SAMPLE_RATE);
+        let (early, late) = (
+            zero_crossing_hz(window(&quack, 2.0, 12.0)),
+            zero_crossing_hz(window(&quack, 90.0, 140.0)),
+        );
+        assert!(early > late * 1.25, "quack went {early} Hz to {late} Hz");
+    }
+
+    /// Mean voice length in milliseconds — how long the click takes up, which is
+    /// the other half of what distinguishes one from another.
+    fn mean_length_ms(profile: &Profile, kind: CueKind) -> f32 {
+        (0..8)
+            .map(|seed| render_voice(profile, kind, seed, SAMPLE_RATE).samples.len() as f32)
+            .sum::<f32>()
+            / 8.0
+            / SAMPLE_RATE as f32
+            * 1_000.0
+    }
+
+    /// The ten click sounds are a spread, not ten shades of one sound.
+    ///
+    /// Distinctness is checked on two axes, because one is not enough: `Hush`
+    /// and `Tok` sit within 7 % of each other by centroid and are obviously
+    /// different sounds — a dull damped tap against a pitched knock on a tube —
+    /// and so do `Hush` and `Pop`, where one of them bends. A pair has to differ
+    /// in where its energy sits *or* in how long it lasts. Neither axis hears a
+    /// harmonic stack or an octave, so this is a floor and `audition.rs` is
+    /// still what settles whether a table sounds like the thing it names.
+    #[test]
+    fn the_click_sounds_spread_from_walnut_to_tink() {
+        let mut measured: Vec<(&str, f32, f32)> = ClickProfile::ALL
+            .into_iter()
+            .map(|p| {
+                (
+                    p.id(),
+                    mean_brightness(p.table(), CueKind::Click),
+                    mean_length_ms(p.table(), CueKind::Click),
+                )
+            })
+            .collect();
+        measured.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+        assert_eq!(
+            measured.first().map(|m| m.0),
+            Some(ClickProfile::Walnut.id())
+        );
+        assert_eq!(measured.last().map(|m| m.0), Some(ClickProfile::Tink.id()));
+
+        let (darkest, brightest) = (measured[0].1, measured[measured.len() - 1].1);
+        assert!(
+            brightest > darkest * 8.0,
+            "only {darkest} Hz to {brightest} Hz between them"
+        );
+
+        for (index, low) in measured.iter().enumerate() {
+            for high in &measured[index + 1..] {
+                let apart = |a: f32, b: f32| a.max(b) / a.min(b) > 1.15;
+                assert!(
+                    apart(low.1, high.1) || apart(low.2, high.2),
+                    "{} ({:.0} Hz, {:.0} ms) and {} ({:.0} Hz, {:.0} ms) are the same sound",
+                    low.0,
+                    low.1,
+                    low.2,
+                    high.0,
+                    high.1,
+                    high.2
+                );
             }
         }
     }
