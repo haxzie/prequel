@@ -838,13 +838,19 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * cut. The head moving is not a request to stop editing the zoom.
    */
   useEffect(() => {
+    // Nothing to follow while the panel is shut. Closing it dispatches a
+    // deselect, which lands in this effect's own dependencies — so without this
+    // the head is still over a clip, that clip is selected again on the spot,
+    // and the effect below reopens the panel on it. The close button looked
+    // dead: one frame out, one frame back, with the same clip in it.
+    if (!panelOpen) return;
     if (!media.sliceId || media.sliceId === state.selectedSliceId) return;
     // Nor a text, for the same reason: scrubbing across a cut while a title
     // is being typed must not swap the panel out from under the keyboard.
     if (state.selectedZoomId || state.selectedTextId) return;
 
     dispatch({ type: "select", sliceId: media.sliceId });
-  }, [media.sliceId, state.selectedSliceId, state.selectedZoomId, state.selectedTextId]);
+  }, [panelOpen, media.sliceId, state.selectedSliceId, state.selectedZoomId, state.selectedTextId]);
 
   /**
    * Seeks to a text the moment it is selected, when the playhead is not on it.
