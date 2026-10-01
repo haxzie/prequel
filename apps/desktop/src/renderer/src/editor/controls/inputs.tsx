@@ -376,21 +376,10 @@ export function useTravelling(at: number, ms = SLIDE_MS): boolean {
 export function Tabs<T extends string>({
   value,
   options,
-  below,
   onChange,
 }: {
   value: T;
   options: { value: T; label: string; title?: string }[];
-  /**
-   * A control that rides in the pinned band with the row.
-   *
-   * For the one thing that must stay reachable while a long grid scrolls past
-   * underneath — the same reason the row itself is sticky. Inside this wrapper
-   * rather than pinned separately: a second `sticky top-0` lands on top of the
-   * first unless the row's height is written in as a number, which is the trap
-   * the panel header already records.
-   */
-  below?: ReactNode;
   onChange: (value: T) => void;
 }) {
   const at = Math.max(
@@ -400,113 +389,71 @@ export function Tabs<T extends string>({
   const [hovered, setHovered] = useState<number | null>(null);
   const travelling = useTravelling(at);
 
-  // The row is padded by `p-1`, so the track the pills run along is that much
-  // narrower than the box. One slot is a pill's whole width — see the transform.
-  const slot = { width: `calc((100% - 2rem) / ${String(options.length)})` };
+  // One slot is a pill's whole width — see the transform. No inset to subtract
+  // any more: the row used to cancel the section's padding and add back `px-4`
+  // of its own, and both went when it stopped being a pinned band. The pills
+  // run the full width of the row that holds them.
+  const slot = { width: `calc(100% / ${String(options.length)})` };
   const pill =
-    "pointer-events-none absolute inset-y-1 left-4 rounded-md " +
+    "pointer-events-none absolute inset-y-1 left-0 rounded-md " +
     "transition-[transform,opacity] ease-out motion-reduce:transition-none";
   const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
 
   return (
-    // `-mx-4` and `-mt-4` cancel the section's own padding, on the assumption
-    // this is the first thing in it — which it is at the one place tabs are
-    // used. Vertically to sit the row against the header; horizontally so the
-    // bar covers the full width as content scrolls beneath it. Inset, a swatch
-    // would slide up through the strip of panel either side of it.
+    // Not sticky, and no band of its own. It was pinned to the top of the
+    // panel's scroller so it stayed reachable while a long grid of swatches
+    // scrolled past — which worked, and cost an opaque strip across the top of
+    // the panel to stop the grid showing through it. The panel that uses this
+    // puts the row above its scroller instead: nothing passes underneath, so
+    // there is nothing to hide and no surface needed to hide it with.
     //
-    // No rule under the row. The moving pill is what says which tab is which,
-    // and a line as well drew a box around a control that is already a band of
-    // its own.
-    //
-    // Sticky against the top of the panel's scroller — which starts below the
-    // header, since that sits outside it — so the tabs stay reachable through a
-    // long grid of swatches. `z-20` clears the swatches, which lift to `z-10`
-    // on hover to grow past their track.
-    //
-    // This was the *solid* veil, on the reasoning that content scrolls under it
-    // and anything translucent showed a swatch grid through as a ghost of
-    // itself. True, and it stopped being the right answer when the panel became
-    // frosted: an opaque near-black band across the top of a translucent panel
-    // is the darkest thing in the editor, sitting exactly where the eye lands.
-    //
-    // A blur and *no tint at all* does the job the opacity was doing. What
-    // scrolls under is thrown far enough out of focus to read as material
-    // rather than as a ghost of a swatch, and with nothing added the band is
-    // the panel's own tone — so the tabs and the slider pinned with them sit on
-    // the panel instead of in a darker box at the top of it.
-    //
-    // A tint was tried at 80% of the scrim first and was still wrong, for a
-    // reason worth writing down: the panel is already a scrim over the board,
-    // so any scrim here is a *second* one and compounds. The band came out
-    // darker than everything below it while every value in it looked sensible.
-    <div className="sticky top-0 z-20 -mx-4 -mt-4">
-      {/* Below the row rather than at the scroller's top, where the shared one
-          sits: these tabs are opaque and pinned over it, so content passing
-          under them is cut at *their* underside. Anchored inside the sticky
-          wrapper so it travels with them and needs no measurement of how tall
-          they are. */}
-      <ScrollFade className="absolute inset-x-0 top-full z-10" />
-      {/* `px-4` insets the pills from the panel's edges — the rule under them
-          still runs the full width, so the row divides the panel while the
-          controls in it sit within its margin. It also sets the slot width, and
-          with it how wide a pill is: see `slot`. */}
-      <div
-        className="relative flex px-4 py-1"
-        role="tablist"
-        onPointerLeave={() => setHovered(null)}
-      >
-        {/* Parked under the choice while nothing is hovered, so it fades in
+    // No rule under the row either. The moving pill is what says which tab is
+    // which, and a line as well drew a box around a control that is already a
+    // band of its own.
+    <div className="relative flex py-1" role="tablist" onPointerLeave={() => setHovered(null)}>
+      {/* Parked under the choice while nothing is hovered, so it fades in
             where the pointer is rather than flying in from the first tab. */}
-        <span
-          aria-hidden
-          className={cn(pill, "bg-white/6")}
-          style={{
-            ...slot,
-            ...slide,
-            transform: `translateX(calc(${String(hovered ?? at)} * 100%))`,
-            opacity: hovered === null || (hovered === at && !travelling) ? 0 : 1,
-          }}
-        />
-        <span
-          aria-hidden
-          className={cn(pill, "bg-white/12")}
-          style={{ ...slot, ...slide, transform: `translateX(calc(${String(at)} * 100%))` }}
-        />
+      <span
+        aria-hidden
+        className={cn(pill, "bg-white/6")}
+        style={{
+          ...slot,
+          ...slide,
+          transform: `translateX(calc(${String(hovered ?? at)} * 100%))`,
+          opacity: hovered === null || (hovered === at && !travelling) ? 0 : 1,
+        }}
+      />
+      <span
+        aria-hidden
+        className={cn(pill, "bg-white/12")}
+        style={{ ...slot, ...slide, transform: `translateX(calc(${String(at)} * 100%))` }}
+      />
 
-        {options.map((option, index) => (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={option.value === value}
-            title={option.title ?? option.label}
-            // Above the pills, which are painted behind the whole row.
-            className={cn(
-              "relative z-10 flex flex-1 items-center justify-center rounded-md py-1",
-              // The panel header's size, not the 11px the field labels use:
-              // these are the panel's own divisions rather than a label on a
-              // control, and at 11px they read as a caption over the thing they
-              // switch.
-              "text-[13px] whitespace-nowrap transition-colors",
-              option.value === value
-                ? "font-medium text-editor-fg"
-                : "text-editor-muted hover:text-editor-fg",
-            )}
-            onPointerEnter={() => setHovered(index)}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Inside the pinned band, under the pills. `px-4` matches the row's own
-          inset so the control lines up with the tabs above it, and the vertical
-          padding gives the band a floor for the fade to hang off — enough of it
-          that the control reads as its own row rather than as part of the tab
-          it happens to sit under. */}
-      {below && <div className="px-4 pt-2 pb-3">{below}</div>}
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={option.value === value}
+          title={option.title ?? option.label}
+          // Above the pills, which are painted behind the whole row.
+          className={cn(
+            "relative z-10 flex flex-1 items-center justify-center rounded-md py-1",
+            // The panel header's size, not the 11px the field labels use:
+            // these are the panel's own divisions rather than a label on a
+            // control, and at 11px they read as a caption over the thing they
+            // switch.
+            "text-[13px] whitespace-nowrap transition-colors",
+            option.value === value
+              ? "font-medium text-editor-fg"
+              : "text-editor-muted hover:text-editor-fg",
+          )}
+          onPointerEnter={() => setHovered(index)}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

@@ -26,6 +26,14 @@ import { cn } from "../../lib/cn";
  * leave a seam at the join, because each one's mask reaches zero exactly where
  * its neighbour does. Overlapping them means at every height some layer is at
  * full strength.
+ *
+ * Blur and nothing else. There used to be a fifth layer over these — a
+ * gradient to the solid veil — so that content at the very top of the strip
+ * was hidden outright rather than merely softened. It was the right idea on an
+ * opaque panel and the wrong one the moment the panel became frosted: an
+ * opaque band across the top of a translucent surface is the darkest thing in
+ * the editor, and it sits exactly where the eye lands. The blur alone says
+ * "there is more above this" without painting anything.
  */
 const LAYERS = [
   { blur: "1px", from: 0, to: 40 },
@@ -109,13 +117,6 @@ export function ScrollFade({ className }: { className?: string }) {
             }}
           />
         ))}
-
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "linear-gradient(to top, transparent, var(--editor-veil-solid) 95%)",
-          }}
-        />
       </div>
     </div>
   );

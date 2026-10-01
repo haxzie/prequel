@@ -591,6 +591,18 @@ export function Inspector(props: InspectorProps) {
     filterView === "options" &&
     filterSpec(settings.effects.filter) !== null;
 
+  /**
+   * Whether the panel showing scrolls itself rather than being scrolled.
+   *
+   * Only Background, and only when it is actually the thing on screen — the
+   * caption editor and the filter options take the same slot and are ordinary
+   * scrolling columns. One flag rather than the condition written out at the
+   * three places it is needed, because they have to agree: the box stops
+   * scrolling, the fade at its top goes with it, and the column between them
+   * gains the `min-h-0` that lets the panel's own scroller be bounded.
+   */
+  const ownsScroll = !editingCaptions && !tuningFilter && active === "background";
+
   const close = () => {
     setCaptionView("options");
     setFilterView("picker");
@@ -701,11 +713,23 @@ export function Inspector(props: InspectorProps) {
               after scrolling another was already scrolled to wherever that one
               had been left — the top of the new panel out of sight, for no
               reason anyone could see. A remounted scroller opens at the top. */}
+          {/* Most panels are a column of sections that this scrolls. One is
+              not: Background pins a tab row above its list and a blur slider
+              below it, so the list is the only part that moves and the panel
+              has to own the scrolling to say where it stops. This stands aside
+              for it — `overflow-hidden` and a `min-h-0` chain down to the
+              panel, which is what lets a scroller inside it be bounded by the
+              window rather than by its own content. */}
           <div
             key={editingCaptions ? "captions-editor" : tuningFilter ? "filter-options" : active}
-            className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+            className={cn(
+              "sleek-scrollbar flex min-w-0 flex-1 flex-col",
+              ownsScroll ? "min-h-0 overflow-hidden" : "overflow-y-auto",
+            )}
           >
-            <ScrollFade className="sticky top-0 z-10" />
+            {/* The panel draws its own where it owns the scrolling, under its
+                own tabs rather than at the top of this box. */}
+            {!ownsScroll && <ScrollFade className="sticky top-0 z-10" />}
 
             {/* The panel's content, faded in on the way to a new one.
                 `animate-view-in` is the dock's own swap, reused: opacity and
@@ -719,7 +743,12 @@ export function Inspector(props: InspectorProps) {
                 mounted and float over the incoming one, and these are a
                 scrolling column of very different heights: the two would have
                 to agree on a size neither has. */}
-            <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+            <div
+              className={cn(
+                "flex min-w-0 flex-1 flex-col animate-view-in",
+                ownsScroll && "min-h-0",
+              )}
+            >
               {editingCaptions && <CaptionEditor {...props.editing} />}
 
               {active === "presets" && (
@@ -2852,121 +2881,145 @@ function BackgroundPanel({
   useEffect(() => setStyle(paint.kind), [paint.kind]);
 
   return (
-    <Section>
-      {/* No label over it. "Style" restated what three tabs reading Image,
-          Solid and Gradient already say, and a tab row is the one control in
-          this panel that names itself. The override this field would have
-          marked is still reachable: the panel header carries Reset whenever
-          anything in this section is set for the clip.
+    /**
+     * Three parts, and only the middle one moves.
+     *
+     * This panel is the one that holds a list long enough to scroll — four
+     * categories of wallpaper — and the two controls around it are the two you
+     * want *while looking at the list*. Scrolling them away was what made both
+     * of them awkward: the tabs had to be pinned, which cost an opaque band
+     * across the top of the panel, and the blur was reachable only by scrolling
+     * past everything it acts on.
+     *
+     * So the row is above the scroller and the slider below it, and the list
+     * between them is clipped by its own `overflow-y-auto` — which is why
+     * neither needs a surface to hide anything behind. `min-h-0` on this column
+     * and on the scroller both: a flex child will not shrink below its content
+     * otherwise, and a four-category grid is very much taller than the panel.
+     */
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* No label over the tabs. "Style" restated what three tabs reading
+          Image, Solid and Gradient already say, and a tab row is the one
+          control in this panel that names itself. The override this field
+          would have marked is still reachable: the panel header carries Reset
+          whenever anything in this section is set for the clip.
 
           No icons either. Three words that short are read as words, and a glyph
           beside each one was a second thing to look at saying nothing the word
           did not. */}
-      <Tabs
-        value={style}
-        options={[
-          { value: "image", label: "Image" },
-          { value: "solid", label: "Solid" },
-          { value: "gradient", label: "Gradient" },
-        ]}
-        // Pinned with the tabs rather than laid under the swatches, because it
-        // is the one control here you want while *looking* at the pictures:
-        // below a grid four categories long it would sit off the bottom of the
-        // panel, found by scrolling past everything it acts on.
-        //
-        // Shown only under Image. A solid has nothing to soften and a gradient
-        // is already a smooth ramp, so on those two the control is not disabled
-        // so much as absent — the tab is a mode, and blur is not one of the
-        // things this mode has.
-        below={
-          style !== "image" ? undefined : (
-            <Slider
-              icon={<BlurIcon />}
-              label="Blur"
-              {...field("background", "backgroundBlur")}
-              value={background.backgroundBlur}
-              min={0}
-              max={0.08}
-              format={percent}
-              disabled={paint.kind !== "image"}
-              onChange={(value) => set("background", "backgroundBlur", value)}
-            />
-          )
-        }
-        onChange={setStyle}
-      />
+      <div className="flex-none px-4 pt-3 pb-2">
+        <Tabs
+          value={style}
+          options={[
+            { value: "image", label: "Image" },
+            { value: "solid", label: "Solid" },
+            { value: "gradient", label: "Gradient" },
+          ]}
+          onChange={setStyle}
+        />
+      </div>
 
-      {/* Each grid is passed the applied value only when it is that grid's own
+      <div className="sleek-scrollbar relative flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-1 pb-4">
+        {/* Hung at the top of this list rather than at the top of the panel:
+            what passes out of sight here passes under the tab row, so the blur
+            belongs at the list's own edge. */}
+        <ScrollFade className="sticky top-0 z-10" />
+        {/* Each grid is passed the applied value only when it is that grid's own
           style. Otherwise nothing is marked as chosen — a colour highlighted
           while the frame is showing an image would be claiming something
           untrue. */}
-      {style === "solid" && (
-        <SolidSwatches
-          value={paint.kind === "solid" ? paint.color : null}
-          // A whole background rather than a patch of the old one: what is
-          // applied may not be a solid, so there is nothing to spread.
-          onChange={(color) => setPaint({ kind: "solid", color })}
-        />
-      )}
-
-      {style === "gradient" && (
-        <>
-          <GradientSwatches
-            value={paint.kind === "gradient" ? paint : null}
-            onChange={(preset) => setPaint({ kind: "gradient", ...preset })}
+        {style === "solid" && (
+          <SolidSwatches
+            value={paint.kind === "solid" ? paint.color : null}
+            // A whole background rather than a patch of the old one: what is
+            // applied may not be a solid, so there is nothing to spread.
+            onChange={(color) => setPaint({ kind: "solid", color })}
           />
-          {/* Greyed until one is applied, rather than absent. An angle slider
+        )}
+
+        {style === "gradient" && (
+          <>
+            <GradientSwatches
+              value={paint.kind === "gradient" ? paint : null}
+              onChange={(preset) => setPaint({ kind: "gradient", ...preset })}
+            />
+            {/* Greyed until one is applied, rather than absent. An angle slider
               for a gradient that is not on screen has nothing to turn — but a
               row that appears the moment you pick a swatch is a panel that
               changes height under the hand that is still choosing, and the
               rest of this inspector greys its dependent controls rather than
               removing them. The reading falls back to the angle every preset
               here carries, so the disabled slider is not sitting at zero. */}
-          <Slider
-            icon={<AngleIcon />}
-            label="Angle"
-            value={paint.kind === "gradient" ? paint.angle : DEFAULT_GRADIENT_ANGLE}
-            min={0}
-            max={360}
-            step={1}
-            format={(value) => `${Math.round(value)}°`}
-            disabled={paint.kind !== "gradient"}
-            onChange={(angle) => {
-              if (paint.kind === "gradient") setPaint({ ...paint, angle });
-            }}
-          />
-        </>
-      )}
-
-      {style === "image" && (
-        // No label: the tab above already says Image, and what follows is
-        // pictures.
-        <Field>
-          <div className="flex flex-col gap-1.5">
-            <ImageSwatches
-              path={paint.kind === "image" ? paint.path : null}
-              wallpaper={wallpaperUrl}
-              onPickWallpaper={onPickWallpaper}
-              onPickPreset={onPickPreset}
-              backgrounds={backgrounds}
-              pending={pendingBackground}
-              onPickImage={onPickImage}
+            <Slider
+              icon={<AngleIcon />}
+              label="Angle"
+              value={paint.kind === "gradient" ? paint.angle : DEFAULT_GRADIENT_ANGLE}
+              min={0}
+              max={360}
+              step={1}
+              format={(value) => `${Math.round(value)}°`}
+              disabled={paint.kind !== "gradient"}
+              onChange={(angle) => {
+                if (paint.kind === "gradient") setPaint({ ...paint, angle });
+              }}
             />
+          </>
+        )}
 
-            <p
-              className="truncate text-[11px] text-editor-muted"
-              title={paint.kind === "image" ? paint.path : undefined}
-            >
-              {paint.kind === "image" && paint.path
-                ? // Copied into the recording, so the export is the same
-                  // tomorrow even after the desktop picture changes.
-                  paint.path
-                : "No image chosen yet"}
-            </p>
-          </div>
-        </Field>
+        {style === "image" && (
+          // No label: the tab above already says Image, and what follows is
+          // pictures.
+          <Field>
+            <div className="flex flex-col gap-1.5">
+              <ImageSwatches
+                path={paint.kind === "image" ? paint.path : null}
+                wallpaper={wallpaperUrl}
+                onPickWallpaper={onPickWallpaper}
+                onPickPreset={onPickPreset}
+                backgrounds={backgrounds}
+                pending={pendingBackground}
+                onPickImage={onPickImage}
+              />
+
+              <p
+                className="truncate text-[11px] text-editor-muted"
+                title={paint.kind === "image" ? paint.path : undefined}
+              >
+                {paint.kind === "image" && paint.path
+                  ? // Copied into the recording, so the export is the same
+                    // tomorrow even after the desktop picture changes.
+                    paint.path
+                  : "No image chosen yet"}
+              </p>
+            </div>
+          </Field>
+        )}
+      </div>
+
+      {/* Blur, at the foot and always on screen. Shown only under Image: a
+          solid has nothing to soften and a gradient is already a smooth ramp,
+          so on those two the control is not disabled so much as absent — the
+          tab is a mode, and blur is not one of the things this mode has.
+
+          A rule above it rather than a surface behind it. The list is clipped
+          by the scroller, so nothing ever reaches this row; the line is there
+          to say the row is not the last thing in the list. */}
+      {style === "image" && (
+        <div className="flex-none border-t border-editor-line px-4 py-3">
+          <Slider
+            icon={<BlurIcon />}
+            label="Blur"
+            {...field("background", "backgroundBlur")}
+            value={background.backgroundBlur}
+            min={0}
+            max={0.08}
+            format={percent}
+            disabled={paint.kind !== "image"}
+            onChange={(value) => set("background", "backgroundBlur", value)}
+          />
+        </div>
       )}
-    </Section>
+    </div>
   );
 }
 
