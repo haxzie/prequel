@@ -3,7 +3,9 @@ import {
   useCallback,
   useContext,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -103,6 +105,38 @@ export function usePushed(title: string): {
   const id = useId();
   const { id: openId, open, close } = useContext(PushedContext);
   const mine = openId === id;
+
+  /**
+   * A control that goes away takes its list with it.
+   *
+   * Which is open is held up in the provider, and the content is portalled out
+   * of the control that owns it — so a control unmounting while its list is
+   * showing leaves the panel drawing a header with that list's title over a
+   * slot nothing portals into any more. An empty body under the name of the
+   * thing you were just looking at. Selecting a text, opening its Font list,
+   * then clicking a video clip did exactly that: the inspector's three render
+   * paths are mutually exclusive, so the picker unmounts with the text panel
+   * while `id` stays set.
+   *
+   * Here rather than at each place the selection can change, because the next
+   * panel to be added would have to remember, and forgetting is silent.
+   *
+   * Read through a ref so the cleanup runs on unmount only. With `mine` in the
+   * deps it would also run on every ordinary change of which list is showing,
+   * closing the one that had just been opened.
+   *
+   * A layout effect, not a passive one: the unmount and the new panel are the
+   * same commit, so a passive cleanup would close it after that commit had
+   * already painted — one frame of the empty body this exists to prevent.
+   */
+  const mineRef = useRef(mine);
+  mineRef.current = mine;
+  useLayoutEffect(
+    () => () => {
+      if (mineRef.current) close();
+    },
+    [close],
+  );
 
   return {
     open: mine,
