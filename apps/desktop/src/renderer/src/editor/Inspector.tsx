@@ -1737,7 +1737,7 @@ function PresetsPanel({
               maxLength={40}
               className={cn(
                 // Room on the right for the return key sitting in the field.
-                "w-full rounded-md bg-white/5 pr-8 pl-2 text-xs outline-none",
+                "w-full rounded-full bg-white/5 pr-8 pl-3 text-xs outline-none",
                 CONTROL_H,
                 "placeholder:text-editor-muted focus:bg-white/10",
               )}
@@ -2458,7 +2458,7 @@ function CursorPanel({
               disabled={off}
               spellCheck={false}
               className={cn(
-                "w-full rounded-md bg-white/5 px-2 text-xs outline-none",
+                "w-full rounded-full bg-white/5 px-3 text-xs outline-none",
                 CONTROL_H,
                 "placeholder:text-editor-muted focus:bg-white/10 disabled:opacity-40",
               )}

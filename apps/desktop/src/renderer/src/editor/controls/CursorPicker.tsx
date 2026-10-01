@@ -1,4 +1,4 @@
-import { CURSOR_STYLES } from "../../../../shared/contract";
+import { CURSOR_STYLES, cursorTag } from "../../../../shared/contract";
 import { cn } from "../../lib/cn";
 
 /**
@@ -41,10 +41,13 @@ export function CursorPicker({
         // may have caught, so the tooltip has to say which of the two it is —
         // the swatch shows an arrow either way.
         const shapes = Object.keys(style.shapes).length;
-        const title =
+        const base =
           shapes > 1
             ? `${style.label} pointer, following the shape the system was showing — a hand over a link, an I-beam in text, arrows on an edge`
             : `${style.label} marker, whatever the pointer was doing`;
+        // What the T on the tile means, spelled out for the one place there is
+        // room for words.
+        const title = cursorTag(style.id) !== null ? `${base}. Can carry a name tag` : base;
 
         return (
           <button
@@ -64,7 +67,9 @@ export function CursorPicker({
               // sit two panels apart and are the same kind of thing — a set of
               // cards, one of them chosen — so they should not be two different
               // materials.
-              "grid aspect-square place-items-center rounded-lg bg-white/5",
+              //
+              // `relative`, for the mark below.
+              "relative grid aspect-square place-items-center rounded-lg bg-white/5",
               "disabled:pointer-events-none disabled:opacity-30",
               style.id === value ? "ring-2 ring-selected ring-inset" : "hover:bg-white/10",
             )}
@@ -80,6 +85,27 @@ export function CursorPicker({
               draggable={false}
               className="w-1/2 select-none"
             />
+
+            {/* A T on the ones that carry a name tag.
+                Which styles those are is not guessable from the artwork — the
+                tag is drawn beside the pointer in the composition, not on the
+                swatch — so picking one was the only way to find out, and the
+                field that appears underneath was the only thing that said so.
+                A mark on the tile answers it before the press.
+                Not a letter in a circle or a badge with a fill: five across,
+                this is forty points square, and anything with a surface of its
+                own at that size is a smudge. The glyph alone, in the corner the
+                eye already checks for a state.
+                `aria-hidden` and said properly in the title instead — a lone
+                "T" read out between two pointer names is noise. */}
+            {cursorTag(style.id) !== null && (
+              <span
+                aria-hidden
+                className="absolute top-0.5 right-1.5 text-[10px] leading-none font-semibold text-white/55"
+              >
+                T
+              </span>
+            )}
           </button>
         );
       })}
