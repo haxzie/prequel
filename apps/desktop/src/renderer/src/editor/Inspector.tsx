@@ -3237,8 +3237,11 @@ function PlaySampleButton({ label, onClick }: { label: string; onClick: () => vo
       type="button"
       title={`Play ${label}`}
       aria-label={`Play ${label}`}
+      // Round, like every other thing that fills in under the pointer here.
+      // It sits inside a row of a dropdown that is itself a pill, so a rounded
+      // square lighting up inside one was the odd shape out at two removes.
       className={cn(
-        "mr-1 grid size-6 flex-none place-items-center rounded text-editor-muted",
+        "mr-1 grid size-6 flex-none place-items-center rounded-full text-editor-muted",
         "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3",
       )}
       onClick={onClick}
