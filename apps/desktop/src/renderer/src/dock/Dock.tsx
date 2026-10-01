@@ -77,15 +77,15 @@ export function Dock() {
         // grows, and a scrollbar flicks in and out across the bottom of the
         // pill while the window catches up. Clipped, the name is revealed as
         // the panel widens, which is what the animation is for.
-        // Dark, like the rest of the app's hairlines. This was a light 12% on
-        // the argument that the edge of a panel floating over someone's
-        // wallpaper has nothing underneath it to tell it from the desktop — but
-        // a dark rim does that job better against a *bright* wallpaper, which
-        // is the case that was worrying about, and it reads as the panel's own
-        // edge rather than as a highlight sitting on top of it. The shadow
-        // below is what lifts it off whatever is behind.
+        // Translucent white, and lighter than the rest of the app's hairlines.
+        // Every other one separates two of this app's own surfaces; this is the
+        // edge of a panel floating over whatever the user happens to have on
+        // screen, and a rim that catches the light is what makes the pill read
+        // as an object rather than a smear. Translucent so it takes a little of
+        // the wallpaper with it instead of drawing a flat line around the panel.
+        // The shadow below is what lifts it off whatever is behind.
         "dock-theme m-(--panel-inset) mt-(--dock-headroom) flex-1 overflow-hidden rounded-[10px] " +
-        "border border-black/55 bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
+        "border border-white/10 bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}
