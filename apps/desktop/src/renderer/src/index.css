@@ -655,14 +655,14 @@ body {
      in it competes with whatever is behind. Kept a little short of opaque so it
      still sits *over* the screen rather than punching a hole in it. */
   --dock-bg: rgba(28, 33, 40, 0.96);
-  /* The divider, and the tray the recording modes sit in.
+  /* Every line the panel draws: the dividers inside it, and its own outer rim —
+     `Dock.tsx` reaches for this rather than carrying a second figure of its
+     own, so the two cannot drift apart the next time either is adjusted.
 
-     Dark-tinted, which is the rest of the app's border idiom and not what this
-     started as: a light hairline was chosen here on the argument that a dark
-     one would read as grime on a dark panel. With the modes now in a recessed
-     tray that argument is the wrong way round — a light edge round a well makes
-     it read as raised, which is the opposite of what the fill is saying. */
-  --dock-line: rgba(0, 0, 0, 0.45);
+     Translucent white, so a rule inside the panel is the same light the rim
+     catches. A dark tone was tried here and reads as grime on a dark panel
+     rather than as a rule between two things. */
+  --dock-line: rgba(255, 255, 255, 0.1);
   /* The surface the three "what to record" buttons sit on, so they read as one
      control rather than three neighbours.
 
