@@ -156,10 +156,13 @@ export function SetupPanel({ state }: { state: DockState }) {
           outside of three buttons that each light up with an edge of their own
           is the one that reads as clutter.
 
-          Rounded a touch wider than the 30px buttons inside it, so their
-          corners nest in its own rather than racing them. */}
+          The same 8px radius as the buttons inside it. Strictly the nesting
+          wants the outer corner to be the inner one plus the 2px padding, and
+          at that figure the tray reads rounder than the row it sits in; held
+          equal, the 2px the button's corner overshoots by is below what the
+          edge of a 34px tray shows. */}
       <div
-        className="flex items-center gap-0.5 rounded-[10px] bg-dock-group p-0.5"
+        className="flex items-center gap-0.5 rounded-lg bg-dock-group p-0.5"
         role="radiogroup"
         aria-label="What to record"
       >
