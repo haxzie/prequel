@@ -1724,16 +1724,17 @@ function Shell({
           frost it had the wallpaper coming up through it — which was the whole
           argument for the solid bar, and is answered by giving the text a
           surface of its own rather than giving the window one. */}
+      {/* `pl-20` is the room macOS's own traffic lights need, at the inset
+          `hiddenInset` puts them at. Room and nothing else — they had a plate
+          of their own for a while, matching the groups beside them, and it was
+          never quite right: their position is the system's to choose and it
+          moves with the title bar's height, so a plate sized to them here is a
+          number that only holds until something changes it. Bare, they sit on
+          the board like any other floating thing. */}
       <header
-        className="drag absolute inset-x-0 top-0 z-40 flex items-center gap-2 px-2"
+        className="drag absolute inset-x-0 top-0 z-40 flex items-center gap-2 pr-2 pl-20"
         style={{ height: TITLE_BAR }}
       >
-        {/* The traffic lights are macOS's and are drawn over this, at the inset
-            `hiddenInset` puts them at. Nothing is in here: it is a plate for
-            them to sit on, sized to cover the three and no more, which is why
-            it is a width rather than padding on the bar. */}
-        <span aria-hidden className={cn("h-7 w-[66px] flex-none rounded-full", FLOATING)} />
-
         {/* Where this recording is and what can be done to it, as one object.
             The bin is in here rather than out with Export because it acts on
             the thing this group names — and at the far end of the bar it was a
