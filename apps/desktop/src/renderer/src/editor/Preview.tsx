@@ -1178,20 +1178,30 @@ export function Preview({
           animate. `key` is what makes the new layer a new element with its
           animation unplayed; without it React updates the style in place and
           nothing moves. */}
-      {washes.map((wash, index) => (
-        <div
-          key={wash.id}
-          aria-hidden
-          onAnimationEnd={() => setWashes((current) => current.slice(-1))}
-          className={cn(
-            "pointer-events-none absolute -inset-[10%] -z-10 blur-[72px]",
-            // Only the one on top animates; the one underneath is already
-            // where it needs to be and re-running it would flash the board.
-            index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
-          )}
-          style={{ background: wash.css }}
-        />
-      ))}
+      {/* The opacity is on the stack, not on the washes. Each gradient is drawn
+          at full strength so the incoming one *covers* the outgoing one as it
+          fades in; put the opacity on the layers instead and the two translucent
+          copies add up, so the glow blooms for the length of the fade and snaps
+          back the moment the old layer is dropped. The blur is here for the
+          same reason — once, over the result, rather than over each copy. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-[10%] -z-10 opacity-50 blur-[72px]"
+      >
+        {washes.map((wash, index) => (
+          <div
+            key={wash.id}
+            onAnimationEnd={() => setWashes((current) => current.slice(-1))}
+            className={cn(
+              "absolute inset-0",
+              // Only the one on top animates; the one underneath is already
+              // where it needs to be and re-running it would flash the board.
+              index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
+            )}
+            style={{ background: wash.css }}
+          />
+        ))}
+      </div>
       {/* Sized to the picture so the ring inside it can be placed in frame
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}
