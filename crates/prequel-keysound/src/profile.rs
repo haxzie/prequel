@@ -680,29 +680,48 @@ static CLICK_POP: Profile = Profile {
 /// A duck.
 ///
 /// Not a struck body at all: a quack is voiced, which means a buzzy harmonic
-/// stack rather than a handful of unrelated resonances. Six harmonics of one
-/// fundamental, all falling by the same ratio so they stay harmonic — a mallard
-/// hen's quack drops about a third as she runs out of breath, and a stack that
-/// held its pitch would read as a car horn. The loudest partial is the third,
-/// not the first: that 1.5 kHz emphasis is the nasal formant, and it is what
-/// separates a quack from a hum. Higher partials die first, as they do in
-/// anything voiced.
+/// stack rather than a handful of unrelated resonances. Ten harmonics of one
+/// fundamental, all falling by the same ratio — a mallard hen's quack drops as
+/// she runs out of breath, and a stack that held its pitch would read as a car
+/// horn.
+///
+/// **Every partial carries the same T60.** `bend` sweeps each mode over its own
+/// T60, so partials given different decay times finish their sweeps at
+/// different moments and the stack is only harmonic on the first sample. That
+/// matters more than it sounds: harmonics of one fundamental stay phase-locked,
+/// which is what makes the sum a pulse train and a pulse train is what "voiced"
+/// means. Let them drift and it is ten sliding sines — a kazoo. The earlier
+/// table tapered the decays to kill the upper partials first, and by 40 ms it
+/// had nothing left above 2 kHz and was a hum sliding downwards.
+///
+/// So the taper is in the gains instead, a fixed shape peaking on the fourth
+/// partial: that 2 kHz emphasis is the nasal formant, and half the energy sits
+/// above it for the sound's whole length. That rasp is the duck.
+///
+/// `contact_lowpass_hz` does nothing here — a gliding mode is not driven by the
+/// burst — and is left at a sane figure rather than removed, since `Profile`
+/// asks every table for one.
 ///
 /// `Tap`, for the same reason as `Pop`, and because `Tap` drives its modes with
-/// a clean pulse rather than noise — a random burst would ring six harmonics in
-/// a different balance on every variant, so every click would be a different
-/// bird.
+/// a clean pulse rather than noise. `excite_tau_ms` is the attack, and it is
+/// long here on purpose: a quack swells over its first 20 ms, where 1 ms would
+/// put ten phase-aligned partials at full level on sample zero and add a click
+/// in front of the bird.
 static CLICK_QUACK: Profile = Profile {
     mechanism: Mechanism::Tap,
-    excite_tau_ms: 1.0,
+    excite_tau_ms: 9.0,
     contact_lowpass_hz: 5_000.0,
     modes: &[
-        glide(520.0, 360.0, 200.0, 0.55),
-        glide(1_040.0, 720.0, 180.0, 0.9),
-        glide(1_560.0, 1_080.0, 160.0, 1.0),
-        glide(2_080.0, 1_440.0, 120.0, 0.6),
-        glide(2_600.0, 1_800.0, 90.0, 0.3),
-        glide(3_120.0, 2_160.0, 60.0, 0.15),
+        glide(520.0, 330.0, 220.0, 0.30),
+        glide(1_040.0, 660.0, 220.0, 0.55),
+        glide(1_560.0, 990.0, 220.0, 0.90),
+        glide(2_080.0, 1_320.0, 220.0, 1.00),
+        glide(2_600.0, 1_650.0, 220.0, 0.88),
+        glide(3_120.0, 1_980.0, 220.0, 0.70),
+        glide(3_640.0, 2_310.0, 220.0, 0.52),
+        glide(4_160.0, 2_640.0, 220.0, 0.36),
+        glide(4_680.0, 2_970.0, 220.0, 0.24),
+        glide(5_200.0, 3_300.0, 220.0, 0.15),
     ],
     ping: None,
     jacket: None,
@@ -754,6 +773,15 @@ mod tests {
                 "partial {harmonic} lands on {} not {}",
                 mode.to_hz,
                 to0 * harmonic
+            );
+            // And one T60 for the lot. `bend` sweeps a mode over its own T60,
+            // so a partial with a shorter one arrives early and the stack is
+            // harmonic on the first sample and nowhere after it.
+            assert!(
+                (mode.t60_ms - modes[0].t60_ms).abs() < f32::EPSILON,
+                "partial {harmonic} decays over {} ms, not {}",
+                mode.t60_ms,
+                modes[0].t60_ms
             );
         }
 

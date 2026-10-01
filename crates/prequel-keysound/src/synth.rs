@@ -606,9 +606,9 @@ mod tests {
     }
 
     /// A bubble rises and a duck falls, and neither is something a struck body
-    /// can do. Measured as a pitch, not a centroid: a centroid would fall for
-    /// the quack anyway, because its upper partials die first, and so would pass
-    /// with the bend deleted.
+    /// can do. Measured as a pitch, not a centroid: the centroid is the one
+    /// thing the quack holds steady on purpose, so a centroid test would pass a
+    /// table with the bend deleted.
     #[test]
     fn the_bubble_rises_and_the_duck_falls() {
         let pop = render_voice(ClickProfile::Pop.table(), CueKind::Click, 0, SAMPLE_RATE);
@@ -619,9 +619,13 @@ mod tests {
         assert!(late > early * 1.5, "pop went {early} Hz to {late} Hz");
 
         let quack = render_voice(ClickProfile::Quack.table(), CueKind::Click, 0, SAMPLE_RATE);
+        // Read late enough to be most of the way down the sweep. The quack
+        // keeps every partial to the end now, so the only thing moving here is
+        // the pitch — the old window got a steeper-looking reading for free
+        // from a spectrum that was collapsing as well as falling.
         let (early, late) = (
             zero_crossing_hz(window(&quack, 2.0, 12.0)),
-            zero_crossing_hz(window(&quack, 90.0, 140.0)),
+            zero_crossing_hz(window(&quack, 150.0, 200.0)),
         );
         assert!(early > late * 1.25, "quack went {early} Hz to {late} Hz");
     }
