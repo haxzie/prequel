@@ -314,6 +314,32 @@ export function Preview({
     [background, backgroundImage],
   );
 
+  /**
+   * The wash on screen, and the one it is replacing while it arrives.
+   *
+   * At most two: whatever was there, and what is coming. A third would mean
+   * three backgrounds chosen inside one fade, and the right answer then is
+   * still "the one before this and this one" — anything older is already
+   * invisible under two layers.
+   *
+   * Dropped back to one by the animation's own end rather than by a timer, so
+   * the two can never disagree about how long the fade is.
+   */
+  const [washes, setWashes] = useState<{ id: number; css: string }[]>([]);
+
+  useEffect(() => {
+    if (!glow) return setWashes([]);
+    setWashes((current) =>
+      // Nothing to do when the colours have not actually moved — the memo above
+      // reruns whenever the background object is rebuilt, which is every
+      // keystroke in a caption, and a new layer each time would restart the
+      // fade for ever.
+      current.at(-1)?.css === glow
+        ? current
+        : [...current.slice(-1), { id: (current.at(-1)?.id ?? 0) + 1, css: glow }],
+    );
+  }, [glow]);
+
   // `cursor`, `zooms` and `cues` are in here for the same reason as the rest,
   // and it took a regression to notice they were not. The loop's effect depends
   // on `media`, which used to be a fresh object on every render — so the closure
@@ -1143,13 +1169,29 @@ export function Preview({
             `transition-[background]` because the swatch that changes it is a
             click away in the panel beside this, and a wash that snapped from
             one set of colours to another would read as a flash. */}
-        {glow && (
+        {/* Two layers, not one with a transition on it. A gradient in
+            `background-image` is not interpolated — Chromium treats it as a
+            discrete value — so a transition there is a snap with a duration
+            written beside it. The outgoing wash stays underneath at full
+            strength while the incoming one fades in over it, which is a
+            crossfade that cannot depend on what the browser is willing to
+            animate. `key` is what makes the new layer a new element with its
+            animation unplayed; without it React updates the style in place and
+            nothing moves. */}
+        {washes.map((wash, index) => (
           <div
+            key={wash.id}
             aria-hidden
-            className="pointer-events-none absolute -inset-[22%] -z-10 blur-[72px] transition-[background] duration-500 motion-reduce:transition-none"
-            style={{ background: glow }}
+            onAnimationEnd={() => setWashes((current) => current.slice(-1))}
+            className={cn(
+              "pointer-events-none absolute -inset-[22%] -z-10 blur-[72px]",
+              // Only the one on top animates; the one underneath is already
+              // where it needs to be and re-running it would flash the board.
+              index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
+            )}
+            style={{ background: wash.css }}
           />
-        )}
+        ))}
         {/* Over the canvas rather than instead of it. The canvas has to keep
             its box — the ring, the handles and the hit testing are all placed
             against its size — and it has to keep painting, so what is revealed

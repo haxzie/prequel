@@ -129,6 +129,11 @@
      runs for minutes beside an editor somebody is still working in, and a
      quick sweep at that length reads as an alert. */
   --animate-sheen: sheen 2.4s ease-in-out infinite;
+  /* The new background's wash arriving over the one it replaces. The same
+     length as the crossfade on the canvas below it — `BACKGROUND_FADE_MS` in
+     `webgl.ts` — because the two are one change and a glow that lagged the
+     picture would be read as the glow being wrong. */
+  --animate-glow-in: glow-in 220ms ease-out;
   /* The selection bar rising over the library. Short and from close by: it
      appears the instant a tile is ticked, and anything longer puts the button
      somebody is reaching for in motion under the pointer. */
@@ -172,6 +177,12 @@
     from {
       opacity: 0;
       transform: translateY(8px);
+    }
+  }
+
+  @keyframes glow-in {
+    from {
+      opacity: 0;
     }
   }
 

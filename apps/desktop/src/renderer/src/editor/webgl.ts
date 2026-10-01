@@ -72,6 +72,16 @@ export interface Backing {
  */
 const TEXTURE_CAP = 24;
 
+/**
+ * How long a new wallpaper takes to arrive, in milliseconds.
+ *
+ * Short. This is a change the user asked for by clicking a swatch, so the job
+ * is to take the hard edge off it rather than to put on a transition — long
+ * enough that nothing snaps, short enough that trying five wallpapers in a row
+ * is still five answers and not a slideshow.
+ */
+const BACKGROUND_FADE_MS = 220;
+
 const MODE_FILL = 0;
 const MODE_GRADIENT = 1;
 const MODE_IMAGE = 2;
@@ -614,6 +624,23 @@ export class WebGlCompositor {
    */
   private filterProgram: FilterProgram | null = null;
   private filterFailed = false;
+  /**
+   * The background being faded out, and when the fade ends.
+   *
+   * A new wallpaper arrived as a hard cut: one frame of the old picture, the
+   * next of the new one, in the middle of a window that is otherwise still.
+   * The picker is a grid of swatches somebody tries four or five of in a row,
+   * and five hard cuts is a flicker.
+   *
+   * Held here rather than in the plan on purpose. A fade is not a property of
+   * the composition — the exporter must never draw one, and it does not share
+   * this file — and it is not a property of the edit either, so it has no
+   * business in `buildRenderPlan`. It is this canvas remembering what it drew
+   * last, which is the one thing a plan cannot carry.
+   */
+  private fading: { from: Paint; until: number } | null = null;
+  /** What is on screen now, so a change can be noticed. Null before the first. */
+  private painted: { paint: Paint; key: string } | null = null;
   /** Allocated on the first filtered frame. A recording with no look never
       pays for it. */
   private scene: Scene | null = null;
@@ -951,7 +978,7 @@ export class WebGlCompositor {
 
     switch (item.kind) {
       case "fill": {
-        this.paint(gl, item.paint, item.rect, images);
+        this.fill(gl, item.paint, item.rect, images);
         break;
       }
 
@@ -1270,8 +1297,63 @@ export class WebGlCompositor {
     gl.activeTexture(gl.TEXTURE0);
   }
 
+  /**
+   * The background, crossfaded when the *picture* behind it changes.
+   *
+   * Over the top rather than blended in a shader: the canvas already composites
+   * premultiplied, so the outgoing background drawn at full strength and the
+   * incoming one drawn over it at the fade's own alpha is exactly a crossfade,
+   * and it needs no uniform the pictures do not already use.
+   *
+   * Keyed on the picture and not on the whole paint, which is the difference
+   * between this helping and this being infuriating. A colour picker and a blur
+   * slider are dragged, so their values change on every frame of a gesture —
+   * fading those would restart the fade sixty times a second and leave the
+   * control lagging the hand. A wallpaper is *chosen*, once, and that is the
+   * change worth softening.
+   *
+   * `performance.now()` rather than the frame's own timestamp, and this is the
+   * exception the renderer's rule allows for: that rule is about sampling media
+   * on the same clock the picture is painted on, and this is not media. It is a
+   * fixed-length piece of interface feedback that has nothing to do with where
+   * the playhead is — on the media clock it would stall with playback.
+   */
+  private fill(gl: WebGL2RenderingContext, paint: Paint, rect: Rect, images: Images): void {
+    const key = paint.kind === "image" ? `image:${paint.path}` : paint.kind;
+    const now = performance.now();
+
+    if (this.painted && this.painted.key !== key) {
+      // The picture that was on screen goes on being drawn underneath for the
+      // length of the fade. Captured by value: `painted` is about to be the new
+      // one, and the old `Paint` object is all this needs to keep drawing it.
+      this.fading = { from: this.painted.paint, until: now + BACKGROUND_FADE_MS };
+    }
+    this.painted = { paint, key };
+
+    const fade = this.fading;
+    if (!fade || now >= fade.until) {
+      this.fading = null;
+      this.paint(gl, paint, rect, images);
+      return;
+    }
+
+    const left = (fade.until - now) / BACKGROUND_FADE_MS;
+    this.paint(gl, fade.from, rect, images);
+    // Eased, so the new picture arrives rather than ramping in linearly — a
+    // linear crossfade reads as a dissolve, which is a transition, where this
+    // should read as the swatch simply having taken effect.
+    this.paint(gl, paint, rect, images, 1 - left * left);
+  }
+
   /** A background fill: flat, a gradient, or an image scaled to cover. */
-  private paint(gl: WebGL2RenderingContext, paint: Paint, rect: Rect, images: Images): void {
+  private paint(
+    gl: WebGL2RenderingContext,
+    paint: Paint,
+    rect: Rect,
+    images: Images,
+    /** How far in the fade this one is. 1 — fully drawn — in the ordinary case. */
+    alpha = 1,
+  ): void {
     const p = this.program;
     if (!p) return;
 
@@ -1279,7 +1361,7 @@ export class WebGlCompositor {
 
     switch (paint.kind) {
       case "solid":
-        set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: paint.color });
+        set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: paint.color, alpha });
         drawQuad(gl);
         return;
 
@@ -1293,6 +1375,7 @@ export class WebGlCompositor {
           colorA: paint.from,
           colorB: paint.to,
           gradient: [Math.cos(radians), Math.sin(radians)],
+          alpha,
         });
         drawQuad(gl);
         return;
@@ -1303,7 +1386,7 @@ export class WebGlCompositor {
         // Not loaded yet, or missing. A flat neutral rather than a transparent
         // hole that shows the editor's own chrome through the frame.
         if (!image) {
-          set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: "#1c1e22" });
+          set(gl, p, { rect, shape: square, mode: MODE_FILL, colorA: "#1c1e22", alpha });
           drawQuad(gl);
           return;
         }
@@ -1329,6 +1412,7 @@ export class WebGlCompositor {
           // setting's radius has to be converted or a 20-pixel blur reaches
           // barely a pixel of a 3200-wide picture.
           soften: paint.blur * sourcePerOutput(src, rect, size),
+          alpha,
         });
         drawQuad(gl);
         return;
