@@ -567,6 +567,16 @@ const api = {
     delete: (dir: string): Promise<IpcResult<boolean>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsDelete, dir),
 
+    /**
+     * Moves several to the Trash, behind one confirmation.
+     *
+     * Resolves with the directories that actually went — empty when the user
+     * declined, so the caller can tell "did not happen" from "failed", and
+     * short of what it asked for when one of them would not move.
+     */
+    deleteMany: (dirs: string[]): Promise<IpcResult<string[]>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsDeleteMany, dirs),
+
     /** Caches a still the grid made, so the next open does not have to. */
     savePoster: (dir: string, dataUrl: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsSavePoster, dir, dataUrl),

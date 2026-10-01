@@ -199,7 +199,16 @@ export interface RecordingPreferences {
    * navigation, by a rebuild in dev — and a layout that resets every time reads
    * as the toggle not having worked. Flat, like every leaf in this file.
    */
-  exportsView: ExportsView;
+  exportsView: LibraryView;
+  /**
+   * The same, for Projects.
+   *
+   * Its own leaf rather than one setting shared by both panes: they hold
+   * different things and are read for different reasons — a recording is found
+   * by looking at it, an export by reading what it is called — so somebody who
+   * wants tiles in one and rows in the other is not confused.
+   */
+  projectsView: LibraryView;
 }
 
 export const DEFAULT_PREFERENCES: RecordingPreferences = {
@@ -224,6 +233,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   teleprompterDisplay: null,
   welcomed: false,
   exportsView: "list",
+  projectsView: "grid",
 };
 
 /**
@@ -750,6 +760,14 @@ export const IPC_CHANNELS = {
   workspaceNavigate: "workspace:navigate",
   projectsRename: "projects:rename",
   projectsDelete: "projects:delete",
+  /**
+   * Several at once, behind one confirmation.
+   *
+   * Its own channel rather than the renderer calling the one above in a loop:
+   * that would put a sheet in front of the user for every recording in the
+   * selection, and the fifth of six is dismissed without being read.
+   */
+  projectsDeleteMany: "projects:deleteMany",
   /** Renderer → main: cache a still the grid just made. */
   projectsSavePoster: "projects:savePoster",
   /**
@@ -1830,6 +1848,14 @@ export interface ProjectSummary {
    */
   createdAt: number;
   /**
+   * When the edit was last saved, or null for a recording nobody has opened.
+   *
+   * Free to read: the listing already stats `project.json` to decide whether
+   * the cached still is still the edit's picture, so this is the mtime it
+   * already had rather than a syscall added to a loop that counts them.
+   */
+  editedAt: number | null;
+  /**
    * A `prequel-media:` URL for the cached still, or null when there is none
    * yet — or when the one on disk is older than the edit it pictures. The grid
    * makes the missing ones and asks main to keep them.
@@ -1933,8 +1959,14 @@ export interface ExportSummary {
   thumbnail: string | null;
 }
 
-/** Whether the Exports pane is a column of rows or a grid of tiles. */
-export type ExportsView = "list" | "grid";
+/**
+ * Whether a library pane is a column of rows or a grid of tiles.
+ *
+ * One type for both panes rather than one each. They are the same choice about
+ * the same kind of thing, the toggle that sets them is one component, and two
+ * identical string unions would be two places to add a third layout to.
+ */
+export type LibraryView = "list" | "grid";
 
 /**
  * Which pane of the app window's library is showing.

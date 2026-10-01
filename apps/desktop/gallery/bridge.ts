@@ -399,6 +399,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       },
       rename: () => ok(undefined),
       delete: () => ok(false),
+      // Nothing is deleted in the gallery, and a decline is an empty list —
+      // so a shot can tick tiles and press Delete without the fixtures moving
+      // under it.
+      deleteMany: () => ok([]),
       savePoster: () => ok(undefined),
       composition: async (dir: string) => ok(await loadComposition(recordingName(dir))),
     },

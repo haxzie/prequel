@@ -213,12 +213,15 @@ function fixture(pathname: string, options: GalleryOptions): unknown | null {
         }
         const manifest = join(dir, "session.json");
         const createdAt = existsSync(manifest) ? statSync(manifest).mtimeMs : 0;
+        const project = join(dir, "project.json");
+        const editedAt = existsSync(project) ? statSync(project).mtimeMs : null;
         const media = (file: string) =>
           `/media/recording/${encodeURIComponent(name)}/${encodeURIComponent(file)}`;
         return {
           dir,
           name: title,
           createdAt,
+          editedAt,
           // Null once the edit is newer than the still, exactly as
           // `listProjects` reports it: the tile pictures the composition, so an
           // edit is a picture out of date. A fixture with a stale poster is

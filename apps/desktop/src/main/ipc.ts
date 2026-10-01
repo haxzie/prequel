@@ -77,6 +77,7 @@ import {
 } from "./wallpaper.js";
 import {
   deleteRecording,
+  deleteRecordings,
   readEditorSession,
   readSoundBank,
   readSoundSample,
@@ -461,6 +462,24 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
       // screen. Only when it was this recording on show — a delete from the
       // grid leaves the grid exactly where it is.
       if (deleted && workspace.currentDir === dir) workspace.showProjects();
+      return deleted;
+    }),
+  );
+
+  /**
+   * The whole selection, behind one sheet.
+   *
+   * Answers with the directories that actually went, so the grid can drop them
+   * without re-listing — and so a decline, which is an empty array, is not
+   * mistaken for a failure.
+   */
+  ipcMain.handle(IPC_CHANNELS.projectsDeleteMany, (event, dirs: string[]) =>
+    attempt(async () => {
+      const deleted = await deleteRecordings(dirs, BrowserWindow.fromWebContents(event.sender));
+      // Back to the grid if the recording on screen was among them, for the
+      // reason the single delete does it: the editor and the grid share one
+      // window, and closing it would take the whole app off screen.
+      if (workspace.currentDir && deleted.includes(workspace.currentDir)) workspace.showProjects();
       return deleted;
     }),
   );

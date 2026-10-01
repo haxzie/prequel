@@ -154,6 +154,24 @@ describe("listProjects", () => {
 
     expect(entry(dir)?.poster).toBeNull();
   });
+
+  it("reports no edit for a recording nobody has opened", () => {
+    const dir = recording("never-opened");
+
+    // A dash in the list's Edited column, not an epoch zero dressed up as
+    // "56 years ago".
+    expect(entry(dir)?.editedAt).toBeNull();
+  });
+
+  it("reports when the edit was last saved", () => {
+    const dir = recording("worked-on");
+    writeFileSync(join(dir, PROJECT_FILE_NAME), JSON.stringify({ name: "Worked on" }));
+
+    const when = new Date(Date.now() - 90_000);
+    utimesSync(join(dir, PROJECT_FILE_NAME), when, when);
+
+    expect(entry(dir)?.editedAt).toBeCloseTo(when.getTime(), -3);
+  });
 });
 
 describe("renameProject", () => {

@@ -241,13 +241,39 @@ function readTranscript(dir: string, recordingId: string): Transcript | null {
  * going back to the grid rather than closing the app's only window.
  */
 export async function deleteRecording(dir: string, window: BrowserWindow | null): Promise<boolean> {
-  // The path comes from a renderer, which is the least-trusted process in the
-  // app, and this moves an entire directory tree. Guarded the way every other
-  // library operation is.
-  if (!insideRecordings(dir)) {
+  const deleted = await deleteRecordings([dir], window);
+  return deleted.length > 0;
+}
+
+/**
+ * Moves several recordings to the Trash, behind one confirmation.
+ *
+ * One sheet for the whole selection, not one per recording. Six sheets in a row
+ * is not six decisions — it is one decision and five obstacles, and the fifth
+ * is dismissed without being read, which is the opposite of what a confirmation
+ * is for.
+ *
+ * Answers with the directories that actually went, so the caller can prune its
+ * list without re-reading the folder and can tell a decline (none) from a
+ * partial failure (some). A single failure does not stop the rest: the others
+ * are perfectly deletable and the user asked for all of them.
+ */
+export async function deleteRecordings(
+  dirs: string[],
+  window: BrowserWindow | null,
+): Promise<string[]> {
+  // The paths come from a renderer, which is the least-trusted process in the
+  // app, and this moves entire directory trees. Guarded the way every other
+  // library operation is, and before the sheet rather than after: a count that
+  // included a path about to be refused would be a confirmation for work that
+  // then silently did not happen.
+  const safe = dirs.filter((dir) => {
+    if (insideRecordings(dir)) return true;
     console.warn(`[library] refusing to trash outside the recordings folder: ${dir}`);
     return false;
-  }
+  });
+
+  if (safe.length === 0) return [];
 
   const { response } = await dialog.showMessageBox(window ?? undefined!, {
     type: "warning",
@@ -256,17 +282,38 @@ export async function deleteRecording(dir: string, window: BrowserWindow | null)
     // Escape and the close button both land on Cancel: the destructive choice
     // should never be the one a stray keypress takes.
     cancelId: 1,
-    message: `Delete "${basename(dir)}"?`,
+    // Named when it is one, counted when it is several. A list of six names in
+    // a dialog is unreadable, and the names are all `Prequel <date> <time>`
+    // anyway — the number is the thing worth checking before pressing.
+    message:
+      safe.length === 1
+        ? `Delete "${basename(safe[0]!)}"?`
+        : `Delete ${String(safe.length)} recordings?`,
     detail:
-      "The recording, its edit and everything exported from it move to the Trash. " +
-      "You can put them back from there.",
+      safe.length === 1
+        ? "The recording, its edit and everything exported from it move to the Trash. " +
+          "You can put them back from there."
+        : "The recordings, their edits and everything exported from them move to the Trash. " +
+          "You can put them back from there.",
   });
 
-  if (response !== 0) return false;
+  if (response !== 0) return [];
 
-  await shell.trashItem(dir);
-  log("info", `moved ${dir} to the Trash`);
-  return true;
+  const deleted: string[] = [];
+  for (const dir of safe) {
+    try {
+      await shell.trashItem(dir);
+      deleted.push(dir);
+      log("info", `moved ${dir} to the Trash`);
+    } catch (cause) {
+      // One that would not go — a permission, a file open elsewhere — must not
+      // take the rest of the selection with it. It simply stays in the library,
+      // which is visible on the next listing.
+      console.error(`[library] could not trash ${dir}:`, cause);
+    }
+  }
+
+  return deleted;
 }
 
 /**

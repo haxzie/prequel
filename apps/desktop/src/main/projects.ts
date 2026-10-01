@@ -78,11 +78,13 @@ export function listProjects(
   for (const name of wanted) {
     const path = join(dir, name);
     try {
+      const edited = editedAt(path);
       projects.push({
         dir: path,
         name: displayName(path),
         createdAt: statSync(join(path, MANIFEST_FILE_NAME)).mtimeMs,
-        poster: freshPoster(path) ? mediaUrl(name, POSTER_FILE_NAME) : null,
+        editedAt: edited,
+        poster: freshPoster(path, edited) ? mediaUrl(name, POSTER_FILE_NAME) : null,
       });
     } catch {
       // No manifest, or unreadable. Not a recording we can open.
@@ -107,7 +109,7 @@ export function listProjects(
  * A recording nobody has edited has no `project.json` at all, and its poster is
  * as current as it will ever be.
  */
-function freshPoster(dir: string): boolean {
+function freshPoster(dir: string, edited: number | null): boolean {
   let poster: number;
   try {
     poster = statSync(join(dir, POSTER_FILE_NAME)).mtimeMs;
@@ -115,10 +117,24 @@ function freshPoster(dir: string): boolean {
     return false;
   }
 
+  // A recording nobody has edited has no `project.json` at all, and its poster
+  // is as current as it will ever be.
+  return edited === null || poster >= edited;
+}
+
+/**
+ * When the edit was last saved, or null for a recording nobody has opened.
+ *
+ * Taken once per recording and handed to `freshPoster` rather than stat'd again
+ * inside it. This loop's whole design is about what a thousand-take library
+ * costs in syscalls — see the note on `listProjects` — and the same file stat'd
+ * twice per tile is exactly what that note is about.
+ */
+function editedAt(dir: string): number | null {
   try {
-    return poster >= statSync(join(dir, PROJECT_FILE_NAME)).mtimeMs;
+    return statSync(join(dir, PROJECT_FILE_NAME)).mtimeMs;
   } catch {
-    return true;
+    return null;
   }
 }
 

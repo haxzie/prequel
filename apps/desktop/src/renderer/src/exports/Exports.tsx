@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { ExportsView, ExportSummary } from "../../../shared/contract";
+import type { LibraryView, ExportSummary } from "../../../shared/contract";
 import { cn } from "../lib/cn";
 import { formatElapsed, formatFileSize, formatTimeAgo } from "../lib/format";
 import { CheckIcon, CopyIcon, ExportIcon, FolderIcon } from "../editor/icons";
 import { useDock } from "../hooks/useDock";
 import { PaneHeader } from "../workspace/PaneHeader";
-import { GridIcon, ListIcon } from "./icons";
+import { ViewToggle } from "../workspace/ViewToggle";
 import { useExportThumbnails } from "./useExportThumbnails";
 
 /**
@@ -57,7 +57,7 @@ export function Exports() {
 
   const thumbnails = useExportThumbnails(exports ?? []);
 
-  const setView = useCallback((next: ExportsView) => {
+  const setView = useCallback((next: LibraryView) => {
     void window.prequel.dock.updatePreferences({ exportsView: next });
   }, []);
 
@@ -128,49 +128,6 @@ export function Exports() {
 }
 
 /**
- * Rows or tiles.
- *
- * Two buttons rather than a segmented control: there are exactly two states and
- * each has an icon that says which it is, so a control wide enough for two
- * words would be saying it twice.
- */
-function ViewToggle({
-  view,
-  onChange,
-}: {
-  view: ExportsView;
-  onChange: (view: ExportsView) => void;
-}) {
-  return (
-    <div className="no-drag flex items-center gap-0.5 rounded-lg bg-white/6 p-0.5">
-      {(
-        [
-          { id: "list", label: "Show as a list", Icon: ListIcon },
-          { id: "grid", label: "Show as a grid", Icon: GridIcon },
-        ] as const
-      ).map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          title={option.label}
-          aria-label={option.label}
-          aria-pressed={view === option.id}
-          onClick={() => onChange(option.id)}
-          className={cn(
-            "grid size-6 place-items-center rounded-md transition-colors [&_svg]:size-3.5",
-            view === option.id
-              ? "bg-white/15 text-editor-fg"
-              : "text-editor-fg/55 hover:text-editor-fg",
-          )}
-        >
-          <option.Icon />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
  * The table's columns, stated once.
  *
  * Shared between the head and every row, and that is the whole reason it is a
@@ -203,7 +160,7 @@ function Row({
   thumbnail,
 }: {
   entry: ExportSummary;
-  view: ExportsView;
+  view: LibraryView;
   thumbnail: string | null;
 }) {
   const [copied, setCopied] = useState(false);
@@ -414,7 +371,7 @@ function Action({
 }
 
 /** The shape of what is coming, so the first listing lands in place. */
-function Skeletons({ view }: { view: ExportsView }) {
+function Skeletons({ view }: { view: LibraryView }) {
   return (
     <div className={cn("min-h-0 flex-1 overflow-y-auto", view === "grid" ? "p-5" : "pt-8")}>
       <div

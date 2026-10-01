@@ -41,6 +41,9 @@ const Teleprompter = lazy(() =>
 /** The same Mac, with the Exports pane set to tiles rather than rows. */
 const GRID_PREFERENCES = { ...DEFAULT_FIXTURES.dock.preferences, exportsView: "grid" } as const;
 
+/** The same Mac, with Projects set to rows rather than tiles. */
+const PROJECT_ROWS = { ...DEFAULT_FIXTURES.dock.preferences, projectsView: "list" } as const;
+
 export type ShotFrameKind =
   | "workspace"
   | "welcome"
@@ -291,6 +294,30 @@ export const SHOTS: readonly Shot[] = [
     install: install(),
     render: () => <Library section="projects" onSection={() => {}} onOpen={() => {}} />,
     steps: [{ kind: "settle", ms: 800 }],
+    clip: "frame",
+  },
+  {
+    id: "projects-list",
+    frame: "workspace",
+    install: install({ dock: { ...DEFAULT_FIXTURES.dock, preferences: PROJECT_ROWS } }),
+    render: () => <Library section="projects" onSection={() => {}} onOpen={() => {}} />,
+    steps: [{ kind: "settle", ms: 800 }],
+    clip: "frame",
+  },
+  {
+    id: "projects-selected",
+    frame: "workspace",
+    install: install(),
+    render: () => <Library section="projects" onSection={() => {}} onOpen={() => {}} />,
+    // Two tiles ticked, so the shot carries the thing the pane is for: the
+    // ticks out on every card and the bar up over the grid.
+    steps: [
+      { kind: "settle", ms: 800 },
+      { kind: "click", selector: ".group:nth-child(1) [role=checkbox]" },
+      { kind: "settle", ms: 120 },
+      { kind: "click", selector: ".group:nth-child(3) [role=checkbox]" },
+      { kind: "settle", ms: 300 },
+    ],
     clip: "frame",
   },
   {
