@@ -1910,7 +1910,7 @@ function FilterOptions({
       <Section>
         <div
           className={cn(
-            "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-1.5",
+            "flex items-center gap-2 rounded-lg border border-white/7 bg-white/5 p-1.5",
           )}
         >
           <button
@@ -2071,7 +2071,7 @@ function fraction(value: number): string {
 const FILTER_GRID = "grid grid-cols-3 gap-1";
 
 const FILTER_CELL =
-  "relative flex flex-col items-center gap-1.5 rounded-lg border border-white/10 " +
+  "relative flex flex-col items-center gap-1.5 rounded-lg border border-white/7 " +
   "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
 const FILTER_CHOSEN = "ring-2 ring-selected ring-inset";

@@ -273,7 +273,7 @@ export function TooltipLayer() {
         // is: the chip floats over a frosted panel and the bare desktop
         // alike, and a fixed dark edge drawn on either reads as a smudge.
         className={cn(
-          "rounded-md border border-white/12 bg-[#1c1e22] px-2 py-1 text-[11px] leading-[14px] text-[#eceef1]",
+          "rounded-md border border-white/8 bg-[#1c1e22] px-2 py-1 text-[11px] leading-[14px] text-[#eceef1]",
           "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
           "animate-tooltip-in transition-opacity ease-out",
           "data-[open=false]:opacity-0 motion-reduce:animate-none motion-reduce:transition-none",

@@ -142,7 +142,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-col px-5 pt-5 pb-4">
           <div className="flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-xl border border-white/12 bg-white/8 text-white [&_svg]:size-4">
+            <span className="grid size-8 place-items-center rounded-xl border border-white/8 bg-white/8 text-white [&_svg]:size-4">
               {sent ? <CheckIcon /> : <BugIcon />}
             </span>
             <h2 className="text-[0.9375rem] font-medium tracking-tight text-editor-fg">

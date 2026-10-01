@@ -142,7 +142,7 @@ const THUMB_MIN_PADDING = 0.1;
 // in a box nearly twice its height, with the slack above and below it reading
 // as padding that the sides did not have.
 const CELL =
-  "relative grid place-items-center rounded-lg border border-white/10 " +
+  "relative grid place-items-center rounded-lg border border-white/7 " +
   "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
 // Three across. Wide enough that a thumbnail can be told apart at a glance,

@@ -78,7 +78,7 @@ export function Script() {
       <main className="flex min-h-0 flex-1 flex-col gap-3 px-5 pb-5">
         <textarea
           className={
-            "min-h-0 flex-1 resize-none rounded-lg border border-white/10 bg-black/25 p-3 " +
+            "min-h-0 flex-1 resize-none rounded-lg border border-white/7 bg-black/25 p-3 " +
             "text-[15px] leading-relaxed text-editor-fg outline-none placeholder:text-editor-muted " +
             "focus:border-white/25"
           }

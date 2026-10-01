@@ -60,7 +60,7 @@ function PermissionRow({
     // The surface belongs to the list now, so a row carries nothing but its
     // divider: four cards read as four separate asks, where one card of four
     // rows reads as the set macOS hands out together.
-    <li className="flex items-start gap-3 border-b border-white/10 px-3.5 py-3 last:border-b-0">
+    <li className="flex items-start gap-3 border-b border-white/7 px-3.5 py-3 last:border-b-0">
       {/* macOS's own icon for the pane this permission is granted in, so the
           row and the System Settings window it sends you to show the same
           picture — the artwork is the instruction for what to look for once you
@@ -118,7 +118,7 @@ function PermissionRow({
  */
 export function PermissionList({ permissions }: { permissions: Permissions }) {
   return (
-    <ul className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+    <ul className="flex flex-col overflow-hidden rounded-xl border border-white/7 bg-white/[0.04]">
       {PERMISSIONS.map((permission) => (
         <PermissionRow
           key={permission.id}

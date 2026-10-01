@@ -75,7 +75,7 @@ export function UpgradeDialog({
           {/* The export icon, not a padlock or a price tag. What is being asked
               for is the thing they just pressed, and the picture should be that
               rather than a threat. */}
-          <span className="grid size-12 place-items-center rounded-2xl border border-white/12 bg-white/8 text-white [&_svg]:size-5">
+          <span className="grid size-12 place-items-center rounded-2xl border border-white/8 bg-white/8 text-white [&_svg]:size-5">
             <ExportIcon />
           </span>
 

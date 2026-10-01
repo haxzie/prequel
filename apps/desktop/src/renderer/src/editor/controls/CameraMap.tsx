@@ -135,7 +135,7 @@ export function CameraMap({
         // The layout cards' surface. It was a well of its own — darker than
         // anything else in the panel — which read as a hole in the column
         // rather than as one more card in it.
-        "relative w-full overflow-hidden rounded-md border border-white/10 bg-white/5",
+        "relative w-full overflow-hidden rounded-md border border-white/7 bg-white/5",
         disabled && "pointer-events-none opacity-40",
       )}
       // The frame's own proportions. Switching the output to vertical reshapes

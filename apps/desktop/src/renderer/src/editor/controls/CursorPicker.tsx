@@ -64,7 +64,7 @@ export function CursorPicker({
               // sit two panels apart and are the same kind of thing — a set of
               // cards, one of them chosen — so they should not be two different
               // materials.
-              "grid aspect-square place-items-center rounded-lg border border-white/10 bg-white/5",
+              "grid aspect-square place-items-center rounded-lg border border-white/7 bg-white/5",
               "disabled:pointer-events-none disabled:opacity-30",
               style.id === value ? "ring-2 ring-selected ring-inset" : "hover:bg-white/10",
             )}

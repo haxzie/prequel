@@ -44,7 +44,7 @@ const CELL =
  * against a busy image. Nothing moves either way — the box is border-box, so
  * the second pixel comes out of the swatch rather than out of the grid.
  */
-const EDGE = "border border-white/10";
+const EDGE = "border border-white/7";
 const EDGE_CHOSEN = "border-2 border-selected";
 /**
  * The edge on the cell that opens the file picker.

@@ -58,8 +58,14 @@ export function Library({
           the window sits on raises the luminance here by an amount nothing can
           predict, so a fixed dark hairline sinks into it and a fixed muted grey
           loses the contrast it was chosen for. A white alpha rides whatever is
-          behind it instead. */}
-      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/12 p-3 pt-10">
+          behind it instead.
+
+          The weights across these panes come in three: 8% for the edge of a
+          surface, 7% for a container's own border, 4% for a rule between rows
+          of one list. All a notch below where they started — a border only has
+          to say where one thing ends, and at the distance they were drawn at a
+          pane of eight bordered groups read as eight boxes. */}
+      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/8 p-3 pt-10">
         {SECTIONS.map((item) => (
           <button
             key={item.id}
@@ -85,7 +91,7 @@ export function Library({
             spaced, because the difference matters before the press and not
             after: everything above changes what this window shows, everything
             below hands the user to their browser. */}
-        <hr className="my-2 border-0 border-t border-white/12" />
+        <hr className="my-2 border-0 border-t border-white/8" />
 
         <button
           type="button"

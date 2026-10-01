@@ -91,7 +91,7 @@ export function Exports() {
                 // Sticky, so scrolling a long list never leaves four
                 // unlabelled columns. Opaque, or the rows would show through
                 // it as they pass underneath.
-                "sticky top-0 z-10 border-b border-white/10 bg-editor-scrim",
+                "sticky top-0 z-10 border-b border-white/7 bg-editor-scrim",
                 "h-8 text-[11px] font-medium text-editor-muted",
               )}
             >
@@ -171,7 +171,7 @@ function Row({
     <div
       className={cn(
         "group relative",
-        grid ? "flex flex-col gap-2" : "border-b border-white/6 last:border-b-0",
+        grid ? "flex flex-col gap-2" : "border-b border-white/4 last:border-b-0",
       )}
       draggable
       onDragStart={(event) => {
@@ -217,7 +217,7 @@ function Row({
                 // Small, and sized to the row rather than the other way
                 // round. A tall picture would set the row height and turn
                 // four columns back into a stack of cards.
-                className="h-7 w-12 shrink-0 overflow-hidden rounded-sm border border-white/10 bg-editor-panel"
+                className="h-7 w-12 shrink-0 overflow-hidden rounded-sm border border-white/7 bg-editor-panel"
               />
               <span className="truncate text-[13px]">{entry.name}</span>
             </span>
@@ -390,7 +390,7 @@ function Skeletons({ view }: { view: LibraryView }) {
           ) : (
             // The same columns the real rows use, so the head above them does
             // not shift sideways when the listing lands.
-            <div key={index} className={cn(COLUMNS, "h-11 border-b border-white/6")}>
+            <div key={index} className={cn(COLUMNS, "h-11 border-b border-white/4")}>
               <span className="flex items-center gap-2.5">
                 <span className="h-7 w-12 shrink-0 animate-pulse rounded-sm bg-editor-panel" />
                 <span className="h-3 w-1/2 animate-pulse rounded bg-editor-panel" />

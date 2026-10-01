@@ -94,7 +94,7 @@ export function SelectionBar({
           // Opaque enough to read against a grid of bright thumbnails, and
           // lifted off them by a shadow rather than a border — this floats,
           // and a hairline would read as another row.
-          "border border-white/12 bg-editor-bg/92 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl",
+          "border border-white/8 bg-editor-bg/92 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl",
           "animate-selection-in motion-reduce:animate-none",
         )}
       >

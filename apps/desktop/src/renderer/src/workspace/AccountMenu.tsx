@@ -59,7 +59,7 @@ function UpgradeCard({ entitlement }: { entitlement: Entitlement }) {
   const ending = entitlement.status === "expired";
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-white/12 bg-white/8 p-2.5">
+    <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/8 p-2.5">
       <div>
         <p className="text-[12px] font-medium text-editor-fg">
           {ending

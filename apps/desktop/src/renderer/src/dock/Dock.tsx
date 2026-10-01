@@ -77,6 +77,12 @@ export function Dock() {
         // grows, and a scrollbar flicks in and out across the bottom of the
         // pill while the window catches up. Clipped, the name is revealed as
         // the panel widens, which is what the animation is for.
+        // 12%, where the rest of the app's chrome was taken down to 7 and 8.
+        // Deliberately left behind: every other hairline separates two of this
+        // app's own surfaces, and this one is the edge of a panel floating over
+        // whatever the user happens to have on screen. It is what makes the
+        // pill read as an object rather than a smear, and against a bright
+        // wallpaper there is nothing underneath it to do that job instead.
         "dock-theme m-(--panel-inset) mt-(--dock-headroom) flex-1 overflow-hidden rounded-[10px] " +
         "border border-white/12 bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
