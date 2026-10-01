@@ -345,6 +345,19 @@ export function Inspector(props: InspectorProps) {
 
 function InspectorPanels(props: InspectorProps) {
   const { state, dispatch, tab, onTab } = props;
+  /**
+   * A list that has taken the panel over — a colour, a font, a sound.
+   *
+   * The same shape as `editingCaptions` and `tuningFilter` further down, and
+   * treated the same way: the header becomes its own with a way back, and the
+   * body is the slot its content is portalled into. It is not a third flag of
+   * the same kind only because the control that owns the content is somewhere
+   * else entirely, so what travels is a title and a place to draw.
+   *
+   * Up here with the rest of the hooks because all three of this component's
+   * render paths need it, and two of them return before the others are reached.
+   */
+  const pushed = usePushedView();
   const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
   // Above the early returns, for the reason `naming` below gives.
   const [textTab, setTextTab] = useState<TextTabId>("style");
@@ -426,32 +439,53 @@ function InspectorPanels(props: InspectorProps) {
 
     return (
       <div className={SHELL}>
-        <Rail items={ZOOM_TABS} value={zoomTab} onChange={setZoomTab} />
+        <Rail
+          items={ZOOM_TABS}
+          value={zoomTab}
+          onChange={(id) => {
+            setZoomTab(id);
+            pushed.close();
+          }}
+        />
 
         <aside className={PANEL}>
           <div className="flex min-w-0 flex-1 flex-col">
-            <PanelHeader
-              // The tab that is showing, not the word "Zoom": the header names
-              // the section the panel is displaying, which is what the rail's
-              // glyphs cannot say for themselves.
-              title={showingZoomTab.label}
-              icon={<showingZoomTab.Icon />}
-              clips={slicesOf(state.project).length}
-              onClose={props.onClose}
-            />
-            {/* Keyed on the tab, so React replaces the view rather than
-                reconciling one panel's controls into another's and the
-                animation has something to run on. The key is on the scroller
-                rather than the view inside it, for the reason the clip
-                panel's is — see there. */}
-            <div
-              key={zoomTab}
-              className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
-            >
-              <div className="flex min-w-0 flex-1 flex-col animate-view-in">
-                {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
-                {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
-                {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+            {/* This path has no list in it today. It gets the slot anyway, for
+                the reason the other two needed it: a control that opens one is
+                a `ColorField` away, and the failure is silent — a trigger that
+                does nothing at all. */}
+            {pushed.id !== null && (
+              <PushedPanel
+                icon={<showingZoomTab.Icon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+            )}
+
+            <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+              <PanelHeader
+                // The tab that is showing, not the word "Zoom": the header names
+                // the section the panel is displaying, which is what the rail's
+                // glyphs cannot say for themselves.
+                title={showingZoomTab.label}
+                icon={<showingZoomTab.Icon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+              {/* Keyed on the tab, so React replaces the view rather than
+                  reconciling one panel's controls into another's and the
+                  animation has something to run on. The key is on the scroller
+                  rather than the view inside it, for the reason the clip
+                  panel's is — see there. */}
+              <div
+                key={zoomTab}
+                className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+              >
+                <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+                  {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
+                  {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
+                  {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+                </div>
               </div>
             </div>
           </div>
@@ -488,29 +522,49 @@ function InspectorPanels(props: InspectorProps) {
 
     return (
       <div className={SHELL}>
-        <Rail items={TEXT_TABS} value={textTab} onChange={setTextTab} />
+        <Rail
+          items={TEXT_TABS}
+          value={textTab}
+          onChange={(id) => {
+            setTextTab(id);
+            pushed.close();
+          }}
+        />
 
         <aside className={PANEL}>
           <div className="flex min-w-0 flex-1 flex-col">
-            <PanelHeader
-              title={showingTextTab.label}
-              icon={<showingTextTab.Icon />}
-              clips={slicesOf(state.project).length}
-              onClose={props.onClose}
-            />
-            {/* Keyed on the tab and the text, so switching either replaces
-                the view rather than reconciling one text's controls into
-                another's — a textarea kept across texts would keep its caret
-                in words that are no longer there. On the scroller, for the
-                reason the clip panel's is. */}
-            <div
-              key={`${textTab}:${text.id}`}
-              className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
-            >
-              <div className="flex min-w-0 flex-1 flex-col animate-view-in">
-                {textTab === "text" && <TextContentPanel {...panel} />}
-                {textTab === "style" && <TextStylePanel {...panel} />}
-                {textTab === "position" && <TextPositionPanel {...panel} />}
+            {pushed.id !== null && (
+              <PushedPanel
+                icon={<showingTextTab.Icon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+            )}
+
+            {/* Hidden rather than unmounted: the font picker and the four
+                colour fields in here own the lists they open, and portal the
+                content out of this subtree. */}
+            <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+              <PanelHeader
+                title={showingTextTab.label}
+                icon={<showingTextTab.Icon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+              {/* Keyed on the tab and the text, so switching either replaces
+                  the view rather than reconciling one text's controls into
+                  another's — a textarea kept across texts would keep its caret
+                  in words that are no longer there. On the scroller, for the
+                  reason the clip panel's is. */}
+              <div
+                key={`${textTab}:${text.id}`}
+                className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+              >
+                <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+                  {textTab === "text" && <TextContentPanel {...panel} />}
+                  {textTab === "style" && <TextStylePanel {...panel} />}
+                  {textTab === "position" && <TextPositionPanel {...panel} />}
+                </div>
               </div>
             </div>
           </div>
@@ -615,17 +669,6 @@ function InspectorPanels(props: InspectorProps) {
    * scrolling, the fade at its top goes with it, and the column between them
    * gains the `min-h-0` that lets the panel's own scroller be bounded.
    */
-  /**
-   * A list that has taken the panel over — a colour, a font, a sound.
-   *
-   * The same shape as `editingCaptions` and `tuningFilter` above, and treated
-   * the same way: the header becomes its own with a way back, and the body is
-   * the slot its content is portalled into. It is not a third flag of the same
-   * kind only because the control that owns the content is somewhere else
-   * entirely, so what travels is a title and a place to draw.
-   */
-  const pushed = usePushedView();
-
   const ownsScroll =
     !editingCaptions && !tuningFilter && pushed.id === null && active === "background";
 
@@ -660,121 +703,122 @@ function InspectorPanels(props: InspectorProps) {
             number. Out here the header is simply not scrollable, and the tabs
             pin at `top-0` of whatever is left. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {pushed.id !== null ? (
-            // A list that has taken the panel over. No reset and no apply-to-all:
-            // this is a choice being made, not a section with settings in it, and
-            // the control it belongs to carries both of those on the row it came
-            // from.
-            <PanelHeader
-              title={pushed.title}
+          {pushed.id !== null && (
+            <PushedPanel
               icon={<showing.Icon />}
-              onBack={pushed.close}
-              clips={slicesOf(state.project).length}
-              onClose={close}
-            />
-          ) : editingCaptions ? (
-            // The editor is about the words, not about the selected clip, so
-            // the header says so rather than "Clip" — and offers no delete,
-            // because Backspace in here already means something.
-            <PanelHeader
-              title="Edit captions"
-              icon={<CaptionsIcon />}
-              onBack={() => setCaptionView("options")}
-              // The same button in the same place as every other panel's, and
-              // absent for the same reason: nothing edited is nothing to put
-              // back. It was a word here while the panels had words of their
-              // own, and a lone word among icons once they stopped.
-              onReset={props.editing.edited ? props.editing.onReset : undefined}
-              clips={slicesOf(state.project).length}
-              onClose={close}
-            />
-          ) : (
-            <PanelHeader
-              // The category that is showing. The rail is a column of glyphs
-              // with no labels — a tooltip is the only way to find out what one
-              // means — so the panel it opens says the word.
-              title={showing.label}
-              icon={<showing.Icon />}
-              // The one view with a control of its own. Saving is not a setting,
-              // so it belongs beside the title rather than among the cards it
-              // would otherwise be mistaken for.
-              action={
-                active === "presets" ? (
-                  <button
-                    type="button"
-                    title={naming ? "Cancel" : "Save this look…"}
-                    aria-label={naming ? "Cancel saving" : "Save this look…"}
-                    aria-expanded={naming}
-                    disabled={!props.presets.canSave}
-                    className={cn(
-                      "grid size-6 place-items-center rounded-md text-editor-muted [&_svg]:size-3.5",
-                      props.presets.canSave
-                        ? "hover:bg-white/10 hover:text-editor-fg"
-                        : "cursor-default opacity-40",
-                      // A cross is a plus turned an eighth of a turn, so the one
-                      // glyph can be both — and turning rather than swapping
-                      // says the second state is the first one undone, which is
-                      // exactly what cancelling is.
-                      "transition-transform duration-150 motion-reduce:transition-none",
-                      naming && "rotate-45",
-                    )}
-                    onClick={() => setNaming(!naming)}
-                  >
-                    <AddPresetIcon />
-                  </button>
-                ) : undefined
-              }
-              onReset={
-                OWNS[showing.id]
-                  ? sectionReset(OWNS[showing.id]!.section, OWNS[showing.id]!.keys)
-                  : undefined
-              }
-              // Only from a selected clip, and only onto others: with nothing
-              // selected the panel is already editing what every clip follows,
-              // and with one clip there is nowhere for it to go.
-              onApplyToAll={
-                scoped && OWNS[showing.id] && slicesOf(state.project).length > 1
-                  ? () =>
-                      dispatch({
-                        type: "applyToAll",
-                        section: OWNS[showing.id]!.section,
-                        keys: OWNS[showing.id]!.keys,
-                      })
-                  : undefined
-              }
               clips={slicesOf(state.project).length}
               onClose={close}
             />
           )}
 
-          {/* Keyed on what it shows, and the key is on the *scroller*, not on
+          {/* Hidden rather than unmounted while a list is over it. The control
+              that owns the list lives in here and portals its content out, so
+              unmounting this would take the list with it — the same trap the
+              scroller's key note below describes. */}
+          <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+            {editingCaptions ? (
+              // The editor is about the words, not about the selected clip, so
+              // the header says so rather than "Clip" — and offers no delete,
+              // because Backspace in here already means something.
+              <PanelHeader
+                title="Edit captions"
+                icon={<CaptionsIcon />}
+                onBack={() => setCaptionView("options")}
+                // The same button in the same place as every other panel's, and
+                // absent for the same reason: nothing edited is nothing to put
+                // back. It was a word here while the panels had words of their
+                // own, and a lone word among icons once they stopped.
+                onReset={props.editing.edited ? props.editing.onReset : undefined}
+                clips={slicesOf(state.project).length}
+                onClose={close}
+              />
+            ) : (
+              <PanelHeader
+                // The category that is showing. The rail is a column of glyphs
+                // with no labels — a tooltip is the only way to find out what one
+                // means — so the panel it opens says the word.
+                title={showing.label}
+                icon={<showing.Icon />}
+                // The one view with a control of its own. Saving is not a setting,
+                // so it belongs beside the title rather than among the cards it
+                // would otherwise be mistaken for.
+                action={
+                  active === "presets" ? (
+                    <button
+                      type="button"
+                      title={naming ? "Cancel" : "Save this look…"}
+                      aria-label={naming ? "Cancel saving" : "Save this look…"}
+                      aria-expanded={naming}
+                      disabled={!props.presets.canSave}
+                      className={cn(
+                        "grid size-6 place-items-center rounded-md text-editor-muted [&_svg]:size-3.5",
+                        props.presets.canSave
+                          ? "hover:bg-white/10 hover:text-editor-fg"
+                          : "cursor-default opacity-40",
+                        // A cross is a plus turned an eighth of a turn, so the one
+                        // glyph can be both — and turning rather than swapping
+                        // says the second state is the first one undone, which is
+                        // exactly what cancelling is.
+                        "transition-transform duration-150 motion-reduce:transition-none",
+                        naming && "rotate-45",
+                      )}
+                      onClick={() => setNaming(!naming)}
+                    >
+                      <AddPresetIcon />
+                    </button>
+                  ) : undefined
+                }
+                onReset={
+                  OWNS[showing.id]
+                    ? sectionReset(OWNS[showing.id]!.section, OWNS[showing.id]!.keys)
+                    : undefined
+                }
+                // Only from a selected clip, and only onto others: with nothing
+                // selected the panel is already editing what every clip follows,
+                // and with one clip there is nowhere for it to go.
+                onApplyToAll={
+                  scoped && OWNS[showing.id] && slicesOf(state.project).length > 1
+                    ? () =>
+                        dispatch({
+                          type: "applyToAll",
+                          section: OWNS[showing.id]!.section,
+                          keys: OWNS[showing.id]!.keys,
+                        })
+                    : undefined
+                }
+                clips={slicesOf(state.project).length}
+                onClose={close}
+              />
+            )}
+
+            {/* Keyed on what it shows, and the key is on the *scroller*, not on
               the view inside it. Keyed one level down, the column that scrolls
               survived every switch and kept its `scrollTop`, so a panel opened
               after scrolling another was already scrolled to wherever that one
               had been left — the top of the new panel out of sight, for no
               reason anyone could see. A remounted scroller opens at the top. */}
-          {/* Most panels are a column of sections that this scrolls. One is
+            {/* Most panels are a column of sections that this scrolls. One is
               not: Background pins a tab row above its list and a blur slider
               below it, so the list is the only part that moves and the panel
               has to own the scrolling to say where it stops. This stands aside
               for it — `overflow-hidden` and a `min-h-0` chain down to the
               panel, which is what lets a scroller inside it be bounded by the
               window rather than by its own content. */}
-          {/* Deliberately *not* keyed on the pushed list. The key remounts the
+            {/* Deliberately *not* keyed on the pushed list. The key remounts the
               column, and the control that owns a pushed list lives in it — on
               the frame the list opened, that control would come back as a new
               instance with a new generated id, no longer the one the panel was
               told to show, and the body would be empty with the header still
               naming it. The scroll position surviving a list opening over it is
               the right answer anyway. */}
-          <div
-            key={editingCaptions ? "captions-editor" : tuningFilter ? "filter-options" : active}
-            className={cn(
-              "sleek-scrollbar flex min-w-0 flex-1 flex-col",
-              ownsScroll ? "min-h-0 overflow-hidden" : "overflow-y-auto",
-            )}
-          >
-            {/* The panel's content, faded in on the way to a new one.
+            <div
+              key={editingCaptions ? "captions-editor" : tuningFilter ? "filter-options" : active}
+              className={cn(
+                "sleek-scrollbar flex min-w-0 flex-1 flex-col",
+                ownsScroll ? "min-h-0 overflow-hidden" : "overflow-y-auto",
+              )}
+            >
+              {/* The panel's content, faded in on the way to a new one.
                 `animate-view-in` is the dock's own swap, reused: opacity and
                 nothing else, which matters more here than it does there. A
                 keyframe that moved the content would make this wrapper a
@@ -786,142 +830,142 @@ function InspectorPanels(props: InspectorProps) {
                 mounted and float over the incoming one, and these are a
                 scrolling column of very different heights: the two would have
                 to agree on a size neither has. */}
-            {/* Where a list that has taken the panel over is drawn. Always
+              {/* Where a list that has taken the panel over is drawn. Always
                 rendered while one is showing, because the content is portalled
                 into it — a slot that only appeared once something had asked for
                 it would not exist on the frame the asking happened. */}
-            {pushed.id !== null && (
+              {pushed.id !== null && (
+                <div
+                  ref={pushed.setSlot}
+                  className="flex min-w-0 flex-1 flex-col p-1 animate-view-in"
+                />
+              )}
+
               <div
-                ref={pushed.setSlot}
-                className="flex min-w-0 flex-1 flex-col p-1 animate-view-in"
-              />
-            )}
+                className={cn(
+                  "flex min-w-0 flex-1 flex-col animate-view-in",
+                  ownsScroll && "min-h-0",
+                )}
+              >
+                {editingCaptions && <CaptionEditor {...props.editing} />}
 
-            <div
-              className={cn(
-                "flex min-w-0 flex-1 flex-col animate-view-in",
-                ownsScroll && "min-h-0",
-                pushed.id !== null && "hidden",
-              )}
-            >
-              {editingCaptions && <CaptionEditor {...props.editing} />}
+                {active === "presets" && (
+                  <PresetsPanel presets={props.presets} naming={naming} onNaming={setNaming} />
+                )}
 
-              {active === "presets" && (
-                <PresetsPanel presets={props.presets} naming={naming} onNaming={setNaming} />
-              )}
+                {active === "layout" && (
+                  <LayoutPanel
+                    settings={settings}
+                    frame={props.frame}
+                    cameraSource={props.cameraSource}
+                    cameraPresent={props.present.has("camera")}
+                    fileUrl={props.fileUrl}
+                    field={field}
+                    set={set}
+                  />
+                )}
 
-              {active === "layout" && (
-                <LayoutPanel
-                  settings={settings}
-                  frame={props.frame}
-                  cameraSource={props.cameraSource}
-                  cameraPresent={props.present.has("camera")}
-                  fileUrl={props.fileUrl}
-                  field={field}
-                  set={set}
-                />
-              )}
+                {active === "background" && (
+                  <BackgroundPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    onPickWallpaper={props.onPickWallpaper}
+                    onPickImage={props.onPickImage}
+                    onPickPreset={props.onPickPreset}
+                    backgrounds={props.backgrounds}
+                    pendingBackground={props.pendingBackground}
+                    wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
+                  />
+                )}
 
-              {active === "background" && (
-                <BackgroundPanel
-                  settings={settings}
-                  field={field}
-                  set={set}
-                  onPickWallpaper={props.onPickWallpaper}
-                  onPickImage={props.onPickImage}
-                  onPickPreset={props.onPickPreset}
-                  backgrounds={props.backgrounds}
-                  pendingBackground={props.pendingBackground}
-                  wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
-                />
-              )}
+                {active === "recording" && (
+                  <RecordingPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    // A direct `Slice` field rather than one of `settings`'
+                    // sections — speed moves where everything else on the
+                    // timeline sits, which `set`'s overrides machinery does not
+                    // expect of anything it writes. Undefined with nothing
+                    // selected: there is no "every clip's speed" the way there
+                    // is a default padding, so the control disables rather than
+                    // inventing one.
+                    speed={selectedSlice(state)?.speed}
+                    onChangeSpeed={(speed) => {
+                      const slice = selectedSlice(state);
+                      if (slice) dispatch({ type: "setSliceSpeed", sliceId: slice.id, speed });
+                    }}
+                  />
+                )}
 
-              {active === "recording" && (
-                <RecordingPanel
-                  settings={settings}
-                  field={field}
-                  set={set}
-                  // A direct `Slice` field rather than one of `settings`'
-                  // sections — speed moves where everything else on the
-                  // timeline sits, which `set`'s overrides machinery does not
-                  // expect of anything it writes. Undefined with nothing
-                  // selected: there is no "every clip's speed" the way there
-                  // is a default padding, so the control disables rather than
-                  // inventing one.
-                  speed={selectedSlice(state)?.speed}
-                  onChangeSpeed={(speed) => {
-                    const slice = selectedSlice(state);
-                    if (slice) dispatch({ type: "setSliceSpeed", sliceId: slice.id, speed });
-                  }}
-                />
-              )}
+                {active === "filters" && (
+                  <FiltersPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    tuning={tuningFilter}
+                    onTune={() => setFilterView("options")}
+                    onBack={() => setFilterView("picker")}
+                  />
+                )}
 
-              {active === "filters" && (
-                <FiltersPanel
-                  settings={settings}
-                  field={field}
-                  set={set}
-                  tuning={tuningFilter}
-                  onTune={() => setFilterView("options")}
-                  onBack={() => setFilterView("picker")}
-                />
-              )}
+                {active === "watermark" && (
+                  <WatermarkPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    fileUrl={props.fileUrl}
+                    onPick={props.onPickWatermark}
+                  />
+                )}
 
-              {active === "watermark" && (
-                <WatermarkPanel
-                  settings={settings}
-                  field={field}
-                  set={set}
-                  fileUrl={props.fileUrl}
-                  onPick={props.onPickWatermark}
-                />
-              )}
+                {active === "camera" && (
+                  <CameraPanel
+                    settings={settings}
+                    frame={props.frame}
+                    cameraSource={props.cameraSource}
+                    cameraMatte={props.cameraMatte}
+                    cameraBlobs={props.cameraBlobs}
+                    field={field}
+                    set={set}
+                  />
+                )}
 
-              {active === "camera" && (
-                <CameraPanel
-                  settings={settings}
-                  frame={props.frame}
-                  cameraSource={props.cameraSource}
-                  cameraMatte={props.cameraMatte}
-                  cameraBlobs={props.cameraBlobs}
-                  field={field}
-                  set={set}
-                />
-              )}
+                {active === "audio" && (
+                  <AudioPanel
+                    settings={settings}
+                    present={props.present}
+                    hasSounds={props.hasSounds}
+                    field={field}
+                    set={set}
+                    denoise={props.denoise}
+                    micDenoise={state.project.micDenoise}
+                    onMicDenoise={(level) => dispatch({ type: "setMicDenoise", level })}
+                    onAudition={props.onAudition}
+                    onPlaySample={props.onPlaySample}
+                  />
+                )}
 
-              {active === "audio" && (
-                <AudioPanel
-                  settings={settings}
-                  present={props.present}
-                  hasSounds={props.hasSounds}
-                  field={field}
-                  set={set}
-                  denoise={props.denoise}
-                  micDenoise={state.project.micDenoise}
-                  onMicDenoise={(level) => dispatch({ type: "setMicDenoise", level })}
-                  onAudition={props.onAudition}
-                  onPlaySample={props.onPlaySample}
-                />
-              )}
+                {active === "cursor" && (
+                  <CursorPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    cursorUrl={props.fileUrl}
+                  />
+                )}
 
-              {active === "cursor" && (
-                <CursorPanel
-                  settings={settings}
-                  field={field}
-                  set={set}
-                  cursorUrl={props.fileUrl}
-                />
-              )}
-
-              {active === "captions" && !editingCaptions && (
-                <CaptionsPanel
-                  settings={settings}
-                  captions={props.captions}
-                  field={field}
-                  set={set}
-                  onEdit={() => setCaptionView("edit")}
-                />
-              )}
+                {active === "captions" && !editingCaptions && (
+                  <CaptionsPanel
+                    settings={settings}
+                    captions={props.captions}
+                    field={field}
+                    set={set}
+                    onEdit={() => setCaptionView("edit")}
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -3552,6 +3596,49 @@ function AudioPanel({
  * under the pointer beside a pill reads as a different kind of control, which
  * is the whole of the reason the shapes are being made to agree.
  */
+/**
+ * The panel, while a list has taken it over.
+ *
+ * Its own component because the inspector has *three* render paths — a selected
+ * zoom, a selected text, and the clip — and a list can be opened from any of
+ * them. It was written into the clip's path alone first, which is why the font
+ * picker and every colour field did nothing at all: both live in the text
+ * panel, `PushedView` found no slot to draw into, and the trigger appeared
+ * dead. A list that can be opened from three places needs somewhere to land in
+ * all three.
+ *
+ * No reset and no apply-to-all in the header: this is a choice being made, not
+ * a section with settings in it, and the control it belongs to carries both of
+ * those on the row it came from.
+ */
+function PushedPanel({
+  icon,
+  clips,
+  onClose,
+}: {
+  icon: React.ReactNode;
+  clips: number;
+  onClose: () => void;
+}) {
+  const pushed = usePushedView();
+
+  return (
+    <>
+      <PanelHeader
+        title={pushed.title}
+        icon={icon}
+        onBack={pushed.close}
+        clips={clips}
+        onClose={onClose}
+      />
+      <div
+        ref={pushed.setSlot}
+        className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto p-1 animate-view-in"
+      />
+    </>
+  );
+}
+
 function PanelHeader({
   title,
   icon,
