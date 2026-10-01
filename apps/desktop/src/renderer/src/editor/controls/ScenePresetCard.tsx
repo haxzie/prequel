@@ -78,7 +78,11 @@ export function ScenePresetCard({
         className="flex w-full flex-col gap-1 text-left"
         onClick={onApply}
       >
-        <span className="relative block aspect-video w-full overflow-hidden rounded-md border border-editor-line bg-black/25 group-hover:border-white/25">
+        {/* The same fill every other tile in these panels carries, and no
+            border — see `FILTER_CELL`. It was `bg-black/25` inside a hairline,
+            which made a card darker than the panel it sat on where every other
+            grid here is a step lighter than it. */}
+        <span className="relative block aspect-video w-full overflow-hidden rounded-md bg-white/5">
           <span
             aria-hidden
             className="absolute inset-0 bg-contain bg-center bg-no-repeat"

@@ -1985,11 +1985,7 @@ function FilterOptions({
   return (
     <>
       <Section>
-        <div
-          className={cn(
-            "flex items-center gap-2 rounded-lg border border-white/7 bg-white/5 p-1.5",
-          )}
-        >
+        <div className={cn("flex items-center gap-2 rounded-lg bg-white/5 p-1.5")}>
           <button
             type="button"
             aria-label="All filters"
@@ -2147,8 +2143,13 @@ function fraction(value: number): string {
 /** Three across, matching the layout picker's grid. */
 const FILTER_GRID = "grid grid-cols-3 gap-1";
 
+// No border. The fill is what makes a tile a tile, and it is the same fill a
+// slider's track carries — these sit in the same panels as those and reading
+// as one family of surface is worth more than an outline each. An edge as well
+// drew a box around something that was already a shape, and twelve of them in a
+// grid read as a table.
 const FILTER_CELL =
-  "relative flex flex-col items-center gap-1.5 rounded-lg border border-white/7 " +
+  "relative flex flex-col items-center gap-1.5 rounded-lg " +
   "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
 const FILTER_CHOSEN = "ring-2 ring-selected ring-inset";

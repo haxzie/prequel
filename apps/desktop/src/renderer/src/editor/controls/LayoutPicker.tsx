@@ -141,8 +141,10 @@ const THUMB_MIN_PADDING = 0.1;
 // same padding on every side. It used to be square, which left a 16:9 plate
 // in a box nearly twice its height, with the slack above and below it reading
 // as padding that the sides did not have.
+// Borderless, matching the filter grid and the slider track — see the note on
+// `FILTER_CELL`. The chosen one still says so with the blue ring drawn inside.
 const CELL =
-  "relative grid place-items-center rounded-lg border border-white/7 " +
+  "relative grid place-items-center rounded-lg " +
   "bg-white/5 p-2 hover:bg-white/10 disabled:pointer-events-none disabled:opacity-30";
 
 // Three across. Wide enough that a thumbnail can be told apart at a glance,
