@@ -155,9 +155,18 @@ export function SetupPanel({ state }: { state: DockState }) {
         <CloseIcon />
       </IconButton>
 
-      <span className={DIVIDER} />
+      {/* On their own surface rather than fenced off by a rule either side.
+          Three buttons between two dividers read as three things that happen to
+          be adjacent; one tray holding them reads as the single choice it is —
+          and it drops two of the four rules the strip used to carry.
 
-      <div className="flex items-center gap-0.5" role="radiogroup" aria-label="What to record">
+          Rounded a touch wider than the 30px buttons inside it, so their
+          corners nest in its own rather than racing them. */}
+      <div
+        className="flex items-center gap-0.5 rounded-[10px] border border-dock-line bg-dock-group p-0.5"
+        role="radiogroup"
+        aria-label="What to record"
+      >
         {MODES.map(({ mode, label, Icon }) => {
           const active = activeMode === mode;
           return (
@@ -177,8 +186,6 @@ export function SetupPanel({ state }: { state: DockState }) {
           );
         })}
       </div>
-
-      <span className={DIVIDER} />
 
       <div className="flex items-center gap-0.5">
         <DeviceMenu

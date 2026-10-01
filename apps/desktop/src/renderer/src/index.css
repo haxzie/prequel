@@ -59,6 +59,7 @@
 
   --color-dock-bg: var(--dock-bg);
   --color-dock-line: var(--dock-line);
+  --color-dock-group: var(--dock-group);
   --color-dock-fg: var(--dock-fg);
   --color-dock-muted: var(--dock-muted);
   --color-dock-hover: var(--dock-hover);
@@ -662,6 +663,15 @@ body {
      it rather than as a rule between two things. Light enough to find, faint
      enough that a strip of three of them is not what the eye lands on. */
   --dock-line: rgba(255, 255, 255, 0.11);
+  /* The surface the three "what to record" buttons sit on, so they read as one
+     control rather than three neighbours.
+
+     Fainter than `--dock-hover` on purpose: the buttons it holds light up on
+     hover with that value *over* this one, and a group as light as its own
+     hover state leaves the pointer with nothing to say. Translucent white for
+     the reason the divider and the hover are — a dark tone on a dark panel
+     reads as grime rather than as a surface. */
+  --dock-group: rgba(255, 255, 255, 0.055);
   --dock-fg: #eceef1;
   --dock-muted: #98a0a9;
   /* Lighter than the background, and translucent white rather than a fixed
