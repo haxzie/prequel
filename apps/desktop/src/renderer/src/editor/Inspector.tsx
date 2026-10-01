@@ -92,7 +92,6 @@ import {
   PencilIcon,
   PerspectiveIcon,
   PlaceIcon,
-  PlayIcon,
   PortraitIcon,
   AddPresetIcon,
   ApplyAllIcon,
@@ -137,7 +136,7 @@ import {
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
 import { DEFAULT_GRADIENT_ANGLE } from "../../../shared/presets";
 import { ScenePresetCard } from "./controls/ScenePresetCard";
-import { DetachedProvider } from "./controls/Detached";
+import { PushedProvider, usePushedView } from "./controls/PushedView";
 import { FLOATING } from "./surfaces";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import {
@@ -329,17 +328,18 @@ export interface CaptionsState {
  * a value is currently coming from.
  */
 /**
- * Wrapped so the three detached pickers inside share one "which is open".
+ * Wrapped so the lists that take the panel over share one "which is showing".
  *
- * Here rather than deeper in, because the three are in different panels — a
- * colour in Recording, a font in Text, a sound in Audio — and opening one while
- * another is up has to close the first wherever the two happen to live.
+ * Here rather than deeper in, because they are in different panels — a colour
+ * in Recording, a font in Text, a sound in Audio — and the panel they take over
+ * is this one. The provider also owns the slot their content is drawn into,
+ * which only this component knows where to put.
  */
 export function Inspector(props: InspectorProps) {
   return (
-    <DetachedProvider>
+    <PushedProvider>
       <InspectorPanels {...props} />
-    </DetachedProvider>
+    </PushedProvider>
   );
 }
 
@@ -615,11 +615,24 @@ function InspectorPanels(props: InspectorProps) {
    * scrolling, the fade at its top goes with it, and the column between them
    * gains the `min-h-0` that lets the panel's own scroller be bounded.
    */
-  const ownsScroll = !editingCaptions && !tuningFilter && active === "background";
+  /**
+   * A list that has taken the panel over — a colour, a font, a sound.
+   *
+   * The same shape as `editingCaptions` and `tuningFilter` above, and treated
+   * the same way: the header becomes its own with a way back, and the body is
+   * the slot its content is portalled into. It is not a third flag of the same
+   * kind only because the control that owns the content is somewhere else
+   * entirely, so what travels is a title and a place to draw.
+   */
+  const pushed = usePushedView();
+
+  const ownsScroll =
+    !editingCaptions && !tuningFilter && pushed.id === null && active === "background";
 
   const close = () => {
     setCaptionView("options");
     setFilterView("picker");
+    pushed.close();
     props.onClose();
   };
 
@@ -632,6 +645,7 @@ function InspectorPanels(props: InspectorProps) {
           onTab(id);
           setCaptionView("options");
           setFilterView("picker");
+          pushed.close();
           // Both views put back when the panel changes what it is about, so
           // coming back to a category never finds it mid-something.
           setNaming(false);
@@ -646,7 +660,19 @@ function InspectorPanels(props: InspectorProps) {
             number. Out here the header is simply not scrollable, and the tabs
             pin at `top-0` of whatever is left. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {editingCaptions ? (
+          {pushed.id !== null ? (
+            // A list that has taken the panel over. No reset and no apply-to-all:
+            // this is a choice being made, not a section with settings in it, and
+            // the control it belongs to carries both of those on the row it came
+            // from.
+            <PanelHeader
+              title={pushed.title}
+              icon={<showing.Icon />}
+              onBack={pushed.close}
+              clips={slicesOf(state.project).length}
+              onClose={close}
+            />
+          ) : editingCaptions ? (
             // The editor is about the words, not about the selected clip, so
             // the header says so rather than "Clip" — and offers no delete,
             // because Backspace in here already means something.
@@ -734,6 +760,13 @@ function InspectorPanels(props: InspectorProps) {
               for it — `overflow-hidden` and a `min-h-0` chain down to the
               panel, which is what lets a scroller inside it be bounded by the
               window rather than by its own content. */}
+          {/* Deliberately *not* keyed on the pushed list. The key remounts the
+              column, and the control that owns a pushed list lives in it — on
+              the frame the list opened, that control would come back as a new
+              instance with a new generated id, no longer the one the panel was
+              told to show, and the body would be empty with the header still
+              naming it. The scroll position surviving a list opening over it is
+              the right answer anyway. */}
           <div
             key={editingCaptions ? "captions-editor" : tuningFilter ? "filter-options" : active}
             className={cn(
@@ -753,10 +786,22 @@ function InspectorPanels(props: InspectorProps) {
                 mounted and float over the incoming one, and these are a
                 scrolling column of very different heights: the two would have
                 to agree on a size neither has. */}
+            {/* Where a list that has taken the panel over is drawn. Always
+                rendered while one is showing, because the content is portalled
+                into it — a slot that only appeared once something had asked for
+                it would not exist on the frame the asking happened. */}
+            {pushed.id !== null && (
+              <div
+                ref={pushed.setSlot}
+                className="flex min-w-0 flex-1 flex-col p-1 animate-view-in"
+              />
+            )}
+
             <div
               className={cn(
                 "flex min-w-0 flex-1 flex-col animate-view-in",
                 ownsScroll && "min-h-0",
+                pushed.id !== null && "hidden",
               )}
             >
               {editingCaptions && <CaptionEditor {...props.editing} />}
@@ -2049,6 +2094,7 @@ function FilterOptions({
           ) : (
             <Field label={says("variant", "Style")} {...field("effects", "filterVariant")}>
               <Dropdown
+                label={says("variant", "Style")}
                 value={effects.filterVariant}
                 options={spec.variants.map((v) => ({ value: v.id, label: v.label }))}
                 onChange={(value) => set("effects", "filterVariant", value)}
@@ -3254,15 +3300,20 @@ function PlaySampleButton({ label, onClick }: { label: string; onClick: () => vo
       title={`Play ${label}`}
       aria-label={`Play ${label}`}
       // Round, like every other thing that fills in under the pointer here.
-      // It sits inside a row of a dropdown that is itself a pill, so a rounded
-      // square lighting up inside one was the odd shape out at two removes.
+      // It sits inside a row of a list that is itself a column of pills, so a
+      // rounded square lighting up inside one was the odd shape out.
       className={cn(
         "mr-1 grid size-6 flex-none place-items-center rounded-full text-editor-muted",
-        "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3",
+        "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3.5",
       )}
       onClick={onClick}
     >
-      <PlayIcon />
+      {/* A loudspeaker, not a play triangle. At twelve pixels a triangle is a
+          wedge, and it sat on every row of a list whose own chevrons point the
+          same way — two arrowheads a few pixels apart meaning different things.
+          A speaker says the one thing this does that nothing else on the row
+          does: it makes a sound without choosing anything. */}
+      <SpeakerIcon />
     </button>
   );
 }
@@ -3402,6 +3453,7 @@ function AudioPanel({
           </p>
           <Field icon={<KeyboardIcon />} label="Keyboard" {...field("audio", "keySound")}>
             <Dropdown
+              label="Keyboard"
               value={keySound}
               options={[
                 { value: SOUND_OFF, label: "Off" },
@@ -3435,6 +3487,7 @@ function AudioPanel({
           />
           <Field icon={<MouseIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
             <Dropdown
+              label="Mouse clicks"
               value={clickSound}
               options={[
                 { value: SOUND_OFF, label: "Off" },

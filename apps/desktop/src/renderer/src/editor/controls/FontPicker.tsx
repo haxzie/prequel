@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 
 import { cn } from "../../lib/cn";
-import { ChevronDownIcon } from "../icons";
+import { ChevronRightIcon } from "../icons";
 import { hostedFamily, type Fonts } from "../useFonts";
 import { available, CAPTION_FONTS, captionFont, leadFamily, PROBE } from "./fonts";
-import { Detached, useDetached } from "./Detached";
+import { PushedView, usePushed } from "./PushedView";
 import { CONTROL_H } from "./inputs";
 
 /**
@@ -38,8 +38,7 @@ export function FontPicker({
   fonts?: Fonts;
   onChange: (id: string) => void;
 }) {
-  const { open, toggle, close } = useDetached();
-  const row = useRef<HTMLDivElement>(null);
+  const { open, toggle, close } = usePushed("Font");
 
   const shipped = useMemo(() => {
     // One scratch context for the whole test. Creating a canvas per family is
@@ -100,15 +99,14 @@ export function FontPicker({
     groups.flatMap((group) => group.fonts).find((font) => font.id === value) ?? captionFont(value);
 
   return (
-    // Opens beside the panel rather than inside it — see `Detached`. This list
-    // is the longest of the three and was the worst offender: every face the
-    // catalogue carries, pushing the whole of the text panel below it off the
-    // bottom of the window while it was open.
-    <div ref={row} className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+    // Takes the panel over rather than opening inside it — see `PushedView`.
+    // This list is the longest of the three and was the worst offender: every
+    // face the catalogue carries, pushing the whole of the text panel below it
+    // off the bottom of the window while it was open.
+    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
       <button
         type="button"
         aria-expanded={open}
-        aria-haspopup="dialog"
         className={cn(
           "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
           CONTROL_H,
@@ -122,18 +120,12 @@ export function FontPicker({
         <span className="truncate text-[13px] text-white" style={{ fontFamily: chosen.stack }}>
           {chosen.label}
         </span>
-        <span
-          className={cn(
-            "flex-none text-editor-muted transition-transform [&_svg]:size-3",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        >
-          <ChevronDownIcon />
+        <span className="flex-none text-editor-muted [&_svg]:size-3" aria-hidden>
+          <ChevronRightIcon />
         </span>
       </button>
 
-      <Detached anchor={row} open={open && !disabled} label="Font" onClose={close}>
+      <PushedView open={open && !disabled}>
         <div className="flex flex-col gap-0.5" role="radiogroup">
           {groups.map((group) => (
             <div key={group.id} className="flex flex-col gap-0.5">
@@ -173,7 +165,7 @@ export function FontPicker({
             </div>
           ))}
         </div>
-      </Detached>
+      </PushedView>
     </div>
   );
 }

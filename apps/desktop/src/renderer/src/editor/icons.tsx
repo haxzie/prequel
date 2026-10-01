@@ -1162,6 +1162,21 @@ export function ChevronDownIcon() {
   );
 }
 
+/**
+ * Points at what opens *beside* it — a list that takes the panel over.
+ *
+ * A chevron down says "this unfolds here"; these do not unfold, they replace
+ * what is on screen, and the arrow that means that on every platform points the
+ * way the new thing arrives from.
+ */
+export function ChevronRightIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
 /** A shape and the one it casts. */
 export function ShadowIcon() {
   return (

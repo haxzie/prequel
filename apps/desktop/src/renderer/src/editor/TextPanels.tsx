@@ -157,6 +157,7 @@ export function TextContentPanel({ text, fonts, onField, onBeginEdit }: TextPane
           {/* Each row set in its own weight, in the chosen face — the list
               is a sample, like the font list above it. */}
           <Dropdown
+            label="Weight"
             value={String(nearest(weights, style.weight))}
             options={weights.map((weight) => ({
               value: String(weight),

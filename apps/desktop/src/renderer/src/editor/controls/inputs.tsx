@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { useTooltip } from "../../components/Tooltip";
 import { cn } from "../../lib/cn";
-import { ChevronDownIcon } from "../icons";
+import { ChevronDownIcon, ChevronRightIcon } from "../icons";
 import { ColorPicker } from "./ColorPicker";
-import { Detached, useDetached } from "./Detached";
+import { PushedView, usePushed } from "./PushedView";
 
 /**
  * The inspector's four controls.
@@ -666,12 +666,11 @@ export function ColorField({
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const { open, toggle, close } = useDetached();
-  const row = useRef<HTMLDivElement>(null);
+  const { open, toggle } = usePushed(label);
 
   return (
     <div className="flex flex-col">
-      <div ref={row} className={cn("flex items-center gap-2", disabled && "opacity-40")}>
+      <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
         <span className="flex-none text-editor-muted [&_svg]:size-4" aria-hidden>
           {icon}
         </span>
@@ -689,7 +688,6 @@ export function ColorField({
             type="button"
             aria-label={`${label}, as a colour`}
             aria-expanded={open}
-            aria-haspopup="dialog"
             disabled={disabled}
             className={cn(
               "flex flex-none items-center gap-1 pr-1.5 pl-2",
@@ -705,14 +703,8 @@ export function ColorField({
                 it opens, and what opens here is the picker the swatch stands
                 for. Turned over once it is open, which is the one thing saying
                 the panel below belongs to this field. */}
-            <span
-              className={cn(
-                "text-editor-muted transition-transform [&_svg]:size-3",
-                open && "rotate-180",
-              )}
-              aria-hidden
-            >
-              <ChevronDownIcon />
+            <span className="text-editor-muted [&_svg]:size-3" aria-hidden>
+              <ChevronRightIcon />
             </span>
           </button>
 
@@ -751,19 +743,20 @@ export function ColorField({
         </div>
       </div>
 
-      {/* Beside the field rather than under it, and never while it is
-          disabled: a picker left standing open under a greyed field is a panel
-          of live swatches attached to a control that is not taking any.
+      {/* Never while it is disabled: a picker left standing open over a greyed
+          field is a panel of live swatches attached to a control that is not
+          taking any.
 
-          It does not close on a change, which every other detached picker here
-          does. A colour is chosen by dragging around a gradient — the value
-          changes continuously on the way to the one you want — so closing on
-          `onChange` would shut the panel on the first pixel of the drag. It
-          closes on a press outside it, which for this one is also how you say
-          you are finished. */}
-      <Detached anchor={row} open={open && !disabled} label="Colour" onClose={close}>
-        <ColorPicker value={value} onChange={onChange} />
-      </Detached>
+          No close on a change, unlike the lists. A colour is chosen by dragging
+          around a gradient — the value moves continuously on the way to the one
+          you want — so closing on `onChange` would shut the view on the first
+          pixel of the drag. The back arrow is how you leave this one, which is
+          what it is for. */}
+      <PushedView open={open && !disabled}>
+        <div className="p-4">
+          <ColorPicker value={value} onChange={onChange} />
+        </div>
+      </PushedView>
     </div>
   );
 }
@@ -791,12 +784,21 @@ export function percent(value: number): string {
  * shows each face.
  */
 export function Dropdown<T extends string>({
+  label,
   value,
   options,
   disabled,
   action,
   onChange,
 }: {
+  /**
+   * What the list is called once it has taken the panel over.
+   *
+   * Required, not derived from the chosen option: the header has to say what
+   * is being chosen, and "Soft" at the top of a list of sounds says only what
+   * was already true before it opened.
+   */
+  label: string;
   value: T;
   options: { value: T; label: string; style?: CSSProperties }[];
   disabled?: boolean;
@@ -812,16 +814,14 @@ export function Dropdown<T extends string>({
   action?: (option: { value: T; label: string }) => ReactNode;
   onChange: (value: T) => void;
 }) {
-  const { open, toggle, close } = useDetached();
-  const row = useRef<HTMLDivElement>(null);
+  const { open, toggle, close } = usePushed(label);
   const chosen = options.find((option) => option.value === value) ?? options[0];
 
   return (
-    <div ref={row} className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
       <button
         type="button"
         aria-expanded={open}
-        aria-haspopup="dialog"
         className={cn(
           "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
           CONTROL_H,
@@ -832,18 +832,12 @@ export function Dropdown<T extends string>({
         <span className="truncate text-[13px] text-white" style={chosen?.style}>
           {chosen?.label ?? value}
         </span>
-        <span
-          className={cn(
-            "flex-none text-editor-muted transition-transform [&_svg]:size-3",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        >
-          <ChevronDownIcon />
+        <span className="flex-none text-editor-muted [&_svg]:size-3" aria-hidden>
+          <ChevronRightIcon />
         </span>
       </button>
 
-      <Detached anchor={row} open={open && !disabled} label="Choose" onClose={close}>
+      <PushedView open={open && !disabled}>
         <div className="flex flex-col gap-0.5" role="radiogroup">
           {options.map((option) => (
             // The row's surface, rather than the radio itself, so an `action`
@@ -879,7 +873,7 @@ export function Dropdown<T extends string>({
             </div>
           ))}
         </div>
-      </Detached>
+      </PushedView>
     </div>
   );
 }
