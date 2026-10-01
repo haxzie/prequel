@@ -146,24 +146,20 @@ export function SetupPanel({ state }: { state: DockState }) {
       data-panel="setup"
       className="drag flex h-full w-max animate-view-in items-center gap-1.5 px-1.5"
     >
-      {/* Named for where it goes. Dismissing the panel mid-addition returns to
-          the editor the addition was started from, not to the library. */}
-      <IconButton
-        title={state.extending ? "Back to the editor" : "Close"}
-        onClick={() => void window.prequel.dock.close()}
-      >
-        <CloseIcon />
-      </IconButton>
-
       {/* On their own surface rather than fenced off by a rule either side.
           Three buttons between two dividers read as three things that happen to
           be adjacent; one tray holding them reads as the single choice it is —
           and it drops two of the four rules the strip used to carry.
 
+          The fill alone, with no border on it. An edge as well as a fill states
+          the grouping twice on a tray 34px tall, and the one drawn round the
+          outside of three buttons that each light up with an edge of their own
+          is the one that reads as clutter.
+
           Rounded a touch wider than the 30px buttons inside it, so their
           corners nest in its own rather than racing them. */}
       <div
-        className="flex items-center gap-0.5 rounded-[10px] border border-dock-line bg-dock-group p-0.5"
+        className="flex items-center gap-0.5 rounded-[10px] bg-dock-group p-0.5"
         role="radiogroup"
         aria-label="What to record"
       >
@@ -229,12 +225,12 @@ export function SetupPanel({ state }: { state: DockState }) {
         )}
       </div>
 
-      {/* Last, and absent entirely when there is nothing wrong. At the end
-          rather than beside Close because it must not push the controls people
-          reach for before every recording sideways the day it appears. The
-          update button is here for the same reason, and after this one because
-          a missing permission is about the recording that is about to be made
-          and an update is not. */}
+      {/* Towards the end, and absent entirely when there is nothing wrong. Far
+          enough along that it cannot push the controls people reach for before
+          every recording sideways the day it appears. The update button is here
+          for the same reason, and after this one because a missing permission
+          is about the recording that is about to be made and an update is
+          not. */}
       {missing.length > 0 && (
         <>
           <span className={DIVIDER} />
@@ -247,6 +243,20 @@ export function SetupPanel({ state }: { state: DockState }) {
       )}
 
       <UpdateButton />
+
+      {/* Last on the strip. Everything to the left of it is part of setting a
+          recording up and is read left to right; dismissing the panel is the
+          one thing here that is not, so it sits at the far end out of that
+          sequence rather than at the head of it.
+
+          Named for where it goes. Dismissing the panel mid-addition returns to
+          the editor the addition was started from, not to the library. */}
+      <IconButton
+        title={state.extending ? "Back to the editor" : "Close"}
+        onClick={() => void window.prequel.dock.close()}
+      >
+        <CloseIcon />
+      </IconButton>
     </div>
   );
 }
