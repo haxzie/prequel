@@ -1130,7 +1130,13 @@ export function Preview({
       // `transition-[padding]` to match the panel's own: the two move together,
       // so the composition takes the space back exactly as the panel gives it
       // up rather than jumping when it has gone.
-      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6 transition-[padding] duration-200 ease-out"
+      // `relative isolate` for the wash below: a `-z-10` child is only behind
+      // its own stacking context, and without one it goes behind the board's
+      // own `bg-editor-scrim` and is never seen. `overflow-hidden` is what
+      // keeps it on the board, and it clips at the padding box — so the wash
+      // reaches under the floating panel, which is the whole point of it being
+      // on the stage rather than around the picture.
+      className="relative isolate grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6 transition-[padding] duration-200 ease-out"
       // Added to the gutter rather than replacing it, so the picture keeps the
       // same breathing room from the panel that it has from every other edge.
       style={inset ? { paddingRight: `calc(1.5rem + ${inset})` } : undefined}
@@ -1146,16 +1152,33 @@ export function Preview({
         if (event.target === event.currentTarget) setSelected(null);
       }}
     >
+      {/* Two layers, not one with a transition on it. A gradient in
+          `background-image` is not interpolated — Chromium treats it as a
+          discrete value — so a transition there is a snap with a duration
+          written beside it. The outgoing wash stays underneath at full
+          strength while the incoming one fades in over it, which is a
+          crossfade that cannot depend on what the browser is willing to
+          animate. `key` is what makes the new layer a new element with its
+          animation unplayed; without it React updates the style in place and
+          nothing moves. */}
+      {washes.map((wash, index) => (
+        <div
+          key={wash.id}
+          aria-hidden
+          onAnimationEnd={() => setWashes((current) => current.slice(-1))}
+          className={cn(
+            "pointer-events-none absolute -inset-[10%] -z-10 blur-[72px]",
+            // Only the one on top animates; the one underneath is already
+            // where it needs to be and re-running it would flash the board.
+            index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
+          )}
+          style={{ background: wash.css }}
+        />
+      ))}
       {/* Sized to the picture so the ring inside it can be placed in frame
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}
-      {/* `isolate`, and the glow below depends on it entirely. A `-z-10` child
-          is only *behind its own stacking context* — without one it is behind
-          whatever ancestor paints a background, and the board above this is
-          `bg-editor-scrim`, so the wash was drawn perfectly and then covered by
-          the surface it was meant to light. Isolating here keeps it under the
-          canvas and over the board. */}
-      <div className="relative isolate" style={{ width: fitted.width, height: fitted.height }}>
+      <div className="relative" style={{ width: fitted.width, height: fitted.height }}>
         {/* The background's own colours, thrown on the board behind the
             composition — see `ambience.ts`. Outside the picture on every side
             and heavily blurred, so what reaches the eye is light rather than a
@@ -1169,29 +1192,6 @@ export function Preview({
             `transition-[background]` because the swatch that changes it is a
             click away in the panel beside this, and a wash that snapped from
             one set of colours to another would read as a flash. */}
-        {/* Two layers, not one with a transition on it. A gradient in
-            `background-image` is not interpolated — Chromium treats it as a
-            discrete value — so a transition there is a snap with a duration
-            written beside it. The outgoing wash stays underneath at full
-            strength while the incoming one fades in over it, which is a
-            crossfade that cannot depend on what the browser is willing to
-            animate. `key` is what makes the new layer a new element with its
-            animation unplayed; without it React updates the style in place and
-            nothing moves. */}
-        {washes.map((wash, index) => (
-          <div
-            key={wash.id}
-            aria-hidden
-            onAnimationEnd={() => setWashes((current) => current.slice(-1))}
-            className={cn(
-              "pointer-events-none absolute -inset-[22%] -z-10 blur-[72px]",
-              // Only the one on top animates; the one underneath is already
-              // where it needs to be and re-running it would flash the board.
-              index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
-            )}
-            style={{ background: wash.css }}
-          />
-        ))}
         {/* Over the canvas rather than instead of it. The canvas has to keep
             its box — the ring, the handles and the hit testing are all placed
             against its size — and it has to keep painting, so what is revealed
@@ -1211,7 +1211,13 @@ export function Preview({
           // `ready`. `visibility` and not `opacity`, because a transparent
           // canvas still catches the pointer, and a drag begun on a picture
           // nobody can see yet would move it.
-          className="block rounded-lg shadow-2xl"
+          // Cast down and well spread, rather than Tailwind's own `shadow-2xl`.
+          // That one was drawn for a card on a flat surface; this picture now
+          // sits in a pool of its background's own light, and a shadow tight
+          // enough to read against plain board disappears into a lit one. A
+          // long, soft, mostly-downward fall is what separates the two — the
+          // picture is the thing in front, and the glow is behind it.
+          className="block rounded-lg shadow-[0_28px_70px_-16px_rgba(0,0,0,0.8),0_6px_18px_-6px_rgba(0,0,0,0.5)]"
           // Explicit pixels rather than a percentage: see the note above on why
           // `max-h-full` cannot be relied on here.
           style={{

@@ -1020,16 +1020,27 @@ function RailButton({
 /**
  * The panel itself: a full-height column against the window edge.
  *
- * `bg-editor-veil`, the timeline's surface rather than `--editor-panel`, so the
- * two meet as one continuous chrome down the right and along the bottom instead
- * of as two panels of slightly different greys.
+ * It took `--editor-veil` for a long time, the timeline's near-solid surface,
+ * so the two met as one continuous chrome down the right and along the bottom
+ * rather than as two panels of slightly different greys. That argument was
+ * right while this sat *beside* the board. It floats over it now, and over a
+ * board lit by the background's own colours — so a surface at 93% is a panel
+ * with a wash of colour stopping dead underneath it, which is the one thing
+ * the glow was meant to avoid.
+ *
+ * `--editor-scrim` and a backdrop blur instead: the same tone the library
+ * reads a grid of recordings against, so small text is still comfortably on a
+ * surface, with just enough of the light coming through to say the panel is
+ * sitting on something. The blur is what keeps it a material rather than a
+ * tinted sheet — without it the gradient behind reads straight through as a
+ * gradient, and the panel looks transparent rather than frosted.
  *
  * A left border and no shadow: square and flush, the only edge that exists is
- * the one facing the composition, and a drop shadow with nothing to float over
- * reads as a seam rather than as depth. `overflow-hidden` still earns its place
- * — it keeps the scrolling content off the border.
+ * the one facing the composition. `overflow-hidden` still earns its place —
+ * it keeps the scrolling content off the border.
  */
-const PANEL = "flex w-80 flex-none overflow-hidden border-l border-editor-line bg-editor-veil";
+const PANEL =
+  "flex w-80 flex-none overflow-hidden border-l border-editor-line bg-editor-scrim backdrop-blur-2xl";
 
 /**
  * What the pair occupies when open.
