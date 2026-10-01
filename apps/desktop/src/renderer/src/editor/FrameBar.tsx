@@ -128,11 +128,10 @@ export function FrameBar({
           <ul
             className={
               // Anchored to the trigger now that the bar is centred, rather
-              // than to the window's left edge — and opening *upwards*, because
-              // the bar sits at the foot of the board. Downwards it would run
-              // straight into the transport, and this list is tall enough that
-              // most of it would be off the board entirely.
-              "absolute bottom-full left-1/2 z-20 mb-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
+              // than to the window's left edge. Downwards again: the bar is
+              // back at the head of the board, where the whole height of it is
+              // below the list's anchor.
+              "absolute top-full left-1/2 z-20 mt-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
               "border border-editor-line bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
             }
             role="listbox"

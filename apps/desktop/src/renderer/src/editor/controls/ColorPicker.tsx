@@ -101,7 +101,10 @@ function Area({
     <div
       role="application"
       aria-label="Saturation and brightness"
-      className="relative h-28 w-full cursor-crosshair touch-none overflow-hidden rounded-md"
+      // `rounded-xl`, not a pill: this is a field to pick a point out of, not
+      // a control on a row, and rounding a rectangle this tall into a capsule
+      // would cut the corners off the very colours being chosen from.
+      className="relative h-28 w-full cursor-crosshair touch-none overflow-hidden rounded-xl"
       // White to the hue across, then black up from the bottom. Two layers
       // rather than one: it is the standard construction, and it means the hue
       // is the only thing that changes when the strip moves.

@@ -35,7 +35,7 @@ import {
 import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { TITLE_BAR } from "./surfaces";
+import { FRAME_BAR, TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
@@ -1320,16 +1320,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 column now runs the full width of the board, and a bar centred
                 in it would sit off-centre over the part of the board anybody
                 can see. */}
-            {/* Under the picture rather than over it. It was at the top, which
-                put two bars across the head of the window — the title bar and
-                this — with the composition pushed down below both. The frame is
-                a property of the thing above it now, and the space it sits in
-                is the space the transport already occupies on the other side of
-                the seam, so the window reads as picture-in-the-middle rather
-                than as chrome-then-picture. */}
+            {/* Above the picture, under the title bar. It sat below for a
+                while, in the space the transport occupies on the other side of
+                the seam — which balanced the window and put the frame's own
+                controls at the far end from the frame. */}
             <div
-              className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center transition-[padding] duration-200 ease-out"
-              style={{ paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
+              className="pointer-events-none absolute inset-x-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
+              style={{ top: TITLE_BAR, paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
             >
               <span className="pointer-events-auto">
                 <FrameBar
@@ -1343,11 +1340,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // The room the floating panel needs. The stage keeps the picture
               // out from under it while the board itself runs the whole width.
               inset={panelOpen ? PANEL_WIDTH : undefined}
-              // And the room the bars need. The title bar is above — the board
-              // is the full height of the window, so the picture keeps clear of
-              // it itself — and the frame bar is below.
-              headroom={`calc(${TITLE_BAR} + 1.5rem)`}
-              footroom="3.75rem"
+              // The room the two bars above need, and then the same gutter the
+              // picture has from the transport below it. Written as one sum so
+              // the two gaps are the same number rather than two numbers that
+              // happen to agree: the space over the picture and the space under
+              // it are read together, and a window where they differ by four
+              // pixels looks like it is sagging.
+              headroom={`calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`}
+              footroom="1.5rem"
               ready={ready}
               frame={state.project.frame}
               settings={previewSettings}

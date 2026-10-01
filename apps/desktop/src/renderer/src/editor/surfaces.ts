@@ -20,6 +20,18 @@
 export const TITLE_BAR = "2.625rem";
 
 /**
+ * How tall the frame bar is.
+ *
+ * Measured from the thing rather than imposed on it — the bar is a row of
+ * controls and its height comes from them — so this is a number to keep in step
+ * with it, and the one thing that reads it is the stage's headroom. It has to
+ * be here because the bar floats: the board runs the full height of the window
+ * so the dots and the light reach the top, which means nothing above the
+ * picture takes a row, which means the picture has to hold its own space clear.
+ */
+export const FRAME_BAR = "2.375rem";
+
+/**
  * What the editor's floating things are made of.
  *
  * One constant rather than the same four utilities written out wherever

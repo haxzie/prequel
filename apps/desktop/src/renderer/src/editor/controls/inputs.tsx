@@ -139,15 +139,20 @@ export function Slider({
             grip is the thing being reached for, so it is the thing that should
             answer.
 
-            A dot, where it was a short vertical rule. The rule was right on a
-            squared-off track: it echoed the track's own corners and read as a
-            division of it. In a pill it was the one straight edge left in the
-            control, and the shape that says "this moves along a line" is the
-            thing that moves, not a second line. */}
+            A rule and not a dot, which it was for about ten minutes. A disc
+            wide enough to read is wide enough to swallow a letter of the label
+            it travels across — and the label is white, so whichever of the two
+            is on top the other is simply gone. Two pixels of rule cross a word
+            without destroying it, which is the whole reason this shape was
+            chosen for a control whose label lives inside its track.
+
+            Dimmed at rest. It only has to be found when somebody is reaching
+            for it, and at full white it was the brightest thing in a panel of
+            muted rows. */}
           <span
             className={cn(
-              "absolute top-1/2 right-1 size-2.5 -translate-y-1/2 rounded-full transition-colors",
-              disabled ? "bg-white/40" : "bg-white group-hover:bg-toggle",
+              "absolute top-1/2 right-2 h-3.5 w-0.5 -translate-y-1/2 rounded-full transition-colors",
+              disabled ? "bg-white/40" : "bg-white/60 group-hover:bg-toggle",
             )}
           />
         </div>
@@ -158,16 +163,20 @@ export function Slider({
           <span
             key={at}
             aria-hidden
-            // Dots too, matching the grip. These are the notches a slider
-            // snaps to; a tick in a different shape from the thing that lands
-            // on it reads as two unrelated marks.
-            className="pointer-events-none absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/25"
+            // Rules, matching the grip. These are the notches a slider snaps
+            // to, and a tick in a different shape from the thing that lands on
+            // it reads as two unrelated marks.
+            className="pointer-events-none absolute top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-white/25"
             style={{ left: `${String(at)}%` }}
           />
         ))}
 
-        {/* Over the fill and under the input, so the words never eat a drag. */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2.5 text-[11px]">
+        {/* Over the fill and under the input, so the words never eat a drag.
+            `z-10` says so rather than leaving it to paint order: the grip
+            travels the length of the row, so at some value it is always behind
+            some letter, and which way round that lands should not depend on
+            the order two siblings happen to be written in. */}
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between gap-2 px-2.5 text-[11px]">
           {/* Overridden fields still say so through the label's weight, the way
             they did when the label was `Field`'s. */}
           <span className={cn("truncate text-white", overridden && "font-medium")}>{label}</span>
@@ -686,7 +695,10 @@ export function ColorField({
             )}
             onClick={() => setOpen((was) => !was)}
           >
-            <span className="size-4 rounded-[3px]" style={{ backgroundColor: value }} aria-hidden />
+            {/* Round, like the slider's grip and everything else in a row
+                here. A rounded square of colour beside a pill of text was the
+                last squared-off thing left in the panels. */}
+            <span className="size-4 rounded-full" style={{ backgroundColor: value }} aria-hidden />
             {/* After the swatch, not before it: a chevron leads the eye to what
                 it opens, and what opens here is the picker the swatch stands
                 for. Turned over once it is open, which is the one thing saying
