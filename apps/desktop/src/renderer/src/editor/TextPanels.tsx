@@ -30,7 +30,7 @@ import {
   FadeIcon,
   FromLeftIcon,
   FromRightIcon,
-  NoMotionIcon,
+  NoneIcon,
   PopIcon,
   RiseIcon,
   TypewriterIcon,
@@ -89,9 +89,36 @@ export interface TextPanelProps {
   fonts: Fonts;
   onChange: (patch: TextPatch) => void;
   onField: (index: number, patch: { text?: string; style?: Partial<TextStyle> }) => void;
+  /**
+   * Stand a hovered face in for this field's, or clear it with null.
+   *
+   * The weight travels with it because the commit adjusts it — see
+   * `settleFont`. The field's index rather than the field, because the editor
+   * holds this beside the project and has to find the field again later.
+   */
+  onPreviewFont: (index: number, style: { font: string; weight: number } | null) => void;
   onTemplate: (templateId: string) => void;
   /** A new run of typing is starting, so it is its own undo step. */
   onBeginEdit: () => void;
+}
+
+/**
+ * A face, and the weight to wear it at.
+ *
+ * Landed on a weight the family really has, or the engine fakes one until the
+ * real bold arrives and the picture changes under the hand that chose it. A
+ * macOS face offers no listing, so its own weight stands.
+ *
+ * Lifted out of the picker's `onChange` because the hover preview has to make
+ * exactly the same choice: a preview drawn at 700 that the click resolves to
+ * 600 is a list that lies about what it is offering.
+ */
+function settleFont(fonts: Fonts, font: string, style: TextStyle): { font: string; weight: number } {
+  const offered = fonts.variants(font);
+  const weight = offered
+    ? nearest([...new Set(offered.map((variant) => variant.weight))], style.weight)
+    : style.weight;
+  return { font, weight };
 }
 
 /**
@@ -101,7 +128,13 @@ export interface TextPanelProps {
  * and its title are set differently, and every control below answers for
  * the one that is picked. The row is not shown for a text with one field.
  */
-export function TextContentPanel({ text, fonts, onField, onBeginEdit }: TextPanelProps) {
+export function TextContentPanel({
+  text,
+  fonts,
+  onField,
+  onPreviewFont,
+  onBeginEdit,
+}: TextPanelProps) {
   const [index, setIndex] = useState(0);
   // A template with fewer fields than the one before leaves the pick past the
   // end; the first field is the one to land on.
@@ -146,16 +179,14 @@ export function TextContentPanel({ text, fonts, onField, onBeginEdit }: TextPane
           <FontPicker
             value={style.font}
             fonts={fonts}
-            onChange={(font) => {
-              // Landed on a weight the family has, or the engine fakes one
-              // until the real bold arrives and the picture changes under
-              // the hand that chose it.
-              const offered = fonts.variants(font);
-              const weight = offered
-                ? nearest([...new Set(offered.map((variant) => variant.weight))], style.weight)
-                : style.weight;
-              set({ font, weight });
-            }}
+            // The same resolution the click makes, so the face the pointer
+            // puts on the picture is the face the click leaves there. Two
+            // copies of "which weight does this family have" is how a preview
+            // and the thing it previews come to disagree.
+            onPreview={(font) =>
+              onPreviewFont(index, font === null ? null : settleFont(fonts, font, style))
+            }
+            onChange={(font) => set(settleFont(fonts, font, style))}
           />
         </Field>
 
@@ -482,7 +513,7 @@ export function TextMotionPanel({ text, onChange }: TextPanelProps) {
  * with the plan and knows nothing about SVG.
  */
 const MOTION_ICONS: Record<TextMotionId, () => React.ReactElement> = {
-  none: NoMotionIcon,
+  none: NoneIcon,
   fade: FadeIcon,
   rise: RiseIcon,
   drop: DropIcon,

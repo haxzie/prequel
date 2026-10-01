@@ -838,14 +838,16 @@ export function MoveIcon() {
   );
 }
 
-// ── Text motions ────────────────────────────────────────────────────────────
-//
-// One glyph per way a text can arrive or leave, for the picker to set beside
-// each name. Every one is Lucide's, so the row of them reads as one set: the
-// arrows are `move-*`, which carry the whole line the text travels along.
-
-/** Lucide `ban`: no motion at all. */
-export function NoMotionIcon() {
+/**
+ * Lucide `ban`: the option that is the absence of the thing — no motion at
+ * all, no keyboard sound, no click.
+ *
+ * Outside the motions block below, and named for what it means rather than
+ * for where it was first used. It was `NoMotionIcon`, and the sound lists
+ * wanting the same glyph for "Off" would have left every list but one
+ * importing a name that describes a different list.
+ */
+export function NoneIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">
       <circle cx="12" cy="12" r="10" />
@@ -853,6 +855,13 @@ export function NoMotionIcon() {
     </svg>
   );
 }
+
+// ── Text motions ────────────────────────────────────────────────────────────
+//
+// One glyph per way a text can arrive or leave, for the picker to set beside
+// each name. Every one is Lucide's, so the row of them reads as one set: the
+// arrows are `move-*`, which carry the whole line the text travels along.
+// `NoneIcon` above stands in for "no motion", which is not only this list's.
 
 /** Lucide `circle-dashed`: a shape that is only partly there. */
 export function FadeIcon() {

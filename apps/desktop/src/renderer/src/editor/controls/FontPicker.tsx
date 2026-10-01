@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { cn } from "../../lib/cn";
-import { ChevronRightIcon } from "../icons";
+import { ChevronRightIcon, FontIcon } from "../icons";
 import { hostedFamily, type Fonts } from "../useFonts";
 import { available, CAPTION_FONTS, captionFont, leadFamily, PROBE } from "./fonts";
 import { PushedView, usePushed } from "./PushedView";
@@ -29,6 +29,7 @@ export function FontPicker({
   value,
   disabled,
   fonts,
+  onPreview,
   onChange,
 }: {
   value: string;
@@ -36,6 +37,15 @@ export function FontPicker({
   /** The hosted catalogue and its loader. Absent for captions, which offer
       the shipped faces alone. */
   fonts?: Fonts;
+  /**
+   * The face under the pointer, or null for none.
+   *
+   * The row shows the letterforms; this shows them at the size, colour and
+   * weight they will be, over the picture they will be over — which is the
+   * question actually being asked of a font list in a video editor. Never a
+   * commit: see `FontPreview`.
+   */
+  onPreview?: (id: string | null) => void;
   onChange: (id: string) => void;
 }) {
   const { open, toggle, close } = usePushed("Font");
@@ -95,6 +105,24 @@ export function FontPicker({
     }
   }, [open, fonts]);
 
+  /**
+   * Dropping the preview when the list goes away.
+   *
+   * A row's `onPointerLeave` covers the pointer moving off it, but not the two
+   * ways the list stops existing under a pointer that never moved: the click
+   * that chooses a face closes the view, and the back arrow closes it from the
+   * header. Either would leave the hovered face standing in for a project
+   * setting with nothing on screen to say it was doing so.
+   *
+   * Through a ref so the cleanup is not torn down and re-run every time the
+   * callback's identity changes — it is an inline closure at both call sites,
+   * so that is every render, and re-running this would clear a preview the
+   * pointer is still sitting on.
+   */
+  const preview = useRef(onPreview);
+  preview.current = onPreview;
+  useEffect(() => () => preview.current?.(null), [open]);
+
   const chosen =
     groups.flatMap((group) => group.fonts).find((font) => font.id === value) ?? captionFont(value);
 
@@ -143,7 +171,7 @@ export function FontPicker({
                   role="radio"
                   aria-checked={font.id === value}
                   className={cn(
-                    "flex items-center rounded-full px-2.5 text-left text-[13px] transition-colors",
+                    "flex items-center gap-2 rounded-full px-2.5 text-left text-[13px] transition-colors",
                     CONTROL_H,
                     font.id === value
                       ? "bg-white/12 text-editor-fg"
@@ -154,12 +182,30 @@ export function FontPicker({
                   // Tailwind class generated for every entry in a list that is
                   // meant to be edited.
                   style={{ fontFamily: font.stack }}
+                  // Pointer rather than mouse events, so a face previews under
+                  // a trackpad hover and a pen alike. Cleared on leave rather
+                  // than on the next row's enter: the rows have a gap between
+                  // them, and a pointer resting in it would otherwise hold the
+                  // last row's face on the picture indefinitely.
+                  onPointerEnter={() => onPreview?.(font.id)}
+                  onPointerLeave={() => onPreview?.(null)}
                   onClick={() => {
                     onChange(font.id);
                     close();
                   }}
                 >
-                  {font.label}
+                  {/* The same glyph down every row, as in the sound lists.
+                      Outside the `fontFamily` the label carries — an SVG
+                      ignores it, but the gap and the truncation have to be
+                      the row's rather than the sample's, or a long family
+                      name squeezes the glyph instead of ellipsing itself. */}
+                  <span
+                    className="flex-none text-editor-muted opacity-70 [&_svg]:size-3.5"
+                    aria-hidden
+                  >
+                    <FontIcon />
+                  </span>
+                  <span className="truncate">{font.label}</span>
                 </button>
               ))}
             </div>

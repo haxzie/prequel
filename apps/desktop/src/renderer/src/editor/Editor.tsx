@@ -56,6 +56,7 @@ import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
+import { withFontPreview, type FontPreview } from "./fontPreview";
 import { useTextBitmaps } from "./useTextBitmaps";
 import { useCursorTags } from "./useCursorTags";
 import { useTranscription } from "./useTranscription";
@@ -348,6 +349,33 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const previewSettings = useMemo(
     () => settingsOf(state.project, media.sliceId),
     [state.project, media.sliceId],
+  );
+
+  /** The face under the pointer in a font list, if one is. See `FontPreview`. */
+  const [fontPreview, setFontPreview] = useState<FontPreview | null>(null);
+
+  /**
+   * The project as the preview draws it, which is not quite the project.
+   *
+   * The only difference is a hovered face, and it exists for exactly as long as
+   * the pointer is on a row. Everything that *reads* the project — the
+   * inspector, the saver, `savePreset` — keeps `state.project`, because a look
+   * saved mid-hover would carry a font nobody chose, and a panel reading from
+   * here would show the hovered row as the setting and so as the thing to
+   * reset.
+   *
+   * Identical to `state.project` by identity when nothing is hovered, which is
+   * nearly always; see `withFontPreview`.
+   */
+  const drawnProject = useMemo(
+    () => withFontPreview(state.project, fontPreview),
+    [state.project, fontPreview],
+  );
+
+  /** `previewSettings`, with the hovered face standing in. What is on screen. */
+  const drawnSettings = useMemo(
+    () => settingsOf(drawnProject, media.sliceId),
+    [drawnProject, media.sliceId],
   );
 
   /**
@@ -755,11 +783,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     transcript,
     // The whole project, not one clip's settings: caption looks are per clip,
     // so this has to see every override to know which sets to draw.
-    state.project,
+    //
+    // The drawn project rather than the real one, so a hovered face is
+    // rasterised and appears on the cues. The rasteriser is debounced, which is
+    // what makes that affordable: crossing a list of forty faces asks for one
+    // set of bitmaps, for the row the pointer came to rest on.
+    drawnProject,
     captionFrame,
   );
   const fonts = useFonts();
-  const textBitmaps = useTextBitmaps(session, state.project, captionFrame, fonts);
+  const textBitmaps = useTextBitmaps(session, drawnProject, captionFrame, fonts);
   const cursorTags = useCursorTags(session, state.project, setImages);
   /**
    * Every text's bitmaps by when it is on screen, for the image cache.
@@ -1356,7 +1389,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               footroom="1.5rem"
               ready={ready}
               frame={state.project.frame}
-              settings={previewSettings}
+              // `drawnSettings`, not `previewSettings`: the compositor looks the
+              // cue bitmaps up by `captionLook(settings.captions)`, so handing
+              // it the project's font while `useCaptions` rasterised the
+              // hovered one would miss the key and fall through to the stale
+              // set — the hover would cost the work and show nothing.
+              settings={drawnSettings}
               enter={previewEnter}
               media={media}
               images={images}
@@ -1456,6 +1494,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               fonts={fonts}
               onPreviewZoom={previewZoom}
               onPreviewText={previewText}
+              onPreviewFont={setFontPreview}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing
               // the other is free where asking which is live is a branch that

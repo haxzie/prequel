@@ -70,6 +70,7 @@ import {
   KeyboardIcon,
   MouseIcon,
   MoveIcon,
+  NoneIcon,
   PersonIcon,
   DepthIcon,
   DropletIcon,
@@ -157,6 +158,7 @@ import {
   type TextTabId,
 } from "./TextPanels";
 import type { Fonts } from "./useFonts";
+import type { FontPreview } from "./fontPreview";
 
 export interface InspectorProps {
   state: EditorState;
@@ -230,6 +232,15 @@ export interface InspectorProps {
    * just changed. Debounced by the caller, like `onPreviewZoom`.
    */
   onPreviewText: (part: "enter" | "exit" | "all") => void;
+  /**
+   * Stand a hovered face in for the one the project carries, or clear it.
+   *
+   * Not `onPreviewText`'s sibling despite the name: that one replays a motion
+   * the panel has already committed, and this one shows something the project
+   * does not say. The editor holds it beside the project rather than in it —
+   * see `FontPreview`.
+   */
+  onPreviewFont: (preview: FontPreview | null) => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
   /** Opens the file picker for a logo, and copies it into the recording. */
@@ -525,6 +536,10 @@ function InspectorPanels(props: InspectorProps) {
       },
       onField: (index: number, patch: { text?: string; style?: Partial<TextStyle> }) =>
         dispatch({ type: "setTextField", textId: text.id, index, patch }),
+      onPreviewFont: (index: number, style: { font: string; weight: number } | null) =>
+        props.onPreviewFont(
+          style === null ? null : { what: "text", textId: text.id, field: index, ...style },
+        ),
       onTemplate: (templateId: string) => {
         dispatch({ type: "applyTextTemplate", textId: text.id, templateId });
         props.onPreviewText("all");
@@ -989,6 +1004,7 @@ function InspectorPanels(props: InspectorProps) {
                     captions={props.captions}
                     field={field}
                     set={set}
+                    onPreviewFont={props.onPreviewFont}
                     onEdit={() => setCaptionView("edit")}
                   />
                 )}
@@ -2758,12 +2774,14 @@ function CaptionsPanel({
   captions,
   field,
   set,
+  onPreviewFont,
   onEdit,
 }: {
   settings: SliceSettings;
   captions: CaptionsState;
   field: FieldProps;
   set: Setter;
+  onPreviewFont: (preview: FontPreview | null) => void;
   /** Open the words for correction. */
   onEdit: () => void;
 }) {
@@ -2823,6 +2841,15 @@ function CaptionsPanel({
           <FontPicker
             value={values.captionFont}
             disabled={!values.captionsOn}
+            // Only while there are words to set in it. With captions off the
+            // picker is dead anyway, but a recording with no speech draws no
+            // cues either, and a hover there would re-rasterise nothing at all
+            // on every row crossed.
+            onPreview={
+              off
+                ? undefined
+                : (font) => onPreviewFont(font === null ? null : { what: "captions", font })
+            }
             onChange={(id) => set("captions", "captionFont", id)}
           />
         </Field>
@@ -3530,6 +3557,11 @@ function AudioPanel({
                 { value: SOUND_OFF, label: "Off" },
                 ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
               ]}
+              // The keyboard again on every row, the way the field above the
+              // list carries it: once the list has taken the panel over, the
+              // header is the only thing left saying what these ten names are
+              // names of. Off is the one row that is not a keyboard.
+              icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <KeyboardIcon />)}
               // Every row but Off, which has nothing to play.
               action={(option) =>
                 option.value === SOUND_OFF ? null : (
@@ -3564,6 +3596,7 @@ function AudioPanel({
                 { value: SOUND_OFF, label: "Off" },
                 ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
               ]}
+              icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <MouseIcon />)}
               action={(option) =>
                 option.value === SOUND_OFF ? null : (
                   <PlaySampleButton

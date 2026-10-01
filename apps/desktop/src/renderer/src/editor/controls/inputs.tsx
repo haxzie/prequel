@@ -788,6 +788,7 @@ export function Dropdown<T extends string>({
   value,
   options,
   disabled,
+  icon,
   action,
   onChange,
 }: {
@@ -802,6 +803,19 @@ export function Dropdown<T extends string>({
   value: T;
   options: { value: T; label: string; style?: CSSProperties }[];
   disabled?: boolean;
+  /**
+   * The glyph at the left-hand end of each open row.
+   *
+   * One icon for the whole list, not one per option: it says what kind of
+   * thing is being chosen — a keyboard, a mouse, a face — and repeating it
+   * down the rows is the point. Picking a different glyph per row would make
+   * the column read as a second set of labels competing with the names.
+   *
+   * A render prop anyway, like `action`, for the one row that is not of that
+   * kind: "Off" is the absence of a sound rather than a quieter one, and it
+   * takes `NoneIcon`. The caller knows which row that is; this does not.
+   */
+  icon?: (option: { value: T; label: string }) => ReactNode;
   /**
    * A control at the right-hand end of each open row — the sound pickers' play
    * button, which auditions a keyboard without choosing it.
@@ -855,7 +869,7 @@ export function Dropdown<T extends string>({
                 role="radio"
                 aria-checked={option.value === value}
                 className={cn(
-                  "flex min-w-0 flex-1 items-center px-2.5 text-left text-[13px]",
+                  "flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-[13px]",
                   CONTROL_H,
                   option.value === value
                     ? "text-editor-fg"
@@ -867,7 +881,23 @@ export function Dropdown<T extends string>({
                   close();
                 }}
               >
-                {option.label}
+                {icon && (
+                  // Dimmer than the name, in the chosen row as much as the
+                  // rest: it is the same picture all the way down, and at the
+                  // label's strength a column of identical glyphs pulls harder
+                  // than the names that are what actually differ.
+                  //
+                  // `flex-none` with the truncation moved onto the label, or a
+                  // long family name squeezes the glyph to nothing instead of
+                  // ellipsing itself.
+                  <span
+                    className="flex-none text-editor-muted opacity-70 [&_svg]:size-3.5"
+                    aria-hidden
+                  >
+                    {icon(option)}
+                  </span>
+                )}
+                <span className="truncate">{option.label}</span>
               </button>
               {action?.(option)}
             </div>
