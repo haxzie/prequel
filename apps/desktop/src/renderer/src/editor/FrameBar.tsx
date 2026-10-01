@@ -9,6 +9,7 @@ import {
 } from "../../../shared/presets";
 import type { Size } from "../../../shared/layout";
 import { cn } from "../lib/cn";
+import { FLOATING } from "./surfaces";
 
 export interface Frame {
   width: number;
@@ -60,12 +61,25 @@ export function FrameBar({
   };
 
   return (
-    // No rule under it and no surface of its own: it sits on the same ground
-    // the composition does, so the eye goes to the frame rather than to a bar
-    // above it. Centred for the same reason — the controls belong to the thing
-    // in the middle, not to the left edge of the window.
+    // A surface of its own, the same one the dock and the inspector are made
+    // of. It had none for a long time, on the argument that it sits on the same
+    // ground the composition does so the eye goes to the frame rather than to a
+    // bar above it — which was right while it *was* a bar above it, taking a row
+    // of its own at the top of the column.
+    //
+    // It floats on the board now, over light the recording itself is casting,
+    // and a row of bare controls out there is the one group in the window with
+    // nothing holding it together. Pill-shaped like the dock rather than
+    // rounded like the panel: both of those are a line of controls, and the
+    // panel is a page of them.
+    //
+    // Still centred, and for the original reason — the controls belong to the
+    // thing in the middle, not to the left edge of the window.
     <div
-      className="relative flex flex-none items-center justify-center gap-3 px-4 py-2"
+      className={cn(
+        "relative flex flex-none items-center justify-center gap-3 rounded-full px-4 py-1.5",
+        FLOATING,
+      )}
       data-panel="frame-bar"
     >
       {/* White, not `--editor-muted`. That tone was chosen against the opaque
@@ -114,8 +128,11 @@ export function FrameBar({
           <ul
             className={
               // Anchored to the trigger now that the bar is centred, rather
-              // than to the window's left edge.
-              "absolute top-full left-1/2 z-20 mt-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
+              // than to the window's left edge — and opening *upwards*, because
+              // the bar sits at the foot of the board. Downwards it would run
+              // straight into the transport, and this list is tall enough that
+              // most of it would be off the board entirely.
+              "absolute bottom-full left-1/2 z-20 mb-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
               "border border-editor-line bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
             }
             role="listbox"

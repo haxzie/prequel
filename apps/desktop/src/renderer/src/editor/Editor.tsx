@@ -1320,13 +1320,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 column now runs the full width of the board, and a bar centred
                 in it would sit off-centre over the part of the board anybody
                 can see. */}
+            {/* Under the picture rather than over it. It was at the top, which
+                put two bars across the head of the window — the title bar and
+                this — with the composition pushed down below both. The frame is
+                a property of the thing above it now, and the space it sits in
+                is the space the transport already occupies on the other side of
+                the seam, so the window reads as picture-in-the-middle rather
+                than as chrome-then-picture. */}
             <div
-              className="pointer-events-none absolute inset-x-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
-              // Below the title bar, which floats over this column now — the
-              // board runs the full height of the window so the dots and the
-              // glow reach the top of it, and everything that is not board has
-              // to keep out of the bar's way itself.
-              style={{ top: TITLE_BAR, paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
+              className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center transition-[padding] duration-200 ease-out"
+              style={{ paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
             >
               <span className="pointer-events-auto">
                 <FrameBar
@@ -1340,10 +1343,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // The room the floating panel needs. The stage keeps the picture
               // out from under it while the board itself runs the whole width.
               inset={panelOpen ? PANEL_WIDTH : undefined}
-              // And the room the title bar and the frame bar need above it, for
-              // the same reason: the board is the full height of the window and
-              // the picture has to stay clear of what floats on it.
-              headroom={`calc(${TITLE_BAR} + 3.5rem)`}
+              // And the room the bars need. The title bar is above — the board
+              // is the full height of the window, so the picture keeps clear of
+              // it itself — and the frame bar is below.
+              headroom={`calc(${TITLE_BAR} + 1.5rem)`}
+              footroom="3.75rem"
               ready={ready}
               frame={state.project.frame}
               settings={previewSettings}

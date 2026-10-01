@@ -93,6 +93,7 @@ export type Grabbable = PlanSource | "watermark";
 export function Preview({
   inset,
   headroom,
+  footroom,
   ready,
   frame,
   settings,
@@ -151,6 +152,8 @@ export function Preview({
    * so this is what keeps the picture out from under them.
    */
   headroom?: string;
+  /** The same, for the frame bar under it. */
+  footroom?: string;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
   /**
@@ -1145,12 +1148,13 @@ export function Preview({
       // keeps it on the board, and it clips at the padding box — so the wash
       // reaches under the floating panel, which is the whole point of it being
       // on the stage rather than around the picture.
-      className="relative isolate grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pb-6 transition-[padding] duration-200 ease-out"
+      className="relative isolate grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 transition-[padding] duration-200 ease-out"
       // Both added to the gutter rather than replacing it, so the picture keeps
       // the same breathing room from the bars and the panel that it has from
       // every other edge.
       style={{
         paddingTop: headroom ?? "1.5rem",
+        paddingBottom: footroom ?? "1.5rem",
         ...(inset ? { paddingRight: `calc(1.5rem + ${inset})` } : {}),
       }}
       // The dotted surround. A click that lands out here is the same "nothing"

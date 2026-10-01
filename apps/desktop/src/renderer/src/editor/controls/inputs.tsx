@@ -137,10 +137,16 @@ export function Slider({
             only part that says it can be dragged. White at rest, where it was
             dark while the fill behind it was solid white. Green on hover — the
             grip is the thing being reached for, so it is the thing that should
-            answer. */}
+            answer.
+
+            A dot, where it was a short vertical rule. The rule was right on a
+            squared-off track: it echoed the track's own corners and read as a
+            division of it. In a pill it was the one straight edge left in the
+            control, and the shape that says "this moves along a line" is the
+            thing that moves, not a second line. */}
           <span
             className={cn(
-              "absolute top-1/2 right-1.5 h-3.5 w-0.5 -translate-y-1/2 rounded-full transition-colors",
+              "absolute top-1/2 right-1 size-2.5 -translate-y-1/2 rounded-full transition-colors",
               disabled ? "bg-white/40" : "bg-white group-hover:bg-toggle",
             )}
           />
@@ -152,7 +158,10 @@ export function Slider({
           <span
             key={at}
             aria-hidden
-            className="pointer-events-none absolute top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-white/25"
+            // Dots too, matching the grip. These are the notches a slider
+            // snaps to; a tick in a different shape from the thing that lands
+            // on it reads as two unrelated marks.
+            className="pointer-events-none absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/25"
             style={{ left: `${String(at)}%` }}
           />
         ))}
