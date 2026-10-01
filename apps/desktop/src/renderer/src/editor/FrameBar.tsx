@@ -68,18 +68,27 @@ export function FrameBar({
       className="relative flex flex-none items-center justify-center gap-3 px-4 py-2"
       data-panel="frame-bar"
     >
-      <span className="text-[11px] tracking-wide text-editor-muted uppercase">Frame</span>
+      {/* White, not `--editor-muted`. That tone was chosen against the opaque
+          strip this used to be a row in; the bar floats on the board now, and
+          over a surface lit by the recording's own colours a muted grey is the
+          one thing on the bar you have to look twice at. The same goes for the
+          numbers beside it — every one of these is a reading, and a reading
+          that is hard to read is not one. */}
+      <span className="text-[11px] tracking-wide text-editor-fg uppercase">Frame</span>
 
       <button
         type="button"
-        className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs hover:bg-white/10"
+        // Fully round, like everything else that floats on the board. A
+        // rounded rectangle lighting up under the pointer beside a row of
+        // pills reads as a different kind of control.
+        className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs hover:bg-white/10"
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <AspectGlyph width={frame.width} height={frame.height} />
         {label}
-        <span className="tabular-nums text-editor-muted">
+        <span className="tabular-nums text-editor-fg">
           {frame.width} × {frame.height}
         </span>
       </button>
@@ -90,7 +99,7 @@ export function FrameBar({
           value={frame.width}
           onChange={(width) => onChange({ ...frame, width, presetId: null })}
         />
-        <span className="text-editor-muted">×</span>
+        <span className="text-editor-fg">×</span>
         <SizeField
           label="Height"
           value={frame.height}
@@ -187,7 +196,7 @@ function SizeField({
   return (
     <input
       aria-label={label}
-      className="w-16 rounded-md bg-transparent px-2 py-1 text-center tabular-nums outline-none hover:bg-white/5 focus:bg-white/10"
+      className="w-16 rounded-full bg-transparent px-2 py-1 text-center tabular-nums outline-none hover:bg-white/5 focus:bg-white/10"
       value={draft ?? String(value)}
       // Held as text while being typed: committing on every keystroke would
       // clamp "10" to the minimum before "1080" could be finished.

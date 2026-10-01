@@ -35,6 +35,17 @@ import { ColorPicker } from "./ColorPicker";
  * reading — and the rest follow so a column of mixed controls has one baseline
  * rather than a step at every change of kind.
  */
+/**
+ * The shape every control that occupies a row takes.
+ *
+ * A pill. The window is round now — the panels, the dock, the groups on the
+ * title bar — and a rounded rectangle filling in under the pointer beside them
+ * reads as a different kind of control rather than as the same one. Stated once
+ * because the hover is the thing that gives it away: a track and the highlight
+ * drawn over it have to agree, and they drift when each is written separately.
+ */
+const ROW_SHAPE = "rounded-full";
+
 export const CONTROL_H = "h-7";
 
 /** Past this many intervals a stepped slider is drawn plain — see `levels`. */
@@ -104,7 +115,12 @@ export function Slider({
         {icon}
       </span>
 
-      <div className={cn("group relative flex-1 overflow-hidden rounded-md bg-white/5", CONTROL_H)}>
+      {/* Pill, like every other control on a row here — see the note on
+          `ROW_SHAPE`. The fill inside takes the same radius, or the filled end
+          of a track would be square inside a round trough. */}
+      <div
+        className={cn("group relative flex-1 overflow-hidden", ROW_SHAPE, "bg-white/5", CONTROL_H)}
+      >
         {/* The tabs' own pill, not the solid white this was. White was fine while
           the bar was empty; with words on top of it there is nothing legible to
           write in — and the filled part of a slider and the marked tab of a row
@@ -112,7 +128,7 @@ export function Slider({
         {/* Rounded like the track it sits in, so the filled end follows the same
           curve as the rim rather than stopping square inside it. */}
         <div
-          className="absolute inset-y-0 left-0 rounded-md bg-white/12 transition-[width] duration-75"
+          className="absolute inset-y-0 left-0 rounded-full bg-white/12 transition-[width] duration-75"
           // A floor, so the fill keeps its rounded end at zero instead of
           // collapsing into a sliver against the left edge.
           style={{ width: `max(0.75rem, ${String(fill)}%)` }}
@@ -210,13 +226,16 @@ export function Segmented<T extends string>({
   };
   const step = (index: number) => `translateX(calc(${String(index)} * (100% + 0.125rem)))`;
   const pill =
-    "pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md " +
+    "pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full " +
     "transition-[transform,opacity] ease-out motion-reduce:transition-none";
   const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
 
   return (
     <div
-      className={cn("relative flex gap-0.5 rounded-lg bg-white/5 p-0.5", disabled && "opacity-40")}
+      className={cn(
+        "relative flex gap-0.5 rounded-full bg-white/5 p-0.5",
+        disabled && "opacity-40",
+      )}
       role="radiogroup"
       onPointerLeave={() => setHovered(null)}
     >
@@ -302,7 +321,7 @@ function SegmentedOption({
         // The icon sits beside the label rather than replacing it: a glyph
         // alone has to be learned, and a label alone makes every option in
         // the panel look the same at a glance.
-        "relative z-10 flex flex-1 items-center justify-center gap-1 rounded-md px-2",
+        "relative z-10 flex flex-1 items-center justify-center gap-1 rounded-full px-2",
         CONTROL_H,
         "text-[11px] whitespace-nowrap transition-colors [&_svg]:size-3.5",
         checked ? "font-medium text-editor-fg" : "text-editor-muted hover:text-editor-fg",
@@ -394,7 +413,7 @@ export function Tabs<T extends string>({
   // run the full width of the row that holds them.
   const slot = { width: `calc(100% / ${String(options.length)})` };
   const pill =
-    "pointer-events-none absolute inset-y-1 left-0 rounded-md " +
+    "pointer-events-none absolute inset-y-1 left-0 rounded-full " +
     "transition-[transform,opacity] ease-out motion-reduce:transition-none";
   const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
 
@@ -437,7 +456,7 @@ export function Tabs<T extends string>({
           title={option.title ?? option.label}
           // Above the pills, which are painted behind the whole row.
           className={cn(
-            "relative z-10 flex flex-1 items-center justify-center rounded-md py-1",
+            "relative z-10 flex flex-1 items-center justify-center rounded-full py-1",
             // The panel header's size, not the 11px the field labels use:
             // these are the panel's own divisions rather than a label on a
             // control, and at 11px they read as a caption over the thing they
@@ -512,7 +531,7 @@ export function ToggleField({
         // in it, borrowed from a control that needed one. The whole row is still
         // the target, and the hover is what says so.
         className={cn(
-          "flex flex-1 items-center justify-between gap-2 rounded-md px-2.5",
+          "flex flex-1 items-center justify-between gap-2 rounded-full px-2.5",
           CONTROL_H,
           "text-left disabled:cursor-default",
           !disabled && "hover:bg-white/8",
@@ -640,7 +659,7 @@ export function ColorField({
 
         <div
           className={cn(
-            "flex flex-1 items-stretch overflow-hidden rounded-md bg-white/5",
+            "flex flex-1 items-stretch overflow-hidden rounded-full bg-white/5",
             CONTROL_H,
             "focus-within:bg-white/10",
           )}
@@ -774,7 +793,7 @@ export function Dropdown<T extends string>({
         type="button"
         aria-expanded={open}
         className={cn(
-          "flex items-center justify-between gap-2 rounded-md bg-white/5 px-2.5 text-left",
+          "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
           CONTROL_H,
         )}
         onClick={() => setOpen((was) => !was)}
@@ -802,7 +821,7 @@ export function Dropdown<T extends string>({
             <div
               key={option.value}
               className={cn(
-                "group flex items-center rounded-md transition-colors",
+                "group flex items-center rounded-full transition-colors",
                 option.value === value ? "bg-white/12" : "hover:bg-white/6",
               )}
             >

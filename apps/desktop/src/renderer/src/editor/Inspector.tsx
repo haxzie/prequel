@@ -3472,6 +3472,14 @@ function AudioPanel({
  * glance. The glyph itself stays white: at 14px a tinted stroke on a tinted
  * ground is two washes of the same hue and reads as neither.
  */
+/**
+ * Round, like everything else that lights up under the pointer here.
+ *
+ * These are the panel's own three — back, reset, apply to all, close — and they
+ * sit in a row of round things on a round panel. A rounded square filling in
+ * under the pointer beside a pill reads as a different kind of control, which
+ * is the whole of the reason the shapes are being made to agree.
+ */
 function PanelHeader({
   title,
   icon,
@@ -3536,7 +3544,7 @@ function PanelHeader({
           title="Back"
           aria-label="Back to caption options"
           className={cn(
-            "-ml-1 grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+            "-ml-1 grid size-6 flex-none place-items-center rounded-full text-editor-muted",
             "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
           )}
           onClick={onBack}
@@ -3570,7 +3578,7 @@ function PanelHeader({
           title="Reset to the project defaults"
           aria-label="Reset to the project defaults"
           className={cn(
-            "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+            "grid size-6 flex-none place-items-center rounded-full text-editor-muted",
             "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
           )}
           onClick={onReset}
@@ -3590,7 +3598,7 @@ function PanelHeader({
           aria-label="Apply these settings to every clip"
           aria-expanded={confirming}
           className={cn(
-            "grid size-6 flex-none place-items-center rounded-md",
+            "grid size-6 flex-none place-items-center rounded-full",
             "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
             confirming ? "bg-white/10 text-editor-fg" : "text-editor-muted",
           )}
@@ -3643,7 +3651,7 @@ function PanelHeader({
         title="Close the panel"
         aria-label="Close the panel"
         className={cn(
-          "grid size-6 flex-none place-items-center rounded-md text-editor-muted",
+          "grid size-6 flex-none place-items-center rounded-full text-editor-muted",
           "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
         )}
         onClick={onClose}
