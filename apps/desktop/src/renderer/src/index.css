@@ -654,7 +654,11 @@ body {
      desktop the panel reads as a smear rather than an object, and every control
      in it competes with whatever is behind. Kept a little short of opaque so it
      still sits *over* the screen rather than punching a hole in it. */
-  --dock-bg: rgba(28, 33, 40, 0.96);
+  /* Neutral, give or take a unit. This was (28, 33, 40) — twelve units more
+     blue than red — and read as cold next to anything on screen that was not.
+     Every grey in here is now within a unit or two of its own luminance, so the
+     panel has a tone rather than a cast: the hue moved, the weight did not. */
+  --dock-bg: rgba(32, 32, 33, 0.96);
   /* Every line the panel draws: the dividers inside it, and its own outer rim —
      `Dock.tsx` reaches for this rather than carrying a second figure of its
      own, so the two cannot drift apart the next time either is adjusted.
@@ -677,7 +681,9 @@ body {
      leaves the pointer with nothing to say. */
   --dock-group: rgba(255, 255, 255, 0.05);
   --dock-fg: #eceef1;
-  --dock-muted: #98a0a9;
+  /* Neutralised with `--dock-bg`, and the worst offender of the two: seventeen
+     units of blue on the one grey in the panel whose whole job is to be grey. */
+  --dock-muted: #9f9fa0;
   /* Lighter than the background, and translucent white rather than a fixed
      tone so it stays lighter whatever is behind it. */
   --dock-hover: rgba(255, 255, 255, 0.12);
@@ -689,7 +695,9 @@ body {
      something is wrong and nothing else. */
   --dock-warn: #f0b429;
   --dot-on: #34c759;
-  --dot-off: #6f757c;
+  /* Neutral for the reason the muted grey is. The green beside it is the only
+     colour either dot is meant to carry. */
+  --dot-off: #747475;
 }
 
 /* The panel's own focus ring, in place of Chromium's.
