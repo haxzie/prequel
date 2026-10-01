@@ -421,11 +421,26 @@ export function Tabs<T extends string>({
     //
     // Sticky against the top of the panel's scroller — which starts below the
     // header, since that sits outside it — so the tabs stay reachable through a
-    // long grid of swatches. The *solid* veil, not the translucent one the panel
-    // itself uses: content scrolls under this, and at 93% a swatch grid passing
-    // beneath showed through as a ghost of itself. `z-20` clears the swatches,
-    // which lift to `z-10` on hover to grow past their track.
-    <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-editor-veil-solid">
+    // long grid of swatches. `z-20` clears the swatches, which lift to `z-10`
+    // on hover to grow past their track.
+    //
+    // This was the *solid* veil, on the reasoning that content scrolls under it
+    // and anything translucent showed a swatch grid through as a ghost of
+    // itself. True, and it stopped being the right answer when the panel became
+    // frosted: an opaque near-black band across the top of a translucent panel
+    // is the darkest thing in the editor, sitting exactly where the eye lands.
+    //
+    // A blur and *no tint at all* does the job the opacity was doing. What
+    // scrolls under is thrown far enough out of focus to read as material
+    // rather than as a ghost of a swatch, and with nothing added the band is
+    // the panel's own tone — so the tabs and the slider pinned with them sit on
+    // the panel instead of in a darker box at the top of it.
+    //
+    // A tint was tried at 80% of the scrim first and was still wrong, for a
+    // reason worth writing down: the panel is already a scrim over the board,
+    // so any scrim here is a *second* one and compounds. The band came out
+    // darker than everything below it while every value in it looked sensible.
+    <div className="sticky top-0 z-20 -mx-4 -mt-4">
       {/* Below the row rather than at the scroller's top, where the shared one
           sits: these tabs are opaque and pinned over it, so content passing
           under them is cut at *their* underside. Anchored inside the sticky

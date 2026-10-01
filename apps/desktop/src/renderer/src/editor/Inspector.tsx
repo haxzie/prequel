@@ -870,6 +870,25 @@ const SHELL = "flex flex-1 justify-end";
  * a column of hover targets over nothing.
  */
 /**
+ * What both of the editor's floating things are made of.
+ *
+ * One constant rather than the same four utilities written twice, because the
+ * two are meant to be the same material and were drifting the moment they were
+ * written apart — the dock carried a tight shadow and the panel a deep one, and
+ * at a glance that read as two different surfaces rather than as one at two
+ * sizes. Whatever is true of the frost has to be true of both, so there is only
+ * one place to change it.
+ *
+ * The shadow is deliberately slight. These float over a board lit by the
+ * recording's own colours, and a deep shadow puts a dark halo around each of
+ * them — which is a hole punched in the light rather than an object resting on
+ * it. Enough to lift, and no more.
+ */
+const FLOATING =
+  "border border-editor-line bg-editor-scrim backdrop-blur-2xl " +
+  "shadow-[0_2px_10px_rgba(0,0,0,0.28)]";
+
+/**
  * The rail: icons over the editor's own background, with nothing behind them.
  *
  * It is a surface again. It was one, then was not — two surfaces made the eye
@@ -927,21 +946,18 @@ function Rail<T extends string>({
         // buttons, which is what makes it read as an object placed on the
         // composition rather than as a column the window happens to have.
         //
-        // Frosted, like the panel beside it. It was `--editor-panel`, opaque,
-        // on the argument that the dock sits *on* the window where the panel is
-        // part of it — but both float over a lit board now, and an opaque chip
-        // in the middle of the light is the one thing on screen the glow does
-        // not reach. The same scrim and the same blur, so the two read as one
-        // material at two sizes.
+        // The same material as the panel beside it, from the same constant —
+        // see `FLOATING`. It was opaque `--editor-panel` on the argument that
+        // the dock sits *on* the window where the panel is part of it, but both
+        // float over a lit board now and an opaque chip in the middle of the
+        // light was the one thing the glow did not reach.
         //
         // Fully round rather than concentric with its buttons: a 48px column of
         // round buttons has no corners of its own to be concentric with, and a
         // 10px radius around them read as a rounded rectangle that happened to
-        // contain circles. A shadow just deep enough to lift it off the board —
-        // this is a surface the composition sits under, not a dialog over it,
-        // and a heavy one made the board look like a hole.
-        "rounded-full border border-editor-line bg-editor-scrim backdrop-blur-2xl",
-        "shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
+        // contain circles.
+        "rounded-full",
+        FLOATING,
         // Margin outside, padding in. Without the margin the dock's own corners
         // meet the panel's edge and the top of the row, which is the one thing
         // a floating object must not do.
@@ -1059,8 +1075,7 @@ const PANEL =
   // adding a left margin here would double it — and, because the container
   // this sits in is `overflow-hidden`, every pixel added beyond `PANEL_WIDTH`
   // comes off the right-hand side rather than out of the gap.
-  "my-2 mr-2 flex w-80 flex-none overflow-hidden rounded-2xl border border-editor-line " +
-  "bg-editor-scrim shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-2xl";
+  "my-2 mr-2 flex w-80 flex-none overflow-hidden rounded-2xl " + FLOATING;
 
 /**
  * What the pair occupies when open.

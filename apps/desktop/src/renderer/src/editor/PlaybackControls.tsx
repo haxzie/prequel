@@ -324,12 +324,22 @@ function AddClip({
       {open && (
         <>
           {/* Click-away, behind the menu and over everything else — the same
-              pair the frame picker uses. */}
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+              pair the timeline's own context menu uses, at the same two
+              levels.
+
+              40 and 50, where this was 10 and 20. The menu opens upwards from
+              a button at the foot of the window and the inspector now floats
+              over the board at `z-30`, so the two overlap and the panel was
+              winning — a menu that opened behind the thing beside it. The
+              editor's scale has the two layers above the panel reserved for
+              exactly this: anything summoned by a press, which has to be over
+              everything because the press is the most recent thing the user
+              did. */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <ul
             role="menu"
             className={
-              "absolute right-0 bottom-full z-20 mb-1.5 w-48 rounded-xl border border-editor-line " +
+              "absolute right-0 bottom-full z-50 mb-1.5 w-48 rounded-xl border border-editor-line " +
               "bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
             }
             // Escape from inside the menu as well as from the trigger: the
