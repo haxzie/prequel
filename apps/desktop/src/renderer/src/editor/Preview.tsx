@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent,
@@ -36,6 +37,7 @@ import {
   type ZoomSlice,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
+import { ambientColours, ambientGradient } from "./ambience";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
 import type { EditorPlayback } from "./useEditorPlayback";
@@ -276,6 +278,32 @@ export function Preview({
    * set is published, and by then this is no longer being read.
    */
   const stale = useRef<readonly RenderedCue[] | undefined>(undefined);
+
+  /**
+   * The wash of background colour behind the composition.
+   *
+   * Keyed on the background itself and on whether its picture has arrived, and
+   * on nothing else — not on the images map, which gains an entry every time a
+   * caption is redrawn, and certainly not on the frame, which changes as the
+   * window is dragged. A background is chosen a handful of times in an edit;
+   * this runs a handful of times in an edit.
+   *
+   * The picture is looked up rather than depended on because it is loaded
+   * asynchronously: the project names it immediately and `useImages` fills it
+   * in a moment later, so the first pass finds nothing and the one after the
+   * picture lands finds it. Until then there is simply no glow.
+   */
+  const background = settings.background.background;
+  const backgroundImage = background.kind === "image" ? images.get(background.path) : undefined;
+  const glow = useMemo(
+    () => ambientGradient(ambientColours(background, images)),
+    // `images` is read inside and deliberately not listed: it is a new Map on
+    // every caption redraw, and what actually decides the answer is the one
+    // picture below. Listing it would re-sample the background on every
+    // keystroke in a caption.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [background, backgroundImage],
+  );
 
   // `cursor`, `zooms` and `cues` are in here for the same reason as the rest,
   // and it took a regression to notice they were not. The loop's effect depends
@@ -1059,7 +1087,11 @@ export function Preview({
   return (
     <div
       ref={box}
-      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden p-6"
+      // Headroom at the top for the frame bar, which floats over this rather
+      // than taking a row above it — see the note at the call site. The number
+      // is the bar's height plus the breathing room the other three sides get,
+      // so a composition tall enough to fill the stage still clears it.
+      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6"
       // The dotted surround. A click that lands out here is the same "nothing"
       // the canvas already treats as a deselect, and without it a ring put on
       // the camera could only be taken off by finding an empty patch of the
@@ -1075,7 +1107,33 @@ export function Preview({
       {/* Sized to the picture so the ring inside it can be placed in frame
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}
-      <div className="relative" style={{ width: fitted.width, height: fitted.height }}>
+      {/* `isolate`, and the glow below depends on it entirely. A `-z-10` child
+          is only *behind its own stacking context* — without one it is behind
+          whatever ancestor paints a background, and the board above this is
+          `bg-editor-scrim`, so the wash was drawn perfectly and then covered by
+          the surface it was meant to light. Isolating here keeps it under the
+          canvas and over the board. */}
+      <div className="relative isolate" style={{ width: fitted.width, height: fitted.height }}>
+        {/* The background's own colours, thrown on the board behind the
+            composition — see `ambience.ts`. Outside the picture on every side
+            and heavily blurred, so what reaches the eye is light rather than a
+            shape; the surround's `overflow-hidden` is what keeps it on the
+            board instead of running under the inspector.
+
+            `-z-10` puts it behind the canvas without taking the canvas out of
+            flow: this box paints no background of its own, so a negative layer
+            inside it lands under everything and over the dotted surround.
+
+            `transition-[background]` because the swatch that changes it is a
+            click away in the panel beside this, and a wash that snapped from
+            one set of colours to another would read as a flash. */}
+        {glow && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-[22%] -z-10 blur-[72px] transition-[background] duration-500 motion-reduce:transition-none"
+            style={{ background: glow }}
+          />
+        )}
         {/* Over the canvas rather than instead of it. The canvas has to keep
             its box — the ring, the handles and the hit testing are all placed
             against its size — and it has to keep painting, so what is revealed

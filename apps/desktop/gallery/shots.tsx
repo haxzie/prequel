@@ -305,6 +305,18 @@ export const SHOTS: readonly Shot[] = [
     clip: "frame",
   },
   {
+    id: "projects-hover",
+    frame: "workspace",
+    install: install(),
+    render: () => <Library section="projects" onSection={() => {}} onOpen={() => {}} />,
+    steps: [
+      { kind: "settle", ms: 800 },
+      { kind: "hover", selector: ".group:nth-child(2) button" },
+      { kind: "settle", ms: 300 },
+    ],
+    clip: "frame",
+  },
+  {
     id: "projects-selected",
     frame: "workspace",
     install: install(),

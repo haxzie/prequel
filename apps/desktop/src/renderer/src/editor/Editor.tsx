@@ -1286,13 +1286,30 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             the column grows past the row and the timeline is clipped away by
             the shell's `overflow-hidden`. */}
           {/* The frame bar and the composition share one surface, so the bar
-              reads as part of the canvas rather than as chrome above it. */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <FrameBar
-              frame={state.project.frame}
-              recorded={screenSource}
-              onChange={(frame) => dispatch({ type: "setFrame", frame })}
-            />
+              reads as part of the canvas rather than as chrome above it.
+
+              It floats over that surface rather than taking a row above it.
+              As a row it was a strip of board the composition could not reach
+              and the glow behind the composition could not cross, so the wash
+              ended in a straight horizontal line a third of the way up the
+              window — which reads as a rendering fault rather than as light.
+              Over the top, the board is one continuous surface and the bar sits
+              on it; the stage below carries the headroom the bar needs, so
+              nothing is ever behind it. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* `pointer-events-none` on the strip and `auto` on the bar: this
+                spans the full width to centre its contents, and without it the
+                invisible half of the strip would swallow every click meant for
+                the board — including the one that deselects. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center">
+              <span className="pointer-events-auto">
+                <FrameBar
+                  frame={state.project.frame}
+                  recorded={screenSource}
+                  onChange={(frame) => dispatch({ type: "setFrame", frame })}
+                />
+              </span>
+            </div>
             <Preview
               ready={ready}
               frame={state.project.frame}
@@ -1655,11 +1672,11 @@ function Shell({
         <button
           type="button"
           onClick={onBack}
-          title="Back to Projects"
+          title="Back to Recordings"
           className="no-drag flex flex-none items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
         >
           <FolderIcon />
-          Projects
+          Recordings
         </button>
         <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
           /

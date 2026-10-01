@@ -4,6 +4,7 @@ import type { LibraryView, ProjectSummary } from "../../../shared/contract";
 import { formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon } from "../editor/icons";
+import { RecordingsIcon } from "../workspace/icons";
 import { useDock } from "../hooks/useDock";
 import { PaneHeader } from "../workspace/PaneHeader";
 import { ViewToggle } from "../workspace/ViewToggle";
@@ -193,7 +194,7 @@ export function Projects({
 
   return (
     <>
-      <PaneHeader icon={<FolderIcon />} title="Projects">
+      <PaneHeader icon={<RecordingsIcon />} title="Recordings">
         {projects !== null && projects.length > 0 && (
           <span className="text-[12px] text-editor-muted">
             {projects.length} {projects.length === 1 ? "recording" : "recordings"}
@@ -498,9 +499,16 @@ function Card({
             // its tick: the tick is 18 points in a corner, and which of twelve
             // tiles are chosen should be readable from across the room. The
             // same green, for the same reason the row is tinted with it.
+            //
+            // The pointer says the same thing in blue — the same border and
+            // ring, a different colour. Two states that look alike are right
+            // here: both are "this one", and the only difference is whether it
+            // is the pointer saying so or the user. The blue is the app's one
+            // blue, `--indicator`, which is a hue away from both the green of
+            // a selection and the purple of everything in a thumbnail.
             checked
               ? "border-export ring-2 ring-export/40"
-              : "border-editor-line hover:border-editor-accent/60",
+              : "border-editor-line hover:border-indicator hover:ring-2 hover:ring-indicator/35",
           )}
         >
           <Poster project={project} poster={poster} className="size-full" />

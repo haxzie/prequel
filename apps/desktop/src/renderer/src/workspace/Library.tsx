@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 
 import type { WorkspaceSection } from "../../../shared/contract";
 import { cn } from "../lib/cn";
-import { ExportIcon, FolderIcon } from "../editor/icons";
 import { Exports } from "../exports/Exports";
 import { Projects } from "../projects/Projects";
 import { ExternalIcon, GeneralIcon } from "../settings/icons";
 import { SettingsPane } from "../settings/Settings";
 import { AccountMenu } from "./AccountMenu";
+import { ExportsIcon, RecordingsIcon, SettingsIcon } from "./icons";
 import { PaneHeader } from "./PaneHeader";
 
 /**
@@ -23,10 +23,20 @@ import { PaneHeader } from "./PaneHeader";
  * set, and it sits at the foot of the sidebar where it can be read at a glance
  * instead of behind a tab somebody visits once.
  */
+/**
+ * The sidebar, in the words the app uses for these things.
+ *
+ * "Recordings", not "Projects". A project is what the *edit* is called in the
+ * code — `shared/project.ts`, `project.json` — and the pane does not list those:
+ * it lists the takes, one card each, named for the moment they were made. The
+ * two meanings sat on top of each other in the one place a user would read the
+ * word. The id stays `projects`, because it is a persisted preference and an
+ * IPC channel and neither is read by anybody.
+ */
 const SECTIONS = [
-  { id: "projects", label: "Projects", Icon: FolderIcon },
-  { id: "exports", label: "Exports", Icon: ExportIcon },
-  { id: "settings", label: "Settings", Icon: GeneralIcon },
+  { id: "projects", label: "Recordings", Icon: RecordingsIcon },
+  { id: "exports", label: "Exports", Icon: ExportsIcon },
+  { id: "settings", label: "Settings", Icon: SettingsIcon },
 ] as const satisfies readonly {
   id: WorkspaceSection;
   label: string;

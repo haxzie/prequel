@@ -192,7 +192,10 @@ function Row({
         className={cn(
           "w-full text-left transition-colors",
           grid
-            ? "block overflow-hidden rounded-xl border border-editor-line bg-editor-panel aspect-video hover:border-editor-accent/60"
+            ? // The same blue the Recordings grid lights a tile with under the
+              // pointer. Two panes of tiles in one window that answered "this
+              // one" differently would be two panes nobody reads as a pair.
+              "block overflow-hidden rounded-xl border border-editor-line bg-editor-panel aspect-video hover:border-indicator hover:ring-2 hover:ring-indicator/35"
             : // Full-bleed and unrounded: the hover has to fill the row
               // between two rules, and a rounded inset highlight inside a ruled
               // row reads as a card that has been dropped into a table.
