@@ -320,16 +320,16 @@ export function parseHex(value: string): Rgb | null {
  * that moves for no reason.
  *
  * `alpha` is the strongest the first colour reaches; the rest fall away behind
- * it. Full strength by default, and turned down where it is drawn rather than
- * here — `Preview` sets it on the stack of washes, not on each one.
+ * it. Low: this sits under the user's own composition, and the editor's whole
+ * argument about the board is that nothing on it may compete with the picture.
  *
- * That is not a tidying. Two of these are on screen at once while a background
- * is being changed, and two translucent copies stacked are brighter than one:
- * the glow bloomed for the length of the fade and dropped back the moment the
- * old layer was dropped. Opaque layers inside a stack that carries the opacity
- * cover one another instead of adding up, which is what a crossfade is.
+ * Two of these are on screen at once while a background is being changed, and
+ * because they are translucent the arriving one never hides the one it
+ * replaces. `Preview` fades the outgoing wash out as the incoming one comes in
+ * for that reason — hold the old one at full strength and the pair add up to
+ * half again as much light, then fall back the frame it is dropped.
  */
-export function ambientGradient(colours: Rgb[], alpha = 1): string | null {
+export function ambientGradient(colours: Rgb[], alpha = 0.5): string | null {
   if (colours.length === 0) return null;
 
   const lit = colours.map(lift);

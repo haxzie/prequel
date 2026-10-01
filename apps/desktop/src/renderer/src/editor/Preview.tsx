@@ -1178,25 +1178,24 @@ export function Preview({
           animate. `key` is what makes the new layer a new element with its
           animation unplayed; without it React updates the style in place and
           nothing moves. */}
-      {/* The opacity is on the stack, not on the washes. Each gradient is drawn
-          at full strength so the incoming one *covers* the outgoing one as it
-          fades in; put the opacity on the layers instead and the two translucent
-          copies add up, so the glow blooms for the length of the fade and snaps
-          back the moment the old layer is dropped. The blur is here for the
-          same reason — once, over the result, rather than over each copy. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -inset-[10%] -z-10 opacity-50 blur-[72px]"
-      >
+      {/* The blur is on the stack rather than on each wash: once, over the
+          result of the crossfade, rather than twice over two copies of it. The
+          strength stays in the gradient — see `ambientGradient`, which keeps a
+          smaller dip through the middle of a fade than two opaque layers
+          dissolving inside a half-opacity group would. */}
+      <div aria-hidden className="pointer-events-none absolute -inset-[10%] -z-10 blur-[72px]">
         {washes.map((wash, index) => (
           <div
             key={wash.id}
             onAnimationEnd={() => setWashes((current) => current.slice(-1))}
             className={cn(
               "absolute inset-0",
-              // Only the one on top animates; the one underneath is already
-              // where it needs to be and re-running it would flash the board.
-              index === washes.length - 1 && washes.length > 1 && "animate-glow-in",
+              // Both halves of the crossfade, not just the arriving one. These
+              // gradients are translucent, so an incoming wash never covers the
+              // one beneath it however far it fades in — the old layer has to
+              // go out as the new one comes in or the two simply add up.
+              washes.length > 1 &&
+                (index === washes.length - 1 ? "animate-glow-in" : "animate-glow-out"),
             )}
             style={{ background: wash.css }}
           />

@@ -134,6 +134,13 @@
      `webgl.ts` — because the two are one change and a glow that lagged the
      picture would be read as the glow being wrong. */
   --animate-glow-in: glow-in 220ms ease-out;
+  /* Its other half. The wash being replaced has to fade *out* over the same
+     220ms: left at full strength under the incoming one, the two sum to half
+     again as much light as either, and then the old layer is dropped in a
+     single frame and the glow falls back. `forwards` so it holds at zero
+     until it is unmounted, rather than snapping back for the frame
+     between the animation ending and React removing it. */
+  --animate-glow-out: glow-out 220ms ease-out forwards;
   /* The selection bar rising over the library. Short and from close by: it
      appears the instant a tile is ticked, and anything longer puts the button
      somebody is reaching for in motion under the pointer. */
@@ -182,6 +189,12 @@
 
   @keyframes glow-in {
     from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes glow-out {
+    to {
       opacity: 0;
     }
   }
