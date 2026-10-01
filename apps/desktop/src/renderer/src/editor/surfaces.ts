@@ -51,7 +51,15 @@ export const FRAME_BAR = "2.375rem";
  * recording's own colours, and a deep shadow puts a dark halo around each of
  * them — which is a hole punched in the light rather than an object resting on
  * it. Enough to lift, and no more.
+ *
+ * The blur is wide — wider than it needs to be to read as frost — and that is
+ * what keeps the three looking like one material. A backdrop filter samples
+ * what is immediately behind the element, so a 48px dock sitting on a lamp
+ * picks up a hot spot while a 320px panel beside it averages the lamp and the
+ * dark board either side of it. At this radius each of them is averaging far
+ * more than it covers, so they converge instead of reporting whatever happens
+ * to be under them.
  */
 export const FLOATING =
-  "border border-editor-line bg-editor-scrim backdrop-blur-2xl " +
+  "border border-editor-line bg-editor-scrim backdrop-blur-3xl " +
   "shadow-[0_2px_10px_rgba(0,0,0,0.28)]";

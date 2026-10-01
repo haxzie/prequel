@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AUTO_PRESET_ID,
@@ -36,6 +36,42 @@ export function FrameBar({
   onChange: (frame: Frame) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const bar = useRef<HTMLDivElement>(null);
+
+  /**
+   * Closes the list on a press anywhere else, and on Escape.
+   *
+   * A listener on the document rather than the full-screen click-away `<div>`
+   * this used to have, and the reason is worth keeping: that element was
+   * `position: fixed`, and the bar it lives in grew a `backdrop-filter` when it
+   * was given a surface of its own. A backdrop filter makes its element a
+   * containing block for fixed descendants — the same rule `filter` and
+   * `transform` follow — so `inset-0` stopped meaning the viewport and started
+   * meaning the pill. The overlay was still there, still catching clicks, and
+   * covered nothing but the control that opened it.
+   *
+   * Nothing above it in the tree can break a document listener the same way.
+   *
+   * `pointerdown` rather than `click`, so the list is gone by the time a drag
+   * that started outside it finishes.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const away = (event: Event) => {
+      if (!bar.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
 
   const auto = frame.presetId === AUTO_PRESET_ID;
   const preset = FRAME_PRESETS.find((candidate) => candidate.id === frame.presetId);
@@ -81,6 +117,7 @@ export function FrameBar({
         FLOATING,
       )}
       data-panel="frame-bar"
+      ref={bar}
     >
       {/* White, not `--editor-muted`. That tone was chosen against the opaque
           strip this used to be a row in; the bar floats on the board now, and
@@ -122,77 +159,71 @@ export function FrameBar({
       </div>
 
       {open && (
-        <>
-          {/* Click-away, behind the menu and over everything else. */}
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <ul
-            className={
-              // Anchored to the trigger now that the bar is centred, rather
-              // than to the window's left edge. Downwards again: the bar is
-              // back at the head of the board, where the whole height of it is
-              // below the list's anchor.
-              "absolute top-full left-1/2 z-20 mt-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
-              "border border-editor-line bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
-            }
-            role="listbox"
-          >
-            {/* First, and outside the groups: it is not a size, it is the
+        <ul
+          className={
+            // Anchored to the trigger now that the bar is centred, rather
+            // than to the window's left edge. Downwards again: the bar is
+            // back at the head of the board, where the whole height of it is
+            // below the list's anchor.
+            "absolute top-full left-1/2 z-20 mt-1 max-h-80 w-64 -translate-x-1/2 overflow-y-auto rounded-xl " +
+            "border border-editor-line bg-editor-panel p-1 shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+          }
+          role="listbox"
+        >
+          {/* First, and outside the groups: it is not a size, it is the
                 absence of choosing one. */}
-            <li>
-              <button
-                type="button"
-                role="option"
-                aria-selected={auto}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white/10",
-                  auto && "text-editor-accent",
-                )}
-                onClick={chooseAuto}
-              >
-                <AspectGlyph
-                  width={recorded?.width ?? frame.width}
-                  height={recorded?.height ?? frame.height}
-                />
-                <span className="flex-1">Automatic</span>
-                <span className="tabular-nums text-editor-muted">
-                  {recorded ? `${evenSize(recorded.width)} × ${evenSize(recorded.height)}` : "—"}
-                </span>
-              </button>
-            </li>
+          <li>
+            <button
+              type="button"
+              role="option"
+              aria-selected={auto}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white/10",
+                auto && "text-editor-accent",
+              )}
+              onClick={chooseAuto}
+            >
+              <AspectGlyph
+                width={recorded?.width ?? frame.width}
+                height={recorded?.height ?? frame.height}
+              />
+              <span className="flex-1">Automatic</span>
+              <span className="tabular-nums text-editor-muted">
+                {recorded ? `${evenSize(recorded.width)} × ${evenSize(recorded.height)}` : "—"}
+              </span>
+            </button>
+          </li>
 
-            {(["General", "Social"] as const).map((group) => (
-              <li key={group}>
-                <p className="px-2 pt-2 pb-1 text-[10px] tracking-wide text-editor-muted uppercase">
-                  {group}
-                </p>
-                <ul>
-                  {FRAME_PRESETS.filter((candidate) => candidate.group === group).map(
-                    (candidate) => (
-                      <li key={candidate.id}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={candidate.id === frame.presetId}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white/10",
-                            candidate.id === frame.presetId && "text-editor-accent",
-                          )}
-                          onClick={() => choose(candidate)}
-                        >
-                          <AspectGlyph width={candidate.width} height={candidate.height} />
-                          <span className="flex-1">{candidate.label}</span>
-                          <span className="tabular-nums text-editor-muted">
-                            {candidate.width} × {candidate.height}
-                          </span>
-                        </button>
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </>
+          {(["General", "Social"] as const).map((group) => (
+            <li key={group}>
+              <p className="px-2 pt-2 pb-1 text-[10px] tracking-wide text-editor-muted uppercase">
+                {group}
+              </p>
+              <ul>
+                {FRAME_PRESETS.filter((candidate) => candidate.group === group).map((candidate) => (
+                  <li key={candidate.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={candidate.id === frame.presetId}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-white/10",
+                        candidate.id === frame.presetId && "text-editor-accent",
+                      )}
+                      onClick={() => choose(candidate)}
+                    >
+                      <AspectGlyph width={candidate.width} height={candidate.height} />
+                      <span className="flex-1">{candidate.label}</span>
+                      <span className="tabular-nums text-editor-muted">
+                        {candidate.width} × {candidate.height}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
