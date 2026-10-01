@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CAPTION_STYLES, captionStyle, cuesFrom } from "./captions";
+import { CAPTION_ANIMATIONS, CAPTION_LOOKS, captionStyle, cuesFrom } from "./captions";
 import type { TranscriptWord } from "./transcript";
 
 const SECOND = 1_000_000_000;
@@ -30,8 +30,11 @@ describe("captionStyle", () => {
     // so a look that grows it pushes it into the words either side — the gap
     // between two words is about the same as the growth. One word to a cue is
     // what stops that, and it is the look these styles are imitating anyway.
-    for (const style of CAPTION_STYLES) {
-      if (style.lit && style.lit.pop > 1) expect(style.perWord).toBe(true);
+    for (const look of CAPTION_LOOKS) {
+      for (const animation of CAPTION_ANIMATIONS) {
+        const style = captionStyle(look.id, animation.id);
+        if (style.lit && style.lit.pop > 1) expect(style.perWord).toBe(true);
+      }
     }
   });
 
@@ -39,27 +42,69 @@ describe("captionStyle", () => {
     // The lit layer is a rectangle cropped out of a bitmap that carries the
     // plate, so growing it would drag the plate's own edge with it and show a
     // seam. `captionBitmap` relies on this holding.
-    for (const style of CAPTION_STYLES) {
-      if (style.plate && style.lit) expect(style.lit.pop).toBe(1);
+    for (const look of CAPTION_LOOKS) {
+      for (const animation of CAPTION_ANIMATIONS) {
+        const style = captionStyle(look.id, animation.id);
+        if (style.plate && style.lit) expect(style.lit.pop).toBe(1);
+      }
     }
   });
 });
 
 describe("the styles that carry a plate", () => {
   it("gives every plated look the same dark", () => {
-    // Subtitle, Highlight and Band are one family: the difference between them
-    // is shape and whether a word lights, never the colour of the plate.
-    const plated = CAPTION_STYLES.filter((style) => style.plate).map((style) => style.plate!.color);
+    // Subtitle and Band are one family: the difference between them is shape,
+    // never the colour of the plate.
+    const plated = CAPTION_LOOKS.filter((look) => look.plate).map((look) => look.plate!.color);
 
     expect(new Set(plated).size).toBe(1);
   });
 
   it("plates the two looks a caption panel opens on", () => {
-    // Highlight is the default, and it read as having no background at all
-    // while a stale bitmap from an older build was still on disk. Both of the
-    // pill styles carry one.
+    // "highlight" is no longer a look of its own — it was the subtitle pill
+    // with a lit word, and the lit word is an arrival now — but a project that
+    // names it still has to resolve to something with a plate. It read as
+    // having no background at all while a stale bitmap from an older build was
+    // still on disk.
     for (const id of ["subtitle", "highlight"]) {
       expect(captionStyle(id).plate).not.toBeNull();
+    }
+  });
+});
+
+describe("a project saved before the arrival was its own setting", () => {
+  // The quiet failure this guards. Every look used to carry how its words
+  // arrived; splitting the two means a stored project names a look and nothing
+  // else, and resolving that to "none" would stop every existing caption
+  // moving — in a finished edit, with nothing to say what changed.
+  it.each([
+    ["blur", 0.26, null, null],
+    ["subtitle", null, 0.5, null],
+    ["highlight", null, 0.5, 1],
+    ["outline", null, null, null],
+    ["band", null, 0.5, null],
+  ])("draws %s as it always did", (id, blurIn, dim, pop) => {
+    const style = captionStyle(id);
+
+    expect(style.blurIn).toBe(blurIn);
+    expect(style.dim).toBe(dim);
+    expect(style.lit?.pop ?? null).toBe(pop);
+  });
+
+  it("holds nothing back on a look that shows one word", () => {
+    // There is no rest of the line to dim, and dimming the only word on screen
+    // means it arrives at half strength and then jumps. "pop" carried the lit
+    // word without the fill when the two were one record, and still does.
+    const style = captionStyle("pop");
+
+    expect(style.perWord).toBe(true);
+    expect(style.lit).not.toBeNull();
+    expect(style.dim).toBeNull();
+  });
+
+  it("drops the fill from any arrival on a one-word look", () => {
+    for (const animation of CAPTION_ANIMATIONS) {
+      expect(captionStyle("pop", animation.id).dim).toBeNull();
     }
   });
 });

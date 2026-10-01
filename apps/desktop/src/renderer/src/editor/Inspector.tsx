@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 
-import { captionStyle } from "../../../shared/captions";
+import { captionArrival, captionLook } from "../../../shared/captions";
 import { cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
 import {
@@ -43,7 +43,7 @@ import {
 import type { Backgrounds } from "./useBackgrounds";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
-import { CaptionStylePicker } from "./controls/CaptionStylePicker";
+import { CaptionAnimationPicker, CaptionStylePicker } from "./controls/CaptionStylePicker";
 import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import { CursorPicker } from "./controls/CursorPicker";
@@ -78,6 +78,7 @@ import {
   EyeOffIcon,
   FillIcon,
   FocusIcon,
+  FadeIcon,
   FontIcon,
   LayoutIcon,
   LeanIcon,
@@ -2745,6 +2746,10 @@ function CaptionsPanel({
   // are the same thing to the controls, and a live style picker over a
   // recording with no words is a promise the preview will not keep.
   const off = !values.captionsOn || !captions.ready;
+  // Resolved rather than read straight off the settings, so a project saved
+  // before the arrival was its own leaf — or naming one this build no longer
+  // ships — shows the arrival actually being drawn instead of no selection.
+  const arrival = captionArrival(values.captionStyle, values.captionAnimation).id;
 
   return (
     <>
@@ -2783,10 +2788,26 @@ function CaptionsPanel({
             // Resolved rather than passed through, so a project naming a look this
             // build no longer ships shows the one actually being drawn instead of
             // no selection at all.
-            value={captionStyle(values.captionStyle).id}
+            value={captionLook(values.captionStyle).id}
+            animation={arrival}
             accent={values.captionAccent}
             disabled={off}
             onChange={(value) => set("captions", "captionStyle", value)}
+          />
+        </Field>
+      </Section>
+
+      {/* Its own section rather than a second grid under the look. They are
+          independent choices — any arrival on any look — and two grids in one
+          section read as one control with twice the options. */}
+      <Section title="Animation">
+        <Field icon={<FadeIcon />} {...field("captions", "captionAnimation")}>
+          <CaptionAnimationPicker
+            value={arrival}
+            look={values.captionStyle}
+            accent={values.captionAccent}
+            disabled={off}
+            onChange={(value) => set("captions", "captionAnimation", value)}
           />
         </Field>
       </Section>
@@ -2856,7 +2877,7 @@ function CaptionsPanel({
           // A look that shows one word at a time has no line to fill, so this
           // would move a number nothing reads. Dead rather than missing: the
           // control belongs to captions, not to one look.
-          disabled={off || captionStyle(values.captionStyle).perWord}
+          disabled={off || captionLook(values.captionStyle).perWord}
           format={(value) => (value === 1 ? "1 line" : `${value} lines`)}
           onChange={(value) => set("captions", "captionLines", value)}
         />

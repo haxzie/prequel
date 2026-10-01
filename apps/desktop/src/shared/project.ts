@@ -487,6 +487,15 @@ export interface CaptionSettings {
    */
   captionStyle: string;
   /**
+   * How the words arrive. See `CAPTION_ANIMATIONS`.
+   *
+   * Its own leaf rather than a property of the look, because the two are
+   * independent choices and a look that carried its arrival meant there had to
+   * be an entry in the catalogue for every pairing. A string for the reason
+   * `captionStyle` is one, and with the same guard.
+   */
+  captionAnimation: string;
+  /**
    * Which face to set them in. See `CAPTION_FONTS`.
    *
    * A string for the same reason `captionStyle` is one, and with the same
@@ -513,7 +522,7 @@ export interface CaptionSettings {
  * What a cue's pixels depend on, as one string.
  *
  * Caption settings are per clip like every other section, but the cues are
- * *rasterised* — so two clips that agree on these five leaves can share one set
+ * *rasterised* — so two clips that agree on these six leaves can share one set
  * of bitmaps, and two that disagree need their own. Position and whether they
  * are shown at all are deliberately absent: neither changes a pixel of the
  * bitmap, so moving the captions up the frame must not redraw them.
@@ -521,6 +530,10 @@ export interface CaptionSettings {
 export function captionLook(captions: CaptionSettings): string {
   return [
     captions.captionStyle,
+    // In the signature because `dim` is baked into the flat layer and `blurIn`
+    // sets the padding the quad needs — change the arrival and the bitmaps on
+    // disk are the wrong pixels, not merely drawn differently.
+    captions.captionAnimation,
     // In the signature because the bitmaps are drawn with it: leave it out and
     // changing the face repaints nothing, the cues already on disk being taken
     // as still good.
@@ -1409,6 +1422,8 @@ export const DEFAULT_CAPTIONS: CaptionSettings = {
   // what stops a build changing how somebody's finished edit looks.
   captionsOn: true,
   captionStyle: "blur",
+  // What "Blur in" used to be, so a new project looks as it always did.
+  captionAnimation: "focus",
   // SF, which is what captions were set in before the face was a choice — so
   // this changes nothing about a project that never touches it.
   captionFont: "system",

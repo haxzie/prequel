@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { CAPTION_STYLES } from "./captions";
+import { CAPTION_LOOKS } from "./captions";
 import { CURSOR_STYLES } from "./contract";
 import { AUTO_PRESET_ID } from "./presets";
 import {
@@ -182,7 +182,7 @@ describe("reading one written by another build", () => {
 
   it("falls back to a caption look this build has", () => {
     const preset = read({ captions: { captionStyle: "not-in-this-build" } });
-    expect(CAPTION_STYLES.some((style) => style.id === preset.captions.captionStyle)).toBe(true);
+    expect(CAPTION_LOOKS.some((style) => style.id === preset.captions.captionStyle)).toBe(true);
   });
 
   it("fills in a setting it has never heard of, rather than failing", () => {
