@@ -24,11 +24,16 @@ export const TITLE_BAR = "2.625rem";
  *
  * One constant rather than the same four utilities written out wherever
  * something has to sit on top of the board. They are meant to be one material —
- * the dock, the inspector, and each group of controls in the title bar — and
- * they drift the moment they are written apart: the dock carried a tight shadow
- * and the panel a deep one for exactly as long as the two were separate
- * strings, and at a glance that read as two different surfaces rather than as
- * one at two sizes.
+ * the dock and the inspector — and they drift the moment they are written
+ * apart: the dock carried a tight shadow and the panel a deep one for exactly
+ * as long as the two were separate strings, and at a glance that read as two
+ * different surfaces rather than as one at two sizes.
+ *
+ * The title bar's groups wore it for a while and do not any more. What is up
+ * there is the window saying where you are, not controls waiting to be used,
+ * and three plates across the top made the bar compete with the picture under
+ * it. They light up on hover instead, which is the only moment any of them is
+ * a control.
  *
  * The shadow is deliberately slight. These float over a board lit by the
  * recording's own colours, and a deep shadow puts a dark halo around each of

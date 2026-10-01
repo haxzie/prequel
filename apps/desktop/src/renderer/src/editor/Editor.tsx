@@ -35,7 +35,7 @@ import {
 import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { FLOATING, TITLE_BAR } from "./surfaces";
+import { TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
@@ -1255,17 +1255,15 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               looking for it, in the moment the app has just done something
               wrong. An unlabelled bug is a button nobody presses.
 
-              On the bar's own material, as its own object. It used to be a
-              bare label that only drew a surface when hovered, which on a
-              solid bar read as restraint and on a transparent one reads as
-              text floating over the wallpaper. */}
+              No surface of its own, like the breadcrumb: the only thing on
+              this bar that brings one is Export, which is the only thing on it
+              that is a decision rather than a label. */}
           <button
             type="button"
             title="Tell us what went wrong"
             className={cn(
               "no-drag flex h-7 flex-none items-center gap-1.5 rounded-full px-2.5",
-              "text-[12px] text-editor-muted hover:text-editor-fg [&_svg]:size-3.5",
-              FLOATING,
+              "text-[12px] text-editor-fg/75 hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
             )}
             onClick={() => setFeedbackOpen(true)}
           >
@@ -1739,21 +1737,27 @@ function Shell({
             The bin is in here rather than out with Export because it acts on
             the thing this group names — and at the far end of the bar it was a
             destructive button sitting beside the one everybody reaches for. */}
-        <div
-          className={cn("flex min-w-0 items-center gap-1 rounded-full py-1 pr-1 pl-1.5", FLOATING)}
-        >
+        {/* No surface. These are the window saying where you are, not controls
+            waiting to be used, and a plate under them made the bar read as
+            three objects competing with the picture below it. Each part lights
+            up on hover, which is the only moment it is a control. */}
+        <div className="flex min-w-0 items-center gap-1">
           {/* `no-drag`, or this moves the window instead of navigating — the
               one mistake this bar makes easy to make. */}
           <button
             type="button"
             onClick={onBack}
             title="Back to Recordings"
-            className="no-drag flex flex-none items-center gap-1.5 rounded-full px-2 py-0.5 text-[13px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+            // Not `--editor-muted`, for the reason the frame bar's readings are
+            // not: that tone was chosen against an opaque bar, and with no
+            // surface left under it the wallpaper comes up through it. A step
+            // below the name beside it is enough to say which is which.
+            className="no-drag flex flex-none items-center gap-1.5 rounded-full px-2 py-1 text-[13px] text-editor-fg/75 hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
           >
             <FolderIcon />
             Recordings
           </button>
-          <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
+          <span aria-hidden className="flex-none text-[13px] text-editor-fg/40">
             /
           </span>
           <span className="min-w-0 truncate px-1 text-[13px] font-medium">{name}</span>
