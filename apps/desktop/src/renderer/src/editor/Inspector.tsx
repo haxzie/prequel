@@ -910,8 +910,11 @@ function Rail<T extends string>({
   // The pills are positioned from the rail's own padding, so a whole number of
   // steps lands one exactly on a button.
   const step = (index: number) => ({ transform: `translateY(calc(${String(index)} * 2.5rem))` });
+  // `rounded-full`: the mark travels down a column of round icons, and a
+  // rounded square sliding between them reads as a different object arriving
+  // rather than as the same mark moving.
   const pill =
-    "pointer-events-none absolute top-1.5 left-1.5 size-9 rounded " +
+    "pointer-events-none absolute top-1.5 left-1.5 size-9 rounded-full " +
     "transition-[transform,opacity] ease-out motion-reduce:transition-none";
   const slide = { transitionDuration: `${String(SLIDE_MS)}ms` };
 
@@ -924,15 +927,21 @@ function Rail<T extends string>({
         // buttons, which is what makes it read as an object placed on the
         // composition rather than as a column the window happens to have.
         //
-        // `editor-panel` is the app's own floating-surface colour — the export
-        // dialog and the account menu are already on it — so this is opaque and
-        // a shade lighter than the inspector beside it. That is the difference:
-        // the panel is part of the window, the dock sits on top of it.
-        // 10px around 4px buttons with 6px of padding between them: concentric,
-        // 10 − 6 = 4. A shadow just deep enough to lift it off the board — the
-        // dock is a surface the composition sits under, not a dialog over it,
+        // Frosted, like the panel beside it. It was `--editor-panel`, opaque,
+        // on the argument that the dock sits *on* the window where the panel is
+        // part of it — but both float over a lit board now, and an opaque chip
+        // in the middle of the light is the one thing on screen the glow does
+        // not reach. The same scrim and the same blur, so the two read as one
+        // material at two sizes.
+        //
+        // Fully round rather than concentric with its buttons: a 48px column of
+        // round buttons has no corners of its own to be concentric with, and a
+        // 10px radius around them read as a rounded rectangle that happened to
+        // contain circles. A shadow just deep enough to lift it off the board —
+        // this is a surface the composition sits under, not a dialog over it,
         // and a heavy one made the board look like a hole.
-        "rounded-[10px] border border-editor-line bg-editor-panel shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
+        "rounded-full border border-editor-line bg-editor-scrim backdrop-blur-2xl",
+        "shadow-[0_1px_6px_rgba(0,0,0,0.3)]",
         // Margin outside, padding in. Without the margin the dock's own corners
         // meet the panel's edge and the top of the row, which is the one thing
         // a floating object must not do.
@@ -1004,7 +1013,7 @@ function RailButton({
       // than merely unselected — so the fill behind the chosen one carries
       // that on its own. Tried at 45% with a lift on hover, and it still
       // read as a column of unavailable things.
-      className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
+      className="relative z-10 grid size-9 place-items-center rounded-full text-white [&_svg]:size-[18px]"
       {...tooltip}
       onPointerEnter={() => {
         tooltip.onPointerEnter();
@@ -1035,22 +1044,42 @@ function RailButton({
  * tinted sheet — without it the gradient behind reads straight through as a
  * gradient, and the panel looks transparent rather than frosted.
  *
- * A left border and no shadow: square and flush, the only edge that exists is
- * the one facing the composition. `overflow-hidden` still earns its place —
- * it keeps the scrolling content off the border.
+ * It floats, where it used to be flush. A left border and square corners were
+ * right for a column that was part of the window; this one is an object resting
+ * on a lit board, and the two things that say so are a border on all four sides
+ * and daylight around it. `overflow-hidden` earns its place twice over now — it
+ * keeps the scrolling content off the border *and* inside the rounding, without
+ * which every list in the panel would square off its own corners.
+ *
+ * The margin is what the `PANEL_WIDTH` arithmetic has to account for; see the
+ * note on it below.
  */
 const PANEL =
-  "flex w-80 flex-none overflow-hidden border-l border-editor-line bg-editor-scrim backdrop-blur-2xl";
+  // `my-2 mr-2`, not `m-2`: the gap to the dock is the dock's own `mr-2` and
+  // adding a left margin here would double it — and, because the container
+  // this sits in is `overflow-hidden`, every pixel added beyond `PANEL_WIDTH`
+  // comes off the right-hand side rather than out of the gap.
+  "my-2 mr-2 flex w-80 flex-none overflow-hidden rounded-2xl border border-editor-line " +
+  "bg-editor-scrim shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-2xl";
 
 /**
  * What the pair occupies when open.
  *
  * The dock is 2.25rem of button, 0.75rem of padding, 0.125rem of border and
- * 0.5rem of margin beside the panel — 3.625rem — and the panel is 20rem. The
- * rest falls to the left of the dock, the shell being `justify-end`, so slack
- * here never moves the panel off the window edge.
+ * 0.5rem of margin beside the panel — 3.625rem — and the panel is 20rem plus
+ * the 0.5rem it is now inset from the window edge by: 20.5rem. That is
+ * 24.125rem, and this carries a little over it. The rest falls to the left of
+ * the dock, the shell being `justify-end`, so slack here never moves the panel
+ * off the window edge.
+ *
+ * It has to be *at least* the sum, and this is the second time that has caught
+ * me out. The container this sizes is `overflow-hidden`, so a shortfall does
+ * not crowd the pair — it takes the missing pixels off the panel's right-hand
+ * side, which is the side against the window edge and the one nobody looks at
+ * to check. The symptom of being eight pixels short is a panel whose inset
+ * from the edge is mysteriously thinner than the dock's.
  */
-export const PANEL_WIDTH = "24rem";
+export const PANEL_WIDTH = "24.5rem";
 
 /** The inspector's destinations. */
 export type CategoryId =
