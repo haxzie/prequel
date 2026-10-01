@@ -137,6 +137,7 @@ import {
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
 import { DEFAULT_GRADIENT_ANGLE } from "../../../shared/presets";
 import { ScenePresetCard } from "./controls/ScenePresetCard";
+import { DetachedProvider } from "./controls/Detached";
 import { FLOATING } from "./surfaces";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import {
@@ -327,7 +328,22 @@ export interface CaptionsState {
  * overridden the key follows. The dot beside a control says which of the two
  * a value is currently coming from.
  */
+/**
+ * Wrapped so the three detached pickers inside share one "which is open".
+ *
+ * Here rather than deeper in, because the three are in different panels — a
+ * colour in Recording, a font in Text, a sound in Audio — and opening one while
+ * another is up has to close the first wherever the two happen to live.
+ */
 export function Inspector(props: InspectorProps) {
+  return (
+    <DetachedProvider>
+      <InspectorPanels {...props} />
+    </DetachedProvider>
+  );
+}
+
+function InspectorPanels(props: InspectorProps) {
   const { state, dispatch, tab, onTab } = props;
   const [zoomTab, setZoomTab] = useState<ZoomTabId>("motion");
   // Above the early returns, for the reason `naming` below gives.

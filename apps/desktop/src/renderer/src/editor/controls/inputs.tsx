@@ -1,11 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useTooltip } from "../../components/Tooltip";
 import { cn } from "../../lib/cn";
 import { ChevronDownIcon } from "../icons";
 import { ColorPicker } from "./ColorPicker";
+import { Detached, useDetached } from "./Detached";
 
 /**
  * The inspector's four controls.
@@ -665,12 +666,12 @@ export function ColorField({
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const { open, toggle, close } = useDetached();
+  const row = useRef<HTMLDivElement>(null);
 
   return (
-    // A column: the row, and the picker that drops out of it.
     <div className="flex flex-col">
-      <div className={cn("flex items-center gap-2", disabled && "opacity-40")}>
+      <div ref={row} className={cn("flex items-center gap-2", disabled && "opacity-40")}>
         <span className="flex-none text-editor-muted [&_svg]:size-4" aria-hidden>
           {icon}
         </span>
@@ -688,12 +689,13 @@ export function ColorField({
             type="button"
             aria-label={`${label}, as a colour`}
             aria-expanded={open}
+            aria-haspopup="dialog"
             disabled={disabled}
             className={cn(
               "flex flex-none items-center gap-1 pr-1.5 pl-2",
               disabled ? "cursor-default" : "cursor-pointer",
             )}
-            onClick={() => setOpen((was) => !was)}
+            onClick={toggle}
           >
             {/* Round, like the slider's grip and everything else in a row
                 here. A rounded square of colour beside a pill of text was the
@@ -749,17 +751,19 @@ export function ColorField({
         </div>
       </div>
 
-      {/* Never while it is disabled: a picker left standing open under a greyed
-          field is a panel of live swatches attached to a control that is not
-          taking any. */}
-      {open && !disabled && (
-        // Lined up with the well rather than the row, so it reads as belonging
-        // to the field rather than as one of its own. `ml-6` is the icon and
-        // the gap beside it.
-        <div className="mt-2 ml-6">
-          <ColorPicker value={value} onChange={onChange} />
-        </div>
-      )}
+      {/* Beside the field rather than under it, and never while it is
+          disabled: a picker left standing open under a greyed field is a panel
+          of live swatches attached to a control that is not taking any.
+
+          It does not close on a change, which every other detached picker here
+          does. A colour is chosen by dragging around a gradient — the value
+          changes continuously on the way to the one you want — so closing on
+          `onChange` would shut the panel on the first pixel of the drag. It
+          closes on a press outside it, which for this one is also how you say
+          you are finished. */}
+      <Detached anchor={row} open={open && !disabled} label="Colour" onClose={close}>
+        <ColorPicker value={value} onChange={onChange} />
+      </Detached>
     </div>
   );
 }
@@ -770,12 +774,15 @@ export function percent(value: number): string {
 }
 
 /**
- * One choice from a list, opened in the flow.
+ * One choice from a list, opened beside the panel.
  *
- * In the flow rather than floating, for the reason the font picker is: the
- * panel is `overflow-hidden` around a scrolling column, so a menu floating
- * out of it would be clipped at the panel's edge unless it were portalled to
- * the body and then kept in place against scroll and resize.
+ * It opened in the flow for a long time, on the grounds that the inspector is
+ * `overflow-hidden` around a scrolling column so a floating menu would be
+ * clipped unless it were portalled and then kept in place against scroll and
+ * resize. All true, and all it bought was a list that shoved every control
+ * below it down the panel while it was open — so choosing a sound moved the
+ * volume slider you were about to reach for. `Detached` does the portalling
+ * and the keeping in place; see the note there.
  *
  * A dropdown rather than a `Segmented` row for a list that is long, or whose
  * labels are: seven weights in one row were seven abbreviations, and the row
@@ -805,19 +812,22 @@ export function Dropdown<T extends string>({
   action?: (option: { value: T; label: string }) => ReactNode;
   onChange: (value: T) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle, close } = useDetached();
+  const row = useRef<HTMLDivElement>(null);
   const chosen = options.find((option) => option.value === value) ?? options[0];
 
   return (
-    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+    <div ref={row} className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
       <button
         type="button"
         aria-expanded={open}
+        aria-haspopup="dialog"
         className={cn(
           "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
           CONTROL_H,
+          open && "bg-white/12",
         )}
-        onClick={() => setOpen((was) => !was)}
+        onClick={toggle}
       >
         <span className="truncate text-[13px] text-white" style={chosen?.style}>
           {chosen?.label ?? value}
@@ -833,8 +843,8 @@ export function Dropdown<T extends string>({
         </span>
       </button>
 
-      {open && (
-        <div className="mt-1 flex flex-col gap-0.5" role="radiogroup">
+      <Detached anchor={row} open={open && !disabled} label="Choose" onClose={close}>
+        <div className="flex flex-col gap-0.5" role="radiogroup">
           {options.map((option) => (
             // The row's surface, rather than the radio itself, so an `action`
             // beside the radio is inside the same highlight. With no action
@@ -860,7 +870,7 @@ export function Dropdown<T extends string>({
                 style={option.style}
                 onClick={() => {
                   onChange(option.value);
-                  setOpen(false);
+                  close();
                 }}
               >
                 {option.label}
@@ -869,7 +879,7 @@ export function Dropdown<T extends string>({
             </div>
           ))}
         </div>
-      )}
+      </Detached>
     </div>
   );
 }

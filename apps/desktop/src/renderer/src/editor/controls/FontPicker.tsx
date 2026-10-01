@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { cn } from "../../lib/cn";
 import { ChevronDownIcon } from "../icons";
 import { hostedFamily, type Fonts } from "../useFonts";
 import { available, CAPTION_FONTS, captionFont, leadFamily, PROBE } from "./fonts";
+import { Detached, useDetached } from "./Detached";
 import { CONTROL_H } from "./inputs";
 
 /**
@@ -37,7 +38,8 @@ export function FontPicker({
   fonts?: Fonts;
   onChange: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle, close } = useDetached();
+  const row = useRef<HTMLDivElement>(null);
 
   const shipped = useMemo(() => {
     // One scratch context for the whole test. Creating a canvas per family is
@@ -98,19 +100,21 @@ export function FontPicker({
     groups.flatMap((group) => group.fonts).find((font) => font.id === value) ?? captionFont(value);
 
   return (
-    // Opens in the flow rather than over it, for the reason the colour picker
-    // does: the panel is `overflow-hidden` around a scrolling column, so a menu
-    // floating out of it would be clipped at the panel's edge unless it were
-    // portalled to the body and then kept in place against scroll and resize.
-    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+    // Opens beside the panel rather than inside it — see `Detached`. This list
+    // is the longest of the three and was the worst offender: every face the
+    // catalogue carries, pushing the whole of the text panel below it off the
+    // bottom of the window while it was open.
+    <div ref={row} className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
       <button
         type="button"
         aria-expanded={open}
+        aria-haspopup="dialog"
         className={cn(
-          "flex items-center justify-between gap-2 rounded-md bg-white/5 px-2.5 text-left",
+          "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
           CONTROL_H,
+          open && "bg-white/12",
         )}
-        onClick={() => setOpen((was) => !was)}
+        onClick={toggle}
       >
         {/* The closed control is a sample too — the point of the list is that
             you can see a face before choosing it, and that is worth as much for
@@ -129,8 +133,8 @@ export function FontPicker({
         </span>
       </button>
 
-      {open && (
-        <div className="mt-1 flex flex-col gap-0.5" role="radiogroup">
+      <Detached anchor={row} open={open && !disabled} label="Font" onClose={close}>
+        <div className="flex flex-col gap-0.5" role="radiogroup">
           {groups.map((group) => (
             <div key={group.id} className="flex flex-col gap-0.5">
               {/* A heading only where there is more than one group to tell
@@ -147,7 +151,7 @@ export function FontPicker({
                   role="radio"
                   aria-checked={font.id === value}
                   className={cn(
-                    "flex items-center rounded-md px-2.5 text-left text-[13px] transition-colors",
+                    "flex items-center rounded-full px-2.5 text-left text-[13px] transition-colors",
                     CONTROL_H,
                     font.id === value
                       ? "bg-white/12 text-editor-fg"
@@ -160,7 +164,7 @@ export function FontPicker({
                   style={{ fontFamily: font.stack }}
                   onClick={() => {
                     onChange(font.id);
-                    setOpen(false);
+                    close();
                   }}
                 >
                   {font.label}
@@ -169,7 +173,7 @@ export function FontPicker({
             </div>
           ))}
         </div>
-      )}
+      </Detached>
     </div>
   );
 }
