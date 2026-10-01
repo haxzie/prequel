@@ -150,6 +150,7 @@ import {
 import {
   TEXT_TABS,
   TextStylePanel,
+  TextMotionPanel,
   TextContentPanel,
   TextPositionPanel,
   type TextPatch,
@@ -563,6 +564,7 @@ function InspectorPanels(props: InspectorProps) {
                 <div className="flex min-w-0 flex-1 flex-col animate-view-in">
                   {textTab === "text" && <TextContentPanel {...panel} />}
                   {textTab === "style" && <TextStylePanel {...panel} />}
+                  {textTab === "animate" && <TextMotionPanel {...panel} />}
                   {textTab === "position" && <TextPositionPanel {...panel} />}
                 </div>
               </div>

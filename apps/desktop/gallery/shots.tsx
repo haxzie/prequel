@@ -595,8 +595,7 @@ export const SHOTS: readonly Shot[] = [
     steps: [
       ...EDITOR_READY,
       { kind: "key", code: "KeyT" },
-      { kind: "click", selector: 'button[aria-label="Style"]' },
-      { kind: "scrollTo", selector: "[data-section='enter']" },
+      { kind: "click", selector: 'button[aria-label="Animate"]' },
       { kind: "settle", ms: 600 },
     ],
     clip: "[data-panel='inspector']",

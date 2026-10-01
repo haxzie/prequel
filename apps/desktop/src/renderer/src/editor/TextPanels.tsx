@@ -38,6 +38,7 @@ import {
   CornerRadiusIcon,
   FontIcon,
   LinesIcon,
+  AnimateIcon,
   BackdropIcon,
   MoveIcon,
   OffsetIcon,
@@ -52,7 +53,7 @@ import {
 } from "./icons";
 import type { Fonts } from "./useFonts";
 
-export type TextTabId = "style" | "text" | "position";
+export type TextTabId = "style" | "text" | "animate" | "position";
 
 /**
  * Style first: a freshly added text is a template and a motion before it is
@@ -61,6 +62,11 @@ export type TextTabId = "style" | "text" | "position";
 export const TEXT_TABS: { id: TextTabId; label: string; Icon: () => React.ReactElement }[] = [
   { id: "style", label: "Style", Icon: BackdropIcon },
   { id: "text", label: "Text", Icon: TextIcon },
+  // Its own tab rather than two sections under Style. How a text looks and how
+  // it arrives are different questions asked at different times, and the
+  // motions are ten buttons and two sliders — enough that reaching the colour
+  // under them meant scrolling past a grid you were not using.
+  { id: "animate", label: "Animate", Icon: AnimateIcon },
   { id: "position", label: "Position", Icon: MoveIcon },
 ];
 
@@ -373,16 +379,8 @@ function Words({
   );
 }
 
-/**
- * Which template the text wears, and how it arrives and leaves.
- *
- * The gallery and the motions on one tab: picking a template is mostly
- * picking a motion and a look together, and it is the first thing anyone
- * changes on a freshly added text.
- */
-export function TextStylePanel({ text, onChange, onTemplate }: TextPanelProps) {
-  const motions = TEXT_MOTIONS.map((motion) => ({ value: motion.id, label: motion.label }));
-
+/** Which template the text wears. The first thing anyone changes on a new one. */
+export function TextStylePanel({ text, onTemplate }: TextPanelProps) {
   return (
     <>
       <Section title="Template">
@@ -430,6 +428,16 @@ export function TextStylePanel({ text, onChange, onTemplate }: TextPanelProps) {
         </div>
       </Section>
 
+    </>
+  );
+}
+
+/** How a text comes and goes — see the note on `TEXT_TABS`. */
+export function TextMotionPanel({ text, onChange }: TextPanelProps) {
+  const motions = TEXT_MOTIONS.map((motion) => ({ value: motion.id, label: motion.label }));
+
+  return (
+    <>
       <Section title="Enter" id="enter">
         <MotionPicker
           value={text.enter}
