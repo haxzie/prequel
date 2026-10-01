@@ -244,13 +244,15 @@ export function SetupPanel({ state }: { state: DockState }) {
 
       <UpdateButton />
 
-      {/* Last on the strip. Everything to the left of it is part of setting a
-          recording up and is read left to right; dismissing the panel is the
-          one thing here that is not, so it sits at the far end out of that
-          sequence rather than at the head of it.
+      {/* Last on the strip, behind a rule. Everything to the left of it is part
+          of setting a recording up and is read left to right; dismissing the
+          panel is the one thing here that is not, so it sits at the far end out
+          of that sequence rather than at the head of it — and the rule is what
+          says so, now that there is no gap in the row to do it.
 
           Named for where it goes. Dismissing the panel mid-addition returns to
           the editor the addition was started from, not to the library. */}
+      <span className={DIVIDER} />
       <IconButton
         title={state.extending ? "Back to the editor" : "Close"}
         onClick={() => void window.prequel.dock.close()}
