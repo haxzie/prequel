@@ -1279,7 +1279,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             Frosted only slightly: the wallpaper reads as depth behind the
             board, and any more of it competes with the composition, which is
             the one thing in this window being looked at. */}
-        <div className="dot-grid flex min-h-0 flex-1 bg-editor-scrim">
+        {/* `relative`, because the panel on the right floats over this rather
+            than sitting beside it — see the note on it below. */}
+        <div className="dot-grid relative flex min-h-0 flex-1 bg-editor-scrim">
           {/* `min-h-0` as well as `min-w-0`: a flex item defaults to
             `min-height: auto`, so this column refuses to shrink below its
             content — and the canvas reports an intrinsic 1920×1080. Without it
@@ -1301,7 +1303,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 spans the full width to centre its contents, and without it the
                 invisible half of the strip would swallow every click meant for
                 the board — including the one that deselects. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center">
+            {/* Inset by the panel for the same reason the stage is: this
+                column now runs the full width of the board, and a bar centred
+                in it would sit off-centre over the part of the board anybody
+                can see. */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
+              style={{ paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
+            >
               <span className="pointer-events-auto">
                 <FrameBar
                   frame={state.project.frame}
@@ -1311,6 +1320,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               </span>
             </div>
             <Preview
+              // The room the floating panel needs. The stage keeps the picture
+              // out from under it while the board itself runs the whole width.
+              inset={panelOpen ? PANEL_WIDTH : undefined}
               ready={ready}
               frame={state.project.frame}
               settings={previewSettings}
@@ -1352,7 +1364,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               to take the space back as it goes, and a panel that slid away
               leaving a gap would be worse than one that simply vanished.
               `overflow-hidden` keeps the content its full width throughout, so
-              nothing reflows on the way past. */}
+              nothing reflows on the way past.
+
+              Floating over the board rather than sitting beside it, and the
+              reason is the rail: those icons are drawn on the editor's own
+              background with nothing behind them, so as a column of its own the
+              rail was a vertical strip the glow could not cross and the wash
+              stopped dead at it. Over the board, the light runs underneath and
+              the icons sit in it. The composition still takes the space back —
+              through the stage's padding now rather than through this width,
+              which is why both carry the same transition. */}
           <div
             aria-hidden={!panelOpen}
             // Named by attribute for the documentation screenshots, which clip
@@ -1361,7 +1382,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             // the crop. Same convention as `data-panel='setup'` on the dock.
             data-panel="inspector"
             className={cn(
-              "flex flex-none overflow-hidden transition-[width,opacity] duration-200 ease-out",
+              "absolute inset-y-0 right-0 z-30 flex overflow-hidden",
+              "transition-[width,opacity] duration-200 ease-out",
               panelOpen ? "opacity-100" : "pointer-events-none opacity-0",
             )}
             style={{ width: panelOpen ? PANEL_WIDTH : 0 }}

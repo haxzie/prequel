@@ -91,6 +91,7 @@ export type Picked = Grabbable | "captions";
 export type Grabbable = PlanSource | "watermark";
 
 export function Preview({
+  inset,
   ready,
   frame,
   settings,
@@ -133,6 +134,14 @@ export function Preview({
   enter: EnterTransition | null;
   media: EditorPlayback;
   images: Images;
+  /**
+   * How much of the right edge is covered by the floating panel.
+   *
+   * The board runs the full width of the window — that is what lets the glow
+   * pass under the rail — so this is what keeps the composition out from under
+   * it. Undefined when the panel is closed, which is the ordinary gutter.
+   */
+  inset?: string;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
   /**
@@ -1091,7 +1100,14 @@ export function Preview({
       // than taking a row above it — see the note at the call site. The number
       // is the bar's height plus the breathing room the other three sides get,
       // so a composition tall enough to fill the stage still clears it.
-      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6"
+      //
+      // `transition-[padding]` to match the panel's own: the two move together,
+      // so the composition takes the space back exactly as the panel gives it
+      // up rather than jumping when it has gone.
+      className="grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6 transition-[padding] duration-200 ease-out"
+      // Added to the gutter rather than replacing it, so the picture keeps the
+      // same breathing room from the panel that it has from every other edge.
+      style={inset ? { paddingRight: `calc(1.5rem + ${inset})` } : undefined}
       // The dotted surround. A click that lands out here is the same "nothing"
       // the canvas already treats as a deselect, and without it a ring put on
       // the camera could only be taken off by finding an empty patch of the
