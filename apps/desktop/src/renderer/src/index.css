@@ -666,17 +666,16 @@ body {
   /* The surface the three "what to record" buttons sit on, so they read as one
      control rather than three neighbours.
 
-     White, having been walked down through black to within three units of the
-     panel — at which point a well stops being shallow and starts being nothing,
-     because there is only so far a fill can be darkened before it meets the
-     surface it is supposed to differ from. Going *up* instead buys the same
-     faintness with somewhere to go.
+     Lighter than the panel rather than darker. A sunken tray has only the few
+     units between the fill and the surface to work with before the two meet and
+     the grouping disappears; a raised one can be as faint as it likes and still
+     have somewhere to go.
 
      Translucent rather than a fixed tone so it stays lighter whatever is behind
-     the panel, and far short of `--dock-hover`: the buttons inside light up
+     the panel, and well short of `--dock-hover`: the buttons inside light up
      with that value *over* this one, and a tray as light as its own hover state
      leaves the pointer with nothing to say. */
-  --dock-group: rgba(255, 255, 255, 0.02);
+  --dock-group: rgba(255, 255, 255, 0.05);
   --dock-fg: #eceef1;
   --dock-muted: #98a0a9;
   /* Lighter than the background, and translucent white rather than a fixed
