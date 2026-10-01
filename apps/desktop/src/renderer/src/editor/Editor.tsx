@@ -35,6 +35,7 @@ import {
 import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
+import { FLOATING } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
@@ -1235,31 +1236,45 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     <Shell
       name={session.name}
       onBack={onBack}
+      trailing={
+        <button
+          type="button"
+          title="Move this recording to the Trash"
+          aria-label="Move this recording to the Trash"
+          className="no-drag grid size-6 flex-none place-items-center rounded-full text-editor-muted hover:bg-cut/20 hover:text-editor-fg [&_svg]:size-3.5"
+          onClick={() => void window.prequel.projects.delete(session.dir)}
+        >
+          <TrashIcon />
+        </button>
+      }
       actions={
         <>
           {/* Text as well as the glyph, unlike every other button on this bar.
               The others are things somebody came here to do and will find by
               looking; this one has to be noticed by somebody who was not
               looking for it, in the moment the app has just done something
-              wrong. An unlabelled bug is a button nobody presses. */}
+              wrong. An unlabelled bug is a button nobody presses.
+
+              On the bar's own material, as its own object. It used to be a
+              bare label that only drew a surface when hovered, which on a
+              solid bar read as restraint and on a transparent one reads as
+              text floating over the wallpaper. */}
           <button
             type="button"
             title="Tell us what went wrong"
-            className="no-drag flex flex-none items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+            className={cn(
+              "no-drag flex h-7 flex-none items-center gap-1.5 rounded-full px-2.5",
+              "text-[12px] text-editor-muted hover:text-editor-fg [&_svg]:size-3.5",
+              FLOATING,
+            )}
             onClick={() => setFeedbackOpen(true)}
           >
             <BugIcon />
             Found a bug?
           </button>
-          <button
-            type="button"
-            title="Move this recording to the Trash"
-            aria-label="Move this recording to the Trash"
-            className="no-drag grid size-7 place-items-center rounded-lg text-editor-muted hover:bg-cut/20 hover:text-editor-fg [&_svg]:size-4"
-            onClick={() => void window.prequel.projects.delete(session.dir)}
-          >
-            <TrashIcon />
-          </button>
+          {/* No plate under this one. Export is the only thing on the bar that
+              is already a surface — a filled button in the app's own green —
+              and putting it on another would be a button on a button. */}
           <ExportButton busy={checking} onOpen={openExport} />
         </>
       }
@@ -1667,11 +1682,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 function Shell({
   name,
   onBack,
+  trailing,
   actions,
   children,
 }: {
   name: string;
   onBack: () => void;
+  /** Sits inside the breadcrumb group, at its end. */
+  trailing?: React.ReactNode;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -1680,30 +1698,56 @@ function Shell({
     // and a flex item that cannot shrink below its content pushes the bottom of
     // the window out of view instead of letting the middle give way.
     <div className="editor-theme relative flex min-h-0 flex-1 flex-col overflow-hidden bg-editor-glass text-editor-fg">
-      {/* Dragging the bar moves the window, and the inset traffic lights need
-          the room on the left. */}
-      {/* Nearly solid, like the transport and the timeline at the other end:
-          the window's two bands of controls read as the frame around the work,
-          and the frosted board between them is the work. It is also what lets
-          this bar keep `--editor-muted` for the breadcrumb — that tone was
-          chosen against an opaque surface, and at the shell's own frost it had
-          the wallpaper coming up through it. */}
-      <header className="drag flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line bg-editor-veil pr-3 pl-20">
-        {/* `no-drag`, or this moves the window instead of navigating — the one
-            mistake this bar makes easy to make. */}
-        <button
-          type="button"
-          onClick={onBack}
-          title="Back to Recordings"
-          className="no-drag flex flex-none items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+      {/* No surface of its own. It was a nearly-solid band, matching the
+          transport at the other end so the two read as the frame around the
+          work — and that stopped being the arrangement when the panels inside
+          lifted off the board. A solid bar above a window of floating things is
+          the one thing left that is still a wall.
+
+          So the bar is the shell showing through, and what sits on it is three
+          groups on the same material everything else here floats on. Dragging
+          it still moves the window; each group opts back out.
+
+          The groups are also what let the breadcrumb keep `--editor-muted`.
+          That tone was chosen against an opaque surface and at the shell's own
+          frost it had the wallpaper coming up through it — which was the whole
+          argument for the solid bar, and is answered by giving the text a
+          surface of its own rather than giving the window one. */}
+      <header className="drag flex h-[42px] flex-none items-center gap-2 px-2">
+        {/* The traffic lights are macOS's and are drawn over this, at the inset
+            `hiddenInset` puts them at. Nothing is in here: it is a plate for
+            them to sit on, sized to cover the three and no more, which is why
+            it is a width rather than padding on the bar. */}
+        <span aria-hidden className={cn("h-7 w-[66px] flex-none rounded-full", FLOATING)} />
+
+        {/* Where this recording is and what can be done to it, as one object.
+            The bin is in here rather than out with Export because it acts on
+            the thing this group names — and at the far end of the bar it was a
+            destructive button sitting beside the one everybody reaches for. */}
+        <div
+          className={cn("flex min-w-0 items-center gap-1 rounded-full py-1 pr-1 pl-1.5", FLOATING)}
         >
-          <FolderIcon />
-          Recordings
-        </button>
-        <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
-          /
-        </span>
-        <span className="flex-1 truncate pr-1.5 text-[13px] font-medium">{name}</span>
+          {/* `no-drag`, or this moves the window instead of navigating — the
+              one mistake this bar makes easy to make. */}
+          <button
+            type="button"
+            onClick={onBack}
+            title="Back to Recordings"
+            className="no-drag flex flex-none items-center gap-1.5 rounded-full px-2 py-0.5 text-[13px] text-editor-muted hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5"
+          >
+            <FolderIcon />
+            Recordings
+          </button>
+          <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
+            /
+          </span>
+          <span className="min-w-0 truncate px-1 text-[13px] font-medium">{name}</span>
+          {trailing}
+        </div>
+
+        {/* Everything after this is pushed to the far end. */}
+        <span className="flex-1" />
+
         {actions}
       </header>
       {children}

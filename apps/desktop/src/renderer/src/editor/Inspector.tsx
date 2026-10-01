@@ -137,6 +137,7 @@ import {
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
 import { DEFAULT_GRADIENT_ANGLE } from "../../../shared/presets";
 import { ScenePresetCard } from "./controls/ScenePresetCard";
+import { FLOATING } from "./surfaces";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import {
   activeSettings,
@@ -891,25 +892,6 @@ const SHELL = "flex flex-1 justify-end";
  * an ordinary flex item it would stretch to match the panel beside it and hold
  * a column of hover targets over nothing.
  */
-/**
- * What both of the editor's floating things are made of.
- *
- * One constant rather than the same four utilities written twice, because the
- * two are meant to be the same material and were drifting the moment they were
- * written apart — the dock carried a tight shadow and the panel a deep one, and
- * at a glance that read as two different surfaces rather than as one at two
- * sizes. Whatever is true of the frost has to be true of both, so there is only
- * one place to change it.
- *
- * The shadow is deliberately slight. These float over a board lit by the
- * recording's own colours, and a deep shadow puts a dark halo around each of
- * them — which is a hole punched in the light rather than an object resting on
- * it. Enough to lift, and no more.
- */
-const FLOATING =
-  "border border-editor-line bg-editor-scrim backdrop-blur-2xl " +
-  "shadow-[0_2px_10px_rgba(0,0,0,0.28)]";
-
 /**
  * The rail: icons over the editor's own background, with nothing behind them.
  *

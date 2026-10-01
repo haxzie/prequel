@@ -25,7 +25,10 @@ export function ExportButton({ busy, onOpen }: { busy?: boolean; onOpen: () => v
       // an impatient second press would queue another one behind the first.
       disabled={busy}
       aria-busy={busy}
-      className="no-drag flex items-center gap-1.5 rounded-lg bg-export px-3 py-1.5 text-[11px] font-medium text-white hover:brightness-110 disabled:hover:brightness-100 [&_svg]:size-3.5"
+      // Fully round, matching the groups it sits beside on the title bar — it
+      // is the one of them that brings its own surface, so the shape is all it
+      // has to share with them.
+      className="no-drag flex h-7 items-center gap-1.5 rounded-full bg-export px-3 text-[11px] font-medium text-white hover:brightness-110 disabled:hover:brightness-100 [&_svg]:size-3.5"
       onClick={onOpen}
     >
       {/* The glyph carries it, not the word: "Export" turning into "Checking…"
