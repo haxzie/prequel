@@ -463,7 +463,19 @@ function InspectorPanels(props: InspectorProps) {
               />
             )}
 
-            <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+            <div
+              className={cn(
+                // `min-h-0` is not decoration. This wrapper has visible
+                // overflow, so its automatic minimum size is its content's
+                // height — it grows past the panel and the scroller below it is
+                // never bounded by anything, which is a panel that simply does
+                // not scroll. The scroller used to be a direct child here and
+                // needed none of this: a flex item that is itself a scroll
+                // container already resolves its own minimum to zero.
+                "flex min-h-0 min-w-0 flex-1 flex-col",
+                pushed.id !== null && "hidden",
+              )}
+            >
               <PanelHeader
                 // The tab that is showing, not the word "Zoom": the header names
                 // the section the panel is displaying, which is what the rail's
@@ -545,7 +557,19 @@ function InspectorPanels(props: InspectorProps) {
             {/* Hidden rather than unmounted: the font picker and the four
                 colour fields in here own the lists they open, and portal the
                 content out of this subtree. */}
-            <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+            <div
+              className={cn(
+                // `min-h-0` is not decoration. This wrapper has visible
+                // overflow, so its automatic minimum size is its content's
+                // height — it grows past the panel and the scroller below it is
+                // never bounded by anything, which is a panel that simply does
+                // not scroll. The scroller used to be a direct child here and
+                // needed none of this: a flex item that is itself a scroll
+                // container already resolves its own minimum to zero.
+                "flex min-h-0 min-w-0 flex-1 flex-col",
+                pushed.id !== null && "hidden",
+              )}
+            >
               <PanelHeader
                 title={showingTextTab.label}
                 icon={<showingTextTab.Icon />}
@@ -717,7 +741,19 @@ function InspectorPanels(props: InspectorProps) {
               that owns the list lives in here and portals its content out, so
               unmounting this would take the list with it — the same trap the
               scroller's key note below describes. */}
-          <div className={cn("flex min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}>
+          <div
+            className={cn(
+              // `min-h-0` is not decoration. This wrapper has visible
+              // overflow, so its automatic minimum size is its content's
+              // height — it grows past the panel and the scroller below it is
+              // never bounded by anything, which is a panel that simply does
+              // not scroll. The scroller used to be a direct child here and
+              // needed none of this: a flex item that is itself a scroll
+              // container already resolves its own minimum to zero.
+              "flex min-h-0 min-w-0 flex-1 flex-col",
+              pushed.id !== null && "hidden",
+            )}
+          >
             {editingCaptions ? (
               // The editor is about the words, not about the selected clip, so
               // the header says so rather than "Clip" — and offers no delete,
@@ -832,17 +868,6 @@ function InspectorPanels(props: InspectorProps) {
                 mounted and float over the incoming one, and these are a
                 scrolling column of very different heights: the two would have
                 to agree on a size neither has. */}
-              {/* Where a list that has taken the panel over is drawn. Always
-                rendered while one is showing, because the content is portalled
-                into it — a slot that only appeared once something had asked for
-                it would not exist on the frame the asking happened. */}
-              {pushed.id !== null && (
-                <div
-                  ref={pushed.setSlot}
-                  className="flex min-w-0 flex-1 flex-col p-1 animate-view-in"
-                />
-              )}
-
               <div
                 className={cn(
                   "flex min-w-0 flex-1 flex-col animate-view-in",
