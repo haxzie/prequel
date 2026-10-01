@@ -35,7 +35,7 @@ import {
 import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { FLOATING } from "./surfaces";
+import { FLOATING, TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
@@ -1323,8 +1323,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 in it would sit off-centre over the part of the board anybody
                 can see. */}
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
-              style={{ paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
+              className="pointer-events-none absolute inset-x-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
+              // Below the title bar, which floats over this column now — the
+              // board runs the full height of the window so the dots and the
+              // glow reach the top of it, and everything that is not board has
+              // to keep out of the bar's way itself.
+              style={{ top: TITLE_BAR, paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
             >
               <span className="pointer-events-auto">
                 <FrameBar
@@ -1338,6 +1342,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // The room the floating panel needs. The stage keeps the picture
               // out from under it while the board itself runs the whole width.
               inset={panelOpen ? PANEL_WIDTH : undefined}
+              // And the room the title bar and the frame bar need above it, for
+              // the same reason: the board is the full height of the window and
+              // the picture has to stay clear of what floats on it.
+              headroom={`calc(${TITLE_BAR} + 3.5rem)`}
               ready={ready}
               frame={state.project.frame}
               settings={previewSettings}
@@ -1397,11 +1405,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             // the crop. Same convention as `data-panel='setup'` on the dock.
             data-panel="inspector"
             className={cn(
-              "absolute inset-y-0 right-0 z-30 flex overflow-hidden",
+              "absolute right-0 bottom-0 z-30 flex overflow-hidden",
               "transition-[width,opacity] duration-200 ease-out",
               panelOpen ? "opacity-100" : "pointer-events-none opacity-0",
             )}
-            style={{ width: panelOpen ? PANEL_WIDTH : 0 }}
+            // `top` rather than `inset-y-0`: the board reaches the top of the
+            // window and this must not, or it would slide up behind the title
+            // bar's own controls.
+            style={{ top: TITLE_BAR, width: panelOpen ? PANEL_WIDTH : 0 }}
           >
             <Inspector
               state={state}
@@ -1713,7 +1724,10 @@ function Shell({
           frost it had the wallpaper coming up through it — which was the whole
           argument for the solid bar, and is answered by giving the text a
           surface of its own rather than giving the window one. */}
-      <header className="drag flex h-[42px] flex-none items-center gap-2 px-2">
+      <header
+        className="drag absolute inset-x-0 top-0 z-40 flex items-center gap-2 px-2"
+        style={{ height: TITLE_BAR }}
+      >
         {/* The traffic lights are macOS's and are drawn over this, at the inset
             `hiddenInset` puts them at. Nothing is in here: it is a plate for
             them to sit on, sized to cover the three and no more, which is why

@@ -92,6 +92,7 @@ export type Grabbable = PlanSource | "watermark";
 
 export function Preview({
   inset,
+  headroom,
   ready,
   frame,
   settings,
@@ -142,6 +143,14 @@ export function Preview({
    * it. Undefined when the panel is closed, which is the ordinary gutter.
    */
   inset?: string;
+  /**
+   * How much of the top edge is covered by the bars floating over it.
+   *
+   * The title bar and the frame bar both sit on this board rather than above
+   * it — that is what lets the dots and the glow reach the top of the window —
+   * so this is what keeps the picture out from under them.
+   */
+  headroom?: string;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
   /**
@@ -1136,10 +1145,14 @@ export function Preview({
       // keeps it on the board, and it clips at the padding box — so the wash
       // reaches under the floating panel, which is the whole point of it being
       // on the stage rather than around the picture.
-      className="relative isolate grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pt-14 pb-6 transition-[padding] duration-200 ease-out"
-      // Added to the gutter rather than replacing it, so the picture keeps the
-      // same breathing room from the panel that it has from every other edge.
-      style={inset ? { paddingRight: `calc(1.5rem + ${inset})` } : undefined}
+      className="relative isolate grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden px-6 pb-6 transition-[padding] duration-200 ease-out"
+      // Both added to the gutter rather than replacing it, so the picture keeps
+      // the same breathing room from the bars and the panel that it has from
+      // every other edge.
+      style={{
+        paddingTop: headroom ?? "1.5rem",
+        ...(inset ? { paddingRight: `calc(1.5rem + ${inset})` } : {}),
+      }}
       // The dotted surround. A click that lands out here is the same "nothing"
       // the canvas already treats as a deselect, and without it a ring put on
       // the camera could only be taken off by finding an empty patch of the
