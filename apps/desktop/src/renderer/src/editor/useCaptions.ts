@@ -168,7 +168,7 @@ export function useCaptions(
         const written: string[] = [];
 
         for (const [look, current] of pending) {
-          const style = captionStyle(current.captionStyle, current.captionAnimation);
+          const style = captionStyle(current.captionStyle);
           const options = {
             frame: size,
             size: current.captionSize,

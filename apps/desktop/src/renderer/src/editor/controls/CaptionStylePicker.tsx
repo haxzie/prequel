@@ -1,9 +1,4 @@
-import {
-  CAPTION_ANIMATIONS,
-  CAPTION_LOOKS,
-  captionStyle,
-  type CaptionStyle,
-} from "../../../../shared/captions";
+import { CAPTION_STYLES, type CaptionStyle } from "../../../../shared/captions";
 import { cn } from "../../lib/cn";
 
 /**
@@ -18,22 +13,14 @@ import { cn } from "../../lib/cn";
  * the plate, the weight, the stroke and the lit word are all real, but the
  * wrapping and the exact metrics are the browser's. That is the honest limit of
  * a 60px swatch, and the preview beside it is the thing that has to be exact.
- *
- * Every swatch carries the arrival that is actually chosen, rather than none.
- * The two grids each vary one axis and hold the other, so what a swatch shows
- * is the combination picking it would give you — not the look in the abstract,
- * which is a thing the editor never draws.
  */
 export function CaptionStylePicker({
   value,
-  animation,
   accent,
   disabled,
   onChange,
 }: {
   value: string;
-  /** The arrival in force, so each look is shown arriving the way it would. */
-  animation: string;
   /** The lit-word colour, so a swatch shows the choice actually in force. */
   accent: string;
   disabled?: boolean;
@@ -41,7 +28,7 @@ export function CaptionStylePicker({
 }) {
   return (
     <div className="grid grid-cols-3 gap-1">
-      {CAPTION_LOOKS.map((look) => captionStyle(look.id, animation)).map((style) => (
+      {CAPTION_STYLES.map((style) => (
         <button
           key={style.id}
           type="button"
@@ -68,56 +55,6 @@ export function CaptionStylePicker({
             <Sample style={style} accent={accent} />
           </span>
           {style.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * How the words arrive, as a grid of the same swatch arriving each way.
- *
- * Held against the look in force for the reason given above. A "Focus" swatch
- * drawn on the subtitle pill and one drawn on the plain look are different
- * pictures, and the useful one is the one you are about to get.
- */
-export function CaptionAnimationPicker({
-  value,
-  look,
-  accent,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  /** The look in force, which the swatches are drawn in. */
-  look: string;
-  accent: string;
-  disabled?: boolean;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-4 gap-1">
-      {CAPTION_ANIMATIONS.map((animation) => (
-        <button
-          key={animation.id}
-          type="button"
-          title={animation.label}
-          aria-label={animation.label}
-          aria-pressed={animation.id === value}
-          disabled={disabled}
-          className={cn(
-            "flex flex-col gap-1 rounded-md p-1 text-center text-[10px]",
-            "disabled:pointer-events-none disabled:opacity-30",
-            animation.id === value
-              ? "bg-white/10 text-editor-fg ring-2 ring-selected ring-inset"
-              : "text-editor-muted hover:bg-white/5",
-          )}
-          onClick={() => onChange(animation.id)}
-        >
-          <span className="grid aspect-video place-items-center overflow-hidden rounded-[5px]">
-            <Sample style={captionStyle(look, animation.id)} accent={accent} />
-          </span>
-          {animation.label}
         </button>
       ))}
     </div>

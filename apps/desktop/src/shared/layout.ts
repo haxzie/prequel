@@ -1583,7 +1583,7 @@ function captionItems(
   const items: PlanItem[] = [];
   // Resolved rather than passed: the look decides whether its words are
   // coloured against what is behind them, and only its id reaches here.
-  const look = captionStyle(captions.captionStyle, captions.captionAnimation);
+  const look = captionStyle(captions.captionStyle);
   const tint = look.onLight ? { onDark: look.fill, onLight: look.onLight } : null;
 
   for (const cue of cues) {

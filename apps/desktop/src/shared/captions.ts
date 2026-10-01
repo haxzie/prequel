@@ -26,7 +26,7 @@ import type { TranscriptWord } from "./transcript.js";
  * 0.5×. The one exception is `scale`, which multiplies the setting itself so a
  * style can read bigger without moving the slider under the user.
  */
-export interface CaptionLook {
+export interface CaptionStyle {
   id: string;
   label: string;
   weight: number;
@@ -44,53 +44,6 @@ export interface CaptionLook {
    */
   plate: { color: string; radius: number; padX: number; padY: number; full: boolean } | null;
   /**
-   * The colour to use where what is behind the words is light, or null to draw
-   * them in `fill` whatever they land on.
-   *
-   * `fill` is then the colour for a dark backdrop, and the two are chosen
-   * between while the frame is drawn — the compositor measures the pixels it
-   * has already put down under the caption. That is the only place the answer
-   * exists: a recording zooms, scrolls and cuts, so what is behind a given
-   * word is not known when the words are laid out.
-   *
-   * Only for a look with nothing behind its glyphs. A plate or an outline
-   * carries its own contrast and has no need of this.
-   */
-  onLight: string | null;
-  /** Extra letter spacing, as a fraction of the font size. */
-  tracking: number;
-  caps: boolean;
-  /**
-   * One word to a cue, rather than a line of them.
-   *
-   * Required by any look that swells the word it lights. The lit word is drawn
-   * over a flat layer that still holds the whole line, so growing it by a
-   * seventh pushes it about ten pixels into the space either side — and the gap
-   * between two words is about ten pixels. It lands on top of its neighbours.
-   *
-   * With one word to a cue there are no neighbours to land on, which is also
-   * the look these styles are imitating: a single word at a time, large.
-   */
-  perWord: boolean;
-}
-
-/**
- * How the words arrive — the second axis of a caption, and the one that moves.
- *
- * Split from `CaptionLook` because the two are independent and were not being
- * treated as such: every look carried its own arrival baked in, so choosing a
- * plate meant accepting the fill-in that came with it, and the catalogue had to
- * carry a separate entry for each pairing anybody might want. "Highlight" and
- * "Subtitle" were in fact the same look twice over, differing only here.
- *
- * Three ways in and a way of not bothering. They are exclusive rather than
- * additive: two signals saying which word is being spoken make a line busy
- * rather than clear, which is the note the old table repeated at every entry.
- */
-export interface CaptionAnimation {
-  id: string;
-  label: string;
-  /**
    * Whether the spoken word is lit, and how much larger it is drawn.
    *
    * Non-null means the cue is rasterised twice — once flat, once in the accent
@@ -98,7 +51,6 @@ export interface CaptionAnimation {
    * `pop` of 1 lights the word without swelling it.
    */
   lit: { pop: number } | null;
-
   /**
    * How solid a word is before it is spoken, as a fraction of full strength,
    * or null for a look that draws its whole line at once.
@@ -132,27 +84,45 @@ export interface CaptionAnimation {
    * happens.
    */
   blurIn: number | null;
+  /**
+   * The colour to use where what is behind the words is light, or null to draw
+   * them in `fill` whatever they land on.
+   *
+   * `fill` is then the colour for a dark backdrop, and the two are chosen
+   * between while the frame is drawn — the compositor measures the pixels it
+   * has already put down under the caption. That is the only place the answer
+   * exists: a recording zooms, scrolls and cuts, so what is behind a given
+   * word is not known when the words are laid out.
+   *
+   * Only for a look with nothing behind its glyphs. A plate or an outline
+   * carries its own contrast and has no need of this.
+   */
+  onLight: string | null;
+  /** Extra letter spacing, as a fraction of the font size. */
+  tracking: number;
+  caps: boolean;
+  /**
+   * One word to a cue, rather than a line of them.
+   *
+   * Required by any look that swells the word it lights. The lit word is drawn
+   * over a flat layer that still holds the whole line, so growing it by a
+   * seventh pushes it about ten pixels into the space either side — and the gap
+   * between two words is about ten pixels. It lands on top of its neighbours.
+   *
+   * With one word to a cue there are no neighbours to land on, which is also
+   * the look these styles are imitating: a single word at a time, large.
+   */
+  perWord: boolean;
 }
-
-/**
- * A look and an arrival, together: what actually gets drawn.
- *
- * The rasteriser and `layout.ts` take one of these rather than the two halves,
- * so neither has to know the axes were ever separate — and neither can pair
- * them differently from the other, which is the usual way a preview and an
- * export come to disagree.
- */
-export type CaptionStyle = CaptionLook & Omit<CaptionAnimation, "id" | "label">;
-
 
 /**
  * The safe look, and the one anything unrecognised falls back to.
  *
- * Named rather than reached as `CAPTION_LOOKS[0]` so the fallback is a
+ * Named rather than reached as `CAPTION_STYLES[0]` so the fallback is a
  * definite value: an index into an array is `undefined` as far as the compiler
  * is concerned, and a fallback that can itself be missing is not one.
  */
-const SUBTITLE: CaptionLook = {
+const SUBTITLE: CaptionStyle = {
   id: "subtitle",
   label: "Subtitle",
   weight: 500,
@@ -164,6 +134,12 @@ const SUBTITLE: CaptionLook = {
   // the contrast here, so the glyph edges are better left clean.
   shadow: null,
   plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
+  lit: null,
+  // Held back until it is said. Half, which is as far as white over this plate
+  // can go and still be read a word ahead of the voice — much below it and the
+  // line reads as one word with a grey smear after it.
+  dim: 0.5,
+  blurIn: null,
   onLight: null,
   // A hair tight, which is how SF is set at display sizes.
   tracking: -0.01,
@@ -174,29 +150,21 @@ const SUBTITLE: CaptionLook = {
 /**
  * The looks on offer, in the order the picker shows them.
  *
- * "Plain" leads because it is what a new project is set to — see
- * `DEFAULT_CAPTIONS` — and a picker whose default sits fifth reads as though
+ * "Blur in" leads because it is what a new project is set to — see
+ * `DEFAULT_SETTINGS` — and a picker whose default sits fifth reads as though
  * something else were chosen for you.
  *
  * The order carries nothing else. The fallback is `SUBTITLE` by name rather
  * than whatever happens to be first, which is what lets this list be reordered
  * freely: see the note on that constant.
- *
- * **The ids outlive the labels.** `blur` is a look with no blur in it and `pop`
- * is a look that does not pop — both named for the arrival they used to carry,
- * which now lives in `CAPTION_ANIMATIONS`. Renaming them would be tidier and
- * would also silently restyle every project that named one, because
- * `captionLook` falls back rather than throwing: a saved `blur` would stop
- * resolving and come back as a subtitle pill. The labels are what anybody
- * reads, so the labels are what changed.
  */
-export const CAPTION_LOOKS: CaptionLook[] = [
+export const CAPTION_STYLES: CaptionStyle[] = [
   {
     id: "blur",
-    label: "Plain",
-    // Light. The look is words standing on the footage with nothing behind
-    // them, and a heavy face and shouted capitals are a second thing competing
-    // to be the point of it.
+    label: "Blur in",
+    // Light, and set as it was spoken. The look is the focus moving along the
+    // line; a heavy face and shouted capitals are a second thing competing to
+    // be the point of it.
     weight: 300,
     scale: 1.1,
     fill: "#ffffff",
@@ -206,21 +174,54 @@ export const CAPTION_LOOKS: CaptionLook[] = [
     // against what is behind them rather than assumed.
     shadow: null,
     plate: null,
+    // Not lit. The whole line is on screen and the blur is what says which
+    // word is being spoken, so a second colour would be saying it twice.
+    lit: null,
+    // Nothing held back either, for the same reason: the focus is already
+    // saying which word is being spoken, and a second signal saying it too
+    // makes the line busy rather than clear.
+    dim: null,
+    blurIn: 0.26,
     // Near-black where the footage is light. The words have no plate and no
     // shadow, so white on a white page is white on a white page — this is what
     // makes the look usable on a screen recording rather than only on footage
     // that happens to be dark.
     onLight: "#101418",
-    // Open rather than tight: a light face at caption size closes up, and a
-    // word arriving reads better with air around the letters.
+    // Open rather than tight: a light face at caption size closes up, and the
+    // blur clearing off a word reads better with air around the letters.
     tracking: 0.005,
     caps: false,
+    // A full line, like every look but `pop`. The words are drawn a quad each
+    // so they can come into focus one at a time, which is not the same thing
+    // as showing them one at a time.
     perWord: false,
   },
   SUBTITLE,
   {
+    id: "highlight",
+    label: "Highlight",
+    weight: 500,
+    scale: 1,
+    fill: "#ffffff",
+    stroke: null,
+    // As `subtitle`: the plate carries the contrast, so the glyphs stay clean.
+    shadow: null,
+    plate: { color: "rgba(8,10,14,0.55)", radius: 0.34, padX: 0.5, padY: 0.3, full: false },
+    // Lit but not swollen: on a plate, a word that grows collides with the one
+    // beside it, because the plate was measured around the flat layout.
+    lit: { pop: 1 },
+    // The same half as `subtitle`, so the two looks differ by the colour the
+    // line fills with rather than by how hard they hold the rest of it back.
+    dim: 0.5,
+    blurIn: null,
+    onLight: null,
+    tracking: -0.01,
+    caps: false,
+    perWord: false,
+  },
+  {
     id: "pop",
-    label: "Word",
+    label: "Pop",
     weight: 800,
     scale: 1.25,
     fill: "#ffffff",
@@ -230,16 +231,21 @@ export const CAPTION_LOOKS: CaptionLook[] = [
     stroke: null,
     shadow: { color: "rgba(0,0,0,0.5)", blur: 0.2, dy: 0.05 },
     plate: null,
+    // Lit, but not swollen at draw time.
+    //
+    // Swelling meant scaling the bitmap up as it was composited, which is both
+    // blurry and — while anything was drawn underneath — wrong: a glyph grown
+    // about its centre does not cover the one beneath it, because the counters
+    // grow too and the smaller strokes show through them. The size this look
+    // wants comes from `scale`, which is applied when the text is rasterised
+    // and therefore sharp.
+    lit: { pop: 1 },
+    // One word to a cue, so there is no rest of the line to hold back.
+    dim: null,
+    blurIn: null,
     onLight: null,
     tracking: -0.01,
     caps: true,
-    // One word to a cue: the look is a single large word at a time, and the
-    // size it wants comes from `scale`, applied when the text is rasterised and
-    // therefore sharp. Swelling a lit word at draw time instead meant scaling
-    // the bitmap up as it was composited, which is blurry — and, with anything
-    // drawn underneath, wrong: a glyph grown about its centre does not cover
-    // the one beneath it, because the counters grow too and the smaller strokes
-    // show through them.
     perWord: true,
   },
   {
@@ -251,6 +257,11 @@ export const CAPTION_LOOKS: CaptionLook[] = [
     stroke: { color: "#000000", width: 0.11 },
     shadow: null,
     plate: null,
+    lit: null,
+    // Nothing held back. The look is a hard outline on every word, and a word
+    // at half strength inside a full-strength outline reads as a mistake.
+    dim: null,
+    blurIn: null,
     onLight: null,
     tracking: 0,
     caps: false,
@@ -267,6 +278,9 @@ export const CAPTION_LOOKS: CaptionLook[] = [
     // The same dark as the pill styles, so the looks read as one family and a
     // band is a difference of shape rather than of colour.
     plate: { color: "rgba(8,10,14,0.55)", radius: 0, padX: 0.6, padY: 0.42, full: true },
+    lit: null,
+    dim: 0.5,
+    blurIn: null,
     onLight: null,
     tracking: 0.01,
     caps: false,
@@ -274,122 +288,16 @@ export const CAPTION_LOOKS: CaptionLook[] = [
   },
 ];
 
-/** Nothing moves: the whole line, every word at full strength, from the off. */
-const STILL: CaptionAnimation = {
-  id: "none",
-  label: "None",
-  lit: null,
-  dim: null,
-  blurIn: null,
-};
-
 /**
- * The arrivals on offer, in the order the picker shows them.
- *
- * "Focus" leads for the reason "Plain" does: it is what a new project is set
- * to. `STILL` is last because it is the one somebody goes looking for, rather
- * than the one they are offered.
- */
-export const CAPTION_ANIMATIONS: CaptionAnimation[] = [
-  {
-    id: "focus",
-    label: "Focus",
-    // Not lit, and nothing held back. The focus clearing off a word already
-    // says which word is being spoken, and a second signal saying it too makes
-    // the line busy rather than clear.
-    lit: null,
-    dim: null,
-    blurIn: 0.26,
-  },
-  {
-    id: "fill",
-    label: "Fill in",
-    lit: null,
-    // Half, which is as far as white over a dark plate can go and still be read
-    // a word ahead of the voice — much below it and the line reads as one word
-    // with a grey smear after it.
-    dim: 0.5,
-    blurIn: null,
-  },
-  {
-    id: "highlight",
-    label: "Highlight",
-    // Lit but not swollen: on a plate, a word that grows collides with the one
-    // beside it, because the plate was measured around the flat layout.
-    lit: { pop: 1 },
-    // Held back as well as lit, so the line fills in *and* colours — which is
-    // what the old "Highlight" look did, and the pairing it is named for.
-    dim: 0.5,
-    blurIn: null,
-  },
-  STILL,
-];
-
-/**
- * The arrival each look used to carry, by look id.
- *
- * A project saved before the two were separate names a look and nothing else,
- * and resolving that to `STILL` would quietly stop every existing caption from
- * moving. `highlight` is in here although it is no longer a look: it fell in
- * with `subtitle`, whose appearance it shared exactly, and this is the half of
- * it that was not a duplicate.
- */
-const WAS: Record<string, string> = {
-  blur: "focus",
-  subtitle: "fill",
-  highlight: "highlight",
-  pop: "highlight",
-  outline: "none",
-  band: "fill",
-};
-
-/**
- * The look with this id, or the subtitle pill.
+ * The style with this id, or the first one.
  *
  * Falls back rather than throwing, for the same reason `cursorStyle` does: a
- * project saved by a build that had a look this one does not is still worth
+ * project saved by a build that had a style this one does not is still worth
  * opening, and a missing look is a plainer video rather than an editor that
  * will not load the recording.
  */
-export function captionLook(id: string): CaptionLook {
-  return CAPTION_LOOKS.find((look) => look.id === id) ?? SUBTITLE;
-}
-
-/** The arrival with this id, or none. Falls back for the reason above. */
-export function captionAnimation(id: string): CaptionAnimation {
-  return CAPTION_ANIMATIONS.find((animation) => animation.id === id) ?? STILL;
-}
-
-/**
- * The arrival a project means, given what it stored.
- *
- * `animationId` is optional so that a caller holding nothing but an old
- * project's look id still gets what that look always did — see `WAS`.
- */
-export function captionArrival(lookId: string, animationId?: string): CaptionAnimation {
-  return captionAnimation(animationId ?? WAS[lookId] ?? STILL.id);
-}
-
-/**
- * What gets drawn: a look and an arrival resolved into one record.
- *
- * Note the `id` and `label` this comes back with are the *look*'s. Nothing
- * downstream of here needs to name the arrival — `captionArrival` is for the
- * two callers that do.
- */
-export function captionStyle(id: string, animationId?: string): CaptionStyle {
-  const look = captionLook(id);
-  const arrival = captionArrival(id, animationId);
-  return {
-    ...look,
-    lit: arrival.lit,
-    // A look with one word to a cue has no rest of the line to hold back, and
-    // dimming the only word on screen until it is spoken means it arrives
-    // half-strength and then jumps. The arrival keeps its colour change and
-    // loses the fill, which is what `pop` did when the two were one record.
-    dim: look.perWord ? null : arrival.dim,
-    blurIn: arrival.blurIn,
-  };
+export function captionStyle(id: string): CaptionStyle {
+  return CAPTION_STYLES.find((style) => style.id === id) ?? SUBTITLE;
 }
 
 /** One word inside a cue, on the session clock, and which line it sits on. */

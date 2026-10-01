@@ -24,7 +24,7 @@
  * Deliberately free of any `electron`, Node or DOM import: main stores them,
  * the renderer draws them, and the reducer applies them.
  */
-import { captionArrival, captionLook } from "./captions.js";
+import { captionStyle } from "./captions.js";
 import { cursorStyle } from "./contract.js";
 import { filterId } from "./filters.js";
 import { layoutBoxes } from "./layout.js";
@@ -154,17 +154,8 @@ export function sanitiseScenePreset(value: unknown): ScenePreset | null {
     ...dropCaptionsOn(DEFAULT_CAPTIONS),
     ...storedCaptionLook(stored.captions),
     // Normalised for the reason `cursorStyle` is, just above.
-    captionStyle: captionLook(
+    captionStyle: captionStyle(
       String(stored.captions?.captionStyle ?? DEFAULT_CAPTIONS.captionStyle),
-    ).id,
-    // A preset written before the arrival was its own leaf names only a look,
-    // and resolving that to "none" would land every caption in it still. The
-    // one-argument resolver answers with what that look always did.
-    captionAnimation: captionArrival(
-      String(stored.captions?.captionStyle ?? DEFAULT_CAPTIONS.captionStyle),
-      typeof stored.captions?.captionAnimation === "string"
-        ? stored.captions.captionAnimation
-        : undefined,
     ).id,
   };
 
