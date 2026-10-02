@@ -4203,11 +4203,29 @@ function ZoomMotionPanel({
         onChange={(speed) => onChange({ speed })}
       />
 
-      {/* Directly under Speed, because the two answer halves of one question:
-          that one is how long the move takes, this one is what it feels like
-          over that time. Presets first — most people want "ease out" rather
-          than a particular pair of control points, and the curve then shows
-          what they picked and can be nudged from there. */}
+      {/* Between the timing and the shape of it, and only for a lens. Speed
+          says how long the move takes and this says what the move does to the
+          picture — both are about the travel, where the ease below is the
+          curve it travels on. */}
+      {zoom.method === "loupe" && (
+        <Slider
+          icon={<BlurIcon />}
+          label="Motion blur"
+          value={zoom.loupeBlur}
+          min={0}
+          max={1}
+          step={0.01}
+          format={(value) => (value === 0 ? "Off" : percent(value))}
+          onChange={(loupeBlur) => onChange({ loupeBlur })}
+        />
+      )}
+
+      {/* Under the timing, because they answer halves of one question: that
+          says how long the move takes, this says what it feels like over that
+          time. A lens slips its motion blur between the two — that one is
+          about the travel as well. Presets first: most people want "ease out"
+          rather than a particular pair of control points, and the curve then
+          shows what they picked and can be nudged from there. */}
       <Field icon={<SmoothingIcon />} label="Ease">
         <div className="flex flex-col gap-2">
           <Segmented
@@ -4221,24 +4239,6 @@ function ZoomMotionPanel({
           <EasingPad curve={zoom} onChange={onChange} />
         </div>
       </Field>
-
-      {/* After the ease, and only for a lens. It belongs with Speed and Ease
-          rather than on the Glass tab — those three are what the move does, and
-          the glass's own controls are what it is made of. Last of the three
-          because it is the only one that does nothing at all until the lens is
-          actually travelling. */}
-      {zoom.method === "loupe" && (
-        <Slider
-          icon={<BlurIcon />}
-          label="Motion blur"
-          value={zoom.loupeBlur}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value === 0 ? "Off" : percent(value))}
-          onChange={(loupeBlur) => onChange({ loupeBlur })}
-        />
-      )}
     </Section>
   );
 }
