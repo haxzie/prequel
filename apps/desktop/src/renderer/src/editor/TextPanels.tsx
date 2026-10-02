@@ -113,7 +113,11 @@ export interface TextPanelProps {
  * exactly the same choice: a preview drawn at 700 that the click resolves to
  * 600 is a list that lies about what it is offering.
  */
-function settleFont(fonts: Fonts, font: string, style: TextStyle): { font: string; weight: number } {
+function settleFont(
+  fonts: Fonts,
+  font: string,
+  style: TextStyle,
+): { font: string; weight: number } {
   const offered = fonts.variants(font);
   const weight = offered
     ? nearest([...new Set(offered.map((variant) => variant.weight))], style.weight)
@@ -458,7 +462,6 @@ export function TextStylePanel({ text, onTemplate }: TextPanelProps) {
           ))}
         </div>
       </Section>
-
     </>
   );
 }
