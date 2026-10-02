@@ -59,6 +59,48 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "decision-models-for-browser-agents",
+    title: "How to build a fast browser agent with Jev and OpenAI's Decisions API",
+    excerpt:
+      "Decision models like TypeSafe's Jev and OpenAI's new Decisions API pick a browser agent's next click in about 150 ms. We read the two open source agents built on Jev and wrote down the loop, the code, the numbers and where it breaks.",
+    date: "2026-10-02",
+    tag: "Guide",
+    readingMinutes: 12,
+    pillar: "product-demo-videos",
+    faq: [
+      {
+        question: "What is Jev by TypeSafe AI?",
+        answer:
+          "Jev is a System One decision model from TypeSafe AI, released in early access on 15 September 2026. It does not generate text. You send it state and typed questions (Choice, Score or Noul, a yes or no) and it returns the chosen answer with a probability for every option, in 70 to 500 ms. It is priced at $0.042 per million input tokens with output free.",
+      },
+      {
+        question: "What is OpenAI's Decisions API?",
+        answer:
+          "The Decisions API is OpenAI's decision model, announced at DevDay on 29 September 2026 and built on a specialised version of GPT-6 Luna. You define questions with a fixed set of answers and supply text or images, and it returns a choice with a confidence score in about 150 ms. As of 2 October 2026 it is in limited preview, with no published schema or price.",
+      },
+      {
+        question: "How do you use a decision model in a browser agent?",
+        answer:
+          "Turn the page into a numbered list of controls, then ask the decision model in one request which operation to perform and which element to perform it on. Code checks the answer, gates it on confidence and risk, and executes it. A language model writes any text and handles low-confidence steps, and code verifies the outcome. Browser Use's Jev Ultrafast and hunch both work this way.",
+      },
+      {
+        question: "Is Jev faster than an LLM for browser automation?",
+        answer:
+          "Per decision, yes. Hunch measured a median of 153 ms for Jev against 678 ms for gpt-4o-mini in JSON mode on the same page states, with both correct on all 24 calls. Browser Use's Jev Ultrafast completed a Google Flights search in 7.1 seconds. The page snapshot and the browser action cost the same with any model, so the end-to-end gain is smaller than the per-decision gap.",
+      },
+      {
+        question: "Can Jev read screenshots?",
+        answer:
+          "No. Jev reads text and JSON, so a browser agent sends it a text description of the page's controls. OpenAI's Decisions API accepts images, and open-weight Jev-style models such as OneJev and Vev take screenshots in the state, which helps with canvas apps and pages without accessible labels.",
+      },
+      {
+        question: "Is there an open source alternative to Jev?",
+        answer:
+          "Several open-weight models answer the same Choice, Score and Noul questions through a Jev-compatible endpoint. WebJev is trained for browser agents and needs one 80 GB GPU. Laya runs locally, including in a browser. OneJev and Vev accept images. Each needs testing on your own task before you rely on its probabilities.",
+      },
+    ],
+  },
+  {
     slug: "screen-studio-4",
     title: "Screen Studio 4: what's new, and what it still costs",
     excerpt:
