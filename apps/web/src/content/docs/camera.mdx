@@ -1,10 +1,15 @@
 export const title = "Camera";
-export const description = "The shape, size, position and border of your camera.";
+export const description = "The shape, size, position, colour look and border of your camera.";
 export const faq = [
   {
     question: "Can I remove the background behind me?",
     answer:
       "Yes, on recordings made since Prequel began recording a person matte alongside the camera. Choose Remove background as the shape. On an older take the option explains why it cannot be used.",
+  },
+  {
+    question: "Can I improve how I look on camera?",
+    answer:
+      "Open Effects in the Camera panel and pick a look. Warm is for a cold room or a window behind you, Cool for a warm bulb overhead, and Film for lifted blacks and warm highlights. Hover a look to see it on your face before you choose, and set Amount for how much of it you want.",
   },
   {
     question: "Why is my camera mirrored?",
@@ -39,6 +44,25 @@ The first shape cuts you out of your surroundings, leaving just you over the com
 The map at the bottom places the camera at one of nine positions in the frame. Dragging it in the composition is the other way, and gives you any position at all.
 
 **Mirror** flips the picture so it matches what you see in a mirror, which is how most people expect to look. It is on by default.
+
+## Effects
+
+A colour look on the camera alone, for when the room you recorded in was not kind to you. The screen beside it is untouched — it is lit by a display rather than by the light you were sitting in.
+
+![The Effects list: six camera looks, each with a swatch and the room it is for](/docs/camera-looks.webp)
+
+Each look carries a swatch showing it on a reference picture, so you can compare them side by side. **Hover a look to see it on your own camera** — the swatch says what a look does, the preview says what it does to you.
+
+- **Natural** evens out the room without changing the colour.
+- **Warm** is for a cold room, or a window behind you washing you out.
+- **Cool** is for a warm bulb overhead turning you orange.
+- **Film** lifts the blacks and splits the toning: teal shadows, warm highlights.
+- **Clean** is crisp and neutral, for a room that is already lit well.
+- **Soft** pulls the contrast down, for a ring light or a hard overhead.
+
+**Amount** fades the look towards your untouched camera, and appears once you have picked one.
+
+Every look is built for skin first. The saturation they add spares faces and lands on the room instead, so the picture comes up without you going orange.
 
 ## Border
 

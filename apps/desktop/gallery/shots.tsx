@@ -377,6 +377,28 @@ export const SHOTS: readonly Shot[] = [
   inspector("inspector-background", "Background"),
   inspector("inspector-recording", "Recording"),
   inspector("inspector-camera", "Camera"),
+  // The camera's colour looks, and the list open on them. Its own shot because
+  // the control is a list that takes the panel over — the Camera panel shows
+  // only the chosen name, which says nothing about what the list is for.
+  {
+    id: "camera-looks",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Camera"]' },
+      { kind: "settle", ms: 300 },
+      // The row sits at the foot of the section, below the fold on a short
+      // window — and a click is dispatched at the element's coordinates, so
+      // off screen it lands on whatever is there instead.
+      { kind: "scrollTo", selector: "[data-panel='inspector'] button[aria-expanded]" },
+      { kind: "settle", ms: 200 },
+      { kind: "click", selector: "[data-panel='inspector'] button[aria-expanded]" },
+      { kind: "settle", ms: 400 },
+    ],
+    clip: "[data-panel='inspector']",
+  },
   inspector("inspector-audio", "Audio"),
   inspector("inspector-cursor", "Cursor"),
   // A named pointer: the blue tag chosen and a name typed, with the tag
