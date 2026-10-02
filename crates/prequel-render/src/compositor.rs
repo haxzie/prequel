@@ -186,7 +186,7 @@ const LOUPE_BLEED: f64 = 0.22;
 /// Mirrors `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts` and in
 /// `shaders.metal`: the editor's is the one that documents it, this one sizes
 /// and places the render, and the shader's is what samples it.
-const LOUPE_REACH: f64 = 1.6;
+const LOUPE_REACH: f64 = 1.75;
 
 /**
  * A texture and everything that has to outlive it.
@@ -1400,7 +1400,13 @@ impl Compositor {
         // a very large glass at a very high magnification then gets less
         // supersampling rather than a target nothing can afford.
         let want = span * glass.magnify;
-        let cap = (frame.width * frame.height).sqrt();
+        // Twice the frame's own pixel count, not one. A lens at the default size
+        // and 2x needs about 1.1 frames' worth, so a cap of one frame clipped
+        // exactly the ordinary case — the texture came out at the frame's own
+        // scale and the lens was back to enlarging output pixels. Two leaves the
+        // common settings untouched and still bounds a huge glass at a huge
+        // magnification.
+        let cap = (2.0 * frame.width * frame.height).sqrt();
         let size = (want.min(cap).round() as usize).max(1);
 
         // Retained, so the borrow of `self` ends before `uniforms_for` takes its

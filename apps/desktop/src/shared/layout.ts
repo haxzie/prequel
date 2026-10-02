@@ -2458,13 +2458,32 @@ function betweenZooms(zooms: readonly ZoomSlice[]): Between[] {
 }
 
 /** Seconds of travel, as nanoseconds. */
+/**
+ * How long a lens's move takes, against what the Speed control asks for.
+ *
+ * A camera move carries the whole picture across the frame, and it needs its
+ * time or it reads as a cut rather than as a camera. A lens covers no distance
+ * at all — it grows where it already is, over a few hundred pixels — so the same
+ * duration spent on it reads as the glass hanging in the air on its way down.
+ *
+ * A fraction rather than a second default, because what is wanted is a
+ * *relationship*: a lens should be quicker than a camera move set to the same
+ * speed, at every setting and after the slider has been dragged, not only at
+ * the one value a default could carry.
+ *
+ * The Speed control shows the resolved figure, so the number under the hand is
+ * still the number of seconds the move takes. See `ZoomMotionPanel`.
+ */
+export const LOUPE_HASTE = 0.62;
+
 function easeNs(zoom: ZoomSlice): number {
   // Rounded, because this is a *time* and every time in a plan is a whole
   // nanosecond: `Span`, `RectKey.at` and `CursorPoint.at` are all `i64` on the
   // Rust side, and serde refuses a float for one with an error naming a number
   // and nothing else. A speed is seconds from a slider, so this is the first
   // place a fraction can get in.
-  return Math.round(Math.max(0, zoom.speed) * 1_000_000_000);
+  const seconds = Math.max(0, zoom.speed) * (zoom.method === "loupe" ? LOUPE_HASTE : 1);
+  return Math.round(seconds * 1_000_000_000);
 }
 
 /**
@@ -4966,11 +4985,12 @@ export const LOUPE_BLEED = 0.22;
  * resolution rather than off output pixels that have already thrown most of it
  * away. See `renderGlass` in `webgl.ts` and `render_glass` in `compositor.rs`.
  *
- * Just over the furthest the shader ever looks, which is the rim's reflection at
- * `1.3 + 0.5 * edge` radii with `edge` at its widest. Short of that the rim
- * samples past the end of the render and clamps, which draws as a smeared ring.
+ * Just over the furthest the shader ever looks, which is the rim gathering the
+ * surroundings into itself — `LOUPE_GATHER` radii, and a little past that for
+ * the blue end of the dispersion. Short of this the rim samples past the end of
+ * the render and clamps, which draws as a smeared ring.
  */
-export const LOUPE_REACH = 1.6;
+export const LOUPE_REACH = 1.75;
 
 /**
  * Where the lens is at one instant, or null when there is no glass to draw.

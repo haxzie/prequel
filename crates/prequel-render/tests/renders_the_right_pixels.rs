@@ -2013,14 +2013,14 @@ fn the_glass_splits_colour_at_its_edge() {
 
     // The same lens twice, once with the fringing off and once at full.
     //
-    // Placed so the black-and-white boundary falls in the *rim*, which is the
-    // only place the bend differs enough between channels to separate them —
-    // and the only place it should. Over the middle of the glass a lens is
-    // nearly flat, every index refracts the same, and a scan across the
-    // diameter of a centred lens finds no colour however broken the control is.
+    // Placed so the black-and-white boundary falls where the glass thickens,
+    // which is the only place the bend differs enough between channels to
+    // separate them — and the only place it should. Over the flat middle every
+    // index refracts the same, so a scan across the diameter of a lens centred
+    // on the boundary finds no colour however broken the control is.
     let shot = |aberration: f64| LoupeKey {
         at: 0,
-        x: 228.0,
+        x: 190.0,
         y: 120.0,
         radius: 80.0,
         magnify: 2.0,
@@ -2079,7 +2079,7 @@ fn the_glass_splits_colour_at_its_edge() {
 
         let frame = first_frame(&output);
         let mut widest = 0;
-        for x in 149..307 {
+        for x in 111..269 {
             let (r, g, b) = frame.at(x, 120);
             let spread = (r as i16 - b as i16)
                 .abs()
@@ -2099,6 +2099,196 @@ fn the_glass_splits_colour_at_its_edge() {
     assert!(
         full_split > 60,
         "the fringing control should split colour, got {full_split}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A source with real detail in it: fine vertical stripes.
+fn striped(width: u32, height: u32, period: u32) -> arc::R<cv::PixelBuf> {
+    let mut buf = cv::PixelBuf::new(
+        width as usize,
+        height as usize,
+        cv::PixelFormat::_32_BGRA,
+        None,
+    )
+    .expect("allocate a pixel buffer");
+
+    unsafe {
+        buf.lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("lock");
+        let stride = buf.bytes_per_row();
+        let base = buf.base_address_mut().cast::<u8>();
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let on = (x as u32 / period).is_multiple_of(2);
+                let v = if on { 235 } else { 20 };
+                let at = y * stride + x * 4;
+                *base.add(at) = v;
+                *base.add(at + 1) = v;
+                *base.add(at + 2) = v;
+                *base.add(at + 3) = 255;
+            }
+        }
+        buf.unlock_lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("unlock");
+    }
+    buf
+}
+
+/// How steep the edges are: the biggest step between neighbours.
+///
+/// Steepness rather than mean energy, because that is what reads as sharpness.
+/// A 2x enlargement of a hard edge is a ramp, and the only question is how many
+/// output pixels the ramp takes — one, and it still looks like an edge.
+fn detail(frame: &Frame, x0: u32, x1: u32, y0: u32, y1: u32) -> f64 {
+    let mut steepest: f64 = 0.0;
+    for y in y0..y1 {
+        for x in x0..x1 - 1 {
+            let a = frame.at(x, y).1 as f64;
+            let b = frame.at(x + 1, y).1 as f64;
+            steepest = steepest.max((a - b).abs());
+        }
+    }
+    steepest
+}
+
+#[test]
+fn magnifying_a_picture_keeps_its_edges() {
+    let dir = scratch("prequel-loupe-sharpness");
+    // One source pixel per output pixel, which is what the Automatic frame
+    // gives: the export is the recording's own size. A 2x lens has nothing left
+    // to recover here and has to invent, and so does a 2x camera zoom.
+    let source = striped(320, 240, 8);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    let src_rect = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 320.0,
+        height: 240.0,
+    };
+    let square = Shape {
+        radius: 0.0,
+        exponent: 2.0,
+    };
+
+    let picture = |dst: Rect| PlanItem::Image {
+        source: PlanSource::Screen,
+        src_rect,
+        dst_rect: dst,
+        shape: square,
+        mirror: false,
+        matte: false,
+        blobs: Vec::new(),
+        motion: Vec::new(),
+    };
+
+    // (a) the lens, 2x over the middle.
+    let glass = |at: i64| LoupeKey {
+        at,
+        x: (OUT_W / 2) as f64,
+        y: (OUT_H / 2) as f64,
+        radius: 60.0,
+        magnify: 2.0,
+        presence: 1.0,
+        curvature: 0.34,
+        aberration: 0.0,
+        reflection: 0.0,
+    };
+    let lens_plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            picture(full),
+            PlanItem::Loupe {
+                keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+            },
+        ],
+        filter: None,
+    };
+
+    // (b) a camera zoom to the same 2x about the same point: the picture drawn
+    // at twice the size, centred. This is the path that has always sampled the
+    // recording directly, so it is the ceiling the lens should reach.
+    let zoomed = Rect {
+        x: -(OUT_W as f64) / 2.0,
+        y: -(OUT_H as f64) / 2.0,
+        width: OUT_W as f64 * 2.0,
+        height: OUT_H as f64 * 2.0,
+    };
+    let zoom_plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![picture(zoomed)],
+        filter: None,
+    };
+
+    let run = |plan: RenderPlan, name: &str| -> Frame {
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+        first_frame(&output)
+    };
+
+    let lens = run(lens_plan, "lens");
+    let zoom = run(zoom_plan, "zoom");
+
+    // The flat middle of the glass, well inside the rolled edge.
+    let (x0, x1) = (OUT_W / 2 - 30, OUT_W / 2 + 30);
+    let (y0, y1) = (OUT_H / 2 - 25, OUT_H / 2 + 25);
+
+    let through_glass = detail(&lens, x0, x1, y0, y1);
+    let through_zoom = detail(&zoom, x0, x1, y0, y1);
+    let unmagnified = detail(
+        &run(
+            RenderPlan {
+                frame: Size {
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                items: vec![picture(full)],
+                filter: None,
+            },
+            "flat",
+        ),
+        x0,
+        x1,
+        y0,
+        y1,
+    );
+
+    // Magnified, a hard edge has to stay as steep as it was unmagnified. Plain
+    // bilinear scores about half of this — it spreads the edge over as many
+    // output pixels as the magnification — and a nine-tap cubic about 60%. The
+    // one-tap texel snap in both shaders is what holds the full figure.
+    assert!(
+        through_zoom > unmagnified * 0.9,
+        "a 2x camera zoom should keep its edges: {through_zoom:.0} against {unmagnified:.0}"
+    );
+    // And the lens has to reach the same place. It renders the composition
+    // again rather than enlarging the finished frame, so it has exactly the
+    // same pixels available — anything less means that second pass is losing
+    // them.
+    assert!(
+        through_glass > through_zoom * 0.9,
+        "a 2x loupe should be as sharp as a 2x zoom: {through_glass:.0} against {through_zoom:.0}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

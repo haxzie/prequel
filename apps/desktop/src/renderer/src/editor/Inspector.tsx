@@ -40,6 +40,7 @@ import {
   type ZoomSlice,
   WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
+import { LOUPE_HASTE } from "../../../shared/layout";
 import type { Backgrounds } from "./useBackgrounds";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
@@ -4119,7 +4120,12 @@ function ZoomMotionPanel({
         icon={<LevelIcon />}
         label="Level"
         value={zoom.level}
-        min={1.2}
+        // A lens goes down to 1, where a camera move stops at 1.2. At 1 a zoom
+        // that moves the picture does nothing at all and the control would have
+        // a dead end on it; a lens at 1 is still a lens — the glass is there,
+        // bending the picture at its rim — and it is the setting that reads
+        // most like a piece of glass set down on the screen.
+        min={zoom.method === "loupe" ? 1 : 1.2}
         max={4}
         step={0.1}
         format={(value) => `${value.toFixed(1)}×`}
@@ -4133,9 +4139,16 @@ function ZoomMotionPanel({
         min={0}
         max={2}
         step={0.05}
-        // Seconds, not a rate: "how long does it take" is the question
-        // anyone actually has about a camera move.
-        format={(value) => (value === 0 ? "Cut" : `${value.toFixed(2)}s`)}
+        // Seconds, not a rate: "how long does it take" is the question anyone
+        // actually has about a camera move. Resolved through `LOUPE_HASTE` for a
+        // lens, which moves quicker than a camera at the same setting — the
+        // control has to show the seconds it will really take, or the one number
+        // on it would be the one thing about the move that is not true.
+        format={(value) =>
+          value === 0
+            ? "Cut"
+            : `${(value * (zoom.method === "loupe" ? LOUPE_HASTE : 1)).toFixed(2)}s`
+        }
         onChange={(speed) => onChange({ speed })}
       />
 

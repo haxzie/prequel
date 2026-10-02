@@ -19,6 +19,7 @@ import {
   cursorAt,
   layoutBoxes,
   loupeAt,
+  LOUPE_HASTE,
   placement,
   presetFitsFrame,
   rectAt,
@@ -5351,6 +5352,7 @@ describe("the look laid over the frame", () => {
  */
 describe("the loupe", () => {
   const S = 1_000_000_000;
+  const NS = 1_000_000_000;
   const FRAME: Size = { width: 1920, height: 1080 };
 
   const lens = (over: Partial<ZoomSlice> = {}): ZoomSlice => ({
@@ -5485,6 +5487,28 @@ describe("the loupe", () => {
     // Mid-move, where a smoothed sprite is a long way behind the sample.
     expect(glass.x).toBeCloseTo(drawn.x, 3);
     expect(glass.y).toBeCloseTo(drawn.y, 3);
+  });
+
+  it("arrives quicker than a camera move set to the same speed", () => {
+    // A lens grows where it already is; a camera carries the whole picture
+    // across the frame. The same number of seconds spent on the first reads as
+    // the glass hanging in the air, which is what this stops.
+    const speed = 0.6;
+    const start = 2 * S;
+
+    const keys = glassOf([lens({ speed, source: { start, end: 6 * S } })])!;
+    const camera = image(
+      planWith([{ ...DEFAULT_ZOOM, id: "z", speed, source: { start, end: 6 * S } } as ZoomSlice]),
+      "screen",
+    )!;
+
+    // Both tracks open where their move in begins, before the slice.
+    const lensOpens = start - keys[0]!.at;
+    const cameraOpens = start - camera.motion![0]!.at;
+
+    expect(cameraOpens).toBeCloseTo(speed * NS, -6);
+    expect(lensOpens).toBeCloseTo(speed * LOUPE_HASTE * NS, -6);
+    expect(lensOpens).toBeLessThan(cameraOpens);
   });
 
   it("does not shrink the camera bubble out of its way", () => {

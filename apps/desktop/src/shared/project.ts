@@ -873,10 +873,12 @@ export const DEFAULT_ZOOM = {
   // Enough bow to read as glass at the rim and leave the middle of the lens
   // magnifying evenly. Further up it is a ball lens, which is a look rather
   // than a magnifier.
-  loupeCurvature: 0.34,
-  // Present and slight. A lens with no fringing at all reads as a cut-out
-  // circle, and this is about the width of one at export resolution.
-  loupeAberration: 0.3,
+  loupeCurvature: 0.4,
+  // Present, and not slight. The rim is where a lens shows what it is — the
+  // picture stretched and split into colour as the glass thickens — and with
+  // this near zero the glass is a clean circle of picture, which reads as a
+  // crop rather than as something resting on the screen.
+  loupeAberration: 0.45,
   loupeReflection: 0.5,
 } as const;
 

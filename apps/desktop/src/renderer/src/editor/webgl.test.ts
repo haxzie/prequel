@@ -215,6 +215,45 @@ const lens = (source: string) =>
     .replaceAll(/\blens_bend\b/g, "lensBend")
     .replaceAll(/\blens_reach\b/g, "lensReach");
 
+describe("enlarging a picture", () => {
+  it("snaps to the texel grid the same way on each side", () => {
+    // The filter every magnified draw goes through — a camera zoom as well as a
+    // lens. A difference here is a preview and an export that disagree about how
+    // sharp the same zoom is, which is only findable by exporting and comparing.
+    const glsl = body(SHADER_SOURCE().fragment, "vec4 sampleEnlarged(");
+    const msl = body(METAL, "static float4 sample_enlarged(");
+
+    expect(glsl, "sampleEnlarged in the GLSL").not.toBeNull();
+    expect(msl, "sample_enlarged in the MSL").not.toBeNull();
+    expect(enlarge(glsl!)).toBe(enlarge(msl!));
+  });
+
+  it("measures the sampling rate the same way on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "float texelsPerPixel(");
+    const msl = body(METAL, "static float texels_per_pixel(");
+
+    expect(glsl, "texelsPerPixel in the GLSL").not.toBeNull();
+    expect(msl, "texels_per_pixel in the MSL").not.toBeNull();
+    expect(enlarge(glsl!)).toBe(enlarge(msl!));
+  });
+});
+
+/**
+ * The two spellings, and the arguments MSL passes where GLSL has globals.
+ *
+ * MSL takes the texture, the sampler and the uniform block as parameters; GLSL
+ * declares all three at file scope and names none of them. Same values, same
+ * arithmetic, different way of reaching them — which is exactly what this has
+ * to see through.
+ */
+const enlarge = (source: string) =>
+  arithmetic(source)
+    .replaceAll(/\bsample_enlarged\b/g, "sampleEnlarged")
+    .replaceAll(/\btexels_per_pixel\b/g, "texelsPerPixel")
+    .replaceAll(/\bimage\.sample\(smp, /g, "texture(u_image, ")
+    .replaceAll("texture2d<N> image, sampler smp, ", "")
+    .replaceAll("constant Uniforms &u, ", "");
+
 describe("the loupe both rasterisers draw", () => {
   it("has the same surface on each side", () => {
     const glsl = body(SHADER_SOURCE().fragment, "vec3 lensNormal(");
@@ -244,12 +283,13 @@ describe("the loupe both rasterisers draw", () => {
     for (const declaration of [
       "LOUPE_BLEED = 0.22",
       "LOUPE_IOR = 1.52",
-      "LOUPE_SPREAD = 0.09",
       "LOUPE_LIGHT = N(-0.4508, -0.6211, 0.6411)",
       "LOUPE_ROLL = 0.995",
       "LOUPE_EDGE_FLAT = 0.08",
       "LOUPE_EDGE_FULL = 0.55",
-      "LOUPE_REACH = 1.6",
+      "LOUPE_REACH = 1.75",
+      "LOUPE_STRETCH = 0.42",
+      "LOUPE_SPREAD = 0.2",
     ]) {
       expect(lens(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);
       expect(lens(METAL), `${declaration} in the MSL`).toContain(declaration);

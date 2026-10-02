@@ -262,7 +262,7 @@ constant float LOUPE_BLEED = 0.22;
 // How far around the glass the lens's own render reaches, in radii. Mirrors
 // `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts`, which the preview
 // interpolates straight into its own shader.
-constant float LOUPE_REACH = 1.6;
+constant float LOUPE_REACH = 1.75;
 
 // The refractive index of the glass. Crown glass, which is what a loupe is
 // actually ground from.
@@ -272,7 +272,20 @@ constant float LOUPE_IOR = 1.52;
 // Far more than crown glass really splits: a lens a few hundred pixels across
 // splits by well under one of them, so a physical figure here would be a control
 // that does nothing at any setting.
-constant float LOUPE_SPREAD = 0.09;
+constant float LOUPE_SPREAD = 0.2;
+
+// How far the refracted ray walks back towards the middle at the rim, in radii.
+//
+// This is the stretch, and it is the whole character of a thick glass edge. Across
+// the rolled edge the sample is pulled inwards, so a thin ring of the picture just
+// inside the glass is smeared across the entire band — the edge *expands* what is
+// near it rather than merely bending it, and in the last of the band it folds, the
+// way the lip of a glass paperweight folds what is under it.
+//
+// It is also what makes the fringing spectral rather than a hairline. The three
+// channels are separated by how much their bend differs, and across a band this
+// steep that difference is tens of pixels.
+constant float LOUPE_STRETCH = 0.42;
 
 // Where the key light is, for the highlight on the glass. Up and to the left,
 // which is where every shadow in this composition already says it is.
@@ -367,6 +380,7 @@ static float lens_bend(float3 normal, float ior) {
 //
 // Verbatim as `lensReach` in `webgl.ts`.
 static float lens_reach(float2 offset, float edge, float magnify, float ior) {
+    float r = length(offset);
     float bend = lens_bend(lens_normal(offset, edge), ior);
     // The rim measured at the glass's *own* index, not at this channel's, and
     // that is the whole of the fringing.
@@ -381,7 +395,14 @@ static float lens_reach(float2 offset, float edge, float magnify, float ior) {
     // `smoothstep` rather than the ratio itself, so the mapping is flat at both
     // ends and there is no distance from the middle at which the squeeze visibly
     // starts — the same reason `sample_focused` ramps the way it does.
-    return mix(1.0 / magnify, 1.0, smoothstep(0.0, 1.0, bend / max(rim, 1e-4)));
+    // The walk, in radii, and exactly zero across the flat middle — the bend is
+    // zero there, so the middle magnifies by what was asked for and nothing
+    // else. Divided by the magnification so a strong lens folds no harder than
+    // a weak one: the band is a fraction of the picture, not a pixel count.
+    float walk = (LOUPE_STRETCH / magnify) * smoothstep(0.0, 1.0, bend / max(rim, 1e-4));
+    // Back to a multiplier on the offset. Never past the middle of the glass,
+    // which is where a fold would start turning itself inside out.
+    return max(1.0 / magnify - walk / max(r, 1e-3), 0.02);
 }
 
 // The colour these words should be, given what is behind them.
@@ -407,6 +428,55 @@ static float3 chosen(texture2d<float> backdrop, sampler smp, constant Uniforms &
     }
 
     return mix(u.colorA.rgb, u.colorB.rgb, smoothstep(0.42, 0.62, luma / 16.0));
+}
+
+// The picture, enlarged without rounding its edges off.
+//
+// Texel snapping, and one tap. The sample is nudged so that the blend between
+// two source texels happens across one *output* pixel instead of across the
+// whole texel — so an edge in the recording arrives as an edge with one pixel of
+// antialiasing on it, however far the picture is being magnified, rather than as
+// a ramp as wide as the magnification. The hardware's own bilinear unit does the
+// blend; all this does is decide where to ask for it.
+//
+// Measured against the alternatives on a hard edge magnified 2x, as the biggest
+// step between neighbouring output pixels — which is what reads as sharpness:
+// plain bilinear 115, a nine-tap Catmull-Rom 132, this 216. The source's own
+// unmagnified edge is 216, so this is not an approximation of the right answer,
+// it is the right answer, and it is cheaper than either. Pinned by
+// `magnifying_a_picture_keeps_its_edges` in `renders_the_right_pixels.rs`.
+//
+// It suits what Prequel magnifies. A screen recording is text, rules and
+// flat-filled panels on a pixel grid; a cubic kernel rings on exactly those, and
+// a linear one turns a one-pixel rule into a three-pixel smudge.
+//
+// Verbatim as `sampleEnlarged` in `webgl.ts`.
+static float4 sample_enlarged(texture2d<float> image, sampler smp, constant Uniforms &u,
+                              float2 uv) {
+    float2 pos = uv / max(u.texel, float2(1e-9));
+    // One output pixel, measured in source texels. Never wider than a texel, or
+    // the blend would be the plain linear one it is replacing.
+    float2 wide = clamp(fwidth(pos), float2(1e-4), float2(1.0));
+    float2 base = floor(pos - 0.5) + 0.5;
+    // Flat at both texel centres, crossing over the width of one output pixel.
+    float2 snapped = clamp((pos - base - 0.5) / wide + 0.5, 0.0, 1.0);
+    return image.sample(smp, (base + snapped) * u.texel);
+}
+
+// How many source texels one output pixel covers.
+//
+// Off the screen-space derivatives rather than off the uniforms, which is what
+// makes it right in every pass: the lens draws the same plan into a target at
+// its own magnification, and a quad can be tilted, so the ratio of the
+// destination rectangle to the source crop is not the rate anything is actually
+// sampled at. This is the same quantity the hardware picks a mip level with.
+//
+// Below 1 the picture is being enlarged.
+//
+// Verbatim as `texelsPerPixel` in `webgl.ts`.
+static float texels_per_pixel(constant Uniforms &u, float2 uv) {
+    float2 rate = fwidth(uv) / max(u.texel, float2(1e-9));
+    return max(max(rate.x, rate.y), 1e-6);
 }
 
 // The picture, softened by how far this pixel is from what is in focus.
@@ -440,8 +510,13 @@ static float4 sample_focused(texture2d<float> image, sampler smp, constant Unifo
     // about what a radius means.
     float radius = max(u.focus.w * smoothstep(0.0, max(u.focus.z * 1.5, 1.0), away), u.soften);
 
+    // Enlarging: a cubic kernel recovers the edge a linear one rounds off. The
+    // source runs out long before the lens does — an Automatic frame exports at
+    // the recording's own size, so a 2x zoom of any kind has nothing left to
+    // read and everything to do with how it interpolates.
     if (radius <= 0.5) {
-        return image.sample(smp, uv);
+        return texels_per_pixel(u, uv) < 0.95 ? sample_enlarged(image, smp, u, uv)
+                                              : image.sample(smp, uv);
     }
 
     // The tap count follows the radius rather than being fixed at sixteen.
@@ -635,7 +710,7 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // of the frame, and that drew as a black cap over the top of every lens.
         float2 outward = offset / max(r, 1e-3);
         float3 around =
-            behind(backdrop, smp, u, u.loupe.xy + outward * radius * (1.3 + 0.5 * edge));
+            behind(backdrop, smp, u, u.loupe.xy + outward * radius * (1.1 + 0.3 * edge));
 
         // And the room the glass is standing in, which is the half of the
         // reflection the frame cannot supply.
