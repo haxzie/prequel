@@ -1751,6 +1751,49 @@ function CameraPanel({
         />
       </Section>
 
+      {/* Its own section, and above Position, because it is the only thing in
+          this panel about how the person *looks* rather than about where the
+          bubble sits and what shape it is. At the foot of Position it read as
+          one more placement control, and was below the fold besides.
+
+          On the camera, and only the camera. The whole-frame looks live in the
+          Filters panel; this is a different question, because the two pictures
+          are lit by different things — a room with a window in it, and a
+          display — and a grade that flattered the face would be plainly wrong
+          on the screen beside it. */}
+      <Section title="Effects">
+        {/* No label on the row: the section heading above it already says
+            Effects, and the Position map below sets the precedent for a field
+            whose name is its section's. */}
+        <Field icon={<LookIcon />} {...field("layout", "cameraLook")}>
+          <CameraLookPicker
+            value={layout.cameraLook}
+            disabled={off}
+            onChange={(id) => set("layout", "cameraLook", id)}
+            onPreview={onPreviewCameraLook}
+          />
+        </Field>
+
+        {/* Only once a look is on. At "None" it is a slider for the strength of
+            nothing — and the row is the one place the panel can say that the
+            look is adjustable at all, so it appears with the look rather than
+            sitting greyed above it. */}
+        {layout.cameraLook !== "none" && (
+          <Slider
+            icon={<StrengthIcon />}
+            label="Amount"
+            {...field("layout", "cameraLookStrength")}
+            value={layout.cameraLookStrength}
+            min={0}
+            max={1}
+            step={0.01}
+            disabled={off}
+            format={percent}
+            onChange={(value) => set("layout", "cameraLookStrength", value)}
+          />
+        )}
+      </Section>
+
       <Section title="Position">
         <Field icon={<PlaceIcon />} {...field("layout", "cameraX")}>
           <CameraMap
@@ -1778,43 +1821,6 @@ function CameraPanel({
           // was mirrored; off reads as flipped against it.
           onChange={(value) => set("layout", "cameraMirror", value)}
         />
-
-        {/* On the camera, and only the camera. The whole-frame looks live in
-            the Filters panel; this is a different question, because the two
-            pictures are lit by different things — a room with a window in it,
-            and a display — and a grade that flattered the face would be plainly
-            wrong on the screen beside it.
-
-            Last in the section on purpose: it is the one control here that is
-            about how the person *looks* rather than where the bubble sits, and
-            it is chosen once. */}
-        <Field icon={<LookIcon />} label="Effects" {...field("layout", "cameraLook")}>
-          <CameraLookPicker
-            value={layout.cameraLook}
-            disabled={off}
-            onChange={(id) => set("layout", "cameraLook", id)}
-            onPreview={onPreviewCameraLook}
-          />
-        </Field>
-
-        {/* Only once a look is on. At "None" it is a slider for the strength of
-            nothing — and the row is the one place the panel can say that the
-            look is adjustable at all, so it appears with the look rather than
-            sitting greyed above it. */}
-        {layout.cameraLook !== "none" && (
-          <Slider
-            icon={<StrengthIcon />}
-            label="Amount"
-            {...field("layout", "cameraLookStrength")}
-            value={layout.cameraLookStrength}
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={off}
-            format={percent}
-            onChange={(value) => set("layout", "cameraLookStrength", value)}
-          />
-        )}
       </Section>
 
       {/* The camera's own, deliberately not the Frame panel's.
