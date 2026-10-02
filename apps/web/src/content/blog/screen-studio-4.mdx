@@ -1,0 +1,184 @@
+## What is Screen Studio 4?
+
+Screen Studio 4 is the fourth major version of Screen Studio, the macOS screen
+recorder that zooms in on your clicks and your typing and smooths the cursor
+as it records. It arrived on 2 October 2026. The headline feature is an
+upscaler that sharpens a recording up to 6.5 times its size, on the Mac.
+
+The price did not move. Screen Studio is still $29 a month, or $9 a month
+billed yearly, which is $108 up front. There is no free tier and no one-time
+licence; that was withdrawn in October 2025.
+
+Screen Studio made this category, so a new major version gets attention. It
+is also the first one in a long while. Through 2026 the app shipped point
+releases: 3.5.2 in January with an iPhone 17 Pro Max mockup, 3.6 in February
+with fixes to microphone selection and export length, 3.7 in May, and its
+fifth patch in August. Then two quiet months, and 4.0.
+
+This post covers what is in it, what is not, and what the rest of the
+category shipped in the meantime.
+
+## What is new in Screen Studio 4
+
+### An upscaler trained on the Mac's own interface
+
+The problem it solves is real. A zoom enlarges pixels, and text on a 1080p
+capture goes soft by the time it fills the frame at 2x. Screen Studio's answer
+is a model of its own. Adam Pietrasiak, the founder, described how it was
+trained in a thread on X on launch day: a bot generated random SwiftUI apps
+that look like macOS, screenshotted them, shrank the screenshots, and taught
+the model to put the detail back. Around 5,000 of them.
+
+It runs on your Mac, so nothing is uploaded, and the claim is up to 6.5x.
+If your recordings are made on a small display and zoomed hard, it is the
+part of 4.0 you will notice.
+
+### The rest of the release
+
+The announcement leads with the upscaler, and so does the founder's thread.
+The zooms, the cursor, the camera layouts and the export are the Screen
+Studio you already know. Nothing in the launch changes the subscription,
+the 4K 60 export ceiling, or the 30-minute cap and branded page on a share
+link.
+
+That is the honest summary of 4.0: one well-made feature, after a year of
+fixes and mockups, at the same $29 a month.
+
+![A thread on r/macapps asking whether the Screen Studio yearly subscription is worth paying for](/blog/quotes/screen-studio-yearly-worth-it.webp)
+
+[Read it on r/macapps](https://www.reddit.com/r/macapps/comments/1ogtmbo/it_is_worth_paying_for_the_screenstudio_yearly/)
+
+The question in that thread is the one a new version has to answer, and an
+upscaler answers it only for people whose problem was sharpness.
+
+## What the category shipped while Screen Studio was on 3.7
+
+Most of what makes a screen recording look produced in 2026 has been
+available elsewhere for months. Cap's 0.6 release on 15 September added 3D
+scenes with perspective and focus blur, and a camera cut out of its
+background. Prequel shipped 30 releases between 28 August and 2 October.
+These are the ones you can see in the video.
+
+### A loupe over the work
+
+![Prequel's loupe: a round magnifying glass over the Create menu in Google Calendar, with the rest of the window still readable around it](/blog/screen-studio-4/prequel-loupe.webp)
+
+Set a zoom's **Method** to **Loupe** and a magnifying glass comes down over
+what you are doing, while the rest of the screen stays where it is and stays
+readable. The glass follows the pointer or holds a region. The **Glass** tab
+sets its curvature, colour fringing and reflection, and the picture inside
+it smears as it travels, so a lens chasing a quick hand reads as motion.
+
+<video
+  src="/blog/screen-studio-4/prequel-loupe.mp4"
+  poster="/blog/screen-studio-4/prequel-loupe-poster.webp"
+  controls
+  muted
+  loop
+  playsInline
+  preload="none"
+  aria-label="A loupe following the pointer across Google Calendar as an event is created"
+  className="my-7 h-auto w-full rounded-xl border border-line bg-surface"
+/>
+
+The same release made every zoom sharper: a magnified picture keeps its
+edges as it grows. With export at up to 4K and 120 fps,
+the softness the upscaler is built to fix has less to work on.
+
+### Typing and clicks you can hear
+
+<video
+  src="/blog/screen-studio-4/prequel-sounds.mp4"
+  poster="/blog/screen-studio-4/prequel-sounds.webp"
+  controls
+  loop
+  playsInline
+  preload="none"
+  aria-label="Prequel's editor with the Audio panel open, choosing a keyboard sound and a mouse click sound"
+  className="my-7 h-auto w-full rounded-xl border border-line bg-surface"
+/>
+
+Under **Sounds** in the **Audio** panel, pick a keyboard (Tactile, Linear,
+Clicky, Thock, or the iPhone's own soft tock) and one of ten mouse clicks,
+from a barely-there tap to a wooden knock. The export carries a keystroke
+for every key you pressed and a click for every click, landing on the frame
+where it happens. Prequel makes the sounds itself, so no microphone is
+involved, and on the mechanical keyboards no two presses sound quite the
+same. Every row has a play button, so you can hear it before you pick it.
+
+### Filters over the whole picture
+
+<video
+  src="/blog/screen-studio-4/prequel-filters.mp4"
+  poster="/blog/screen-studio-4/prequel-filters.webp"
+  controls
+  muted
+  loop
+  playsInline
+  preload="none"
+  aria-label="A montage of Prequel's filters: fish eye, chromatic aberration, lights and shadows, and an LCD screen look"
+  className="my-7 h-auto w-full rounded-xl border border-line bg-surface"
+/>
+
+CRT, LCD, VHS, film, halftone, fish eye, glow, Dream, Lost signal, Dither,
+four retro palettes (Pico-8, Game Boy, C64 and Risograph) and more. Each has its
+own controls and is set per clip, so the intro can look like a VHS tape and
+the demo can look like a Mac.
+
+### And the rest, since the end of August
+
+- A teleprompter in the notch that follows your voice and never appears in the recording.
+- Titles and text over the recording, in eight looks, up to five rows deep.
+- Noise reduction on the microphone, Light or Strong.
+- Colour looks for the camera, built to flatter skin, with a preview on your own face.
+- A camera shape that follows you: a free-form bubble that moves as you move.
+- Speed per clip, from 0.25x to 4x.
+- Import a video you already have, and caption it from its own sound.
+- Shared links with chapters and subtitles written from the transcript.
+
+None of that needed a new major version. It arrived a few days at a time.
+
+## Screen Studio 4 and Prequel on price
+
+| Plan            | Screen Studio 4                             | Prequel                                                       |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------- |
+| Monthly         | $29 a month                                 | <span className="font-medium text-positive">$9 a month</span> |
+| Yearly          | $108 up front ($9 a month)                  | $29 once covers it                                            |
+| Pay once        | Withdrawn in October 2025                   | <span className="font-medium text-positive">$29 once</span>   |
+| Maximum export  | 4K, 60 fps                                  | 4K, 120 fps                                                   |
+| Watermark       | None on a paid plan                         | None, on any plan or during the trial                         |
+| Release cadence | 3.6 in February, 3.7 in May, 4.0 in October | 30 releases from 28 August to 2 October                       |
+
+Screen Studio's prices read off its pricing page on 28 September 2026 and
+unchanged in the 4.0 launch.
+
+$29 buys one month of Screen Studio 4, or Prequel for good. If you pay
+Screen Studio month by month, a year is $348.
+
+[Prequel vs Screen Studio →](/alternatives/screen-studio)
+
+## So, is Screen Studio 4 worth it
+
+If you are already subscribed, update. It costs you nothing extra and the
+upscaler is good at what it does.
+
+If your renewal is coming up, or you are choosing a recorder today, record
+the same take in both and compare the two files. Screen Studio 4 gives you
+a sharper zoom. Prequel gives you the zoom, the loupe, the sounds, the
+filters, the teleprompter and 4K at 120 fps, for $29 once or $9 a month,
+with several releases a week.
+
+We wrote a longer, feature-by-feature version of that decision:
+
+[Should you upgrade to Screen Studio 4 in 2026? →](/blog/should-you-upgrade-to-screen-studio-4)
+
+Prequel's trial is seven days with the whole app in it, export included and
+no watermark. It needs an Apple Silicon Mac on macOS 14 or later.
+
+[See what Prequel costs →](/pricing)
+
+Related reading: [the best Screen Studio alternatives](/blog/screen-studio-alternatives),
+[Screen Studio vs Cap](/blog/screen-studio-vs-cap),
+[Screen Studio vs Loom](/blog/screen-studio-vs-loom),
+[screen recorders that zoom on the mouse](/blog/screen-recorder-mouse-zoom-mac),
+and [the best screen recorders for Mac](/blog/best-screen-recorders-for-mac).
