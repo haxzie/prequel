@@ -1946,6 +1946,8 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
         curvature: 0.34,
         aberration: 0.0,
         reflection: 0.0,
+        smear_x: 0.0,
+        smear_y: 0.0,
     };
 
     let plan = RenderPlan {
@@ -2043,6 +2045,8 @@ fn the_glass_splits_colour_at_its_edge() {
         aberration,
         // Off, or the highlight would put light of its own on the glass.
         reflection: 0.0,
+        smear_x: 0.0,
+        smear_y: 0.0,
     };
 
     // The widest any channel is from any other, straight across the middle of
@@ -2219,6 +2223,8 @@ fn magnifying_a_picture_keeps_its_edges() {
         curvature: 0.34,
         aberration: 0.0,
         reflection: 0.0,
+        smear_x: 0.0,
+        smear_y: 0.0,
     };
     let lens_plan = RenderPlan {
         frame: Size {
@@ -2426,4 +2432,101 @@ fn a_camera_look_leaves_the_screen_alone() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A travelling lens softens what is inside it, and a still one does not.
+///
+/// The streak arrives finished, in output pixels, so nothing here knows a speed
+/// — which is the whole reason the preview and the export cannot disagree about
+/// how far a lens smears. What this covers is that the number is *read*: a
+/// uniform never bound, or bound in the wrong units, draws a perfectly sharp
+/// lens and nothing anywhere says so.
+#[test]
+fn a_travelling_lens_smears_what_is_inside_it() {
+    let dir = scratch("prequel-pixels-lens-smear");
+    // A hard edge down the middle, which is the only thing a blur can be
+    // measured against.
+    let source = split_frame(320, 240, [10, 10, 10], [245, 245, 245]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    let square = Shape {
+        radius: 0.0,
+        exponent: 2.0,
+    };
+
+    let edges = |smear: f64, name: &str| -> f64 {
+        let glass = |at: i64| LoupeKey {
+            at,
+            x: 160.0,
+            y: 120.0,
+            radius: 70.0,
+            magnify: 2.0,
+            presence: 1.0,
+            curvature: 0.4,
+            // Both off: a fringe and a highlight would both put their own
+            // gradients across the edge being measured.
+            aberration: 0.0,
+            reflection: 0.0,
+            // Across the edge, which is the direction that blurs it.
+            smear_x: smear,
+            smear_y: 0.0,
+        };
+        let plan = RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 320.0,
+                        height: 240.0,
+                    },
+                    dst_rect: full,
+                    shape: square,
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    motion: Vec::new(),
+                    grade: None,
+                },
+                PlanItem::Loupe {
+                    keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+                },
+            ],
+            filter: None,
+        };
+
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+
+        // Straight across the flat middle of the glass, where the edge is.
+        detail(&first_frame(&output), 130, 190, 110, 130)
+    };
+
+    let still = edges(0.0, "still");
+    let moving = edges(26.0, "moving");
+
+    assert!(
+        still > 150.0,
+        "a still lens should keep the edge, got {still:.0}"
+    );
+    assert!(
+        moving < still * 0.6,
+        "a travelling lens should soften it: {moving:.0} against {still:.0}"
+    );
 }

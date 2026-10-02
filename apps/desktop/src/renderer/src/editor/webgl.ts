@@ -340,6 +340,9 @@ uniform vec4 u_gradeC;
 // What sort of glass it is: the magnification in x, how deep the surface is in
 // y, how far it splits colour in z and how much it reflects in w.
 uniform vec4 u_glass;
+// How far the picture inside the glass smears, as a vector in output pixels.
+// Zero wherever the lens is still, which is most of the time it is on screen.
+uniform vec4 u_motion;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -680,6 +683,11 @@ const float LOUPE_SPREAD = 0.2;
 // steep that difference is tens of pixels.
 const float LOUPE_STRETCH = 0.42;
 
+// How many moments of the shutter a moving lens is sampled at. Five: the taps
+// cover a line rather than a disc, so far fewer are needed than a defocus — the
+// pointer's own streak uses nine over a sprite a tenth of this size.
+const int LOUPE_SMEAR_TAPS = 5;
+
 // Where the key light is, for the highlight on the glass. Up and to the left,
 // which is where every shadow in this composition already says it is.
 //
@@ -798,6 +806,28 @@ float lensReach(vec2 offset, float edge, float magnify, float ior) {
   return max(1.0 / magnify - walk / max(r, 1e-3), 0.02);
 }
 
+/**
+ * One sample through the glass, at one moment of the shutter.
+ *
+ * along runs from -0.5 to 0.5 across the streak, so the smear is centred on
+ * where the lens is rather than trailing behind it — the same arrangement the
+ * pointer's smear uses, and for the same reason: trailing alone reads as the
+ * glass lagging the hand.
+ *
+ * No backticks in here: this whole shader is a template literal, and one would
+ * end it.
+ */
+vec3 lensTap(vec2 centre, vec2 offset, float edge, float magnify, float ior,
+             float radius, vec2 smear, float along) {
+  float reach = lensReach(offset, edge, magnify, ior);
+  // Where this pixel's content has travelled to, which is not where the glass
+  // has. Move the lens by d and the point it samples moves by d * (1 - reach):
+  // the middle of a 2x glass drifts with the picture under it and smears half
+  // as much as the rim, which is what parallax through a lens actually looks
+  // like.
+  return behind(centre + offset * reach * radius + smear * ((1.0 - reach) * along));
+}
+
 void main() {
   // The lens, first, because nothing else in here applies to it: its quad is a
   // square grown around the glass for the shadow, and the shape that matters is
@@ -831,18 +861,28 @@ void main() {
     float magnify = max(u_glass.x, 1.0);
     float split = clamp(u_glass.z, 0.0, 1.0) * LOUPE_SPREAD;
 
-    vec3 lit;
-    if (split <= 0.0) {
-      lit = behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR) * radius);
-    } else {
-      // Three taps rather than one blurred one: a fringe is each channel landing
-      // somewhere slightly different, not all of them being soft.
-      lit = vec3(
-        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR - split) * radius).r,
-        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR) * radius).g,
-        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR + split) * radius).b
-      );
+    // The streak, and how many moments of the shutter to take. One below a
+    // pixel: a smear that short is not visible, and the taps cost the same
+    // whether the lens is moving or not. Mirrors the pointer's own threshold.
+    vec2 smear = u_motion.xy;
+    int moments = length(smear) >= 1.0 ? LOUPE_SMEAR_TAPS : 1;
+
+    vec3 lit = vec3(0.0);
+    for (int tap = 0; tap < moments; tap++) {
+      float along = moments > 1 ? float(tap) / float(moments - 1) - 0.5 : 0.0;
+      if (split <= 0.0) {
+        lit += lensTap(u_loupe.xy, offset, edge, magnify, LOUPE_IOR, radius, smear, along);
+      } else {
+        // Three taps rather than one blurred one: a fringe is each channel
+        // landing somewhere slightly different, not all of them being soft.
+        lit += vec3(
+          lensTap(u_loupe.xy, offset, edge, magnify, LOUPE_IOR - split, radius, smear, along).r,
+          lensTap(u_loupe.xy, offset, edge, magnify, LOUPE_IOR, radius, smear, along).g,
+          lensTap(u_loupe.xy, offset, edge, magnify, LOUPE_IOR + split, radius, smear, along).b
+        );
+      }
     }
+    lit /= float(moments);
 
     float shine = clamp(u_glass.w, 0.0, 1.0);
 
@@ -1039,6 +1079,7 @@ interface Program {
   loupe: WebGLUniformLocation | null;
   glass: WebGLUniformLocation | null;
   view: WebGLUniformLocation | null;
+  motion: WebGLUniformLocation | null;
   gradeA: WebGLUniformLocation | null;
   gradeB: WebGLUniformLocation | null;
   gradeC: WebGLUniformLocation | null;
@@ -2369,6 +2410,7 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   // levers for zero.
   gl.uniform4f(p.gradeC, grade?.highlightHue ?? 0, grade?.highlightAmount ?? 0, grade ? 1 : 0, 0);
 
+  gl.uniform4f(p.motion, loupe?.smearX ?? 0, loupe?.smearY ?? 0, 0, 0);
   gl.uniform4f(
     p.glass,
     loupe?.magnify ?? 1,
@@ -2564,6 +2606,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     loupe: at("u_loupe"),
     glass: at("u_glass"),
     view: at("u_view"),
+    motion: at("u_motion"),
     gradeA: at("u_gradeA"),
     gradeB: at("u_gradeB"),
     gradeC: at("u_gradeC"),

@@ -226,6 +226,7 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
         loupeCurvature: DEFAULT_ZOOM.loupeCurvature,
         loupeAberration: DEFAULT_ZOOM.loupeAberration,
         loupeReflection: DEFAULT_ZOOM.loupeReflection,
+        loupeBlur: DEFAULT_ZOOM.loupeBlur,
         level: levelFor(chunk),
         speed: DEFAULT_ZOOM.speed,
         // The default distance. The automatic pass sets an angle but not how

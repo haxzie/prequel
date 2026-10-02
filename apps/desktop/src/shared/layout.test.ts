@@ -5511,6 +5511,58 @@ describe("the loupe", () => {
     expect(lensOpens).toBeLessThan(cameraOpens);
   });
 
+  it("smears its contents while it is travelling, and not while it is still", () => {
+    // The streak is the glass's own travel, finished, in output pixels — the
+    // same contract the pointer's holds. A still lens has to carry zero rather
+    // than a small number: the shader skips its extra taps on that, and a lens
+    // parked over a word would otherwise pay for a blur nobody can see.
+    //
+    // Sampled densely, because the lens follows the pointer as it is *drawn*
+    // and a track of two distant samples is a parked pointer that jumps — the
+    // glass would sit still through the whole span and the streak would be
+    // honestly zero.
+    const sweep = Array.from({ length: 81 }, (_, i) => {
+      const at = (i * S) / 10;
+      // Still, then across the frame in a second, then still again. The lens is
+      // read mid-sweep.
+      const t = Math.min(Math.max((i / 10 - 3.5) / 1, 0), 1);
+      return { at, x: 0.1 + 0.8 * t, y: 0.5 };
+    });
+    const parkedTrack = Array.from({ length: 81 }, (_, i) => ({
+      at: (i * S) / 10,
+      x: 0.5,
+      y: 0.5,
+    }));
+    const track = (samples: { at: number; x: number; y: number }[]) => ({
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples,
+    });
+    const keysFor = (samples: { at: number; x: number; y: number }[]) =>
+      buildRenderPlan(FRAME, { screen: SCREEN, camera: null }, settings(), track(samples), [
+        lens({ target: "cursor" }),
+      ]).items.flatMap((item) => (item.kind === "loupe" ? item.keys : []));
+
+    const travelling = loupeAt(keysFor(sweep), 4 * S)!;
+    const parked = loupeAt(keysFor(parkedTrack), 4 * S)!;
+
+    expect(Math.hypot(travelling.smearX, travelling.smearY)).toBeGreaterThan(4);
+    // Along the way it is going, which here is straight across.
+    expect(travelling.smearX).toBeGreaterThan(0);
+    expect(Math.abs(travelling.smearY)).toBeLessThan(1);
+
+    expect(Math.hypot(parked.smearX, parked.smearY)).toBeCloseTo(0, 6);
+  });
+
+  it("carries no streak at all when the blur is off", () => {
+    const keys = glassOf([lens({ loupeBlur: 0 })])!;
+    for (const key of keys) {
+      expect(key.smearX).toBe(0);
+      expect(key.smearY).toBe(0);
+    }
+  });
+
   it("does not shrink the camera bubble out of its way", () => {
     // The bubble gets out of the way of a picture coming forward. Nothing comes
     // forward here, so the bubble has nothing to do — and a bubble that shrank

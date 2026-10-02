@@ -69,6 +69,9 @@ struct Uniforms {
     // What sort of glass it is: the magnification in x, how deep the surface is
     // in y, how far it splits colour in z and how much it reflects in w.
     float4 glass;
+    // How far the picture inside the glass smears, as a vector in output
+    // pixels. Zero wherever the lens is still.
+    float4 motion;
     // The region of the frame this pass is drawing into, as x, y, width, height
     // in frame pixels. The whole frame for every pass but the lens's own, which
     // draws the composition again over a small box around the glass — see
@@ -293,6 +296,11 @@ constant float LOUPE_SPREAD = 0.2;
 // channels are separated by how much their bend differs, and across a band this
 // steep that difference is tens of pixels.
 constant float LOUPE_STRETCH = 0.42;
+
+// How many moments of the shutter a moving lens is sampled at. Five: the taps
+// cover a line rather than a disc, so far fewer are needed than a defocus — the
+// pointer's own streak uses nine over a sprite a tenth of this size.
+constant int LOUPE_SMEAR_TAPS = 5;
 
 // Where the key light is, for the highlight on the glass. Up and to the left,
 // which is where every shadow in this composition already says it is.
@@ -721,6 +729,26 @@ static inline float4 premultiplied(float3 rgb, float alpha) {
     return float4(rgb * alpha, alpha);
 }
 
+// One sample through the glass, at one moment of the shutter.
+//
+// `along` runs from -0.5 to 0.5 across the streak, so the smear is centred on
+// where the lens is rather than trailing behind it — the same arrangement the
+// pointer's smear uses, and for the same reason: trailing alone reads as the
+// glass lagging the hand.
+//
+// Verbatim as `lensTap` in `webgl.ts`.
+static float3 lens_tap(texture2d<float> backdrop, sampler smp, constant Uniforms &u,
+                       float2 centre, float2 offset, float edge, float magnify, float ior,
+                       float radius, float2 smear, float along) {
+  float reach = lens_reach(offset, edge, magnify, ior);
+  // Where this pixel's content has travelled to, which is not where the glass
+  // has. Move the lens by d and the point it samples moves by d * (1 - reach):
+  // the middle of a 2x glass drifts with the picture under it and smears half
+  // as much as the rim, which is what parallax through a lens actually looks
+  // like.
+  return behind(backdrop, smp, u, centre + offset * reach * radius + smear * ((1.0 - reach) * along));
+}
+
 fragment float4 composite_fragment(Vertex in [[stage_in]],
                                    constant Uniforms &u [[buffer(0)]],
                                    texture2d<float> image [[texture(0)]],
@@ -771,27 +799,32 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         float magnify = max(u.glass.x, 1.0);
         float split = clamp(u.glass.z, 0.0, 1.0) * LOUPE_SPREAD;
 
-        float3 lit;
-        if (split <= 0.0) {
-            lit = behind(
-                backdrop, smp, u,
-                u.loupe.xy + offset * lens_reach(offset, edge, magnify, LOUPE_IOR) * radius);
-        } else {
-            // Three taps rather than one blurred one: a fringe is each channel
-            // landing somewhere slightly different, not all of them being soft.
-            lit = float3(
-                behind(backdrop, smp, u,
-                       u.loupe.xy
-                           + offset * lens_reach(offset, edge, magnify, LOUPE_IOR - split)
-                                 * radius).r,
-                behind(backdrop, smp, u,
-                       u.loupe.xy
-                           + offset * lens_reach(offset, edge, magnify, LOUPE_IOR) * radius).g,
-                behind(backdrop, smp, u,
-                       u.loupe.xy
-                           + offset * lens_reach(offset, edge, magnify, LOUPE_IOR + split)
-                                 * radius).b);
+        // The streak, and how many moments of the shutter to take. One below a
+        // pixel: a smear that short is not visible, and the taps cost the same
+        // whether the lens is moving or not. Mirrors the pointer's threshold.
+        float2 smear = u.motion.xy;
+        int moments = length(smear) >= 1.0 ? LOUPE_SMEAR_TAPS : 1;
+
+        float3 lit = float3(0.0);
+        for (int tap = 0; tap < moments; tap++) {
+            float along = moments > 1 ? float(tap) / float(moments - 1) - 0.5 : 0.0;
+            if (split <= 0.0) {
+                lit += lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify, LOUPE_IOR,
+                                radius, smear, along);
+            } else {
+                // Three taps rather than one blurred one: a fringe is each
+                // channel landing somewhere slightly different, not all of them
+                // being soft.
+                lit += float3(
+                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify,
+                             LOUPE_IOR - split, radius, smear, along).r,
+                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify, LOUPE_IOR,
+                             radius, smear, along).g,
+                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify,
+                             LOUPE_IOR + split, radius, smear, along).b);
+            }
         }
+        lit /= float(moments);
 
         float shine = clamp(u.glass.w, 0.0, 1.0);
 

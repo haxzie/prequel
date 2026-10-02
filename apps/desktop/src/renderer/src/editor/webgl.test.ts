@@ -213,6 +213,9 @@ const lens = (source: string) =>
   arithmetic(source)
     .replaceAll(/\blens_normal\b/g, "lensNormal")
     .replaceAll(/\blens_bend\b/g, "lensBend")
+    .replaceAll(/\blens_tap\b/g, "lensTap")
+    .replaceAll("texture2d<N> backdrop, sampler smp, ", "")
+    .replaceAll(/\bbehind\(backdrop, smp, u, /g, "behind(")
     .replaceAll(/\blens_reach\b/g, "lensReach");
 
 describe("the camera's colour look", () => {
@@ -308,6 +311,19 @@ describe("the loupe both rasterisers draw", () => {
     expect(lens(glsl!)).toBe(lens(msl!));
   });
 
+  it("smears its contents the same way on each side", () => {
+    // How much of the glass's travel a given pixel sees depends on how far into
+    // the lens it is. Two answers to that is a preview whose lens smears by a
+    // different amount from the export's, on exactly the frames where something
+    // is moving and nobody is looking closely.
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 lensTap(");
+    const msl = body(METAL, "static float3 lens_tap(");
+
+    expect(glsl, "lensTap in the GLSL").not.toBeNull();
+    expect(msl, "lens_tap in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
   it("refracts the same way on each side", () => {
     // Where the magnification actually comes from. A difference here is a lens
     // that joins the picture at the rim in one and leaves a seam in the other.
@@ -333,6 +349,7 @@ describe("the loupe both rasterisers draw", () => {
       "LOUPE_EDGE_FULL = 0.55",
       "LOUPE_REACH = 1.75",
       "LOUPE_STRETCH = 0.42",
+      "LOUPE_SMEAR_TAPS = 5",
       "LOUPE_SPREAD = 0.2",
     ]) {
       expect(lens(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);

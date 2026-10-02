@@ -837,6 +837,15 @@ export interface ZoomSlice {
    * the eye, and a highlight sits where a key light would catch it.
    */
   loupeReflection: number;
+  /**
+   * How far the picture inside the glass smears as the lens travels, 0 to 1.
+   *
+   * On the contents, not on the glass. A lens is a hard-edged object and a
+   * blurred rim would read as the whole thing being out of focus; what moves
+   * against the frame is what is *seen through* it, and smearing that is what
+   * stops a lens chasing a quick hand from strobing across the picture.
+   */
+  loupeBlur: number;
 }
 
 /**
@@ -896,6 +905,10 @@ export const DEFAULT_ZOOM = {
   // crop rather than as something resting on the screen.
   loupeAberration: 0.45,
   loupeReflection: 0.5,
+  // On, and moderate. A lens follows the pointer exactly, so it moves whenever
+  // the hand does — and at thirty frames a second an unsmeared one steps rather
+  // than travels.
+  loupeBlur: 0.6,
 } as const;
 
 const { target: _target, x: _x, y: _y, ...ZOOM_LOOK } = DEFAULT_ZOOM;
@@ -1617,6 +1630,7 @@ export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomD
     loupeCurvature: clamp(number(zoom["loupeCurvature"], fallback.loupeCurvature), 0, 1),
     loupeAberration: clamp(number(zoom["loupeAberration"], fallback.loupeAberration), 0, 1),
     loupeReflection: clamp(number(zoom["loupeReflection"], fallback.loupeReflection), 0, 1),
+    loupeBlur: clamp(number(zoom["loupeBlur"], fallback.loupeBlur), 0, 1),
   };
 }
 

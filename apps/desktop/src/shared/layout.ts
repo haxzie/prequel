@@ -307,6 +307,21 @@ export interface LoupeKey {
   aberration: number;
   /** How much the glass mirrors what is beside it, 0 to 1. */
   reflection: number;
+  /**
+   * How far the picture inside the glass smears, as a vector in output pixels.
+   *
+   * The finished streak, not a speed — the same contract `CursorPoint.smearX`
+   * holds, and for the same reason: a speed here would leave each rasteriser to
+   * pick a shutter, which is two answers to "how fast is this moving". Zero
+   * wherever the lens is still, which is most of the time it is on screen.
+   *
+   * The glass's own travel. How much of it a given pixel actually sees is
+   * worked out in the shader, because it depends on how far into the lens that
+   * pixel is — the middle of a 2x glass moves with the picture under it and
+   * smears half as much as the rim.
+   */
+  smearX: number;
+  smearY: number;
 }
 
 export type PlanItem =
@@ -2080,6 +2095,21 @@ function zoomKeys(
 }
 
 /**
+ * The longest streak a lens may smear by, in radii.
+ *
+ * Its own number rather than `SMEAR_CAP`, which is the pointer's: that one is
+ * measured in *pointers*, and a pointer is a few dozen pixels where a lens is a
+ * few hundred. Reused, it allowed a streak of one and a half radii — far outside
+ * the render the lens samples from, so the taps clamped and the glass went
+ * black on any quick move.
+ *
+ * A quarter of the glass is already a strong blur: the contents only travel by
+ * what the lens is not moving with, so at the rim this is most of a radius of
+ * apparent motion.
+ */
+const LOUPE_SMEAR_CAP = 0.22;
+
+/**
  * How big the glass is on its way in, as a fraction of its full size.
  *
  * It arrives rather than appearing: a circle cut into the frame between one
@@ -2198,7 +2228,51 @@ function loupeKeys(
     }
   });
 
-  return keys;
+  // Last, over the finished track, for the reason the pointer's streak is
+  // measured last: a lens that moves straight from one slice to another is
+  // travelling at the join, and a streak taken per lens would find two
+  // stationary glasses either side of a jump.
+  return withGlassSmear(keys, loupes[0]?.loupeBlur ?? 0);
+}
+
+/**
+ * How far the picture inside each glass smears, as a vector in output pixels.
+ *
+ * A near copy of `withSmear`, which does this for the pointer — the same
+ * shutter, the same neighbour difference, the same length-wise cap. Not shared
+ * with it: that one works on `ShapedPoint`s and folds the result into a quad's
+ * own uv, and the two would have to grow a common shape before they could grow
+ * a common function. The constants are shared, which is the part that matters —
+ * a lens and a pointer crossing the frame together have to smear by the same
+ * amount or one of them is lying about how fast it is going.
+ *
+ * The strength comes off the first lens in the project rather than per key.
+ * Every lens is one track by the time it reaches here, and a blur that changed
+ * partway through a move would be a smear that visibly shortened mid-flight.
+ */
+function withGlassSmear(keys: LoupeKey[], strength: number): LoupeKey[] {
+  if (strength <= 0 || keys.length < 2) return keys;
+
+  return keys.map((key, index) => {
+    const before = keys[index - 1] ?? key;
+    const after = keys[index + 1] ?? key;
+    const span = after.at - before.at;
+    if (span <= 0) return key;
+
+    const perShutter = (strength * SMEAR_SHUTTER_NS) / span;
+    const x = (after.x - before.x) * perShutter;
+    const y = (after.y - before.y) * perShutter;
+
+    // Capped against the glass itself, so the longest streak is a fixed
+    // fraction of the lens however big the lens is. Clamped by length rather
+    // than per axis, or a fast diagonal would streak somewhere the glass never
+    // went.
+    const cap = key.radius * LOUPE_SMEAR_CAP;
+    const length = Math.hypot(x, y);
+    const held = length > cap ? cap / length : 1;
+
+    return { ...key, smearX: x * held, smearY: y * held };
+  });
 }
 
 /** Where the glass is at one sample, and how much of it there is. */
@@ -2210,6 +2284,9 @@ interface Glass {
   curvature: number;
   aberration: number;
   reflection: number;
+  /** Always zero here. `withGlassSmear` fills it in once the track exists. */
+  smearX: number;
+  smearY: number;
 }
 
 /**
@@ -2301,6 +2378,10 @@ function glassTrack(
       curvature: loupe.loupeCurvature,
       aberration: loupe.loupeAberration,
       reflection: loupe.loupeReflection,
+      // Filled in once the whole track exists — a streak is the difference
+      // between neighbouring samples, and there are none yet.
+      smearX: 0,
+      smearY: 0,
     };
 
     down.push({ ...place, radius: glass, magnify: level, ...optics });
@@ -2342,6 +2423,8 @@ function glassAt(
         curvature: lerp(a.curvature, b.curvature, t),
         aberration: lerp(a.aberration, b.aberration, t),
         reflection: lerp(a.reflection, b.reflection, t),
+        smearX: 0,
+        smearY: 0,
       },
       1,
     );
@@ -2367,6 +2450,8 @@ function glassAt(
       curvature: full.curvature,
       aberration: full.aberration,
       reflection: full.reflection,
+      smearX: 0,
+      smearY: 0,
     },
     t,
   );
@@ -5068,6 +5153,8 @@ export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null 
     curvature: lerp(a.curvature, b.curvature, t),
     aberration: lerp(a.aberration, b.aberration, t),
     reflection: lerp(a.reflection, b.reflection, t),
+    smearX: lerp(a.smearX, b.smearX, t),
+    smearY: lerp(a.smearY, b.smearY, t),
   };
 }
 

@@ -438,6 +438,14 @@ pub struct LoupeKey {
     pub aberration: f64,
     /// How much the glass mirrors what is beside it, 0 to 1.
     pub reflection: f64,
+    /// How far the picture inside the glass smears, as a vector in output
+    /// pixels. The finished streak, not a speed — the same contract
+    /// `CursorPoint` holds. Defaulted, so a plan written before the lens could
+    /// smear still parses, and parses as still.
+    #[serde(default, rename = "smearX")]
+    pub smear_x: f64,
+    #[serde(default, rename = "smearY")]
+    pub smear_y: f64,
 }
 
 /// Where the lens is at one instant, or `None` when there is no glass to draw.
@@ -479,6 +487,8 @@ pub fn loupe_at(keys: &[LoupeKey], at: i64) -> Option<LoupeKey> {
         curvature: lerp(a.curvature, b.curvature),
         aberration: lerp(a.aberration, b.aberration),
         reflection: lerp(a.reflection, b.reflection),
+        smear_x: lerp(a.smear_x, b.smear_x),
+        smear_y: lerp(a.smear_y, b.smear_y),
     })
 }
 
@@ -1397,6 +1407,8 @@ mod tests {
             curvature: 0.3,
             aberration: 0.0,
             reflection: 0.0,
+            smear_x: 0.0,
+            smear_y: 0.0,
         };
         let keys = [key(0, 0.0), key(1000, 0.0), key(2000, 1.0)];
 
