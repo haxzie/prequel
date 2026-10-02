@@ -18,6 +18,7 @@ import {
   cropToFrame,
   cursorAt,
   layoutBoxes,
+  loupeAt,
   placement,
   presetFitsFrame,
   rectAt,
@@ -5337,5 +5338,185 @@ describe("the look laid over the frame", () => {
     );
 
     expect(plan.filter?.variant).toBe("");
+  });
+});
+
+/**
+ * The lens, which is the one kind of zoom that moves nothing.
+ *
+ * That is the whole invariant and it fails silently: a loupe that reached
+ * `zoomKeys` would magnify the area *and* push the picture in, which looks like a
+ * stronger effect rather than like a bug — right up to the point somebody asks
+ * why the menu bar left the frame.
+ */
+describe("the loupe", () => {
+  const S = 1_000_000_000;
+  const FRAME: Size = { width: 1920, height: 1080 };
+
+  const lens = (over: Partial<ZoomSlice> = {}): ZoomSlice => ({
+    ...DEFAULT_ZOOM,
+    id: "l",
+    source: { start: 2 * S, end: 6 * S },
+    method: "loupe",
+    target: "region",
+    x: 0.25,
+    y: 0.75,
+    ...over,
+  });
+
+  const planWith = (zooms: ZoomSlice[]) =>
+    buildRenderPlan(FRAME, { screen: SCREEN, camera: null }, settings(), null, zooms);
+
+  const glassOf = (zooms: ZoomSlice[]) => {
+    const item = planWith(zooms).items.find((candidate) => candidate.kind === "loupe");
+    if (item?.kind !== "loupe") return null;
+    return item.keys;
+  };
+
+  it("leaves the picture exactly where it was", () => {
+    const plain = image(planWith([]), "screen")!;
+    const lensed = image(planWith([lens()]), "screen")!;
+
+    expect(lensed.dstRect).toEqual(plain.dstRect);
+    // Not merely equal at rest: a motion track at all means the picture travels,
+    // and the whole point of this method is that it does not.
+    expect(lensed.motion).toBeUndefined();
+  });
+
+  it("draws the glass over the pointer rather than under it", () => {
+    // A glass held over a screen magnifies the arrow on that screen. Drawn the
+    // other way round the pointer floats on top of its own magnifier, which is
+    // the one thing about a loupe anybody would notice immediately.
+    const plan = buildRenderPlan(
+      FRAME,
+      { screen: SCREEN, camera: null },
+      settings(),
+      {
+        shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+        size: 0.035,
+        hideAfter: null,
+        samples: [
+          { at: 0, x: 0.2, y: 0.7 },
+          { at: 8 * S, x: 0.3, y: 0.8 },
+        ],
+      },
+      [lens()],
+    );
+
+    const kinds = plan.items.map((item) => item.kind);
+    expect(kinds.indexOf("loupe")).toBeGreaterThan(kinds.indexOf("cursor"));
+  });
+
+  it("arrives at its magnification instead of starting there", () => {
+    const keys = glassOf([lens({ level: 3 })])!;
+
+    // The track opens with the glass away and no magnification at all, holds at
+    // the level it was set to, and closes the same way it opened.
+    expect(keys[0]!.presence).toBe(0);
+    expect(keys[0]!.magnify).toBeCloseTo(1, 6);
+    expect(keys[keys.length - 1]!.presence).toBe(0);
+
+    const held = loupeAt(keys, 4 * S)!;
+    expect(held.presence).toBeCloseTo(1, 6);
+    expect(held.magnify).toBeCloseTo(3, 6);
+  });
+
+  it("sizes the glass against the frame's shorter edge", () => {
+    // So a look survives 16:9 going to 9:16, like every other geometry setting.
+    const wide = loupeAt(glassOf([lens({ loupeSize: 0.5 })])!, 4 * S)!;
+    const tall = loupeAt(
+      buildRenderPlan(VERTICAL, { screen: SCREEN, camera: null }, settings(), null, [
+        lens({ loupeSize: 0.5 }),
+      ]).items.flatMap((item) => (item.kind === "loupe" ? item.keys : [])),
+      4 * S,
+    )!;
+
+    expect(wide.radius).toBeCloseTo((0.5 * 1080) / 2, 6);
+    expect(tall.radius).toBeCloseTo((0.5 * 1080) / 2, 6);
+  });
+
+  it("puts what it is pointing at dead centre, off the frame if need be", () => {
+    // The one thing a magnifier has to do. A lens held inside the frame at the
+    // edges would be a glass sitting *beside* the thing it is over — and it
+    // would be wrong by more the nearer the pointer got to the edge, which is
+    // exactly where somebody is most likely to be pointing at something small.
+    const keys = glassOf([lens({ x: 0, y: 0, loupeSize: 0.5 })])!;
+    const glass = loupeAt(keys, 4 * S)!;
+
+    // The top-left corner of the recording, wherever the picture puts it, and
+    // the glass hanging off two edges to get there.
+    const picture = image(planWith([]), "screen")!.dstRect;
+    expect(glass.x).toBeCloseTo(picture.x, 6);
+    expect(glass.y).toBeCloseTo(picture.y, 6);
+    expect(glass.x).toBeLessThan(glass.radius);
+  });
+
+  it("centres the glass on the pointer as it is drawn, not as it was sampled", () => {
+    // `cursorSmoothing` moves the sprite off the raw sample by design. A lens
+    // that followed the sample would sit a few pixels from its own arrow — and
+    // only while the pointer was moving, which is the hardest kind of wrong to
+    // catch.
+    const samples = [
+      { at: 0, x: 0.2, y: 0.2 },
+      { at: 2 * S, x: 0.2, y: 0.2 },
+      { at: 3 * S, x: 0.8, y: 0.8 },
+      { at: 8 * S, x: 0.8, y: 0.8 },
+    ];
+    const track = {
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples,
+    };
+    const plan = buildRenderPlan(
+      FRAME,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, cursorSmoothing: 1 } }),
+      track,
+      [lens({ target: "cursor" })],
+    );
+
+    const keys = plan.items.flatMap((item) => (item.kind === "loupe" ? item.keys : []));
+    const glass = loupeAt(keys, 3_200_000_000)!;
+    const sprite = plan.items.find((item) => item.kind === "cursor");
+    if (sprite?.kind !== "cursor") throw new Error("no pointer");
+    const drawn = cursorAt(sprite.points, 3_200_000_000)!;
+
+    // Mid-move, where a smoothed sprite is a long way behind the sample.
+    expect(glass.x).toBeCloseTo(drawn.x, 3);
+    expect(glass.y).toBeCloseTo(drawn.y, 3);
+  });
+
+  it("does not shrink the camera bubble out of its way", () => {
+    // The bubble gets out of the way of a picture coming forward. Nothing comes
+    // forward here, so the bubble has nothing to do — and a bubble that shrank
+    // anyway would be the only visible sign that a lens had been mistaken for a
+    // camera move.
+    const withLens = image(
+      buildRenderPlan(FRAME, { screen: SCREEN, camera: CAMERA }, settings(), null, [lens()]),
+      "camera",
+    )!;
+
+    expect(withLens.motion).toBeUndefined();
+  });
+
+  it("carries a camera zoom and a lens side by side", () => {
+    const zooms = [
+      lens({ id: "l", source: { start: 1 * S, end: 2 * S } }),
+      { ...DEFAULT_ZOOM, id: "z", source: { start: 5 * S, end: 7 * S } } as ZoomSlice,
+    ];
+    const plan = planWith(zooms);
+    const screen = image(plan, "screen")!;
+
+    // The camera zoom still moves the picture, and only over its own span.
+    expect(screen.motion?.length ?? 0).toBeGreaterThan(0);
+    expect(rectAt(screen.motion!, 1_500_000_000, screen.dstRect, 0).width).toBeCloseTo(
+      screen.dstRect.width,
+      6,
+    );
+    // And the glass is down over the lens's span and away over the zoom's.
+    const keys = plan.items.flatMap((item) => (item.kind === "loupe" ? item.keys : []));
+    expect(loupeAt(keys, 1_500_000_000)).not.toBeNull();
+    expect(loupeAt(keys, 6 * S)).toBeNull();
   });
 });

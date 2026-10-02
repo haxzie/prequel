@@ -129,6 +129,23 @@ pub enum PlanItem {
         #[serde(default)]
         motion: Vec<RectKey>,
     },
+    /// A glass lens lying on the finished frame, magnifying what is under it.
+    ///
+    /// The one item that draws no source of its own: it reads what has already
+    /// been composited, so whatever is beneath it in the list — the picture, the
+    /// pointer, the camera bubble — is what appears inside the glass. Which is
+    /// also why the compositor has to end its pass and blit before drawing one,
+    /// the same wall a caption coloured against its backdrop hits.
+    ///
+    /// Its own variant rather than another `RectKey` field on the picture. A
+    /// camera zoom and a lens are opposites in the one way that matters here:
+    /// one moves the whole picture and this one leaves it exactly where it is.
+    Loupe {
+        /// Where the glass is over time, sorted by `at`. One item per plan: the
+        /// track carries every lens in the project, which is what lets the glass
+        /// travel straight from one to the next.
+        keys: Vec<LoupeKey>,
+    },
     /// A still picture laid over the composition — a logo or a channel mark.
     ///
     /// Its own variant rather than a `Fill` or an `Image`: `Fill` covers its
@@ -386,6 +403,74 @@ pub struct RectKey {
     /// being smeared across two flat triangles.
     #[serde(default)]
     pub quad: Vec<f64>,
+}
+
+/// Where the glass is, and how hard it is working, at one source time.
+///
+/// Mirrors `LoupeKey` in `apps/desktop/src/shared/layout.ts`. The same shape
+/// `RectKey` is: the easing is already baked into where these land, so this side
+/// only ever lerps between two of them and never learns what a bézier is.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LoupeKey {
+    pub at: i64,
+    /// The middle of the lens, in output pixels.
+    pub x: f64,
+    pub y: f64,
+    /// The glass's radius in output pixels, already eased.
+    pub radius: f64,
+    /// How far in the lens is looking. 1 shows the picture at its own size.
+    pub magnify: f64,
+    /// How present the glass is, 0 to 1. A key of 0 draws nothing at all, which
+    /// is what makes the stretches between lenses free.
+    pub presence: f64,
+    /// How deep the glass is over its own radius.
+    pub curvature: f64,
+    /// How far the rim splits colour, 0 to 1.
+    pub aberration: f64,
+    /// How much the glass mirrors what is beside it, 0 to 1.
+    pub reflection: f64,
+}
+
+/// Where the lens is at one instant, or `None` when there is no glass to draw.
+///
+/// Mirrors `loupeAt` in `apps/desktop/src/shared/layout.ts`. Nothing beyond the
+/// ends of the track rather than the end value held: it opens and closes with the
+/// glass fully away, so holding that would still be nothing — and saying so here
+/// keeps every frame of a recording that has no lens on screen out of the search.
+pub fn loupe_at(keys: &[LoupeKey], at: i64) -> Option<LoupeKey> {
+    let (first, last) = (keys.first()?, keys.last()?);
+    if at <= first.at || at >= last.at {
+        return None;
+    }
+
+    let high = keys.partition_point(|key| key.at <= at);
+    let a = &keys[high - 1];
+    let b = &keys[high];
+
+    let span = (b.at - a.at) as f64;
+    let t = if span > 0.0 {
+        (at - a.at) as f64 / span
+    } else {
+        0.0
+    };
+    let lerp = |from: f64, to: f64| from + (to - from) * t;
+
+    let presence = lerp(a.presence, b.presence);
+    if presence <= 0.0 {
+        return None;
+    }
+
+    Some(LoupeKey {
+        at,
+        x: lerp(a.x, b.x),
+        y: lerp(a.y, b.y),
+        radius: lerp(a.radius, b.radius),
+        magnify: lerp(a.magnify, b.magnify),
+        presence,
+        curvature: lerp(a.curvature, b.curvature),
+        aberration: lerp(a.aberration, b.aberration),
+        reflection: lerp(a.reflection, b.reflection),
+    })
 }
 
 /// What a zoom keeps sharp, and how soft the rest becomes.
@@ -1220,6 +1305,69 @@ impl Rgba {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The key names the editor writes, for the reason the plan test above
+    /// exists: a rename on either side has to break here and not at render time.
+    #[test]
+    fn parses_a_lens_the_editor_would_send() {
+        let json = r##"{
+            "frame": { "width": 1920, "height": 1080 },
+            "items": [
+                { "kind": "loupe", "keys": [
+                    { "at": 0, "x": 100, "y": 200, "radius": 0, "magnify": 1,
+                      "presence": 0, "curvature": 0.34, "aberration": 0.3,
+                      "reflection": 0.5 },
+                    { "at": 1000, "x": 100, "y": 200, "radius": 240, "magnify": 3,
+                      "presence": 1, "curvature": 0.34, "aberration": 0.3,
+                      "reflection": 0.5 }
+                ] }
+            ]
+        }"##;
+
+        let plan: RenderPlan = serde_json::from_str(json).expect("parse the plan");
+        let PlanItem::Loupe { keys } = &plan.items[0] else {
+            panic!("expected a lens");
+        };
+
+        // Halfway, where everything is halfway. The eased values arrive baked
+        // into the keys, so this side only ever draws a straight line between
+        // two of them.
+        let half = loupe_at(keys, 500).expect("the glass is down");
+        assert!((half.radius - 120.0).abs() < 1e-9);
+        assert!((half.magnify - 2.0).abs() < 1e-9);
+        assert!((half.presence - 0.5).abs() < 1e-9);
+        assert!((half.curvature - 0.34).abs() < 1e-9);
+    }
+
+    /// Nothing at the ends, and nothing beyond them.
+    ///
+    /// The track opens and closes with the glass fully away, so holding the end
+    /// value would leave a lens on screen for the rest of the clip — and a
+    /// presence of zero anywhere inside has to draw nothing rather than a disc at
+    /// no opacity, which still costs the compositor a full-frame blit.
+    #[test]
+    fn a_lens_that_is_away_draws_nothing() {
+        let key = |at: i64, presence: f64| LoupeKey {
+            at,
+            x: 0.0,
+            y: 0.0,
+            radius: 100.0,
+            magnify: 2.0,
+            presence,
+            curvature: 0.3,
+            aberration: 0.0,
+            reflection: 0.0,
+        };
+        let keys = [key(0, 0.0), key(1000, 0.0), key(2000, 1.0)];
+
+        assert!(loupe_at(&keys, -1).is_none());
+        assert!(loupe_at(&keys, 0).is_none());
+        assert!(loupe_at(&keys, 500).is_none());
+        assert!(loupe_at(&keys, 2000).is_none());
+        assert!(loupe_at(&keys, 9999).is_none());
+        assert!(loupe_at(&keys, 1500).is_some());
+        assert!(loupe_at(&[], 1).is_none());
+    }
 
     #[test]
     fn parses_a_plan_the_editor_would_send() {

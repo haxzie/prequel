@@ -54,9 +54,13 @@ import { LayoutPicker } from "./controls/LayoutPicker";
 import { PerspectivePad } from "./controls/PerspectivePad";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
 import {
+  AberrationIcon,
   AngleIcon,
   AudioIcon,
+  GlassIcon,
   ImageIcon,
+  PushInIcon,
+  ReflectionIcon,
   BackIcon,
   BlurIcon,
   BorderIcon,
@@ -446,14 +450,17 @@ function InspectorPanels(props: InspectorProps) {
       props.onPreviewZoom();
     };
     const panel = { zoom, frame: props.frame, hasCursor: props.hasCursor, onChange: change };
-    // Non-null because `zoomTab` only ever holds an id from this list.
-    const showingZoomTab = ZOOM_TABS.find((entry) => entry.id === zoomTab) ?? ZOOM_TABS[0]!;
+    const tabs = zoomTabs(zoom.method);
+    // Falls back to the first, which is what happens the moment the method is
+    // switched: the tab that was showing may not be in the new rail at all, and
+    // the panel then shows Zoom rather than nothing.
+    const showingZoomTab = tabs.find((entry) => entry.id === zoomTab) ?? tabs[0]!;
 
     return (
       <div className={SHELL}>
         <Rail
-          items={ZOOM_TABS}
-          value={zoomTab}
+          items={tabs}
+          value={showingZoomTab.id}
           onChange={(id) => {
             setZoomTab(id);
             pushed.close();
@@ -502,13 +509,14 @@ function InspectorPanels(props: InspectorProps) {
                   rather than the view inside it, for the reason the clip
                   panel's is — see there. */}
               <div
-                key={zoomTab}
+                key={showingZoomTab.id}
                 className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
               >
                 <div className="flex min-w-0 flex-1 flex-col animate-view-in">
-                  {zoomTab === "motion" && <ZoomMotionPanel {...panel} />}
-                  {zoomTab === "perspective" && <ZoomPerspectivePanel {...panel} />}
-                  {zoomTab === "focus" && <ZoomFocusPanel {...panel} />}
+                  {showingZoomTab.id === "motion" && <ZoomMotionPanel {...panel} />}
+                  {showingZoomTab.id === "perspective" && <ZoomPerspectivePanel {...panel} />}
+                  {showingZoomTab.id === "focus" && <ZoomFocusPanel {...panel} />}
+                  {showingZoomTab.id === "glass" && <ZoomGlassPanel {...panel} />}
                 </div>
               </div>
             </div>
@@ -1270,13 +1278,38 @@ export type CategoryId =
  * two rails never coexist — a zoom takes over the panel — and a single union
  * would let a clip's tab be selected on a zoom and back again.
  */
-type ZoomTabId = "motion" | "perspective" | "focus";
+type ZoomTabId = "motion" | "perspective" | "focus" | "glass";
 
-const ZOOM_TABS: { id: ZoomTabId; label: string; Icon: () => React.ReactElement }[] = [
-  { id: "motion", label: "Zoom", Icon: ZoomIcon },
-  { id: "perspective", label: "Angle", Icon: PerspectiveIcon },
-  { id: "focus", label: "Focus", Icon: FocusIcon },
-];
+/**
+ * The rail a zoom gets, which depends on how it brings the picture closer.
+ *
+ * A lens does not tilt and has no depth of field — `rotateX`, the vignette and
+ * the blur are all ignored while the method is `loupe` — so those two tabs are
+ * absent rather than present and inert. A greyed-out panel reads as something
+ * broken; a tab that is not there reads as a control that does not apply, which
+ * is the same reasoning that keeps the Area map under Region only.
+ *
+ * `Glass` is the mirror of that: it is every control a lens has and a camera move
+ * has none of.
+ */
+function zoomTabs(method: ZoomSlice["method"]): {
+  id: ZoomTabId;
+  label: string;
+  Icon: () => React.ReactElement;
+}[] {
+  if (method === "loupe") {
+    return [
+      { id: "motion", label: "Zoom", Icon: ZoomIcon },
+      { id: "glass", label: "Glass", Icon: GlassIcon },
+    ];
+  }
+
+  return [
+    { id: "motion", label: "Zoom", Icon: ZoomIcon },
+    { id: "perspective", label: "Angle", Icon: PerspectiveIcon },
+    { id: "focus", label: "Focus", Icon: FocusIcon },
+  ];
+}
 
 interface Category {
   id: CategoryId;
@@ -4012,6 +4045,32 @@ function ZoomMotionPanel({
         />
       </Field>
 
+      {/* Directly under Follow, because the two read as one sentence: what the
+          shot is aimed at, and what happens when it gets there. Both options
+          carry a glyph, like Follow's above — a frame closing on its subject
+          against a glass lying on one that has not moved, which is the whole
+          difference between the two in one picture. */}
+      <Field icon={<GlassIcon />} label="Method">
+        <Segmented
+          value={zoom.method}
+          options={[
+            {
+              value: "camera",
+              label: "Camera",
+              title: "Push the whole picture in",
+              icon: <PushInIcon />,
+            },
+            {
+              value: "loupe",
+              label: "Loupe",
+              title: "Lay a glass lens on the frame and leave the rest readable",
+              icon: <GlassIcon />,
+            },
+          ]}
+          onChange={(method) => onChange({ method })}
+        />
+      </Field>
+
       {/* Only under Region. Following the cursor means the pointer decides
           where the shot sits, so a map of somewhere to put it is answering a
           question that is not being asked — it used to sit there greyed out,
@@ -4035,6 +4094,25 @@ function ZoomMotionPanel({
             onChange={(x, y) => onChange({ x, y })}
           />
         </Field>
+      )}
+
+      {/* Only under Loupe, and above Level for the same reason the Area map is
+          where it is: how big the glass is comes before how far into it you are
+          looking. A camera move has no size — it fills the frame. */}
+      {zoom.method === "loupe" && (
+        <Slider
+          icon={<GlassIcon />}
+          label="Lens"
+          value={zoom.loupeSize}
+          min={0.15}
+          max={0.9}
+          step={0.01}
+          // Against the frame's shorter edge, which is what the setting is a
+          // fraction of — "a third of the frame across" is the thing anyone has
+          // an opinion about.
+          format={percent}
+          onChange={(loupeSize) => onChange({ loupeSize })}
+        />
       )}
 
       <Slider
@@ -4208,6 +4286,70 @@ function ZoomPerspectivePanel({
         step={1}
         format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
         onChange={(rotateY) => onChange({ rotateY })}
+      />
+    </Section>
+  );
+}
+
+/**
+ * What sort of glass the lens is.
+ *
+ * Its own tab rather than three more rows under the motion controls, for the
+ * reason Angle is one: these are set once and rarely returned to, while `Lens`
+ * and `Level` are what a loupe is adjusted by — and a column that mixes the two
+ * makes the frequent controls something to scroll past.
+ *
+ * Three controls, because the glass is three decisions: its shape, what it does
+ * to colour, and what it does to light. Every one of them is physical — the
+ * shader refracts, disperses and reflects rather than drawing an effect — which
+ * is why none of them has an "amount".
+ */
+function ZoomGlassPanel({
+  zoom,
+  onChange,
+}: {
+  zoom: ZoomSlice;
+  onChange: (patch: Partial<ZoomSlice>) => void;
+}) {
+  return (
+    <Section>
+      <Slider
+        icon={<GlassIcon />}
+        label="Curvature"
+        value={zoom.loupeCurvature}
+        min={0}
+        max={1}
+        step={0.01}
+        // The two ends are what the control actually does, not numbers: at the
+        // bottom it is a flat pane that magnifies evenly and at the top a ball
+        // that bows the last third of the picture into its rim.
+        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
+        onChange={(loupeCurvature) => onChange({ loupeCurvature })}
+      />
+
+      <Slider
+        icon={<AberrationIcon />}
+        label="Fringing"
+        value={zoom.loupeAberration}
+        min={0}
+        max={1}
+        step={0.01}
+        // Named for what is seen rather than for dispersion, which is the
+        // mechanism. "Fringing" is the word anyone who has looked through a
+        // cheap lens already has for it.
+        format={(value) => (value === 0 ? "None" : percent(value))}
+        onChange={(loupeAberration) => onChange({ loupeAberration })}
+      />
+
+      <Slider
+        icon={<ReflectionIcon />}
+        label="Reflection"
+        value={zoom.loupeReflection}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value === 0 ? "None" : percent(value))}
+        onChange={(loupeReflection) => onChange({ loupeReflection })}
       />
     </Section>
   );

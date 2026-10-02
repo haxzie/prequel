@@ -268,6 +268,46 @@ export interface RectKey {
   quad?: number[];
 }
 
+/**
+ * Where the glass is, and how hard it is working, at one source time.
+ *
+ * The loupe's whole track, and the same shape `RectKey` is for a camera zoom:
+ * the easing is already baked into where these land, so both rasterisers only
+ * ever lerp between two keys and neither knows that a bézier exists.
+ *
+ * Everything about the glass is here rather than on the item, including the
+ * three numbers that do not change while one lens is on screen. One track
+ * carries *every* lens in the project, exactly as one motion track carries every
+ * zoom — which is what lets the glass travel straight from one lens to the next
+ * instead of two of them crossfading — and two lenses may be set up
+ * differently.
+ */
+export interface LoupeKey {
+  at: number;
+  /** The middle of the lens, in output pixels. */
+  x: number;
+  y: number;
+  /** The glass's radius in output pixels, already eased. */
+  radius: number;
+  /** How far in the lens is looking. 1 shows the picture at its own size. */
+  magnify: number;
+  /**
+   * How present the glass is, 0 to 1.
+   *
+   * Multiplied into what it draws, so a lens arrives rather than appearing.
+   * Opens and closes at 0 like a zoom's keys, which is what makes the stretches
+   * between lenses free: interpolating 0 to 0 is 0, and a key of 0 draws
+   * nothing at all.
+   */
+  presence: number;
+  /** How deep the glass is over its own radius. See `ZoomSlice.loupeCurvature`. */
+  curvature: number;
+  /** How far the rim splits colour, 0 to 1. */
+  aberration: number;
+  /** How much the glass mirrors what is beside it, 0 to 1. */
+  reflection: number;
+}
+
 export type PlanItem =
   | { kind: "fill"; rect: Rect; paint: Paint }
   | {
@@ -309,6 +349,24 @@ export type PlanItem =
       blobs?: BlobKey[];
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
+  | {
+      /**
+       * A glass lens lying on the finished frame, magnifying what is under it.
+       *
+       * The one item that draws no source of its own: it reads what has already
+       * been composited, so whatever is beneath it at this point in the list —
+       * the picture, the pointer, the camera bubble — is what appears inside the
+       * glass. That is also why it is placed where it is rather than beside the
+       * picture: a lens over a screen magnifies the pointer on that screen.
+       *
+       * Its own kind rather than another `RectKey` field on the picture. A
+       * camera zoom and a lens are opposites in the one way that matters here:
+       * one moves the whole picture and this one leaves it exactly where it is.
+       */
+      kind: "loupe";
+      /** Where the glass is over time, sorted by `at`. One item per plan. */
+      keys: LoupeKey[];
+    }
   | {
       /**
        * A still picture laid over the composition — a logo or a channel mark.
@@ -805,6 +863,16 @@ export function buildRenderPlan(
   // otherwise still be one the shot drifted across.
   if (cursor) cursor = { ...cursor, samples: withHeldParks(cursor.samples) };
 
+  // The two methods, separated once. A lens is not a camera move that happens to
+  // be drawn differently — it moves nothing — so it must not reach `zoomKeys`,
+  // where every zoom in the list contributes a rectangle, nor `zoomPresence`,
+  // where it would shrink the camera bubble out of the way of a picture that
+  // never came forward.
+  const shots = (zooms ?? []).filter((zoom) => zoom.method !== "loupe");
+  const lenses = (zooms ?? []).filter((zoom) => zoom.method === "loupe");
+  /** Filled in once the picture is placed; empty when there is no screen. */
+  let glass: LoupeKey[] = [];
+
   // The shorter edge is the reference for every fraction, so a setting means
   // the same thing in a landscape frame and a portrait one.
   const unit = Math.min(frame.width, frame.height);
@@ -873,7 +941,7 @@ export function buildRenderPlan(
       border: borderMotion,
       shadow: shadowMotion,
     } = zoomKeys(
-      zooms ?? [],
+      shots,
       frame,
       dstRect,
       srcRect,
@@ -884,6 +952,23 @@ export function buildRenderPlan(
       cursor,
     );
     const moving = motion.length > 0 ? { motion } : {};
+
+    // Against the picture that was just placed, and after `motion` exists: a
+    // lens is aimed at a point on the recording, so it needs the box that point
+    // is drawn in and the track that box follows.
+    glass = loupeKeys(
+      lenses,
+      frame,
+      dstRect,
+      srcRect,
+      sources.screen,
+      motion,
+      shape.radius,
+      // The same smoothing the sprite is drawn with, so the glass is centred on
+      // the arrow somebody can see rather than on the sample under it.
+      layout.cursorSmoothing,
+      cursor,
+    );
 
     if (background.shadowOpacity > 0) {
       items.push({
@@ -1120,7 +1205,10 @@ export function buildRenderPlan(
     // And shrinking out of the way of a zoom, for a bubble that was asked to.
     // Only a bubble: one of two cards sharing a frame cannot shrink without
     // leaving a hole where it was.
-    const presence = zooms && !slot.card && layout.cameraShrinkOnZoom ? zoomPresence(zooms) : [];
+    // `shots`, not `zooms`: the bubble gets out of the way of a picture coming
+    // forward, and a lens leaves the picture where it is. A bubble that shrank
+    // for a loupe would be answering a question nothing asked.
+    const presence = !slot.card && layout.cameraShrinkOnZoom ? zoomPresence(shots) : [];
 
     const {
       keys: motion,
@@ -1315,6 +1403,17 @@ export function buildRenderPlan(
       }
     }
   }
+
+  // The glass, over everything that was recorded and under everything that was
+  // added.
+  //
+  // Over both pictures and the pointer, because a lens held over a screen
+  // magnifies what is on that screen — the arrow included, and the camera bubble
+  // too where the two overlap. Under the mark, the titles and the captions for
+  // the opposite reason: those are laid on the finished film rather than being
+  // part of it, and a logo seen through a magnifier is a logo drawn at the wrong
+  // size.
+  if (glass.length > 0) items.push({ kind: "loupe", keys: glass });
 
   // Over both pictures, and under the captions.
   //
@@ -1950,6 +2049,299 @@ function zoomKeys(
   });
 
   return { keys, border: edges, shadow };
+}
+
+/**
+ * How big the glass is on its way in, as a fraction of its full size.
+ *
+ * It arrives rather than appearing: a circle cut into the frame between one
+ * output frame and the next reads as a rendering fault, and the same move that
+ * carries a camera zoom in carries this. Not from zero — a lens growing from a
+ * point is a transition rather than a glass being set down, and the first few
+ * frames of it are a dot nobody can read.
+ */
+const LOUPE_ARRIVE = 0.72;
+
+/**
+ * Turns the lens slices into one sampled track of where the glass is.
+ *
+ * The same shape as `zoomKeys`, deliberately: one track for every lens in the
+ * project, sampled on one shared grid, so the glass can travel straight from one
+ * lens to the next and the stretches between distant ones need no samples at all
+ * — interpolating a presence of 0 to 0 is 0.
+ *
+ * What it does *not* do is move the picture. That is the whole difference between
+ * the two methods, and it is why the lenses are kept out of `zoomKeys` rather
+ * than given a flag inside it: the picture's rectangle is read here, never
+ * written, so a lens cannot drift the frame by a pixel.
+ */
+function loupeKeys(
+  loupes: readonly ZoomSlice[],
+  frame: Size,
+  /** The picture at rest, which is where the lens is placed against. */
+  base: Rect,
+  srcRect: Rect,
+  source: Size,
+  /** The picture's own track, so a lens near a camera zoom's move still lands
+      on the thing it is pointing at rather than on where it used to be. */
+  motion: readonly RectKey[],
+  radius: number,
+  /** The `cursorSmoothing` the pointer is *drawn* on. See `glassTrack`. */
+  smoothing: number,
+  cursor?: CursorTrack | null,
+): LoupeKey[] {
+  if (loupes.length === 0) return [];
+
+  const between = betweenZooms(loupes);
+  const stages = stagesFor(loupes, between);
+  if (stages.length === 0) return [];
+
+  // One shared grid for every stage, for the reason `zoomKeys` has one: a stage
+  // that moves the glass from one lens to another asks both of them about the
+  // same instant, and per-lens grids would not line up.
+  const times: number[] = [];
+  const range: { first: number; last: number }[] = [];
+
+  for (const stage of stages) {
+    const span = stage.to - stage.from;
+    const steps = Math.max(1, Math.ceil(span / ZOOM_SAMPLE_NS));
+    const first =
+      times.length > 0 && times[times.length - 1] === stage.from ? times.length - 1 : times.length;
+
+    for (let step = 0; step <= steps; step += 1) {
+      const at = Math.round(stage.from + (span * step) / steps);
+      if (times.length > 0 && times[times.length - 1]! >= at) continue;
+      times.push(at);
+    }
+
+    range.push({ first, last: times.length - 1 });
+  }
+
+  const reachOf = loupes.map(() => ({ first: times.length, last: -1 }));
+  stages.forEach((stage, index) => {
+    for (const which of [stage.fromZoom, stage.toZoom]) {
+      if (which === null) continue;
+      const seen = reachOf[which]!;
+      seen.first = Math.min(seen.first, range[index]!.first);
+      seen.last = Math.max(seen.last, range[index]!.last);
+    }
+  });
+
+  // Smoothed once, here, rather than per lens: `smoothPath` runs a spring over
+  // the whole take, and two lenses would each pay for all of it.
+  const drawn: CursorTrack | null = cursor
+    ? { ...cursor, samples: smoothPath(cursor.samples, smoothing) }
+    : null;
+
+  const glasses = loupes.map((loupe, index) =>
+    glassTrack(
+      loupe,
+      times,
+      reachOf[index]!,
+      base,
+      srcRect,
+      source,
+      motion,
+      radius,
+      Math.min(frame.width, frame.height),
+      drawn,
+    ),
+  );
+
+  const keys: LoupeKey[] = [];
+  let written = -Infinity;
+
+  stages.forEach((stage, index) => {
+    const { first, last } = range[index]!;
+    const span = stage.to - stage.from;
+
+    for (let step = first; step <= last; step += 1) {
+      const at = times[step]!;
+      // Shared boundary samples belong to whichever stage reached them first;
+      // both agree on the glass there, so the second is a duplicate.
+      if (at <= written) continue;
+      written = at;
+
+      const from = stage.fromZoom === null ? null : glasses[stage.fromZoom]!;
+      const to = stage.toZoom === null ? null : glasses[stage.toZoom]!;
+      const u = span > 0 ? (at - stage.from) / span : 1;
+
+      keys.push(glassAt(from, to, step, u, at));
+    }
+  });
+
+  return keys;
+}
+
+/** Where the glass is at one sample, and how much of it there is. */
+interface Glass {
+  x: number;
+  y: number;
+  radius: number;
+  magnify: number;
+  curvature: number;
+  aberration: number;
+  reflection: number;
+}
+
+/**
+ * One lens's samples: the glass fully down, and the same glass still on its way.
+ *
+ * The pair rather than one shot and an amount, for the reason `ShotTrack` holds
+ * a pair: a move between two lenses is then the same arithmetic as a move from
+ * nothing into one, and there is no "how far in is this lens" anywhere.
+ */
+interface GlassTrack {
+  first: number;
+  curve: Curve;
+  away: Glass[];
+  down: Glass[];
+}
+
+function glassTrack(
+  loupe: ZoomSlice,
+  times: number[],
+  covers: { first: number; last: number },
+  base: Rect,
+  srcRect: Rect,
+  source: Size,
+  motion: readonly RectKey[],
+  radius: number,
+  /** The frame's shorter edge, which is what the lens is sized against. */
+  shorter: number,
+  /** The pointer on the path it is *drawn* on, already smoothed. */
+  cursor: CursorTrack | null,
+): GlassTrack {
+  const at = times.slice(covers.first, covers.last + 1);
+  const level = Math.max(1, loupe.level);
+  const glass = (loupe.loupeSize * shorter) / 2;
+
+  // How much of the capture the glass covers at full magnification, as fractions
+  // of it — what `typingCentre` needs to know to frame the end of a field that
+  // is wider than the lens.
+  const shows = {
+    width: ((srcRect.width / source.width) * (2 * glass)) / Math.max(base.width, 1) / level,
+    height: ((srcRect.height / source.height) * (2 * glass)) / Math.max(base.height, 1) / level,
+  };
+
+  // Where the lens is aimed, in output pixels, mapped through the picture as it
+  // stands at that moment. `rectAt` rather than `base`: a lens close to a camera
+  // zoom sits inside that zoom's move, and against the resting rectangle it
+  // would point at the place the thing used to be.
+  /**
+   * Where the lens is, in output pixels, moment by moment.
+   *
+   * **The thing it is pointing at is in the middle of the glass, always.** Not
+   * steadied, not held inside the frame, not eased into place — a loupe is a
+   * glass somebody is holding over the pointer, and anything that puts the two a
+   * few pixels apart is a magnifier that is not magnifying what it is over.
+   *
+   * So there is no `followPath` and no `deJitter`, which is the whole difference
+   * between this and a camera zoom. A camera gets a dead zone and a speed limit
+   * so the picture can rest while the pointer wanders inside the shot. The lens
+   * gets the pointer's position exactly — and off the same *smoothed* track the
+   * sprite is drawn on, so the glass is centred on the arrow somebody can see
+   * rather than on the raw sample under it, which `cursorSmoothing` has already
+   * moved it away from.
+   *
+   * Mapped through the picture as it stands at that moment. `rectAt` rather
+   * than `base`: a lens close to a camera zoom sits inside that zoom's move, and
+   * against the resting rectangle it would point at the place the thing used to
+   * be.
+   */
+  const aims: Point[] = at.map((when) => {
+    const picture = rectAt(motion, when, base, radius);
+    const field = loupe.target === "typing" ? typingCentre(cursor, when, shows) : null;
+    const point =
+      loupe.target === "region"
+        ? { x: loupe.x, y: loupe.y }
+        : (field ?? cursorFraction(cursor, when));
+
+    return {
+      x: picture.x + ((point.x * source.width - srcRect.x) / srcRect.width) * picture.width,
+      y: picture.y + ((point.y * source.height - srcRect.y) / srcRect.height) * picture.height,
+    };
+  });
+
+  const away: Glass[] = [];
+  const down: Glass[] = [];
+
+  for (let step = 0; step < at.length; step += 1) {
+    const place = aims[step]!;
+
+    const optics = {
+      curvature: loupe.loupeCurvature,
+      aberration: loupe.loupeAberration,
+      reflection: loupe.loupeReflection,
+    };
+
+    down.push({ ...place, radius: glass, magnify: level, ...optics });
+    // Smaller, and showing the picture at its own size: the glass arrives with
+    // its magnification rather than being set down already full, which is what
+    // makes the move read as a lens being brought in and not as a circle being
+    // switched on.
+    away.push({ ...place, radius: glass * LOUPE_ARRIVE, magnify: 1, ...optics });
+  }
+
+  return { first: covers.first, curve: loupe, away, down };
+}
+
+/** The glass at one sample of one stage. The four cases `shotAt` has. */
+function glassAt(
+  from: GlassTrack | null,
+  to: GlassTrack | null,
+  step: number,
+  u: number,
+  at: number,
+): LoupeKey {
+  const key = (glass: Glass, presence: number): LoupeKey => ({ at, ...glass, presence });
+
+  // Fully down, and only following what it is aimed at.
+  if (from && to && from === to) return key(from.down[step - from.first]!, 1);
+
+  // Straight from one lens to the next: the glass never leaves, so it is fully
+  // down throughout and everything about it crossfades.
+  if (from && to) {
+    const t = easeAt(to.curve, u);
+    const a = from.down[step - from.first]!;
+    const b = to.down[step - to.first]!;
+    return key(
+      {
+        x: lerp(a.x, b.x, t),
+        y: lerp(a.y, b.y, t),
+        radius: lerp(a.radius, b.radius, t),
+        magnify: lerp(a.magnify, b.magnify, t),
+        curvature: lerp(a.curvature, b.curvature, t),
+        aberration: lerp(a.aberration, b.aberration, t),
+        reflection: lerp(a.reflection, b.reflection, t),
+      },
+      1,
+    );
+  }
+
+  // Coming in, or going away. Going away is the same curve read backwards,
+  // which is what a zoom's move out already is.
+  const track = (from ?? to)!;
+  const t = easeAt(track.curve, to === null ? 1 - u : u);
+  const rest = track.away[step - track.first]!;
+  const full = track.down[step - track.first]!;
+
+  return key(
+    {
+      // Only the size and the magnification ease. The place does not: the glass
+      // is over the thing it is pointing at from the first frame it is visible,
+      // and sliding in from somewhere else would be a lens arriving from off
+      // screen — a transition rather than a magnifier.
+      x: full.x,
+      y: full.y,
+      radius: lerp(rest.radius, full.radius, t),
+      magnify: lerp(rest.magnify, full.magnify, t),
+      curvature: full.curvature,
+      aberration: full.aberration,
+      reflection: full.reflection,
+    },
+    t,
+  );
 }
 
 /**
@@ -4547,6 +4939,87 @@ export function rectAt(
     ...(quad ? { quad } : {}),
     ...(focus ? { focus } : {}),
     ...(vignette > 0 ? { vignette } : {}),
+  };
+}
+
+/**
+ * How far past the glass the lens quad reaches, as a fraction of its radius.
+ *
+ * Room for the shadow the lens casts on the frame to fall off in. A shadow is
+ * drawn by the same quad as the thing casting it, and a fragment shader cannot
+ * paint outside its own geometry — so without this the shadow would stop dead on
+ * the rim, which reads as a dark hairline rather than as a glass standing off a
+ * screen.
+ *
+ * Both rasterisers build the quad from this and the key's radius, the way the
+ * pointer's quad is grown around its sprite. `LOUPE_BLEED` in `webgl.ts` and
+ * `shaders.metal` mirror it; changing it here alone clips the shadow.
+ */
+export const LOUPE_BLEED = 0.22;
+
+/**
+ * How far around the glass the lens's own render has to reach, in radii.
+ *
+ * The lens does not sample the finished frame. It is handed a second render of
+ * the composition covering this much of it, drawn at the magnification — which
+ * is what lets the picture inside the glass come off the *recording* at its own
+ * resolution rather than off output pixels that have already thrown most of it
+ * away. See `renderGlass` in `webgl.ts` and `render_glass` in `compositor.rs`.
+ *
+ * Just over the furthest the shader ever looks, which is the rim's reflection at
+ * `1.3 + 0.5 * edge` radii with `edge` at its widest. Short of that the rim
+ * samples past the end of the render and clamps, which draws as a smeared ring.
+ */
+export const LOUPE_REACH = 1.6;
+
+/**
+ * Where the lens is at one instant, or null when there is no glass to draw.
+ *
+ * The fourth piece of arithmetic that exists on both sides, after `cursorAt`,
+ * `rectAt` and `captionAt`, and for the same reason: a plan cannot hold a
+ * circle per output frame. `loupe_at` in `crates/prequel-render/src/plan.rs`
+ * mirrors it.
+ *
+ * Null outside the track and wherever the glass has no presence — which is every
+ * frame of a recording but the ones a lens is on screen for, so this is the cheap
+ * answer rather than the exception.
+ */
+export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null {
+  if (keys.length === 0) return null;
+
+  const first = keys[0]!;
+  const last = keys[keys.length - 1]!;
+  // Nothing beyond the ends rather than the end value held: the track opens and
+  // closes with the glass fully away, and holding that would still be nothing —
+  // but saying so here keeps the rest of the recording out of the binary search.
+  if (at <= first.at || at >= last.at) return null;
+
+  let low = 0;
+  let high = keys.length - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (keys[mid]!.at <= at) low = mid;
+    else high = mid;
+  }
+
+  const a = keys[low]!;
+  const b = keys[high]!;
+  const span = b.at - a.at;
+  const t = span > 0 ? (at - a.at) / span : 0;
+
+  const presence = lerp(a.presence, b.presence, t);
+  if (presence <= 0) return null;
+
+  return {
+    at,
+    x: lerp(a.x, b.x, t),
+    y: lerp(a.y, b.y, t),
+    radius: lerp(a.radius, b.radius, t),
+    magnify: lerp(a.magnify, b.magnify, t),
+    presence,
+    curvature: lerp(a.curvature, b.curvature, t),
+    aberration: lerp(a.aberration, b.aberration, t),
+    reflection: lerp(a.reflection, b.reflection, t),
   };
 }
 

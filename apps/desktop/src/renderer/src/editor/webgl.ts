@@ -26,7 +26,10 @@ import {
   overlayAt,
   cropToFrame,
   cursorAt,
+  loupeAt,
   rectAt,
+  LOUPE_BLEED,
+  LOUPE_REACH,
   SHADOW_SPREAD,
   type BlobKey,
   type BlobShape,
@@ -35,6 +38,7 @@ import {
   type Rect,
   type RectKey,
   type RenderPlan,
+  type LoupeKey,
   type Shape,
   type Size,
 } from "../../../shared/layout";
@@ -87,6 +91,7 @@ const MODE_GRADIENT = 1;
 const MODE_IMAGE = 2;
 const MODE_SHADOW = 3;
 const MODE_STROKE = 4;
+const MODE_LOUPE = 5;
 
 /**
  * The two shader sources, exported for `webgl.test.ts` and nothing else.
@@ -105,6 +110,10 @@ precision highp float;
 
 uniform vec4 u_rect;
 uniform vec2 u_frame;
+// The region of the frame this pass is drawing into, as x, y, width, height in
+// frame pixels. The whole frame for every pass but the lens's own, which draws
+// the composition again over a small box around the glass — see renderGlass.
+uniform vec4 u_view;
 // Twelve numbers as four (x, y, w) corners, or w = 0 for "not tilted".
 uniform vec3 u_quad[4];
 
@@ -123,7 +132,11 @@ void main() {
 
   // Pixels to clip space, with y flipped: clip space is bottom-up and every
   // rectangle in the plan is top-down.
-  vec2 clip = (pixel / u_frame) * 2.0 - 1.0;
+  //
+  // Against the pass's own region rather than the frame, which is what lets the
+  // lens draw the same plan into a small box at its own magnification. Every
+  // other pass passes the whole frame, so this is the identity it always was.
+  vec2 clip = ((pixel - u_view.xy) / u_view.zw) * 2.0 - 1.0;
 
   // Scaled by w, with w in the fourth component: the hardware divides by it
   // per fragment, which is what makes the texture and the shape follow the
@@ -202,6 +215,12 @@ uniform vec4 u_blob;
 // makes the shape lobed rather than merely oval; the editor is what decides how
 // much of it arrives here.
 uniform vec4 u_harmonics[2];
+// The lens: its middle in xy and its radius in z, all in output pixels, and how
+// present it is in w. A radius of 0 is every draw but a loupe.
+uniform vec4 u_loupe;
+// What sort of glass it is: the magnification in x, how deep the surface is in
+// y, how far it splits colour in z and how much it reflects in w.
+uniform vec4 u_glass;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -445,7 +464,232 @@ float vignette(vec2 screen) {
   return 1.0 - u_vignette * smoothstep(0.35, 1.0, away);
 }
 
+// ── The loupe ───────────────────────────────────────────────────────────────
+//
+// A glass lens lying on the finished frame. Every one of these is mirrored
+// verbatim in shaders.metal: this is shading rather than geometry, so the plan
+// cannot carry the answer and each rasteriser works it out itself — which only
+// agrees if the arithmetic is the same arithmetic.
+
+// How far past the glass the quad reaches, as a fraction of the radius, so the
+// shadow has somewhere to fall off. Interpolated from shared/layout.ts, which
+// is what grows the quad in the first place — one number rather than two that
+// could drift.
+const float LOUPE_BLEED = ${LOUPE_BLEED.toFixed(2)};
+
+// How far around the glass the lens's own render reaches, in radii. Interpolated
+// from shared/layout.ts, which is where the reason lives — one number, not two
+// that could drift.
+const float LOUPE_REACH = ${LOUPE_REACH.toFixed(1)};
+
+// The refractive index of the glass. Crown glass, which is what a loupe is
+// actually ground from.
+const float LOUPE_IOR = 1.52;
+
+// How far either side of that the red and the blue ends sit at full dispersion.
+// Far more than crown glass really splits: a lens a few hundred pixels across
+// splits by well under one of them, so a physical figure here would be a control
+// that does nothing at any setting.
+const float LOUPE_SPREAD = 0.09;
+
+// Where the key light is, for the highlight on the glass. Up and to the left,
+// which is where every shadow in this composition already says it is.
+//
+// Written out already normalised rather than through normalize(): a const
+// initialiser has to be a constant expression, and a built-in call is not one.
+const vec3 LOUPE_LIGHT = vec3(-0.4508, -0.6211, 0.6411);
+
+// How far over the glass has turned at its rim, as the sine of the slope.
+// Just short of standing on end: at exactly vertical the refracted ray runs
+// flat and the sample it asks for is nowhere, and the last pixel of the lens
+// comes back as whatever the sampler clamped to.
+const float LOUPE_ROLL = 0.995;
+
+// How much of the radius is the rolled edge, at each end of the curvature
+// control. The bottom is a lens that is flat almost to its rim; the top turns
+// over through half of itself, which is a ball rather than a magnifier.
+const float LOUPE_EDGE_FLAT = 0.08;
+const float LOUPE_EDGE_FULL = 0.55;
+
+/**
+ * The composition at a point in the frame, as the lens sees it.
+ *
+ * u_backdrop holds the lens's own render: the plan drawn a second time over a
+ * box LOUPE_REACH radii around the glass, at the magnification. So this is not
+ * a copy of the finished frame — the picture in it comes off the recording at
+ * the recording's own resolution, which is the only way a magnified lens can be
+ * sharp. Enlarging output pixels can only ever blur what is already there.
+ *
+ * The box is the glass's own, so nothing extra has to be carried to find it.
+ *
+ * u_src is how each rasteriser states its buffer's orientation: this one renders
+ * into a framebuffer that runs bottom-up, so it passes (0, 1, 1, -1); the
+ * exporter's texture is top-down, so it passes (0, 0, 1, 1). One number rather
+ * than a flip written into the shader, which is exactly the kind of thing only
+ * one of the two would ever get right.
+ */
+vec3 behind(vec2 screen) {
+  float span = 2.0 * LOUPE_REACH * u_loupe.z;
+  vec2 at = (screen - (u_loupe.xy - LOUPE_REACH * u_loupe.z)) / span;
+  return texture(u_backdrop, u_src.xy + at * u_src.zw).rgb;
+}
+
+/**
+ * The surface normal of the lens at a point on it, in lens radii.
+ *
+ * An aspheric, not a sphere cap, and the difference is the whole look. A cap
+ * shallow enough to magnify cleanly is very nearly flat everywhere, so both the
+ * squeeze and the glint off its surface collapse into the last one per cent of
+ * the radius and there is nothing to see. This is the shape a magnifier
+ * actually is: flat across the working area, then rolled over through the outer
+ * edge until it stands almost on end where it meets its mount.
+ *
+ * roll is the sine of the surface's slope, so the vector below is already unit
+ * length. LOUPE_ROLL stops just short of vertical: at the rim the glass is
+ * grazing, which is what squeezes the picture out to meet the screen and what
+ * puts a Fresnel edge on it with nothing drawn there.
+ */
+vec3 lensNormal(vec2 offset, float edge) {
+  float r = length(offset);
+  float roll = smoothstep(1.0 - edge, 1.0, r) * LOUPE_ROLL;
+  // Straight out from the middle, which is the way a surface of revolution
+  // leans. Nothing at the very centre, where there is no direction and no
+  // slope either.
+  vec2 away = r > 1e-4 ? offset / r : vec2(0.0);
+  return vec3(away * roll, sqrt(max(1.0 - roll * roll, 1e-6)));
+}
+
+/** How far the refracted ray walks off the axis per unit of depth. */
+float lensBend(vec3 normal, float ior) {
+  // Looking straight down, refracted at the surface on the way in.
+  vec3 through = refract(vec3(0.0, 0.0, -1.0), normal, 1.0 / ior);
+  return length(through.xy) / max(-through.z, 1e-4);
+}
+
+/**
+ * How far from the middle of the lens to sample, as a fraction of how far this
+ * pixel is from it.
+ *
+ * 1 / magnify through the flat middle, so the picture there is enlarged by
+ * exactly what was asked for. Across the rolled edge the refracted ray leaves
+ * the axis faster and faster, and the fraction is walked back up to 1 — so the
+ * last of the glass shows the frame at its own size and the magnified image
+ * *meets* the screen it is lying on. Without that the lens ends on a seam, and
+ * the whole thing reads as a circle pasted on the frame rather than as glass.
+ *
+ * Measured against the rim's own bend rather than against a fixed number, which
+ * is what makes that arrival exact at every curvature: Snell decides how the
+ * squeeze is distributed across the edge, and this decides where it ends.
+ *
+ * ior is a parameter so each of the three channels can be given its own. That is
+ * all dispersion is, and it is the whole of the aberration control.
+ */
+float lensReach(vec2 offset, float edge, float magnify, float ior) {
+  float bend = lensBend(lensNormal(offset, edge), ior);
+  // The rim measured at the glass's *own* index, not at this channel's, and
+  // that is the whole of the fringing.
+  //
+  // Normalising each channel against its own rim divided the dispersion back
+  // out again: both the bend and the rim scale with the index, so the ratio came
+  // out very nearly the same for all three and the control did nothing at any
+  // setting. Against one reference the three channels land apart — and they land
+  // apart *by how much the bend differs*, which is nothing in the flat middle
+  // and most at the rim. Which is where fringing belongs.
+  float rim = lensBend(lensNormal(vec2(1.0, 0.0), edge), LOUPE_IOR);
+  // smoothstep rather than the ratio itself, so the mapping is flat at both ends
+  // and there is no distance from the middle at which the squeeze visibly starts
+  // — the same reason sampleFocused ramps the way it does.
+  return mix(1.0 / magnify, 1.0, smoothstep(0.0, 1.0, bend / max(rim, 1e-4)));
+}
+
 void main() {
+  // The lens, first, because nothing else in here applies to it: its quad is a
+  // square grown around the glass for the shadow, and the shape that matters is
+  // the circle inside it rather than the rectangle the quad covers.
+  if (u_mode == 5) {
+    float radius = max(u_loupe.z, 1.0);
+    // In lens radii, so every number below is read against the glass itself.
+    vec2 offset = (v_screen - u_loupe.xy) / radius;
+    float r = length(offset);
+
+    // The shadow the glass casts, drawn in the bleed the quad was grown by. The
+    // same logistic falloff the rectangle shadows use — a blurred edge decays
+    // rather than stopping — dropped by a fraction of the radius so the lens
+    // stands off the picture instead of sitting in it.
+    float sigma = LOUPE_BLEED * 0.42;
+    float under = length(offset - vec2(0.0, LOUPE_BLEED * 0.3)) - 1.0;
+    float shade = 0.34 * u_loupe.w / (1.0 + exp(1.702 * under / sigma));
+
+    // One pixel of feathering at the rim, in pixels, like every other edge here.
+    float cover = 1.0 - smoothstep(-0.5, 0.5, (r - 1.0) * radius);
+    if (cover <= 0.0) {
+      // Only the shadow out here. Premultiplied black, so it darkens whatever
+      // the frame already put down.
+      fragColor = premultiplied(vec3(0.0), shade);
+      return;
+    }
+
+    // Flat almost to the rim at one end, half of it turned over at the other.
+    float edge = mix(LOUPE_EDGE_FLAT, LOUPE_EDGE_FULL, clamp(u_glass.y, 0.0, 1.0));
+    vec3 normal = lensNormal(offset, edge);
+    float magnify = max(u_glass.x, 1.0);
+    float split = clamp(u_glass.z, 0.0, 1.0) * LOUPE_SPREAD;
+
+    vec3 lit;
+    if (split <= 0.0) {
+      lit = behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR) * radius);
+    } else {
+      // Three taps rather than one blurred one: a fringe is each channel landing
+      // somewhere slightly different, not all of them being soft.
+      lit = vec3(
+        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR - split) * radius).r,
+        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR) * radius).g,
+        behind(u_loupe.xy + offset * lensReach(offset, edge, magnify, LOUPE_IOR + split) * radius).b
+      );
+    }
+
+    float shine = clamp(u_glass.w, 0.0, 1.0);
+
+    // What the glass reflects. Schlick's approximation: barely reflective looked
+    // at straight on, a mirror at the rim where the surface has turned away.
+    float fresnel = 0.04 + 0.96 * pow(1.0 - normal.z, 5.0);
+    // Straight out from the middle and a little past the rim, which is where a
+    // convex surface of revolution sends what it reflects — and near the rim is
+    // the only place the Fresnel term lets any of it through.
+    //
+    // A bounded step rather than following the reflected ray to where it lands.
+    // Near grazing that ray runs almost flat, so the true landing point is very
+    // far away; under a clamped sampler far away is the corner of the frame, and
+    // that drew as a black cap over the top of every lens.
+    vec2 outward = offset / max(r, 1e-3);
+    vec3 around = behind(u_loupe.xy + outward * radius * (1.3 + 0.5 * edge));
+
+    // And the room the glass is standing in, which is the half of the reflection
+    // the frame cannot supply.
+    //
+    // The surroundings alone are not enough to read as glass: a lens over a dark
+    // panel reflects a dark panel and comes out as a hole cut in the picture.
+    // Real glass on a dark desk still carries a bright edge, and that light is
+    // the room rather than the desk. So this is a plain studio gradient — bright
+    // where the surface turns up to the ceiling, dim where it turns down to the
+    // table — and it is what the rim is made of now that nothing is drawn there.
+    vec3 room = mix(vec3(0.04), vec3(0.92), smoothstep(-0.5, 0.75, -normal.y));
+    lit = mix(lit, mix(around, room, 0.55), fresnel * shine);
+
+    // The highlight, and a broad sheen under it. One light: the tight term is the
+    // reflection of the source itself and the wide one is the glass being lit at
+    // all, and without the second the first reads as a sticker.
+    float facing = max(dot(normal, LOUPE_LIGHT), 0.0);
+    lit += shine * (pow(facing, 40.0) * 0.7 + pow(facing, 4.0) * 0.08);
+
+    // The glass over its own shadow, both premultiplied: what is left of the
+    // shadow is the part the glass does not cover. Presence rides on the
+    // coverage, so an arriving lens is see-through rather than popping in.
+    float shown = cover * u_loupe.w;
+    fragColor = vec4(lit * shown, shown + (1.0 - shown) * shade);
+    return;
+  }
+
   vec2 halfSize = u_rect.zw * 0.5;
   vec2 p = v_local - halfSize;
   // The outline, when the camera has one, otherwise the rounded rectangle every
@@ -587,6 +831,9 @@ interface Program {
   blob: WebGLUniformLocation | null;
   harmonics: WebGLUniformLocation | null;
   useMatte: WebGLUniformLocation | null;
+  loupe: WebGLUniformLocation | null;
+  glass: WebGLUniformLocation | null;
+  view: WebGLUniformLocation | null;
 }
 
 /** The full-screen pass that lays a look over the finished frame. */
@@ -616,6 +863,8 @@ export class WebGlCompositor {
   private program: Program | null = null;
   /** A copy of the frame under the caption being drawn. See `grabBackdrop`. */
   private backdrop: WebGLTexture | null = null;
+  /** The lens's own render of the composition. See `renderGlass`. */
+  private glass: Scene | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   /**
    * Built on the first filtered frame, and kept even when the look is taken
@@ -698,8 +947,35 @@ export class WebGlCompositor {
     gl.useProgram(this.program.program);
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.program.frame, plan.frame.width, plan.frame.height);
+    // The identity, which every pass but the lens's own uses. Set per frame
+    // rather than per item: it belongs to the pass, not to what is in it.
+    gl.uniform4f(this.program.view, 0, 0, plan.frame.width, plan.frame.height);
 
-    for (const item of plan.items) {
+    for (let index = 0; index < plan.items.length; index += 1) {
+      const item = plan.items[index]!;
+
+      // The lens is drawn here rather than in `drawItem`, because it is the one
+      // item that needs the items *before* it: they are what goes inside the
+      // glass, and they have to be drawn again at its magnification first.
+      if (item.kind === "loupe") {
+        const glass = loupeAt(item.keys, at);
+        // Away, or not yet arrived — most of a recording, even one with a lens
+        // in it. Nothing drawn, and no second pass paid for either.
+        if (!glass) continue;
+        const ready = this.renderGlass(
+          gl,
+          glass,
+          plan.items.slice(0, index),
+          sources,
+          images,
+          at,
+          plan.frame,
+          backing,
+        );
+        if (ready) this.drawLoupe(gl, glass);
+        continue;
+      }
+
       this.drawItem(gl, item, sources, images, at, plan.frame);
     }
 
@@ -906,6 +1182,15 @@ export class WebGlCompositor {
 
     for (const texture of this.textures.values()) gl.deleteTexture(texture);
     this.textures.clear();
+    // Neither lives in `textures` — both are copies of the canvas rather than
+    // uploads keyed by a path — so neither is freed by the loop above.
+    if (this.backdrop) gl.deleteTexture(this.backdrop);
+    if (this.glass) {
+      gl.deleteTexture(this.glass.texture);
+      gl.deleteFramebuffer(this.glass.framebuffer);
+    }
+    this.backdrop = null;
+    this.glass = null;
     this.touched.clear();
     if (this.program) gl.deleteProgram(this.program.program);
     if (this.filterProgram) gl.deleteProgram(this.filterProgram.program);
@@ -1238,6 +1523,173 @@ export class WebGlCompositor {
         break;
       }
     }
+  }
+
+  /**
+   * The glass itself, over the magnified render that is already on unit 1.
+   *
+   * Its own method rather than a `drawItem` case, for the reason the call site
+   * gives: this is the one item whose contents are a pass of their own.
+   */
+  private drawLoupe(gl: WebGL2RenderingContext, glass: LoupeKey): void {
+    const p = this.program;
+    if (!p) return;
+
+    // The quad is the glass grown for its shadow, which the shader draws in the
+    // bleed. Mirrors the same three lines in `compositor.rs`.
+    const reach = glass.radius * (1 + LOUPE_BLEED);
+    set(gl, p, {
+      rect: { x: glass.x - reach, y: glass.y - reach, width: reach * 2, height: reach * 2 },
+      // Square and un-rounded: the circle is the lens's own, measured from its
+      // centre, and a rounded quad would cut the shadow's corners off.
+      shape: { radius: 0, exponent: 2 },
+      mode: MODE_LOUPE,
+      // How this buffer is oriented, which is the one thing about the lens's
+      // render the two rasterisers do not share. See `behind` in the shader.
+      src: [0, 1, 1, -1],
+      loupe: glass,
+    });
+    drawQuad(gl);
+  }
+
+  /**
+   * Draws the composition again, over a small box around the glass, at the
+   * lens's own magnification.
+   *
+   * This is the whole reason a loupe can be sharp. Sampling the finished frame
+   * — which is what this used to do — hands the lens output pixels, and
+   * enlarging those can only blur what is already there. A 3024-wide recording
+   * drawn into a 1920 frame has about 1.7 source pixels behind every output
+   * one, and all of that detail is sitting in the file unread. Drawing the plan
+   * a second time at the magnification is what reaches it: the screen is
+   * sampled at the rate the lens actually needs, and the pointer is rasterised
+   * at its magnified size rather than enlarged.
+   *
+   * Only the items *under* the lens, which is the same slice of the list the
+   * frame copy used to capture — so what appears inside the glass is unchanged,
+   * only its resolution is.
+   *
+   * Bound to unit 1, where `u_backdrop` points. The caption's grab binds its own
+   * texture to the same unit later in the frame; only one of the two is ever
+   * read by a given draw.
+   *
+   * Mirrors `render_glass` in `crates/prequel-render/src/compositor.rs`.
+   */
+  private renderGlass(
+    gl: WebGL2RenderingContext,
+    glass: LoupeKey,
+    under: readonly PlanItem[],
+    sources: Sources,
+    images: Images,
+    at: number,
+    frame: Size,
+    backing: Backing,
+  ): boolean {
+    const p = this.program;
+    if (!p) return false;
+
+    const span = 2 * LOUPE_REACH * glass.radius;
+    if (span <= 0) return false;
+
+    // How many device pixels the frame itself is drawn at. The preview's canvas
+    // is its backing store, which is larger than the plan's frame by the display
+    // scale — so the lens has to be drawn at that density too, or it would be
+    // the one thing on screen rendered below the resolution it is shown at.
+    const density = backing.width / Math.max(frame.width, 1);
+    // What the glass needs to be sharp: its own span, magnified, at that
+    // density. Capped so the lens never costs more pixels than the frame it sits
+    // on — a very large glass at a very high magnification then gets less
+    // supersampling rather than a target nothing can afford.
+    const want = span * glass.magnify * density;
+    const cap = Math.sqrt(backing.width * backing.height);
+    const size = Math.max(1, Math.round(Math.min(want, cap)));
+
+    const target = this.glassFor(gl, size);
+    if (!target) return false;
+
+    // Off unit 1 before it becomes the target. Last frame's draw left this very
+    // texture bound there, and sampling a texture that is attached to the
+    // framebuffer being drawn into is a rendering feedback loop — undefined by
+    // the specification, and in Chromium a pass that comes back empty. It showed
+    // as the lens rendering as a solid black disc from the second frame on.
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+    gl.viewport(0, 0, size, size);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // The box the pass covers, in frame pixels. `behind` in the shader takes the
+    // same box off the glass's own centre and radius, so nothing has to be
+    // carried between the two.
+    const origin = {
+      x: glass.x - LOUPE_REACH * glass.radius,
+      y: glass.y - LOUPE_REACH * glass.radius,
+    };
+    gl.uniform4f(p.view, origin.x, origin.y, span, span);
+
+    for (const item of under) {
+      // A lens inside a lens would be a pass inside a pass. There is only ever
+      // one in a plan, and it is not in this slice — this is what keeps that
+      // from being load-bearing.
+      if (item.kind === "loupe") continue;
+      this.drawItem(gl, item, sources, images, at, frame);
+    }
+
+    // Back to whatever the frame is being drawn into, and back to the identity
+    // view. Left set, every item after the lens would be placed into the lens's
+    // box — which is the whole rest of the frame drawn inside a circle.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.scene?.framebuffer ?? null);
+    gl.viewport(0, 0, backing.width, backing.height);
+    gl.uniform4f(p.view, 0, 0, frame.width, frame.height);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+    gl.uniform1i(p.backdrop, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    return true;
+  }
+
+  /** The lens's render target, reallocated only when its size changes. */
+  private glassFor(gl: WebGL2RenderingContext, size: number): Scene | null {
+    if (this.glass && this.glass.width === size && this.glass.height === size) return this.glass;
+
+    if (this.glass) {
+      gl.deleteTexture(this.glass.texture);
+      gl.deleteFramebuffer(this.glass.framebuffer);
+      this.glass = null;
+    }
+
+    const texture = gl.createTexture();
+    const framebuffer = gl.createFramebuffer();
+    if (!texture || !framebuffer) return null;
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // Clamped, or a tap at the edge of the box wraps to the opposite side and
+    // draws as a stripe of the wrong picture around the rim.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    if (!complete) {
+      console.error("[editor] the lens's framebuffer is incomplete; drawing without a loupe");
+      gl.deleteTexture(texture);
+      gl.deleteFramebuffer(framebuffer);
+      return null;
+    }
+
+    this.glass = { texture, framebuffer, width: size, height: size };
+    return this.glass;
   }
 
   /**
@@ -1588,6 +2040,13 @@ interface Draw {
    * front of it, which draws nothing.
    */
   blob?: BlobShape;
+  /**
+   * The lens this frame, in output pixels, already interpolated.
+   *
+   * Left out for every draw but a loupe, which is what leaves the radius at zero
+   * and the glass out of the way.
+   */
+  loupe?: LoupeKey;
 }
 
 /** The outline this frame, moved by whatever the picture's rectangle is doing. */
@@ -1664,6 +2123,19 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
     HARMONICS[k] = h?.[k] ?? 0;
   }
   gl.uniform4fv(p.harmonics, HARMONICS);
+
+  // Written every draw for the reason the outline is: a uniform holds its value
+  // until it is changed, and a radius left over from the last lens would send
+  // the next primitive down the loupe's branch.
+  const loupe = draw.loupe;
+  gl.uniform4f(p.loupe, loupe?.x ?? 0, loupe?.y ?? 0, loupe?.radius ?? 0, loupe?.presence ?? 0);
+  gl.uniform4f(
+    p.glass,
+    loupe?.magnify ?? 1,
+    loupe?.curvature ?? 0,
+    loupe?.aberration ?? 0,
+    loupe?.reflection ?? 0,
+  );
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -1849,6 +2321,9 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     useMatte: at("u_useMatte"),
     blob: at("u_blob"),
     harmonics: at("u_harmonics"),
+    loupe: at("u_loupe"),
+    glass: at("u_glass"),
+    view: at("u_view"),
   };
 }
 

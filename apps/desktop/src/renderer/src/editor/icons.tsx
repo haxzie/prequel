@@ -1369,3 +1369,65 @@ export function FontIcon() {
     </svg>
   );
 }
+
+/**
+ * A lens with a highlight on it: the loupe's own glyph.
+ *
+ * Its own rather than `ZoomIcon` with something added. That one is a magnifying
+ * glass and stands for the whole zoom panel, so it appears on the row beside
+ * this — and two magnifying glasses next to each other read as one of them
+ * being a mistake. This is the glass alone, with the catchlight the lens
+ * actually draws.
+ */
+export function GlassIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M8.5 9.2a5 5 0 0 1 3-1.9" />
+    </svg>
+  );
+}
+
+/**
+ * Three offset arcs: one edge split into colours.
+ *
+ * What chromatic aberration looks like rather than what causes it — a prism
+ * would be the mechanism, and the control is named for the fringe you see.
+ */
+export function AberrationIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M8 4a9 9 0 0 0 0 16M12 4a9 9 0 0 0 0 16M16 4a9 9 0 0 0 0 16" />
+    </svg>
+  );
+}
+
+/** A surface and a highlight sliding off it. */
+export function ReflectionIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 20 20 4" />
+      <path d="M6 12a6 6 0 0 1 6-6" />
+      <path d="M12 18a6 6 0 0 0 6-6" />
+    </svg>
+  );
+}
+
+/**
+ * Two arrows to opposite corners: the camera move, taking the whole picture out
+ * past the frame. Lucide `maximize-2`.
+ *
+ * No frame around it, and that is the point. This sits one row under `Follow`,
+ * where Region is a bracketed square — a second bracketed square directly below
+ * it was the same glyph twice at 14px, which is how the row came to read as
+ * though one of the two options was a mistake. Nothing else in the zoom panel
+ * is a bare pair of diagonals.
+ */
+export function PushInIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M15 3h6v6M9 21H3v-6" />
+      <path d="M21 3l-7 7M3 21l7-7" />
+    </svg>
+  );
+}

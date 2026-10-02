@@ -217,6 +217,15 @@ export function autoZooms(moments: readonly Moment[], options: AutoEditOptions):
         target: clicks > 0 ? (options.hasCursor ? "cursor" : "region") : "typing",
         x: centre.x,
         y: centre.y,
+        // The camera move, always. A lens is a deliberate flourish over one
+        // small thing, and a first cut that put a magnifying glass on every
+        // click would be a different sort of video rather than a steadier one —
+        // the same reasoning that leaves the blur and the vignette off below.
+        method: DEFAULT_ZOOM.method,
+        loupeSize: DEFAULT_ZOOM.loupeSize,
+        loupeCurvature: DEFAULT_ZOOM.loupeCurvature,
+        loupeAberration: DEFAULT_ZOOM.loupeAberration,
+        loupeReflection: DEFAULT_ZOOM.loupeReflection,
         level: levelFor(chunk),
         speed: DEFAULT_ZOOM.speed,
         // The default distance. The automatic pass sets an angle but not how

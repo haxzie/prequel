@@ -195,3 +195,64 @@ describe("the outline both rasterisers draw", () => {
     expect(arithmetic(METAL)).toContain("u_blob.z > 0.0 ? blobDistance");
   });
 });
+
+/**
+ * The lens both rasterisers draw.
+ *
+ * The loupe is shading, not geometry: the plan carries where the glass is and how
+ * strong it is, and each side works out for itself where every pixel inside it
+ * samples from. Two slightly different refractions is a preview whose lens
+ * magnifies by a shade more than the export's — and the two are never on screen
+ * together, so nobody would see it until a frame of one was put beside a frame of
+ * the other.
+ *
+ * The spellings are the only difference allowed: `lensNormal` here,
+ * `lens_normal` there.
+ */
+const lens = (source: string) =>
+  arithmetic(source)
+    .replaceAll(/\blens_normal\b/g, "lensNormal")
+    .replaceAll(/\blens_bend\b/g, "lensBend")
+    .replaceAll(/\blens_reach\b/g, "lensReach");
+
+describe("the loupe both rasterisers draw", () => {
+  it("has the same surface on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 lensNormal(");
+    const msl = body(METAL, "static float3 lens_normal(");
+
+    expect(glsl, "lensNormal in the GLSL").not.toBeNull();
+    expect(msl, "lens_normal in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
+  it("refracts the same way on each side", () => {
+    // Where the magnification actually comes from. A difference here is a lens
+    // that joins the picture at the rim in one and leaves a seam in the other.
+    const glsl = body(SHADER_SOURCE().fragment, "float lensReach(");
+    const msl = body(METAL, "static float lens_reach(");
+
+    expect(glsl, "lensReach in the GLSL").not.toBeNull();
+    expect(msl, "lens_reach in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
+  it("is ground from the same glass on each side", () => {
+    // The constants the two shaders cannot share, since one is a template
+    // literal in TypeScript and the other a Metal file. The index and the
+    // dispersion decide the mapping; the bleed has to agree with the quad the
+    // plan grew, or the shadow is clipped on one side only.
+    for (const declaration of [
+      "LOUPE_BLEED = 0.22",
+      "LOUPE_IOR = 1.52",
+      "LOUPE_SPREAD = 0.09",
+      "LOUPE_LIGHT = N(-0.4508, -0.6211, 0.6411)",
+      "LOUPE_ROLL = 0.995",
+      "LOUPE_EDGE_FLAT = 0.08",
+      "LOUPE_EDGE_FULL = 0.55",
+      "LOUPE_REACH = 1.6",
+    ]) {
+      expect(lens(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);
+      expect(lens(METAL), `${declaration} in the MSL`).toContain(declaration);
+    }
+  });
+});

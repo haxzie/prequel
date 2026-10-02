@@ -21,6 +21,7 @@ import {
   CameraIcon,
   CursorIcon,
   FillIcon,
+  GlassIcon,
   ScreenIcon,
   TextIcon,
   TypingIcon,
@@ -993,6 +994,7 @@ export function TimelineStrip({
                   room={((to - from) / NS_PER_SECOND) * pxPerSecond}
                   selected={zoom.id === state.selectedZoomId}
                   target={zoom.target}
+                  method={zoom.method}
                   level={zoom.level}
                   sourceAt={(clientX) => sourceAt(timeAt(clientX))}
                   start={zoom.source.start}
@@ -2127,6 +2129,7 @@ function Zoom({
   room,
   selected,
   target,
+  method,
   level,
   start,
   sourceAt,
@@ -2145,6 +2148,10 @@ function Zoom({
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
   target: ZoomSlice["target"];
+  /** Whether it is a camera move or a lens. Shown in place of what it follows,
+      not beside it: the two glyphs would not fit on a short bar, and which of
+      the two methods a bar is matters more than where it is aimed. */
+  method: ZoomSlice["method"];
   /** How far in. The one number about a zoom worth reading from the strip —
       how long it runs is already its width. */
   level: number;
@@ -2230,7 +2237,15 @@ function Zoom({
           nothing without changing the row's height. */}
       <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
         <ZoomIcon />
-        {target === "cursor" ? <CursorIcon /> : target === "typing" ? <TypingIcon /> : <FillIcon />}
+        {method === "loupe" ? (
+          <GlassIcon />
+        ) : target === "cursor" ? (
+          <CursorIcon />
+        ) : target === "typing" ? (
+          <TypingIcon />
+        ) : (
+          <FillIcon />
+        )}
         <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
       </span>
 

@@ -691,6 +691,24 @@ export interface ZoomSlice {
   /** Half-open range of source time, on the recording's own timeline. */
   source: { start: Ns; end: Ns };
   /**
+   * How the picture is brought closer.
+   *
+   * `camera` pushes the whole frame in — the shot every field below describes.
+   * `loupe` leaves the frame where it is and lays a glass lens on it, so the
+   * area being looked at is magnified and the rest of the screen stays put and
+   * stays readable.
+   *
+   * The two share `target`, `x`, `y`, `level`, `speed` and the ease, because
+   * those are the same questions for both: where is it, how far in, how long
+   * does it take to get there. Nothing else crosses — a lens does not tilt and
+   * has no depth of field, and `rotateX`, `vignette` and `blur` are ignored
+   * while this is `loupe`.
+   *
+   * Absent in every project written before the lens existed, which reads back as
+   * `camera` — so all of them look exactly as they did.
+   */
+  method: "camera" | "loupe";
+  /**
    * `cursor` keeps the pointer in the middle of the shot for the whole span;
    * `typing` frames whatever field has keyboard focus; `region` holds still on
    * a place picked in advance.
@@ -770,6 +788,39 @@ export interface ZoomSlice {
   blurSafe: number;
   /** How soft it gets beyond that, as a fraction of the frame's shorter edge. */
   blurStrength: number;
+  /**
+   * How wide the lens is across, as a fraction of the frame's shorter edge.
+   *
+   * The shorter edge like every other length here, so a loupe is the same size
+   * on screen in a 16:9 export and a 9:16 one.
+   */
+  loupeSize: number;
+  /**
+   * How deep the glass is, 0 to 1.
+   *
+   * The thickness of the lens, which decides how much of the picture is
+   * squeezed into the rim: a nearly flat pane magnifies evenly and joins the
+   * screen abruptly, a fat one bows the last third of the way out. It is one
+   * control because the surface is one sphere — see the lens in
+   * `shaders.metal`, where this is the cap's depth over its own radius.
+   */
+  loupeCurvature: number;
+  /**
+   * How far the glass splits colour at the rim, 0 to 1.
+   *
+   * Dispersion: the lens is given a slightly different index per channel, so
+   * blue bends harder than red and the fringes appear where the bending is
+   * strongest. Zero is a perfectly corrected lens, which no real glass is.
+   */
+  loupeAberration: number;
+  /**
+   * How much the glass reflects, 0 to 1.
+   *
+   * Both halves of what makes it read as glass rather than as a hole: the rim
+   * mirrors what is beside the lens, strongest where the surface turns away from
+   * the eye, and a highlight sits where a key light would catch it.
+   */
+  loupeReflection: number;
 }
 
 /**
@@ -790,6 +841,10 @@ export const DEFAULT_ZOOM = {
   target: "cursor",
   x: 0.5,
   y: 0.5,
+  // The shot, not the lens. A zoom dropped on the timeline is the camera move
+  // every recording before this one got, so nothing about an existing project
+  // changes and the lens is something picked on purpose.
+  method: "camera",
   level: 2,
   // Long enough to read as a camera move rather than a cut, short enough not to
   // spend the first second of a two-second zoom still arriving.
@@ -811,6 +866,18 @@ export const DEFAULT_ZOOM = {
   blurSafe: 0.28,
   blurStrength: 0.012,
   vignette: 0,
+  // A bit under half the shorter edge: large enough that what is inside it can
+  // be read at a glance, small enough that there is still a screen around it —
+  // which is the only reason to reach for a lens rather than a camera move.
+  loupeSize: 0.44,
+  // Enough bow to read as glass at the rim and leave the middle of the lens
+  // magnifying evenly. Further up it is a ball lens, which is a look rather
+  // than a magnifier.
+  loupeCurvature: 0.34,
+  // Present and slight. A lens with no fringing at all reads as a cut-out
+  // circle, and this is about the width of one at export resolution.
+  loupeAberration: 0.3,
+  loupeReflection: 0.5,
 } as const;
 
 const { target: _target, x: _x, y: _y, ...ZOOM_LOOK } = DEFAULT_ZOOM;
@@ -1475,6 +1542,10 @@ export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomD
   const zoom = (stored ?? {}) as Record<string, unknown>;
 
   return {
+    // Only the lens by name; anything else is the camera move. A project from
+    // before this existed carries nothing here and reads back as the shot it
+    // was.
+    method: zoom["method"] === "loupe" ? "loupe" : "camera",
     level: clamp(number(zoom["level"], fallback.level), 1, 8),
     speed: clamp(number(zoom["speed"], fallback.speed), 0, 5),
     // Both to the unit square. x because a bézier whose control points run
@@ -1516,6 +1587,13 @@ export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomD
     blur: zoom["blur"] === true,
     blurSafe: clamp(number(zoom["blurSafe"], fallback.blurSafe), 0.05, 0.9),
     blurStrength: clamp(number(zoom["blurStrength"], fallback.blurStrength), 0, 0.04),
+    // The lens. Its floor is a glass big enough to hold a word of interface and
+    // its ceiling one that still leaves a screen around it; past that a lens is
+    // doing a camera move's job badly.
+    loupeSize: clamp(number(zoom["loupeSize"], fallback.loupeSize), 0.15, 0.9),
+    loupeCurvature: clamp(number(zoom["loupeCurvature"], fallback.loupeCurvature), 0, 1),
+    loupeAberration: clamp(number(zoom["loupeAberration"], fallback.loupeAberration), 0, 1),
+    loupeReflection: clamp(number(zoom["loupeReflection"], fallback.loupeReflection), 0, 1),
   };
 }
 

@@ -15,9 +15,9 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, BlobKey, CancelFlag, CursorPoint, CursorShadow, ExportRequest, OutputFormat,
-    OverlayKey, Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, SegmentRef, Shape,
-    Size, SliceMedia, SliceRender, Span, export,
+    AudioMix, BlobKey, CancelFlag, CursorPoint, CursorShadow, ExportRequest, LoupeKey,
+    OutputFormat, OverlayKey, Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan,
+    SegmentRef, Shape, Size, SliceMedia, SliceRender, Span, export,
 };
 use prequel_session::{CAMERA_MATTE_FILE, TrackKind};
 
@@ -1890,6 +1890,216 @@ fn draws_nothing_where_the_outline_has_closed() {
     let frame = first_frame(&output);
     near(frame.at(160, 120), (0, 0, 255), "where the shape was");
     near(frame.at(60, 60), (0, 0, 255), "and everywhere else");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A lens the size of one on screen, over a boundary it has to move.
+///
+/// The glass sits a little to the right of where blue meets red, so the
+/// magnified image puts that meeting point *further* left than the frame does —
+/// twice as far from the lens's middle, at 2x. A point between the two reads
+/// blue on the frame and red through the glass, which no amount of drawing a
+/// circle in the right place could produce.
+///
+/// `curvature` is the default and `aberration` and `reflection` are off, so what
+/// is being measured is the mapping rather than the dressing: the rim darkening
+/// and the highlight both land well outside the point being sampled.
+#[test]
+fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
+    let dir = scratch("prequel-pixels-loupe");
+    // Blue left, red right, so the boundary lands at the middle of the output.
+    let source = split_frame(320, 240, [0, 0, 255], [255, 0, 0]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let output = dir.join("export.mp4");
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    // Fully down for the whole clip. Two keys with the same values, outside the
+    // slice at both ends, because `loupe_at` draws nothing at or beyond them.
+    let glass = |at: i64| LoupeKey {
+        at,
+        // A tenth of the frame to the right of the boundary at x = 160.
+        x: 192.0,
+        y: 120.0,
+        radius: 80.0,
+        magnify: 2.0,
+        presence: 1.0,
+        curvature: 0.34,
+        aberration: 0.0,
+        reflection: 0.0,
+    };
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 320.0,
+                    height: 240.0,
+                },
+                dst_rect: full,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                motion: Vec::new(),
+            },
+            PlanItem::Loupe {
+                keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+            },
+        ],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    // Inside the glass, on the frame's blue side, past where the magnified
+    // boundary sits. Blue here means the lens drew the frame at its own size.
+    near(frame.at(140, 120), (255, 0, 0), "through the glass");
+    // Inside the glass on the red side, which is red either way — a sanity
+    // check that the lens is drawing the picture and not a flat disc.
+    near(frame.at(240, 120), (255, 0, 0), "the far side of the glass");
+    // Outside the quad entirely. The lens must move nothing: red here, or blue
+    // anywhere past the boundary, is the picture having been dragged.
+    near(frame.at(40, 120), (0, 0, 255), "well clear of the glass");
+    near(frame.at(180, 8), (255, 0, 0), "above the glass");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A greyscale picture, seen through the glass, comes out with colour at the rim.
+///
+/// The fringing control shipped doing nothing at any setting, and nothing could
+/// have told you: each channel was normalised against its *own* index, so the
+/// dispersion divided straight back out and the three landed on top of each
+/// other. The lens still looked like a lens, so there was no artefact to notice
+/// — only a slider that moved and changed no pixel.
+///
+/// Black and white either side, `reflection` off, so there is no colour anywhere
+/// in the composition and nothing but the glass can have put any in.
+#[test]
+fn the_glass_splits_colour_at_its_edge() {
+    let dir = scratch("prequel-pixels-fringe");
+    let source = split_frame(320, 240, [0, 0, 0], [255, 255, 255]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    // The same lens twice, once with the fringing off and once at full.
+    //
+    // Placed so the black-and-white boundary falls in the *rim*, which is the
+    // only place the bend differs enough between channels to separate them —
+    // and the only place it should. Over the middle of the glass a lens is
+    // nearly flat, every index refracts the same, and a scan across the
+    // diameter of a centred lens finds no colour however broken the control is.
+    let shot = |aberration: f64| LoupeKey {
+        at: 0,
+        x: 228.0,
+        y: 120.0,
+        radius: 80.0,
+        magnify: 2.0,
+        presence: 1.0,
+        curvature: 0.34,
+        aberration,
+        // Off, or the highlight would put light of its own on the glass.
+        reflection: 0.0,
+    };
+
+    // The widest any channel is from any other, straight across the middle of
+    // the lens. Greyscale in, so anything above nothing is the glass.
+    let split = |aberration: f64, name: &str| -> i16 {
+        let output = dir.join(format!("{name}.mp4"));
+        let glass = |at: i64| LoupeKey {
+            at,
+            ..shot(aberration)
+        };
+        let plan = RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 320.0,
+                        height: 240.0,
+                    },
+                    dst_rect: full,
+                    shape: Shape {
+                        radius: 0.0,
+                        exponent: 2.0,
+                    },
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    motion: Vec::new(),
+                },
+                PlanItem::Loupe {
+                    keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+                },
+            ],
+            filter: None,
+        };
+
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+
+        let frame = first_frame(&output);
+        let mut widest = 0;
+        for x in 149..307 {
+            let (r, g, b) = frame.at(x, 120);
+            let spread = (r as i16 - b as i16)
+                .abs()
+                .max((r as i16 - g as i16).abs())
+                .max((g as i16 - b as i16).abs());
+            widest = widest.max(spread);
+        }
+        widest
+    };
+
+    let off = split(0.0, "none");
+    let full_split = split(1.0, "full");
+
+    // The encoder is lossy and the picture has a hard edge in it, so "none" is
+    // allowed a little chroma noise rather than exactly zero.
+    assert!(off < 24, "a corrected lens should add no colour, got {off}");
+    assert!(
+        full_split > 60,
+        "the fringing control should split colour, got {full_split}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -17,15 +17,15 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at, caption_at, crop_to_frame,
-    cursor_at, moved_blob, overlay_at, rect_at,
+    LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at, caption_at,
+    crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at, rect_at,
 };
 use crate::{Error, Result};
 
 /// Mirrors `FilterUniforms` in `filters.metal`. Field order and padding must
 /// match, for the reason the block below spells out at length.
 ///
-/// Its own block rather than more fields on `Uniforms`: that one is 320 bytes
+/// Its own block rather than more fields on `Uniforms`: that one is 368 bytes
 /// with a hand-derived offset table and a test asserting every offset in it,
 /// and none of this is read by a per-item draw. Keeping them apart is what lets
 /// a look be added without re-deriving the numbers that place a camera.
@@ -93,6 +93,21 @@ struct Uniforms {
     cursor_box: [f32; 4],
     /// Cursor shadow drop x/y, blur radius and opacity, in outer-quad units.
     cursor_shadow: [f32; 4],
+    /// The lens: its middle in xy and its radius in z, all in output pixels, and
+    /// how present it is in w. A radius of 0 is every draw but a loupe.
+    ///
+    /// The last of the `float4`s rather than in the tail, for the reason `src`
+    /// sits beside `rect`: each one is 16-byte aligned, so adding these two here
+    /// leaves nothing above them moved and shifts the `float2`s and the scalars
+    /// below by one whole pair of rows. Appending them after the `u32`s would put
+    /// the tail at an offset Rust and MSL disagree about.
+    loupe: [f32; 4],
+    /// What sort of glass it is: the magnification, how deep the surface is, how
+    /// far it splits colour and how much it reflects.
+    glass: [f32; 4],
+    /// The region of the frame this pass draws into, as x, y, width, height in
+    /// frame pixels. The whole frame for every pass but the lens's own.
+    view: [f32; 4],
     /// One texel of the sampled image, so a blur is measured in its own pixels.
     texel: [f32; 2],
     shape: [f32; 2],
@@ -130,7 +145,7 @@ struct Uniforms {
     ///
     /// The scalar tail follows the Metal declaration exactly. Rust aligns
     /// arrays to 4 bytes rather than 16, so the explicit tail below keeps the
-    /// 320-byte block the same size on both sides.
+    /// block the same size on both sides.
     alpha: f32,
     /// Non-zero to multiply the sampled picture by the matte at slot 2.
     ///
@@ -156,6 +171,22 @@ const MODE_GRADIENT: u32 = 1;
 const MODE_IMAGE: u32 = 2;
 const MODE_SHADOW: u32 = 3;
 const MODE_STROKE: u32 = 4;
+const MODE_LOUPE: u32 = 5;
+
+/// How far past the glass the lens quad reaches, as a fraction of its radius.
+///
+/// Mirrors `LOUPE_BLEED` in `apps/desktop/src/shared/layout.ts` and in
+/// `shaders.metal`: the editor's constant is the one that documents it, this one
+/// grows the quad, and the shader's draws the shadow inside what was grown.
+/// Changing one alone clips the shadow.
+const LOUPE_BLEED: f64 = 0.22;
+
+/// How far around the glass the lens's own render reaches, in radii.
+///
+/// Mirrors `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts` and in
+/// `shaders.metal`: the editor's is the one that documents it, this one sizes
+/// and places the render, and the shader's is what samples it.
+const LOUPE_REACH: f64 = 1.6;
 
 /**
  * A texture and everything that has to outlive it.
@@ -188,6 +219,13 @@ pub struct Compositor {
     caption_clock: u64,
     /// A copy of the frame under the caption being drawn. See `grab_backdrop`.
     backdrop: Option<arc::R<mtl::Texture>>,
+    /// The lens's own render of the composition. See `render_glass`.
+    ///
+    /// Its own texture rather than the caption's, and not for tidiness: a plan
+    /// can hold both, and they are not even the same kind of thing — this one is
+    /// a render target the composition is drawn into, that one a blit of the
+    /// finished frame.
+    glass: Option<arc::R<mtl::Texture>>,
     /// The pass that lays a look over the finished frame.
     ///
     /// `None` when `filters.metal` would not compile or is missing a function.
@@ -301,6 +339,7 @@ impl Compositor {
             caption_use: HashMap::new(),
             caption_clock: 0,
             backdrop: None,
+            glass: None,
             filter_pipeline,
             scene: None,
         })
@@ -463,13 +502,60 @@ impl Compositor {
         // splits the pass once rather than once per word.
         let mut copied: Option<Rect> = None;
 
-        for item in &plan.items {
-            // A caption coloured against what is behind it needs to *see* what
-            // is behind it, and Metal cannot sample the texture it is drawing
-            // into. So the pass ends here, the region under the caption is
-            // blitted out, and a second pass loads what was already drawn and
-            // carries on. Captions are last in a plan and a line's words all
-            // share one box, so in practice this happens once a frame.
+        // The identity: every pass but the lens's own covers the whole frame.
+        let full_view = [0.0, 0.0, frame[0], frame[1]];
+
+        for (index, item) in plan.items.iter().enumerate() {
+            // The lens's contents are a pass of their own: the plan is drawn
+            // again over a small box around the glass, at the magnification, so
+            // the picture inside it comes off the recording rather than off
+            // output pixels that have already thrown most of it away. Metal
+            // cannot sample the texture it is drawing into either way, so the
+            // pass has to end here regardless.
+            //
+            // Only when there really is a lens on screen. A plan holds one item
+            // for every lens in the project, and paying for a second pass for
+            // each of them on every frame of the clip is most of the cost of a
+            // lens for none of the picture.
+            let lensing = match item {
+                PlanItem::Loupe { keys } => loupe_at(keys, at as i64),
+                _ => None,
+            };
+
+            if let Some(glass) = lensing {
+                unsafe { encoder.end_encoding() };
+                // Everything under the lens, which is what goes inside it.
+                self.render_glass(
+                    &mut cmd,
+                    &glass,
+                    &plan.items[..index],
+                    plan.frame,
+                    &sources,
+                    at,
+                    &matte,
+                    &mut alive,
+                )?;
+                // Whatever a caption measured itself against is now a frame
+                // without the glass in it. `buildRenderPlan` puts the lens
+                // first, so this does not fire today — it is what keeps that
+                // from being load-bearing, since the failure if it changed is a
+                // caption picking the wrong colour over a lens and nothing else.
+                copied = None;
+
+                let descriptor = mtl::RenderPassDesc::new();
+                let attachments = descriptor.color_attaches();
+                let mut attachment = attachments.get(0);
+                attachment.set_texture(Some(items_into));
+                // Load, not clear: everything drawn so far is the frame.
+                attachment.set_load_action(mtl::LoadAction::Load);
+                attachment.set_store_action(mtl::StoreAction::Store);
+
+                encoder = cmd
+                    .new_render_cmd_enc(&descriptor)
+                    .ok_or_else(|| Error::Metal("could not create a render encoder".to_owned()))?;
+                encoder.set_render_ps(&self.pipeline);
+            }
+
             if let PlanItem::Caption {
                 dst_rect,
                 tint: Some(_),
@@ -504,7 +590,7 @@ impl Compositor {
             // frame for this moment — before the camera opened, say — and the
             // item is skipped rather than drawn from nothing.
             let (uniforms, texture) =
-                match self.uniforms_for(item, frame, &sources, at, &mut alive)? {
+                match self.uniforms_for(item, frame, full_view, &sources, at, &mut alive)? {
                     Some(pair) => pair,
                     None => continue,
                 };
@@ -519,12 +605,21 @@ impl Compositor {
 
             encoder.set_vertex_buf_at(Some(&buffer), 0, 0);
             encoder.set_fragment_buf_at(Some(&buffer), 0, 0);
-            encoder.set_fragment_texture_at(texture, 0);
             // Bound for every draw, not only the ones that read it: a fragment
             // function declares its textures whatever the uniforms say, and
-            // leaving slot 1 empty is a validation error rather than an unused
-            // binding. Only `adapt` decides whether it is sampled.
-            encoder.set_fragment_texture_at(self.backdrop.as_deref().or(texture), 1);
+            // leaving a slot empty is a validation error rather than an unused
+            // binding. Only `adapt` decides whether slot 1 is sampled.
+            //
+            // The lens reads its own copy there instead, which is the whole frame
+            // rather than a caption's box — and it has nothing for slot 0, so it
+            // is given the same copy twice.
+            let behind = if lensing.is_some() {
+                self.glass.as_deref()
+            } else {
+                self.backdrop.as_deref()
+            };
+            encoder.set_fragment_texture_at(texture.or(behind), 0);
+            encoder.set_fragment_texture_at(behind.or(texture), 1);
             // Slot 2 likewise: only `matte` in the uniforms decides whether
             // it is sampled, and a frame with no matte binds the picture.
             encoder.set_fragment_texture_at(
@@ -636,6 +731,9 @@ impl Compositor {
         &'a self,
         item: &PlanItem,
         frame: [f32; 2],
+        // The region of the frame this pass covers. The whole of it for every
+        // pass but the lens's own.
+        view: [f32; 4],
         sources: &Sources<'_>,
         at: MediaTime,
         alive: &'a mut Vec<Held>,
@@ -656,6 +754,11 @@ impl Compositor {
             smear: [0.0; 4],
             cursor_box: [0.0, 0.0, 1.0, 1.0],
             cursor_shadow: [0.0; 4],
+            // No lens unless a loupe item says otherwise, which is what leaves
+            // the radius at zero and keeps every other draw off that branch.
+            loupe: [0.0; 4],
+            glass: [1.0, 0.0, 0.0, 0.0],
+            view,
             texel: [0.0; 2],
             // Opaque unless a watermark says otherwise — the one item that
             // draws a picture at less than its own alpha.
@@ -909,6 +1012,57 @@ impl Compositor {
                 ))
             }
 
+            PlanItem::Loupe { keys } => {
+                // Away, or not yet arrived — most of a recording, even one with a
+                // lens in it. Skipped rather than drawn at nothing, which would
+                // still cost the blit the caller makes for it.
+                let Some(glass) = loupe_at(keys, at as i64) else {
+                    return Ok(None);
+                };
+
+                // The quad is the glass grown for its shadow, which the shader
+                // draws in the bleed. Mirrors the same three lines in `webgl.ts`.
+                let reach = (glass.radius * (1.0 + LOUPE_BLEED)) as f32;
+                Some((
+                    Uniforms {
+                        rect: [
+                            glass.x as f32 - reach,
+                            glass.y as f32 - reach,
+                            reach * 2.0,
+                            reach * 2.0,
+                        ],
+                        // Square and un-rounded: the circle is the lens's own,
+                        // measured from its centre, and a rounded quad would cut
+                        // the corners off the shadow.
+                        shape: [0.0, 2.0],
+                        mode: MODE_LOUPE,
+                        loupe: [
+                            glass.x as f32,
+                            glass.y as f32,
+                            glass.radius as f32,
+                            glass.presence as f32,
+                        ],
+                        glass: [
+                            glass.magnify as f32,
+                            glass.curvature as f32,
+                            glass.aberration as f32,
+                            glass.reflection as f32,
+                        ],
+                        // How this buffer is oriented, which is the one thing
+                        // about the copy the two rasterisers do not share: the
+                        // blit keeps the texture top-down. See `behind` in the
+                        // shader.
+                        src: [0.0, 0.0, 1.0, 1.0],
+                        ..base
+                    },
+                    // Nothing on slot 0. The lens reads the frame behind it,
+                    // which the caller binds to slot 1 — but a fragment function
+                    // declares every texture it has whatever the uniforms say, so
+                    // the caller still binds *something* here.
+                    None,
+                ))
+            }
+
             PlanItem::Watermark {
                 path,
                 dst_rect,
@@ -1134,6 +1288,14 @@ impl Compositor {
     ///
     /// Mirrors `grabBackdrop` in `apps/desktop/src/renderer/src/editor/webgl.ts`
     /// — the same region, so the sixteen taps the shader takes across it land
+    /// Copies what has been drawn under a rectangle out of the frame.
+    ///
+    /// The blit is the only way to read the target: Metal refuses to sample a
+    /// texture that is attached to the pass drawing into it, so the caller ends
+    /// the pass, calls this, and starts another that loads what was there.
+    ///
+    /// Mirrors `grabBackdrop` in `apps/desktop/src/renderer/src/editor/webgl.ts`
+    /// — the same region, so the sixteen taps the shader takes across it land
     /// on the same picture in both.
     fn grab_backdrop(
         &mut self,
@@ -1194,6 +1356,150 @@ impl Compositor {
         });
 
         Ok(())
+    }
+
+    /// Draws the composition again, over a small box around the glass, at the
+    /// lens's own magnification.
+    ///
+    /// This is the whole reason a loupe can be sharp. Sampling the finished
+    /// frame — which is what this used to do — hands the lens output pixels, and
+    /// enlarging those can only blur what is already there. A 3024-wide
+    /// recording drawn into a 1920 frame has about 1.7 source pixels behind
+    /// every output one, and all of that detail is sitting in the file unread.
+    /// Drawing the plan a second time at the magnification is what reaches it:
+    /// the screen is sampled at the rate the lens actually needs, and the
+    /// pointer is rasterised at its magnified size rather than enlarged.
+    ///
+    /// Only the items *under* the lens, which is the same slice of the list the
+    /// frame copy used to capture — so what appears inside the glass is
+    /// unchanged, only its resolution is.
+    ///
+    /// Mirrors `renderGlass` in
+    /// `apps/desktop/src/renderer/src/editor/webgl.ts`.
+    #[allow(clippy::too_many_arguments)]
+    fn render_glass(
+        &mut self,
+        cmd: &mut mtl::CmdBuf,
+        glass: &LoupeKey,
+        under: &[PlanItem],
+        frame: Size,
+        sources: &Sources<'_>,
+        at: MediaTime,
+        matte: &Option<Held>,
+        // The frame's keep-alive list, not one of our own: a texture dropped
+        // when this returns would be freed while the GPU was still reading it.
+        alive: &mut Vec<Held>,
+    ) -> Result<()> {
+        let span = 2.0 * LOUPE_REACH * glass.radius;
+        if span <= 0.0 {
+            return Ok(());
+        }
+
+        // What the glass needs to be sharp: its own span at the magnification.
+        // Capped so the lens never costs more pixels than the frame it sits on —
+        // a very large glass at a very high magnification then gets less
+        // supersampling rather than a target nothing can afford.
+        let want = span * glass.magnify;
+        let cap = (frame.width * frame.height).sqrt();
+        let size = (want.min(cap).round() as usize).max(1);
+
+        // Retained, so the borrow of `self` ends before `uniforms_for` takes its
+        // own below.
+        let target = self.glass_texture(size)?;
+
+        let descriptor = mtl::RenderPassDesc::new();
+        let attachments = descriptor.color_attaches();
+        let mut attachment = attachments.get(0);
+        attachment.set_texture(Some(&target));
+        attachment.set_load_action(mtl::LoadAction::Clear);
+        attachment.set_store_action(mtl::StoreAction::Store);
+        attachment.set_clear_color(mtl::ClearColor::clear());
+
+        let mut encoder = cmd
+            .new_render_cmd_enc(&descriptor)
+            .ok_or_else(|| Error::Metal("could not create a lens encoder".to_owned()))?;
+        encoder.set_render_ps(&self.pipeline);
+
+        // The box the pass covers, in frame pixels. `behind` in the shader takes
+        // the same box off the glass's own centre and radius, so nothing has to
+        // be carried between the two.
+        let view = [
+            (glass.x - LOUPE_REACH * glass.radius) as f32,
+            (glass.y - LOUPE_REACH * glass.radius) as f32,
+            span as f32,
+            span as f32,
+        ];
+        let frame_px = [frame.width as f32, frame.height as f32];
+
+        for item in under {
+            // A lens inside a lens would be a pass inside a pass. There is only
+            // ever one in a plan and it is not in this slice — this is what
+            // keeps that from being load-bearing.
+            if matches!(item, PlanItem::Loupe { .. }) {
+                continue;
+            }
+
+            let (uniforms, texture) =
+                match self.uniforms_for(item, frame_px, view, sources, at, alive)? {
+                    Some(pair) => pair,
+                    None => continue,
+                };
+
+            let buffer = self
+                .device
+                .new_buf_with_slice(&[uniforms], mtl::ResOpts::default())
+                .ok_or_else(|| Error::Metal("could not allocate uniforms".to_owned()))?;
+
+            encoder.set_vertex_buf_at(Some(&buffer), 0, 0);
+            encoder.set_fragment_buf_at(Some(&buffer), 0, 0);
+            encoder.set_fragment_texture_at(texture, 0);
+            // No lens reads anything in here, so slot 1 is only ever the
+            // caption backdrop — and bound whatever the uniforms say, for the
+            // reason the main pass binds it.
+            encoder.set_fragment_texture_at(self.backdrop.as_deref().or(texture), 1);
+            encoder.set_fragment_texture_at(
+                matte.as_ref().map(|held| held.texture.as_ref()).or(texture),
+                2,
+            );
+
+            encoder.draw_primitives(mtl::Primitive::TriangleStrip, 0, 4);
+        }
+
+        // Safety: no further commands are encoded on this encoder, and it is
+        // dropped immediately below.
+        unsafe { encoder.end_encoding() };
+        Ok(())
+    }
+
+    /// The lens's render target, reallocated only when its size changes.
+    ///
+    /// Square, because the box around the glass is. It does change size — the
+    /// radius eases as the lens arrives — so unlike the scene texture this one
+    /// really does reallocate, a handful of times across a move in.
+    fn glass_texture(&mut self, size: usize) -> Result<arc::R<mtl::Texture>> {
+        let stale = self
+            .glass
+            .as_ref()
+            .is_none_or(|texture| texture.width() != size || texture.height() != size);
+        if stale {
+            let mut desc =
+                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, size, size, false);
+            // Both: the items are rendered into it and the lens samples it.
+            // `SHADER_READ` alone is a validation failure at the first frame,
+            // which in a packaged build is an export that stops with a Metal
+            // message rather than a picture.
+            desc.set_usage(mtl::TextureUsage::RENDER_TARGET | mtl::TextureUsage::SHADER_READ);
+            self.glass = Some(
+                self.device
+                    .new_texture(&desc)
+                    .ok_or_else(|| Error::Metal("could not make a lens texture".to_owned()))?,
+            );
+        }
+
+        self.glass
+            .as_ref()
+            .map(|texture| texture.retained())
+            .ok_or_else(|| Error::Metal("no lens texture".to_owned()))
     }
 
     /// The texture the items are drawn into when a look will run over them.
@@ -1474,30 +1780,35 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, smear), 160);
         assert_eq!(offset_of!(Uniforms, cursor_box), 176);
         assert_eq!(offset_of!(Uniforms, cursor_shadow), 192);
-        assert_eq!(offset_of!(Uniforms, texel), 208);
-        assert_eq!(offset_of!(Uniforms, shape), 216);
-        assert_eq!(offset_of!(Uniforms, frame), 224);
-        assert_eq!(offset_of!(Uniforms, color_a), 240);
-        assert_eq!(offset_of!(Uniforms, color_b), 256);
-        assert_eq!(offset_of!(Uniforms, gradient), 272);
-        assert_eq!(offset_of!(Uniforms, mode), 280);
-        assert_eq!(offset_of!(Uniforms, weight), 284);
-        assert_eq!(offset_of!(Uniforms, mirror), 288);
+        // The lens's two rows close the run of `float4`s, so everything below
+        // them moved by exactly 32 and nothing above them moved at all.
+        assert_eq!(offset_of!(Uniforms, loupe), 208);
+        assert_eq!(offset_of!(Uniforms, glass), 224);
+        assert_eq!(offset_of!(Uniforms, view), 240);
+        assert_eq!(offset_of!(Uniforms, texel), 256);
+        assert_eq!(offset_of!(Uniforms, shape), 264);
+        assert_eq!(offset_of!(Uniforms, frame), 272);
+        assert_eq!(offset_of!(Uniforms, color_a), 288);
+        assert_eq!(offset_of!(Uniforms, color_b), 304);
+        assert_eq!(offset_of!(Uniforms, gradient), 320);
+        assert_eq!(offset_of!(Uniforms, mode), 328);
+        assert_eq!(offset_of!(Uniforms, weight), 332);
+        assert_eq!(offset_of!(Uniforms, mirror), 336);
         // The tail. These are plain scalars on 4-byte boundaries; the explicit
         // layout remains in lockstep with the Metal declaration.
-        assert_eq!(offset_of!(Uniforms, vignette), 292);
-        assert_eq!(offset_of!(Uniforms, soften), 296);
-        assert_eq!(offset_of!(Uniforms, adapt), 300);
+        assert_eq!(offset_of!(Uniforms, vignette), 340);
+        assert_eq!(offset_of!(Uniforms, soften), 344);
+        assert_eq!(offset_of!(Uniforms, adapt), 348);
 
-        // MSL rounds the block to the next 16, so both sides are 320 and the
+        // MSL rounds the block to the next 16, so both sides are 368 and the
         // tail is written out here because Rust would not add it.
-        assert_eq!(offset_of!(Uniforms, alpha), 304);
+        assert_eq!(offset_of!(Uniforms, alpha), 352);
         // `matte` follows `alpha` without changing the field order.
-        assert_eq!(offset_of!(Uniforms, matte), 308);
+        assert_eq!(offset_of!(Uniforms, matte), 356);
         // The outline's two scalars took the padding the block already had, so
         // the block is the size it was plus the array and nothing else moved.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 320);
+        assert_eq!(size_of::<Uniforms>(), 368);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in
