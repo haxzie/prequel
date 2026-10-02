@@ -1449,3 +1449,12 @@ export function LookIcon() {
     </svg>
   );
 }
+
+/** Lucide `arrow-right`. */
+export function ArrowRightIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
