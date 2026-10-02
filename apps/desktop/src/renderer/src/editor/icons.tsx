@@ -1431,3 +1431,21 @@ export function PushInIcon() {
     </svg>
   );
 }
+
+/**
+ * A half-filled circle over a slider: a colour look.
+ *
+ * Not the filters panel's glyph, and that is the point — the two are different
+ * questions. That one is a look over the whole frame; this one is a grade on
+ * the camera alone, and a reader who sees the same icon in both places would
+ * reasonably expect the same control.
+ */
+export function LookIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="9" r="6" />
+      <path d="M12 3a6 6 0 0 0 0 12" fill="currentColor" stroke="none" />
+      <path d="M4 20h16" />
+    </svg>
+  );
+}

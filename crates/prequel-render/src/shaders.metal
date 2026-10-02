@@ -74,6 +74,13 @@ struct Uniforms {
     // draws the composition again over a small box around the glass — see
     // `render_glass` in `compositor.rs`.
     float4 view;
+    // The camera's colour look, already resolved from the catalogue:
+    // temperature, tint, contrast and saturation; then vibrance, lift and the
+    // shadow tone; then the highlight tone and whether to grade at all. Only
+    // the camera ever sets it.
+    float4 grade_a;
+    float4 grade_b;
+    float4 grade_c;
     // One texel of the sampled image, so a blur is measured in its own pixels.
     float2 texel;
     // Superellipse: x = radius, y = exponent.
@@ -428,6 +435,98 @@ static float3 chosen(texture2d<float> backdrop, sampler smp, constant Uniforms &
     }
 
     return mix(u.colorA.rgb, u.colorB.rgb, smoothstep(0.42, 0.62, luma / 16.0));
+}
+
+// A hue angle in turns, as a colour to add.
+//
+// Not a full HSV conversion: these are offsets added to a picture, so what is
+// wanted is a direction in colour, and three cosines a third of a turn apart
+// give one for almost nothing. Centred on zero, so adding it shifts the hue
+// without also lifting the brightness the way a positive-only ramp would.
+//
+// Verbatim as `hueColour` in `webgl.ts`.
+static float3 hue_colour(float turns) {
+    float a = turns * 6.2831853;
+    return float3(cos(a), cos(a - 2.0943951), cos(a + 2.0943951)) * 0.3333333;
+}
+
+// Where skin sits, as red-minus-green over green-minus-blue. Measured off the
+// faces in the sample recordings rather than taken from a paper: what matters
+// is where a webcam puts skin, not where skin is.
+constant float2 SKIN = float2(0.19, 0.08);
+
+static float max_of(float3 v) { return max(v.r, max(v.g, v.b)); }
+static float min_of(float3 v) { return min(v.r, min(v.g, v.b)); }
+
+// The camera's colour look.
+//
+// One function for every look there is, driven by three vectors the plan carries —
+// see `camera-looks.ts`, which is the only place a look is defined. Neither shader
+// holds a catalogue, so neither can drift out of step with the other, and retuning
+// a look changes no shader at all. That is the whole difference between this and
+// the whole-frame filters, which are an arm of a switch in each.
+//
+// The order is the order a colourist works in: correct the white balance, set the
+// black point, shape the contrast, then touch the colour. Saturating before
+// balancing bakes the cast in.
+//
+// Taking the vectors as arguments rather than reading the uniforms, so the two
+// bodies are the same text in both languages and `webgl.test.ts` can say so.
+//
+// Mirrored verbatim in `apps/desktop/src/renderer/src/editor/webgl.ts`.
+static float3 graded(float3 rgb, float4 a, float4 b, float4 c) {
+    float temperature = a.x;
+    float tint = a.y;
+    float contrast = a.z;
+    float saturation = a.w;
+    float vibrance = b.x;
+    float lift = b.y;
+
+    // White balance first, because it is the only one of these correcting
+    // something rather than styling it. A crude but well-behaved approximation:
+    // red against blue for temperature, green against the other two for tint. A
+    // real chromatic adaptation needs the source white point, which a webcam
+    // does not tell us.
+    rgb *= float3(1.0 + 0.32 * temperature, 1.0 - 0.14 * tint, 1.0 - 0.32 * temperature);
+    rgb = max(rgb, float3(0.0));
+
+    // The blacks lifted towards mid, without moving the whites. Compressing the
+    // range from below rather than adding a constant: adding one raises the whole
+    // picture and washes the highlights out with it.
+    rgb = rgb * (1.0 - lift) + lift * 0.18;
+
+    // An S-curve about mid grey. smoothstep rather than a power or a multiply: a
+    // multiply clips the highlights the moment contrast goes up, and this is flat
+    // at both ends so nothing stops abruptly. Negative contrast pulls towards the
+    // pivot instead, which is a different operation and has to be.
+    float3 softer = float3(0.4) + (rgb - float3(0.4)) * 0.72;
+    rgb = contrast >= 0.0 ? mix(rgb, smoothstep(float3(0.0), float3(1.0), rgb), contrast)
+                          : mix(rgb, softer, -contrast);
+
+    float grey = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+
+    // Vibrance, and the reason it earns a lever of its own: it weights by how
+    // grey a pixel already is, so a dull background comes up and a face that is
+    // already colourful does not — and then weights again by distance from skin,
+    // because a face is the thing a saturation control ruins first.
+    float away = length(float2(rgb.r - rgb.g, rgb.g - rgb.b) - SKIN);
+    float flesh = 1.0 - smoothstep(0.08, 0.3, away);
+    float dull = 1.0 - clamp(max_of(rgb) - min_of(rgb), 0.0, 1.0);
+    rgb = mix(float3(grey), rgb, 1.0 + vibrance * dull * (1.0 - 0.75 * flesh));
+
+    // And the flat one, which moves the face as much as anything else. Small
+    // numbers only, in every look in the catalogue.
+    rgb = mix(float3(grey), rgb, 1.0 + saturation);
+
+    // Split toning: shadows and highlights pulled towards opposing hues, which is
+    // most of what reads as film. Weighted by luma so the two never fight over
+    // the midtones, which is where a face lives.
+    float dark = 1.0 - smoothstep(0.0, 0.5, grey);
+    float light = smoothstep(0.5, 1.0, grey);
+    rgb += hue_colour(b.z) * (b.w * dark);
+    rgb += hue_colour(c.x) * (c.y * light);
+
+    return clamp(rgb, float3(0.0), float3(1.0));
 }
 
 // The picture, enlarged without rounding its edges off.
@@ -834,6 +933,18 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
                 // alpha or the edge of the person glows.
                 if (u.matte != 0) {
                     sampled *= matte.sample(smp, uv).r;
+                }
+                // The camera's look, on the camera alone. After the matte so a
+                // cutout is graded only where somebody is, and before
+                // everything below so the vignette and the caption's backdrop
+                // both see the graded picture rather than the raw one.
+                // Premultiplied, so the colour is divided out and folded back
+                // in or a translucent edge would grade twice.
+                if (u.grade_c.z > 0.0 && sampled.a > 0.0) {
+                    sampled = float4(
+                        graded(sampled.rgb / sampled.a, u.grade_a, u.grade_b, u.grade_c)
+                            * sampled.a,
+                        sampled.a);
                 }
             }
         }

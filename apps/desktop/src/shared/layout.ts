@@ -15,6 +15,7 @@
  * Pure, and free of any `electron`, Node or DOM import, so the arithmetic is
  * testable on its own.
  */
+import { resolveGrade, type CameraGrade } from "./camera-looks.js";
 import { captionStyle } from "./captions.js";
 import type { CursorShape } from "./contract.js";
 import {
@@ -337,6 +338,19 @@ export type PlanItem =
        * before the matte existed draws what it drew.
        */
       matte?: boolean;
+      /**
+       * The colour look this picture wears, already resolved to numbers.
+       *
+       * Only ever set on the camera, and absent whenever there is no look —
+       * which is the default, so an ordinary plan carries nothing for it and
+       * both rasterisers skip the grade on one field.
+       *
+       * Numbers rather than the look's id, for the reason every other value in
+       * a plan is resolved: the catalogue lives in `camera-looks.ts`, is read
+       * exactly once, and neither rasteriser has a table of looks to drift out
+       * of step with the other's.
+       */
+      grade?: CameraGrade;
       /**
        * The camera's outline over time, for the shape that follows somebody.
        *
@@ -1136,6 +1150,10 @@ export function buildRenderPlan(
     // the box and off the frame where they must. Letterboxing the source
     // *inside* the box instead shrank the person to a strip across it.
     const cutout = layout.cameraCutout;
+    // Resolved once for the clip, here rather than at each of the two places a
+    // camera is drawn: the catalogue is read exactly once per plan, and the
+    // bubble and its outgoing twin cannot end up on different numbers.
+    const grade = resolveGrade(layout.cameraLook, layout.cameraLookStrength);
     const camera = sources.camera;
     const whole: Rect = { x: 0, y: 0, width: camera.width, height: camera.height };
 
@@ -1272,6 +1290,7 @@ export function buildRenderPlan(
       mirror: layout.cameraMirror,
       ...moving,
       ...(cutout ? { matte: true } : {}),
+      ...(grade ? { grade } : {}),
       ...(outline
         ? {
             blobs: placedBlobs(
@@ -1333,6 +1352,10 @@ export function buildRenderPlan(
     const gone = nothingAt(was);
     const radius = cameraRadius(leaving.dstRect, enter.from);
     const against = leaving.card ? unit : Math.min(leaving.dstRect.width, leaving.dstRect.height);
+    const leavingGrade = resolveGrade(
+      enter.from.layout.cameraLook,
+      enter.from.layout.cameraLookStrength,
+    );
     const blur = enter.from.background.shadowBlur * against;
     const spread = wasCutout ? 0 : (blur / 2) * SHADOW_SPREAD;
 
@@ -1386,6 +1409,11 @@ export function buildRenderPlan(
         mirror: enter.from.layout.cameraMirror,
         motion,
         ...(wasCutout ? { matte: true } : {}),
+        // The look the camera was wearing on the far side of the cut, not the
+        // one it is wearing now. This is the outgoing bubble: it belongs to the
+        // clip that is ending, and grading it with the incoming clip's look
+        // would change its colour as it left.
+        ...(leavingGrade ? { grade: leavingGrade } : {}),
       });
 
       if (border > 0) {

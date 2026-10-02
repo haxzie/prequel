@@ -196,6 +196,7 @@ fn plan(filter: Option<PlanFilter>) -> RenderPlan {
             matte: false,
             blobs: Vec::new(),
             motion: Vec::new(),
+            grade: None,
         }],
         filter,
     }

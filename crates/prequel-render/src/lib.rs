@@ -44,8 +44,8 @@ pub mod reader;
 
 pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};
 pub use plan::{
-    BlobKey, CaptionWord, CursorPoint, CursorShadow, FilterKind, LoupeKey, OverlayKey, Paint,
-    PlanFilter, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, Span,
+    BlobKey, CaptionWord, CursorPoint, CursorShadow, FilterKind, Grade, LoupeKey, OverlayKey,
+    Paint, PlanFilter, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape, Size, Span,
 };
 pub use timeline::{AudioMix, SegmentRef, SliceMedia, SliceRender, Timeline};
 

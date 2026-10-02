@@ -97,3 +97,45 @@ export function withFontPreview(project: Project, preview: FontPreview | null): 
     ),
   };
 }
+
+/**
+ * The project as the preview should draw it, with a hovered camera look on.
+ *
+ * Here beside the font preview, and the same shape, for the same reason: a
+ * colour look cannot be judged from its name, so the list applies it to the
+ * picture under the pointer — and committing each row the pointer crossed
+ * would push an undo entry per row and mark the project dirty for having been
+ * read.
+ *
+ * Returns the project itself when nothing is hovered — identity, not a copy,
+ * because everything downstream is keyed on it.
+ *
+ * Clips that set their own look follow, for the reason the caption font's do:
+ * otherwise hovering the list does nothing on exactly the clip whose look you
+ * opened the list to change.
+ */
+export function withCameraLookPreview(project: Project, look: string | null): Project {
+  if (look === null) return project;
+
+  return {
+    ...project,
+    defaults: {
+      ...project.defaults,
+      layout: { ...project.defaults.layout, cameraLook: look },
+    },
+    tracks: project.tracks.map((track) => ({
+      ...track,
+      slices: track.slices.map((slice) =>
+        slice.overrides.layout && "cameraLook" in slice.overrides.layout
+          ? {
+              ...slice,
+              overrides: {
+                ...slice.overrides,
+                layout: { ...slice.overrides.layout, cameraLook: look },
+              },
+            }
+          : slice,
+      ),
+    })),
+  };
+}

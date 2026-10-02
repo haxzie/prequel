@@ -42,6 +42,7 @@ import {
 } from "../../../shared/project";
 import { LOUPE_HASTE } from "../../../shared/layout";
 import type { Backgrounds } from "./useBackgrounds";
+import { CameraLookPicker } from "./controls/CameraLookPicker";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
@@ -60,6 +61,7 @@ import {
   AudioIcon,
   GlassIcon,
   ImageIcon,
+  LookIcon,
   PushInIcon,
   ReflectionIcon,
   BackIcon,
@@ -245,6 +247,8 @@ export interface InspectorProps {
    * does not say. The editor holds it beside the project rather than in it —
    * see `FontPreview`.
    */
+  /** The camera look to draw instead of the chosen one while a row is hovered. */
+  onPreviewCameraLook: (id: string | null) => void;
   onPreviewFont: (preview: FontPreview | null) => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
@@ -980,6 +984,7 @@ function InspectorPanels(props: InspectorProps) {
                     cameraBlobs={props.cameraBlobs}
                     field={field}
                     set={set}
+                    onPreviewCameraLook={props.onPreviewCameraLook}
                   />
                 )}
 
@@ -1558,6 +1563,7 @@ function CameraPanel({
   cameraBlobs,
   field,
   set,
+  onPreviewCameraLook,
 }: {
   settings: SliceSettings;
   frame: Size;
@@ -1569,6 +1575,8 @@ function CameraPanel({
   cameraBlobs: boolean;
   field: FieldProps;
   set: Setter;
+  /** The look to draw instead of the chosen one while a row is hovered. */
+  onPreviewCameraLook: (id: string | null) => void;
 }) {
   const { layout } = settings;
   // Disabled rather than hidden. Controls that vanish take the panel's shape
@@ -1770,6 +1778,43 @@ function CameraPanel({
           // was mirrored; off reads as flipped against it.
           onChange={(value) => set("layout", "cameraMirror", value)}
         />
+
+        {/* On the camera, and only the camera. The whole-frame looks live in
+            the Filters panel; this is a different question, because the two
+            pictures are lit by different things — a room with a window in it,
+            and a display — and a grade that flattered the face would be plainly
+            wrong on the screen beside it.
+
+            Last in the section on purpose: it is the one control here that is
+            about how the person *looks* rather than where the bubble sits, and
+            it is chosen once. */}
+        <Field icon={<LookIcon />} label="Effects" {...field("layout", "cameraLook")}>
+          <CameraLookPicker
+            value={layout.cameraLook}
+            disabled={off}
+            onChange={(id) => set("layout", "cameraLook", id)}
+            onPreview={onPreviewCameraLook}
+          />
+        </Field>
+
+        {/* Only once a look is on. At "None" it is a slider for the strength of
+            nothing — and the row is the one place the panel can say that the
+            look is adjustable at all, so it appears with the look rather than
+            sitting greyed above it. */}
+        {layout.cameraLook !== "none" && (
+          <Slider
+            icon={<StrengthIcon />}
+            label="Amount"
+            {...field("layout", "cameraLookStrength")}
+            value={layout.cameraLookStrength}
+            min={0}
+            max={1}
+            step={0.01}
+            disabled={off}
+            format={percent}
+            onChange={(value) => set("layout", "cameraLookStrength", value)}
+          />
+        )}
       </Section>
 
       {/* The camera's own, deliberately not the Frame panel's.

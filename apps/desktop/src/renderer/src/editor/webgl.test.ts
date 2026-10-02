@@ -215,6 +215,50 @@ const lens = (source: string) =>
     .replaceAll(/\blens_bend\b/g, "lensBend")
     .replaceAll(/\blens_reach\b/g, "lensReach");
 
+describe("the camera's colour look", () => {
+  it("grades the same way on each side", () => {
+    // The catalogue is data and lives in one file, so the two shaders cannot
+    // disagree about what a look *is*. They can still disagree about what the
+    // numbers mean, which is what this covers — and it would show as a face
+    // that is one colour in the preview and another in the file, noticed after
+    // the export.
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 graded(");
+    const msl = body(METAL, "static float3 graded(");
+
+    expect(glsl, "graded in the GLSL").not.toBeNull();
+    expect(msl, "graded in the MSL").not.toBeNull();
+    expect(grade(glsl!)).toBe(grade(msl!));
+  });
+
+  it("builds a hue the same way on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 hueColour(");
+    const msl = body(METAL, "static float3 hue_colour(");
+
+    expect(glsl, "hueColour in the GLSL").not.toBeNull();
+    expect(msl, "hue_colour in the MSL").not.toBeNull();
+    expect(grade(glsl!)).toBe(grade(msl!));
+  });
+
+  it("puts skin in the same place on each side", () => {
+    // Where a webcam puts skin, which is what the vibrance protects. Two
+    // different points is a grade that spares the face in one rasteriser and
+    // drives it orange in the other.
+    for (const [name, source] of [
+      ["the preview", SHADER_SOURCE().fragment],
+      ["the exporter", METAL],
+    ] as const) {
+      expect(grade(source), name).toContain("SKIN = N(0.19, 0.08)");
+    }
+  });
+});
+
+/** The two spellings, and nothing else between the grading functions. */
+const grade = (source: string) =>
+  arithmetic(source)
+    .replaceAll(/\bhue_colour\b/g, "hueColour")
+    .replaceAll(/\bmax_of\b/g, "maxOf")
+    .replaceAll(/\bmin_of\b/g, "minOf");
+
 describe("enlarging a picture", () => {
   it("snaps to the texel grid the same way on each side", () => {
     // The filter every magnified draw goes through — a camera zoom as well as a

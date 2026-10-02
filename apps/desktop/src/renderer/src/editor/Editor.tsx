@@ -56,7 +56,7 @@ import { useBackgrounds } from "./useBackgrounds";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
-import { withFontPreview, type FontPreview } from "./fontPreview";
+import { withCameraLookPreview, withFontPreview, type FontPreview } from "./fontPreview";
 import { useTextBitmaps } from "./useTextBitmaps";
 import { useCursorTags } from "./useCursorTags";
 import { useTranscription } from "./useTranscription";
@@ -353,6 +353,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
   /** The face under the pointer in a font list, if one is. See `FontPreview`. */
   const [fontPreview, setFontPreview] = useState<FontPreview | null>(null);
+  /** The camera look under the pointer in the Effects list, if any. */
+  const [lookPreview, setLookPreview] = useState<string | null>(null);
 
   /**
    * The project as the preview draws it, which is not quite the project.
@@ -368,8 +370,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * nearly always; see `withFontPreview`.
    */
   const drawnProject = useMemo(
-    () => withFontPreview(state.project, fontPreview),
-    [state.project, fontPreview],
+    () => withCameraLookPreview(withFontPreview(state.project, fontPreview), lookPreview),
+    [state.project, fontPreview, lookPreview],
   );
 
   /** `previewSettings`, with the hovered face standing in. What is on screen. */
@@ -1494,6 +1496,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               fonts={fonts}
               onPreviewZoom={previewZoom}
               onPreviewText={previewText}
+              onPreviewCameraLook={setLookPreview}
               onPreviewFont={setFontPreview}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing

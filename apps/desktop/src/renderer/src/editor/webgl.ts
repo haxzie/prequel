@@ -42,6 +42,7 @@ import {
   type Shape,
   type Size,
 } from "../../../shared/layout";
+import type { CameraGrade } from "../../../shared/camera-looks";
 import { FILTERS, variantIndex } from "../../../shared/filters";
 import { FILTER_LOOKS, FILTER_SHADER_SOURCE, filterTime } from "./filters";
 
@@ -104,6 +105,118 @@ const MODE_LOUPE = 5;
  * reserved word shipped once already.
  */
 export const SHADER_SOURCE = () => ({ vertex: VERTEX, fragment: FRAGMENT });
+
+/**
+ * The camera's colour grading, as source both the compositor and the Effects
+ * list compile.
+ *
+ * Its own constant because the swatches in that list have to be graded by the
+ * *same* arithmetic as the picture. A swatch drawn with a CSS filter, or with
+ * an feColorMatrix approximating the same idea, would be a picture of a look
+ * that is not the look — and a reader choosing from six of them has no way to
+ * tell. So the list compiles this text into a shader of its own and draws a
+ * reference image through it.
+ *
+ * Interpolated into FRAGMENT below rather than duplicated. Two copies of a
+ * grade is the same mistake as two copies of a geometry.
+ */
+export const GRADE_GLSL = `/**
+ * A hue angle in turns, as a colour to add.
+ *
+ * Not a full HSV conversion: these are offsets added to a picture, so what is
+ * wanted is a direction in colour, and three cosines a third of a turn apart
+ * give one for almost nothing. Centred on zero, so adding it shifts the hue
+ * without also lifting the brightness the way a positive-only ramp would.
+ */
+vec3 hueColour(float turns) {
+  float a = turns * 6.2831853;
+  return vec3(cos(a), cos(a - 2.0943951), cos(a + 2.0943951)) * 0.3333333;
+}
+
+// Where skin sits, as red-minus-green over green-minus-blue. Measured off the
+// faces in the sample recordings rather than taken from a paper: what matters
+// is where a webcam puts skin, not where skin is.
+const vec2 SKIN = vec2(0.19, 0.08);
+
+float maxOf(vec3 v) { return max(v.r, max(v.g, v.b)); }
+float minOf(vec3 v) { return min(v.r, min(v.g, v.b)); }
+
+/**
+ * The camera's colour look.
+ *
+ * One function for every look there is, driven by three vectors the plan carries —
+ * see camera-looks.ts, which is the only place a look is defined. Neither shader
+ * holds a catalogue, so neither can drift out of step with the other, and retuning
+ * a look changes no shader at all. That is the whole difference between this and
+ * the whole-frame filters, which are an arm of a switch in each.
+ *
+ * The order is the order a colourist works in: correct the white balance, set the
+ * black point, shape the contrast, then touch the colour. Saturating before
+ * balancing bakes the cast in.
+ *
+ * Taking the vectors as arguments rather than reading the uniforms, so the two
+ * bodies are the same text in both languages and webgl.test.ts can say so.
+ *
+ * No backticks in here: this whole shader is a template literal, and one would
+ * end it — which is a syntax error in the TypeScript, not in the shader.
+ *
+ * Mirrored verbatim in crates/prequel-render/src/shaders.metal.
+ */
+vec3 graded(vec3 rgb, vec4 a, vec4 b, vec4 c) {
+  float temperature = a.x;
+  float tint = a.y;
+  float contrast = a.z;
+  float saturation = a.w;
+  float vibrance = b.x;
+  float lift = b.y;
+
+  // White balance first, because it is the only one of these correcting
+  // something rather than styling it. A crude but well-behaved approximation:
+  // red against blue for temperature, green against the other two for tint. A
+  // real chromatic adaptation needs the source white point, which a webcam
+  // does not tell us.
+  rgb *= vec3(1.0 + 0.32 * temperature, 1.0 - 0.14 * tint, 1.0 - 0.32 * temperature);
+  rgb = max(rgb, vec3(0.0));
+
+  // The blacks lifted towards mid, without moving the whites. Compressing the
+  // range from below rather than adding a constant: adding one raises the whole
+  // picture and washes the highlights out with it.
+  rgb = rgb * (1.0 - lift) + lift * 0.18;
+
+  // An S-curve about mid grey. smoothstep rather than a power or a multiply: a
+  // multiply clips the highlights the moment contrast goes up, and this is flat
+  // at both ends so nothing stops abruptly. Negative contrast pulls towards the
+  // pivot instead, which is a different operation and has to be.
+  vec3 softer = vec3(0.4) + (rgb - vec3(0.4)) * 0.72;
+  rgb = contrast >= 0.0 ? mix(rgb, smoothstep(vec3(0.0), vec3(1.0), rgb), contrast)
+                        : mix(rgb, softer, -contrast);
+
+  float grey = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+
+  // Vibrance, and the reason it earns a lever of its own: it weights by how
+  // grey a pixel already is, so a dull background comes up and a face that is
+  // already colourful does not — and then weights again by distance from skin,
+  // because a face is the thing a saturation control ruins first.
+  float away = length(vec2(rgb.r - rgb.g, rgb.g - rgb.b) - SKIN);
+  float flesh = 1.0 - smoothstep(0.08, 0.3, away);
+  float dull = 1.0 - clamp(maxOf(rgb) - minOf(rgb), 0.0, 1.0);
+  rgb = mix(vec3(grey), rgb, 1.0 + vibrance * dull * (1.0 - 0.75 * flesh));
+
+  // And the flat one, which moves the face as much as anything else. Small
+  // numbers only, in every look in the catalogue.
+  rgb = mix(vec3(grey), rgb, 1.0 + saturation);
+
+  // Split toning: shadows and highlights pulled towards opposing hues, which is
+  // most of what reads as film. Weighted by luma so the two never fight over
+  // the midtones, which is where a face lives.
+  float dark = 1.0 - smoothstep(0.0, 0.5, grey);
+  float light = smoothstep(0.5, 1.0, grey);
+  rgb += hueColour(b.z) * (b.w * dark);
+  rgb += hueColour(c.x) * (c.y * light);
+
+  return clamp(rgb, vec3(0.0), vec3(1.0));
+}
+`;
 
 const VERTEX = `#version 300 es
 precision highp float;
@@ -218,6 +331,12 @@ uniform vec4 u_harmonics[2];
 // The lens: its middle in xy and its radius in z, all in output pixels, and how
 // present it is in w. A radius of 0 is every draw but a loupe.
 uniform vec4 u_loupe;
+// The camera's colour look, already resolved from the catalogue: temperature,
+// tint, contrast and saturation; then vibrance, lift and the shadow tone; then
+// the highlight tone and whether to grade at all. Only the camera ever sets it.
+uniform vec4 u_gradeA;
+uniform vec4 u_gradeB;
+uniform vec4 u_gradeC;
 // What sort of glass it is: the magnification in x, how deep the surface is in
 // y, how far it splits colour in z and how much it reflects in w.
 uniform vec4 u_glass;
@@ -226,6 +345,8 @@ in vec2 v_local;
 in vec2 v_uv;
 in vec2 v_screen;
 out vec4 fragColor;
+
+${GRADE_GLSL}
 
 /**
  * The picture, enlarged without rounding its edges off.
@@ -840,6 +961,15 @@ void main() {
         // premultiplied, and colour has to scale with alpha or the edge of the
         // person glows. Mirrors the Metal side in shaders.metal.
         if (u_useMatte != 0) sampled *= texture(u_matte, uv).r;
+        // The camera's look, on the camera alone. After the matte so a cutout
+        // is graded only where somebody is, and before everything below so the
+        // vignette and the caption's backdrop both see the graded picture
+        // rather than the raw one. Premultiplied, so the colour is divided out
+        // and folded back in or a translucent edge would grade twice.
+        if (u_gradeC.z > 0.0 && sampled.a > 0.0) {
+          sampled = vec4(graded(sampled.rgb / sampled.a, u_gradeA, u_gradeB, u_gradeC) * sampled.a,
+                         sampled.a);
+        }
       }
     }
     if (u_cursorShadow.w > 0.0) {
@@ -909,6 +1039,9 @@ interface Program {
   loupe: WebGLUniformLocation | null;
   glass: WebGLUniformLocation | null;
   view: WebGLUniformLocation | null;
+  gradeA: WebGLUniformLocation | null;
+  gradeB: WebGLUniformLocation | null;
+  gradeC: WebGLUniformLocation | null;
 }
 
 /** The full-screen pass that lays a look over the finished frame. */
@@ -1403,6 +1536,9 @@ export class WebGlCompositor {
           src,
           mirror: item.mirror,
           matte: masked,
+          // The camera's look. Absent on the screen, which is lit by a display
+          // rather than by the room and wants none of it.
+          ...(item.grade ? { grade: item.grade } : {}),
           // Resolved here rather than held in the plan, exactly as the pointer's
           // position is: the plan is built once per clip and this changes every
           // frame. Then carried by whatever the rectangle is doing, so a zoom
@@ -2127,6 +2263,8 @@ interface Draw {
    * and the glass out of the way.
    */
   loupe?: LoupeKey;
+  /** The camera's colour look, already resolved. Only the camera sets it. */
+  grade?: CameraGrade;
 }
 
 /** The outline this frame, moved by whatever the picture's rectangle is doing. */
@@ -2209,6 +2347,28 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   // the next primitive down the loupe's branch.
   const loupe = draw.loupe;
   gl.uniform4f(p.loupe, loupe?.x ?? 0, loupe?.y ?? 0, loupe?.radius ?? 0, loupe?.presence ?? 0);
+  // Written every draw for the reason the outline and the lens are: a uniform
+  // holds its value until it is changed, and a look left over from the camera
+  // would grade whatever was drawn next.
+  const grade = draw.grade;
+  gl.uniform4f(
+    p.gradeA,
+    grade?.temperature ?? 0,
+    grade?.tint ?? 0,
+    grade?.contrast ?? 0,
+    grade?.saturation ?? 0,
+  );
+  gl.uniform4f(
+    p.gradeB,
+    grade?.vibrance ?? 0,
+    grade?.lift ?? 0,
+    grade?.shadowHue ?? 0,
+    grade?.shadowAmount ?? 0,
+  );
+  // The third slot is the switch: the shader reads it rather than testing ten
+  // levers for zero.
+  gl.uniform4f(p.gradeC, grade?.highlightHue ?? 0, grade?.highlightAmount ?? 0, grade ? 1 : 0, 0);
+
   gl.uniform4f(
     p.glass,
     loupe?.magnify ?? 1,
@@ -2404,6 +2564,9 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     loupe: at("u_loupe"),
     glass: at("u_glass"),
     view: at("u_view"),
+    gradeA: at("u_gradeA"),
+    gradeB: at("u_gradeB"),
+    gradeC: at("u_gradeC"),
   };
 }
 

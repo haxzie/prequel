@@ -159,6 +159,7 @@ fn plan() -> RenderPlan {
                 matte: false,
                 blobs: Vec::new(),
                 motion: Vec::new(),
+                grade: None,
             },
         ],
         filter: None,

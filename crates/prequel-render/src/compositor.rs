@@ -25,7 +25,7 @@ use crate::{Error, Result};
 /// Mirrors `FilterUniforms` in `filters.metal`. Field order and padding must
 /// match, for the reason the block below spells out at length.
 ///
-/// Its own block rather than more fields on `Uniforms`: that one is 368 bytes
+/// Its own block rather than more fields on `Uniforms`: that one is 416 bytes
 /// with a hand-derived offset table and a test asserting every offset in it,
 /// and none of this is read by a per-item draw. Keeping them apart is what lets
 /// a look be added without re-deriving the numbers that place a camera.
@@ -108,6 +108,11 @@ struct Uniforms {
     /// The region of the frame this pass draws into, as x, y, width, height in
     /// frame pixels. The whole frame for every pass but the lens's own.
     view: [f32; 4],
+    /// The camera's colour look, already resolved from the catalogue. All zero
+    /// for every draw but a graded camera, and `grade_c[2]` is what says so.
+    grade_a: [f32; 4],
+    grade_b: [f32; 4],
+    grade_c: [f32; 4],
     /// One texel of the sampled image, so a blur is measured in its own pixels.
     texel: [f32; 2],
     shape: [f32; 2],
@@ -759,6 +764,11 @@ impl Compositor {
             loupe: [0.0; 4],
             glass: [1.0, 0.0, 0.0, 0.0],
             view,
+            // No look unless a camera item carries one, which `grade_c[2]`
+            // being zero is what tells the shader.
+            grade_a: [0.0; 4],
+            grade_b: [0.0; 4],
+            grade_c: [0.0; 4],
             texel: [0.0; 2],
             // Opaque unless a watermark says otherwise — the one item that
             // draws a picture at less than its own alpha.
@@ -902,6 +912,7 @@ impl Compositor {
                 mirror,
                 matte,
                 blobs,
+                grade,
             } => {
                 let buffer = match source {
                     PlanSource::Screen => screen,
@@ -964,6 +975,27 @@ impl Compositor {
                         // the whole point: a 16:9 camera cropped to a square
                         // and then sampled edge-to-edge comes out stretched.
                         src: normalised(&crop, buffer.width(), buffer.height()),
+                        grade_a: grade.map_or([0.0; 4], |g| {
+                            [
+                                g.temperature as f32,
+                                g.tint as f32,
+                                g.contrast as f32,
+                                g.saturation as f32,
+                            ]
+                        }),
+                        grade_b: grade.map_or([0.0; 4], |g| {
+                            [
+                                g.vibrance as f32,
+                                g.lift as f32,
+                                g.shadow_hue as f32,
+                                g.shadow_amount as f32,
+                            ]
+                        }),
+                        // The third slot is the switch: the shader reads it
+                        // rather than testing ten levers for zero.
+                        grade_c: grade.map_or([0.0; 4], |g| {
+                            [g.highlight_hue as f32, g.highlight_amount as f32, 1.0, 0.0]
+                        }),
                         vignette: now.vignette as f32,
                         focus: now.focus.map_or([0.0, 0.0, 1.0, 0.0], |f| {
                             [f.x as f32, f.y as f32, f.safe as f32, f.strength as f32]
@@ -1791,30 +1823,33 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, loupe), 208);
         assert_eq!(offset_of!(Uniforms, glass), 224);
         assert_eq!(offset_of!(Uniforms, view), 240);
-        assert_eq!(offset_of!(Uniforms, texel), 256);
-        assert_eq!(offset_of!(Uniforms, shape), 264);
-        assert_eq!(offset_of!(Uniforms, frame), 272);
-        assert_eq!(offset_of!(Uniforms, color_a), 288);
-        assert_eq!(offset_of!(Uniforms, color_b), 304);
-        assert_eq!(offset_of!(Uniforms, gradient), 320);
-        assert_eq!(offset_of!(Uniforms, mode), 328);
-        assert_eq!(offset_of!(Uniforms, weight), 332);
-        assert_eq!(offset_of!(Uniforms, mirror), 336);
+        assert_eq!(offset_of!(Uniforms, grade_a), 256);
+        assert_eq!(offset_of!(Uniforms, grade_b), 272);
+        assert_eq!(offset_of!(Uniforms, grade_c), 288);
+        assert_eq!(offset_of!(Uniforms, texel), 304);
+        assert_eq!(offset_of!(Uniforms, shape), 312);
+        assert_eq!(offset_of!(Uniforms, frame), 320);
+        assert_eq!(offset_of!(Uniforms, color_a), 336);
+        assert_eq!(offset_of!(Uniforms, color_b), 352);
+        assert_eq!(offset_of!(Uniforms, gradient), 368);
+        assert_eq!(offset_of!(Uniforms, mode), 376);
+        assert_eq!(offset_of!(Uniforms, weight), 380);
+        assert_eq!(offset_of!(Uniforms, mirror), 384);
         // The tail. These are plain scalars on 4-byte boundaries; the explicit
         // layout remains in lockstep with the Metal declaration.
-        assert_eq!(offset_of!(Uniforms, vignette), 340);
-        assert_eq!(offset_of!(Uniforms, soften), 344);
-        assert_eq!(offset_of!(Uniforms, adapt), 348);
+        assert_eq!(offset_of!(Uniforms, vignette), 388);
+        assert_eq!(offset_of!(Uniforms, soften), 392);
+        assert_eq!(offset_of!(Uniforms, adapt), 396);
 
-        // MSL rounds the block to the next 16, so both sides are 368 and the
+        // MSL rounds the block to the next 16, so both sides are 416 and the
         // tail is written out here because Rust would not add it.
-        assert_eq!(offset_of!(Uniforms, alpha), 352);
+        assert_eq!(offset_of!(Uniforms, alpha), 400);
         // `matte` follows `alpha` without changing the field order.
-        assert_eq!(offset_of!(Uniforms, matte), 356);
+        assert_eq!(offset_of!(Uniforms, matte), 404);
         // The outline's two scalars took the padding the block already had, so
         // the block is the size it was plus the array and nothing else moved.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 368);
+        assert_eq!(size_of::<Uniforms>(), 416);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in

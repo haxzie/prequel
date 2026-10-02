@@ -238,6 +238,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
             mirror: false,
             matte: false,
             blobs: Vec::new(),
+            grade: None,
             motion: Vec::new(),
         }],
         filter: None,
@@ -299,6 +300,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
             mirror: true,
             matte: false,
             blobs: Vec::new(),
+            grade: None,
         }],
         filter: None,
     };
@@ -376,6 +378,7 @@ fn draws_an_image_background() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
         ],
@@ -617,6 +620,7 @@ fn swaps_the_pointer_image_partway_through() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -710,6 +714,7 @@ fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -840,6 +845,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -950,6 +956,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -1177,6 +1184,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
@@ -1268,6 +1276,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Stroke {
@@ -1346,6 +1355,7 @@ fn camera_over_red(matte: bool) -> RenderPlan {
                 mirror: false,
                 matte,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
         ],
@@ -1479,6 +1489,7 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
             mirror: true,
             matte: false,
             blobs: Vec::new(),
+            grade: None,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1651,6 +1662,7 @@ fn screen_filling(size: u32) -> RenderPlan {
             mirror: false,
             matte: false,
             blobs: Vec::new(),
+            grade: None,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1791,6 +1803,7 @@ fn outlined(mirror: bool) -> RenderPlan {
                     presence: 1.0,
                 }],
                 motion: Vec::new(),
+                grade: None,
             },
         ],
         filter: None,
@@ -1957,6 +1970,7 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
                 mirror: false,
                 matte: false,
                 blobs: Vec::new(),
+                grade: None,
                 motion: Vec::new(),
             },
             PlanItem::Loupe {
@@ -2061,6 +2075,7 @@ fn the_glass_splits_colour_at_its_edge() {
                     mirror: false,
                     matte: false,
                     blobs: Vec::new(),
+                    grade: None,
                     motion: Vec::new(),
                 },
                 PlanItem::Loupe {
@@ -2189,6 +2204,7 @@ fn magnifying_a_picture_keeps_its_edges() {
         mirror: false,
         matte: false,
         blobs: Vec::new(),
+        grade: None,
         motion: Vec::new(),
     };
 
@@ -2289,6 +2305,124 @@ fn magnifying_a_picture_keeps_its_edges() {
     assert!(
         through_glass > through_zoom * 0.9,
         "a 2x loupe should be as sharp as a 2x zoom: {through_glass:.0} against {through_zoom:.0}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A look lands on the camera and nowhere else.
+///
+/// The one thing about this that could go wrong silently. The grade is set per
+/// item, and the shader applies it inside the branch that draws a picture — so
+/// a uniform left set from the camera, or a grade attached to the wrong item,
+/// would tint the whole recording. It would look deliberate, and it would only
+/// be noticed by somebody who had chosen a look for their face and found their
+/// screen warm as well.
+#[test]
+fn a_camera_look_leaves_the_screen_alone() {
+    let dir = scratch("prequel-pixels-look");
+    // Grey either side, so any colour in the output came from the grade.
+    let screen = solid_wide(320, 240, [128, 128, 128]);
+    record(&dir, "screen.mp4", 320, 240, &screen);
+    let camera = solid_wide(160, 120, [128, 128, 128]);
+    record(&dir, "camera.mp4", 160, 120, &camera);
+
+    let output = dir.join("export.mp4");
+    let square = Shape {
+        radius: 0.0,
+        exponent: 2.0,
+    };
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 320.0,
+                    height: 240.0,
+                },
+                dst_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                shape: square,
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                motion: Vec::new(),
+                // Pointedly none. The screen is lit by a display, not by the
+                // room, and the look is not for it.
+                grade: None,
+            },
+            PlanItem::Image {
+                source: PlanSource::Camera,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 160.0,
+                    height: 120.0,
+                },
+                // Bottom-right, well clear of where the screen is sampled.
+                dst_rect: Rect {
+                    x: 180.0,
+                    y: 140.0,
+                    width: 120.0,
+                    height: 90.0,
+                },
+                shape: square,
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                motion: Vec::new(),
+                // Warm, hard. Red up and blue down is the one thing about a
+                // temperature that is unambiguous in a pixel.
+                grade: Some(prequel_render::Grade {
+                    temperature: 0.3,
+                    tint: 0.0,
+                    contrast: 0.0,
+                    saturation: 0.0,
+                    vibrance: 0.0,
+                    lift: 0.0,
+                    shadow_hue: 0.0,
+                    shadow_amount: 0.0,
+                    highlight_hue: 0.0,
+                    highlight_amount: 0.0,
+                }),
+            },
+        ],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+
+    // The screen, untouched: still the grey it was recorded as.
+    let (r, g, b) = frame.at(60, 60);
+    assert!(
+        (r as i16 - b as i16).abs() < 12,
+        "the screen should carry no colour, got {r},{g},{b}"
+    );
+
+    // The camera, warmed. A temperature of 0.3 is red up and blue down by
+    // 0.32 * 0.3, so mid grey should come apart by about 128 * 0.192 — call it
+    // 24, and assert well under it so the encoder has room.
+    let (r, g, b) = frame.at(240, 185);
+    assert!(
+        r as i16 - b as i16 > 15,
+        "the camera should be warmed, got {r},{g},{b}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

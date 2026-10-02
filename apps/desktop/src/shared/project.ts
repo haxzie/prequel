@@ -214,6 +214,22 @@ export interface LayoutSettings {
    */
   cameraMirror: boolean;
   /**
+   * The colour look the camera wears, by id from `CAMERA_LOOKS`.
+   *
+   * On the camera alone, not on the frame: the two pictures are lit by
+   * different things — a room with a window in it, and a display — and a grade
+   * that suited the face would be plainly wrong on the screen beside it. The
+   * whole-frame looks are `effects.filter`, and they stay that.
+   *
+   * An id rather than the numbers, so a look can be retuned in one place and
+   * every project made before gets the better version. `none` is the default
+   * and means the camera is drawn as it was recorded.
+   */
+  cameraLook: string;
+  /** How much of it, 0 to 1. The levers are signed, so this is a plain fade
+      towards the untouched picture. */
+  cameraLookStrength: number;
+  /**
    * Draw only the person: the camera's matte cuts the background away and the
    * whole frame lands over the wallpaper with no shape, shadow or border —
    * there is no card edge left to dress.
@@ -1338,6 +1354,11 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // enough that whoever is on camera is still legible rather than a thumbnail.
   cameraShrinkTo: 0.7,
   cameraMirror: true,
+  // Nothing, and deliberately. A grade applied to somebody's face without being
+  // asked for is a strong change to how a person looks, and the one effect in
+  // here they would be right to be annoyed about finding switched on.
+  cameraLook: "none",
+  cameraLookStrength: 1,
   // Off, so every project saved before the matte existed reads back drawing
   // what it drew.
   cameraCutout: false,

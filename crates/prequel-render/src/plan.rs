@@ -120,6 +120,15 @@ pub enum PlanItem {
         /// what leaves `shape` as the outline.
         #[serde(default)]
         blobs: Vec<BlobKey>,
+        /// The colour look this picture wears, already resolved to numbers.
+        ///
+        /// Only ever set on the camera, and absent whenever there is no look —
+        /// which is the default, so an ordinary plan carries nothing for it.
+        /// Numbers rather than a name: the catalogue lives in the editor's
+        /// `camera-looks.ts` and is read once, so this side has no table of
+        /// looks to drift out of step with it.
+        #[serde(default)]
+        grade: Option<Grade>,
     },
     Stroke {
         rect: Rect,
@@ -471,6 +480,37 @@ pub fn loupe_at(keys: &[LoupeKey], at: i64) -> Option<LoupeKey> {
         aberration: lerp(a.aberration, b.aberration),
         reflection: lerp(a.reflection, b.reflection),
     })
+}
+
+/// A colour look, resolved. Mirrors `CameraGrade` in
+/// `apps/desktop/src/shared/camera-looks.ts`.
+///
+/// Every field is signed and centred on zero, so all-zero is no look at all and
+/// fading one in is a matter of scaling the row.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Grade {
+    /// Warmer above zero, cooler below.
+    pub temperature: f64,
+    /// Magenta above zero, green below.
+    pub tint: f64,
+    /// An S-curve about mid grey.
+    pub contrast: f64,
+    /// Flat saturation, which moves skin as much as anything else.
+    pub saturation: f64,
+    /// Saturation that spares what is already saturated, and skin most of all.
+    pub vibrance: f64,
+    /// Raises the blacks without touching the whites.
+    pub lift: f64,
+    /// Colour pushed into the shadows: a hue angle in turns, and how much.
+    #[serde(rename = "shadowHue")]
+    pub shadow_hue: f64,
+    #[serde(rename = "shadowAmount")]
+    pub shadow_amount: f64,
+    /// And into the highlights.
+    #[serde(rename = "highlightHue")]
+    pub highlight_hue: f64,
+    #[serde(rename = "highlightAmount")]
+    pub highlight_amount: f64,
 }
 
 /// What a zoom keeps sharp, and how soft the rest becomes.
