@@ -490,6 +490,46 @@ export const SHOTS: readonly Shot[] = [
     steps: [...EDITOR_READY, { kind: "key", code: "KeyZ" }, { kind: "settle", ms: 400 }],
     clip: "[data-panel='inspector']",
   },
+  // The lens itself, on the real composition — and the only shot that reaches
+  // the loupe's WebGL branch at all.
+  //
+  // It earns its place the way `filter-applied` does: the pixel tests prove the
+  // *exporter* draws the glass, and the shader-mirror test proves the two
+  // refractions are the same arithmetic. Neither of them compiles the GLSL. A
+  // preview whose shader will not compile draws nothing whatsoever, logs once,
+  // and passes every other check in this repo.
+  //
+  // The whole frame rather than the panel: the point is the glass on the
+  // picture, not the controls that chose it.
+  {
+    id: "loupe-applied",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyZ" },
+      { kind: "click", selector: 'button[aria-label="Loupe"]' },
+      // Past the write, the plan rebuild and a draw or two.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
+  // The lens's own controls, which only exist under Loupe.
+  {
+    id: "inspector-glass",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyZ" },
+      { kind: "click", selector: 'button[aria-label="Loupe"]' },
+      { kind: "click", selector: 'button[aria-label="Glass"]' },
+      { kind: "settle", ms: 400 },
+    ],
+    clip: "[data-panel='inspector']",
+  },
   {
     id: "inspector-angle",
     frame: "workspace",

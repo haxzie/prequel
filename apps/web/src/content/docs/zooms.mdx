@@ -1,5 +1,5 @@
 export const title = "Zooms";
-export const description = "Pushing into the work: automatic zooms, adding your own, and the angle and focus of each.";
+export const description = "Pushing into the work: automatic zooms, adding your own, the loupe, and the angle and focus of each.";
 export const faq = [
   {
     question: "How do I add a zoom by hand?",
@@ -10,6 +10,11 @@ export const faq = [
     question: "Can a zoom follow the pointer?",
     answer:
       "Yes. Set Follow to Cursor and the zoom moves with the pointer. Set it to Region to hold a fixed area you choose on the map.",
+  },
+  {
+    question: "What is the Loupe method?",
+    answer:
+      "A magnifying glass that sits on the frame instead of pushing the whole picture in. The rest of the screen stays where it is and stays readable. Set Method to Loupe, then size the lens and set its curvature, fringing and reflection on the Glass tab.",
   },
   {
     question: "What do Angle and Focus do?",
@@ -34,14 +39,32 @@ Drag a zoom to move it, drag its ends to change how long it lasts, and press **B
 
 ## The Zoom tab
 
-Selecting a zoom swaps the Inspector for the zoom's own three tabs.
+Selecting a zoom swaps the Inspector for the zoom's own tabs.
 
 ![The Zoom tab: follow cursor or region, area, level, speed and ease](/docs/inspector-zoom.webp)
 
 - **Follow**: **Cursor** keeps the pointer in view as the zoom moves with it; **Region** holds a fixed area you choose on the map.
+- **Method**: **Camera** pushes the whole picture in. **Loupe** lays a magnifying glass on the frame instead.
+- **Lens**, under Loupe, is how wide the glass is.
 - **Level** is how far in to go.
 - **Speed** is how long the push in and pull out take.
 - **Ease**: **Smooth**, **Linear**, **Slow in** or **Slow out**, with a curve you can drag for anything in between.
+
+## The Loupe
+
+Set **Method** to **Loupe** and the picture stays where it is. A glass lens comes down over the thing you are pointing at, magnifies it, and leaves the rest of the screen readable.
+
+![A loupe on the recording, magnifying the pointer and the timeline under it](/docs/loupe-applied.webp)
+
+It follows the cursor or holds a region, and takes its level, speed and ease from the Zoom tab like any other zoom. The **Glass** tab is what sort of lens it is.
+
+![The Glass tab: curvature, fringing and reflection](/docs/inspector-glass.webp)
+
+- **Curvature** is how much of the lens is edge: flat almost to the rim at the bottom, bowing the outer half of the picture round at the top.
+- **Fringing** splits colour at the edge, the way a real lens does.
+- **Reflection** is the shine on the glass and what its rim mirrors.
+
+A loupe does not tilt and has no depth of field, so the Angle and Focus tabs below belong to the Camera method.
 
 ## The Angle tab
 

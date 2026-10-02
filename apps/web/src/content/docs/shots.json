@@ -144,8 +144,16 @@
     "height": 543
   },
   "inspector-zoom": {
-    "width": 384,
-    "height": 543
+    "width": 392,
+    "height": 539
+  },
+  "loupe-applied": {
+    "width": 1280,
+    "height": 820
+  },
+  "inspector-glass": {
+    "width": 392,
+    "height": 539
   },
   "inspector-angle": {
     "width": 384,
