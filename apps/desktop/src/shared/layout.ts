@@ -5106,6 +5106,14 @@ export const LOUPE_BLEED = 0.22;
 export const LOUPE_REACH = 1.75;
 
 /**
+ * How far the scrim around the glass reaches, in radii, and how dark it is at
+ * the rim. The quad is grown to this reach so the scrim is not cut off in a
+ * square. Mirrors `LOUPE_SCRIM_REACH` in `shaders.metal` and `compositor.rs`.
+ */
+export const LOUPE_SCRIM_REACH = 2.5;
+export const LOUPE_SCRIM = 0.1;
+
+/**
  * Where the lens is at one instant, or null when there is no glass to draw.
  *
  * The fourth piece of arithmetic that exists on both sides, after `cursorAt`,

@@ -4203,27 +4203,9 @@ function ZoomMotionPanel({
         onChange={(speed) => onChange({ speed })}
       />
 
-      {/* Between the timing and the shape of it, and only for a lens. Speed
-          says how long the move takes and this says what the move does to the
-          picture — both are about the travel, where the ease below is the
-          curve it travels on. */}
-      {zoom.method === "loupe" && (
-        <Slider
-          icon={<BlurIcon />}
-          label="Motion blur"
-          value={zoom.loupeBlur}
-          min={0}
-          max={1}
-          step={0.01}
-          format={(value) => (value === 0 ? "Off" : percent(value))}
-          onChange={(loupeBlur) => onChange({ loupeBlur })}
-        />
-      )}
-
       {/* Under the timing, because they answer halves of one question: that
           says how long the move takes, this says what it feels like over that
-          time. A lens slips its motion blur between the two — that one is
-          about the travel as well. Presets first: most people want "ease out"
+          time. Presets first: most people want "ease out"
           rather than a particular pair of control points, and the curve then
           shows what they picked and can be nudged from there. */}
       <Field icon={<SmoothingIcon />} label="Ease">
@@ -4381,8 +4363,8 @@ function ZoomPerspectivePanel({
  * and `Level` are what a loupe is adjusted by — and a column that mixes the two
  * makes the frequent controls something to scroll past.
  *
- * Three controls, because the glass is three decisions: its shape, what it does
- * to colour, and what it does to light. Every one of them is physical — the
+ * Four controls: the glass is three decisions — its shape, what it does to
+ * colour, and what it does to light — and how much it smears when it moves. Every one of them is physical — the
  * shader refracts, disperses and reflects rather than drawing an effect — which
  * is why none of them has an "amount".
  */
@@ -4432,6 +4414,21 @@ function ZoomGlassPanel({
         step={0.01}
         format={(value) => (value === 0 ? "None" : percent(value))}
         onChange={(loupeReflection) => onChange({ loupeReflection })}
+      />
+
+      {/* Last, because it is the one glass control about the move rather than
+          the material: what the lens smears into while it travels. It sat under
+          Speed with the camera-move controls, where a lens's look was the last
+          thing anyone went looking for. */}
+      <Slider
+        icon={<BlurIcon />}
+        label="Motion blur"
+        value={zoom.loupeBlur}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value === 0 ? "Off" : percent(value))}
+        onChange={(loupeBlur) => onChange({ loupeBlur })}
       />
     </Section>
   );

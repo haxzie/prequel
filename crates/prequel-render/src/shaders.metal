@@ -274,6 +274,14 @@ constant float LOUPE_BLEED = 0.22;
 // interpolates straight into its own shader.
 constant float LOUPE_REACH = 1.75;
 
+// How far the scrim around the glass reaches, in radii, and how dark it is at
+// the rim. A whisper of black that fades to nothing, so the lens reads as the
+// thing to look at without the frame looking dimmed. The quad is grown to this
+// reach, which is why the shadow's own bleed is not what bounds it. Mirrors
+// `LOUPE_SCRIM_REACH` in `compositor.rs` and `webgl.ts`.
+constant float LOUPE_SCRIM_REACH = 2.5;
+constant float LOUPE_SCRIM = 0.1;
+
 // The refractive index of the glass. Crown glass, which is what a loupe is
 // actually ground from.
 constant float LOUPE_IOR = 1.52;
@@ -783,7 +791,9 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // the lens stands off the picture instead of sitting in it.
         float sigma = LOUPE_BLEED * 0.42;
         float under = length(offset - float2(0.0, LOUPE_BLEED * 0.3)) - 1.0;
-        float shade = 0.34 * u.loupe.w / (1.0 + exp(1.702 * under / sigma));
+        float shadow = 0.16 * u.loupe.w / (1.0 + exp(1.702 * under / sigma));
+        float scrim = LOUPE_SCRIM * u.loupe.w * (1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r));
+        float shade = shadow + scrim * (1.0 - shadow);
 
         // One pixel of feathering at the rim, in pixels, like every other edge.
         float cover = 1.0 - smoothstep(-0.5, 0.5, (r - 1.0) * radius);

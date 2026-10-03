@@ -1429,7 +1429,7 @@ export const CURSOR_STYLES = [
     id: "black",
     label: "Classic Black",
     shapes: {
-      arrow: { file: "cursor-black.png", hotspot: { x: 0.055, y: 0.055 } },
+      arrow: { file: "cursor-black.png", hotspot: { x: 0.0768, y: 0.0768 } },
       hand: { file: "cursor-black-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-black-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-black-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },
@@ -1440,7 +1440,7 @@ export const CURSOR_STYLES = [
     id: "white",
     label: "Classic White",
     shapes: {
-      arrow: { file: "cursor-white.png", hotspot: { x: 0.055, y: 0.055 } },
+      arrow: { file: "cursor-white.png", hotspot: { x: 0.0768, y: 0.0768 } },
       hand: { file: "cursor-white-hand.png", hotspot: { x: 0.347, y: 0.055 } },
       text: { file: "cursor-white-text.png", hotspot: { x: 0.5, y: 0.5 } },
       "resize-h": { file: "cursor-white-resize-h.png", hotspot: { x: 0.5, y: 0.5 } },

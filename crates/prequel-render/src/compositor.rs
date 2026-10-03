@@ -181,20 +181,17 @@ const MODE_SHADOW: u32 = 3;
 const MODE_STROKE: u32 = 4;
 const MODE_LOUPE: u32 = 5;
 
-/// How far past the glass the lens quad reaches, as a fraction of its radius.
-///
-/// Mirrors `LOUPE_BLEED` in `apps/desktop/src/shared/layout.ts` and in
-/// `shaders.metal`: the editor's constant is the one that documents it, this one
-/// grows the quad, and the shader's draws the shadow inside what was grown.
-/// Changing one alone clips the shadow.
-const LOUPE_BLEED: f64 = 0.22;
-
 /// How far around the glass the lens's own render reaches, in radii.
 ///
 /// Mirrors `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts` and in
 /// `shaders.metal`: the editor's is the one that documents it, this one sizes
 /// and places the render, and the shader's is what samples it.
 const LOUPE_REACH: f64 = 1.75;
+
+/// How far the scrim around the glass reaches, in radii. Mirrors
+/// `LOUPE_SCRIM_REACH` in `shaders.metal` and `shared/layout.ts`; the quad has
+/// to be this big or the scrim is cut off in a square.
+const LOUPE_SCRIM_REACH: f64 = 2.5;
 
 /**
  * A texture and everything that has to outlive it.
@@ -1056,9 +1053,10 @@ impl Compositor {
                     return Ok(None);
                 };
 
-                // The quad is the glass grown for its shadow, which the shader
-                // draws in the bleed. Mirrors the same three lines in `webgl.ts`.
-                let reach = (glass.radius * (1.0 + LOUPE_BLEED)) as f32;
+                // The quad is the glass grown for its scrim, which reaches further
+                // than the shadow's bleed. Mirrors the same three lines in
+                // `webgl.ts`.
+                let reach = (glass.radius * LOUPE_SCRIM_REACH) as f32;
                 Some((
                     Uniforms {
                         rect: [

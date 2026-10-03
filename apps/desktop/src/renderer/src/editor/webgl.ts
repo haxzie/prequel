@@ -29,6 +29,8 @@ import {
   loupeAt,
   rectAt,
   LOUPE_BLEED,
+  LOUPE_SCRIM,
+  LOUPE_SCRIM_REACH,
   LOUPE_REACH,
   SHADOW_SPREAD,
   type BlobKey,
@@ -653,6 +655,8 @@ float vignette(vec2 screen) {
 // is what grows the quad in the first place — one number rather than two that
 // could drift.
 const float LOUPE_BLEED = ${LOUPE_BLEED.toFixed(2)};
+const float LOUPE_SCRIM_REACH = ${LOUPE_SCRIM_REACH.toFixed(2)};
+const float LOUPE_SCRIM = ${LOUPE_SCRIM.toFixed(2)};
 
 // How far around the glass the lens's own render reaches, in radii. Interpolated
 // from shared/layout.ts, which is where the reason lives — one number, not two
@@ -844,7 +848,9 @@ void main() {
     // stands off the picture instead of sitting in it.
     float sigma = LOUPE_BLEED * 0.42;
     float under = length(offset - vec2(0.0, LOUPE_BLEED * 0.3)) - 1.0;
-    float shade = 0.34 * u_loupe.w / (1.0 + exp(1.702 * under / sigma));
+    float shadow = 0.16 * u_loupe.w / (1.0 + exp(1.702 * under / sigma));
+    float scrim = LOUPE_SCRIM * u_loupe.w * (1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r));
+    float shade = shadow + scrim * (1.0 - shadow);
 
     // One pixel of feathering at the rim, in pixels, like every other edge here.
     float cover = 1.0 - smoothstep(-0.5, 0.5, (r - 1.0) * radius);
@@ -1787,9 +1793,9 @@ export class WebGlCompositor {
     const p = this.program;
     if (!p) return;
 
-    // The quad is the glass grown for its shadow, which the shader draws in the
-    // bleed. Mirrors the same three lines in `compositor.rs`.
-    const reach = glass.radius * (1 + LOUPE_BLEED);
+    // The quad is the glass grown for its scrim, which reaches further than the
+    // shadow's bleed. Mirrors the same three lines in `compositor.rs`.
+    const reach = glass.radius * LOUPE_SCRIM_REACH;
     set(gl, p, {
       rect: { x: glass.x - reach, y: glass.y - reach, width: reach * 2, height: reach * 2 },
       // Square and un-rounded: the circle is the lens's own, measured from its
