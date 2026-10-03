@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 
+import type { Annotation, AnnotationKind } from "../../../shared/annotations";
 import { captionStyle } from "../../../shared/captions";
 import { cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
@@ -67,7 +68,9 @@ import {
   ReflectionIcon,
   BackIcon,
   BlurIcon,
+  ArrowToolIcon,
   BorderIcon,
+  BoxToolIcon,
   CameraIcon,
   CaptionsIcon,
   CircleIcon,
@@ -82,6 +85,7 @@ import {
   PersonIcon,
   DepthIcon,
   DropletIcon,
+  EllipseToolIcon,
   EyeIcon,
   FilterIcon,
   EyeOffIcon,
@@ -92,12 +96,15 @@ import {
   LeanIcon,
   LevelIcon,
   LinesIcon,
+  HighlighterToolIcon,
+  LineToolIcon,
   MicIcon,
   WandIcon,
   MirrorIcon,
   OffsetIcon,
   OpacityIcon,
   PaddingIcon,
+  PenToolIcon,
   PencilIcon,
   PerspectiveIcon,
   PlaceIcon,
@@ -175,6 +182,16 @@ export interface InspectorProps {
   present: Set<TrackKind>;
   /** Whether the pointer is a layer here, or already part of the picture. */
   hasCursor: boolean;
+  /**
+   * Whether this is a screenshot rather than a recording.
+   *
+   * Two things read it, and both are about words rather than controls: the
+   * panel that dresses the picture is called Recording on a take and is not one
+   * here, and the speed inside it is a rate for something that plays. Every
+   * other difference falls out of the tracks a still does not have — no camera,
+   * no pointer layer, nothing to caption — so there is nothing else to say.
+   */
+  still: boolean;
   /**
    * Whether the recording noted any presses or clicks, so there are sounds to
    * offer. False for a take made with the Keyboard switch off and no clicks,
@@ -532,6 +549,101 @@ function InspectorPanels(props: InspectorProps) {
     );
   }
 
+  // A selected mark takes the panel over the way a zoom does, and for the same
+  // reason. The toolbar at the bottom of the window sets what the *next* mark
+  // is drawn in; this is where the one already drawn is changed.
+  const mark = state.project.annotations.find(
+    (candidate) => candidate.id === state.selectedAnnotationId,
+  );
+  if (mark) {
+    const change = (patch: Partial<Annotation>) =>
+      dispatch({ type: "setAnnotation", annotationId: mark.id, patch });
+    // `!` because `noUncheckedIndexedAccess` widens a total `Record`'s lookup,
+    // and `AnnotationKind` is exactly this table's key set.
+    const MarkGlyph = MARK_ICONS[mark.kind]!;
+
+    return (
+      <div className={SHELL}>
+        {/* One tab, and it gets a rail anyway. The rail is the panel's left
+            edge on every other path — the icons sit on the board with the glow
+            running under them — and a panel without one would be the only
+            surface in the editor that starts at the board's edge. */}
+        <Rail
+          items={[{ id: "mark" as const, label: MARK_LABELS[mark.kind]!, Icon: MarkGlyph }]}
+          value="mark"
+          onChange={() => undefined}
+        />
+
+        <aside className={PANEL}>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* The slot, for the colour field below, which portals its list out
+                of this subtree. Without it the trigger does nothing at all —
+                see the note on the zoom path. */}
+            {pushed.id !== null && (
+              <PushedPanel
+                icon={<MarkGlyph />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+            )}
+
+            <div
+              className={cn("flex min-h-0 min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}
+            >
+              <PanelHeader
+                title={MARK_LABELS[mark.kind]!}
+                icon={<MarkGlyph />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+              <div
+                key={mark.id}
+                className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+              >
+                <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+                  <Section>
+                    <ColorField
+                      icon={<DropletIcon />}
+                      label="Colour"
+                      value={mark.color}
+                      onChange={(color) => change({ color })}
+                    />
+
+                    <Slider
+                      icon={<BorderIcon />}
+                      label="Thickness"
+                      value={mark.width}
+                      min={0.001}
+                      max={mark.kind === "highlight" ? 0.12 : 0.016}
+                      step={0.0005}
+                      // As a fraction of the frame's shorter edge, read out as
+                      // the pixels it comes to in the export — which is the
+                      // number anybody judging a stroke is actually looking at.
+                      format={(value) =>
+                        `${String(Math.max(1, Math.round(value * Math.min(props.frame.width, props.frame.height))))} px`
+                      }
+                      onChange={(width) => change({ width })}
+                    />
+
+                    <Slider
+                      icon={<OpacityIcon />}
+                      label="Opacity"
+                      value={mark.opacity}
+                      min={0.05}
+                      max={1}
+                      format={percent}
+                      onChange={(opacity) => change({ opacity })}
+                    />
+                  </Section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    );
+  }
+
   // A selected text takes the panel over the way a zoom does, and for the
   // same reason: none of a clip's questions apply to it.
   const text = findText(state.project, state.selectedTextId);
@@ -633,7 +745,12 @@ function InspectorPanels(props: InspectorProps) {
     // a whole set of them comes from, so it reads as the thing you reach for
     // before you start rather than as another group of controls.
     { id: "presets", label: "Presets", Icon: PresetsIcon },
-    { id: "layout", label: "Layout", Icon: LayoutIcon },
+    // Not on a screenshot. Every arrangement in that picker is about where the
+    // two pictures sit, and a still has one: the camera halves are dead, and
+    // the three screen-only cells are a choice between three paddings that the
+    // Screenshot panel's own slider already makes properly. A still opens as
+    // the padded card and stays one — see `newProject`.
+    ...(props.still ? [] : [{ id: "layout" as const, label: "Layout", Icon: LayoutIcon }]),
     // A picture, not a palette: the palette glyph went to the text panel's
     // Style tab, where a look is chosen, and what this panel mostly holds is
     // wallpapers.
@@ -642,7 +759,11 @@ function InspectorPanels(props: InspectorProps) {
     // border, the shadow — is how the recording is presented, and `frame` is
     // already the output's own dimensions two lines above `FrameBar`. One word
     // meaning two things in one editor is one too many.
-    { id: "recording", label: "Recording", Icon: ScreenIcon },
+    // "Screenshot" on a still, because it is not a recording — and the panel
+    // names what it dresses. "Recording", not "Frame", on a take: `frame` is
+    // already the output's own dimensions two lines above `FrameBar`, and one
+    // word meaning two things in one editor is one too many.
+    { id: "recording", label: props.still ? "Screenshot" : "Recording", Icon: ScreenIcon },
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
@@ -700,8 +821,10 @@ function InspectorPanels(props: InspectorProps) {
 
   // A category can disappear — open a recording with no camera while Camera is
   // showing — so the fallback is the one that is always there rather than a
-  // blank panel.
-  const active = categories.some((category) => category.id === tab) ? tab : "layout";
+  // blank panel. Layout for a recording; a screenshot has none, and the panel
+  // that dresses its picture is the one it should land on.
+  const fallback: CategoryId = props.still ? "recording" : "layout";
+  const active = categories.some((category) => category.id === tab) ? tab : fallback;
   // `active` is resolved against this same list above, so the fallback is
   // unreachable — it exists to keep this total rather than to be taken.
   const showing = categories.find((category) => category.id === active) ?? categories[0]!;
@@ -947,6 +1070,9 @@ function InspectorPanels(props: InspectorProps) {
                     // selected: there is no "every clip's speed" the way there
                     // is a default padding, so the control disables rather than
                     // inventing one.
+                    // Absent on a screenshot, which takes the Speed group off
+                    // the panel: a rate is for something that plays.
+                    still={props.still}
                     speed={selectedSlice(state)?.speed}
                     onChangeSpeed={(speed) => {
                       const slice = selectedSlice(state);
@@ -1317,6 +1443,37 @@ function zoomTabs(method: ZoomSlice["method"]): {
     { id: "focus", label: "Focus", Icon: FocusIcon },
   ];
 }
+
+/**
+ * What the panel calls each kind of mark.
+ *
+ * The header names what is selected, and "Mark" for all six would make the
+ * panel the one place in the editor that does not say what it is about.
+ */
+const MARK_LABELS: Record<AnnotationKind, string> = {
+  arrow: "Arrow",
+  line: "Line",
+  pen: "Drawing",
+  rect: "Box",
+  ellipse: "Ellipse",
+  highlight: "Highlighter",
+};
+
+/**
+ * The glyph beside each, which is the toolbar's own.
+ *
+ * The same icon in the rail as on the button that drew it: the panel is about
+ * the thing that tool made, and a second drawing of an arrow would be a second
+ * thing to keep in step.
+ */
+const MARK_ICONS: Record<AnnotationKind, () => React.JSX.Element> = {
+  arrow: ArrowToolIcon,
+  line: LineToolIcon,
+  pen: PenToolIcon,
+  rect: BoxToolIcon,
+  ellipse: EllipseToolIcon,
+  highlight: HighlighterToolIcon,
+};
 
 interface Category {
   id: CategoryId;
@@ -3322,12 +3479,15 @@ function RecordingPanel({
   settings,
   field,
   set,
+  still,
   speed,
   onChangeSpeed,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   set: Setter;
+  /** Whether this dresses a screenshot, which has no rate to set. */
+  still: boolean;
   /** The selected clip's playback rate, or undefined with nothing selected. */
   speed: number | undefined;
   onChangeSpeed: (speed: number) => void;
@@ -3343,41 +3503,48 @@ function RecordingPanel({
     // Headings earn their place here for the reason they do not on the panels
     // with one group: these name something the panel header does not.
     <>
-      <Section title="Speed">
-        <Slider
-          icon={<SpeedIcon />}
-          label="Speed"
-          value={speed ?? 1}
-          min={MIN_SPEED}
-          max={MAX_SPEED}
-          step={0.05}
-          format={formatSpeed}
-          disabled={speed === undefined}
-          onChange={onChangeSpeed}
-        />
+      {/* Absent on a screenshot. A rate is for something that plays, and a
+          disabled slider would be the panel offering a choice that cannot
+          apply rather than one that does not exist here. */}
+      {!still && (
+        <Section title="Speed">
+          <Slider
+            icon={<SpeedIcon />}
+            label="Speed"
+            value={speed ?? 1}
+            min={MIN_SPEED}
+            max={MAX_SPEED}
+            step={0.05}
+            format={formatSpeed}
+            disabled={speed === undefined}
+            onChange={onChangeSpeed}
+          />
 
-        {/* Stops for the common cases, so reaching for 2x is a click rather
-            than a drag landing near enough. Highlighted only on an exact
-            match — a value the slider carried to, say, 0.73x is not "close
-            to 0.5x", and a preset lit for it would say otherwise. */}
-        <div className="grid grid-cols-5 gap-1">
-          {SPEED_PRESETS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              disabled={speed === undefined}
-              className={cn(
-                "rounded-full px-1 py-1.5 text-center text-[11px] tabular-nums transition-colors",
-                "disabled:pointer-events-none disabled:opacity-40",
-                preset === speed ? "bg-white/15 text-white" : "text-editor-muted hover:bg-white/10",
-              )}
-              onClick={() => onChangeSpeed(preset)}
-            >
-              {formatSpeed(preset)}
-            </button>
-          ))}
-        </div>
-      </Section>
+          {/* Stops for the common cases, so reaching for 2x is a click rather
+              than a drag landing near enough. Highlighted only on an exact
+              match — a value the slider carried to, say, 0.73x is not "close
+              to 0.5x", and a preset lit for it would say otherwise. */}
+          <div className="grid grid-cols-5 gap-1">
+            {SPEED_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                disabled={speed === undefined}
+                className={cn(
+                  "rounded-full px-1 py-1.5 text-center text-[11px] tabular-nums transition-colors",
+                  "disabled:pointer-events-none disabled:opacity-40",
+                  preset === speed
+                    ? "bg-white/15 text-white"
+                    : "text-editor-muted hover:bg-white/10",
+                )}
+                onClick={() => onChangeSpeed(preset)}
+              >
+                {formatSpeed(preset)}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section>
         <Slider

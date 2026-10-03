@@ -63,6 +63,7 @@ const RATES: Record<ExportFormat, number[]> = {
 export function ExportDialog({
   state,
   output,
+  still: isStill = false,
   poster,
   transcript,
   onChange,
@@ -70,6 +71,15 @@ export function ExportDialog({
 }: {
   state: ExportState;
   output: OutputSettings;
+  /**
+   * Whether this is a screenshot rather than a recording.
+   *
+   * Two of the three controls come off the sheet when it is. A frame rate and a
+   * video format are choices about something that plays, and a PNG is neither
+   * of those things — offering them would be two controls that change nothing
+   * about the file, and one of them would name a codec.
+   */
+  still?: boolean;
   /** A still of the composition, from the preview canvas. Null if none loaded. */
   poster: string | null;
   /** What was said in the finished file, for the link's chapters. Null if never transcribed. */
@@ -98,7 +108,7 @@ export function ExportDialog({
     if (!result) return setStill(null);
 
     let live = true;
-    void capturePoster(result.url, result.isGif).then((shot) => {
+    void capturePoster(result.url, result.isImage).then((shot) => {
       if (live) setStill(shot);
     });
 
@@ -165,42 +175,47 @@ export function ExportDialog({
           />
         ) : (
           <div className="flex flex-col gap-4 p-4">
-            <div className="grid grid-cols-[3fr_2fr] gap-3">
-              <Choices
-                label="Video format"
-                value={output.format}
-                disabled={running}
-                options={FORMATS}
-                onChange={setFormat}
-              />
+            {!isStill && (
+              <div className="grid grid-cols-[3fr_2fr] gap-3">
+                <Choices
+                  label="Video format"
+                  value={output.format}
+                  disabled={running}
+                  options={FORMATS}
+                  onChange={setFormat}
+                />
 
-              <Choices
-                label="Frame rate"
-                value={String(output.fps)}
-                disabled={running}
-                options={RATES[output.format].map((rate) => ({
-                  value: String(rate),
-                  label: `${rate} fps`,
-                }))}
-                onChange={(rate) => onChange({ ...output, fps: Number(rate) })}
-              />
-            </div>
+                <Choices
+                  label="Frame rate"
+                  value={String(output.fps)}
+                  disabled={running}
+                  options={RATES[output.format].map((rate) => ({
+                    value: String(rate),
+                    label: `${rate} fps`,
+                  }))}
+                  onChange={(rate) => onChange({ ...output, fps: Number(rate) })}
+                />
+              </div>
+            )}
 
             <Choices
-              label="Video quality"
+              label={isStill ? "Image size" : "Video quality"}
               value={qualityOf(output.shortEdge)}
               disabled={running}
               options={
                 // A GIF's options stop where the format stops being sensible,
-                // rather than being offered and then quietly overridden.
-                output.format === "gif"
+                // rather than being offered and then quietly overridden. A PNG
+                // has no such ceiling — it is written at whatever the frame is.
+                output.format === "gif" && !isStill
                   ? QUALITIES.filter((quality) => allowedForGif(quality.value))
                   : QUALITIES
               }
-              // What the three choices add up to, on the row that names the
-              // last of them: three controls that each change one number are
-              // much easier to trust when the result is on screen beside them.
-              note={`${frame.width} × ${frame.height}${output.format === "gif" ? " · silent" : ""}`}
+              // What the choices add up to, on the row that names the last of
+              // them: controls that each change one number are much easier to
+              // trust when the result is on screen beside them.
+              note={`${frame.width} × ${frame.height}${
+                isStill ? " · PNG" : output.format === "gif" ? " · silent" : ""
+              }`}
               onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
             />
 
@@ -298,7 +313,7 @@ function Preview({
             line box adds a few pixels of descender under it — which is enough to
             push the bottom of the picture out of a band this exact. */}
         {result ? (
-          result.isGif ? (
+          result.isImage ? (
             <img src={result.url} alt="" className="block size-full object-cover" />
           ) : (
             // Muted and looping: this is a thumbnail, and a preview that starts

@@ -14,6 +14,7 @@ import { app } from "electron";
 import { normaliseAccelerator } from "../shared/accelerator.js";
 import type {
   AfterRecording,
+  CaptureMode,
   LibraryView,
   RecordingPreferences,
   ScreenMode,
@@ -28,6 +29,7 @@ import {
 } from "../shared/contract.js";
 
 const SCREEN_MODES: ScreenMode[] = ["screen", "window", "area"];
+const CAPTURE_MODES: CaptureMode[] = ["video", "photo"];
 const AFTER_RECORDING: AfterRecording[] = ["editor", "finder", "nothing"];
 const TELEPROMPTER_MODES: TeleprompterMode[] = ["voice", "timed", "manual"];
 const TELEPROMPTER_SIZES: TeleprompterSize[] = ["small", "medium", "large"];
@@ -100,6 +102,7 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     mode: SCREEN_MODES.includes(value.mode as ScreenMode)
       ? (value.mode as ScreenMode)
       : DEFAULT_PREFERENCES.mode,
+    captureMode: oneOf(CAPTURE_MODES, value.captureMode, DEFAULT_PREFERENCES.captureMode),
     cameraId: typeof value.cameraId === "string" ? value.cameraId : null,
     cameraLabel: typeof value.cameraLabel === "string" ? value.cameraLabel : null,
     micId: typeof value.micId === "string" ? value.micId : null,

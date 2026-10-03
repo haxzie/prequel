@@ -19,7 +19,7 @@ import type {
 } from "../src/shared/contract";
 import { composition } from "../src/shared/composition";
 import type { Manifest } from "../src/shared/manifest";
-import { findTrack, parseManifest, seamsOf } from "../src/shared/manifest";
+import { findTrack, isStill, parseManifest, seamsOf } from "../src/shared/manifest";
 import type { BlobTrack } from "../src/shared/layout";
 import type { Project } from "../src/shared/project";
 import {
@@ -99,6 +99,7 @@ export async function loadSession(
     sourceShape(
       manifest.source,
       media.find((track) => track.kind === "screen" && track.segment === 0),
+      isStill(manifest),
     ),
     seamsOf(manifest),
   );

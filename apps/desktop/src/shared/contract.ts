@@ -86,12 +86,42 @@ export interface Target {
 /** How the user is choosing what to capture. */
 export type ScreenMode = "screen" | "window" | "area";
 
+/**
+ * Whether the panel is set up to record or to take a screenshot.
+ *
+ * Orthogonal to `ScreenMode`, which is *what* is being captured: all three —
+ * a display, a window, a dragged region — are shot the same way they are
+ * recorded, through the same picker. This only decides what the confirm button
+ * does, and therefore which half of the panel is relevant: a camera bubble, a
+ * microphone and a teleprompter are about footage, and nothing to do with a
+ * still frame.
+ *
+ * `"photo"` rather than `"screenshot"`, so it reads as the pair it is beside
+ * `"video"` — two words of the same kind, which is what the switch in the panel
+ * shows.
+ */
+export type CaptureMode = "video" | "photo";
+
 /** What the app does with a take once recording stops. */
 export type AfterRecording = "editor" | "finder" | "nothing";
 
 /** Setup the panel remembers between recordings. */
 export interface RecordingPreferences {
   mode: ScreenMode;
+  /**
+   * Record, or take a screenshot.
+   *
+   * Remembered like the mode, and for the same reason: which of the two
+   * somebody is doing is a choice they make before they think about Prequel at
+   * all, and resetting it every launch would mean reaching for the switch
+   * before every shot.
+   *
+   * A flat leaf like everything else here. Nothing about the camera, the
+   * microphone or the prompter is cleared when this is `"photo"` — the panel
+   * stops *offering* them and the capture ignores them, so switching back finds
+   * the setup exactly as it was left.
+   */
+  captureMode: CaptureMode;
   /** `deviceId` of the chosen camera, or null when the camera is off. */
   cameraId: string | null;
   /**
@@ -213,6 +243,7 @@ export interface RecordingPreferences {
 
 export const DEFAULT_PREFERENCES: RecordingPreferences = {
   mode: "screen",
+  captureMode: "video",
   cameraId: null,
   cameraLabel: null,
   micId: null,
@@ -566,6 +597,8 @@ export const IPC_CHANNELS = {
   selectionAskSetup: "selection:askSetup",
   chooseMode: "dock:chooseMode",
   startRecording: "dock:startRecording",
+  /** Renderer → main: record, or take a screenshot. */
+  setCaptureMode: "dock:setCaptureMode",
   preferences: "prefs:get",
   updatePreferences: "prefs:update",
   ensureDeviceAccess: "devices:ensureAccess",
@@ -830,6 +863,15 @@ export const IPC_CHANNELS = {
    */
   exportChoose: "export:choose",
   exportStart: "export:start",
+  /**
+   * Saves a screenshot the renderer has already drawn.
+   *
+   * One channel rather than a choose/start pair, unlike a video: there is
+   * nothing to render after the sheet — the bytes travel with the request — so
+   * the two questions the split exists to separate have the same answer here.
+   * Resolves false when the sheet was dismissed, which is not a failure.
+   */
+  exportStill: "export:still",
   exportCancel: "export:cancel",
   /** Main → renderer broadcast. */
   exportProgress: "export:progress",
@@ -975,6 +1017,22 @@ export interface ExportSlice {
  * exactly one place — `exportFileName` in `main/export.ts`.
  */
 export type ExportFormat = "h264" | "hevc" | "gif";
+
+/**
+ * Extensions an export is shown as a picture rather than played.
+ *
+ * A GIF, and the PNG a screenshot is written as. In the contract rather than
+ * beside either reader because both of them need it — main, listing the Exports
+ * pane, and the renderer, deciding what the export dialog points at the file —
+ * and a `<video>` aimed at either shows nothing at all.
+ */
+const IMAGE_EXPORTS = [".gif", ".png"];
+
+/** Whether a finished export is a picture rather than something to play. */
+export function isImageExport(name: string): boolean {
+  const lower = name.toLowerCase();
+  return IMAGE_EXPORTS.some((suffix) => lower.endsWith(suffix));
+}
 
 export interface ExportRequest {
   /** The recording's directory — where the source media is read from. */
@@ -1297,6 +1355,15 @@ export interface PickerWindow {
 /** Everything one selection overlay needs to render its display. */
 export interface SelectionSetup {
   mode: ScreenMode;
+  /**
+   * Whether confirming starts a recording or takes a screenshot.
+   *
+   * The overlay needs it for three things, and all three would be wrong
+   * without it: what the confirm button says, whether a countdown runs — three
+   * seconds before a still frame is three seconds of nothing — and what the
+   * hint offers.
+   */
+  capture: CaptureMode;
   displayId: number;
   /** Human name for this display, e.g. "Built-in Retina Display". */
   displayLabel: string;
@@ -1927,6 +1994,17 @@ export interface ProjectComposition {
   /** The screen track, seeked to seconds into its own file. */
   screen: { url: string; at: number } | null;
   /**
+   * Whether the screen is a still picture rather than a video.
+   *
+   * True for a screenshot — see `Manifest.still`. The tile opens an `<img>`
+   * rather than a `<video>` on it, and `at` means nothing: one frame has no
+   * moment to seek to.
+   *
+   * On the composition rather than left to the tile to guess from the file's
+   * extension, which is the sort of second answer this module exists to avoid.
+   */
+  stillScreen: boolean;
+  /**
    * The camera, when the recording has one. `at` is that file's own clock:
    * session media is zero-based, so the track's late start is taken off here
    * and never probed from the file.
@@ -1982,12 +2060,17 @@ export interface ExportSummary {
   /** How big the file is now, re-read on every listing rather than stored. */
   bytes: number;
   /**
-   * Whether this is a GIF, which is shown as a picture rather than played.
+   * Whether this is a picture rather than something to play — a GIF, or a PNG
+   * written out of the screenshot editor.
    *
    * Read off the extension in main for the reason the export dialog reads it
-   * off the extension: a `<video>` pointed at a GIF shows nothing at all.
+   * off the extension: a `<video>` pointed at either shows nothing at all.
+   *
+   * One flag rather than a format, because the only thing anything downstream
+   * asks is which element to point at it. A list of extensions here would be a
+   * second place that has to agree with `IMAGE_EXPORTS`.
    */
-  isGif: boolean;
+  isImage: boolean;
   /** A `prequel-media:` URL for the file, which is the only way to show it. */
   url: string;
   /**

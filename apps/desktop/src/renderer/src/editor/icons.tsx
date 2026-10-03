@@ -744,6 +744,87 @@ export function TextIcon() {
   );
 }
 
+/**
+ * The screenshot toolbar's seven glyphs.
+ *
+ * Lucide's geometry where Lucide has the shape, and the same 24-unit box and
+ * stroke as everything else in this file — these sit in one row with Add Text,
+ * Delete and Undo, and a glyph drawn on another grid reads as a different
+ * weight at 15px.
+ */
+
+/** Lucide `mouse-pointer-2`: the tool that selects rather than draws. */
+export function PointerToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
+    </svg>
+  );
+}
+
+/** Lucide `arrow-up-right`, which is the arrow the tool draws. */
+export function ArrowToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M7 17 17 7" />
+      <path d="M7 7h10v10" />
+    </svg>
+  );
+}
+
+/** Lucide `minus` on the diagonal: a line with no head on it. */
+export function LineToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M5 19 19 5" />
+    </svg>
+  );
+}
+
+/** Lucide `pen-tool`'s nib, which is what freehand is drawn with. */
+export function PenToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
+/** Lucide `square`. */
+export function BoxToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+    </svg>
+  );
+}
+
+/** Lucide `circle`. */
+export function EllipseToolIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `highlighter`, cut down.
+ *
+ * The chisel tip and the band under it, without the nib's inner detail — at
+ * 15px that detail is three strokes inside two others and reads as a smudge.
+ */
+export function HighlighterToolIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="m9 11-6 6v3h3l6-6" />
+      <path d="m20.5 5.5-3-3L9 11l3 3z" />
+      <path d="M14 20h7" />
+    </svg>
+  );
+}
+
 /** `TextIcon` with a plus beside it: the transport's Add Text button. */
 export function AddTextIcon() {
   return (

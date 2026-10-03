@@ -5,8 +5,8 @@
  * that a second Export press cannot start a competing render and a closed
  * window cannot leave one running with nobody listening.
  */
-import { mkdirSync, statSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -44,6 +44,18 @@ import { fileTimestamp } from "./session.js";
  */
 export function exportFileName(format: ExportFormat, now = new Date()): string {
   return `Export ${fileTimestamp(now)}.${format === "gif" ? "gif" : "mp4"}`;
+}
+
+/**
+ * The same, for a screenshot.
+ *
+ * "Screenshot" rather than "Export": the word on the button that produced it,
+ * and the one somebody will search Downloads for. A video from the same editor
+ * is still an Export — the two sort apart in Finder, which is what anybody with
+ * a folder of both wants.
+ */
+export function stillFileName(now = new Date()): string {
+  return `Screenshot ${fileTimestamp(now)}.png`;
 }
 
 /** The directory currently being exported, or null. */
@@ -117,6 +129,107 @@ export async function chooseExportTarget(
 
   lastDir = dirname(output);
   return output;
+}
+
+/**
+ * Asks where to write a screenshot, and answers with the path or null.
+ *
+ * `chooseExportTarget`'s twin rather than a parameter on it. The two differ in
+ * every field that matters — the title, the name, the filter, the forced
+ * extension — and the one thing they share is `lastDir`, which is the whole
+ * point of keeping them in the same module: somebody exporting a video and then
+ * a screenshot into the same folder is asked once.
+ */
+async function chooseStillTarget(window?: BrowserWindow | null): Promise<string | null> {
+  const name = stillFileName();
+  const dir = lastDir ?? app.getPath("downloads");
+  mkdirSync(dir, { recursive: true });
+
+  const options: SaveDialogOptions = {
+    title: "Save screenshot",
+    defaultPath: join(dir, name),
+    filters: [{ name: "PNG", extensions: ["png"] }],
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+  };
+
+  const { canceled, filePath } = window
+    ? await dialog.showSaveDialog(window, options)
+    : await dialog.showSaveDialog(options);
+
+  if (canceled || !filePath) return null;
+
+  // Forced for the reason the video's is: macOS lets a typed name keep whatever
+  // extension it was given, and PNG bytes in a file called `.mp4` is one
+  // nothing on the system will open.
+  const output = extname(filePath).toLowerCase() === ".png" ? filePath : filePath + ".png";
+
+  lastDir = dirname(output);
+  return output;
+}
+
+/**
+ * Writes a screenshot the renderer has already drawn, wherever the user says.
+ *
+ * The bytes arrive over IPC because the renderer is the only thing that can
+ * produce them: a still is composited by the same WebGL rasteriser the preview
+ * uses, which is what makes a screenshot's preview and its file the same
+ * picture by construction — see `stillPng.ts`.
+ *
+ * Reported through the same progress channel a video export uses, so the dialog
+ * that shows a finished render shows this too: one frame of one, done. Returns
+ * false when the sheet was dismissed, which is not a failure and must not look
+ * like one.
+ */
+export async function saveStill(
+  dir: string,
+  bytes: Uint8Array,
+  window?: BrowserWindow | null,
+): Promise<boolean> {
+  if (running) {
+    throw new Error("ALREADY_EXPORTING: an export is already running");
+  }
+
+  const output = await chooseStillTarget(window);
+  if (!output) return false;
+
+  // Claimed for the length of the write, so a second press cannot land a
+  // different picture in the same place while this one is mid-flight. Cleared
+  // by `finish` on both paths below.
+  running = dir;
+  startedAt = Date.now();
+  // Zero, which `duration` reads as "no length" and reports as null. A picture
+  // has none, and the Exports pane shows a dash rather than `0:00`.
+  runningFps = 0;
+
+  // Shapes and switches only, like every other event. No size: the bytes are
+  // already encoded by the time they get here, so main does not know it — and a
+  // zero reported as a width would be a figure rather than a gap.
+  track("export_started", { format: "png", slices: 1 });
+
+  try {
+    writeFileSync(output, bytes);
+  } catch (cause) {
+    finish({
+      stage: "failed",
+      framesDone: 0,
+      framesTotal: 0,
+      outputPath: null,
+      error: { code: null, message: `could not write ${basename(output)}: ${String(cause)}` },
+    });
+    return true;
+  }
+
+  log("info", "screenshot saved", output);
+
+  finish({
+    stage: "done",
+    framesDone: 1,
+    framesTotal: 1,
+    outputPath: output,
+    error: null,
+  });
+
+  return true;
 }
 
 /**

@@ -16,7 +16,7 @@
 import type { ProjectComposition } from "../../../shared/contract";
 import { buildRenderPlan, type Size, type SourceSizes } from "../../../shared/layout";
 import { evenSize } from "../../../shared/presets";
-import { openVideo, QUALITY, release, seek } from "../editor/poster";
+import { openPicture, openVideo, QUALITY, release, seek } from "../editor/poster";
 import { WebGlCompositor, type Images, type Sources } from "../editor/webgl";
 
 /**
@@ -51,14 +51,22 @@ let compositor: WebGlCompositor | null = null;
  * not draw.
  */
 export async function captureComposition(spec: ProjectComposition): Promise<string | null> {
-  let screen: HTMLVideoElement | null = null;
+  let screen: HTMLVideoElement | HTMLImageElement | null = null;
   let camera: HTMLVideoElement | null = null;
   let matte: HTMLVideoElement | null = null;
 
   try {
     if (spec.screen) {
-      screen = await openVideo(spec.screen.url);
-      await seek(screen, spec.screen.at);
+      // A screenshot's frame is a PNG, and an element asked to demux one fails
+      // — which took the whole tile with it, background and all, because a
+      // composition with no screen and no camera has nothing to draw. There is
+      // nothing to seek: one frame has no moment to look at.
+      screen = spec.stillScreen
+        ? await openPicture(spec.screen.url)
+        : await openVideo(spec.screen.url).then(async (element) => {
+            await seek(element, spec.screen!.at);
+            return element;
+          });
     }
 
     if (spec.camera) {
@@ -119,7 +127,9 @@ export async function captureComposition(spec: ProjectComposition): Promise<stri
     console.warn("[library] could not compose a tile:", cause);
     return null;
   } finally {
-    release(screen);
+    // Videos only. An `<img>` holds no decoder and no `src` to tear down — see
+    // `openPicture`.
+    release(screen instanceof HTMLVideoElement ? screen : null);
     release(camera);
     release(matte);
   }
@@ -141,9 +151,13 @@ function frameOf(spec: ProjectComposition, sizes: SourceSizes): Size {
 }
 
 /** A source's dimensions, or null when it has no frame to draw. */
-function sizeOf(video: HTMLVideoElement | null): Size | null {
-  if (!video || video.videoWidth === 0 || video.videoHeight === 0) return null;
-  return { width: video.videoWidth, height: video.videoHeight };
+function sizeOf(source: HTMLVideoElement | HTMLImageElement | null): Size | null {
+  if (!source) return null;
+  // Either kind, because a screenshot's screen is an `<img>` — see
+  // `ProjectComposition.stillScreen`.
+  const width = source instanceof HTMLImageElement ? source.naturalWidth : source.videoWidth;
+  const height = source instanceof HTMLImageElement ? source.naturalHeight : source.videoHeight;
+  return width === 0 || height === 0 ? null : { width, height };
 }
 
 /** The shared canvas, made on the first tile. */

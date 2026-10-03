@@ -76,6 +76,19 @@ export interface ScenePreset {
   /** Newest first is the whole ordering, which is why there is no `order`. */
   savedAt: number;
   /**
+   * Saved from a screenshot rather than from a recording.
+   *
+   * Absent on every look saved before screenshots existed, which were all from
+   * recordings — so absent reads as false and nobody's library changes.
+   *
+   * The two are kept apart because they are not interchangeable: a still is
+   * always the padded card and carries no camera, so a look saved from a
+   * recording offers it an arrangement it cannot be in and a camera it does not
+   * have, and a look saved from a screenshot would flatten a recording's
+   * camera out of the frame. Each editor lists its own.
+   */
+  still?: boolean;
+  /**
    * The frame this look was made in, and the one applying it sets.
    *
    * Never `AUTO_PRESET_ID`. Automatic is not a size — it is the absence of
@@ -163,6 +176,9 @@ export function sanitiseScenePreset(value: unknown): ScenePreset | null {
     id: stored.id,
     name,
     savedAt: number(stored.savedAt, 0),
+    // Only when it is true. Written as a flag rather than always, so a library
+    // of looks saved from recordings reads back exactly as it was stored.
+    ...(stored.still === true ? { still: true } : {}),
     frame: {
       width,
       height,

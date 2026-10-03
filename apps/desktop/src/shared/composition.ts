@@ -16,7 +16,7 @@
  */
 import type { ProjectComposition } from "./contract.js";
 import type { Manifest, MediaTime, Segment } from "./manifest.js";
-import { findTrack } from "./manifest.js";
+import { findTrack, isStill } from "./manifest.js";
 import { AUTO_PRESET_ID } from "./presets.js";
 import type { Project, Slice, SliceOverrides, SliceSettings } from "./project.js";
 import { resolveSettings } from "./project.js";
@@ -59,6 +59,7 @@ export function composition(
     },
     settings,
     screen: screen && { url: url(screen.segment.file_name), at: screen.at },
+    stillScreen: isStill(manifest),
     camera: camera && {
       url: url(camera.segment.file_name),
       matteUrl: camera.segment.matte ? url(camera.segment.matte.file_name) : null,

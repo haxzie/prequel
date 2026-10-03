@@ -17,7 +17,13 @@ import { join } from "node:path";
 import { composition } from "../shared/composition.js";
 import type { ProjectComposition } from "../shared/contract.js";
 import type { Manifest, Segment } from "../shared/manifest.js";
-import { MANIFEST_FILE_NAME, findTrack, parseManifest, seamsOf } from "../shared/manifest.js";
+import {
+  MANIFEST_FILE_NAME,
+  findTrack,
+  isStill,
+  parseManifest,
+  seamsOf,
+} from "../shared/manifest.js";
 import { sourceShape } from "../shared/project.js";
 import { loadProject } from "./editor-project.js";
 import { withBackground } from "./editor-session.js";
@@ -56,7 +62,11 @@ export async function readComposition(
       dir,
       manifest.id,
       manifest.duration,
-      sourceShape(manifest.source, firstSegment(findTrack(manifest, "screen")?.segments)),
+      sourceShape(
+        manifest.source,
+        firstSegment(findTrack(manifest, "screen")?.segments),
+        isStill(manifest),
+      ),
       seamsOf(manifest),
     ),
   );

@@ -52,10 +52,10 @@ const POLL_MS = 20;
  * entry, and a share that fails because of one would be a much worse outcome
  * than a share with no picture.
  */
-export async function capturePoster(url: string, isGif: boolean): Promise<string | null> {
+export async function capturePoster(url: string, isImage: boolean): Promise<string | null> {
   try {
-    if (!isGif) return await videoPoster(url);
-    const frame = await firstGifFrame(url);
+    if (!isImage) return await videoPoster(url);
+    const frame = await firstImageFrame(url);
     return frame && draw(frame.source, frame.width, frame.height);
   } catch (cause) {
     console.warn("[poster] could not take a still:", cause);
@@ -215,8 +215,48 @@ export function release(video: HTMLVideoElement | null): void {
   video.load();
 }
 
+/**
+ * Opens a picture and waits for it to decode.
+ *
+ * `openVideo`'s counterpart, for a screenshot's one frame. Rejects rather than
+ * resolving null, so a caller that has to have the picture — the library's tile
+ * — fails in the same shape a video failure already has.
+ *
+ * Nothing to release afterwards: an `<img>` holds no decoder and no `src` to
+ * tear down, which is why `release` is video-only.
+ */
+export function openPicture(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+
+    const timer = window.setTimeout(
+      () => reject(new Error("the picture would not open")),
+      TIMEOUT_MS,
+    );
+
+    image.onerror = () => {
+      window.clearTimeout(timer);
+      reject(new Error("the picture would not decode"));
+    };
+    image.onload = () => {
+      window.clearTimeout(timer);
+      // `decode()` rather than trusting `onload`, which fires before the pixels
+      // are necessarily ready to draw — a texture uploaded from an undecoded
+      // image samples as nothing. Resolved either way: a browser without it, or
+      // one that refuses, still has a loaded image worth trying.
+      void image
+        .decode()
+        .catch(() => undefined)
+        .then(() => resolve(image));
+    };
+
+    image.src = url;
+  });
+}
+
 /** A GIF has no seeking, so its first frame is the only one on offer. */
-function firstGifFrame(url: string): Promise<Frame | null> {
+function firstImageFrame(url: string): Promise<Frame | null> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.crossOrigin = "anonymous";

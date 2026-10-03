@@ -8,6 +8,7 @@
 import { BrowserWindow, screen, type Display, type WebContents } from "electron";
 
 import type {
+  CaptureMode,
   PickerWindow,
   ScreenMode,
   SelectionResult,
@@ -28,6 +29,14 @@ export class SelectionOverlay {
   private pending: ((result: SelectionResult | null) => void) | null = null;
   /** The mode currently on screen, so a refresh can re-describe it. */
   private mode: ScreenMode = "screen";
+  /**
+   * Whether the overlay is confirming a recording or a screenshot.
+   *
+   * Held beside the mode and for the same reason: the window picker
+   * re-describes itself every second while it is up, and a refresh that
+   * forgot this would put "Start recording" back on a screenshot's card.
+   */
+  private capture: CaptureMode = "video";
   /**
    * The list the overlays were last given.
    *
@@ -50,6 +59,7 @@ export class SelectionOverlay {
    */
   open(
     mode: ScreenMode,
+    capture: CaptureMode,
     targets: Target[],
     icons: Map<number, string> = new Map(),
   ): Promise<SelectionResult | null> {
@@ -60,6 +70,7 @@ export class SelectionOverlay {
     this.settle(null);
 
     this.mode = mode;
+    this.capture = capture;
     this.targets = targets;
     this.icons = icons;
 
@@ -67,7 +78,10 @@ export class SelectionOverlay {
       this.pending = resolve;
 
       for (const display of screen.getAllDisplays()) {
-        this.panes.push({ window: this.createFor(display, mode, targets, icons), display });
+        this.panes.push({
+          window: this.createFor(display, mode, capture, targets, icons),
+          display,
+        });
       }
       // Nowhere to draw would leave the promise hanging forever.
       if (this.panes.length === 0) this.settle(null);
@@ -91,7 +105,7 @@ export class SelectionOverlay {
       if (window.isDestroyed()) continue;
       window.webContents.send(
         IPC_CHANNELS.selectionSetup,
-        describe(display, this.mode, targets, icons),
+        describe(display, this.mode, this.capture, targets, icons),
       );
     }
   }
@@ -112,7 +126,7 @@ export class SelectionOverlay {
     const pane = this.panes.find(
       ({ window }) => !window.isDestroyed() && window.webContents === contents,
     );
-    return pane ? describe(pane.display, this.mode, this.targets, this.icons) : null;
+    return pane ? describe(pane.display, this.mode, this.capture, this.targets, this.icons) : null;
   }
 
   choose(result: SelectionResult): void {
@@ -144,6 +158,7 @@ export class SelectionOverlay {
   private createFor(
     display: Display,
     mode: ScreenMode,
+    capture: CaptureMode,
     targets: Target[],
     icons: Map<number, string>,
   ): BrowserWindow {
@@ -160,7 +175,10 @@ export class SelectionOverlay {
     window.setFullScreenable(false);
 
     void loadRoute(window, "/selection").then(() => {
-      window.webContents.send(IPC_CHANNELS.selectionSetup, describe(display, mode, targets, icons));
+      window.webContents.send(
+        IPC_CHANNELS.selectionSetup,
+        describe(display, mode, capture, targets, icons),
+      );
       window.showInactive();
       // The overlay owns the keyboard while it is up, so Escape works without
       // the user having to click it first.
@@ -181,6 +199,7 @@ export class SelectionOverlay {
 function describe(
   display: Display,
   mode: ScreenMode,
+  capture: CaptureMode,
   targets: Target[],
   icons: Map<number, string>,
 ) {
@@ -201,6 +220,7 @@ function describe(
 
   return {
     mode,
+    capture,
     displayId: display.id,
     // The one thing that tells two screens apart on a multi-monitor desk; the
     // resolution often does not.

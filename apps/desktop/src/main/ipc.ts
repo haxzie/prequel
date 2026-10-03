@@ -11,6 +11,7 @@ import { app, BrowserWindow, ipcMain, systemPreferences } from "electron";
 import { env } from "@prequel/env";
 
 import type {
+  CaptureMode,
   DockMenu,
   DockState,
   IpcResult,
@@ -41,7 +42,14 @@ import { cleanMic } from "./voice.js";
 import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
 import { setToggleShortcut } from "./shortcuts.js";
-import { cancelExport, chooseExportTarget, copyExport, dragExport, startExport } from "./export.js";
+import {
+  cancelExport,
+  chooseExportTarget,
+  copyExport,
+  dragExport,
+  saveStill,
+  startExport,
+} from "./export.js";
 import { entitlement, openUpgrade, refreshEntitlement, trackUpgradePrompt } from "./licence.js";
 import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
@@ -196,7 +204,14 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
     attempt(() => flow.chooseMode(mode)),
   );
 
-  ipcMain.handle(IPC_CHANNELS.startRecording, () => attempt(() => flow.record()));
+  // `capture`, not `record`: what the button does is the panel's own setting,
+  // and a channel that named one of the two would be a second place that has to
+  // agree with the switch — see `CaptureFlow.capture`.
+  ipcMain.handle(IPC_CHANNELS.startRecording, () => attempt(() => flow.capture()));
+
+  ipcMain.handle(IPC_CHANNELS.setCaptureMode, (_event, mode: CaptureMode) =>
+    attempt(() => flow.setCaptureMode(mode)),
+  );
   ipcMain.handle(IPC_CHANNELS.sessionStop, () => attempt(() => flow.stop()));
   ipcMain.handle(IPC_CHANNELS.sessionDiscard, () => attempt(() => flow.discard()));
   ipcMain.handle(IPC_CHANNELS.sessionTogglePause, () => attempt(() => flow.togglePause()));
@@ -533,6 +548,11 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
 
   ipcMain.handle(IPC_CHANNELS.exportStart, (_event, request: ExportRequest) =>
     attempt(() => startExport(request)),
+  );
+
+  // The sheet hangs off the asking window here too, for the same reason.
+  ipcMain.handle(IPC_CHANNELS.exportStill, (event, dir: string, bytes: Uint8Array) =>
+    attempt(() => saveStill(dir, bytes, BrowserWindow.fromWebContents(event.sender))),
   );
 
   ipcMain.handle(IPC_CHANNELS.exportCancel, () => attempt(() => cancelExport()));

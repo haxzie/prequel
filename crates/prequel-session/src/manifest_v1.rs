@@ -99,6 +99,9 @@ impl Manifest {
                 end: duration,
                 imported: false,
             }],
+            // v1 predates screenshots entirely, so every one of them is
+            // footage.
+            still: false,
             cursor_baked: self.cursor_baked,
             cursor: self.cursor,
             clicks: self.clicks,

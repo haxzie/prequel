@@ -47,8 +47,15 @@ const PROMPTER_CONTROL_WIDTH = 34;
  * A measurement taken mid-layout can be nonsense, and a window sized from it
  * would be a full-screen transparent sheet or a sliver — neither of which the
  * user could recover from without quitting.
+ *
+ * The floor is a guard and not a layout decision, so it has to sit below the
+ * narrowest row the panel can honestly draw. That is the screenshot one, at
+ * about 225 points: the two trays, a rule and the close button, with no camera,
+ * microphone or prompter. It was 260, which is wider than that — so a panel
+ * switched to Photo was held open past its own contents and showed a band of
+ * empty pill after the close button.
  */
-const MIN_SETUP_WIDTH = 260;
+const MIN_SETUP_WIDTH = 180;
 const MAX_SETUP_WIDTH = 900;
 
 /** Distance from the bottom of the work area to the bottom of the panel. */

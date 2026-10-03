@@ -20,6 +20,7 @@ mod logging;
 mod probe;
 mod screen;
 mod sound;
+mod still;
 mod transcribe;
 mod voice;
 
@@ -34,6 +35,7 @@ pub use screen::{DisplaySafeArea, display_safe_area};
 pub use sound::{
     SoundBank, SoundCues, SoundEvents, SoundSample, sound_bank, sound_cues, sound_sample,
 };
+pub use still::{CaptureStill, StillRequest, StillResult, capture_still};
 
 #[napi(string_enum)]
 #[derive(Debug, Clone, Copy)]
@@ -233,6 +235,10 @@ fn write_manifest(
             .unwrap_or_default(),
         started_at: plan.started_at.clone(),
         duration,
+        // This path is a recording, by construction. A screenshot never reaches
+        // the session machinery — see `still.rs`, which writes one frame and a
+        // file and holds nothing between calls.
+        still: false,
         source: SourceInfo {
             kind: plan.source_kind.to_owned(),
             id: plan.source_id,

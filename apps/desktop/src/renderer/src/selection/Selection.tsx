@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import type {
+  CaptureMode,
   PickerWindow,
   Region,
   SelectionResult,
@@ -64,6 +65,24 @@ type Pending = { result: SelectionResult; rect: Rect };
 export function Selection() {
   const [setup, setSetup] = useState<SelectionSetup | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const capture = setup?.capture ?? "video";
+
+  /**
+   * Confirming, which for a recording means counting down first.
+   *
+   * A screenshot does not. The three seconds exist to give the camera a
+   * warm-up and the user a moment to get ready for something that is about to
+   * be filmed — and a still frame is neither: there is no camera to open, and
+   * what is on screen now is exactly what is wanted, so a countdown would only
+   * be three seconds in which it can change.
+   */
+  const begin = useCallback(
+    (confirmed: Pending) => {
+      if (capture === "photo") void window.prequel.selection.choose(confirmed.result);
+      else setPending(confirmed);
+    },
+    [capture],
+  );
 
   // Asked for as well as subscribed to, which for this window is the whole
   // difference between working and not. Every view is a `lazy()` chunk, so this
@@ -102,11 +121,11 @@ export function Selection() {
 
   switch (setup.mode) {
     case "area":
-      return <AreaSelection setup={setup} onStart={setPending} />;
+      return <AreaSelection setup={setup} onStart={begin} />;
     case "screen":
-      return <ScreenSelection setup={setup} onStart={setPending} />;
+      return <ScreenSelection setup={setup} onStart={begin} />;
     default:
-      return <WindowSelection setup={setup} onStart={setPending} />;
+      return <WindowSelection setup={setup} onStart={begin} />;
   }
 }
 
@@ -255,6 +274,7 @@ function WindowSelection({
             name={hovered.target.appName || hovered.target.title || "Untitled window"}
             detail={hovered.target.appName ? hovered.target.title : undefined}
             size={pixelSize(hovered.rect, hovered.target.scaleFactor || setup.scaleFactor)}
+            capture={setup.capture}
             onStart={start}
           />
         </div>
@@ -304,6 +324,7 @@ function ScreenSelection({
           name="Entire screen"
           detail={setup.displayLabel}
           size={pixelSize(whole, setup.scaleFactor)}
+          capture={setup.capture}
           onStart={start}
         />
       </div>
@@ -486,6 +507,7 @@ function AreaSelection({
               }
               name="Selected area"
               size={pixelSize(region, setup.scaleFactor)}
+              capture={setup.capture}
               onStart={() => start(region)}
             />
           ) : (
@@ -554,19 +576,39 @@ function Grips({ onGrip }: { onGrip: (handle: Handle) => (event: ReactMouseEvent
  * windows, a hint pinned to the bottom of the display leaves you guessing which
  * one it describes.
  */
+/**
+ * What the confirm button says, and the dot beside it.
+ *
+ * A red dot and "Start recording" is what a record button looks like
+ * everywhere, and putting it on a screenshot would be the one word in the flow
+ * that is wrong — somebody who pressed it would be waiting for a stop button
+ * that is never coming. The screenshot's is the same button in the same place,
+ * saying what it does.
+ */
+const CONFIRM: Record<CaptureMode, { label: string; dot: string }> = {
+  video: { label: "Start recording", dot: "rounded-full bg-white" },
+  // A square rather than a circle: the shutter's own shape, and the one thing
+  // that distinguishes the two buttons at a glance when the words are read
+  // second.
+  photo: { label: "Take screenshot", dot: "rounded-[3px] bg-white" },
+};
+
 function SelectionCard({
   icon,
   name,
   detail,
   size,
+  capture,
   onStart,
 }: {
   icon: ReactNode;
   name: string;
   detail?: string;
   size: string;
+  capture: CaptureMode;
   onStart: () => void;
 }) {
+  const confirm = CONFIRM[capture];
   return (
     // The overlay owns the click, so the card must not eat hover tracking —
     // the Start button re-enables pointer events for itself.
@@ -606,8 +648,8 @@ function SelectionCard({
           onStart();
         }}
       >
-        <span className="size-2.5 rounded-full bg-white" />
-        Start recording
+        <span className={`size-2.5 ${confirm.dot}`} />
+        {confirm.label}
       </button>
     </div>
   );
