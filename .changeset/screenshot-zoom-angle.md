@@ -2,4 +2,4 @@
 "@prequel/desktop": patch
 ---
 
-Push into a screenshot and lean it over, from the Zoom and Angle sections.
+Point at something in a screenshot with a loupe or a soft-focus lens, and lean the picture over.

@@ -36,6 +36,7 @@ import {
 } from "./layout.js";
 import { FILTER_SCALE_MAX } from "./filters.js";
 import {
+  STILL_AT,
   DEFAULT_EFFECTS,
   DEFAULT_SETTINGS,
   DEFAULT_ZOOM,
@@ -5856,81 +5857,100 @@ describe("the loupe", () => {
   });
 });
 
-describe("a screenshot pushed into", () => {
-  // The property the control exists for. A zoom that grew the picture's box
-  // would enlarge its border, its corner and its shadow and run the whole card
-  // off the frame, which is a zoom of the composition rather than of the
-  // screen. See `LayoutSettings.screenMagnify`.
-  it("crops the source and leaves the card exactly where it was", () => {
-    const flat = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
-    const close = buildRenderPlan(
+describe("a screenshot's focus area", () => {
+  const focused = (patch: Partial<LayoutSettings>) =>
+    buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: null },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2 } }),
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, ...patch } }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { at: STILL_AT },
     );
 
-    const was = image(flat, "screen")!;
-    const now = image(close, "screen")!;
+  it("lays one piece of glass where the area is", () => {
+    const plan = focused({ focusMode: "loupe", focusX: 0.25, focusY: 0.75, focusSize: 0.4 });
+    const lens = plan.items.find((item) => item.kind === "loupe");
 
-    expect(now.dstRect.x).toBeCloseTo(was.dstRect.x);
-    expect(now.dstRect.y).toBeCloseTo(was.dstRect.y);
-    expect(now.dstRect.width).toBeCloseTo(was.dstRect.width);
-    expect(now.dstRect.height).toBeCloseTo(was.dstRect.height);
-
-    // Half of each edge of the source, centred — which is what twice as close
-    // means with nothing panned.
-    expect(now.srcRect.width).toBeCloseTo(SCREEN.width / 2);
-    expect(now.srcRect.height).toBeCloseTo(SCREEN.height / 2);
-    expect(now.srcRect.x).toBeCloseTo(SCREEN.width / 4);
-    expect(now.srcRect.y).toBeCloseTo(SCREEN.height / 4);
+    // Two keys with the moment strictly between them, which is the whole of
+    // what `loupeAt` needs: it answers with nothing at or beyond either end, so
+    // a single key — the obvious shape for something that does not move — draws
+    // no glass at all.
+    const keys = lens?.kind === "loupe" ? lens.keys : [];
+    expect(keys).toHaveLength(2);
+    expect(loupeAt(keys, STILL_AT)).not.toBeNull();
+    const glass = keys[0]!;
+    expect(glass?.x).toBeCloseTo(0.25 * LANDSCAPE.width);
+    expect(glass?.y).toBeCloseTo(0.75 * LANDSCAPE.height);
+    // Across, halved: the setting is how wide the area is.
+    expect(glass?.radius).toBeCloseTo((0.4 * 1080) / 2);
+    expect(glass?.presence).toBe(1);
+    expect(glass?.smearX).toBe(0);
+    // And both ends are the same glass: nothing about it eases.
+    expect({ ...keys[1]!, at: 0 }).toEqual(glass);
   });
 
-  it("keeps the window the same shape as the box it is drawn in", () => {
-    // The invariant `place` exists to hold, restated for the magnified path: a
-    // window of one shape drawn into a rectangle of another is a stretched
-    // picture, and nothing about pushing in may break it.
-    const plan = buildRenderPlan(
-      LANDSCAPE,
-      { screen: SCREEN, camera: null },
-      settings({ layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2.7 } }),
-    );
-    const { srcRect, dstRect } = image(plan, "screen")!;
+  it("wears the same glass a recording's lens does", () => {
+    // `LOUPE_CURVATURE` and its two neighbours are `DEFAULT_ZOOM`'s, copied
+    // rather than imported to keep `project.ts` and `layout.ts` from importing
+    // values both ways. This is what stops the two drifting.
+    const plan = focused({ focusMode: "loupe" });
+    const lens = plan.items.find((item) => item.kind === "loupe");
+    const glass = lens?.kind === "loupe" ? lens.keys[0]! : null;
 
-    expect(srcRect.width / srcRect.height).toBeCloseTo(dstRect.width / dstRect.height, 4);
+    expect(glass?.curvature).toBeCloseTo(DEFAULT_ZOOM.loupeCurvature);
+    expect(glass?.aberration).toBeCloseTo(DEFAULT_ZOOM.loupeAberration);
+    expect(glass?.reflection).toBeCloseTo(DEFAULT_ZOOM.loupeReflection);
   });
 
-  it("never lets a pan walk the window off the source", () => {
+  it("softens and darkens around a lens instead", () => {
+    const plan = focused({
+      focusMode: "lens",
+      focusX: 0.3,
+      focusY: 0.4,
+      focusSize: 0.5,
+      focusBlur: 1,
+      focusVignette: 0.8,
+    });
+
+    // No glass at all: a lens leaves the picture where it is.
+    expect(plan.items.some((item) => item.kind === "loupe")).toBe(false);
+
+    const key = image(plan, "screen")!.motion?.[0];
+    expect(key?.focus?.x).toBeCloseTo(0.3 * LANDSCAPE.width);
+    expect(key?.focus?.y).toBeCloseTo(0.4 * LANDSCAPE.height);
+    expect(key?.focus?.safe).toBeCloseTo((0.5 * 1080) / 2);
+    expect(key?.focus?.strength).toBeGreaterThan(0);
+    expect(key?.vignette).toBeCloseTo(0.8);
+  });
+
+  it("draws nothing at all while it is off", () => {
+    // Inert at its default, so a plan built from a project that has never seen
+    // these keys is the plan it always was.
+    const plan = focused({ focusBlur: 1, focusVignette: 1, focusMagnify: 4 });
+    expect(plan.items.some((item) => item.kind === "loupe")).toBe(false);
+    expect(image(plan, "screen")!.motion).toBeUndefined();
+  });
+
+  it("is a screenshot's alone", () => {
+    // The same settings on a recording, which is a plan built with no `still`
+    // at all: there is no control that reaches these on one, and a static
+    // "look here" is the mistake a static zoom would be.
     const plan = buildRenderPlan(
       LANDSCAPE,
       { screen: SCREEN, camera: null },
       settings({
-        layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2, screenOffsetX: 5 },
+        layout: { ...DEFAULT_SETTINGS.layout, focusMode: "loupe", focusVignette: 1 },
       }),
     );
-    const { srcRect } = image(plan, "screen")!;
 
-    expect(srcRect.x).toBeGreaterThanOrEqual(0);
-    expect(srcRect.x + srcRect.width).toBeLessThanOrEqual(SCREEN.width + 0.001);
-  });
-
-  it("is where the drag reads the box from too", () => {
-    // `placement` is what the preview's ring and hit testing ask, so it has to
-    // answer with the same box the plan drew — otherwise the handles sit on a
-    // card the picture is not in.
-    const layout = { ...DEFAULT_SETTINGS.layout, screenMagnify: 1.8 };
-    const current = settings({ layout });
-    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, current);
-    const placed = placement(
-      LANDSCAPE,
-      layout,
-      current.background,
-      { screen: SCREEN, camera: null },
-      "screen",
-      false,
-    )!;
-
-    expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);
-    expect(placed.srcRect).toEqual(image(plan, "screen")!.srcRect);
+    expect(plan.items.some((item) => item.kind === "loupe")).toBe(false);
+    expect(image(plan, "screen")!.motion).toBeUndefined();
   });
 });
 
@@ -5991,6 +6011,7 @@ describe("a screenshot's masks", () => {
       undefined,
       undefined,
       {
+        at: STILL_AT,
         masks: [{ rect: { x: 10, y: 20, width: 30, height: 40 }, mode: "pixelate", strength: 0.4 }],
       },
     );
@@ -6017,7 +6038,10 @@ describe("a screenshot's masks", () => {
       undefined,
       undefined,
       undefined,
-      { masks: [{ rect: { x: 0, y: 0, width: 100, height: 100 }, mode: "blur", strength: 1 }] },
+      {
+        at: STILL_AT,
+        masks: [{ rect: { x: 0, y: 0, width: 100, height: 100 }, mode: "blur", strength: 1 }],
+      },
     );
 
     const mask = masked.items.findIndex((item) => item.kind === "mask");
@@ -6093,7 +6117,7 @@ describe("a screenshot dragged off the frame", () => {
       undefined,
       undefined,
       undefined,
-      {},
+      { at: STILL_AT },
     );
 
     expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);

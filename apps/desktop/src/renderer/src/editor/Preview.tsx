@@ -680,7 +680,7 @@ export function Preview({
               // Present only for a screenshot — see `buildRenderPlan`. It
               // carries the masks and it is what lets the picture be dragged
               // past the frame's edge.
-              frozen ? { masks: hidden } : undefined,
+              frozen ? { at: STILL_AT, masks: hidden } : undefined,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };
@@ -1274,33 +1274,27 @@ export function Preview({
       const source = sourceSizes()[grip.target];
       if (!found || !source) return { section: "layout", patch: {} };
 
-      // Whether there is a window to move, which is the question the fit used to
-      // stand in for. A `contain` picture magnified past 1 is cropped too — see
-      // `LayoutSettings.screenMagnify` — and asking the fit answered "no
-      // window" for it, so panning a zoomed screenshot slid the whole picture
-      // out of its card instead of moving the crop.
-      //
-      // With a window, the picture travels with the pointer and the window
+      // Under `cover` the picture travels with the pointer, so the crop window
       // travels against it — by as much of the source as the pointer covered of
       // the picture. `place` clamps the result, so a pan stops at the edge of
       // the recording rather than sampling nothing.
       //
-      // Without one the whole source is on show, and the offset slides the
-      // picture around inside the area it was given. Same gesture, opposite
-      // sign, and the fraction is of the area rather than of the source.
-      const cropped =
-        found.srcRect.width < source.width - 0.5 || found.srcRect.height < source.height - 0.5;
-
-      const [dx, dy] = cropped
-        ? [
-            -((point.x - grip.from.x) / found.dstRect.width) * (found.srcRect.width / source.width),
-            -((point.y - grip.from.y) / found.dstRect.height) *
-              (found.srcRect.height / source.height),
-          ]
-        : [
-            (point.x - grip.from.x) / Math.max(found.area.width, 1),
-            (point.y - grip.from.y) / Math.max(found.area.height, 1),
-          ];
+      // Under `contain` there is no window: the whole source is on show, and
+      // the offset slides the picture around inside the area it was given. Same
+      // gesture, opposite sign, and the fraction is of the area rather than of
+      // the source.
+      const [dx, dy] =
+        found.fit === "cover"
+          ? [
+              -((point.x - grip.from.x) / found.dstRect.width) *
+                (found.srcRect.width / source.width),
+              -((point.y - grip.from.y) / found.dstRect.height) *
+                (found.srcRect.height / source.height),
+            ]
+          : [
+              (point.x - grip.from.x) / Math.max(found.area.width, 1),
+              (point.y - grip.from.y) / Math.max(found.area.height, 1),
+            ];
 
       return {
         section: "layout",

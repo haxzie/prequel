@@ -922,7 +922,24 @@ export function buildRenderPlan(
    * picture shipped with what the mask was hiding still in it. See
    * `maskRegions`.
    */
-  still?: { masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[] },
+  still?: {
+    /**
+     * The moment a still is drawn at, on the clip's own clock.
+     *
+     * Carried because one item needs it: `loupeAt` draws nothing at or beyond
+     * either end of its track — a lens opens and closes with the glass away,
+     * and holding the end value would still be nothing — where `rectAt` holds
+     * the first key before and the last after. So the picture's static key can
+     * sit anywhere and the glass's cannot: it has to be a pair with this moment
+     * strictly inside them.
+     *
+     * `STILL_AT`, from both callers. It is not imported here because
+     * `project.ts` imports `placement` from this file, and a value crossing
+     * back the other way is a cycle between the two modules.
+     */
+    at: number;
+    masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
+  },
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -977,11 +994,6 @@ export function buildRenderPlan(
       NO_ZOOM,
       layout.screenOffsetX,
       layout.screenOffsetY,
-      // A crop rather than a scale, which is what keeps the card the size the
-      // arrangement gave it while the picture inside it comes closer — see
-      // `LayoutSettings.screenMagnify`, and `NO_ZOOM` for why the screen has no
-      // zoom of the other kind.
-      layout.screenMagnify,
     );
     const shape: Shape = { radius: background.cornerRadius * unit, exponent: 2 };
 
@@ -1023,6 +1035,33 @@ export function buildRenderPlan(
       cursor,
     );
 
+    /**
+     * A screenshot's focus area, in the frame's own pixels.
+     *
+     * The frame rather than the picture, which is what the map beside the
+     * control shows and what the two treatments below are measured in: both
+     * `RectKey.focus` and `LoupeKey` are in output pixels, so a point stated
+     * any other way would have to be converted twice and could be converted
+     * differently.
+     *
+     * Null on a recording, always. There is no control that reaches these on
+     * one, and a static "look here" is the same mistake a static zoom would be:
+     * a recording says it on the timeline, where *when* it is said is half the
+     * statement.
+     */
+    const focus =
+      still && layout.focusMode !== "none"
+        ? {
+            mode: layout.focusMode,
+            x: layout.focusX * frame.width,
+            y: layout.focusY * frame.height,
+            // Across, not out from the middle — one number for both treatments,
+            // because it is one thing: how much of the picture is being pointed
+            // at. See `LayoutSettings.focusSize`.
+            radius: (clamp(layout.focusSize, FOCUS_SIZE_MIN, FOCUS_SIZE_MAX) * unit) / 2,
+          }
+        : null;
+
     // A screenshot's static lean, as one key apiece.
     //
     // Through the same `keyFor` a zoom's samples go through, so a tilted still
@@ -1038,8 +1077,12 @@ export function buildRenderPlan(
     // screenshot's control and a screenshot has no timeline to put a zoom on —
     // so the zoom wins rather than the two being blended into a third answer.
     const leaning = layout.screenRotateX !== 0 || layout.screenRotateY !== 0;
-    const tilted =
-      leaning && zoomed.keys.length === 0
+    // A lens is depth of field and a vignette, which are two fields of the same
+    // key the lean writes — so one key carries both and a still that has only
+    // one of them pays for nothing extra.
+    const lensed = focus?.mode === "lens";
+    const posed =
+      (leaning || lensed) && zoomed.keys.length === 0
         ? keyFor(
             {
               rect: dstRect,
@@ -1047,8 +1090,19 @@ export function buildRenderPlan(
               rotateX: layout.screenRotateX,
               rotateY: layout.screenRotateY,
               perspective: layout.screenPerspective,
-              vignette: 0,
-              focus: null,
+              vignette: lensed ? clamp(layout.focusVignette, 0, 1) : 0,
+              focus: lensed
+                ? {
+                    x: focus!.x,
+                    y: focus!.y,
+                    safe: focus!.radius,
+                    // Against the shorter edge like every other length, and
+                    // through the same figure the zoom's own blur is measured
+                    // by, so a lens on a screenshot and a blurred zoom on a
+                    // recording soften by the same amount at the same setting.
+                    strength: clamp(layout.focusBlur, 0, 1) * FOCUS_BLUR * unit,
+                  }
+                : null,
             },
             0,
             spread,
@@ -1056,27 +1110,61 @@ export function buildRenderPlan(
           )
         : null;
 
-    const motion = tilted ? [tilted.key] : zoomed.keys;
-    const borderMotion = tilted ? [tilted.border] : zoomed.border;
-    const shadowMotion = tilted ? [tilted.shadow] : zoomed.shadow;
+    const motion = posed ? [posed.key] : zoomed.keys;
+    const borderMotion = posed ? [posed.border] : zoomed.border;
+    const shadowMotion = posed ? [posed.shadow] : zoomed.shadow;
     const moving = motion.length > 0 ? { motion } : {};
 
     // Against the picture that was just placed, and after `motion` exists: a
     // lens is aimed at a point on the recording, so it needs the box that point
     // is drawn in and the track that box follows.
-    glass = loupeKeys(
-      lenses,
-      frame,
-      dstRect,
-      srcRect,
-      sources.screen,
-      motion,
-      shape.radius,
-      // The same smoothing the sprite is drawn with, so the glass is centred on
-      // the arrow somebody can see rather than on the sample under it.
-      layout.cursorSmoothing,
-      cursor,
-    );
+    // A screenshot's glass: one key, where a recording's is a track. Everything
+    // about a lens that a zoom eases — it arrives, it travels, it smears — is a
+    // statement about time, and a still has one moment. What is left is where
+    // the glass is and how far into it you are looking.
+    //
+    // The optics are the lens's own defaults rather than six more controls: a
+    // zoom exposes them because a shot is being designed around it, and a
+    // screenshot's focus is one decision taken once.
+    glass =
+      focus?.mode === "loupe"
+        ? ((): LoupeKey[] => {
+            const held = {
+              x: focus.x,
+              y: focus.y,
+              radius: focus.radius,
+              magnify: Math.max(1, layout.focusMagnify),
+              presence: 1,
+              curvature: LOUPE_CURVATURE,
+              aberration: LOUPE_ABERRATION,
+              reflection: LOUPE_REFLECTION,
+              // Nothing is moving, so there is nothing to smear.
+              smearX: 0,
+              smearY: 0,
+            };
+
+            // A pair, not one key, and `still.at` says why: the moment has to
+            // fall strictly between them or `loupeAt` answers with nothing and
+            // the glass is simply absent. The two ends span the still's whole
+            // clock, so anything that samples it at all finds the lens.
+            return [
+              { at: 0, ...held },
+              { at: Math.max(2, (still?.at ?? 0) * 2), ...held },
+            ];
+          })()
+        : loupeKeys(
+            lenses,
+            frame,
+            dstRect,
+            srcRect,
+            sources.screen,
+            motion,
+            shape.radius,
+            // The same smoothing the sprite is drawn with, so the glass is centred on
+            // the arrow somebody can see rather than on the sample under it.
+            layout.cursorSmoothing,
+            cursor,
+          );
 
     if (background.shadowOpacity > 0) {
       items.push({
@@ -5620,6 +5708,40 @@ function boxAt(
 }
 
 /**
+ * How wide a screenshot's focus area may be, as a fraction of the shorter edge.
+ *
+ * The same range the zoom's own lens has, because it is the same glass. The
+ * floor is where a loupe stops being something you can see through, and the
+ * ceiling is where it stops being an area and becomes the whole picture.
+ */
+const FOCUS_SIZE_MIN = 0.15;
+const FOCUS_SIZE_MAX = 0.9;
+
+/**
+ * How far a lens softens at full strength, as a fraction of the shorter edge.
+ *
+ * Twice the figure a zoom's blur opens at — `DEFAULT_ZOOM.blurStrength` is
+ * 0.012 — so half the slider is the amount a recording gets by default and the
+ * top of it is a picture whose edges are unreadable. The same number in both,
+ * so a lens on a screenshot and a blurred zoom on a recording soften by the
+ * same amount at the same setting.
+ */
+const FOCUS_BLUR = 0.024;
+
+/**
+ * The glass a screenshot's loupe is made of.
+ *
+ * `DEFAULT_ZOOM`'s three, repeated rather than imported: `project.ts` imports
+ * `placement` from this file, and a value imported back the other way is a
+ * cycle between the two modules at runtime. Types cross freely; these do not.
+ * Pinned by `a screenshot's loupe` in `layout.test.ts`, so the two cannot drift
+ * without a test saying so.
+ */
+const LOUPE_CURVATURE = 0.4;
+const LOUPE_ABERRATION = 0.45;
+const LOUPE_REFLECTION = 0.5;
+
+/**
  * How far a screenshot's picture may be pushed off the frame: half of it.
  *
  * A screenshot is a picture being composed rather than a demonstration being
@@ -6076,15 +6198,7 @@ export function placement(
 
   const fitted =
     which === "screen"
-      ? place(
-          source,
-          slot.area,
-          slot.fit,
-          NO_ZOOM,
-          layout.screenOffsetX,
-          layout.screenOffsetY,
-          layout.screenMagnify,
-        )
+      ? place(source, slot.area, slot.fit, NO_ZOOM, layout.screenOffsetX, layout.screenOffsetY)
       : place(
           source,
           slot.area,
@@ -6251,18 +6365,17 @@ function halves(area: Rect, gap: number): [Rect, Rect] {
 }
 
 /**
- * What the screen is scaled by, which is never anything.
+ * What the screen is placed at, now that it has no zoom of its own.
  *
- * The old `screenZoom` slider scaled the picture inside its area, and it is
- * gone: how far into a *recording* to push is what a zoom moment answers, and
- * two controls for one question are two ways for the shot in the preview and
- * the shot on the timeline to disagree. The camera keeps its own, which scales
- * a different picture entirely.
+ * The static `screenZoom` slider is gone: how far into the recording to push is
+ * what a zoom moment answers, and two controls for one question are two ways
+ * for the shot in the preview and the shot on the timeline to disagree. The
+ * camera keeps its own, which crops a different picture entirely.
  *
- * `screenMagnify` is not that control coming back. It crops rather than scales
- * — the card does not move — and it is a screenshot's, which has no timeline to
- * put a zoom moment on and so nothing for it to disagree with. See
- * `LayoutSettings.screenMagnify`.
+ * A screenshot has no zoom either, and for a plainer reason: the picture can be
+ * resized by dragging a corner, so a slider that made it bigger would be the
+ * same statement twice. What it has instead is a focus area — see
+ * `LayoutSettings.focusMode`.
  */
 const NO_ZOOM = 1;
 
@@ -6290,19 +6403,6 @@ function place(
   zoomLevel: number,
   offsetX: number,
   offsetY: number,
-  /**
-   * How far to crop into the source, on top of whatever the fit does. 1 is all
-   * of it.
-   *
-   * A second number rather than more `zoomLevel`, because under `contain` the
-   * two mean different things and only one of them is wanted: `zoomLevel`
-   * scales the picture inside its area — which is what the camera's own zoom
-   * has always done there, growing the card and eating the padding — and this
-   * crops into the picture and leaves the card exactly where it was. Folding
-   * them together would change the camera in the two `camera-*` arrangements,
-   * which is not what a screenshot's Zoom control was added to do.
-   */
-  magnify = 1,
 ): { dstRect: Rect; srcRect: Rect } {
   const whole: Rect = { x: 0, y: 0, width: source.width, height: source.height };
   if (area.width <= 0 || area.height <= 0) {
@@ -6310,51 +6410,6 @@ function place(
   }
 
   const zoom = Math.max(0.05, zoomLevel);
-  const closer = Math.max(1, magnify);
-
-  // Magnified and letterboxed: the card stays the box `contain` gave it and the
-  // window inside the source shrinks, so what is on show comes closer without
-  // the picture, its corner or its border changing size.
-  //
-  // The window keeps the source's own shape, so the destination is exactly the
-  // box an unmagnified `contain` would have produced. That is the property this
-  // branch exists for: pushing in must not reshape the card.
-  //
-  // The offsets move the *window* here rather than sliding the picture inside
-  // its area, which is what they do at 1. Same rule as `cover`, and the same
-  // sentence as the note in the preview's panner: an offset means whatever
-  // there is to move, and once the picture is cropped the thing to move is the
-  // crop.
-  if (fit !== "cover" && closer > 1) {
-    const windowWidth = source.width / closer;
-    const windowHeight = source.height / closer;
-    const scale = Math.min(area.width / windowWidth, area.height / windowHeight);
-    const width = windowWidth * scale;
-    const height = windowHeight * scale;
-
-    return {
-      dstRect: {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
-      },
-      srcRect: {
-        x: clamp(
-          (source.width - windowWidth) / 2 + offsetX * source.width,
-          0,
-          source.width - windowWidth,
-        ),
-        y: clamp(
-          (source.height - windowHeight) / 2 + offsetY * source.height,
-          0,
-          source.height - windowHeight,
-        ),
-        width: windowWidth,
-        height: windowHeight,
-      },
-    };
-  }
 
   // `contain` shows all of it, letterboxed: the whole source, scaled to fit.
   if (fit !== "cover") {
@@ -6375,9 +6430,7 @@ function place(
 
   // `cover` fills the area and lets the crop take the overflow, which is what
   // makes a 16:9 recording usable in a vertical frame at all.
-  // Both, multiplied: under `cover` a zoom is already a crop, so there is only
-  // one thing for the two numbers to do and they do it together.
-  const scale = Math.max(area.width / source.width, area.height / source.height) * zoom * closer;
+  const scale = Math.max(area.width / source.width, area.height / source.height) * zoom;
   let windowWidth = area.width / scale;
   let windowHeight = area.height / scale;
 

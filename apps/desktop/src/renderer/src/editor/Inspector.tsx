@@ -34,6 +34,7 @@ import {
   type CameraShape,
   type CaptionPlace,
   type CaptionSettings,
+  type FocusMode,
   type LayoutPreset,
   type LayoutSettings,
   type MicDenoise,
@@ -807,18 +808,19 @@ function InspectorPanels(props: InspectorProps) {
     // word meaning two things in one editor is one too many.
     { id: "recording", label: props.still ? "Screenshot" : "Recording", Icon: ScreenIcon },
     // A screenshot's two, straight after the panel that dresses the picture,
-    // because they are about the same picture: how far into it to look, and
+    // because they are about the same picture: what it is pointing at, and
     // which way it leans.
     //
     // Only on a screenshot, and this is the one place in the editor where that
     // is not simply "a still has less". A recording answers both of these on
-    // the timeline — a zoom moment pushes in and carries its own lean — and a
-    // static pair beside it would be a second answer to the same question,
-    // which is what `NO_ZOOM` in `shared/layout.ts` is a note about. A still
-    // has no timeline to put a moment on, so the only place left is here.
+    // the timeline — a zoom moment lays a lens on something and carries its own
+    // lean — and a static pair beside it would be a second answer to the same
+    // question, which is what `NO_ZOOM` in `shared/layout.ts` is a note about.
+    // A still has no timeline to put a moment on, so the only place left is
+    // here.
     ...(props.still
       ? [
-          { id: "zoom" as const, label: "Zoom", Icon: ZoomIcon },
+          { id: "focus" as const, label: "Focus", Icon: FocusIcon },
           { id: "perspective" as const, label: "Angle", Icon: PerspectiveIcon },
         ]
       : []),
@@ -872,7 +874,7 @@ function InspectorPanels(props: InspectorProps) {
     // Three views onto `layout` now, and each resets only its own keys: Zoom
     // and Angle sit over the same section as Camera and Cursor do, and a Reset
     // that put the whole of it back would take the arrangement with it.
-    zoom: { section: "layout", keys: ZOOM_KEYS },
+    focus: { section: "layout", keys: FOCUS_KEYS },
     perspective: { section: "layout", keys: TILT_KEYS },
     filters: { section: "effects" },
     watermark: { section: "watermark" },
@@ -1144,8 +1146,13 @@ function InspectorPanels(props: InspectorProps) {
                   />
                 )}
 
-                {active === "zoom" && (
-                  <ScreenZoomPanel settings={settings} field={field} set={set} />
+                {active === "focus" && (
+                  <ScreenFocusPanel
+                    settings={settings}
+                    frame={props.frame}
+                    field={field}
+                    set={set}
+                  />
                 )}
 
                 {active === "perspective" && (
@@ -1466,7 +1473,7 @@ export type CategoryId =
   | "layout"
   | "background"
   | "recording"
-  | "zoom"
+  | "focus"
   | "perspective"
   | "camera"
   | "audio"
@@ -3543,83 +3550,156 @@ function BackgroundPanel({
  * survives 16:9 becoming 9:16.
  */
 
-/** What Zoom owns of `layout`, for its Reset and its apply-to-all. */
-const ZOOM_KEYS: (keyof LayoutSettings)[] = ["screenMagnify", "screenOffsetX", "screenOffsetY"];
+/** What Focus owns of `layout`, for its Reset and its apply-to-all. */
+const FOCUS_KEYS: (keyof LayoutSettings)[] = [
+  "focusMode",
+  "focusX",
+  "focusY",
+  "focusSize",
+  "focusMagnify",
+  "focusBlur",
+  "focusVignette",
+];
 
 /** And what Angle owns of it. */
 const TILT_KEYS: (keyof LayoutSettings)[] = ["screenRotateX", "screenRotateY", "screenPerspective"];
 
 /**
- * How far into a screenshot to look, and at what.
+ * What a screenshot is drawing attention to.
  *
- * A screenshot's only, and the panel says what it is rather than being a
- * slider nobody can place: the card stays exactly the size the arrangement
- * gave it and the picture inside it comes closer, which is a crop — see
- * `LayoutSettings.screenMagnify`. A control that grew the card would be a zoom
- * of the composition, and the composition is already sized by the frame bar.
+ * Two treatments of one idea, which is why they are one control: a loupe lays a
+ * glass on the area and magnifies what is under it, and a lens leaves the
+ * picture alone and softens everything that is *not* the area. Both answer
+ * "look here"; they differ in what they do to the rest of the shot, and that is
+ * the choice worth putting in front of somebody.
  *
- * The two offsets are the same pan ⌥-dragging the picture writes, which is how
- * anybody actually chooses where to look — these are here to say where it has
- * got to, and to be put back without hunting for the middle.
+ * There is no Zoom beside this. A screenshot's picture is resized by dragging a
+ * corner, so a slider that made it bigger would be the same statement twice —
+ * see `NO_ZOOM` in `shared/layout.ts`.
  */
-function ScreenZoomPanel({
+function ScreenFocusPanel({
   settings,
+  frame,
   field,
   set,
 }: {
   settings: SliceSettings;
+  frame: Size;
   field: FieldProps;
   set: Setter;
 }) {
   const { layout } = settings;
-  const magnified = layout.screenMagnify > 1.005;
+  const off = layout.focusMode === "none";
 
   return (
     <Section>
+      <Field icon={<FocusIcon />} label="Focus">
+        <Segmented<FocusMode>
+          value={layout.focusMode}
+          options={[
+            { value: "none", label: "None", icon: <NoneIcon /> },
+            { value: "loupe", label: "Loupe", icon: <GlassIcon /> },
+            { value: "lens", label: "Lens", icon: <BlurIcon /> },
+          ]}
+          onChange={(value) => set("layout", "focusMode", value)}
+        />
+      </Field>
+
+      {/* The map, not two sliders. A position in a rectangle is not two
+          independent quantities and nobody thinks about one that way — the same
+          argument `CameraMap` already makes for the bubble and for a zoom's
+          area, and the same control. Hidden rather than disabled while there is
+          no area: a map of where nothing is would be the panel's largest
+          control saying nothing at all. */}
+      {!off && (
+        <Field icon={<PlaceIcon />} label="Area">
+          <CameraMap
+            frame={frame}
+            shape="circle"
+            // A point, for the reason a zoom's area is one: a box is clamped so
+            // its own edges stay on the map, which puts every corner of the
+            // frame out of reach — and a focus area in a corner is exactly what
+            // somebody pointing at a menu wants.
+            point
+            // Still passed: the outline behind the dot is drawn at the area's
+            // real size, so the map shows how much of the picture this covers.
+            size={layout.focusSize}
+            aspect={1}
+            x={layout.focusX}
+            y={layout.focusY}
+            onChange={(x, y) => {
+              set("layout", "focusX", x);
+              set("layout", "focusY", y);
+            }}
+          />
+        </Field>
+      )}
+
       <Slider
-        icon={<ZoomIcon />}
-        label="Zoom"
-        {...field("layout", "screenMagnify")}
-        value={layout.screenMagnify}
-        min={1}
-        max={4}
+        icon={<SizeIcon />}
+        label="Size"
+        {...field("layout", "focusSize")}
+        value={layout.focusSize}
+        min={0.15}
+        max={0.9}
         step={0.01}
-        // A magnification, read as one. "100%" for the whole picture would
-        // invite reading the top of the slider as four hundred per cent of the
-        // frame, which is not what it does to anything.
-        format={(value) => `${String(Number(value.toFixed(2)))}×`}
-        onChange={(value) => set("layout", "screenMagnify", value)}
+        disabled={off}
+        // Against the frame's shorter edge, which is what the setting is a
+        // fraction of — "a third of the frame across" is the thing anyone has
+        // an opinion about.
+        format={percent}
+        onChange={(value) => set("layout", "focusSize", value)}
       />
 
-      {/* Dead until there is something to pan, rather than hidden. At 1× the
-          whole picture is on show and there is nowhere to move the window to —
-          and two rows appearing the moment the slider leaves its stop would
-          push everything under them down mid-drag. */}
-      <Slider
-        icon={<PanXIcon />}
-        label="Pan X"
-        {...field("layout", "screenOffsetX")}
-        value={layout.screenOffsetX}
-        min={-0.5}
-        max={0.5}
-        step={0.005}
-        disabled={!magnified}
-        format={(value) => (Math.abs(value) < 0.003 ? "Centred" : percent(value))}
-        onChange={(value) => set("layout", "screenOffsetX", value)}
-      />
+      {layout.focusMode === "loupe" && (
+        <Slider
+          icon={<LevelIcon />}
+          label="Level"
+          {...field("layout", "focusMagnify")}
+          value={layout.focusMagnify}
+          min={1}
+          max={4}
+          step={0.1}
+          // From 1 rather than from 1.2, as a zoom's lens is: at 1 the glass is
+          // still a glass, bending the picture at its rim, and that is the
+          // setting that reads most like something set down on the screen.
+          format={(value) => `${value.toFixed(1)}×`}
+          onChange={(value) => set("layout", "focusMagnify", value)}
+        />
+      )}
 
-      <Slider
-        icon={<PanYIcon />}
-        label="Pan Y"
-        {...field("layout", "screenOffsetY")}
-        value={layout.screenOffsetY}
-        min={-0.5}
-        max={0.5}
-        step={0.005}
-        disabled={!magnified}
-        format={(value) => (Math.abs(value) < 0.003 ? "Centred" : percent(value))}
-        onChange={(value) => set("layout", "screenOffsetY", value)}
-      />
+      {layout.focusMode === "lens" && (
+        <>
+          <Slider
+            icon={<BlurIcon />}
+            label="Blur around"
+            {...field("layout", "focusBlur")}
+            value={layout.focusBlur}
+            min={0}
+            max={1}
+            step={0.01}
+            format={(value) => (value === 0 ? "Off" : percent(value))}
+            onChange={(value) => set("layout", "focusBlur", value)}
+          />
+
+          {/* Beside the blur because the two are the same kind of thing — what
+              the lens does to everything that is not the subject — and on its
+              own switch-free row for the reason the zoom's is: a vignette of
+              zero is already off, so a toggle in front of it would be a second
+              way to say the same thing. */}
+          <Slider
+            icon={<VignetteIcon />}
+            label="Vignette"
+            {...field("layout", "focusVignette")}
+            value={layout.focusVignette}
+            min={0}
+            max={1}
+            step={0.01}
+            format={(value) => (value === 0 ? "Off" : percent(value))}
+            onChange={(value) => set("layout", "focusVignette", value)}
+          />
+        </>
+      )}
     </Section>
   );
 }

@@ -455,6 +455,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     // waiting on a network this has none of.
     feedback: {
       send: () => ok(undefined),
+      // The stars under a finished export, which the gallery shoots and never
+      // sends. Present because the contract has it: a fake missing a method is
+      // a typecheck failure here and a crash in whatever shot reaches for it.
+      rate: () => ok(undefined),
     },
 
     update: {

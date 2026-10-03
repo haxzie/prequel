@@ -29,6 +29,7 @@ import { maskRegions } from "../../../shared/annotations";
 import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
 import {
   captionLook,
+  STILL_AT,
   clickSoundId,
   keySoundId,
   resolveSettings,
@@ -175,7 +176,7 @@ export function buildSlices(
           // and last sample past either end, so a clip that starts mid-take is
           // drawn with the shape that was there.
           session.blobs,
-          still ? { masks: maskRegions(frame, project.annotations) } : undefined,
+          still ? { at: STILL_AT, masks: maskRegions(frame, project.annotations) } : undefined,
         ),
       ),
       speed: slice.speed,

@@ -152,6 +152,15 @@ export const SHAPE_RADIUS: Record<CameraShape, number> = {
   blob: 0.25,
 };
 
+/**
+ * What a screenshot's focus area is drawn as, or nothing.
+ *
+ * Its own type rather than an inline union, for the reason `CameraShape` is
+ * one: three places name it — the setting, the plan builder and the picker —
+ * and a fourth value added in one of them should not compile in the other two.
+ */
+export type FocusMode = "none" | "loupe" | "lens";
+
 export interface LayoutSettings {
   preset: LayoutPreset;
   /**
@@ -171,25 +180,37 @@ export interface LayoutSettings {
   screenOffsetX: number;
   screenOffsetY: number;
   /**
-   * How far into the screen picture to push. 1 shows all of it.
+   * What is being drawn attention to, or nothing.
    *
-   * A crop, not a scale: the card stays the size and shape the arrangement gave
-   * it and the content inside it is magnified, with `screenOffsetX/Y` choosing
-   * which part. The alternative — growing the box — enlarges the picture *and*
-   * its border, its corner and its shadow, and runs the whole card off the
-   * frame, which is a zoom of the composition rather than of the screen.
+   * A screenshot's own, and there is no static equivalent on a recording for
+   * the reason there is no static zoom: a recording says "look here" on the
+   * timeline, where the moment it says it is half the statement. A still has
+   * one moment, so the whole statement is in the picture.
    *
-   * **Not called `screenZoom`**, and that is not taste. There was a setting of
-   * that name on every recording until the zoom moments replaced it, and
-   * `migrateLayout` strips it from stored projects — so a key with the old name
-   * would be deleted on the next load, or if the strip were dropped, would
-   * resurrect a value some old recording was saved with and quietly re-crop it.
-   *
-   * The control is a screenshot's: a still has no timeline to put a zoom moment
-   * on, which is the whole of the objection the old one was removed for. See
-   * `NO_ZOOM` in `shared/layout.ts`.
+   * `loupe` lays a glass over the area and magnifies what is under it, leaving
+   * the rest of the shot readable. `lens` leaves the picture alone and softens
+   * and darkens everything that is not the area — the same depth of field and
+   * vignette a zoom carries. They are two answers to one question, which is why
+   * they are one control and not two.
    */
-  screenMagnify: number;
+  focusMode: FocusMode;
+  /** The middle of the area, as fractions of the frame. */
+  focusX: number;
+  focusY: number;
+  /**
+   * How wide the area is, as a fraction of the frame's shorter edge.
+   *
+   * One number for both treatments, because it is one thing: how much of the
+   * picture is being pointed at. The glass is that wide across, and the sharp
+   * patch inside a lens is that wide across.
+   */
+  focusSize: number;
+  /** How far into the glass the loupe looks. 1 is the picture at its own size. */
+  focusMagnify: number;
+  /** How soft everything outside a lens's area goes, 0 to 1. */
+  focusBlur: number;
+  /** How hard a lens darkens the frame's edges, 0 to 1. */
+  focusVignette: number;
   /**
    * How far the screen picture leans, in degrees, about each axis.
    *
@@ -199,9 +220,9 @@ export interface LayoutSettings {
    * the picture is drawn in rather than one it moves into.
    *
    * On a recording they are zero and no control reaches them. A recording tilts
-   * through its zooms, where the lean arrives with the shot — a static one
-   * would be a second answer to the same question, which is the mistake
-   * `screenMagnify` has a paragraph about.
+   * through its zooms, where the lean arrives with the shot, and a static pair
+   * beside them would be a second answer to one question — the same reason a
+   * recording has no static zoom. See `NO_ZOOM` in `shared/layout.ts`.
    */
   screenRotateX: number;
   screenRotateY: number;
@@ -1424,10 +1445,18 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenHeight: 1,
   screenOffsetX: 0,
   screenOffsetY: 0,
-  // Flat and whole, which is every recording and every screenshot that has not
-  // been tilted or pushed into. Each of these four is inert at its default, so
-  // a plan built from a project that has never seen them is the plan it was.
-  screenMagnify: 1,
+  // Flat, unfocused, and inert at every one of these defaults — so a plan built
+  // from a project that has never seen them is the plan it always was.
+  focusMode: "none",
+  focusX: 0.5,
+  focusY: 0.5,
+  // Getting on for half the shorter edge, which on a screenshot of a whole
+  // display is about one window. Small enough to point at something, large
+  // enough that what it points at can be read.
+  focusSize: 0.44,
+  focusMagnify: 1.8,
+  focusBlur: 0.5,
+  focusVignette: 0.35,
   screenRotateX: 0,
   screenRotateY: 0,
   screenPerspective: 0.5,
