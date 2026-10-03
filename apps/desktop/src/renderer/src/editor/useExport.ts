@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   cursorImages,
+  isImageExport,
   type EditorSession,
   type ExportProgress,
   type ExportSlice,
@@ -24,6 +25,8 @@ import {
 } from "../../../shared/layout";
 import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
 import { tagFor, type CursorTags } from "./useCursorTags";
+import { renderStillPng } from "./stillPng";
+import type { Images } from "./webgl";
 import {
   captionLook,
   clickSoundId,
@@ -37,6 +40,9 @@ import { segmentAt, segmentsOf } from "./segments";
 import { slicesOf } from "./state";
 import { place, toProjectTime, type Slice } from "./timeline";
 
+/** Nothing to draw with, for a project whose plan names no pictures. */
+const EMPTY_IMAGES: Images = new Map();
+
 /** A finished export, in the form the dialog needs to show and hand it on. */
 export interface ExportResult {
   /** Absolute path, for Finder, the pasteboard and the drag. */
@@ -44,13 +50,14 @@ export interface ExportResult {
   /** A `prequel-media://` URL, which is the only way the renderer can show it. */
   url: string;
   /**
-   * Whether this is a GIF, which is shown as an image rather than played.
+   * Whether this is a picture rather than something to play — a GIF, or the
+   * PNG a screenshot is written as.
    *
    * Read off the extension rather than from the settings the export was started
-   * with: those can be changed while it runs, and a `<video>` pointed at a GIF
+   * with: those can be changed while it runs, and a `<video>` pointed at either
    * shows nothing at all.
    */
-  isGif: boolean;
+  isImage: boolean;
   /**
    * How big the file is, in bytes, or null when main could not read it.
    *
@@ -88,6 +95,17 @@ export function useExport(
   captions: { byLook: ReadonlyMap<string, readonly RenderedCue[]>; drawing: boolean },
   texts: { rendered: ReadonlyMap<string, RenderedText>; drawing: boolean },
   tags: CursorTags,
+  /**
+   * A screenshot's one frame, or null for a recording.
+   *
+   * Present, `start` draws the plan here and hands main the bytes instead of
+   * asking the exporter for a video — see `stillPng.ts` for why a still is
+   * composited in the renderer. Everything after that is shared: the same
+   * progress channel, the same result, the same dialog.
+   */
+  shot: HTMLImageElement | null = null,
+  /** The images the plan names, which the still has to draw with too. */
+  images: Images = EMPTY_IMAGES,
 ): ExportState {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
 
@@ -118,6 +136,83 @@ export function useExport(
 
   const start = useCallback(async () => {
     if (!session) return;
+
+    // A screenshot. Composited here rather than by the exporter — see
+    // `stillPng.ts` — and the sheet comes *after* the draw rather than before
+    // it, which is the one place this path is ordered differently from the
+    // video's: a render that takes a millisecond has nothing to protect
+    // somebody from, and asking last means the file is written the instant they
+    // answer.
+    if (shot) {
+      setProgress({
+        stage: "preparing",
+        framesDone: 0,
+        framesTotal: 0,
+        outputPath: null,
+        error: null,
+      });
+
+      // The same wait a video pays, for the same reason: the plan names text
+      // bitmaps by path, and one built mid-draw names files that are not on
+      // disk yet. The compositor skips what it cannot decode, so the picture
+      // would simply have no titles in it.
+      await settled(drawing);
+
+      const size = outputFrame(project.frame, output.shortEdge);
+      // Through `buildSlices`, exactly as a video export is, so a still's
+      // geometry comes out of the one plan builder rather than a second one
+      // written for the simpler case. A still has one slice by construction —
+      // `STILL_DURATION` holds no seam — so the first is the whole of it.
+      const [only] = buildSlices(
+        session,
+        project,
+        size,
+        bitmaps.current.cues,
+        bitmaps.current.texts,
+        bitmaps.current.tags,
+      );
+
+      const bytes =
+        only &&
+        (await renderStillPng(
+          size,
+          only.plan,
+          { screen: shot, camera: null, cameraMatte: null },
+          images,
+          project.annotations,
+        ));
+
+      if (!bytes) {
+        setProgress({
+          stage: "failed",
+          framesDone: 0,
+          framesTotal: 0,
+          outputPath: null,
+          // `renderStillPng` has already logged which of its reasons it was;
+          // this is the one line the dialog has room for.
+          error: { code: null, message: "the screenshot could not be drawn" },
+        });
+        return;
+      }
+
+      const saved = await window.prequel.editor.export.still(session.dir, bytes);
+      if (!saved.ok) {
+        setProgress({
+          stage: "failed",
+          framesDone: 0,
+          framesTotal: 0,
+          outputPath: null,
+          error: { code: saved.code, message: saved.message },
+        });
+        return;
+      }
+
+      // Dismissed. Put back to nothing rather than left on "preparing", which
+      // would be a dialog claiming a render that is not happening — and unlike
+      // the video path, there is already progress on screen by this point.
+      if (!saved.value) setProgress(null);
+      return;
+    }
 
     // Where it goes is asked before anything is rendered. Dismissing the sheet
     // leaves the dialog exactly as it was — no progress, no failure — because
@@ -183,7 +278,7 @@ export function useExport(
         error: { code: result.code, message: result.message },
       });
     }
-  }, [session, project, output]);
+  }, [session, project, output, shot, images]);
 
   const cancel = useCallback(() => void window.prequel.editor.export.cancel(), []);
 
@@ -202,7 +297,7 @@ export function useExport(
       // reach — so the `export` route is an allow-list keyed by an id only
       // main knows, and a URL assembled in the renderer can only 404.
       url: progress.url,
-      isGif: name.endsWith(".gif"),
+      isImage: isImageExport(name),
       bytes: progress.bytes ?? null,
     };
   }, [session, progress]);

@@ -1,4 +1,5 @@
 import type {
+  CaptureMode,
   DockMenu,
   DockMenuPick,
   DockState,
@@ -18,7 +19,9 @@ import {
   CloseIcon,
   MicIcon,
   MicOffIcon,
+  PhotoIcon,
   ScreenIcon,
+  VideoIcon,
   WindowIcon,
 } from "./icons";
 import { DeviceMenu } from "./DeviceMenu";
@@ -38,8 +41,36 @@ const MODES: { mode: ScreenMode; label: string; Icon: typeof ScreenIcon }[] = [
   { mode: "area", label: "Area", Icon: AreaIcon },
 ];
 
+/**
+ * Record, or take a screenshot.
+ *
+ * Two choices in their own tray at the head of the row, because this is the
+ * question asked before any of the others: what the three mode buttons beside
+ * it pick, what the confirm button on the picker's card does, and whether the
+ * camera, the microphone and the prompter are relevant at all.
+ *
+ * Icons rather than words. The panel is 44pt tall and the strip is sized to its
+ * contents, so "Video" and "Photo" spelled out would cost about seventy points
+ * of width that the device names already compete for — and the two glyphs are
+ * drawn to read against each other at a glance, which is what the switch has
+ * to do.
+ */
+const CAPTURE_MODES: { mode: CaptureMode; label: string; Icon: typeof ScreenIcon }[] = [
+  { mode: "video", label: "Record a video", Icon: VideoIcon },
+  { mode: "photo", label: "Take a screenshot", Icon: PhotoIcon },
+];
+
 export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
+  /**
+   * Whether this panel is setting up a screenshot.
+   *
+   * Three controls come off the strip when it is — the camera, the microphone
+   * and the prompter — and the permissions warning narrows with them. All four
+   * read this rather than the preference, so there is one answer to "is this a
+   * screenshot" in this file.
+   */
+  const photo = preferences.captureMode === "photo";
   const cameras = useMediaDevices("videoinput");
   const microphones = useMediaDevices("audioinput");
   // Which drop-up is open comes from main, not from here: the menu is native
@@ -58,9 +89,14 @@ export function SetupPanel({ state }: { state: DockState }) {
 
   // What a recording started *now* would be missing, which is not the same as
   // what is ungranted: a camera nobody has switched on needs no camera grant.
+  //
+  // A screenshot needs neither device whatever is chosen: it writes one frame
+  // of the screen and no camera or microphone track at all, so a camera grant
+  // the next *recording* will want must not raise a warning over a shot that
+  // will not.
   const missing = missingPermissions(permissions.states, {
-    camera: preferences.cameraId !== null,
-    microphone: preferences.micId !== null,
+    camera: !photo && preferences.cameraId !== null,
+    microphone: !photo && preferences.micId !== null,
   });
 
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
@@ -161,6 +197,32 @@ export function SetupPanel({ state }: { state: DockState }) {
           at that figure the tray reads rounder than the row it sits in; held
           equal, the 2px the button's corner overshoots by is below what the
           edge of a 34px tray shows. */}
+      {/* First, in a tray of its own rather than in the one beside it. The
+          three buttons there pick *what* is captured and these two pick what
+          capturing means — one tray of five would read as five alternatives,
+          and the two halves are not alternatives to each other. */}
+      <div
+        className="flex items-center gap-0.5 rounded-lg bg-dock-group p-0.5"
+        role="radiogroup"
+        aria-label="Record or screenshot"
+      >
+        {CAPTURE_MODES.map(({ mode, label, Icon }) => {
+          const active = preferences.captureMode === mode;
+          return (
+            <IconButton
+              key={mode}
+              role="radio"
+              aria-checked={active}
+              selected={active}
+              title={label}
+              onClick={() => void window.prequel.dock.setCaptureMode(mode)}
+            >
+              <Icon />
+            </IconButton>
+          );
+        })}
+      </div>
+
       <div
         className="flex items-center gap-0.5 rounded-lg bg-dock-group p-0.5"
         role="radiogroup"
@@ -186,47 +248,54 @@ export function SetupPanel({ state }: { state: DockState }) {
         })}
       </div>
 
-      <div className="flex items-center gap-0.5">
-        <DeviceMenu
-          kind="camera"
-          devices={cameras}
-          selectedId={preferences.cameraId}
-          selectedLabel={preferences.cameraLabel}
-          error={cameraError}
-          open={open === "camera"}
-          onOpen={(anchor) => void openMenu("camera", anchor)}
-          onSelect={(device) => choose("camera", device)}
-          OnIcon={CameraIcon}
-          OffIcon={CameraOffIcon}
-        />
-
-        <DeviceMenu
-          kind="microphone"
-          devices={microphones}
-          selectedId={preferences.micId}
-          selectedLabel={preferences.micLabel}
-          meter
-          open={open === "microphone"}
-          onOpen={(anchor) => void openMenu("microphone", anchor)}
-          onSelect={(device) => choose("microphone", device)}
-          OnIcon={MicIcon}
-          OffIcon={MicOffIcon}
-        />
-
-        {/* Only with a microphone: the prompter follows a voice, and a panel
-            with no microphone chosen is not about to record one. Auto-scroll
-            and manual would work without, but the control's whole reason to
-            sit beside the microphone is that it belongs to it. */}
-        {preferences.micId !== null && (
-          <TeleprompterMenu
-            enabled={preferences.teleprompter}
-            mode={preferences.teleprompterMode}
-            open={open === "teleprompter"}
-            onToggle={togglePrompter}
-            onOpen={(anchor) => void openMenu("teleprompter", anchor)}
+      {/* Absent for a screenshot, rather than disabled. A still has no camera
+          track, no microphone track and nothing to read a script to, so three
+          dead controls would be the panel offering choices that cannot affect
+          the result. The settings behind them are untouched — switching back to
+          video finds the camera and the microphone exactly as they were. */}
+      {!photo && (
+        <div className="flex items-center gap-0.5">
+          <DeviceMenu
+            kind="camera"
+            devices={cameras}
+            selectedId={preferences.cameraId}
+            selectedLabel={preferences.cameraLabel}
+            error={cameraError}
+            open={open === "camera"}
+            onOpen={(anchor) => void openMenu("camera", anchor)}
+            onSelect={(device) => choose("camera", device)}
+            OnIcon={CameraIcon}
+            OffIcon={CameraOffIcon}
           />
-        )}
-      </div>
+
+          <DeviceMenu
+            kind="microphone"
+            devices={microphones}
+            selectedId={preferences.micId}
+            selectedLabel={preferences.micLabel}
+            meter
+            open={open === "microphone"}
+            onOpen={(anchor) => void openMenu("microphone", anchor)}
+            onSelect={(device) => choose("microphone", device)}
+            OnIcon={MicIcon}
+            OffIcon={MicOffIcon}
+          />
+
+          {/* Only with a microphone: the prompter follows a voice, and a panel
+              with no microphone chosen is not about to record one. Auto-scroll
+              and manual would work without, but the control's whole reason to
+              sit beside the microphone is that it belongs to it. */}
+          {preferences.micId !== null && (
+            <TeleprompterMenu
+              enabled={preferences.teleprompter}
+              mode={preferences.teleprompterMode}
+              open={open === "teleprompter"}
+              onToggle={togglePrompter}
+              onOpen={(anchor) => void openMenu("teleprompter", anchor)}
+            />
+          )}
+        </div>
+      )}
 
       {/* Towards the end, and absent entirely when there is nothing wrong. Far
           enough along that it cannot push the controls people reach for before

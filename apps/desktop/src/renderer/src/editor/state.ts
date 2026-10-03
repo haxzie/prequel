@@ -35,6 +35,13 @@ import {
   type ZoomSlice,
 } from "../../../shared/project";
 import { retemplated, textFromTemplate, textTemplate } from "../../../shared/text-templates";
+import type { Annotation, AnnotationKind, Point } from "../../../shared/annotations";
+import {
+  DEFAULT_COLOUR,
+  DEFAULT_WIDTH,
+  HIGHLIGHT_COLOUR,
+  newAnnotation,
+} from "../../../shared/annotations";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
@@ -77,6 +84,38 @@ export interface EditorState {
   selectedZoomId: string | null;
   /** Which text is selected, or null. Separate for the reason the zoom is. */
   selectedTextId: string | null;
+  /**
+   * Which mark on a screenshot is selected, or null.
+   *
+   * Its own field for the reason the zoom and the text have theirs: a mark is
+   * not a clip, and none of a clip's questions — what does it override, what
+   * does it inherit — apply to an arrow.
+   */
+  selectedAnnotationId: string | null;
+  /**
+   * Which drawing tool is in hand, or null for the pointer.
+   *
+   * In the reducer rather than in the toolbar that shows it, because two other
+   * things read it: the overlay, which draws rather than selects while a tool is
+   * held, and the Escape key, which puts the tool down from anywhere. Not an
+   * edit — it bumps no revision and is never saved, like a selection.
+   */
+  tool: AnnotationKind | null;
+  /**
+   * The colour and thickness the next mark gets.
+   *
+   * Beside the tool and not on the project, because it describes the hand
+   * rather than the picture: somebody who draws three red arrows wants the
+   * fourth red too, and that preference should not be written into a file and
+   * reloaded a week later as part of the edit.
+   *
+   * `highlight` is the highlighter's own colour, kept apart from the strokes'.
+   * The two tools want different inks — a marker is yellow and an arrow is red —
+   * and one field would mean picking up the highlighter after drawing an arrow
+   * gave a translucent red box. There is no second *width*: a band is not a
+   * stroke weight, and the highlighter sets its own.
+   */
+  ink: { color: string; width: number; highlight: string };
   /**
    * How much recording there actually is, in source time.
    *
@@ -241,6 +280,29 @@ export type EditorAction =
   | { type: "addTextNear"; at: MediaTime; templateId?: string }
   | { type: "selectText"; textId: string | null }
   | { type: "deleteText"; textId: string }
+  /** Picks up a drawing tool, or puts it down with null. */
+  | { type: "pickTool"; tool: AnnotationKind | null }
+  /** What the next mark is drawn in. */
+  | { type: "setInk"; ink: Partial<EditorState["ink"]> }
+  | { type: "selectAnnotation"; annotationId: string | null }
+  /**
+   * Lands a mark the overlay has just drawn.
+   *
+   * The points arrive already resolved to fractions of the frame, because only
+   * the overlay knows how big the picture is on screen — see
+   * `shared/annotations.ts`. The reducer names it and keeps the order.
+   */
+  | { type: "addAnnotation"; kind: AnnotationKind; points: Point[] }
+  | { type: "setAnnotation"; annotationId: string; patch: Partial<Annotation> }
+  /**
+   * Moves a mark by a fraction of each edge.
+   *
+   * A delta rather than new points, so a drag does not have to send the whole
+   * stroke back on every pointer move — a freehand mark is a few hundred
+   * samples, and the shape is not what a move changes.
+   */
+  | { type: "moveAnnotation"; annotationId: string; by: Point }
+  | { type: "deleteAnnotation"; annotationId: string }
   /** Copies a text onto a fresh span in the first gap after it, on its row. */
   | { type: "duplicateText"; textId: string }
   /**
@@ -311,6 +373,11 @@ export function initialState(
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
     selectedTextId: null,
+    selectedAnnotationId: null,
+    // Pointer, not a tool. Opening a screenshot is for looking at it first;
+    // somebody who wants to draw reaches for the tool that does.
+    tool: null,
+    ink: { color: DEFAULT_COLOUR, width: DEFAULT_WIDTH, highlight: HIGHLIGHT_COLOUR },
     // Zero until a recording is opened, which is the honest answer: the
     // placeholder project this starts on describes no media at all. Every trim
     // is clamped against it, and clamping to zero is harmless because there is
@@ -365,6 +432,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         ? state.selectedZoomId
         : null,
       selectedTextId: findText(previous, state.selectedTextId) ? state.selectedTextId : null,
+      selectedAnnotationId: previous.annotations.some(
+        (mark) => mark.id === state.selectedAnnotationId,
+      )
+        ? state.selectedAnnotationId
+        : null,
     };
   }
 
@@ -430,7 +502,20 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "copyText":
     // One click that rewrites every field's look, like a preset.
     case "applyTextTemplate":
+    // Drawing a mark and deleting one are each one gesture — a drag's shape is
+    // only read when the pointer is let go, so there is no stream of them.
+    case "addAnnotation":
+    case "deleteAnnotation":
       return { coalesce: null };
+
+    // Dragged, so they stream: one entry per mark per gesture rather than one
+    // per pointer move. Keyed by id, so moving two marks in turn is two steps.
+    case "moveAnnotation":
+      return { coalesce: `move-annotation:${action.annotationId}` };
+
+    // Likewise, because the thickness is a slider.
+    case "setAnnotation":
+      return { coalesce: `set-annotation:${action.annotationId}` };
 
     // The two appearance changes that are undoable, which is a deliberate
     // widening of the rule above rather than an oversight.
@@ -522,6 +607,7 @@ function apply(
         selectedSliceId: action.sliceId,
         selectedZoomId: null,
         selectedTextId: null,
+        selectedAnnotationId: null,
       };
 
     case "selectZoom":
@@ -530,6 +616,7 @@ function apply(
         selectedZoomId: action.zoomId,
         selectedSliceId: null,
         selectedTextId: null,
+        selectedAnnotationId: null,
       };
 
     case "selectText":
@@ -538,7 +625,30 @@ function apply(
         selectedTextId: action.textId,
         selectedSliceId: null,
         selectedZoomId: null,
+        selectedAnnotationId: null,
       };
+
+    case "selectAnnotation":
+      return {
+        ...state,
+        selectedAnnotationId: action.annotationId,
+        selectedSliceId: null,
+        selectedZoomId: null,
+        selectedTextId: null,
+      };
+
+    case "pickTool":
+      // Picking a tool drops the selection. The ring belongs to the pointer —
+      // it says what the next gesture acts on — and with a tool in hand the
+      // next gesture draws something new.
+      return {
+        ...state,
+        tool: action.tool,
+        ...(action.tool === null ? {} : { selectedAnnotationId: null }),
+      };
+
+    case "setInk":
+      return { ...state, ink: { ...state.ink, ...action.ink } };
 
     case "setFrame":
       return edit(state, (project) => framed({ ...project, frame: action.frame }));
@@ -650,6 +760,37 @@ function apply(
 
     case "deleteText":
       return deleteText(state, action.textId);
+
+    case "addAnnotation":
+      return addAnnotation(state, action.kind, action.points);
+
+    case "setAnnotation":
+      return mapAnnotations(state, (mark) =>
+        mark.id === action.annotationId ? { ...mark, ...action.patch } : mark,
+      );
+
+    case "moveAnnotation":
+      return mapAnnotations(state, (mark) =>
+        mark.id === action.annotationId
+          ? {
+              ...mark,
+              points: mark.points.map((point) => ({
+                x: point.x + action.by.x,
+                y: point.y + action.by.y,
+              })),
+            }
+          : mark,
+      );
+
+    case "deleteAnnotation":
+      return {
+        ...edit(state, (project) => ({
+          ...project,
+          annotations: project.annotations.filter((mark) => mark.id !== action.annotationId),
+        })),
+        selectedAnnotationId:
+          state.selectedAnnotationId === action.annotationId ? null : state.selectedAnnotationId,
+      };
 
     case "duplicateText":
       return duplicateText(state, action.textId);
@@ -846,6 +987,59 @@ function addTextNear(
     found.track,
     textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place),
   );
+}
+
+/**
+ * Lands a mark the overlay drew, selected.
+ *
+ * Appended rather than inserted, because the list is drawing order: a mark made
+ * now goes over everything already there, which is what somebody who has just
+ * drawn it expects to see.
+ *
+ * Selected on the way in, as a zoom and a text are: the point of drawing one is
+ * usually to then say what colour it is or to nudge it into place.
+ */
+function addAnnotation(state: EditorState, kind: AnnotationKind, points: Point[]): EditorState {
+  const mark = newAnnotation(
+    `mark-${String(state.revision)}-${String(state.project.annotations.length)}`,
+    kind,
+    points,
+    // Whichever ink this tool draws in. The width goes along for every kind but
+    // the highlighter, which takes its own — see `newAnnotation`.
+    { color: inkFor(state, kind), width: state.ink.width },
+  );
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      annotations: [...project.annotations, mark],
+    })),
+    selectedAnnotationId: mark.id,
+    selectedSliceId: null,
+    selectedZoomId: null,
+    selectedTextId: null,
+  };
+}
+
+/**
+ * The colour a tool draws in.
+ *
+ * Two inks rather than one, because the two tools want different ones: picking
+ * up the highlighter after drawing an arrow should not give a translucent red
+ * box, and picking the arrow back up should not give a yellow one.
+ */
+export function inkFor(state: EditorState, kind: AnnotationKind): string {
+  return kind === "highlight" ? state.ink.highlight : state.ink.color;
+}
+
+/** Rewrites the marks, keeping their order. */
+function mapAnnotations(state: EditorState, change: (mark: Annotation) => Annotation): EditorState {
+  return edit(state, (project) => ({ ...project, annotations: project.annotations.map(change) }));
+}
+
+/** The selected mark, or undefined. */
+export function selectedAnnotation(state: EditorState): Annotation | undefined {
+  return state.project.annotations.find((mark) => mark.id === state.selectedAnnotationId);
 }
 
 function nextTextId(state: EditorState): string {

@@ -253,6 +253,25 @@ export const SHOTS: readonly Shot[] = [
     pad: 28,
   },
   {
+    id: "dock-setup-photo",
+    frame: "dock",
+    // The switch at the head of the row thrown to a screenshot, which is what
+    // takes the camera, the microphone and the prompter off the strip — see
+    // `SetupPanel`. The shot exists because that absence is the thing to show:
+    // a reader comparing it with `dock-setup` can see what a still does not
+    // need.
+    install: install((base) => ({
+      dock: {
+        ...base.dock,
+        preferences: { ...base.dock.preferences, captureMode: "photo" },
+      },
+    })),
+    render: () => <Dock />,
+    steps: [],
+    clip: "[data-view='setup']",
+    pad: 28,
+  },
+  {
     id: "dock-permissions",
     frame: "dock",
     install: install({ permissions: permissions({ accessibility: false }) }),

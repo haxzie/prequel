@@ -19,6 +19,21 @@ pub const MANIFEST_VERSION: u32 = 2;
 
 pub const MANIFEST_FILE_NAME: &str = "session.json";
 
+/// The file a screenshot's one frame is written to.
+///
+/// Not a `TrackKind::file_name` and not `screen.mp4`: everything that opens a
+/// screen segment by name opens it with a decoder, and a PNG under that name
+/// would be read as a video holding no frames. A still is a `Screen` track
+/// whose single segment names this instead — which is what `Manifest::still`
+/// announces before anything tries.
+///
+/// Defined here and written by the shell, which is the one asymmetry in this
+/// file: `still.rs` is handed an output path rather than choosing one, so
+/// nothing in Rust reads this today. It is here because this crate owns the
+/// format — a name the shell invented on its own would be the second definition
+/// of a file every reader has to find.
+pub const STILL_FILE_NAME: &str = "shot.png";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackKind {
@@ -337,6 +352,19 @@ pub struct Manifest {
     /// empty. Laid end to end, so a take begins exactly where the last ended.
     #[serde(default)]
     pub takes: Vec<Take>,
+    /// This session is one still frame rather than footage.
+    ///
+    /// False on every recording, which is what makes the default safe: a
+    /// screenshot is the only thing that sets it, and everything that would
+    /// otherwise reach for a decoder asks this first. The frame itself is the
+    /// `screen` track's single segment, named `STILL_FILE_NAME`.
+    ///
+    /// A flag rather than a `SourceInfo::kind`: that says *what* was captured —
+    /// a display, a window, a region — and a screenshot can be any of the
+    /// three, so overloading it would make "is this a window shot"
+    /// unanswerable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub still: bool,
     /// Whether ScreenCaptureKit drew the pointer into the frames.
     ///
     /// When it did, the pointer is part of the picture and cannot be removed;
@@ -550,6 +578,7 @@ mod tests {
                 corner_radius: None,
                 crop: None,
             },
+            still: false,
             tracks: vec![
                 Track {
                     kind: TrackKind::Screen,

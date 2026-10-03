@@ -53,7 +53,17 @@ export type Images = Map<string, CanvasImageSource>;
 
 /** The live video elements a plan draws from. */
 export interface Sources {
-  screen: HTMLVideoElement | null;
+  /**
+   * The screen, which is a `<video>` for a recording and an `<img>` for a
+   * screenshot — see `Manifest.still`.
+   *
+   * Widened to any drawable rather than branched on, because the compositor has
+   * nothing to say about the difference: a texture upload takes either, and the
+   * one thing that does differ is whether the pixels change between frames,
+   * which `drawItem` reads off the element itself. The camera stays a `<video>`
+   * because its matte is one and the two are kept on one clock.
+   */
+  screen: CanvasImageSource | null;
   camera: HTMLVideoElement | null;
   /**
    * The camera's person matte, when the recording has one and it is ready.
@@ -1552,7 +1562,11 @@ export class WebGlCompositor {
         const matte = item.matte === true && item.source === "camera" ? sources.cameraMatte : null;
         const masked = matte !== null && this.upload(gl, "camera_matte", matte, true, 2) !== null;
 
-        const texture = this.upload(gl, item.source, source, true);
+        // `live` says the pixels may have changed since the last frame, which
+        // for a video they have and for a still they have not. Asked of the
+        // element rather than passed down: a 6K screenshot re-uploaded sixty
+        // times a second is a slider drag that stutters for no reason at all.
+        const texture = this.upload(gl, item.source, source, source instanceof HTMLVideoElement);
         if (!texture) break;
 
         const moment = moving(item, at);
@@ -1568,7 +1582,10 @@ export class WebGlCompositor {
         );
         const { shape, quad, focus, vignette } = moment;
         const rect = cut.rect;
-        const src = normalised(cut.src, source.videoWidth, source.videoHeight);
+        // Through `sizeOf` rather than `videoWidth`, because the screen is an
+        // `<img>` for a screenshot — see `Sources.screen`.
+        const grain = sizeOf(source);
+        const src = normalised(cut.src, grain.width, grain.height);
 
         set(gl, p, {
           rect,
@@ -1578,7 +1595,7 @@ export class WebGlCompositor {
           vignette,
           // In the source's own texels, so a blur of a given strength looks the
           // same whatever resolution the recording happens to be.
-          texel: [1 / Math.max(source.videoWidth, 1), 1 / Math.max(source.videoHeight, 1)],
+          texel: [1 / Math.max(grain.width, 1), 1 / Math.max(grain.height, 1)],
           mode: MODE_IMAGE,
           src,
           mirror: item.mirror,

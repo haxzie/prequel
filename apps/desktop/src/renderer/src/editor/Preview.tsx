@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 
@@ -99,6 +100,7 @@ export function Preview({
   settings,
   enter,
   media,
+  shot,
   images,
   cursor,
   blobs,
@@ -109,6 +111,7 @@ export function Preview({
   tags,
   selectedTextId,
   grab: grabRef,
+  overlay,
   onPick,
   onPickText,
   onDrag,
@@ -135,6 +138,15 @@ export function Preview({
    */
   enter: EnterTransition | null;
   media: EditorPlayback;
+  /**
+   * A screenshot's one frame, or null for a recording.
+   *
+   * Handed in rather than looked up through `media`, because the playback loop
+   * knows only about elements it can seek: a still has no clock, nothing to
+   * follow and no element on it. When this is present it *is* the screen —
+   * there is no video to fall back to.
+   */
+  shot: HTMLImageElement | null;
   images: Images;
   /**
    * How much of the right edge is covered by the floating panel.
@@ -154,6 +166,15 @@ export function Preview({
   headroom?: string;
   /** The same, for the frame bar under it. */
   footroom?: string;
+  /**
+   * Drawn over the composition, inside the picture's own box.
+   *
+   * A slot rather than a component imported here, because what goes in it is a
+   * screenshot's drawing surface and this file is about the composition. The
+   * box it lands in is exactly the canvas's, so whatever is put here can place
+   * itself in fractions of the picture without measuring anything.
+   */
+  overlay?: ReactNode;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
   /**
@@ -364,6 +385,7 @@ export function Preview({
     frame,
     settings,
     enter,
+    shot,
     images,
     fitted,
     selected,
@@ -380,6 +402,7 @@ export function Preview({
     frame,
     settings,
     enter,
+    shot,
     images,
     fitted,
     selected,
@@ -434,6 +457,7 @@ export function Preview({
         frame: size,
         settings: current,
         enter: arriving,
+        shot: frozen,
         images: loaded,
         fitted: box,
         selected: ringed,
@@ -464,7 +488,17 @@ export function Preview({
       if (element.height !== backing.height) element.height = backing.height;
 
       const sources: Sources = {
-        screen: isReady(screen) ? screen : null,
+        // The shot, when there is one: a still's screen has no element on the
+        // playback clock and `isReady` is a question about a decoder. `complete`
+        // rather than truthiness, because an `<img>` is in the DOM with a width
+        // of zero until it has decoded, and an incomplete texture samples black.
+        screen: frozen
+          ? frozen.complete && frozen.naturalWidth > 0
+            ? frozen
+            : null
+          : isReady(screen)
+            ? screen
+            : null,
         // Two separate reasons there may be nothing to draw, and both mean the
         // same thing here: the frame does not exist yet, so it is not invented.
         camera: media.visible.has("camera") && isReady(camera) ? camera : null,
@@ -476,7 +510,11 @@ export function Preview({
       };
 
       const sizes: SourceSizes = {
-        screen: sources.screen ? { width: screen!.videoWidth, height: screen!.videoHeight } : null,
+        screen: sources.screen
+          ? frozen
+            ? { width: frozen.naturalWidth, height: frozen.naturalHeight }
+            : { width: screen!.videoWidth, height: screen!.videoHeight }
+          : null,
         camera: sources.camera ? { width: camera!.videoWidth, height: camera!.videoHeight } : null,
       };
 
@@ -489,6 +527,10 @@ export function Preview({
       if (fresh) stale.current = fresh;
       const key = [
         size,
+        // The shot itself, not only its size: a second screenshot of the same
+        // display is the same dimensions and a different picture, and a plan
+        // reused across the two would draw the first one's texture key.
+        frozen,
         sizes.screen?.width,
         sizes.screen?.height,
         sizes.camera?.width,
@@ -1360,6 +1402,11 @@ export function Preview({
             hideGuides();
           }}
         />
+
+        {/* Between the picture and the ring. A mark is part of the picture —
+            it is written into the file — so it goes over the composition; the
+            ring is chrome and stays on top of both. */}
+        {overlay}
 
         {/* Drawn over the picture, never in it: the canvas is the composition
             and this is a note about it, so it must not reach the export or the

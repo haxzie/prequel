@@ -20,14 +20,11 @@
 //! gradient.
 
 use std::path::Path;
-use std::sync::mpsc;
-use std::time::Duration;
 
-use cidre::{cg, ci, cm, ns, sc};
+use cidre::{cg, ns, sc};
 
+use crate::still::{capture_one, write_png};
 use crate::{Error, Result};
-
-const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Writes the current desktop picture of `display_id` to `path`, as a PNG.
 ///
@@ -84,67 +81,9 @@ pub fn capture_wallpaper(display_id: u32, path: &Path) -> Result<()> {
     cfg.set_width(display.width() as usize);
     cfg.set_height(display.height() as usize);
 
-    let sample = capture(&filter, &cfg)?;
+    // The one-frame capture and the PNG write are `still.rs`'s, which is the
+    // same operation aimed at a target rather than at the desktop. Shared so a
+    // background and a screenshot cannot come out in two colour spaces.
+    let sample = capture_one(&filter, &cfg)?;
     write_png(&sample, path)
-}
-
-/// Takes one frame, blocking until ScreenCaptureKit hands it over.
-///
-/// Block-based rather than async: this is called from a worker thread whose
-/// whole job is to produce the file, and introducing a runtime to await one
-/// callback would be a lot of machinery for no benefit.
-fn capture(
-    filter: &sc::ContentFilter,
-    cfg: &sc::StreamCfg,
-) -> Result<cidre::arc::R<cm::SampleBuf>> {
-    let (tx, rx) = mpsc::channel();
-
-    let mut handler = cidre::blocks::ResultCh::new2(
-        move |sample: Option<&cm::SampleBuf>, error: Option<&ns::Error>| {
-            let _ = tx.send(match (sample, error) {
-                (Some(sample), _) => Ok(sample.retained()),
-                (None, Some(error)) => Err(error.to_string()),
-                (None, None) => Err("no image and no error".to_owned()),
-            });
-        },
-    );
-
-    sc::ScreenshotManager::capture_sample_buf_ch(filter, cfg, Some(&mut handler));
-
-    rx.recv_timeout(CAPTURE_TIMEOUT)
-        .map_err(|_| Error::Timeout(CAPTURE_TIMEOUT))?
-        .map_err(Error::ScreenCaptureKit)
-}
-
-/// Writes a captured frame out as a PNG.
-///
-/// Through Core Image because it is the one path cidre binds end to end —
-/// `ci::Context::write_png_to_url` — and this runs once per background choice,
-/// so nothing here is on a hot path.
-fn write_png(sample: &cm::SampleBuf, path: &Path) -> Result<()> {
-    let buffer = sample
-        .image_buf()
-        .ok_or_else(|| Error::ScreenCaptureKit("the captured frame carried no image".to_owned()))?;
-
-    let image = ci::Image::with_cv_image_buf(buffer, None)
-        .ok_or_else(|| Error::ScreenCaptureKit("could not read the captured frame".to_owned()))?;
-
-    let path = path
-        .to_str()
-        .ok_or_else(|| Error::ScreenCaptureKit("output path is not valid UTF-8".to_owned()))?;
-
-    let context = ci::Context::new();
-    let url = ns::Url::with_fs_path_str(path, false);
-    let color_space = cg::ColorSpace::device_rgb()
-        .ok_or_else(|| Error::ScreenCaptureKit("no device colour space".to_owned()))?;
-
-    context
-        .write_png_to_url(
-            &image,
-            &url,
-            ci::Format::rgba8(),
-            &color_space,
-            &ns::Dictionary::new(),
-        )
-        .map_err(|err| Error::ScreenCaptureKit(err.to_string()))
 }

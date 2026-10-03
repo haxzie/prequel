@@ -15,7 +15,13 @@ import {
   type EditorSession,
   type TrackMedia,
 } from "../../../shared/contract";
-import { seamsOf, speechSegments, type MediaTime, type TrackKind } from "../../../shared/manifest";
+import {
+  isStill,
+  seamsOf,
+  speechSegments,
+  type MediaTime,
+  type TrackKind,
+} from "../../../shared/manifest";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
   clickSoundId,
@@ -23,6 +29,7 @@ import {
   newProject,
   outputFrame,
   SOUND_OFF,
+  STILL_AT,
   type Project,
   type TextSlice,
   type ZoomSlice,
@@ -47,6 +54,8 @@ import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
+import { AnnotateBar } from "./AnnotateBar";
+import { Annotations } from "./Annotations";
 import { Preview, type Grab, type Picked } from "./Preview";
 import { asCard } from "./poster";
 import { previewReady } from "./ready";
@@ -128,6 +137,24 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     initialState(opened.project, opened.manifest.duration, seamsOf(opened.manifest)),
   );
   const [images, setImages] = useState<Images>(new Map());
+  /**
+   * Whether this is a screenshot rather than footage.
+   *
+   * One frame and no clock. Everything that would otherwise reach for a
+   * decoder, draw a transport or offer to split a clip reads this — see
+   * `isStill`, and `main/screenshot.ts` for why a still is a session at all.
+   */
+  const still = isStill(session.manifest);
+  /**
+   * The shot itself, as something the compositor can sample.
+   *
+   * An `<img>` rather than a `<video>`: the file is a PNG, and an element asked
+   * to demux one reports an error and never produces a frame — which is a
+   * composition drawn on a background with a hole in it, and nothing on screen
+   * to say so. Held in state rather than a ref because the draw loop is handed
+   * it as a prop and has to be re-handed it once it has decoded.
+   */
+  const [shot, setShot] = useState<HTMLImageElement | null>(null);
   /**
    * Video tracks whose first frame has decoded.
    *
@@ -898,10 +925,23 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     if (!media.sliceId || media.sliceId === state.selectedSliceId) return;
     // Nor a text, for the same reason: scrubbing across a cut while a title
     // is being typed must not swap the panel out from under the keyboard.
-    if (state.selectedZoomId || state.selectedTextId) return;
+    //
+    // Nor a mark. A still never scrubs, but `media.sliceId` arrives for the
+    // first time a frame or two after the editor mounts — which on a screenshot
+    // is exactly when somebody has just drawn something — and this took the
+    // selection straight back off it: the ring vanished and the inspector
+    // dropped to Layout the instant a mark landed.
+    if (state.selectedZoomId || state.selectedTextId || state.selectedAnnotationId) return;
 
     dispatch({ type: "select", sliceId: media.sliceId });
-  }, [panelOpen, media.sliceId, state.selectedSliceId, state.selectedZoomId, state.selectedTextId]);
+  }, [
+    panelOpen,
+    media.sliceId,
+    state.selectedSliceId,
+    state.selectedZoomId,
+    state.selectedTextId,
+    state.selectedAnnotationId,
+  ]);
 
   /**
    * Seeks to a text the moment it is selected, when the playhead is not on it.
@@ -1000,6 +1040,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     captions,
     textBitmaps,
     cursorTags,
+    // Present only for a screenshot, which is what sends the export down the
+    // still path: one frame drawn here rather than a video rendered by the
+    // addon. Null while the shot is still decoding, so Export cannot write a
+    // picture of a background with a hole in it.
+    shot,
+    images,
   );
 
   /**
@@ -1259,6 +1305,16 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const cameraSource = useMemo(() => sizeOf(session.media, "camera"), [session]);
 
   const screenSource = useMemo(() => sizeOf(session.media, "screen"), [session]);
+  /**
+   * The screen's first segment, which for a still is the whole of it.
+   *
+   * Only the `<img>` reads it, and only for a still — a recording's screen
+   * elements come off `session.media` with the rest of the tracks.
+   */
+  const screenTrack = useMemo(
+    () => session.media.find((track) => track.kind === "screen" && track.segment === 0) ?? null,
+    [session.media],
+  );
 
   useAutoFrame(state.project.frame, screenSource, dispatch);
   useFirstCut(session, state, dispatch);
@@ -1285,6 +1341,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     media,
     dispatch,
     state,
+    still,
     () => void addRecording(),
     () => {
       added.current = true;
@@ -1421,6 +1478,29 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               settings={drawnSettings}
               enter={previewEnter}
               media={media}
+              shot={shot}
+              // Only for a screenshot. A mark is drawn by one 2D painter the
+              // preview and the still export share, and a recording's export
+              // goes through Rust — which does not share it. On a recording the
+              // marks would be in the preview and missing from the file; see
+              // `shared/annotations.ts`.
+              overlay={
+                still ? (
+                  <Annotations
+                    // The *project's* frame, which is what the picture beside
+                    // it is drawn at — not the export's, which is the same
+                    // shape scaled. Every coordinate here is a fraction, so the
+                    // two would agree; the one that matches the canvas is the
+                    // one a hit test should be measured in.
+                    frame={state.project.frame}
+                    annotations={state.project.annotations}
+                    tool={state.tool}
+                    ink={state.ink}
+                    selectedId={state.selectedAnnotationId}
+                    dispatch={dispatch}
+                  />
+                ) : undefined
+              }
               images={images}
               cursor={session.cursor}
               blobs={session.blobs}
@@ -1488,6 +1568,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               state={state}
               dispatch={dispatch}
               present={present}
+              still={still}
               hasCursor={session.cursor !== null}
               hasSounds={hasSounds}
               hasSpeech={hasSpeech}
@@ -1598,58 +1679,100 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           </div>
         </div>
 
-        <PlaybackControls
-          media={media}
-          // Both act on the selection, and the two are mutually exclusive —
-          // only one of them is ever the thing being removed.
-          canSplit={state.selectedSliceId !== null}
-          canDelete={
-            state.selectedSliceId !== null ||
-            state.selectedZoomId !== null ||
-            state.selectedTextId !== null
-          }
-          // Asked from the start rather than from the playhead, which is not
-          // React state and could not re-enable the button as it moved. The
-          // search covers every gap whatever it is given, so any one answer
-          // is the answer for all of them.
-          canAddZoom={zoomSpanNear(state.project, 0) !== null}
-          canAddText={textSpanNear(state.project, 0) !== null}
-          // Off while an export is running. Recording fights the exporter for
-          // the same GPU and the same encoder, and either way of adding a clip
-          // rewrites the project the running export is reading from.
-          canAddClip={!exportState.running}
-          canUndo={canUndo(state)}
-          onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
-          onAddText={() => {
-            dispatch({ type: "addTextNear", at: media.playback.position() });
-            // And the playhead follows it — see the effect beside `previewText`.
-            added.current = true;
-          }}
-          onAddRecording={() => void addRecording()}
-          onImportVideo={() => void importVideo()}
-          onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
-          onDelete={() => {
-            if (state.selectedTextId) {
-              dispatch({ type: "deleteText", textId: state.selectedTextId });
-            } else if (state.selectedZoomId) {
-              dispatch({ type: "deleteZoom", zoomId: state.selectedZoomId });
-            } else if (state.selectedSliceId) {
-              dispatch({ type: "deleteSlice", sliceId: state.selectedSliceId });
-            }
-          }}
-          onUndo={() => dispatch({ type: "undo" })}
-          dispatch={dispatch}
-        />
-        <TimelineStrip
-          state={state}
-          dispatch={dispatch}
-          media={media}
-          peaks={peaks}
-          filmstrip={frames.strip}
-          framesPending={frames.pending}
-          cameraSpans={cameraSpans}
-          captionRange={captionRange}
-        />
+        {/* Neither for a screenshot. A transport over one frame is a play
+            button that does nothing, a timecode that never moves and a split
+            that cannot be made; a timeline is a ruler for a clip with no
+            length. Absent rather than disabled, so the picture takes the room
+            back — a still is one composition being looked at, and the two rows
+            are a third of the window. */}
+        {!still && (
+          <>
+            <PlaybackControls
+              media={media}
+              // Both act on the selection, and the two are mutually exclusive —
+              // only one of them is ever the thing being removed.
+              canSplit={state.selectedSliceId !== null}
+              canDelete={
+                state.selectedSliceId !== null ||
+                state.selectedZoomId !== null ||
+                state.selectedTextId !== null
+              }
+              // Asked from the start rather than from the playhead, which is not
+              // React state and could not re-enable the button as it moved. The
+              // search covers every gap whatever it is given, so any one answer
+              // is the answer for all of them.
+              canAddZoom={zoomSpanNear(state.project, 0) !== null}
+              canAddText={textSpanNear(state.project, 0) !== null}
+              // Off while an export is running. Recording fights the exporter for
+              // the same GPU and the same encoder, and either way of adding a clip
+              // rewrites the project the running export is reading from.
+              canAddClip={!exportState.running}
+              canUndo={canUndo(state)}
+              onAddZoom={() => dispatch({ type: "addZoomNear", at: media.playback.position() })}
+              onAddText={() => {
+                dispatch({ type: "addTextNear", at: media.playback.position() });
+                // And the playhead follows it — see the effect beside `previewText`.
+                added.current = true;
+              }}
+              onAddRecording={() => void addRecording()}
+              onImportVideo={() => void importVideo()}
+              onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
+              onDelete={() => {
+                if (state.selectedTextId) {
+                  dispatch({ type: "deleteText", textId: state.selectedTextId });
+                } else if (state.selectedZoomId) {
+                  dispatch({ type: "deleteZoom", zoomId: state.selectedZoomId });
+                } else if (state.selectedSliceId) {
+                  dispatch({ type: "deleteSlice", sliceId: state.selectedSliceId });
+                }
+              }}
+              onUndo={() => dispatch({ type: "undo" })}
+              dispatch={dispatch}
+            />
+            <TimelineStrip
+              state={state}
+              dispatch={dispatch}
+              media={media}
+              peaks={peaks}
+              filmstrip={frames.strip}
+              framesPending={frames.pending}
+              cameraSpans={cameraSpans}
+              captionRange={captionRange}
+            />
+          </>
+        )}
+
+        {/* The still's verbs, in the row the transport occupies on a recording:
+            the two are the same thing at the same moment — what to do with what
+            is on screen — and a screenshot has no clock to scrub. */}
+        {still && (
+          <AnnotateBar
+            tool={state.tool}
+            ink={state.ink}
+            canDelete={state.selectedAnnotationId !== null || state.selectedTextId !== null}
+            canUndo={canUndo(state)}
+            // Asked from the middle of the still's clock, which is where the
+            // playhead is pinned — see `STILL_AT`. There is always room on a
+            // still: one text per row and five rows.
+            canAddText={textSpanNear(state.project, STILL_AT) !== null}
+            onAddText={() => {
+              dispatch({ type: "addTextNear", at: STILL_AT });
+              // Adding text with a drawing tool in hand would leave the next
+              // click on the picture drawing an arrow rather than editing the
+              // words that have just appeared.
+              dispatch({ type: "pickTool", tool: null });
+            }}
+            onDelete={() => {
+              if (state.selectedAnnotationId) {
+                dispatch({ type: "deleteAnnotation", annotationId: state.selectedAnnotationId });
+              } else if (state.selectedTextId) {
+                dispatch({ type: "deleteText", textId: state.selectedTextId });
+              }
+            }}
+            onUndo={() => dispatch({ type: "undo" })}
+            dispatch={dispatch}
+          />
+        )}
       </div>
 
       {/* Off screen rather than hidden: a `display: none` video is not
@@ -1663,8 +1786,30 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           video elements are marked too: they are drawn to a canvas, and a
           tainted one poisons anything that later reads pixels back off it. */}
       <div className="pointer-events-none absolute -top-px size-px overflow-hidden opacity-0">
+        {/* A screenshot's one frame, as an `<img>`. Its key is the same
+            `screen:0` the loading gate waits for, so the reveal works exactly
+            as it does for a recording — and `onError` settles it too, for the
+            reason the videos below do: a file that will not decode must not
+            hold the editor behind "Loading the recording…" for ever. */}
+        {still && screenTrack && (
+          <img
+            key={mediaKey("screen", 0)}
+            ref={setShot}
+            src={screenTrack.url}
+            crossOrigin="anonymous"
+            alt=""
+            onLoad={() => markDecoded(mediaKey("screen", 0))}
+            onError={() => {
+              console.error(`[editor] ${screenTrack.file} would not open`);
+              markDecoded(mediaKey("screen", 0));
+            }}
+          />
+        )}
         {session.media.map((track) =>
-          track.kind === "screen" || track.kind === "camera" ? (
+          // A still's screen track is the `<img>` above, never a `<video>`.
+          // Registering a PNG with the playback loop would also put an element
+          // it cannot seek on the clock.
+          (track.kind === "screen" && !still) || track.kind === "camera" ? (
             <video
               key={mediaKey(track.kind, track.segment)}
               ref={media.register(mediaKey(track.kind, track.segment))}
@@ -1746,6 +1891,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
         <ExportDialog
           state={exportState}
           output={state.project.output}
+          still={still}
           poster={poster}
           transcript={shareTranscript}
           onChange={(output) => dispatch({ type: "setOutput", output })}
@@ -2314,6 +2460,8 @@ function useShortcuts(
   media: ReturnType<typeof useEditorPlayback>,
   dispatch: Dispatch<EditorAction>,
   state: EditorState,
+  /** Whether this is a screenshot, which has no clock for most of these. */
+  still: boolean,
   onAddRecording: () => void,
   /** A text has just been added, so the playhead can go and meet it. */
   onAddedText: () => void,
@@ -2355,6 +2503,16 @@ function useShortcuts(
 
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
 
+      // Every shortcut below but T and Backspace is about a clock, and a
+      // screenshot has none: Space would play one second of a still picture,
+      // S would cut it, Z would push into it over a span nothing can scrub,
+      // and R would add footage to something that is not footage. The
+      // transport and the timeline are absent for the same reason, so these
+      // would be the only way to reach any of them.
+      if (still && event.code !== "KeyT" && event.code !== "Backspace" && event.code !== "Delete") {
+        return;
+      }
+
       switch (event.code) {
         case "Space":
           event.preventDefault();
@@ -2378,9 +2536,12 @@ function useShortcuts(
         // Adds a text where the playhead is, for the same reason Z adds a zoom.
         // The playhead then moves to the end of its entrance — see the effect
         // beside `previewText`.
+        //
+        // On a still the playhead never moves, so the moment is the one the
+        // picture is drawn at rather than wherever the clock happens to sit.
         case "KeyT":
           event.preventDefault();
-          dispatch({ type: "addTextNear", at: media.playback.position() });
+          dispatch({ type: "addTextNear", at: still ? STILL_AT : media.playback.position() });
           addedText.current();
           return;
 
@@ -2417,7 +2578,7 @@ function useShortcuts(
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [media, dispatch]);
+  }, [media, dispatch, still]);
 }
 
 /**

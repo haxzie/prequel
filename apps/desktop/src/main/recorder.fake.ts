@@ -11,7 +11,7 @@
  * error paths rather than a happy-path mock.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { CursorSample, KeyPress, Manifest, Track } from "../shared/manifest.js";
 import {
@@ -74,6 +74,20 @@ const FAKE_TARGETS: Target[] = [
     scaleFactor: 1,
   },
 ];
+
+/**
+ * Smallest bytes that decode as a PNG — one opaque pixel.
+ *
+ * Real bytes rather than a stub, unlike the two containers either side of it: a
+ * still session's only picture *is* this file, and the editor draws it through
+ * an `<img>` that either decodes or shows nothing at all. An invented
+ * non-image would make a screenshot look like it worked and open an editor with
+ * a hole in it.
+ */
+const STUB_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 /** Smallest bytes that `ffprobe` and Finder will accept as an MP4 container. */
 const STUB_MP4 = Buffer.from(
@@ -385,6 +399,22 @@ export function createFakeRecorder(): Recorder {
     // an invented image would make the wallpaper option look like it worked.
     captureWallpaper: async () => {
       throw new Error("WALLPAPER: the fake recorder cannot capture a desktop");
+    },
+
+    // Unlike the wallpaper, this one writes a file. The difference is what the
+    // picture is for: a wallpaper stands behind a recording and a wrong one is
+    // a wrong-looking background, where a still *is* the recording — a
+    // screenshot flow with nothing on disk could not be followed as far as an
+    // editor at all.
+    captureStill: async (request) => {
+      mkdirSync(dirname(request.outputPath), { recursive: true });
+      writeFileSync(request.outputPath, STUB_PNG);
+      // The file's own size, which is one pixel — not the region's, however
+      // much more useful a test asserting on dimensions would find that. The
+      // caller writes a manifest describing this file, and a manifest that
+      // claimed 3024×1964 for a 1×1 PNG would be exactly the
+      // manifest-disagrees-with-media state the probe exists to catch.
+      return { width: 1, height: 1 };
     },
 
     // The stub media has no frames to composite, so there is nothing to render.

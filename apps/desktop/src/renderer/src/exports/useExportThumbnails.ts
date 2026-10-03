@@ -42,7 +42,7 @@ export function useExportThumbnails(exports: ExportSummary[]): Map<string, strin
         const entry = exports.find((candidate) => candidate.path === path);
         if (!entry) continue;
 
-        const still = await capturePoster(entry.url, entry.isGif);
+        const still = await capturePoster(entry.url, entry.isImage);
         if (!live) return;
         // Null for a file that would not decode — an export written by an
         // older build, a file half-copied onto a drive. The row keeps its

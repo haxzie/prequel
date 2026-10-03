@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { dialog, screen, shell, type BrowserWindow } from "electron";
 
 import type {
+  CaptureMode,
   DockMenu,
   DockMenuPick,
   DockState,
@@ -34,6 +35,7 @@ import { relaunchApp } from "./permissions.js";
 import type { Manifest } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
 import { deleteRecording, newTakePath } from "./session.js";
+import { takeScreenshot } from "./screenshot.js";
 import { mergeTake } from "./session-merge.js";
 import type { RecordingSession } from "./session.js";
 import { windowId } from "./windows/base.js";
@@ -467,6 +469,37 @@ export class CaptureFlow {
     return this.state();
   }
 
+  /**
+   * Switches between recording and taking a screenshot.
+   *
+   * Reopens the picker when one is up, rather than leaving the overlay to be
+   * corrected. The panel sits *above* the overlay and this switch is live while
+   * a picker is on screen, so the card under it would otherwise go on offering
+   * "Start recording" and counting down three seconds to a still frame. A
+   * reopen is also what pressing one of the three mode buttons does, so the two
+   * behave the same.
+   *
+   * Nothing is cleared. The camera, the microphone and the prompter keep their
+   * settings and simply stop being offered — see `syncCamera` and the prompter's
+   * own `sync` — so switching back finds the setup exactly as it was left.
+   */
+  setCaptureMode(captureMode: CaptureMode): DockState {
+    if (this.deps.preferences.get().captureMode === captureMode) return this.state();
+
+    this.deps.preferences.update({ captureMode });
+    this.emit();
+    this.syncCamera();
+    this.deps.teleprompter.sync(this.deps.dock.isVisible);
+
+    if (this.deps.selection.isOpen) {
+      void this.chooseMode(this.deps.preferences.get().mode).catch((cause) => {
+        console.warn("[flow] could not reopen the picker:", cause);
+      });
+    }
+
+    return this.state();
+  }
+
   /** Brings up the script window, for the tray and the island. */
   openScript(): void {
     this.deps.teleprompter.openScript();
@@ -510,9 +543,17 @@ export class CaptureFlow {
     return pick;
   }
 
-  /** Shows or hides the camera bubble to match the chosen device. */
+  /**
+   * Shows or hides the camera bubble to match the chosen device.
+   *
+   * And to match the capture mode: a screenshot has no camera track, so the
+   * bubble has nothing to preview and the light would be on for a frame nobody
+   * is going to put a face in. The preference is left alone — switching back to
+   * video finds the camera exactly as it was.
+   */
   private syncCamera(): void {
-    if (this.deps.preferences.get().cameraId) this.deps.camera.show();
+    const preferences = this.deps.preferences.get();
+    if (preferences.cameraId && preferences.captureMode === "video") this.deps.camera.show();
     else this.deps.camera.hide();
   }
 
@@ -546,6 +587,9 @@ export class CaptureFlow {
       const targets = this.pickable(await (await getRecorder()).listTargets());
       const result = await this.deps.selection.open(
         mode,
+        // What the confirm button does, which the overlay needs for its own
+        // copy, its countdown and its hint — see `SelectionSetup.capture`.
+        this.deps.preferences.get().captureMode,
         targets,
         mode === "window" ? await windowIcons(targets) : undefined,
       );
@@ -599,9 +643,16 @@ export class CaptureFlow {
       return this.state();
     }
 
-    // After `selecting` has been cleared, or `record` would start against a
+    // After `selecting` has been cleared, or the capture would begin against a
     // panel that still believes an overlay is up.
-    if (start) return this.record();
+    //
+    // Which of the two is read here rather than carried on the result: the
+    // overlay says *that* it was confirmed, and what confirming means is the
+    // panel's own setting — so a switch flipped while the picker was up cannot
+    // leave the overlay's idea of it deciding.
+    if (start) {
+      return this.deps.preferences.get().captureMode === "photo" ? this.shoot() : this.record();
+    }
 
     // A source was chosen without starting, so the countdown never ran to a
     // recording. Anything it opened is stray.
@@ -771,6 +822,94 @@ export class CaptureFlow {
     this.deps.teleprompter.recordingStarted();
     this.emit();
     this.watchFirstFrames();
+    return this.state();
+  }
+
+  /**
+   * Takes a screenshot of whatever the panel is set up to capture.
+   *
+   * `record`'s counterpart, and deliberately a much shorter method: there is no
+   * session to start, nothing to pause, nothing to stop and no first frame to
+   * watch for. A still either lands on disk or it does not, and the one thing
+   * that happens either way is that the panel goes away — the picker covered the
+   * screen to choose the shot, and leaving the panel up over the thing that was
+   * just captured is the app getting in the way of its own result.
+   *
+   * The windows are *prepared* before the capture, exactly as a recording
+   * prepares them: a window created afterwards cannot be excluded, and the
+   * panel is on screen over the very display being shot.
+   */
+  async shoot(): Promise<DockState> {
+    // Nothing chosen yet — fall back to the display the cursor is on rather
+    // than making the user go and pick before they can press the button.
+    const selection =
+      this.pending ??
+      ({
+        mode: "screen",
+        target: screenTargetFor(screen.getDisplayNearestPoint(screen.getCursorScreenPoint())),
+        crop: null,
+        label: "Entire screen",
+      } satisfies PendingSelection);
+
+    // The panel first, and the camera bubble and the island with it. A
+    // recording excludes our windows and leaves them up because they are the
+    // controls for a take that is still running; a screenshot is over in one
+    // frame, and exclusion is belt and braces for the moment they are still on
+    // their way off screen.
+    this.deps.dock.hide();
+    this.deps.camera.hide();
+    this.deps.teleprompter.sync(false);
+
+    const dock = this.deps.dock.prepare();
+    const camera = this.deps.camera.prepare();
+    const teleprompter = this.deps.teleprompter.prepare();
+
+    // Shapes and switches only. The target's label names a window, which names
+    // whatever the user happened to have open.
+    track("screenshot_taken", {
+      mode: selection.mode,
+      target: selection.target.kind,
+      cropped: selection.crop !== null,
+    });
+
+    const shot = await takeScreenshot({
+      target: selection.target,
+      crop: selection.crop,
+      // The editor window as well, for the reason the recording path excludes
+      // it: it is deliberately left up during an extend, and harmless the rest
+      // of the time because a window that is not there is skipped.
+      excludedWindowIds: this.excludedIds([
+        dock,
+        camera,
+        teleprompter,
+        this.deps.workspace?.browserWindow() ?? null,
+      ]),
+      // Left out of the shot. See `StillOptions::show_cursor` for why this is
+      // the opposite default from a recording's.
+      showCursor: false,
+    });
+
+    this.emit();
+
+    if (!shot) {
+      // Said out loud and the panel put back, the same way a failed start is:
+      // a button that silently does nothing is indistinguishable from a broken
+      // one, and `takeScreenshot` has already logged why.
+      reportError("capture.still", new Error("the screenshot could not be taken"));
+      this.deps.dock.setView("setup");
+      this.deps.dock.show();
+      this.emit();
+      return this.state();
+    }
+
+    try {
+      this.openEditor(shot.dir);
+    } catch (cause) {
+      // The shot itself is safe on disk; failing to open an editor for it is
+      // not worth treating as a failed screenshot.
+      console.warn("[flow] could not open the editor:", cause);
+    }
+
     return this.state();
   }
 
@@ -991,6 +1130,19 @@ export class CaptureFlow {
     // Back where they came from. Somebody who discarded an addition is still in
     // the middle of editing the recording they were adding it to.
     if (extending) this.deps.workspace?.resumeEditing(extending.dir);
+  }
+
+  /**
+   * Captures whatever the panel is set up for — a take, or one frame.
+   *
+   * One entry point rather than two exposed to the renderer and the shortcut,
+   * because the switch is the panel's state and not theirs: a second channel
+   * for "take a screenshot" would be a second place that has to agree with it,
+   * and the one that got it wrong would record a take from a panel showing a
+   * camera icon.
+   */
+  async capture(): Promise<DockState> {
+    return this.deps.preferences.get().captureMode === "photo" ? this.shoot() : this.record();
   }
 
   /** Stops if recording, otherwise opens the panel ready to start. */

@@ -99,6 +99,39 @@ export interface StartRecordingRequest {
   excludedWindowIds?: number[];
 }
 
+/**
+ * What the addon needs to take one still frame.
+ *
+ * The overlapping half of `StartRecordingRequest`, and deliberately the same
+ * field names: the panel hands the same selection to either, and two spellings
+ * of "which target, cropped how" is one chance for a still and a recording of
+ * the same thing to come out differently framed.
+ */
+export interface CaptureStillRequest {
+  targetKind: TargetKind;
+  targetId: number;
+  /** Target geometry in points, as already measured by the shell. */
+  bounds: { x: number; y: number; width: number; height: number };
+  scaleFactor: number;
+  /** Where the PNG is written. Parent directories are created. */
+  outputPath: string;
+  /** Sub-region of the target, in points relative to its origin. */
+  crop?: { x: number; y: number; width: number; height: number };
+  /**
+   * Bake the pointer into the shot. Defaults to false in the addon, which is
+   * the opposite of a recording — see `StillOptions::show_cursor`.
+   */
+  showCursor?: boolean;
+  /** `CGWindowID`s to keep out of the shot. Same necessity as above. */
+  excludedWindowIds?: number[];
+}
+
+/** What a still turned out to be, in pixels. */
+export interface CaptureStillResult {
+  width: number;
+  height: number;
+}
+
 export interface ListenOptions {
   /** BCP-47. The engine may resolve it to a near neighbour it does have. */
   locale: string;
@@ -246,6 +279,19 @@ export interface Recorder {
    * dynamic or video wallpaper has no still image to name.
    */
   captureWallpaper(displayId: number, path: string): Promise<void>;
+
+  /**
+   * Writes one frame of a display, a window or a region to a PNG.
+   *
+   * The screenshot path, and separate from `startRecording` because
+   * `SCScreenshotManager` hands over a single sample buffer and is done — there
+   * is no session to start, pause or stop, and nothing is held between calls.
+   *
+   * Returns the picture's own size, rather than leaving it to be read back off
+   * the file: the caller writes a `session.json` naming the shot, and an image
+   * decoded twice is two answers to how big it is.
+   */
+  captureStill(request: CaptureStillRequest): Promise<CaptureStillResult>;
 
   /**
    * Renders an edit to a single MP4.

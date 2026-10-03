@@ -171,6 +171,60 @@ export function MicOffIcon() {
   );
 }
 
+/**
+ * Record: a movie camera.
+ *
+ * A clapperboard would say "video" more loudly and says "editing" with it, and
+ * on an 18px grid its diagonal stripes turn into noise. This is the shape
+ * everything else on the strip already uses — a rounded box — with the lens
+ * block that makes it a camera rather than a window.
+ */
+export function VideoIcon() {
+  return (
+    <svg {...box}>
+      <rect
+        x="2"
+        y="5.5"
+        width="11"
+        height="9"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M13 9l4.2-2.3v6.6L13 11z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Screenshot: a stills camera.
+ *
+ * Paired with `VideoIcon` and drawn to read against it at a glance, which on a
+ * 30px button is the whole job: one is wider than it is tall with a lens on the
+ * side, this one is square-ish with a lens in the middle and a hump on top.
+ */
+export function PhotoIcon() {
+  return (
+    <svg {...box}>
+      <path
+        d="M7.3 4.5h5.4l1 2H16a1.8 1.8 0 0 1 1.8 1.8v5.4A1.8 1.8 0 0 1 16 15.5H4A1.8 1.8 0 0 1 2.2 13.7V8.3A1.8 1.8 0 0 1 4 6.5h2.3z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="11" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 export function CloseIcon() {
   return (
     <svg {...box}>

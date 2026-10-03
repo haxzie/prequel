@@ -1537,3 +1537,161 @@ describe("a background whose picture is not there", () => {
     expect(run(gradient, { type: "backgroundMissing" }).project).toBe(gradient.project);
   });
 });
+
+/**
+ * Marks on a screenshot, and the tool that draws them.
+ *
+ * The tool is in the reducer because three things read it — the overlay, the
+ * toolbar and Escape — and the two failures worth pinning are both about state
+ * that outlives its gesture: a tool left in hand after a mark is drawn means the
+ * next click on the picture draws instead of selecting, and a ring left on a
+ * deleted mark is a panel editing something that is no longer there.
+ */
+describe("marks on a screenshot", () => {
+  const SPAN = [
+    { x: 0.2, y: 0.2 },
+    { x: 0.8, y: 0.8 },
+  ];
+
+  it("lands a mark, selected, in the ink the toolbar is holding", () => {
+    const state = run(
+      start(),
+      { type: "setInk", ink: { color: "#3b82f6", width: 0.008 } },
+      { type: "addAnnotation", kind: "arrow", points: SPAN },
+    );
+
+    const [mark] = state.project.annotations;
+    expect(mark?.kind).toBe("arrow");
+    expect(mark?.color).toBe("#3b82f6");
+    expect(mark?.width).toBe(0.008);
+    // Selected on the way in, as a zoom and a text are: the point of drawing
+    // one is usually to then nudge it or recolour it.
+    expect(state.selectedAnnotationId).toBe(mark?.id);
+  });
+
+  it("drops every other selection when a mark is picked", () => {
+    const first = run(start(), { type: "addAnnotation", kind: "arrow", points: SPAN });
+    const state = run(first, { type: "select", sliceId: slicesOf(first.project)[0]!.id });
+
+    // The inspector shows one thing at a time, and leaving both set makes "what
+    // am I editing" unanswerable.
+    expect(state.selectedAnnotationId).toBeNull();
+  });
+
+  it("puts the tool down when a tool is picked up", () => {
+    const state = run(
+      start(),
+      { type: "addAnnotation", kind: "arrow", points: SPAN },
+      { type: "pickTool", tool: "pen" },
+    );
+
+    // The ring says what the next gesture acts on, and with a tool in hand the
+    // next gesture draws something new.
+    expect(state.selectedAnnotationId).toBeNull();
+    expect(state.tool).toBe("pen");
+  });
+
+  it("moves a mark by a delta rather than by new points", () => {
+    const drawn = run(start(), { type: "addAnnotation", kind: "line", points: SPAN });
+    const id = drawn.project.annotations[0]!.id;
+
+    const state = run(drawn, {
+      type: "moveAnnotation",
+      annotationId: id,
+      by: { x: 0.1, y: -0.05 },
+    });
+
+    // Every point shifted by the same amount, which is the whole of what a move
+    // is: a freehand stroke is a few hundred samples, and sending the shape
+    // back on every pointer event is what the delta exists to avoid.
+    const moved = state.project.annotations[0]!.points;
+    expect(moved[0]!.x).toBeCloseTo(0.3, 6);
+    expect(moved[0]!.y).toBeCloseTo(0.15, 6);
+    expect(moved[1]!.x).toBeCloseTo(0.9, 6);
+    expect(moved[1]!.y).toBeCloseTo(0.75, 6);
+  });
+
+  it("collapses a drag into one undo step", () => {
+    const drawn = run(start(), { type: "addAnnotation", kind: "line", points: SPAN });
+    const id = drawn.project.annotations[0]!.id;
+
+    const dragged = run(
+      drawn,
+      { type: "moveAnnotation", annotationId: id, by: { x: 0.01, y: 0 } },
+      { type: "moveAnnotation", annotationId: id, by: { x: 0.01, y: 0 } },
+      { type: "moveAnnotation", annotationId: id, by: { x: 0.01, y: 0 } },
+    );
+
+    // One entry for the whole drag, not one per pointer move — the same rule
+    // trimming an edge follows.
+    expect(dragged.history.length).toBe(drawn.history.length + 1);
+
+    // And stepping back puts the mark where the drag started, not one move
+    // along it.
+    const undone = run(dragged, { type: "undo" });
+    expect(undone.project.annotations[0]!.points).toEqual(SPAN);
+  });
+
+  it("takes the ring off a mark that is deleted", () => {
+    const drawn = run(start(), { type: "addAnnotation", kind: "arrow", points: SPAN });
+    const id = drawn.project.annotations[0]!.id;
+
+    const state = run(drawn, { type: "deleteAnnotation", annotationId: id });
+
+    expect(state.project.annotations).toEqual([]);
+    // A panel editing a mark that is no longer there has nothing to write to.
+    expect(state.selectedAnnotationId).toBeNull();
+  });
+
+  it("takes the ring off a mark an undo removed", () => {
+    const state = run(
+      start(),
+      { type: "addAnnotation", kind: "arrow", points: SPAN },
+      { type: "undo" },
+    );
+
+    expect(state.project.annotations).toEqual([]);
+    expect(state.selectedAnnotationId).toBeNull();
+  });
+
+  it("keeps the highlighter's ink apart from the strokes'", () => {
+    const state = run(
+      start(),
+      { type: "setInk", ink: { color: "#3b82f6", width: 0.008 } },
+      { type: "addAnnotation", kind: "highlight", points: SPAN },
+    );
+
+    const [mark] = state.project.annotations;
+    // Picking up the highlighter after drawing a blue arrow must not give a
+    // translucent blue box, and a band is not a stroke weight — the marker sets
+    // its own.
+    expect(mark?.color).not.toBe("#3b82f6");
+    expect(mark?.width).not.toBe(0.008);
+    expect(mark?.opacity).toBeLessThan(1);
+  });
+
+  it("writes the highlighter's own ink when that is what is in hand", () => {
+    const state = run(
+      start(),
+      { type: "setInk", ink: { highlight: "#46a758" } },
+      { type: "addAnnotation", kind: "highlight", points: SPAN },
+      { type: "addAnnotation", kind: "arrow", points: SPAN },
+    );
+
+    expect(state.project.annotations[0]?.color).toBe("#46a758");
+    // And the arrow is untouched by it.
+    expect(state.project.annotations[1]?.color).not.toBe("#46a758");
+  });
+
+  it("keeps marks in drawing order", () => {
+    const state = run(
+      start(),
+      { type: "addAnnotation", kind: "rect", points: SPAN },
+      { type: "addAnnotation", kind: "arrow", points: SPAN },
+    );
+
+    // Appended, because the list *is* the order they are drawn in: a mark made
+    // now goes over everything already there.
+    expect(state.project.annotations.map((mark) => mark.kind)).toEqual(["rect", "arrow"]);
+  });
+});

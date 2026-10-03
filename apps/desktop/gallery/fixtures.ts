@@ -18,7 +18,12 @@ import type {
   TeleprompterState,
   UpdateState,
 } from "../src/shared/contract";
-import { DEFAULT_PREFERENCES, IDLE_SESSION, IDLE_UPDATE } from "../src/shared/contract";
+import {
+  DEFAULT_PREFERENCES,
+  IDLE_SESSION,
+  IDLE_UPDATE,
+  isImageExport,
+} from "../src/shared/contract";
 import { exportThumbnailUrl, exportUrl } from "./media-url";
 
 /** The built-in display of a 14" MacBook Pro, which is what most takes are of. */
@@ -151,7 +156,7 @@ export const EXPORTS: ExportSummary[] = [
   createdAt: Date.now() - entry.minutesAgo * 60_000,
   durationMs: entry.seconds === 0 ? null : entry.seconds * 1000,
   bytes: entry.bytes,
-  isGif: entry.name.endsWith(".gif"),
+  isImage: isImageExport(entry.name),
   url: exportUrl(String(index), entry.name),
   thumbnail: exportThumbnailUrl(String(index)),
 }));

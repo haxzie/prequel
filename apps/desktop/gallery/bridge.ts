@@ -169,6 +169,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     dock: {
       state: () => Promise.resolve(state.dock),
       chooseMode: async (mode) => ({ ok: true, value: await dock({ activeMode: mode }) }),
+      setCaptureMode: async (captureMode) => ({
+        ok: true,
+        value: await dock({ preferences: { ...state.dock.preferences, captureMode } }),
+      }),
       updatePreferences: (patch) => dock({ preferences: { ...state.dock.preferences, ...patch } }),
       record: () => ok(state.dock),
       stop: () => ok(undefined),
@@ -284,6 +288,8 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
 
       export: {
         choose: () => ok(state.exportPath),
+        // The gallery takes its shots of the dialog, never of a file on disk.
+        still: () => ok(false),
         /**
          * A pretend render: three ticks and done, over about half a second.
          * The dialog's finished view is what the docs want, and it plays back

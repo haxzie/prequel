@@ -39,6 +39,17 @@ export type TrackKind = "screen" | "camera" | "microphone" | "system_audio";
  */
 export const TRACK_KINDS: readonly TrackKind[] = ["screen", "camera", "microphone", "system_audio"];
 
+/**
+ * The file a screenshot's one frame is written to.
+ *
+ * Not in `TRACK_FILE_NAMES`, and not `screen.mp4`: everything that opens a
+ * screen segment by name opens it with a decoder, and a PNG under that name
+ * would be read as a video that holds no frames. A still is a `screen` track
+ * whose single segment names this instead — which is what `Manifest.still`
+ * exists to announce before anything tries.
+ */
+export const STILL_FILE_NAME = "shot.png";
+
 /** The file each kind is written to, inside a session directory. */
 export const TRACK_FILE_NAMES: Record<TrackKind, string> = {
   screen: "screen.mp4",
@@ -346,6 +357,20 @@ export interface Manifest {
    */
   takes: Take[];
   /**
+   * This session is one still frame rather than footage.
+   *
+   * Absent on every recording, which is what makes it safe to read as false: a
+   * screenshot is the only thing that sets it, and everything that would
+   * otherwise reach for a decoder — the playback loop, the probe, the timeline,
+   * the exporter — asks this first. The frame itself is the `screen` track's
+   * single segment, named `STILL_FILE_NAME`.
+   *
+   * A flag rather than a `source.kind`: `source.kind` says *what* was captured
+   * — a display, a window, a region — and a screenshot can be any of the three.
+   * Overloading it would make "is this a window shot" unanswerable.
+   */
+  still?: boolean;
+  /**
    * Whether ScreenCaptureKit drew the pointer into the frames.
    *
    * Absent on recordings made before the pointer became a layer, and true is
@@ -455,6 +480,17 @@ function upgradeV1(manifest: V1Manifest): Manifest {
     // root — which is where a v1 recording keeps them.
     takes: [{ dir: "", start: 0, end: manifest.duration }],
   };
+}
+
+/**
+ * Whether this session is a single still frame rather than footage.
+ *
+ * The one place the flag is read, so nothing downstream has to remember that
+ * absent means no. Asked before anything opens the screen track with a decoder,
+ * before the transport is drawn, and before an export picks a format.
+ */
+export function isStill(manifest: Manifest): boolean {
+  return manifest.still === true;
 }
 
 export function findTrack(manifest: Manifest, kind: TrackKind): Track | undefined {

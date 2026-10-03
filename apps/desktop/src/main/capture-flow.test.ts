@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 
 import {
   DEFAULT_PREFERENCES,
+  type CaptureMode,
   type RecordingPreferences,
   type ScreenMode,
   type SelectionResult,
@@ -29,7 +30,7 @@ import {
 } from "../shared/manifest.js";
 import { CaptureFlow, matchCamera } from "./capture-flow.js";
 import { createFakeRecorder } from "./recorder.fake.js";
-import { setRecorder, type StartRecordingRequest } from "./recorder.js";
+import { setRecorder, type CaptureStillRequest, type StartRecordingRequest } from "./recorder.js";
 import { RecordingSession } from "./session.js";
 
 const SCRATCH = mkdtempSync(join(tmpdir(), "prequel-flow-"));
@@ -110,9 +111,12 @@ function makeFlow(
     isOpen: false,
     /** What the last picker was given to offer. */
     offered: [] as Target[],
+    /** Whether the last picker was confirming a recording or a screenshot. */
+    capture: "video" as CaptureMode,
     browserWindows: () => [],
-    open: async (_mode: ScreenMode, targets: Target[] = []) => {
+    open: async (_mode: ScreenMode, capture: CaptureMode, targets: Target[] = []) => {
       selection.opened += 1;
+      selection.capture = capture;
       selection.offered = targets;
       return picked;
     },
@@ -220,15 +224,21 @@ function makeFlow(
 }
 
 let requests: StartRecordingRequest[] = [];
+let shots: CaptureStillRequest[] = [];
 
 beforeEach(() => {
   requests = [];
+  shots = [];
   const fake = createFakeRecorder();
   setRecorder({
     ...fake,
     startRecording: async (request) => {
       requests.push(request);
       return fake.startRecording(request);
+    },
+    captureStill: async (request) => {
+      shots.push(request);
+      return fake.captureStill(request);
     },
   });
 });
@@ -911,5 +921,127 @@ describe("adding a recording to a project", () => {
     // so it must be false for an ordinary take.
     const { flow } = makeFlow();
     expect(flow.state().extending).toBe(false);
+  });
+});
+
+/**
+ * Recording and taking a screenshot are one flow with a switch on it.
+ *
+ * The switch is the panel's state and not the button's, which is the whole
+ * point of these: every entry — the picker's card, the renderer's Record call,
+ * the global chord — asks the panel what capturing means rather than carrying
+ * its own answer. A second answer anywhere is a panel showing a camera icon
+ * that records a take.
+ */
+/** A picker that was confirmed on a whole display. */
+const CONFIRMED: SelectionResult = {
+  target: {
+    kind: "Display",
+    id: 1,
+    title: "Display 200×200",
+    appName: "",
+    appPath: "",
+    bounds: { x: 0, y: 0, width: 100, height: 100 },
+    scaleFactor: 2,
+  },
+  crop: null,
+  label: "Entire screen",
+};
+
+describe("the screenshot switch", () => {
+  it("shoots rather than records when the picker confirms", async () => {
+    const { flow, workspace } = makeFlow({ captureMode: "photo" }, { ...CONFIRMED, start: true });
+
+    await flow.chooseMode("screen");
+
+    expect(shots).toHaveLength(1);
+    // And nothing was recorded. This is the failure the whole switch exists to
+    // avoid: a confirm that starts a take from a panel set up for a still.
+    expect(requests).toHaveLength(0);
+    // The shot is on disk and nothing else in the app would ever show it.
+    expect(workspace.opened).toHaveLength(1);
+  });
+
+  it("records when the switch is back on video", async () => {
+    const { flow } = makeFlow({ captureMode: "video" }, { ...CONFIRMED, start: true });
+
+    await flow.chooseMode("screen");
+
+    expect(requests).toHaveLength(1);
+    expect(shots).toHaveLength(0);
+  });
+
+  it("tells the picker which one it is confirming", async () => {
+    // The card's own copy and its countdown come off this. Without it the sheet
+    // offers "Start recording" and counts three seconds down to a still frame.
+    const { flow, selection } = makeFlow({ captureMode: "photo" });
+
+    await flow.chooseMode("window");
+
+    expect(selection.capture).toBe("photo");
+  });
+
+  it("keeps our own windows out of the shot", async () => {
+    // The panel is on screen over the very display being captured, and
+    // exclusion by window id is the only mechanism that works — see
+    // `RecordOptions::excluded_windows`.
+    const { flow } = makeFlow(
+      { captureMode: "photo", cameraId: "cam-1" },
+      { ...CONFIRMED, start: true },
+    );
+
+    await flow.chooseMode("screen");
+
+    expect(shots[0]!.excludedWindowIds).toContain(DOCK_WINDOW_ID);
+    expect(shots[0]!.excludedWindowIds).toContain(CAMERA_WINDOW_ID);
+  });
+
+  it("leaves the arrow out of the picture", async () => {
+    // The opposite default from a recording: a recording is of something
+    // happening and the arrow is what is doing it, where a still is of
+    // something on screen and a parked arrow is in the way of it.
+    const { flow } = makeFlow({ captureMode: "photo" }, { ...CONFIRMED, start: true });
+
+    await flow.chooseMode("screen");
+
+    expect(shots[0]!.showCursor).toBe(false);
+  });
+
+  it("puts the camera bubble away without forgetting the camera", async () => {
+    const { flow, camera, preferences } = makeFlow({ cameraId: "cam-1", cameraLabel: "FaceTime" });
+    expect(camera.shown).toBe(true);
+
+    flow.setCaptureMode("photo");
+
+    // A still has no camera track, so the bubble has nothing to preview and the
+    // light would be on for a frame nobody is going to put a face in.
+    expect(camera.shown).toBe(false);
+    // The choice itself is untouched: switching back finds the setup as it was.
+    expect(preferences().cameraId).toBe("cam-1");
+
+    flow.setCaptureMode("video");
+    expect(camera.shown).toBe(true);
+  });
+
+  it("reopens a picker that is already up", async () => {
+    // The panel sits above the overlay and the switch is live while a picker is
+    // on screen, so flipping it has to re-describe the card underneath — which
+    // would otherwise go on offering to record.
+    const { flow, selection } = makeFlow();
+    selection.isOpen = true;
+
+    flow.setCaptureMode("photo");
+    await vi.waitFor(() => expect(selection.capture).toBe("photo"));
+  });
+
+  it("does nothing when the switch is already there", () => {
+    const { flow, selection } = makeFlow({ captureMode: "photo" });
+    selection.isOpen = true;
+
+    flow.setCaptureMode("photo");
+
+    // No reopen. The switch is pressed by a radio group that re-reports the
+    // current value on every render of the panel.
+    expect(selection.opened).toBe(0);
   });
 });

@@ -91,7 +91,7 @@ suite("an overlay that asks what to show", () => {
   it("is answered for the display it covers, in area mode", () => {
     // Not awaited: the promise settles when the user picks, which is the thing
     // that never happened in the bug.
-    void overlay.open("area", []);
+    void overlay.open("area", "video", []);
 
     const setup = overlay.setupFor(panels[0]?.webContents as never);
 
@@ -104,7 +104,7 @@ suite("an overlay that asks what to show", () => {
   });
 
   it("gives each display its own view, in screen mode", () => {
-    void overlay.open("screen", []);
+    void overlay.open("screen", "video", []);
 
     expect(panels).toHaveLength(2);
     expect(overlay.setupFor(panels[0]?.webContents as never)?.displayId).toBe(1);
@@ -118,7 +118,7 @@ suite("an overlay that asks what to show", () => {
   });
 
   it("answers with the newest list rather than the one it opened with", () => {
-    void overlay.open("window", [windowTarget(10, 0, "Before")]);
+    void overlay.open("window", "video", [windowTarget(10, 0, "Before")]);
 
     overlay.update([windowTarget(11, 0, "After")]);
 
@@ -126,14 +126,27 @@ suite("an overlay that asks what to show", () => {
     expect(setup?.windows.map((entry) => entry.target.title)).toEqual(["After"]);
   });
 
+  it("carries which one it is confirming, through a refresh", () => {
+    // The card's copy and its countdown come off this. The window picker
+    // re-describes itself every second while it is up, and a refresh that
+    // forgot would put "Start recording" back on a screenshot's card.
+    void overlay.open("window", "photo", [windowTarget(10, 0, "Before")]);
+
+    expect(overlay.setupFor(panels[0]?.webContents as never)?.capture).toBe("photo");
+
+    overlay.update([windowTarget(11, 0, "After")]);
+
+    expect(overlay.setupFor(panels[0]?.webContents as never)?.capture).toBe("photo");
+  });
+
   it("does not answer web contents that are not one of its overlays", () => {
-    void overlay.open("area", []);
+    void overlay.open("area", "video", []);
 
     expect(overlay.setupFor(fakeWindow().webContents as never)).toBeNull();
   });
 
   it("has nothing to say once the overlays are gone", () => {
-    void overlay.open("area", []);
+    void overlay.open("area", "video", []);
     const contents = panels[0]?.webContents as never;
 
     overlay.cancel();

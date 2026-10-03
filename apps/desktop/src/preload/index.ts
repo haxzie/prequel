@@ -6,6 +6,7 @@ import type {
   AppInfo,
   AuthState,
   BackgroundImage,
+  CaptureMode,
   CleanTrack,
   DockMenu,
   DockMenuPick,
@@ -62,6 +63,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 export type {
   AppInfo,
   BackgroundImage,
+  CaptureMode,
   CleanTrack,
   DockMenu,
   DockMenuPick,
@@ -156,8 +158,24 @@ const api = {
     state: (): Promise<DockState> => ipcRenderer.invoke(IPC_CHANNELS.sessionState),
     chooseMode: (mode: ScreenMode): Promise<IpcResult<DockState>> =>
       ipcRenderer.invoke(IPC_CHANNELS.chooseMode, mode),
+    /**
+     * Record, or take a screenshot.
+     *
+     * Reopens the picker when one is up: the panel sits above the overlay, so
+     * flipping the switch has to re-describe the card underneath it — see
+     * `CaptureFlow.setCaptureMode`.
+     */
+    setCaptureMode: (mode: CaptureMode): Promise<IpcResult<DockState>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.setCaptureMode, mode),
     updatePreferences: (patch: Partial<RecordingPreferences>): Promise<DockState> =>
       ipcRenderer.invoke(IPC_CHANNELS.updatePreferences, patch),
+    /**
+     * Captures whatever the panel is set up for — a take, or one frame.
+     *
+     * Still named `record` on this side because that is what the button in the
+     * recording view is for, and the one in the setup row is the picker's. Which
+     * of the two it turns into is main's answer, not this one's.
+     */
     record: (): Promise<IpcResult<DockState>> => ipcRenderer.invoke(IPC_CHANNELS.startRecording),
     stop: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.sessionStop),
     /** Stops and deletes the take. There is no undo. */
@@ -375,6 +393,17 @@ const api = {
 
       start: (request: ExportRequest): Promise<IpcResult<void>> =>
         ipcRenderer.invoke(IPC_CHANNELS.exportStart, request),
+
+      /**
+       * Saves a screenshot the renderer has already drawn.
+       *
+       * The bytes go with the request rather than a plan, because a still is
+       * composited here — see `stillPng.ts`. False when the sheet was
+       * dismissed; the file's own progress arrives on `onProgress` with
+       * everything else.
+       */
+      still: (dir: string, bytes: Uint8Array): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.exportStill, dir, bytes),
       cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.exportCancel),
 
       /**

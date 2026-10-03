@@ -8,6 +8,8 @@
  * Deliberately free of any `electron` or Node import: main persists it, the
  * renderer edits it, and the exporter is handed what it resolves to.
  */
+import type { Annotation } from "./annotations.js";
+import { sanitiseAnnotations } from "./annotations.js";
 import type { ExportFormat } from "./contract.js";
 import { filterId } from "./filters.js";
 import { placement } from "./layout.js";
@@ -17,6 +19,32 @@ import { textMotion, type TextMotionId } from "./text-motion.js";
 import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
 
 export const PROJECT_VERSION = 1;
+
+/**
+ * The span a screenshot's one frame occupies on the session clock.
+ *
+ * A second, and the figure itself is arbitrary — nothing plays it and nothing
+ * shows it. What matters is that it is not zero: a slice, a text overlay and a
+ * framing zoom are all half-open ranges of source time, and every one of them
+ * would be empty on a clock of no length. An empty slice is a project with no
+ * clip in it, which is an editor with nothing to dress.
+ *
+ * Here rather than beside the capture that writes it, because three places need
+ * it: `main/screenshot.ts` writes the manifest, the editor pins its playhead to
+ * it, and the still export samples the plan at it.
+ */
+export const STILL_DURATION: Ns = 1_000_000_000;
+
+/**
+ * The moment on that clock a still is drawn at — the middle of it.
+ *
+ * Not zero. Several of a plan's spans are half-open ranges built to begin at
+ * the start of the clip, so a frame sampled exactly on the boundary sits on
+ * every one of those edges at once; the middle is unambiguously inside all of
+ * them. The preview and the export both use this, so what is on screen is what
+ * is written.
+ */
+export const STILL_AT: Ns = STILL_DURATION / 2;
 export const PROJECT_FILE_NAME = "project.json";
 
 /** Nanoseconds, matching the manifest's `MediaTime`. */
@@ -1300,6 +1328,20 @@ export interface Project {
    * row draws over a lower one.
    */
   texts: TextTrack[];
+  /**
+   * Marks drawn over a screenshot — arrows, boxes, freehand, highlighter.
+   *
+   * In drawing order, so a later mark covers an earlier one. Empty on every
+   * recording and on every project saved before they existed.
+   *
+   * **Screenshots only**, and `shared/annotations.ts` says why: they are drawn
+   * by one 2D painter the preview and the still export share, rather than by
+   * the two rasterisers a plan goes through. A mark on a recording would show
+   * in the preview and be missing from the export, so the editor does not offer
+   * them on one — and this list stays empty there rather than being refused,
+   * because a project is data and the editor is the thing with the rule.
+   */
+  annotations: Annotation[];
   output: OutputSettings;
   /**
    * Whether the microphone is cleaned up, and how hard.
@@ -1773,6 +1815,7 @@ export function newProject(
     defaults,
     zooms: [],
     texts: [],
+    annotations: [],
     zoomDefaults: { ...DEFAULT_ZOOM_LOOK },
     tracks: [
       {
@@ -1986,6 +2029,7 @@ export function sanitiseProject(
     zooms: sanitiseZooms(stored.zooms, duration),
     zoomDefaults: sanitiseZoomLook(stored.zoomDefaults, DEFAULT_ZOOM),
     texts: sanitiseTexts(stored.texts, duration),
+    annotations: sanitiseAnnotations(stored.annotations),
     defaults: {
       layout: {
         ...DEFAULT_LAYOUT,

@@ -16,7 +16,7 @@ pub use clock::{
 };
 pub use manifest::{
     Blob, BlobSample, CAMERA_MATTE_FILE, ClickSample, CursorSample, KeyClass, KeyPress, KeySpan,
-    MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, ManifestError, Matte, Region, Segment,
-    SourceInfo, Take, Track, TrackKind, TypingSample,
+    MANIFEST_FILE_NAME, MANIFEST_VERSION, Manifest, ManifestError, Matte, Region, STILL_FILE_NAME,
+    Segment, SourceInfo, Take, Track, TrackKind, TypingSample,
 };
 pub use state::{Command, InvalidTransition, RecordingState};

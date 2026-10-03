@@ -942,3 +942,39 @@ describe("a project written before the two clocks", () => {
     expect(rows[0]!.slices[0]!.length).toBe(2 * S);
   });
 });
+
+describe("a screenshot's marks through a save and a reopen", () => {
+  it("survives the round trip", () => {
+    const project = {
+      ...newProject("rec", 1_000_000_000),
+      annotations: [
+        {
+          id: "mark-0",
+          kind: "arrow" as const,
+          points: [
+            { x: 0.2, y: 0.3 },
+            { x: 0.7, y: 0.8 },
+          ],
+          color: "#3b82f6",
+          width: 0.006,
+          opacity: 1,
+        },
+      ],
+    };
+
+    const read = sanitiseProject(JSON.parse(JSON.stringify(project)), "rec", 1_000_000_000);
+
+    expect(read?.annotations).toEqual(project.annotations);
+  });
+
+  it("reads back empty on every project saved before marks existed", () => {
+    const { annotations: _dropped, ...before } = newProject("rec", 1_000_000_000);
+
+    // Absent, not empty — which is what every project file on disk today holds.
+    // A missing list reaching the painter as `undefined` is a screenshot that
+    // will not draw at all.
+    const read = sanitiseProject(JSON.parse(JSON.stringify(before)), "rec", 1_000_000_000);
+
+    expect(read?.annotations).toEqual([]);
+  });
+});

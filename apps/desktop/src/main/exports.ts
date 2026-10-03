@@ -20,6 +20,7 @@ import { homedir } from "node:os";
 import { app, nativeImage, shell, type WebContents } from "electron";
 
 import type { ExportSummary } from "../shared/contract.js";
+import { isImageExport } from "../shared/contract.js";
 import { exportThumbnailUrl, exportUrl } from "../shared/media-url.js";
 
 const LEDGER_FILE = "exports.json";
@@ -191,7 +192,7 @@ export function listExports(): ExportSummary[] {
       // `NaN:aN`.
       durationMs: typeof entry.ms === "number" && entry.ms > 0 ? entry.ms : null,
       bytes,
-      isGif: name.toLowerCase().endsWith(".gif"),
+      isImage: isImageExport(name),
       url: exportUrl(id, name),
       thumbnail: existsSync(join(thumbnailDir(), `${id}.jpg`)) ? exportThumbnailUrl(id) : null,
     });
