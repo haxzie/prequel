@@ -1395,6 +1395,16 @@ function LayoutPanel({
             // while the frame plainly has no camera in it.
             set("layout", "cameraVisible", !SCREEN_ONLY.has(preset));
 
+            // A Fill arrangement is the picture on its own, so it writes that
+            // into the controls rather than leaving geometry to ignore them:
+            // no padding, no corners, no border. They stay ordinary settings
+            // afterwards — move one and the picture follows.
+            if (preset === "screen-full" || preset === "over-full") {
+              set("background", "padding", 0);
+              set("background", "cornerRadius", 0);
+              set("background", "borderWidth", 0);
+            }
+
             // Picking an arrangement starts it clean.
             //
             // Every crop, box and position is an answer to "how should this sit

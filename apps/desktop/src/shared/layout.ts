@@ -5647,18 +5647,16 @@ export function layoutBoxes(
   const withCamera = layout.cameraVisible && sources.camera !== null;
 
   switch (layout.preset) {
-    // Padding does not apply to a full-bleed picture.
+    // Fill is `cover` into the padded box, and nothing else.
     //
-    // Insetting first and then filling what was left made "Fill" crop a
-    // recording whose shape already matched the frame: the padding is a
-    // fraction of the *shorter* edge taken off all four sides, so the box left
-    // behind is always wider than the frame it sits in, and filling that box
-    // means cropping to a shape nothing was recorded in. A 16:9 screen in a
-    // 16:9 frame lost six per cent of its picture and still stopped short of
-    // the edges — a crop that bought nothing, which is exactly how it read.
+    // It used to ignore the padding altogether, which made the slider do
+    // nothing here with no sign why. Choosing the arrangement now writes zero
+    // padding, radius and border into the settings, so a full-bleed picture is
+    // still what it opens as — but the controls say so, and a hand that moves
+    // one gets what it asked for.
     case "over-full":
       return {
-        screen: { area: whole, fit: "cover", card: true },
+        screen: { area: padded, fit: "cover", card: true },
         camera: withCamera ? free() : null,
       };
 
@@ -5720,7 +5718,7 @@ export function layoutBoxes(
     }
 
     case "screen-full":
-      return { screen: { area: whole, fit: "cover", card: true }, camera: null };
+      return { screen: { area: padded, fit: "cover", card: true }, camera: null };
 
     case "screen-padded":
       return { screen: { area: padded, fit: "contain", card: true }, camera: null };

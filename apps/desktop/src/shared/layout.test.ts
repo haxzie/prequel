@@ -2243,29 +2243,28 @@ describe("filling the frame", () => {
       }),
     );
 
-  it("crops nothing from a recording already the shape of the frame", () => {
-    // The bug this pins. Padding is a fraction of the frame's *shorter* edge
-    // taken off all four sides, so the box it leaves is always wider than the
-    // frame — and filling that box cropped a 16:9 recording in a 16:9 frame to
-    // a shape nothing was ever recorded in. Six per cent of the picture, spent
-    // on nothing.
-    const { srcRect } = image(shot("over-full", 0.06), "screen")!;
+  it("crops nothing from a recording already the shape of the frame, at no padding", () => {
+    // What choosing Fill writes: padding zero. Then the box is the frame and a
+    // 16:9 recording in a 16:9 frame loses nothing.
+    const { srcRect } = image(shot("over-full", 0), "screen")!;
 
     expect(srcRect).toEqual({ x: 0, y: 0, width: SCREEN.width, height: SCREEN.height });
   });
 
-  it("actually reaches the edges", () => {
-    // And it did not even fill what it cropped for: the picture stopped at the
-    // padding, so "Fill" left a border on all four sides.
-    const { dstRect } = image(shot("over-full", 0.06), "screen")!;
+  it("reaches the edges at no padding", () => {
+    const { dstRect } = image(shot("over-full", 0), "screen")!;
 
     expect(dstRect).toEqual({ x: 0, y: 0, width: LANDSCAPE.width, height: LANDSCAPE.height });
   });
 
-  it("is the same picture whatever the padding says", () => {
-    // The two settings answer the same question, and `cover` answers it "no
-    // gaps". There is no room left for padding to ask for.
-    expect(image(shot("over-full", 0.2), "screen")).toEqual(image(shot("over-full", 0), "screen"));
+  it("honours the padding it is given", () => {
+    // The slider used to do nothing under Fill, which read as broken. Padding
+    // is a setting like any other here, and the picture stands in from the edge.
+    const { dstRect } = image(shot("over-full", 0.1), "screen")!;
+
+    expect(dstRect.x).toBeGreaterThan(0);
+    expect(dstRect.y).toBeGreaterThan(0);
+    expect(dstRect.width).toBeLessThan(LANDSCAPE.width);
   });
 
   it("still leaves room around a picture that is contained", () => {
