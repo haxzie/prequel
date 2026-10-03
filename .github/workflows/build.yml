@@ -28,20 +28,26 @@ concurrency:
   group: build-${{ inputs.tag || github.ref }}
   cancel-in-progress: true
 
-# Every step that asks "is this a release" asks it here, once. `github.ref` is
-# `refs/heads/main` when this is called by `release.yml` — the tag exists, but
-# the run is not *on* it — so the ref alone answers no for exactly the runs that
-# are publishing.
-env:
-  TAG: ${{ inputs.tag || github.ref_name }}
-  RELEASING: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
-
 jobs:
   package:
     runs-on: macos-15
     permissions:
       # Only so the tag path can create the release. Reads are implicit.
       contents: write
+
+    # Which tag this run is publishing, and whether it is publishing at all.
+    #
+    # On the job rather than on the workflow: a top-level `env` may not read
+    # `inputs`, and a workflow that does is valid on its own triggers and fails
+    # at *startup* for whoever calls it — which is a reusable workflow that
+    # cannot be reused, reported as a run with no jobs in it.
+    #
+    # `github.ref` is `refs/heads/main` when `release.yml` calls this: the tag
+    # exists, but the run is not on it, so the ref alone answers no for exactly
+    # the runs that are publishing.
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASING: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
 
     steps:
       - uses: actions/checkout@v4

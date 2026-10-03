@@ -36,12 +36,18 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Granted here rather than on the job that needs them, because the `build` job
+# below calls a reusable workflow — and a called workflow cannot be given more
+# than its caller holds. `build.yml` asks for `contents: write` to create the
+# release; with these on the `version` job alone, the call is refused before any
+# job starts, as a run with no jobs in it and nothing anywhere saying why.
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     outputs:
       tagged: ${{ steps.tag.outputs.tagged }}
       tag: ${{ steps.tag.outputs.tag }}
@@ -76,6 +82,38 @@ jobs:
           commit: Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+      # The action's title is a fixed string and its body is written for a
+      # project that publishes to npm — "you can merge this and publish to npm
+      # yourself", which is not what merging this does. Both are rewritten here,
+      # where the version finally exists: the number is the one thing somebody
+      # glancing at the pull request list needs, because it is the difference
+      # between a patch and a release that renumbers the app.
+      - name: Say what the release is
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          version=$(git show "origin/changeset-release/${GITHUB_REF_NAME}:apps/desktop/package.json" 2>/dev/null \
+            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || true)
+          [ -n "$version" ] || version="pending"
+
+          gh pr edit "$NUMBER" --title "Release $version" --body "$(cat <<EOF
+          Everything waiting to ship, collected from the changesets on \`main\`.
+
+          **Merging this releases $version.** The tag is pushed for you, and the
+          build that follows signs, notarises and publishes it — every installed
+          copy updates to what is in here.
+
+          - \`apps/desktop/package.json\` → $version
+          - \`apps/web/src/content/changelog/$version.mdx\` → the entry the site shows
+          - the changesets it consumed, deleted
+
+          Not ready? Leave it open. It is rewritten every time another changeset
+          lands on \`main\`.
+          EOF
+          )"
 
       # Nothing pending means the version pull request has merged — or that this
       # push changed nothing a user can see, in which case the tag already

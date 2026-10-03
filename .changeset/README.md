@@ -37,6 +37,17 @@ it is what lets an old `prequel` and a new app recognise each other.
 Nothing. `changeset version` deletes the `.md` files it consumed and leaves this
 and `config.json` alone.
 
+## The two changelogs
+
+`apps/desktop/CHANGELOG.md` is changesets' own, and it exists because
+`changesets/action` reads it to write the body of the release pull request —
+with no file there the action fails with an `ENOENT` naming a path nobody asked
+for. Nothing reads it afterwards.
+
+The published one is `apps/web/src/content/changelog/<version>.mdx`, written by
+`scripts/version-packages.mjs` from the same changesets. They cannot drift: both
+are generated from these files, by the same command, in the same commit.
+
 ## Nothing to add is a normal answer
 
 Refactors, tests, build fixes and fixes to features that never shipped belong in
