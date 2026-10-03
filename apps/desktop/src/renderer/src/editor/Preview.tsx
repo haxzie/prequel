@@ -15,6 +15,7 @@ import {
   buildRenderPlan,
   captionAt,
   type EnterTransition,
+  pictureMoved,
   placement,
   type PlanSource,
   type Rect,
@@ -554,7 +555,7 @@ export function Preview({
         current,
         sizes,
         box,
-        shots,
+        plan,
         at,
         ringedText ? textAt(rows, ringedText, at) : null,
         drawnTexts,
@@ -813,10 +814,18 @@ export function Preview({
       }
     }
 
+    // A picture a zoom has carried off its resting box is not grabbable: the
+    // box these answer with is where it will be again, not where it is, and a
+    // drag begun on it would move something the pointer is nowhere near. The
+    // same answer the ring uses, so what can be grabbed and what shows handles
+    // cannot disagree — off the last plan drawn, which is the one on screen.
+    const away = (which: PlanSource) =>
+      cached.current ? pictureMoved(cached.current.plan, which, media.sourceAt() ?? 0) : false;
+
     const boxes: Record<Grabbable, Rect | null> = {
       watermark: watermarkBox(),
-      camera: camera?.dstRect ?? null,
-      screen: screen?.dstRect ?? null,
+      camera: away("camera") ? null : (camera?.dstRect ?? null),
+      screen: away("screen") ? null : (screen?.dstRect ?? null),
     };
 
     // The ringed picture's corners first, whatever is stacked over them. The
@@ -1443,7 +1452,7 @@ function ring(
   settings: SliceSettings,
   sources: SourceSizes,
   fitted: Size,
-  zooms: readonly ZoomSlice[],
+  plan: RenderPlan,
   at: number,
   /** The selected text, when it is on screen at this moment. */
   text: TextSlice | null,
@@ -1465,13 +1474,18 @@ function ring(
           null)
         : null;
 
-  // A zoom moves the screen on its own track, leaving the box a drag reads and
+  // A zoom moves the picture on its own track, leaving the box a drag reads and
   // writes exactly where it was. Following the zoom would put handles on a
   // corner that cannot be grabbed; staying put would ring empty background. So
-  // for the length of the span there is no ring, and the picture is left to be
-  // watched rather than edited.
+  // while it is away there is no ring, and the picture is left to be watched
+  // rather than edited.
+  //
+  // Through `pictureMoved`, which asks the plan. A text is placed by nothing a
+  // zoom touches, and the logo is not a picture a plan moves.
   const moving =
-    selected === "screen" && zooms.some((zoom) => at >= zoom.source.start && at <= zoom.source.end);
+    !text && selected !== null && selected !== "watermark"
+      ? pictureMoved(plan, selected, at)
+      : false;
 
   if (!box || moving || fitted.width <= 0) {
     element.style.display = "none";

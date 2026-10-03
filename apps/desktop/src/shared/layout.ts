@@ -5099,6 +5099,40 @@ export function rectAt(
 }
 
 /**
+ * Whether a picture is away from the box its own settings put it in, now.
+ *
+ * What the preview's ring and its hit testing both ask before they put handles
+ * on something. A zoom carries the screen — and shrinks the camera — on a track
+ * of its own, leaving the box a drag reads and writes exactly where it was, so
+ * while one is in flight there is nothing to grab.
+ *
+ * Asked of the plan rather than of the zoom list, and that is the whole of it.
+ * A shot's *span* is how long it holds; the move that brings the picture in
+ * starts some six hundred milliseconds before it and the move out settles about
+ * as long after, and two shots close together never come back to rest between
+ * them at all. Tested against the spans, the ring stayed up through every one of
+ * those stretches — drawn around the resting box while the picture on screen was
+ * somewhere else entirely, which reads as handles that have come loose from what
+ * they move.
+ */
+export function pictureMoved(plan: RenderPlan, which: PlanSource, at: number): boolean {
+  const item = plan.items.find(
+    (candidate) => candidate.kind === "image" && candidate.source === which,
+  );
+  if (item?.kind !== "image" || !item.motion || item.motion.length === 0) return false;
+
+  const now = rectAt(item.motion, at, item.dstRect, 0);
+  // A pixel of slack, so a track resting on numbers that went through a lerp
+  // does not read as movement.
+  return (
+    Math.abs(now.x - item.dstRect.x) > 1 ||
+    Math.abs(now.y - item.dstRect.y) > 1 ||
+    Math.abs(now.width - item.dstRect.width) > 1 ||
+    Math.abs(now.height - item.dstRect.height) > 1
+  );
+}
+
+/**
  * How far past the glass the lens quad reaches, as a fraction of its radius.
  *
  * Room for the shadow the lens casts on the frame to fall off in. A shadow is
