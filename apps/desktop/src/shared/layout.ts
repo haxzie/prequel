@@ -2358,9 +2358,7 @@ function glassTrack(
     const picture = rectAt(motion, when, base, radius);
     const field = loupe.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
-      loupe.target === "region"
-        ? { x: loupe.x, y: loupe.y }
-        : (field ?? cursorFraction(cursor, when));
+      loupe.target === "region" ? { x: loupe.x, y: loupe.y } : (field ?? cursorAim(cursor, when));
 
     return {
       x: picture.x + ((point.x * source.width - srcRect.x) / srcRect.width) * picture.width,
@@ -2813,7 +2811,7 @@ function shotTrack(
   const aims: Aim[] = at.map((when) => {
     const field = zoom.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
-      zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorFraction(cursor, when));
+      zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorAim(cursor, when));
 
     return {
       x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
@@ -3538,6 +3536,32 @@ function damp(
   const decay = Math.exp(-w * stepSeconds);
 
   return [target + (gap + rate * stepSeconds) * decay, (velocity - rate * w * stepSeconds) * decay];
+}
+
+/**
+ * Where a shot should look at a moment: the pointer, unless it has left the
+ * picture.
+ *
+ * A window capture is the case this exists for. The pointer spends most of such
+ * a recording *outside* the window — it is somewhere else on the desktop, or on
+ * another display — and a sample of `y: -0.12` is a point above the top edge of
+ * the only picture the viewer can see. Aimed there, the shot framed nothing for
+ * the whole of a nine-second take and read as a composition with its padding
+ * wrong and its subject off-centre, which is how this was found.
+ *
+ * The middle instead. A pointer that is not in the picture is not pointing at
+ * anything in it, so there is nothing to follow and the centre is the honest
+ * answer. The follow and its speed limit turn the switch into a move rather
+ * than a jump, which is what a pointer leaving the window should look like.
+ *
+ * Deliberately not inside `cursorFraction`: that is also what *draws* the
+ * pointer, and a drawn pointer must keep its real position so it leaves the
+ * frame rather than sticking to the edge.
+ */
+function cursorAim(cursor: CursorTrack | null | undefined, at: number): Point {
+  const point = cursorFraction(cursor, at);
+  const inside = point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+  return inside ? point : { x: 0.5, y: 0.5 };
 }
 
 /** The pointer's position at a moment, as a fraction of the captured frame. */

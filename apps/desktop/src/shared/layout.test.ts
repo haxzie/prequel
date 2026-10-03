@@ -2983,6 +2983,63 @@ describe("zooming", () => {
     return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
   };
 
+  /**
+   * A window capture spends most of its length with the pointer somewhere else.
+   *
+   * This was found on a nine-second recording of a terminal window: one cursor
+   * sample, at `y: -0.12`, which is a point above the top edge of the only
+   * picture there is. The shot aimed there for the whole take and the result
+   * read as a composition with its padding wrong and its subject off-centre —
+   * a rendered video nobody could have debugged from the settings, because
+   * every setting in it was right.
+   */
+  describe("a pointer that is not in the picture", () => {
+    const outside = {
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples: [{ at: 0, x: 0.47, y: -0.12 }],
+    };
+
+    const inside = { ...outside, samples: [{ at: 0, x: 0.5, y: 0.5 }] };
+
+    const shotWith = (cursor: typeof outside) => {
+      const zooms: ZoomSlice[] = [region({ target: "cursor", source: { start: 0, end: 8 * S } })];
+      const item = buildRenderPlan(
+        FRAME,
+        { screen: SCREEN, camera: null },
+        settings(),
+        cursor,
+        zooms,
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+      const keys = item.motion ?? [];
+      return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
+    };
+
+    it("is not what the shot aims at", () => {
+      // The middle instead, which is what a pointer pointing at nothing in the
+      // picture deserves: identical to a shot aimed at the centre on purpose.
+      const off = shotWith(outside);
+      const middle = shotWith(inside);
+
+      expect(off.x).toBeCloseTo(middle.x, 1);
+      expect(off.y).toBeCloseTo(middle.y, 1);
+    });
+
+    it("leaves the picture covering the frame", () => {
+      // The symptom, asserted as a property rather than as a number: a shot
+      // aimed off the top let the background through underneath it. Whatever
+      // the zoom is looking at, the magnified picture has to cover the frame.
+      const shot = shotWith(outside);
+
+      expect(shot.x).toBeLessThanOrEqual(0);
+      expect(shot.y).toBeLessThanOrEqual(0);
+      expect(shot.x + shot.width).toBeGreaterThanOrEqual(FRAME.width);
+      expect(shot.y + shot.height).toBeGreaterThanOrEqual(FRAME.height);
+    });
+  });
+
   describe("what the shot is looking at", () => {
     /**
      * The sharp patch has to be where the subject is, not where the frame is.
