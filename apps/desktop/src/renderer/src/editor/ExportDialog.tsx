@@ -5,10 +5,17 @@ import { GIF_MAX_SHORT_EDGE, type OutputSettings } from "../../../shared/project
 import { cn } from "../lib/cn";
 import { formatFileSize } from "../lib/format";
 import { useAuth } from "../hooks/useAuth";
-import { CheckIcon, CloseIcon, CopyIcon, FolderIcon, LinkIcon } from "./icons";
+import { CheckIcon, CloseIcon, CopyIcon, FolderIcon, LinkIcon, StarIcon } from "./icons";
 import { capturePoster } from "./poster";
 import type { ExportState } from "./useExport";
 import { useShare, type ShareState } from "./useShare";
+
+/**
+ * The most a note under the stars may be, matching `main/feedback.ts` and the
+ * Worker. Capped in the box so the limit is a box that stops taking characters
+ * rather than a refusal arriving after Send.
+ */
+const MAX_NOTE = 1_000;
 
 /** How the resolution choice reads. Values are the frame's shorter edge. */
 type Quality = "full" | "1080" | "720" | "480";
@@ -654,6 +661,141 @@ function Finished({
           </p>
         )}
       </div>
+
+      {/* Keyed on the file, so a second export opens with an empty row of stars
+          rather than the last one's thank-you. Everything this holds is local
+          to one rating and there is nothing to carry across. */}
+      <Rating key={result.path} />
+    </div>
+  );
+}
+
+/** What the box asks for, which depends entirely on what the stars said. */
+const PROMPTS: Record<number, string> = {
+  1: "What went wrong?",
+  2: "What let you down?",
+  3: "What would have made this better?",
+  4: "What was missing?",
+  5: "What did you like most?",
+};
+
+/**
+ * How it went, asked where the answer is still fresh.
+ *
+ * Under the export, not behind a menu. The one moment somebody can say whether
+ * this worked is the moment the file lands and they can see it — and the whole
+ * question has to be cheap enough to answer with one press, which is why the
+ * stars are the control and the box only appears once one has been chosen. A
+ * textarea sitting there empty is a form, and nobody fills in a form about a
+ * video they have already got.
+ *
+ * Signed out is fine. `main/feedback.ts` explains why this one does not ask for
+ * an account where the bug report does.
+ *
+ * The prompt changes with the star because the same words cannot do both jobs:
+ * "Tell us more" under one star is a shrug at somebody who is annoyed, and
+ * under five it asks for an essay nobody owes. What is wanted differs, so the
+ * question does.
+ */
+function Rating() {
+  const [rating, setRating] = useState(0);
+  /** The star under the pointer, so the row fills as it is swept. */
+  const [hovered, setHovered] = useState(0);
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (sent) {
+    return (
+      <div className="flex items-center justify-center gap-2 border-t border-editor-line px-4 py-3 text-[11px] text-editor-muted [&_svg]:size-3.5">
+        <CheckIcon />
+        Thanks — we read every one.
+      </div>
+    );
+  }
+
+  const send = async () => {
+    setSending(true);
+    setError(null);
+
+    const result = await window.prequel.feedback.rate(rating, note);
+
+    setSending(false);
+    if (result.ok) setSent(true);
+    else setError(result.message);
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-editor-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[11px] text-editor-muted">How was your experience?</span>
+
+        {/* `onPointerLeave` on the row rather than on each star: moving between
+            two of them leaves one before entering the next, and clearing the
+            preview on the way past makes the whole row flicker. */}
+        <div className="flex items-center gap-0.5" onPointerLeave={() => setHovered(0)}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <button
+              key={star}
+              type="button"
+              disabled={sending}
+              aria-label={`${String(star)} out of 5`}
+              aria-pressed={rating === star}
+              onPointerEnter={() => setHovered(star)}
+              onClick={() => setRating(star)}
+              className={cn(
+                "grid size-6 place-items-center rounded transition-colors [&_svg]:size-4",
+                // The preview wins over the choice while the pointer is in the
+                // row, so sweeping back from four to two shows two — a row that
+                // only ever grew would make a lower rating impossible to aim at.
+                star <= (hovered || rating) ? "text-editor-fg" : "text-white/15",
+                "hover:text-editor-fg disabled:pointer-events-none",
+              )}
+            >
+              <StarIcon />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Nothing below until a star is chosen. The dialog grows by one box at
+          the moment somebody has already committed to answering, which is the
+          only point at which a box is worth the height it costs. */}
+      {rating > 0 && (
+        <>
+          <textarea
+            value={note}
+            maxLength={MAX_NOTE}
+            disabled={sending}
+            spellCheck
+            placeholder={PROMPTS[rating]}
+            onChange={(event) => setNote(event.target.value)}
+            onKeyDown={(event) => {
+              // Command-Return sends and Return makes a paragraph, the same way
+              // round as the bug report box.
+              if (event.key === "Enter" && event.metaKey) {
+                event.preventDefault();
+                if (!sending) void send();
+              }
+            }}
+            className="h-16 w-full resize-none rounded-lg border border-editor-line bg-black/20 px-3 py-2 text-[0.8125rem] leading-relaxed text-editor-fg outline-none placeholder:text-editor-muted/60 focus:border-white/25 disabled:opacity-50"
+          />
+
+          {/* Never disabled on an empty box. The star is the answer; the words
+              are the part somebody may not have. */}
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => void send()}
+            className="rounded-lg bg-white/10 py-2 text-center text-[12px] font-medium text-editor-fg hover:bg-white/15 disabled:pointer-events-none disabled:opacity-40"
+          >
+            {sending ? "Sending…" : "Send feedback"}
+          </button>
+        </>
+      )}
+
+      {error !== null && <p className="text-center text-[11px] text-dock-record">{error}</p>}
     </div>
   );
 }

@@ -754,6 +754,16 @@ const api = {
      */
     send: (message: string, withLog: boolean): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.feedbackSend, message, withLog),
+
+    /**
+     * Sends the stars under a finished export, with whatever was typed.
+     *
+     * Resolves once the rating has reached the channel, like `send` — the row
+     * of stars turns into a thank-you on this answering, and it should not do
+     * that over a message that went nowhere.
+     */
+    rate: (rating: number, message: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.feedbackRate, rating, message),
   },
 
   update: {

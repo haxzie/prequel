@@ -18,6 +18,11 @@
  * failed" into a fixable report, and it is also the one thing here that was
  * never written to be read by anybody but us — so it is a tick box that says
  * what it sends, not a quiet attachment.
+ *
+ * `sendRating` is the other thing in here and takes the opposite view of all
+ * of that: no log, no account required, five stars and a sentence. It is asked
+ * under a finished export rather than sought out from a menu, which is what
+ * makes the two different — see the note on it.
  */
 import { readFileSync, statSync, openSync, readSync, closeSync } from "node:fs";
 
@@ -26,6 +31,7 @@ import { app } from "electron";
 import { apiFetch, ApiError } from "./api.js";
 import { authToken } from "./auth.js";
 import { redact } from "./errors.js";
+import { installId } from "./install-id.js";
 import { logPath } from "./log.js";
 import { track } from "./analytics.js";
 
@@ -129,4 +135,59 @@ export async function sendFeedback(message: string, withLog = false): Promise<vo
   // the one channel they sent it to — `errors.ts` makes the same distinction
   // about a message that arrives with a path in it.
   track("feedback_sent", { with_log: log !== null });
+}
+
+/**
+ * The most a note under the stars may be, matching the Worker.
+ *
+ * Shorter than a bug report because it is a different thing: a sentence about
+ * the export that just finished, not an account of what went wrong.
+ */
+export const MAX_NOTE = 1_000;
+
+/**
+ * Five stars under a finished export, and whatever was typed under them.
+ *
+ * **Signed in is not required, unlike `sendFeedback`.** A bug report needs
+ * somebody to reply to; this needs nobody — it is a number, and the one moment
+ * it gets asked for is the moment an export lands, which plenty of people reach
+ * without an account. Demanding one would turn a single press into a trip
+ * through a browser, and the rating nobody gives is the rating of the person
+ * who was about to give a low one.
+ *
+ * The install id goes in the header rather than the body, the same way
+ * `analytics.ts` sends it: it identifies a machine, and a body field is
+ * something one install can claim on another's behalf. It is also what the
+ * Worker counts the allowance against when there is no account.
+ */
+export async function sendRating(rating: number, message = ""): Promise<void> {
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new ApiError("BAD_RATING", "Pick a rating first.");
+  }
+
+  const note = message.trim();
+  if (note.length > MAX_NOTE) {
+    throw new ApiError("TOO_LONG", "That is longer than this box can send.");
+  }
+
+  await apiFetch("/v1/desktop/rating", {
+    method: "POST",
+    // Sent when there is one and omitted when there is not — a rating from a
+    // signed-in Mac arrives with a name on it, and one from a signed-out Mac
+    // still arrives.
+    token: authToken(),
+    headers: { "x-prequel-install": installId() },
+    body: JSON.stringify({
+      rating,
+      version: app.getVersion(),
+      // Omitted rather than empty, so the Worker's field can stay optional and
+      // a bare star does not arrive looking like a note that failed to send.
+      ...(note ? { message: note } : {}),
+    }),
+  });
+
+  // The star and whether anything was typed beside it, never the words. Same
+  // line `sendFeedback` draws: what somebody writes belongs in the one channel
+  // they sent it to.
+  track("export_rated", { rating, with_note: note.length > 0 });
 }

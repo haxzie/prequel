@@ -24,7 +24,7 @@ import { captureServer } from "../lib/posthog.ts";
 import { sweep, take } from "../lib/rate-limit.ts";
 import { deliver, describe, personById } from "../lib/slack.ts";
 import { trialEndsAt } from "../lib/trial.ts";
-import { authenticate, type AppContext } from "../middleware.ts";
+import { authenticate, optionalIdentity, type AppContext } from "../middleware.ts";
 
 const desktop = new Hono<AppContext>();
 
@@ -51,6 +51,25 @@ const MAX_LOG = 16_000;
 
 /** Enough for somebody having a bad afternoon; not enough to flood the channel. */
 const FEEDBACK_ALLOWANCE = { limit: 10, windowSeconds: 60 * 60 };
+
+/**
+ * The longest note somebody may leave beside a rating.
+ *
+ * A quarter of what the bug report box takes, because this is a different kind
+ * of writing: a sentence about an export that just finished, typed with the
+ * file still on screen. A box that invited a page of it would be the bug report
+ * box with stars on top.
+ */
+const MAX_NOTE = 1_000;
+
+/**
+ * Looser than the bug report allowance, and counted the same way.
+ *
+ * A rating is one press and a sentence, and somebody exporting a batch of clips
+ * may well rate several in an afternoon. The limit is against a script, not a
+ * person.
+ */
+const RATING_ALLOWANCE = { limit: 30, windowSeconds: 60 * 60 };
 
 const Authorize = z.object({
   /** base64url(SHA-256(verifier)), from the app. Opaque to the browser. */
@@ -345,6 +364,95 @@ desktop.post("/feedback", authenticate, async (c) => {
   }
 
   captureServer(c.env, c.executionCtx, { event: "feedback_sent", userId, teamId });
+
+  return c.json({ ok: true });
+});
+
+/**
+ * Five stars under a finished export, and whatever was typed under them.
+ *
+ * **Not behind `authenticate`, unlike the bug report above.** Exporting needs
+ * no account, so the one moment this question gets asked is a moment plenty of
+ * people are signed out — and a rating widget that opens a browser is a rating
+ * widget nobody answers. The cost is that some of these arrive with nobody to
+ * reply to, which is the right trade for a number: a bug report is a
+ * conversation, a rating is a measurement.
+ *
+ * So the limiter counts the install rather than the account, the way
+ * `/v1/transcribe` does, and for the same reason — it is the only thing an
+ * anonymous caller has that identifies a machine. Hashed before it becomes a
+ * key, because the limiter's table has no business being a list of installs.
+ *
+ * Awaited like the bug report: somebody is watching the button for the word
+ * "Thanks", and saying it over a message Slack refused is the one outcome worth
+ * avoiding here.
+ */
+const Rating = z.object({
+  rating: z.number().int().min(1).max(5),
+  /** Optional on purpose: a star on its own is still worth having. */
+  message: z.string().trim().max(MAX_NOTE).optional(),
+  /** The build it was exported from. The app sends it; nobody is asked. */
+  version: z.string().min(1).max(32).optional(),
+});
+
+desktop.post("/rating", async (c) => {
+  const parsed = Rating.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ message: "That request isn't valid." }, 400);
+
+  // Resolves the caller where there is one and sets `db` either way.
+  const identity = await optionalIdentity(c);
+  const db = c.get("db");
+
+  const install = c.req.header("x-prequel-install")?.slice(0, 64) ?? null;
+  const subject = identity
+    ? `rating:user:${identity.userId}`
+    : install
+      ? `rating:install:${await sha256(install)}`
+      : null;
+
+  // Neither a token nor an install header means a caller that is not the app.
+  // Refused rather than let through unlimited: this posts into a channel.
+  if (!subject) return c.json({ message: "That request isn't valid." }, 400);
+
+  if (!(await take(db, subject, RATING_ALLOWANCE))) {
+    return c.json({ message: "That is a lot of ratings. Try again a bit later." }, 429);
+  }
+
+  c.executionCtx.waitUntil(sweep(db, RATING_ALLOWANCE.windowSeconds));
+
+  const { rating, message, version } = parsed.data;
+  const person = identity ? await personById(db, identity.userId) : null;
+
+  // Stars rather than "4/5" alone, so the channel can be skimmed — a row of
+  // one-star messages is visible at a glance in a way a column of numbers is
+  // not. The number follows for anybody counting.
+  const stars = "\u2605".repeat(rating) + "\u2606".repeat(5 - rating);
+
+  // Quoted like a bug report, so a note several lines long stays one block.
+  const quoted = message
+    ? "\n" +
+      message
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n")
+    : "";
+
+  const sent = await deliver(
+    c.env,
+    "events",
+    `*Export rating* ${stars} ${String(rating)}/5 — ${describe(person)}${
+      version ? ` on ${version}` : ""
+    }${quoted}`,
+  );
+
+  // 503 for the same reason the bug report gives: nothing is broken, the
+  // message did not arrive, and the dialog must not claim otherwise.
+  if (!sent) return c.json({ message: "Couldn't send that just now. Please try again." }, 503);
+
+  // No `captureServer` here, unlike every other handler in this file. Most of
+  // these arrive with no account, and an event with no distinct id is dropped
+  // on the floor — so the app sends `export_rated` itself, where the install id
+  // makes an anonymous rating count as much as a signed-in one.
 
   return c.json({ ok: true });
 });

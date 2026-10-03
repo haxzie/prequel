@@ -55,7 +55,7 @@ import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
-import { sendFeedback } from "./feedback.js";
+import { sendFeedback, sendRating } from "./feedback.js";
 import {
   dragExport as dragListedExport,
   listExports,
@@ -584,6 +584,10 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
   // whole point — a report that did not arrive must not read as one that did.
   ipcMain.handle(IPC_CHANNELS.feedbackSend, (_event, message: string, withLog: boolean) =>
     attempt(() => sendFeedback(message, withLog)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.feedbackRate, (_event, rating: number, message: string) =>
+    attempt(() => sendRating(rating, message)),
   );
 
   // ── updates ─────────────────────────────────────────────────────────────
