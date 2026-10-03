@@ -18,6 +18,7 @@ import type { TrackKind } from "../../../shared/manifest";
 import {
   CLICK_SOUNDS,
   clickSoundId,
+  DEFAULT_BACKGROUND,
   DEFAULT_LAYOUT,
   KEY_SOUNDS,
   keySoundId,
@@ -1354,7 +1355,7 @@ function LayoutPanel({
   field: FieldProps;
   set: Setter;
 }) {
-  const { layout } = settings;
+  const { layout, background } = settings;
 
   return (
     <Section>
@@ -1395,20 +1396,46 @@ function LayoutPanel({
             // while the frame plainly has no camera in it.
             set("layout", "cameraVisible", !SCREEN_ONLY.has(preset));
 
-            // A full-frame arrangement starts flush to the edges.
+            // A full-frame arrangement starts flush to the edges, and square.
             //
-            // `layoutBoxes` honours the padding under these two now, so without
-            // this the cell called "full frame" opens with a margin its own
-            // name denies. Written rather than ignored so the slider still
-            // means something afterwards: turn it up and the picture stands in.
+            // `layoutBoxes` honours the padding under these two, so without this
+            // the cell called "full frame" opens with a margin its own name
+            // denies — and rounded corners cut off the four corners of a picture
+            // that is meant to reach the edge of the frame, against nothing but
+            // the background showing through them. Both written rather than
+            // ignored, so the sliders still mean something afterwards: turn
+            // either up and the picture follows.
             //
-            // Padding only. Corner radius and border already work here and
-            // always did, so clearing them would discard two settings somebody
-            // chose in order to describe one they did not. And nothing here
-            // touches the picker: its thumbnails are drawn at a fixed padding
-            // precisely so a write like this cannot redraw fourteen cells.
+            // Nothing here touches the picker: its thumbnails are drawn at a
+            // fixed padding precisely so a write like this cannot redraw
+            // fourteen cells.
+            //
+            // The border is left alone. It stands *outside* the picture, so at
+            // no padding there is nowhere for it to be drawn and it falls off
+            // the edge on its own — clearing it as well would discard a setting
+            // the arrangement has already answered.
             if (fillsTheFrame(preset)) {
               set("background", "padding", 0);
+              set("background", "cornerRadius", 0);
+            } else {
+              // And the other way round, which is the half that was missing.
+              //
+              // Picking Fill writes a zero, and nothing ever put one back — so
+              // the next arrangement, whose whole point is standing in from the
+              // edge, drew the very same flush, square-cornered picture its cell
+              // had just promised a rounded gap around. The three screen-only
+              // cells show three different margins and two of them delivered
+              // none.
+              //
+              // Only from zero, each on its own. A number somebody dialled in is
+              // an answer to "how much", and this is not that question — picking
+              // an arrangement that has a margin at all is.
+              if (background.padding === 0) {
+                set("background", "padding", DEFAULT_BACKGROUND.padding);
+              }
+              if (background.cornerRadius === 0) {
+                set("background", "cornerRadius", DEFAULT_BACKGROUND.cornerRadius);
+              }
             }
 
             // Picking an arrangement starts it clean.
