@@ -26,12 +26,15 @@ vi.mock("./api.js", async () => {
 let token: string | null = "a-token";
 vi.mock("./auth.js", () => ({ authToken: () => token }));
 
-vi.mock("./analytics.js", () => ({ track: () => undefined }));
+const track = vi.fn();
+vi.mock("./analytics.js", () => ({ track: (...args: unknown[]) => track(...args) }));
+
+vi.mock("./install-id.js", () => ({ installId: () => "install-uuid" }));
 
 let log = "";
 vi.mock("./log.js", () => ({ logPath: () => log }));
 
-const { sendFeedback } = await import("./feedback.js");
+const { sendFeedback, sendRating } = await import("./feedback.js");
 
 const dir = mkdtempSync(join(tmpdir(), "prequel-feedback-"));
 
@@ -48,6 +51,7 @@ function sentBody(): { message: string; version?: string; log?: string } {
 }
 
 beforeEach(() => {
+  track.mockReset();
   apiFetch.mockReset();
   apiFetch.mockResolvedValue({ ok: true });
   token = "a-token";
@@ -119,6 +123,68 @@ describe("what it refuses before making a call", () => {
     token = null;
 
     await expect(sendFeedback("Something is broken")).rejects.toThrow();
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The stars under a finished export.
+ *
+ * Two things that would be invisible from the dialog. It can insist on an
+ * account — which is the whole reason this is not `sendFeedback`, and a `token`
+ * that became required would turn a one-press question into a trip through a
+ * browser for most of the people being asked. And it can leave off the install
+ * header, which is the only thing the Worker can count an anonymous rating
+ * against: without it every signed-out rating is refused at the door.
+ */
+describe("a rating", () => {
+  it("goes without an account", async () => {
+    token = null;
+
+    await sendRating(4, "The zooms were a bit fast");
+
+    const [path, init] = apiFetch.mock.calls[0] as [
+      string,
+      { token?: string | null; headers: Record<string, string>; body: string },
+    ];
+
+    expect(path).toBe("/v1/desktop/rating");
+    expect(init.token).toBeNull();
+    // The one thing standing in for an account, and the Worker's only handle
+    // on who is spending the allowance.
+    expect(init.headers["x-prequel-install"]).toBe("install-uuid");
+
+    const body = JSON.parse(init.body) as { rating: number; message?: string; version?: string };
+    expect(body.rating).toBe(4);
+    expect(body.message).toBe("The zooms were a bit fast");
+    expect(body.version).toBe("0.0.32");
+  });
+
+  it("carries the token when there is one", async () => {
+    await sendRating(5);
+
+    const [, init] = apiFetch.mock.calls[0] as [string, { token?: string | null }];
+    expect(init.token).toBe("a-token");
+  });
+
+  it("sends a bare star with no note at all", async () => {
+    await sendRating(5, "   ");
+
+    const [, init] = apiFetch.mock.calls[0] as [string, { body: string }];
+    const body = JSON.parse(init.body) as { message?: string };
+    // Absent, not empty, for the reason the log field gives above.
+    expect(body.message).toBeUndefined();
+  });
+
+  it("counts the star and whether anything was typed, never the words", async () => {
+    await sendRating(2, "The export was silent");
+
+    expect(track).toHaveBeenCalledWith("export_rated", { rating: 2, with_note: true });
+  });
+
+  it("refuses a score that is not one of the five", async () => {
+    await expect(sendRating(0)).rejects.toThrow();
+    await expect(sendRating(6)).rejects.toThrow();
     expect(apiFetch).not.toHaveBeenCalled();
   });
 });

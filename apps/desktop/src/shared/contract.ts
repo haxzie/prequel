@@ -938,6 +938,14 @@ export const IPC_CHANNELS = {
    * because the dialog's whole job is to say whether somebody will read it.
    */
   feedbackSend: "feedback:send",
+  /**
+   * Sends the stars under a finished export, and any note with them.
+   *
+   * Separate from `feedbackSend` rather than a field on it: this one needs no
+   * account, carries no log, and is answered by a number rather than a reply.
+   * One channel taking both would have to be told which it was being used as.
+   */
+  feedbackRate: "feedback:rate",
   /** Uploads a finished export and answers with a link. */
   shareStart: "share:start",
   shareCancel: "share:cancel",

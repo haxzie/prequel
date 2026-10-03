@@ -1539,3 +1539,18 @@ export function ArrowRightIcon() {
     </svg>
   );
 }
+
+/**
+ * Lucide `star`, filled rather than stroked.
+ *
+ * One glyph for both halves of a rating row: an outline star beside a solid
+ * one reads as two different marks at this size, where the same star at two
+ * opacities reads as one that has been chosen and one that has not.
+ */
+export function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="m12 2.5 2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.35 6.19 20.4l1.11-6.47-4.7-4.58 6.5-.95z" />
+    </svg>
+  );
+}

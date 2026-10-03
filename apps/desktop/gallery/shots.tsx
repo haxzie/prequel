@@ -771,6 +771,26 @@ export const SHOTS: readonly Shot[] = [
     pad: 40,
   },
   {
+    id: "export-rating",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: "button", text: "Export" },
+      { kind: "wait", selector: "[role='dialog'][aria-label='Export']" },
+      { kind: "click", selector: "[role='dialog'][aria-label='Export'] button", text: "Export" },
+      { kind: "wait", selector: "[role='dialog'] video" },
+      { kind: "settle", ms: 1200 },
+      // The fourth star, so the shot shows both halves of the row and the
+      // prompt the choice brings with it.
+      { kind: "click", selector: "[role='dialog'] button[aria-label='4 out of 5']" },
+      { kind: "settle", ms: 400 },
+    ],
+    clip: "[role='dialog'][aria-label='Export']",
+    pad: 40,
+  },
+  {
     id: "upgrade-dialog",
     frame: "workspace",
     install: install({ licence: { status: "expired" } }),
