@@ -1723,6 +1723,17 @@ export interface SourceShape {
   /** A whole display, which opens full-bleed — see `newProject`. */
   fullScreen: boolean;
   /**
+   * A screenshot, which opens as a padded card whatever was captured.
+   *
+   * Overrides `fullScreen`. A whole-screen *recording* opens full-bleed because
+   * it is a demonstration and the padding only shrinks what is being
+   * demonstrated; a screenshot is a picture somebody is about to put in a
+   * document or a message, and the point of opening it here at all is the card
+   * — the padding, the corner, the border and the shadow that make a flat
+   * screen grab look like an object.
+   */
+  still: boolean;
+  /**
    * A recorded window's screen track and its own corner radius, all in the
    * track's pixels. Null for a display, an area, and a window whose radius the
    * recorder could not read — the manifest leaves `corner_radius` out for all
@@ -1749,6 +1760,8 @@ export interface SourceShape {
 export function sourceShape(
   source: SourceInfo,
   screen: { width: number | null; height: number | null } | undefined,
+  /** Whether this session is a screenshot — `isStill` on the manifest. */
+  still = false,
 ): SourceShape {
   const radius = source.corner_radius;
   const window =
@@ -1760,7 +1773,7 @@ export function sourceShape(
     radius >= 0
       ? { width: screen.width, height: screen.height, cornerRadius: radius }
       : null;
-  return { fullScreen: source.kind === "display", window };
+  return { fullScreen: source.kind === "display", still, window };
 }
 
 /**
@@ -1790,7 +1803,7 @@ export function sourceShape(
 export function newProject(
   recordingId: string,
   duration: Ns,
-  source: SourceShape = { fullScreen: false, window: null },
+  source: SourceShape = { fullScreen: false, still: false, window: null },
   seams: readonly Ns[] = [],
 ): Project {
   const defaults = structuredClone(DEFAULT_SETTINGS);
@@ -1800,7 +1813,14 @@ export function newProject(
   defaults.layout.cursorShadowOpacity = 0.2;
   defaults.layout.cursorShadowBlur = 0.01;
   defaults.layout.cursorShadowY = 0.01;
-  if (source.fullScreen) {
+  if (source.still) {
+    // The padded card, and the only arrangement a screenshot is ever in: there
+    // is no camera to place, so the rest of the picker is about something a
+    // still does not have. `DEFAULT_BACKGROUND`'s padding and corner are what
+    // it keeps — the stock card — rather than the full bleed a whole-screen
+    // recording opens on.
+    defaults.layout.preset = "screen-padded";
+  } else if (source.fullScreen) {
     defaults.layout.preset = "over-full";
     defaults.background.padding = 0;
     defaults.background.cornerRadius = 0;
@@ -1989,7 +2009,12 @@ export function sanitiseProject(
   // timeline this take does not have.
   if (stored.recordingId !== recordingId) return null;
 
-  const fresh = newProject(recordingId, duration, { fullScreen: false, window: null }, seams);
+  const fresh = newProject(
+    recordingId,
+    duration,
+    { fullScreen: false, still: false, window: null },
+    seams,
+  );
 
   const width = evenSize(number(stored.frame?.width, fresh.frame.width));
   const height = evenSize(number(stored.frame?.height, fresh.frame.height));

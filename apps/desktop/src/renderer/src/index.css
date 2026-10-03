@@ -64,6 +64,7 @@
   --color-dock-muted: var(--dock-muted);
   --color-dock-hover: var(--dock-hover);
   --color-dock-selected: var(--dock-selected);
+  --color-dock-mode: var(--dock-mode);
   --color-dock-meter: var(--dock-meter);
   --color-dock-record: var(--dock-record);
   --color-dock-warn: var(--dock-warn);
@@ -688,6 +689,21 @@ body {
      tone so it stays lighter whatever is behind it. */
   --dock-hover: rgba(255, 255, 255, 0.12);
   --dock-selected: var(--selected);
+  /* The capture switch — video or screenshot — which is green where the three
+     source buttons beside it are blue.
+
+     The colour is doing the separating, because the gap between the two trays
+     cannot: five icon buttons in a row read as one group of five whatever sits
+     between them, and these answer two different questions — what you are
+     making, and what it is of. Blue is "this is the one you picked" throughout
+     the panel, so the switch had to be something else rather than a second
+     blue.
+
+     Green, and the darker of the app's two: this button carries a white glyph,
+     and `--dot-on`'s system green is tuned for black on green. The same figure
+     the editor's Export button uses, written out rather than shared — that one
+     is declared inside `editor-theme`, which this panel is never inside. */
+  --dock-mode: #30a46c;
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
   /* A missing permission, and now the panel's only amber: a device that is on

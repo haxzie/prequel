@@ -27,7 +27,13 @@ import {
   type Target,
   type TranscribeProgress,
 } from "../../shared/contract.js";
-import { MANIFEST_FILE_NAME, findTrack, parseManifest, seamsOf } from "../../shared/manifest.js";
+import {
+  MANIFEST_FILE_NAME,
+  findTrack,
+  isStill,
+  parseManifest,
+  seamsOf,
+} from "../../shared/manifest.js";
 import { autoZooms, momentsOf } from "../../shared/autoedit.js";
 import {
   PROJECT_FILE_NAME,
@@ -366,6 +372,7 @@ function projectOf(dir: string) {
     sourceShape(
       manifest.source,
       screenTrack && { width: screenTrack.width ?? null, height: screenTrack.height ?? null },
+      isStill(manifest),
     ),
     seamsOf(manifest),
   );

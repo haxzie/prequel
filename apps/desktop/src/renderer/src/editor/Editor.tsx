@@ -239,7 +239,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * Here rather than inside `Inspector` so that clicking a picture in the
    * preview can open the panel that dresses it — see `showPanelFor`.
    */
-  const [panelTab, setPanelTab] = useState<CategoryId>("layout");
+  // Layout for a recording, and the panel that dresses the picture for a
+  // screenshot — a still has no Layout, so opening on it would land on a tab
+  // that is not in the rail and fall back a render later.
+  const [panelTab, setPanelTab] = useState<CategoryId>(still ? "recording" : "layout");
 
   /**
    * Opens the panel for a picture that has just been clicked.
@@ -758,8 +761,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    */
   const savePreset = useCallback(
     async (name: string) => {
-      const still = await grab.current?.();
-      const card = still && (await asCard(still));
+      // `grabbed`, not `still`: this is the frame the preview handed back, and
+      // the flag of that name a few lines up is whether this is a screenshot.
+      const grabbed = await grab.current?.();
+      const card = grabbed && (await asCard(grabbed));
       if (!card) {
         console.warn("[editor] the preview had no frame to save as a card");
         return;
@@ -777,6 +782,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           id: `look-${Date.now().toString(36)}`,
           name,
           savedAt: Date.now(),
+          // Which editor it came from, so the two libraries stay apart — see
+          // `ScenePreset.still`.
+          ...(still ? { still: true } : {}),
           frame: {
             width: state.project.frame.width,
             height: state.project.frame.height,
@@ -807,6 +815,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       setSavedPresets,
       state.project.frame,
       state.project.zoomDefaults,
+      still,
     ],
   );
   /** The look whose wallpaper is being fetched, so its card can say so. */
@@ -1586,7 +1595,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               tab={panelTab}
               onTab={setPanelTab}
               presets={{
-                mine: scenePresets.mine,
+                // Only the looks saved from the same kind of editor. A
+                // recording's look offers a still an arrangement it cannot be
+                // in and a camera it does not have, and the other way round —
+                // see `ScenePreset.still`.
+                mine: scenePresets.mine.filter((preset) => (preset.still ?? false) === still),
                 applying: applyingPreset,
                 // Nothing under the playhead is nothing drawn, and a look is
                 // saved from what is on screen.

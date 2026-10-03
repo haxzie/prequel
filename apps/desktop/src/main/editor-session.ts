@@ -21,7 +21,13 @@ import type {
 import { dialog, shell, type BrowserWindow } from "electron";
 
 import type { Manifest } from "../shared/manifest.js";
-import { MANIFEST_FILE_NAME, findTrack, parseManifest, seamsOf } from "../shared/manifest.js";
+import {
+  MANIFEST_FILE_NAME,
+  findTrack,
+  isStill,
+  parseManifest,
+  seamsOf,
+} from "../shared/manifest.js";
 import type { BlobTrack } from "../shared/layout.js";
 import type { CursorLayer } from "../shared/contract.js";
 import { CURSOR_FILES } from "../shared/contract.js";
@@ -185,6 +191,7 @@ function projectFor(dir: string, manifest: Manifest, media: readonly TrackMedia[
       // and so the only one whose shape may set the defaults of a project nobody
       // has edited yet.
       media.find((track) => track.kind === "screen" && track.segment === 0),
+      isStill(manifest),
     ),
     seamsOf(manifest),
   );

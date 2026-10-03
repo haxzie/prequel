@@ -101,7 +101,7 @@ describe("the end of the recording", () => {
     // take's file over the next take's footage, which reads as the addition
     // never having been made.
     const extended = initialState(
-      newProject(RECORDING, 16 * S, { fullScreen: false, window: null }, [10 * S]),
+      newProject(RECORDING, 16 * S, { fullScreen: false, still: false, window: null }, [10 * S]),
       16 * S,
       [10 * S],
     );

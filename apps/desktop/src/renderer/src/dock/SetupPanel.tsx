@@ -214,6 +214,7 @@ export function SetupPanel({ state }: { state: DockState }) {
               role="radio"
               aria-checked={active}
               selected={active}
+              tone="mode"
               title={label}
               onClick={() => void window.prequel.dock.setCaptureMode(mode)}
             >

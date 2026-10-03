@@ -74,7 +74,9 @@ function session(): EditorSession {
 
 /** One clip per take, which is what a fresh project of an extended recording is. */
 function project(): Project {
-  return newProject("Prequel 1", 16 * S, { fullScreen: false, window: null }, [10 * S]);
+  return newProject("Prequel 1", 16 * S, { fullScreen: false, still: false, window: null }, [
+    10 * S,
+  ]);
 }
 
 function built() {

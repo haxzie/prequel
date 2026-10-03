@@ -208,7 +208,7 @@ describe("newProject", () => {
     // inset on a background. A whole screen already fills the frame it was
     // recorded in, and insetting it puts a border of desktop picture around a
     // picture of a desktop while shrinking the thing being demonstrated.
-    const project = newProject(RECORDING, S, { fullScreen: true, window: null });
+    const project = newProject(RECORDING, S, { fullScreen: true, still: false, window: null });
 
     expect(project.defaults.background.padding).toBe(0);
     // The radius goes with it. Kept on a full-bleed picture it cuts four
@@ -218,7 +218,7 @@ describe("newProject", () => {
   });
 
   it("still frames anything else on a background", () => {
-    const project = newProject(RECORDING, S, { fullScreen: false, window: null });
+    const project = newProject(RECORDING, S, { fullScreen: false, still: false, window: null });
 
     expect(project.defaults.background.padding).toBeGreaterThan(0);
     expect(project.defaults.background.cornerRadius).toBeGreaterThan(0);
@@ -230,7 +230,7 @@ describe("newProject", () => {
     // between its border and its edge — so the picture's radius, in the plan
     // the editor draws from, has to be the window's scaled into the frame.
     const window = { width: 2560, height: 1640, cornerRadius: 36 };
-    const project = newProject(RECORDING, S, { fullScreen: false, window });
+    const project = newProject(RECORDING, S, { fullScreen: false, still: false, window });
     const { layout, background } = project.defaults;
 
     const frame = { width: window.width, height: window.height };
@@ -249,7 +249,7 @@ describe("newProject", () => {
     // Absent from the manifest means not measured, never square: a recording
     // made before the radius was recorded still opens on the default.
     const stock = newProject(RECORDING, S).defaults.background.cornerRadius;
-    const project = newProject(RECORDING, S, { fullScreen: false, window: null });
+    const project = newProject(RECORDING, S, { fullScreen: false, still: false, window: null });
 
     expect(project.defaults.background.cornerRadius).toBe(stock);
   });
@@ -258,7 +258,7 @@ describe("newProject", () => {
     // A radius that ran past the control's range would show the control at
     // its stop while the picture used a number nobody can see.
     const window = { width: 200, height: 200, cornerRadius: 100 };
-    const project = newProject(RECORDING, S, { fullScreen: false, window });
+    const project = newProject(RECORDING, S, { fullScreen: false, still: false, window });
 
     expect(project.defaults.background.cornerRadius).toBeLessThanOrEqual(0.1);
   });
@@ -480,7 +480,12 @@ describe("sanitiseProject", () => {
   it("gives a fresh project one slice per take", () => {
     // Nothing has been edited, and the clip list still has to obey the rule: a
     // recording extended twice opens as three clips, not one spanning the lot.
-    const project = newProject(RECORDING, 16 * S, { fullScreen: false, window: null }, [10 * S]);
+    const project = newProject(
+      RECORDING,
+      16 * S,
+      { fullScreen: false, still: false, window: null },
+      [10 * S],
+    );
 
     expect(project.tracks[0]!.slices.map((slice) => slice.source)).toEqual([
       { start: 0, end: 10 * S },
@@ -976,5 +981,37 @@ describe("a screenshot's marks through a save and a reopen", () => {
     const read = sanitiseProject(JSON.parse(JSON.stringify(before)), "rec", 1_000_000_000);
 
     expect(read?.annotations).toEqual([]);
+  });
+});
+
+describe("a fresh project for a screenshot", () => {
+  it("opens as the padded card whatever was captured", () => {
+    // A whole-screen *recording* opens full-bleed, because the padding only
+    // shrinks the thing being demonstrated. A screenshot of the same display
+    // does not: the card is the reason to open it in an editor at all.
+    const project = newProject(RECORDING, S, { fullScreen: true, still: true, window: null });
+
+    expect(project.defaults.layout.preset).toBe("screen-padded");
+    expect(project.defaults.background.padding).toBeGreaterThan(0);
+    expect(project.defaults.background.cornerRadius).toBeGreaterThan(0);
+  });
+
+  it("leaves a recording of the same display full-bleed", () => {
+    const project = newProject(RECORDING, S, { fullScreen: true, still: false, window: null });
+
+    expect(project.defaults.layout.preset).toBe("over-full");
+    expect(project.defaults.background.padding).toBe(0);
+  });
+
+  it("is the card for a window shot too, with no room left for the camera", () => {
+    // `screen-padded` owns the whole frame, so there is no arrangement in which
+    // a still has a camera — which is why the Layout picker is not offered.
+    const project = newProject(RECORDING, S, {
+      fullScreen: false,
+      still: true,
+      window: { width: 1400, height: 900, cornerRadius: 24 },
+    });
+
+    expect(project.defaults.layout.preset).toBe("screen-padded");
   });
 });

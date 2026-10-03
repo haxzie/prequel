@@ -744,7 +744,12 @@ function InspectorPanels(props: InspectorProps) {
     // a whole set of them comes from, so it reads as the thing you reach for
     // before you start rather than as another group of controls.
     { id: "presets", label: "Presets", Icon: PresetsIcon },
-    { id: "layout", label: "Layout", Icon: LayoutIcon },
+    // Not on a screenshot. Every arrangement in that picker is about where the
+    // two pictures sit, and a still has one: the camera halves are dead, and
+    // the three screen-only cells are a choice between three paddings that the
+    // Screenshot panel's own slider already makes properly. A still opens as
+    // the padded card and stays one — see `newProject`.
+    ...(props.still ? [] : [{ id: "layout" as const, label: "Layout", Icon: LayoutIcon }]),
     // A picture, not a palette: the palette glyph went to the text panel's
     // Style tab, where a look is chosen, and what this panel mostly holds is
     // wallpapers.
@@ -815,8 +820,10 @@ function InspectorPanels(props: InspectorProps) {
 
   // A category can disappear — open a recording with no camera while Camera is
   // showing — so the fallback is the one that is always there rather than a
-  // blank panel.
-  const active = categories.some((category) => category.id === tab) ? tab : "layout";
+  // blank panel. Layout for a recording; a screenshot has none, and the panel
+  // that dresses its picture is the one it should land on.
+  const fallback: CategoryId = props.still ? "recording" : "layout";
+  const active = categories.some((category) => category.id === tab) ? tab : fallback;
   // `active` is resolved against this same list above, so the fallback is
   // unreachable — it exists to keep this total rather than to be taken.
   const showing = categories.find((category) => category.id === active) ?? categories[0]!;
