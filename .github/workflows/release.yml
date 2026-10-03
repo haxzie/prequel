@@ -84,14 +84,3 @@ jobs:
         id: tag
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: pnpm release:tag
-
-  # The disk image, the GitHub release and the CDN copy. Called rather than
-  # triggered: the tag above was pushed by this workflow's own token, and GitHub
-  # raises no `push` event for those.
-  build:
-    needs: version
-    if: needs.version.outputs.tagged == 'true'
-    uses: ./.github/workflows/build.yml
-    with:
-      tag: ${{ needs.version.outputs.tag }}
-    secrets: inherit
