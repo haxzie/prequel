@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import type {
   EditorSession,
+  SessionDetails,
   SoundBank,
   SoundCues,
   SoundSample,
@@ -19,7 +20,7 @@ import type {
 } from "../shared/contract.js";
 import { dialog, shell, type BrowserWindow } from "electron";
 
-import type { Manifest, TrackKind } from "../shared/manifest.js";
+import type { Manifest } from "../shared/manifest.js";
 import { MANIFEST_FILE_NAME, findTrack, parseManifest, seamsOf } from "../shared/manifest.js";
 import type { BlobTrack } from "../shared/layout.js";
 import type { CursorLayer } from "../shared/contract.js";
@@ -41,9 +42,20 @@ import { copyPresetBackground, ensureWallpaper } from "./wallpaper.js";
 /**
  * Reads one recording into the payload its editor window needs.
  *
- * The probe is best-effort. A recording is still editable without the media's
- * own account of itself — the manifest already describes every track — so a
- * probe failure degrades the editor rather than refusing to open it.
+ * **Nothing slow happens here.** Every piece is a read of a file beside the
+ * recording or a sum over what that file says, so the promise the route is
+ * blocked on resolves in about the time those reads take and the editor's own
+ * components are what the window draws next. The two slow pieces — the media
+ * probe and providing the background — used to be awaited here, which is how
+ * opening a recording came to show "Opening …" and nothing else for as long as a
+ * screenshot of the desktop and a pass over every media file took. They are
+ * `readSessionDetails` now.
+ *
+ * So the media here is the manifest's account of itself, which is the same
+ * fallback a failed probe has always left the editor on: the manifest is what
+ * the recorder wrote and is never absent. The sound plan stays, because it is a
+ * pure pass over timestamps the manifest already holds — the `await` is the
+ * addon's lazy load and not work.
  */
 export async function readEditorSession(dir: string): Promise<EditorSession> {
   // Before the manifest is read, because it may change it. A take whose merge
@@ -56,6 +68,45 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
 
   const manifest = parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
 
+  const media = trackMedia(dir, manifest, new Map());
+
+  return {
+    dir,
+    name: basename(dir),
+    manifest,
+    media,
+    cursor: cursorLayer(dir, manifest),
+    blobs: blobTrack(manifest),
+    // Unrepaired. Whether its background's picture is actually beside the
+    // recording is `readSessionDetails`'s answer, and the editor's own
+    // `backgroundMissing` is what acts on it: a project edited here would be the
+    // project the reducer is seeded from, and the seed may not wait on a
+    // screenshot.
+    project: projectFor(dir, manifest, media),
+    transcript: readTranscript(dir, manifest.id),
+    sound: await soundPlan(manifest),
+    // Read once and cleared: it describes the addition that has just been made,
+    // not a property of the recording.
+    focusSliceId: takeFocus(dir),
+    backgroundMissing: false,
+  };
+}
+
+/**
+ * The rest of the recording, asked for once its editor is on screen.
+ *
+ * Both halves are deliberately re-derived rather than carried over from
+ * `readEditorSession`: main holds nothing between the two calls, so a window
+ * reloaded onto the same route gets the same answer and there is no per-recording
+ * state to go stale. The manifest read that costs is the same one the fast path
+ * pays, which is a few kilobytes of JSON.
+ */
+export async function readSessionDetails(dir: string): Promise<SessionDetails> {
+  const manifest = parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
+
+  // Best-effort, exactly as it was when it ran on the open path: a recording is
+  // still editable without the media's own account of itself, so a probe failure
+  // leaves the editor on the manifest's numbers rather than refusing anything.
   let probes: TrackProbe[] = [];
   try {
     probes = await (await getRecorder()).probeSession(dir);
@@ -63,14 +114,37 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     console.warn(`[editor] could not probe ${dir}:`, cause);
   }
 
-  const byKind = new Map(probes.map((probe) => [probe.kind as TrackKind, probe]));
+  const media = trackMedia(dir, manifest, new Map(probes.map((probe) => [probe.kind, probe])));
 
+  return {
+    dir,
+    media,
+    // Asked of `loadProject` again rather than of a copy, because that answers
+    // from the edit main is holding: the user can have chosen a different
+    // background in the seconds this took, and providing the one the recording
+    // opened on would fetch a picture nothing is going to draw.
+    backgroundMissing: !(await provideBackground(dir, projectFor(dir, manifest, media))),
+  };
+}
+
+/**
+ * One entry per (kind, segment), preferring each probe over the manifest.
+ *
+ * Shared by both reads so the fast path and the refinement cannot describe the
+ * same file differently in any way but precision — the probe is the only
+ * difference between them, and an empty map is the manifest's own account.
+ */
+function trackMedia(
+  dir: string,
+  manifest: Manifest,
+  byKind: Map<string, TrackProbe>,
+): TrackMedia[] {
   // One entry per segment, so a recording extended with a second take offers
   // the renderer both files rather than whichever one a `Map` keyed by kind
   // happened to keep. The probe only describes the first take's files — it
   // walks the session root — so every later segment falls back to the
   // manifest, which is what the recorder wrote and is never absent.
-  const media: TrackMedia[] = manifest.tracks.flatMap((track) =>
+  return manifest.tracks.flatMap((track) =>
     track.segments.map((segment, index) => {
       const probe = index === 0 ? byKind.get(track.kind) : undefined;
       return {
@@ -97,36 +171,23 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
       };
     }),
   );
+}
 
-  return {
+/** The recording's edit, or a fresh one shaped by what was recorded. */
+function projectFor(dir: string, manifest: Manifest, media: readonly TrackMedia[]): Project {
+  return loadProject(
     dir,
-    name: basename(dir),
-    manifest,
-    media,
-    cursor: cursorLayer(dir, manifest),
-    blobs: blobTrack(manifest),
-    project: await withBackground(
-      dir,
-      loadProject(
-        dir,
-        manifest.id,
-        manifest.duration,
-        sourceShape(
-          manifest.source,
-          // The first take's screen, which is the one `manifest.source`
-          // describes and so the only one whose shape may set the defaults of
-          // a project nobody has edited yet.
-          media.find((track) => track.kind === "screen" && track.segment === 0),
-        ),
-        seamsOf(manifest),
-      ),
+    manifest.id,
+    manifest.duration,
+    sourceShape(
+      manifest.source,
+      // The first take's screen, which is the one `manifest.source` describes
+      // and so the only one whose shape may set the defaults of a project nobody
+      // has edited yet.
+      media.find((track) => track.kind === "screen" && track.segment === 0),
     ),
-    transcript: readTranscript(dir, manifest.id),
-    sound: await soundPlan(manifest),
-    // Read once and cleared: it describes the addition that has just been made,
-    // not a property of the recording.
-    focusSliceId: takeFocus(dir),
-  };
+    seamsOf(manifest),
+  );
 }
 
 /**
@@ -402,19 +463,32 @@ function blobTrack(manifest: Manifest): BlobTrack | null {
 }
 
 /**
- * Makes sure a project's wallpaper background actually has an image.
- *
- * A fresh project defaults to the desktop picture, which has to be copied into
- * the recording before it can be drawn. When that fails — no Screen Recording
- * grant, or a machine with nothing to capture — the background falls back to a
- * gradient rather than rendering as a placeholder that looks like a bug.
+ * The project with its default background swapped for a gradient when the
+ * picture it names could not be put beside the recording.
  *
  * Only the project defaults are repaired. A slice that overrides its background
  * was set deliberately, and quietly rewriting it would undo a decision.
  */
 export async function withBackground(dir: string, project: Project): Promise<Project> {
+  return (await provideBackground(dir, project)) ? project : withFallback(project);
+}
+
+/**
+ * Makes sure a project's default background actually has an image, and says
+ * whether it now has one.
+ *
+ * A fresh project defaults to the desktop picture, which has to be copied into
+ * the recording before it can be drawn. When that fails — no Screen Recording
+ * grant, or a machine with nothing to capture — the caller falls back to a
+ * gradient rather than rendering as a placeholder that looks like a bug.
+ *
+ * The slow one. A picture the machine has never held is a download, and a
+ * desktop that has no still file is a screenshot plus a `sips` pass, which is
+ * why this is answered after the editor is on screen rather than before it.
+ */
+export async function provideBackground(dir: string, project: Project): Promise<boolean> {
   const background = project.defaults.background.background;
-  if (background.kind !== "image") return project;
+  if (background.kind !== "image") return true;
 
   // A catalogue picture, which is what a fresh project opens on. Provided for
   // the same reason the desktop picture is: the plan names a file inside the
@@ -426,26 +500,26 @@ export async function withBackground(dir: string, project: Project): Promise<Pro
     // every project that chose one of the other thirty-one would be handed a
     // gradient the next time it was opened — with the picture it actually wants
     // sitting unread in the same folder.
-    if (existsSync(join(dir, background.path))) return project;
+    if (existsSync(join(dir, background.path))) return true;
 
     const preset = BACKGROUND_PRESETS.find((candidate) => candidate.file === background.path);
-    if (preset && copyPresetBackground(dir, preset.id)) return project;
+    if (preset && copyPresetBackground(dir, preset.id)) return true;
 
     // Not one of the few that ship, and not here yet: fetch it, exactly as
     // choosing it in the picker would. That is a recording opened on a machine
     // which has never held this picture — moved off another Mac, or restored.
-    if (await ensureBackground(dir, background.path)) return project;
+    if (await ensureBackground(dir, background.path)) return true;
 
     console.warn(`[editor] could not provide ${background.path} for ${dir}`);
-    return withFallback(project);
+    return false;
   }
 
-  if (background.source !== "wallpaper") return project;
+  if (background.source !== "wallpaper") return true;
 
-  if (await ensureWallpaper(dir)) return project;
+  if (await ensureWallpaper(dir)) return true;
 
   console.warn(`[editor] no wallpaper for ${dir}; falling back to a gradient`);
-  return withFallback(project);
+  return false;
 }
 
 /** The project with its default background swapped for one that always draws. */

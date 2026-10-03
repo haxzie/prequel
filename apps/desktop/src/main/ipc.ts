@@ -56,7 +56,7 @@ import {
 } from "./exports.js";
 import { listProjects, renameProject, savePoster } from "./projects.js";
 import { readComposition } from "./project-composition.js";
-import { RECORDINGS_DIR, revealRecordings } from "./session.js";
+import { RECORDINGS_DIR, recordingPath, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
 import { catalogue as fontsCatalogue, ensureFont } from "./fonts.js";
 import {
@@ -79,6 +79,7 @@ import {
   deleteRecording,
   deleteRecordings,
   readEditorSession,
+  readSessionDetails,
   readSoundBank,
   readSoundSample,
 } from "./editor-session.js";
@@ -388,6 +389,23 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
     attempt(async () => {
       const dir = workspace.enterRecording(name);
       return dir ? await readEditorSession(dir) : null;
+    }),
+  );
+
+  /**
+   * The rest of the recording, once its editor is drawn.
+   *
+   * Resolved against the recordings folder the same way `editorSession` is, and
+   * deliberately *without* entering the recording: the window is already on it,
+   * and entering again would flush an edit in the middle of one.
+   *
+   * `null` for a name that resolves nowhere, which is a recording trashed in the
+   * moment between the two calls. The editor keeps the manifest's numbers.
+   */
+  ipcMain.handle(IPC_CHANNELS.editorSessionDetails, (_event, name: string) =>
+    attempt(async () => {
+      const dir = recordingPath(name);
+      return dir ? await readSessionDetails(dir) : null;
     }),
   );
 

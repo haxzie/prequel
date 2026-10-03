@@ -39,19 +39,39 @@ export interface Filmstrip {
   cadence: Cadence;
 }
 
-/**
- * A sprite sheet for the screen track, or null until there is one.
- *
- * Null rather than an empty sheet while extracting, so a clip can tell "still
- * working" from "this recording has no frames to show" and draw nothing rather
- * than a row of empty boxes that would then be replaced.
- */
+export interface FilmstripState {
+  /**
+   * The sheet, or null when there is none to draw.
+   *
+   * Null rather than an empty sheet while extracting, so a clip draws nothing
+   * rather than a row of empty boxes that would then be replaced.
+   */
+  strip: Filmstrip | null;
+  /**
+   * Whether one is still coming.
+   *
+   * Beside `strip` because null answers two questions at once — "not yet" and
+   * "this recording has no frames to show" — and the clip draws a different
+   * thing for each. It shimmers for the first; a recording whose frames cannot
+   * be read must settle into a plain clip rather than shimmer for the life of
+   * the window.
+   */
+  pending: boolean;
+}
+
+/** A sprite sheet for the screen track, and whether one is still on its way. */
 export function useFilmstrip(
   media: TrackMedia[],
   duration: MediaTime,
   cellHeight: number,
-): Filmstrip | null {
-  const [strip, setStrip] = useState<Filmstrip | null>(null);
+  /**
+   * Whether to start. The caller passes the preview's own readiness: a sheet is
+   * decoration, and the seeks it takes are decode work the picture is waiting
+   * for.
+   */
+  start: boolean,
+): FilmstripState {
+  const [strip, setStrip] = useState<FilmstripState>({ strip: null, pending: true });
 
   const screen = media.filter((track) => track.kind === "screen");
   // Keyed on the URLs rather than the array: `media` is a fresh array on every
@@ -60,8 +80,13 @@ export function useFilmstrip(
   const key = screen.map((track) => track.url).join("|");
 
   useEffect(() => {
+    // Not `setStrip(null)`: waiting to start is not "this recording has no
+    // frames", and clearing a sheet that is already built would blank the strip
+    // every time the preview went back to waiting.
+    if (!start) return;
+
     if (key === "" || duration <= 0) {
-      setStrip(null);
+      setStrip({ strip: null, pending: false });
       return;
     }
 
@@ -72,12 +97,14 @@ export function useFilmstrip(
 
     void build(video, screen, duration, cellHeight, () => live)
       .then((built) => {
-        if (live) setStrip(built);
+        if (live) setStrip({ strip: built, pending: false });
       })
       .catch((cause) => {
         // A strip is decoration. A recording whose frames cannot be read still
-        // has a timeline, and the clips simply draw without one.
+        // has a timeline, and the clips simply draw without one. Settled either
+        // way, or they would shimmer for ever waiting for one that is not coming.
         console.warn("[editor] could not build the filmstrip:", cause);
+        if (live) setStrip({ strip: null, pending: false });
       });
 
     return () => {
@@ -91,7 +118,7 @@ export function useFilmstrip(
     // `screen` is derived from `key`, which is what actually decides whether the
     // work has to be redone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, duration, cellHeight]);
+  }, [key, duration, cellHeight, start]);
 
   return strip;
 }

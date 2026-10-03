@@ -202,6 +202,7 @@ export function TimelineStrip({
   media,
   peaks,
   filmstrip,
+  framesPending,
   cameraSpans,
   captionRange,
 }: {
@@ -212,6 +213,8 @@ export function TimelineStrip({
   peaks: Float32Array | null;
   /** Frame thumbnails for the whole recording, or null while they are built. */
   filmstrip: Filmstrip | null;
+  /** Whether a sheet is still coming — see `FilmstripState`. */
+  framesPending: boolean;
   /**
    * Source time the camera covers, one span per take that recorded one.
    *
@@ -865,6 +868,7 @@ export function TimelineStrip({
                   duration={duration}
                   peaks={peaks}
                   filmstrip={filmstrip}
+                  framesPending={framesPending}
                   contentWidth={contentWidth}
                   cameraSpans={cameraSpans}
                   selected={slice.id === state.selectedSliceId}
@@ -1416,6 +1420,7 @@ function Clip({
   duration,
   peaks,
   filmstrip,
+  framesPending,
   contentWidth,
   cameraSpans,
   selected,
@@ -1432,6 +1437,8 @@ function Clip({
   duration: MediaTime;
   peaks: Float32Array | null;
   filmstrip: Filmstrip | null;
+  /** Whether a sheet is still coming — see `FilmstripState`. */
+  framesPending: boolean;
   /** The strip's full width in pixels, which is what the zoom actually sets. */
   contentWidth: number;
   cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
@@ -1616,6 +1623,20 @@ function Clip({
             aria-hidden="true"
           />
         ))}
+
+      {/* Standing in for the frames until there are some.
+          A band of light rather than a grid of grey boxes: the clip is already a
+          shape with a fill and a border, so what is missing is the picture inside
+          it and not the clip. The same sheen the export's still carries while it
+          renders, and the same reason — it says "this is still arriving" without
+          laying anything out. The sheet is now built only after the preview has
+          revealed, so this is on screen long enough to be worth drawing. */}
+      {filmstrip === null && framesPending && (
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 animate-sheen bg-gradient-to-r from-transparent via-white/10 to-transparent motion-reduce:hidden"
+          aria-hidden="true"
+        />
+      )}
 
       {/* The clip's audio, standing on its floor.
           `preserveAspectRatio="none"` is the whole trick: the path is built

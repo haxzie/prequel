@@ -68,6 +68,7 @@ function session(): EditorSession {
     transcript: null,
     sound: null,
     focusSliceId: null,
+    backgroundMissing: false,
   };
 }
 

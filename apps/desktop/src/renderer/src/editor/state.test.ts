@@ -1498,3 +1498,42 @@ function captionsOff() {
   const fresh = newProject(RECORDING, 10 * S).defaults;
   return { ...fresh, captions: { ...fresh.captions, captionsOn: false } };
 }
+
+describe("a background whose picture is not there", () => {
+  /**
+   * Main used to repair the project before the editor was seeded from it. It
+   * cannot any more: finding the picture can mean a screenshot of the desktop,
+   * and the editor is drawn before that finishes — so the answer arrives at a
+   * reducer that already holds a project, and the gradient has to land without
+   * looking like something the user did.
+   */
+  it("falls back to a gradient without making an edit of it", () => {
+    const cut = run(start(), { type: "split", at: 5 * S });
+    const fallen = run(cut, { type: "backgroundMissing" });
+
+    expect(fallen.project.defaults.background.background.kind).toBe("gradient");
+    // Not an edit: undoing it would be undoing a fact about the disk, and
+    // bumping the revision would write a gradient over a project nobody touched.
+    expect(fallen.revision).toBe(cut.revision);
+    expect(fallen.history).toBe(cut.history);
+  });
+
+  it("leaves a background that is not a picture alone", () => {
+    const gradient = run(
+      start(),
+      // Nothing selected, or the value lands as an override on the clip and the
+      // defaults keep the picture — which is not what this is about.
+      { type: "select", sliceId: null },
+      {
+        type: "setSetting",
+        section: "background",
+        key: "background",
+        value: { kind: "gradient", from: "#000000", to: "#ffffff", angle: 90 },
+      },
+    );
+
+    // Idempotent, which is what lets the editor dispatch it from an effect: a
+    // second pass must not replace a gradient somebody chose with the fallback.
+    expect(run(gradient, { type: "backgroundMissing" }).project).toBe(gradient.project);
+  });
+});

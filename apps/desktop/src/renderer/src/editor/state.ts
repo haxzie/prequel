@@ -18,6 +18,7 @@ import {
   MIN_TEXT_LENGTH,
   DEFAULT_ZOOM,
   DEFAULT_ZOOM_LENGTH,
+  FALLBACK_BACKGROUND,
   MAX_SPEED,
   MAX_TEXT_TRACKS,
   MIN_SPEED,
@@ -150,6 +151,23 @@ export type EditorAction =
   | { type: "moveSlice"; sliceId: string; before: string | null }
   /** The words as corrected, or null to go back to the generated transcript. */
   | { type: "setTranscript"; words: TranscriptWord[] | null }
+  /**
+   * Puts the default background on a gradient, its picture having turned out not
+   * to be there — see `provideBackground` in `main/editor-session.ts`.
+   *
+   * Neither an edit nor history. Main used to repair the project before the
+   * editor was seeded from it, which it can no longer do: finding the picture can
+   * mean a screenshot of the desktop, and the editor is drawn before that
+   * finishes. So the answer arrives at a reducer that already holds a project,
+   * and it has to land without bumping the revision — it is a fact about the disk
+   * and not something the user did, so it must neither be undoable nor saved, and
+   * a recording whose wallpaper turns up later goes back to using it.
+   *
+   * Only the defaults, and only an image. A slice that overrides its background
+   * chose that deliberately, and the override may name a picture that is
+   * perfectly present.
+   */
+  | { type: "backgroundMissing" }
   | {
       type: "setSetting";
       section: SettingsSection;
@@ -478,6 +496,22 @@ function apply(
   switch (action.type) {
     case "load":
       return initialState(action.project, action.duration, action.seams);
+
+    case "backgroundMissing": {
+      const background = state.project.defaults.background.background;
+      if (background.kind !== "image") return state;
+
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          defaults: {
+            ...state.project.defaults,
+            background: { ...state.project.defaults.background, background: FALLBACK_BACKGROUND },
+          },
+        },
+      };
+    }
 
     case "select":
       // Not a change worth persisting, so the revision stays put. Selecting a

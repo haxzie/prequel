@@ -299,6 +299,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // length is known — the project itself does not carry one, and every trim is
   // clamped against this. Re-run when the session changes because main re-sends
   // it on every load, which is what restores the edit after an HMR round trip.
+  //
+  // Keyed on the two things it reads and not on the session, which is a new
+  // object once more: the route merges `SessionDetails` into it a moment after
+  // the editor mounts. On `[session]` that merge reseeded the reducer, throwing
+  // away everything done in between — including the automatic first cut, whose
+  // zooms are dispatched on mount and so always land inside that window.
   useEffect(() => {
     dispatch({
       type: "load",
@@ -306,7 +312,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       duration: session.manifest.duration,
       seams: seamsOf(session.manifest),
     });
-  }, [session]);
+  }, [session.project, session.manifest]);
+
+  // The default background's picture turned out not to be beside the recording —
+  // see `provideBackground`. Dispatched rather than folded into the project main
+  // sent, because by the time that answer arrives the reducer is seeded and
+  // reseeding it would throw away the first cut. Idempotent: the action only
+  // replaces an image background, so a second run finds a gradient and does
+  // nothing.
+  useEffect(() => {
+    if (session.backgroundMissing) dispatch({ type: "backgroundMissing" });
+  }, [session.backgroundMissing]);
 
   const slices = useMemo(() => slicesOf(state.project), [state.project]);
 
@@ -1213,7 +1229,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const peaks = useWaveforms(heard.media, heard.manifest.duration);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
-  const filmstrip = useFilmstrip(session.media, session.manifest.duration, CLIP_FRAME_H);
+  //
+  // Held back until the picture is up. Building the sheet is up to 240 seeks on a
+  // decoder of its own, and started on mount it competes with the four elements
+  // the preview is waiting for — the strip arrives a little sooner and the thing
+  // the user opened the app to see arrives later, which is the wrong trade for
+  // decoration.
+  const frames = useFilmstrip(session.media, session.manifest.duration, CLIP_FRAME_H, ready);
 
   // The span the camera actually covers, not just whether one was recorded.
   // It opens a few hundred ms after the screen, so a clip cut from the very
@@ -1623,7 +1645,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           dispatch={dispatch}
           media={media}
           peaks={peaks}
-          filmstrip={filmstrip}
+          filmstrip={frames.strip}
+          framesPending={frames.pending}
           cameraSpans={cameraSpans}
           captionRange={captionRange}
         />

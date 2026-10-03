@@ -233,6 +233,11 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         }
         return sessionCache.then((value) => ({ ok: true as const, value }));
       },
+      // Nothing to add. `loadSession` builds the whole session in one pass over
+      // three fetches — no probe, and no background to provide — so what main
+      // sends afterwards is already in the answer above, and `null` is what
+      // leaves the route's merge alone.
+      details: () => ok(null),
       leave: () => ok(undefined),
       // Nothing to record into. The gallery drives the editor over fixture
       // recordings, and there is no capture pipeline behind this window.
