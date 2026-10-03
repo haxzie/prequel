@@ -21,9 +21,14 @@
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,css}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,css}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,css}\"",
+    "changeset": "changeset",
+    "changeset:status": "changeset status --since=origin/main",
+    "version:packages": "node scripts/version-packages.mjs",
+    "release:tag": "node scripts/release-tag.mjs"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^26.2.0",
     "dotenv-cli": "^11.0.0",
     "prettier": "^3.9.6",

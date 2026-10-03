@@ -16,3 +16,9 @@ target/
 # The licence text is reproduced verbatim from fsl.software. Reflowing a legal
 # document is how it stops being the licence you think you granted.
 LICENSE.md
+
+# Conductor gives every workspace a gitignored `.context` for notes an agent
+# leaves itself. Prettier does not read `.gitignore`, so without this a working
+# note fails `pnpm format:check` for the person who wrote it and for nobody
+# else — a red check on a file that is not in the repo.
+.context/

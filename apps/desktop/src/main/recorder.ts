@@ -51,6 +51,16 @@ export type {
  * unions. The single `as unknown as Recorder` cast in `getRecorder` is where
  * the two representations meet — they are runtime-identical.
  */
+/** An audio input as AVFoundation names it. */
+export interface NativeMicrophone {
+  /** `AVCaptureDevice.uniqueID`. */
+  id: string;
+  /** `AVCaptureDevice.localizedName`. */
+  name: string;
+  /** Whether macOS treats this as the input to use, and so the one a take hears. */
+  isDefault: boolean;
+}
+
 /** A camera as AVFoundation names it, which is not how Chromium names it. */
 export interface NativeCamera {
   /** `AVCaptureDevice.uniqueID`. */
@@ -183,6 +193,16 @@ export interface Recorder {
   listTargets(): Promise<Target[]>;
   /** Cameras as AVFoundation sees them. Does not prompt or open anything. */
   listCameras(): NativeCamera[];
+  /**
+   * Audio inputs, with the one macOS treats as the default marked.
+   *
+   * Main's only way to name a microphone: the panel's picker is populated from
+   * `navigator.mediaDevices` in a renderer, which a command line cannot reach.
+   * Listing is not choosing — a take records the default input, because
+   * ScreenCaptureKit captures the microphone rather than a device the app
+   * opens.
+   */
+  listMicrophones(): NativeMicrophone[];
 
   /**
    * The strip a display's notch and menu bar occupy, or null for an unknown id.

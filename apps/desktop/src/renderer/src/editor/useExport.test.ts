@@ -85,7 +85,9 @@ function built() {
     { width: 1920, height: 1080 },
     new Map(),
     new Map(),
-    new Map(),
+    // No cursor tag. The resolver, rather than a map of drawn ones, is what
+    // lets a headless render call this at all — see `exportSlices.ts`.
+    () => undefined,
   );
 }
 

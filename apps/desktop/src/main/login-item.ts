@@ -51,7 +51,23 @@ export function wasOpenedAtLogin(): boolean {
  * becomes unambiguous again, so the panel comes back with it.
  */
 export function startedByItself(): boolean {
-  return wasOpenedAtLogin() || opensAtLogin();
+  return wasOpenedAtLogin() || opensAtLogin() || startedForACommand();
+}
+
+/**
+ * Whether this launch was the `prequel` command starting the app to answer it.
+ *
+ * `open -a Prequel --args --cli`, from `cli/index.ts`. It counts as a launch
+ * nobody asked for, and for the same reason the login case does: an agent about
+ * to record a demo has just had the recording panel and a camera bubble dropped
+ * over the screen it was going to capture.
+ *
+ * Read from this process's own argv, which is where macOS puts `--args` on a
+ * cold launch. A second instance passes them through `second-instance`, where
+ * they are ignored — by then the app is already up and has nothing to decide.
+ */
+export function startedForACommand(): boolean {
+  return process.argv.includes("--cli");
 }
 
 /**

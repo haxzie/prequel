@@ -8,9 +8,24 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+  # Called by `release.yml` once a version pull request has merged and the tag
+  # has been pushed.
+  #
+  # Called rather than left to the tag event above, and the reason is GitHub's
+  # recursion guard: a tag pushed by a workflow's own `GITHUB_TOKEN` raises no
+  # `push` event, so `tags: ["v*"]` would never fire for a release this project
+  # now cuts automatically. The alternative is a personal access token held as a
+  # secret purely to make an event happen, which is a credential to rotate in
+  # exchange for nothing.
+  workflow_call:
+    inputs:
+      tag:
+        description: "The tag to publish, e.g. v0.1.0. Already pushed."
+        required: true
+        type: string
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ inputs.tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -19,6 +34,20 @@ jobs:
     permissions:
       # Only so the tag path can create the release. Reads are implicit.
       contents: write
+
+    # Which tag this run is publishing, and whether it is publishing at all.
+    #
+    # On the job rather than on the workflow: a top-level `env` may not read
+    # `inputs`, and a workflow that does is valid on its own triggers and fails
+    # at *startup* for whoever calls it — which is a reusable workflow that
+    # cannot be reused, reported as a run with no jobs in it.
+    #
+    # `github.ref` is `refs/heads/main` when `release.yml` calls this: the tag
+    # exists, but the run is not on it, so the ref alone answers no for exactly
+    # the runs that are publishing.
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASING: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -73,12 +102,12 @@ jobs:
       # full of files called Prequel-0.1.0 — which looks like the wrong build was
       # published, and is impossible to tell apart from one.
       - name: Check the tag matches the app version
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASING == 'true'
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${TAG#v}"
           version=$(node -p "require('./apps/desktop/package.json').version")
           if [ "$tag" != "$version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match apps/desktop version $version."
+            echo "::error::tag $TAG does not match apps/desktop version $version."
             echo "Bump the version, commit it, then tag that commit."
             exit 1
           fi
@@ -151,6 +180,44 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: pnpm --filter @prequel/desktop package
 
+      # The command line ships *inside* the app — `out/cli/prequel.cjs`, unpacked
+      # from the asar so the Electron binary can run it as plain Node — and
+      # nothing else in this build would notice if it were missing. A wrong
+      # `asarUnpack` glob, or a `package` that stopped running `build-cli.mjs`,
+      # produces a perfectly good disk image whose `prequel` answers "Prequel's
+      # command line tool is missing" on somebody else's Mac. The same class of
+      # silent failure as the shaders, caught the same way: by looking in the
+      # artefact rather than trusting the build.
+      #
+      # Run, not just stat'd. `guide` needs no app running and no permissions,
+      # and it is the one command every agent calls first — so a bundle that
+      # cannot even print its own contract is one worth failing the build for.
+      - name: Check the command line shipped
+        run: |
+          app="apps/desktop/release/mac-arm64/Prequel.app"
+          cli="$app/Contents/Resources/app.asar.unpacked/out/cli/prequel.cjs"
+          skill="$app/Contents/Resources/app.asar.unpacked/resources/skill/SKILL.md"
+
+          for file in "$cli" "$skill"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::$file is not in the packaged app."
+              exit 1
+            fi
+          done
+
+          guide=$(ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Prequel" "$cli" guide --json)
+          node -e '
+            const guide = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const version = require("./apps/desktop/package.json").version;
+            if (guide.version !== version) {
+              throw new Error(`the command line reports ${guide.version}, the app is ${version}`);
+            }
+            if (!guide.commands.some((command) => command.name === "record.window")) {
+              throw new Error("the guide has no record command in it");
+            }
+            console.log(`prequel ${guide.version}, protocol ${guide.protocol}, ${guide.commands.length} commands`);
+          ' <<< "$guide"
+
       - name: Name the build
         id: name
         run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -194,12 +261,12 @@ jobs:
       # and the rest is the body. A version without a changelog still gets a
       # release, with only the compare link, rather than no release at all.
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASING == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          version="${TAG#v}"
+          previous=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
           notes=$(mktemp)
           changelog="apps/web/src/content/changelog/${version}.mdx"
           if [ -f "$changelog" ]; then
@@ -207,13 +274,13 @@ jobs:
             echo >> "$notes"
           fi
           if [ -n "$previous" ]; then
-            echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${GITHUB_REF_NAME}" >> "$notes"
+            echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${previous}...${TAG}" >> "$notes"
           fi
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             apps/desktop/release/*.dmg \
             apps/desktop/release/*.zip \
             apps/desktop/release/latest-mac.yml \
-            --title "Prequel $GITHUB_REF_NAME" \
+            --title "Prequel $TAG" \
             --notes-file "$notes" \
             --verify-tag
 
@@ -226,8 +293,8 @@ jobs:
   # the account id, none of which this job touches.
   mirror:
     needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/release-mirror.yml
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ inputs.tag || github.ref_name }}
     secrets: inherit

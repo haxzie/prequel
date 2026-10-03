@@ -1,0 +1,135 @@
+name: Release
+
+# Versioning, in two pushes and no typing.
+#
+# A branch that changes something a user can see carries a changeset — one file
+# under `.changeset`, one sentence, the entry as the site will print it. When it
+# lands on `main` this workflow collects every pending changeset into a pull
+# request called "Release x.y.z", which holds the whole of the release: the
+# version in `apps/desktop/package.json`, the entry in
+# `apps/web/src/content/changelog`, and the changesets it consumed, deleted.
+#
+# Merging that pull request is the decision to ship. This workflow runs again,
+# finds nothing left to version, tags the commit and calls `build.yml` — which
+# packages, signs, notarises, publishes the GitHub release and mirrors it to
+# `assets.prequel.sh`. `/v1/updates` in the Worker points every installed copy
+# at that release, so the merge is what reaches users.
+#
+# Nobody runs `git tag`. The version is whatever the changesets added up to, and
+# the tag is that version with a `v` on the front — see `scripts/release-tag.mjs`.
+#
+# **Repository setting**: Settings → Actions → General → "Allow GitHub Actions
+# to create and approve pull requests". Without it the version step fails with a
+# 403 from the pull request API, which reads as a credentials problem and is a
+# checkbox.
+
+on:
+  push:
+    branches: [main]
+  # So a release can be re-driven if a run was cancelled part way.
+  workflow_dispatch:
+
+# One at a time, and never cancelled. A cancelled run can leave a tag pushed
+# with no release attached to it, which is not a state anything here recovers
+# from on its own.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# Granted here rather than on the job that needs them, because the `build` job
+# below calls a reusable workflow — and a called workflow cannot be given more
+# than its caller holds. `build.yml` asks for `contents: write` to create the
+# release; with these on the `version` job alone, the call is refused before any
+# job starts, as a run with no jobs in it and nothing anywhere saying why.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tagged: ${{ steps.tag.outputs.tagged }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `release-tag.mjs` reads the remote's tags rather than the clone's,
+          # so the depth is for the changesets action: it compares against the
+          # base branch to decide what is pending.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Opens or updates the release pull request when changesets are pending,
+      # and does nothing at all when they are not. `version` is this repo's own
+      # script rather than `changeset version`, because the changelog it writes
+      # is the site's `.mdx` and the array that orders it — see
+      # `scripts/version-packages.mjs`.
+      - name: Collect the changesets
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm version:packages
+          title: Release
+          commit: Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # The action's title is a fixed string and its body is written for a
+      # project that publishes to npm — "you can merge this and publish to npm
+      # yourself", which is not what merging this does. Both are rewritten here,
+      # where the version finally exists: the number is the one thing somebody
+      # glancing at the pull request list needs, because it is the difference
+      # between a patch and a release that renumbers the app.
+      - name: Say what the release is
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          version=$(git show "origin/changeset-release/${GITHUB_REF_NAME}:apps/desktop/package.json" 2>/dev/null \
+            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || true)
+          [ -n "$version" ] || version="pending"
+
+          gh pr edit "$NUMBER" --title "Release $version" --body "$(cat <<EOF
+          Everything waiting to ship, collected from the changesets on \`main\`.
+
+          **Merging this releases $version.** The tag is pushed for you, and the
+          build that follows signs, notarises and publishes it — every installed
+          copy updates to what is in here.
+
+          - \`apps/desktop/package.json\` → $version
+          - \`apps/web/src/content/changelog/$version.mdx\` → the entry the site shows
+          - the changesets it consumed, deleted
+
+          Not ready? Leave it open. It is rewritten every time another changeset
+          lands on \`main\`.
+          EOF
+          )"
+
+      # Nothing pending means the version pull request has merged — or that this
+      # push changed nothing a user can see, in which case the tag already
+      # exists and the script says so and stops.
+      - name: Tag the release
+        id: tag
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: pnpm release:tag
+
+  # The disk image, the GitHub release and the CDN copy. Called rather than
+  # triggered: the tag above was pushed by this workflow's own token, and GitHub
+  # raises no `push` event for those.
+  build:
+    needs: version
+    if: needs.version.outputs.tagged == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit

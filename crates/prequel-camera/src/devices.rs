@@ -55,6 +55,52 @@ pub fn list_cameras() -> Vec<CameraDevice> {
         .collect()
 }
 
+/// An audio input the Mac can hear.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioDevice {
+    /// `AVCaptureDevice.uniqueID`.
+    pub id: String,
+    /// `AVCaptureDevice.localizedName`.
+    pub name: String,
+    /// Whether macOS treats this as the input to use.
+    ///
+    /// Worth carrying because a take records the *default* input rather than a
+    /// chosen one — ScreenCaptureKit captures the microphone, not a device the
+    /// app opened — so a list without this would read as a choice the recorder
+    /// does not offer.
+    pub is_default: bool,
+}
+
+/// Every audio input currently attached.
+///
+/// `AVCaptureDeviceType::microphone()` covers the built-in, USB interfaces and
+/// anything Core Audio aggregates, which is what the Sound pane lists. Like
+/// `list_cameras`, this prompts for nothing and opens nothing: an unauthorised
+/// app still sees the names.
+pub fn list_microphones() -> Vec<AudioDevice> {
+    let default = av::CaptureDevice::default_with_media(av::MediaType::audio())
+        .map(|device| device.unique_id().to_string());
+
+    let session = av::CaptureDeviceDiscoverySession::with_device_types_media_and_pos(
+        &ns::Array::from_slice(&[av::CaptureDeviceType::microphone()]),
+        Some(av::MediaType::audio()),
+        av::CaptureDevicePos::Unspecified,
+    );
+
+    session
+        .devices()
+        .iter()
+        .map(|device| {
+            let id = device.unique_id().to_string();
+            AudioDevice {
+                is_default: default.as_deref() == Some(id.as_str()),
+                id,
+                name: device.localized_name().to_string(),
+            }
+        })
+        .collect()
+}
+
 /// Resolves what the shell asked for to an actual device.
 ///
 /// Accepts either a `uniqueID` or a `localizedName`, because the two sides of
@@ -92,6 +138,20 @@ mod tests {
         for camera in &cameras {
             assert!(!camera.id.is_empty(), "a camera must have a unique id");
             assert!(!camera.name.is_empty(), "a camera must have a name");
+        }
+    }
+
+    #[test]
+    fn listing_microphones_does_not_panic_without_one() {
+        // Same contract as the cameras: a machine with no input is an empty
+        // list. At most one may claim to be the default, or the shell has two
+        // answers to which device a take will record.
+        let microphones = list_microphones();
+        let defaults = microphones.iter().filter(|m| m.is_default).count();
+        assert!(defaults <= 1, "more than one microphone claimed to be the default");
+        for microphone in &microphones {
+            assert!(!microphone.id.is_empty(), "a microphone must have a unique id");
+            assert!(!microphone.name.is_empty(), "a microphone must have a name");
         }
     }
 

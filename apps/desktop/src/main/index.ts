@@ -6,6 +6,8 @@ import { flush, track } from "./analytics.js";
 import { authState, noteAppBlurred, noteAppFocused, onAuthChanged } from "./auth.js";
 import { clearEntitlement, onEntitlementChanged, refreshEntitlement } from "./licence.js";
 import { CaptureFlow } from "./capture-flow.js";
+import { startCliServer } from "./cli/server.js";
+import { installShim, shimExists } from "./cli/shim.js";
 import { migrateLibrary } from "./library-migrate.js";
 import { flushDeepLinks, handleDeepLinkArgv, registerDeepLinks } from "./deep-link.js";
 import {
@@ -244,6 +246,19 @@ void app.whenReady().then(() => {
 
   registerIpc({ flow, selection, workspace, teleprompter: prompter });
   tray = new AppTray(session, flow);
+
+  // The command line, which is also how an agent drives the app. Started after
+  // the flow exists, because every command that records goes through it — and
+  // before anything that can take time, so a `prequel` waiting on the socket
+  // does not sit through a permission check and an update request first.
+  startCliServer({ flow, session, preferences });
+
+  // Rewritten on every launch so the shim in `~/.local/bin` points at *this*
+  // copy of the app. An update that unpacks elsewhere, or a drag from Downloads
+  // to Applications, otherwise leaves a `prequel` that worked yesterday naming
+  // a bundle that is no longer there. Does nothing when the file is already
+  // right, and nothing at all if it was never installed.
+  if (shimExists()) installShim();
 
   // Several surfaces show the account, so they hear about it rather than each
   // polling for it.

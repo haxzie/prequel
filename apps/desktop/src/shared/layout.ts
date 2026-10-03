@@ -2358,9 +2358,7 @@ function glassTrack(
     const picture = rectAt(motion, when, base, radius);
     const field = loupe.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
-      loupe.target === "region"
-        ? { x: loupe.x, y: loupe.y }
-        : (field ?? cursorFraction(cursor, when));
+      loupe.target === "region" ? { x: loupe.x, y: loupe.y } : (field ?? cursorAim(cursor, when));
 
     return {
       x: picture.x + ((point.x * source.width - srcRect.x) / srcRect.width) * picture.width,
@@ -2813,7 +2811,7 @@ function shotTrack(
   const aims: Aim[] = at.map((when) => {
     const field = zoom.target === "typing" ? typingCentre(cursor, when, shows) : null;
     const point =
-      zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorFraction(cursor, when));
+      zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorAim(cursor, when));
 
     return {
       x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
@@ -3538,6 +3536,32 @@ function damp(
   const decay = Math.exp(-w * stepSeconds);
 
   return [target + (gap + rate * stepSeconds) * decay, (velocity - rate * w * stepSeconds) * decay];
+}
+
+/**
+ * Where a shot should look at a moment: the pointer, unless it has left the
+ * picture.
+ *
+ * A window capture is the case this exists for. The pointer spends most of such
+ * a recording *outside* the window — it is somewhere else on the desktop, or on
+ * another display — and a sample of `y: -0.12` is a point above the top edge of
+ * the only picture the viewer can see. Aimed there, the shot framed nothing for
+ * the whole of a nine-second take and read as a composition with its padding
+ * wrong and its subject off-centre, which is how this was found.
+ *
+ * The middle instead. A pointer that is not in the picture is not pointing at
+ * anything in it, so there is nothing to follow and the centre is the honest
+ * answer. The follow and its speed limit turn the switch into a move rather
+ * than a jump, which is what a pointer leaving the window should look like.
+ *
+ * Deliberately not inside `cursorFraction`: that is also what *draws* the
+ * pointer, and a drawn pointer must keep its real position so it leaves the
+ * frame rather than sticking to the edge.
+ */
+function cursorAim(cursor: CursorTrack | null | undefined, at: number): Point {
+  const point = cursorFraction(cursor, at);
+  const inside = point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+  return inside ? point : { x: 0.5, y: 0.5 };
 }
 
 /** The pointer's position at a moment, as a fraction of the captured frame. */
@@ -6441,12 +6465,26 @@ function grow(rect: Rect, by: number): Rect {
  * A picture cut to the frame, with the source cropped to match.
  *
  * A zoom scales the destination well past every edge — a 1920-wide frame holds
- * a 3379-wide picture — so the picture's own corners end up off screen and
- * there is nothing left to round. Cutting the destination back to the frame and
- * taking the matching slice of the source shows exactly the same pixels, since
- * the part outside was never drawn, and puts the corners back where they can be
- * seen. The radius is kept: that is the whole point, so a zoomed moment is
- * still a rounded picture in a frame rather than a full-bleed rectangle.
+ * a 3379-wide picture — so most of what is drawn is never seen. Cutting the
+ * destination back and taking the matching slice of the source shows exactly
+ * the same pixels, since the part outside was never drawn, and saves the
+ * rasterisers a multiple of the frame in fragments on the most expensive layer
+ * there is.
+ *
+ * **The cut stops a corner radius outside the frame rather than on its edge**,
+ * and that is the whole of the arithmetic below that is not obvious. A corner
+ * reaches exactly `radius` along each of its edges and no further, so an edge
+ * cut that far out leaves the rounding entirely off screen and the visible edge
+ * straight. Cutting flush to the frame instead rebuilt the picture's corners on
+ * the *frame's* corners: a zoom pushed hard into the middle of a recording came
+ * out as a rounded card the size of the player, with the rounding tracing an
+ * edge the recording does not have. The real edge is off screen, so nothing
+ * should be drawn round it — which is also why the border and the shadow,
+ * neither of which is cut, simply leave with it.
+ *
+ * An edge that was never past the frame is not moved, so a zoom that still
+ * shows one of the recording's own corners keeps that corner where it is, round
+ * as ever.
  *
  * Applied where a picture is *drawn* rather than baked into its motion track,
  * and that distinction is load-bearing. The track describes the zoom, and other
@@ -6466,6 +6504,12 @@ export function cropToFrame(
   frame: Size,
   tilted: boolean,
   /**
+   * The picture's corner radius in output pixels, which is how far outside the
+   * frame the cut has to stop. Zero squares the corners off at the frame's own
+   * edge, which is only right for a picture that has none.
+   */
+  radius = 0,
+  /**
    * Whether the picture is drawn flipped. The rasterisers mirror *within* the
    * source rect they are handed, so a cut on the left of a mirrored picture
    * has to come off the *right* of the source — otherwise the slice that
@@ -6476,12 +6520,16 @@ export function cropToFrame(
 ): { rect: Rect; src: Rect } {
   if (tilted || rect.width <= 0 || rect.height <= 0) return { rect, src };
 
-  const x = Math.max(rect.x, 0);
-  const y = Math.max(rect.y, 0);
-  const right = Math.min(rect.x + rect.width, frame.width);
-  const bottom = Math.min(rect.y + rect.height, frame.height);
+  // Not `-radius`: a radius of zero negates to negative zero, which survives
+  // into the plan and compares unequal to the zero every other path produces.
+  const keep = radius > 0 ? radius : 0;
+  const x = Math.max(rect.x, keep > 0 ? -keep : 0);
+  const y = Math.max(rect.y, keep > 0 ? -keep : 0);
+  const right = Math.min(rect.x + rect.width, frame.width + keep);
+  const bottom = Math.min(rect.y + rect.height, frame.height + keep);
 
-  // Fully on screen, which is every moment that is not zoomed in.
+  // Nothing past the frame worth cutting, which is every moment that is not
+  // zoomed in.
   if (
     x === rect.x &&
     y === rect.y &&

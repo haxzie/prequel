@@ -165,6 +165,32 @@ export interface CaptureFlowOptions {
 }
 
 /**
+ * What a single take may override, without it becoming a setting.
+ *
+ * Capture *sources* are not here on purpose: a camera, a microphone and system
+ * audio are written to `RecordingPreferences` by whoever asks for them, so the
+ * panel on screen agrees with what is being recorded and there is one answer to
+ * "is the camera on". A frame rate is not shown anywhere and is nobody's
+ * remembered choice, so it travels with the take instead.
+ */
+export interface CaptureOptions {
+  fps?: number;
+  /**
+   * Keep the recorder's own windows off the screen for this take.
+   *
+   * For a recording nobody is watching being made. An agent records a demo of
+   * somebody's app, and the floating pill and the camera bubble are two pieces
+   * of Prequel's furniture laid over the screen it is capturing — excluded from
+   * the video, which is exactly what makes them pointless here: the only person
+   * who could read them is the one who did not ask for them.
+   *
+   * The tray still shows the take and still stops it, so a recording started
+   * this way is never one a person cannot see or end.
+   */
+  quiet?: boolean;
+}
+
+/**
  * How often to ask whether a frame has arrived yet.
  *
  * Cheap: a `try_lock` and a counter read. The cost of asking often is nothing,
@@ -223,6 +249,15 @@ export class CaptureFlow {
    * a cancel goes back to the editor rather than to the grid.
    */
   private extending: { dir: string; takeDir: string } | null = null;
+  /**
+   * Whether the take running was asked for with its UI kept off the screen.
+   *
+   * Held for the take rather than passed to `stop`, because every path out of a
+   * recording puts the panel back — the stop, the watchdog, a failure — and a
+   * quiet take that ended by any of them would flash the panel up at the end of
+   * a recording nobody was watching.
+   */
+  private quiet = false;
 
   constructor(private readonly deps: CaptureFlowOptions) {
     // The panel renders session state too, so it has to follow it.
@@ -552,6 +587,14 @@ export class CaptureFlow {
    * video finds the camera exactly as it was.
    */
   private syncCamera(): void {
+    // The bubble is a preview, and a quiet take has nobody to preview to — the
+    // camera *track* is written by the recorder either way, so hiding this
+    // changes what is on the screen and nothing about the video.
+    if (this.quiet) {
+      this.deps.camera.hide();
+      return;
+    }
+
     const preferences = this.deps.preferences.get();
     if (preferences.cameraId && preferences.captureMode === "video") this.deps.camera.show();
     else this.deps.camera.hide();
@@ -710,8 +753,41 @@ export class CaptureFlow {
     }
   }
 
+  /**
+   * Starts a take on a target chosen from outside the app.
+   *
+   * The command line's way in, and the only path to `record` that does not go
+   * through a picker: there is nobody at the screen to drag a region or click a
+   * window, so the selection is handed over already made. Everything after that
+   * is the ordinary flow — the same exclusions, the same first-frame watchdog,
+   * the same merge on stop — because a recording made by an agent that took a
+   * different route through capture would be a second recorder to keep working.
+   *
+   * `activeMode` is set with it so the panel, which may well be on screen,
+   * describes what is actually being captured rather than the last thing a
+   * person picked.
+   */
+  async recordTarget(selection: PendingSelection, options?: CaptureOptions): Promise<DockState> {
+    if (this.deps.session.isBusy()) {
+      throw new Error(`BUSY: a take is already ${this.deps.session.snapshot().status}`);
+    }
+
+    this.pending = selection;
+    this.activeMode = selection.mode;
+    this.quiet = options?.quiet === true;
+    this.emit();
+
+    try {
+      return await this.record(options);
+    } catch (cause) {
+      // A start that threw is not a take, so nothing is holding the flag.
+      this.quiet = false;
+      throw cause;
+    }
+  }
+
   /** Starts recording whatever the panel is set up to capture. */
-  async record(): Promise<DockState> {
+  async record(options?: CaptureOptions): Promise<DockState> {
     // Every way out of this method that is not a recording says so. A record
     // button that silently does nothing is indistinguishable from a broken
     // one, and the difference is only visible in here.
@@ -778,6 +854,11 @@ export class CaptureFlow {
         {
           target: selection.target,
           crop: selection.crop,
+          // Only when asked for. `RecordingSession.start` falls back to 60,
+          // which is what the panel has always recorded at — so leaving this
+          // out keeps one default rather than making the command line's the
+          // app's.
+          ...(options?.fps === undefined ? {} : { fps: options.fps }),
           captureKeys: preferences.captureKeys,
           systemAudio: preferences.systemAudio,
           microphone: preferences.micId !== null,
@@ -810,7 +891,10 @@ export class CaptureFlow {
       reportError("capture.start", cause);
       this.releaseCamera();
       this.deps.dock.setView("setup");
-      this.deps.dock.show();
+      // Not for a quiet take: the command that asked for it is told why it
+      // failed, and a panel appearing over the screen is the surprise this
+      // option exists to prevent.
+      if (!this.quiet) this.deps.dock.show();
       this.emit();
       throw cause;
     }
@@ -818,7 +902,17 @@ export class CaptureFlow {
     // The pill carries the prompter's switch when there is a microphone —
     // the same rule as the setup row's control — and is sized for it.
     this.deps.dock.setView("recording", { prompterControl: preferences.micId !== null });
-    this.deps.dock.show();
+    // Prepared either way — a window created after capture starts cannot be
+    // excluded from it — and shown only when somebody is there to read it.
+    // The bubble is *hidden* rather than left alone: the panel may well have
+    // been open with a camera chosen when the command arrived, and a preview
+    // already on screen does not take itself off.
+    if (options?.quiet === true) {
+      this.deps.dock.hide();
+      this.syncCamera();
+    } else {
+      this.deps.dock.show();
+    }
     this.deps.teleprompter.recordingStarted();
     this.emit();
     this.watchFirstFrames();
@@ -1039,7 +1133,16 @@ export class CaptureFlow {
     }
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Stops the take.
+   *
+   * `open` is how the command line stops one without a window appearing. An
+   * agent that has just recorded a demo is about to render it and hand back a
+   * file; an editor window opening over the screen in the middle of that is the
+   * app taking the machine back off whoever was driving it. A person pressing
+   * stop still gets the editor, which is the default.
+   */
+  async stop(options?: { open?: boolean }): Promise<void> {
     // Read before the stop clears it. `RecordingSession.stop()` resets the clock
     // in its `finally`, so asking afterwards reports zero for every recording
     // ever made — which looks like data rather than like a bug.
@@ -1047,6 +1150,9 @@ export class CaptureFlow {
 
     await this.deps.session.stop();
     this.deps.dock.setView("setup");
+    // Back to ordinary behaviour before anything else can read it: the next
+    // take is somebody pressing a button until it is not.
+    this.quiet = false;
     this.deps.teleprompter.recordingStopped();
     this.emit();
 
@@ -1083,6 +1189,7 @@ export class CaptureFlow {
     }
 
     if (!finished) return;
+    if (options?.open === false) return;
 
     try {
       this.openEditor(finished.outputPath);
@@ -1117,6 +1224,7 @@ export class CaptureFlow {
     await this.deps.session.stop();
     this.deps.session.forgetLastResult();
     this.deps.dock.setView("setup");
+    this.quiet = false;
     this.deps.teleprompter.recordingStopped();
     this.emit();
 

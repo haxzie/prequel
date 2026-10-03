@@ -1570,17 +1570,19 @@ export class WebGlCompositor {
         if (!texture) break;
 
         const moment = moving(item, at);
-        // Cut to the frame, with the source cropped to match, so a zoom that
-        // scales the picture past every edge still draws its rounded corners.
+        const { shape, quad, focus, vignette } = moment;
+        // Cut to the frame — a radius outside it, so a zoom that scales the
+        // picture past an edge rounds its corners where they actually are,
+        // off screen, rather than on the frame's own corners.
         // The same arithmetic the exporter runs — see `cropToFrame`.
         const cut = cropToFrame(
           moment.rect,
           item.srcRect,
           frame,
           Boolean(moment.quad),
+          shape.radius,
           item.mirror,
         );
-        const { shape, quad, focus, vignette } = moment;
         const rect = cut.rect;
         // Through `sizeOf` rather than `videoWidth`, because the screen is an
         // `<img>` for a screenshot — see `Sources.screen`.

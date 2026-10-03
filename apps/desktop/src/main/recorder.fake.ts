@@ -295,6 +295,7 @@ export function createFakeRecorder(): Recorder {
     // Named as AVFoundation would, without Chromium's trailing USB ids, so the
     // name-matching the real flow depends on is exercised rather than bypassed.
     listCameras: () => [{ id: "fake-camera-0", name: "FaceTime HD Camera" }],
+    listMicrophones: () => [{ id: "fake-mic-0", name: "MacBook Pro Microphone", isDefault: true }],
     // No AppKit to ask, and null is what an external display answers too.
     displaySafeArea: () => null,
     // No device to warm, and nothing that could fail: the fake exists so the

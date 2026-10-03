@@ -473,8 +473,20 @@ function finish(update: ExportProgress): void {
  * `0:00` beside a video that plays.
  */
 function duration(frames: number): number | null {
-  if (!runningFps || !frames) return null;
-  return Math.round((frames / runningFps) * 1000);
+  return renderedDurationMs(frames, runningFps);
+}
+
+/**
+ * The same arithmetic, for a caller that knows the rate it asked for.
+ *
+ * `prequel render` has to answer with the length of the file it just wrote and
+ * hears about the frames on the progress channel, where the rate is not. One
+ * function rather than the same division twice: a length that disagreed with
+ * the one on the library row would be a bug nobody could see.
+ */
+export function renderedDurationMs(frames: number, fps: number): number | null {
+  if (!fps || !frames) return null;
+  return Math.round((frames / fps) * 1000);
 }
 
 /**

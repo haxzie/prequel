@@ -15,7 +15,7 @@
  * Pure, and free of any `electron`, Node or DOM import, so the judgement calls
  * below are testable without a recording.
  */
-import type { KeySpan, MediaTime, TypingSample } from "./manifest.js";
+import type { ClickSample, KeySpan, MediaTime, TypingSample } from "./manifest.js";
 import { DEFAULT_ZOOM, type ZoomSlice } from "./project.js";
 
 const NS = 1_000_000_000;
@@ -153,6 +153,35 @@ export function whileTyping(
  * right answer for a recording of someone reading, and better than inventing
  * movement to justify the feature.
  */
+/**
+ * What happened in a recording, from the manifest alone.
+ *
+ * Here rather than in the editor because two things make the first cut now: the
+ * editor, when a recording is opened for the first time, and the command line,
+ * when a take it recorded is stopped. A second reading of the same arrays would
+ * be a video with different zooms depending on which of the two got there
+ * first — and the one made headlessly is the one nobody would be watching when
+ * it went wrong.
+ */
+export function momentsOf(manifest: {
+  clicks?: readonly ClickSample[];
+  typing?: readonly TypingSample[];
+  keys?: readonly KeySpan[];
+}): Moment[] {
+  return [
+    ...(manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
+    // The middle of the field, which is what a zoom would frame anyway. Only
+    // the samples taken while keys were going down: the rest are a field that
+    // was focused, which is not something that happened.
+    ...whileTyping(manifest.typing ?? [], manifest.keys).map((span) => ({
+      at: span.at,
+      x: span.x + span.width / 2,
+      y: span.y + span.height / 2,
+      kind: "typing" as const,
+    })),
+  ];
+}
+
 export function autoZooms(moments: readonly Moment[], options: AutoEditOptions): ZoomSlice[] {
   const zooms: ZoomSlice[] = [];
 

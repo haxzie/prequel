@@ -1216,6 +1216,91 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
 }
 
 #[test]
+fn a_zoom_past_every_edge_rounds_nothing() {
+    // The zoom bug. A picture scaled past every edge was cut flush to the frame
+    // and kept its radius, so the recording's corners were rebuilt on the
+    // *player's* corners: a shot pushed into the middle of a window came out as
+    // a rounded card the size of the frame, with the wallpaper showing through
+    // four corners the recording does not have there.
+    //
+    // Pinned in pixels because every shape assertion passes on it — the item is
+    // in the plan, its rectangle is the zoom's, and the export is the right
+    // size. Only the corner pixel knows.
+    let dir = scratch("prequel-pixels-zoom-corner");
+    let source = split_frame(200, 200, [255, 0, 0], [255, 0, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                paint: Paint::Solid {
+                    color: "#0000ff".into(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                // Twice the frame and centred, which is an ordinary 2x zoom:
+                // every one of the picture's own corners is well off screen.
+                dst_rect: Rect {
+                    x: -(OUT_W as f64) / 2.0,
+                    y: -(OUT_H as f64) / 2.0,
+                    width: OUT_W as f64 * 2.0,
+                    height: OUT_H as f64 * 2.0,
+                },
+                // Big enough that a corner drawn on the frame would take a bite
+                // no amount of encoder softness could hide.
+                shape: Shape {
+                    radius: 40.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                grade: None,
+                motion: Vec::new(),
+            },
+        ],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    for (x, y, corner) in [
+        (2, 2, "top left"),
+        (OUT_W - 3, 2, "top right"),
+        (2, OUT_H - 3, "bottom left"),
+        (OUT_W - 3, OUT_H - 3, "bottom right"),
+    ] {
+        near(frame.at(x, y), (255, 0, 0), corner);
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn draws_a_border_of_one_width_all_the_way_round() {
     // The border bug. A stroke was drawn as a band centred on the picture's
     // edge, so half of it fell outside the rectangle the quad covers — and a

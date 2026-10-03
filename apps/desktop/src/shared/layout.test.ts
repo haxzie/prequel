@@ -2983,6 +2983,63 @@ describe("zooming", () => {
     return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
   };
 
+  /**
+   * A window capture spends most of its length with the pointer somewhere else.
+   *
+   * This was found on a nine-second recording of a terminal window: one cursor
+   * sample, at `y: -0.12`, which is a point above the top edge of the only
+   * picture there is. The shot aimed there for the whole take and the result
+   * read as a composition with its padding wrong and its subject off-centre —
+   * a rendered video nobody could have debugged from the settings, because
+   * every setting in it was right.
+   */
+  describe("a pointer that is not in the picture", () => {
+    const outside = {
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples: [{ at: 0, x: 0.47, y: -0.12 }],
+    };
+
+    const inside = { ...outside, samples: [{ at: 0, x: 0.5, y: 0.5 }] };
+
+    const shotWith = (cursor: typeof outside) => {
+      const zooms: ZoomSlice[] = [region({ target: "cursor", source: { start: 0, end: 8 * S } })];
+      const item = buildRenderPlan(
+        FRAME,
+        { screen: SCREEN, camera: null },
+        settings(),
+        cursor,
+        zooms,
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+      const keys = item.motion ?? [];
+      return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
+    };
+
+    it("is not what the shot aims at", () => {
+      // The middle instead, which is what a pointer pointing at nothing in the
+      // picture deserves: identical to a shot aimed at the centre on purpose.
+      const off = shotWith(outside);
+      const middle = shotWith(inside);
+
+      expect(off.x).toBeCloseTo(middle.x, 1);
+      expect(off.y).toBeCloseTo(middle.y, 1);
+    });
+
+    it("leaves the picture covering the frame", () => {
+      // The symptom, asserted as a property rather than as a number: a shot
+      // aimed off the top let the background through underneath it. Whatever
+      // the zoom is looking at, the magnified picture has to cover the frame.
+      const shot = shotWith(outside);
+
+      expect(shot.x).toBeLessThanOrEqual(0);
+      expect(shot.y).toBeLessThanOrEqual(0);
+      expect(shot.x + shot.width).toBeGreaterThanOrEqual(FRAME.width);
+      expect(shot.y + shot.height).toBeGreaterThanOrEqual(FRAME.height);
+    });
+  });
+
   describe("what the shot is looking at", () => {
     /**
      * The sharp patch has to be where the subject is, not where the frame is.
@@ -4613,9 +4670,10 @@ describe("the border through a zoom", () => {
   });
 
   it("keeps the corners round through a zoom", () => {
-    // The picture is cut to the frame with its rounding intact — see
-    // `cropToFrame` — so the border tracing it has to keep its own. Squaring
-    // off here would draw a rectangle round a rounded picture.
+    // The ring traces the picture's own edge wherever that edge is, off screen
+    // included — see `cropToFrame` — so it keeps its rounding throughout.
+    // Squaring off here would draw a rectangle round a rounded picture at every
+    // moment the recording's corners are still in the frame.
     const stroke = strokeOf(
       buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, bordered(), null, zoomed()),
     );
@@ -4651,6 +4709,54 @@ describe("the border through a zoom", () => {
     expect(cut.src.height).toBeCloseTo(source.height * 0.5);
   });
 
+  it("keeps a zoomed picture's rounding off screen", () => {
+    // The bug this fixes: a zoom pushed into the middle of a recording drew the
+    // recording's rounded corners on the *player's* corners, so a shot deep
+    // inside a window came out as a rounded card the size of the frame. A
+    // corner reaches exactly its radius along each edge, so cutting that far
+    // outside leaves the rounding where it belongs — off screen — and the edge
+    // on screen straight. Same numbers as `plan.rs`.
+    const frame = LANDSCAPE;
+    const source = { x: 0, y: 0, width: 2560, height: 1440 };
+
+    const cut = cropToFrame(
+      {
+        x: -frame.width / 2,
+        y: -frame.height / 2,
+        width: frame.width * 2,
+        height: frame.height * 2,
+      },
+      source,
+      frame,
+      false,
+      24,
+    );
+
+    expect(cut.rect).toEqual({
+      x: -24,
+      y: -24,
+      width: frame.width + 48,
+      height: frame.height + 48,
+    });
+  });
+
+  it("leaves a corner that is still in the frame exactly where it is", () => {
+    // A zoom that only just crosses one edge still shows the recording's other
+    // corners, and those are real. Only the edge that left is moved.
+    const source = { x: 0, y: 0, width: 2560, height: 1440 };
+    const cut = cropToFrame(
+      { x: -40, y: 100, width: LANDSCAPE.width, height: 800 },
+      source,
+      LANDSCAPE,
+      false,
+      24,
+    );
+
+    expect(cut.rect.x).toBe(-24);
+    expect(cut.rect.y).toBe(100);
+    expect(cut.rect.y + cut.rect.height).toBe(900);
+  });
+
   it("a mirrored picture cut on the left takes the source from its right", () => {
     // The cutout bug: pushed past the left edge, a mirrored camera stood
     // still while its box left. The rasterisers flip within the slice they
@@ -4660,12 +4766,12 @@ describe("the border through a zoom", () => {
     const source = { x: 0, y: 0, width: 1000, height: 500 };
     const rect = { x: -300, y: 0, width: 1000, height: 500 };
 
-    const mirrored = cropToFrame(rect, source, LANDSCAPE, false, true);
+    const mirrored = cropToFrame(rect, source, LANDSCAPE, false, 0, true);
     expect(mirrored.rect).toEqual({ x: 0, y: 0, width: 700, height: 500 });
     expect(mirrored.src.x).toBeCloseTo(0);
     expect(mirrored.src.width).toBeCloseTo(700);
 
-    const plain = cropToFrame(rect, source, LANDSCAPE, false, false);
+    const plain = cropToFrame(rect, source, LANDSCAPE, false, 0, false);
     expect(plain.src.x).toBeCloseTo(300);
   });
 
@@ -4675,12 +4781,15 @@ describe("the border through a zoom", () => {
 
     // Fully on screen: the common case, and it must not drift by a rounding
     // error or every unzoomed frame in the app moves.
-    expect(cropToFrame(inside, source, LANDSCAPE, false)).toEqual({ rect: inside, src: source });
+    expect(cropToFrame(inside, source, LANDSCAPE, false, 32)).toEqual({
+      rect: inside,
+      src: source,
+    });
 
     // Tilted: positioned by four projected corners rather than by its
     // rectangle, and a clipped projective quad is a polygon.
     const over = { x: -500, y: -500, width: 4000, height: 3000 };
-    expect(cropToFrame(over, source, LANDSCAPE, true)).toEqual({ rect: over, src: source });
+    expect(cropToFrame(over, source, LANDSCAPE, true, 32)).toEqual({ rect: over, src: source });
   });
 });
 

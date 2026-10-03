@@ -57,6 +57,11 @@ files:
 # asar archive, so it has to sit on the real filesystem.
 asarUnpack:
   - "**/*.node"
+  # The command line's bundle. Run by the Electron binary as plain Node, from a
+  # shell script in `~/.local/bin` — so it has to be a real file on disk with a
+  # `.cjs` extension, outside the archive. See `scripts/build-cli.mjs` and
+  # `main/cli/shim.ts`.
+  - "out/cli/**"
   - "**/@prequel/recorder/**"
   # `nativeImage.createFromPath` is native code and cannot read through asar,
   # so a tray icon left inside the archive loads as an empty image. An empty
