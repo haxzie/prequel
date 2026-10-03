@@ -267,6 +267,29 @@ export class AppTray {
               icon: symbol("crop"),
               click: () => this.flow.openMode("area"),
             },
+            // And the same three for a still. Their own rows rather than a
+            // switch somewhere: the menu is read as a list of things the app
+            // can be asked to do, and "take a screenshot of a window" is a
+            // different thing to ask for than "record one" — not the same ask
+            // with a mode set beforehand. Each sets the panel to a screenshot
+            // and opens that source's picker, so the confirm button on the
+            // overlay shoots rather than records.
+            { type: "separator" },
+            {
+              label: "Screenshot Entire Screen",
+              icon: symbol("camera.viewfinder"),
+              click: () => this.flow.shootMode("screen"),
+            },
+            {
+              label: "Screenshot a Window",
+              icon: symbol("macwindow.badge.plus"),
+              click: () => this.flow.shootMode("window"),
+            },
+            {
+              label: "Screenshot an Area",
+              icon: symbol("camera.metering.partial"),
+              click: () => this.flow.shootMode("area"),
+            },
           ] satisfies MenuItemConstructorOptions[])),
       // The prompter's switch and its script, one click from anywhere — with
       // a microphone chosen, as on the panel. A checkbox for the switch
@@ -307,6 +330,14 @@ export class AppTray {
         label: "Open Recordings",
         icon: symbol("square.grid.2x2"),
         click: () => this.flow.openProjects(),
+      },
+      // Its own row rather than a tab somebody finds once they are in there.
+      // The two are separate libraries now — see `WorkspaceSection` — and the
+      // menu that opens one should be able to open the other.
+      {
+        label: "Open Screenshots",
+        icon: symbol("photo.on.rectangle"),
+        click: () => this.flow.openProjects("screenshots"),
       },
       {
         label: "Open Recent",

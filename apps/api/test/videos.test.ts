@@ -144,6 +144,40 @@ describe("POST /v1/videos", () => {
     expect((await create(1_000_000_000_000_000)).status).toBe(200);
   });
 
+  it("takes a screenshot as readily as a recording", async () => {
+    // A still is shared through this route because it is the same thing here —
+    // a file, a title, a team and a slug. The one place the difference is read
+    // is the page that draws it, which puts a picture in an `<img>` rather than
+    // a `<video>` that would show a black rectangle with controls.
+    const response = await call("/v1/videos", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "A screenshot",
+        contentType: "image/png",
+        sizeBytes: 500,
+        width: 3024,
+        height: 1964,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { id: string; uploadUrl: string };
+    expect(body.uploadUrl).toContain("X-Amz-Signature");
+  });
+
+  it("refuses a type nothing can be shared as", async () => {
+    const response = await call("/v1/videos", {
+      method: "POST",
+      body: JSON.stringify({
+        title: "Something else",
+        contentType: "application/pdf",
+        sizeBytes: 500,
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   it("does not count an abandoned upload against the quota", async () => {
     await create(900);
 

@@ -21,7 +21,7 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { MANIFEST_FILE_NAME, MANIFEST_VERSION } from "../shared/manifest.js";
+import { MANIFEST_FILE_NAME, MANIFEST_VERSION, STILL_FILE_NAME } from "../shared/manifest.js";
 import { PROJECT_FILE_NAME } from "../shared/project.js";
 
 vi.mock("electron", () => ({
@@ -57,9 +57,18 @@ function recording(name: string, secondsAgo = 0): string {
   return dir;
 }
 
+/** The same, with the one file that makes a session a screenshot. */
+function screenshot(name: string, secondsAgo = 0): string {
+  const dir = recording(name, secondsAgo);
+  writeFileSync(join(dir, STILL_FILE_NAME), "not really a picture");
+  return dir;
+}
+
 /** The one entry for a directory, whatever else is in the scratch folder. */
 function entry(dir: string) {
-  return listProjects(undefined, 0, SCRATCH).projects.find((project) => project.dir === dir);
+  return listProjects(undefined, 0, undefined, SCRATCH).projects.find(
+    (project) => project.dir === dir,
+  );
 }
 
 describe("listProjects", () => {
@@ -70,7 +79,9 @@ describe("listProjects", () => {
     const older = recording("Prequel 2026-09-01 08-00-00", 60);
     const newer = recording("Prequel 2026-09-10 17-30-00", 10);
 
-    const listed = listProjects(undefined, 0, SCRATCH).projects.map((project) => project.dir);
+    const listed = listProjects(undefined, 0, undefined, SCRATCH).projects.map(
+      (project) => project.dir,
+    );
     expect(listed.indexOf(newer)).toBeLessThan(listed.indexOf(older));
   });
 
@@ -79,7 +90,7 @@ describe("listProjects", () => {
       recording(`Prequel 2026-09-11 ${at}`, 10);
     }
 
-    const page = listProjects(2, 0, SCRATCH);
+    const page = listProjects(2, 0, undefined, SCRATCH);
 
     expect(page.projects).toHaveLength(2);
     // The newest two, because the page is taken after the sort and before
@@ -96,8 +107,8 @@ describe("listProjects", () => {
       recording(`Prequel 2026-09-12 ${at}`, 10);
     }
 
-    const first = listProjects(2, 0, SCRATCH).projects.map((project) => project.dir);
-    const second = listProjects(2, 2, SCRATCH).projects.map((project) => project.dir);
+    const first = listProjects(2, 0, undefined, SCRATCH).projects.map((project) => project.dir);
+    const second = listProjects(2, 2, undefined, SCRATCH).projects.map((project) => project.dir);
 
     // No overlap: a grid asking for the next page must not draw a card twice.
     expect(second.some((dir) => first.includes(dir))).toBe(false);
@@ -108,13 +119,13 @@ describe("listProjects", () => {
     mkdirSync(join(SCRATCH, "interrupted"), { recursive: true });
 
     expect(
-      listProjects(undefined, 0, SCRATCH).projects.map((project) => project.name),
+      listProjects(undefined, 0, undefined, SCRATCH).projects.map((project) => project.name),
     ).not.toContain("interrupted");
   });
 
   it("returns nothing when the recordings folder does not exist yet", () => {
     // Before the first recording. The grid is empty rather than broken.
-    expect(listProjects(undefined, 0, join(SCRATCH, "never-created"))).toEqual({
+    expect(listProjects(undefined, 0, undefined, join(SCRATCH, "never-created"))).toEqual({
       projects: [],
       total: 0,
     });
@@ -236,5 +247,38 @@ describe("savePoster", () => {
 
     expect(existsSync(join(outside, POSTER_FILE_NAME))).toBe(false);
     rmSync(outside, { recursive: true, force: true });
+  });
+});
+
+describe("the two libraries", () => {
+  it("keeps screenshots out of the recordings and the other way about", () => {
+    // They are separate panes, so a page of one that counted the other would
+    // page through a library whose cards keep being filtered away — twelve
+    // recordings asked for, none of them screenshots, an empty grid that loads
+    // for ever. The filter has to happen before the slice.
+    const take = recording("Prequel 2026-09-20 09-00-00", 30);
+    const shot = screenshot("Prequel 2026-09-20 10-00-00", 10);
+
+    const takes = listProjects(undefined, 0, false, SCRATCH);
+    const shots = listProjects(undefined, 0, true, SCRATCH);
+
+    expect(takes.projects.map((project) => project.dir)).toContain(take);
+    expect(takes.projects.map((project) => project.dir)).not.toContain(shot);
+    expect(shots.projects.map((project) => project.dir)).toEqual([shot]);
+  });
+
+  it("counts only the library that asked", () => {
+    // `total` is what the grid pages against. Counting candidates of both kinds
+    // would have it asking for pages that can only come back empty.
+    const before = listProjects(undefined, 0, true, SCRATCH).total;
+    recording("Prequel 2026-09-21 09-00-00", 30);
+    screenshot("Prequel 2026-09-21 10-00-00", 10);
+
+    expect(listProjects(undefined, 0, true, SCRATCH).total).toBe(before + 1);
+  });
+
+  it("says which kind each one is", () => {
+    expect(entry(screenshot("Prequel 2026-09-22 10-00-00"))?.still).toBe(true);
+    expect(entry(recording("Prequel 2026-09-22 11-00-00"))?.still).toBe(false);
   });
 });

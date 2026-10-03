@@ -4,7 +4,7 @@ import type { LibraryView, ProjectSummary } from "../../../shared/contract";
 import { formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon } from "../editor/icons";
-import { RecordingsIcon } from "../workspace/icons";
+import { RecordingsIcon, ScreenshotsIcon } from "../workspace/icons";
 import { useDock } from "../hooks/useDock";
 import { PaneHeader } from "../workspace/PaneHeader";
 import { ViewToggle } from "../workspace/ViewToggle";
@@ -50,8 +50,18 @@ const PAGE = 12;
 const COLUMNS = "grid grid-cols-[18px_minmax(0,1fr)_130px_130px_64px] items-center gap-4 px-4";
 
 export function Projects({
+  still = false,
   onOpen,
 }: {
+  /**
+   * Which library this is: the screenshots, or the recordings.
+   *
+   * The same grid for both, because they are the same thing to a reader — a
+   * picture, a name and an age — and two components would be two places to fix
+   * a rename. What differs is the question the empty state answers and the
+   * word in the header, which are three strings.
+   */
+  still?: boolean;
   /** The recording being loaded, if a card has been clicked. */
   onOpen: (dir: string) => void;
 }) {
@@ -84,14 +94,14 @@ export function Projects({
    */
   const list = useCallback(async () => {
     loading.current = true;
-    const result = await window.prequel.projects.list(PAGE);
+    const result = await window.prequel.projects.list(PAGE, 0, still);
     loading.current = false;
 
     // An empty grid rather than none at all: main has logged whatever went
     // wrong, and a screen that never resolves says nothing to the user.
     setProjects(result.ok ? result.value.projects : []);
     setTotal(result.ok ? result.value.total : 0);
-  }, []);
+  }, [still]);
 
   /**
    * Adds the next page.
@@ -105,14 +115,14 @@ export function Projects({
     loading.current = true;
 
     const offset = seen.current;
-    const result = await window.prequel.projects.list(PAGE, offset);
+    const result = await window.prequel.projects.list(PAGE, offset, still);
     loading.current = false;
     if (!result.ok) return;
 
     seen.current = offset + PAGE;
     setProjects((current) => [...(current ?? []), ...result.value.projects]);
     setTotal(result.value.total);
-  }, []);
+  }, [still]);
 
   /** Candidate folders asked for so far, which is what the offset counts. */
   const seen = useRef(PAGE);
@@ -194,10 +204,13 @@ export function Projects({
 
   return (
     <>
-      <PaneHeader icon={<RecordingsIcon />} title="Recordings">
+      <PaneHeader
+        icon={still ? <ScreenshotsIcon /> : <RecordingsIcon />}
+        title={still ? "Screenshots" : "Recordings"}
+      >
         {projects !== null && projects.length > 0 && (
           <span className="text-[12px] text-editor-muted">
-            {projects.length} {projects.length === 1 ? "recording" : "recordings"}
+            {projects.length} {noun(still, projects.length)}
           </span>
         )}
         <ViewToggle view={view} onChange={setView} />
@@ -210,7 +223,7 @@ export function Projects({
         // main worked through them.
         <Skeletons view={view} />
       ) : projects.length === 0 ? (
-        <Empty />
+        <Empty still={still} />
       ) : (
         // `relative`, so the selection bar's `absolute` resolves against the
         // pane rather than the window — it belongs over this list, not over
@@ -664,14 +677,23 @@ function RenameField({
   );
 }
 
-function Empty() {
+/** What one of these is called, singular or plural. */
+function noun(still: boolean, count: number): string {
+  if (still) return count === 1 ? "screenshot" : "screenshots";
+  return count === 1 ? "recording" : "recordings";
+}
+
+function Empty({ still }: { still: boolean }) {
   return (
     <div className="grid flex-1 place-items-center px-8 text-center">
       <div className="max-w-xs">
-        <p className="text-[13px] font-medium">No recordings yet</p>
+        <p className="text-[13px] font-medium">
+          {still ? "No screenshots yet" : "No recordings yet"}
+        </p>
         <p className="mt-1 text-[12px] text-editor-muted">
-          Everything you record on this Mac shows up here. Start one from the Prequel icon in the
-          menu bar.
+          {still
+            ? "Every screenshot you take shows up here. Take one from the Prequel icon in the menu bar."
+            : "Everything you record on this Mac shows up here. Start one from the Prequel icon in the menu bar."}
         </p>
       </div>
     </div>

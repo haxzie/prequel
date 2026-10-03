@@ -41,6 +41,28 @@ const STROKE = {
 const FILL = { fill: "currentColor", fillOpacity: 0.22, stroke: "none" } as const;
 
 /**
+ * Lucide `image`, filled: the screenshots.
+ *
+ * A picture with a hill and a sun in it, which is what every operating system
+ * has meant by "an image" for thirty years. Deliberately not a camera — the
+ * camera in this app is the webcam, in the panel and in the editor's rail, and
+ * a second meaning for it in the sidebar would put the two a click apart.
+ */
+export function ScreenshotsIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect {...FILL} x="3" y="4" width="18" height="16" rx="2.5" />
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      {/* The hill, drawn to the frame's own corner rather than stopping short:
+          at this size a gap between the two reads as a stray line. */}
+      <path d="m3.5 17.5 4.2-4.2a2 2 0 0 1 2.8 0L15 18" />
+      <path d="m13.5 15 1.6-1.6a2 2 0 0 1 2.8 0l2.6 2.6" />
+    </svg>
+  );
+}
+
+/**
  * Lucide `clapperboard`, filled.
  *
  * A folder is what the library used to be called and what it stopped being:

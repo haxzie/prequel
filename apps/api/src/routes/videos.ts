@@ -41,11 +41,15 @@ videos.use("*", authenticate, requireTeam);
 const TYPES: Record<string, string> = {
   "video/mp4": "mp4",
   "image/gif": "gif",
+  // A screenshot. Shared through the same route as a recording because it is
+  // the same thing to this API — a file, a title, a team and a slug — and the
+  // one place the difference is read is the page that draws it.
+  "image/png": "png",
 };
 
 const Create = z.object({
   title: z.string().min(1).max(200),
-  contentType: z.enum(["video/mp4", "image/gif"]),
+  contentType: z.enum(["video/mp4", "image/gif", "image/png"]),
   sizeBytes: z.number().int().positive(),
   durationMs: z.number().int().nonnegative().default(0),
   width: z.number().int().nonnegative().default(0),

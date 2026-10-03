@@ -7,7 +7,7 @@ import { Projects } from "../projects/Projects";
 import { ExternalIcon, GeneralIcon } from "../settings/icons";
 import { SettingsPane } from "../settings/Settings";
 import { AccountMenu } from "./AccountMenu";
-import { ExportsIcon, RecordingsIcon, SettingsIcon } from "./icons";
+import { ExportsIcon, RecordingsIcon, ScreenshotsIcon, SettingsIcon } from "./icons";
 import { PaneHeader } from "./PaneHeader";
 
 /**
@@ -35,6 +35,11 @@ import { PaneHeader } from "./PaneHeader";
  */
 const SECTIONS = [
   { id: "projects", label: "Recordings", Icon: RecordingsIcon },
+  // Its own pane rather than a filter over the recordings. The two are made by
+  // different gestures, dressed by different controls and reached for at
+  // different moments — and a library that mixes them makes finding either one
+  // a matter of reading past the other.
+  { id: "screenshots", label: "Screenshots", Icon: ScreenshotsIcon },
   { id: "exports", label: "Exports", Icon: ExportsIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ] as const satisfies readonly {
@@ -132,6 +137,8 @@ export function Library({
       <main className="flex min-w-0 flex-1 flex-col bg-editor-scrim">
         {section === "projects" ? (
           <Projects onOpen={onOpen} />
+        ) : section === "screenshots" ? (
+          <Projects still onOpen={onOpen} />
         ) : section === "exports" ? (
           // Not wrapped in `Pane`: that caps the measure at 28rem for a column
           // of settings, and this pane is a grid that should fill the window.

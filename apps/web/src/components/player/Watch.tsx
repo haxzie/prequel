@@ -85,9 +85,11 @@ export function Watch({
       style={{ maxWidth: `calc(75dvh * ${ratio.toFixed(4)})` }}
     >
       <div className="overflow-hidden rounded-2xl border border-line bg-black">
-        {contentType === "image/gif" ? (
-          // A GIF is not a video and a `<video>` pointed at one shows nothing at
-          // all — no error, just a black rectangle with controls.
+        {contentType.startsWith("image/") ? (
+          // A picture is not a video, and a `<video>` pointed at one shows
+          // nothing at all — no error, just a black rectangle with controls.
+          // Any image, not the GIF alone: a screenshot shares as a PNG through
+          // the same route, and the player has nothing to offer either of them.
           <img src={src} alt={title} className="block w-full" />
         ) : (
           <Player
@@ -109,7 +111,7 @@ export function Watch({
     </div>
   );
 
-  if (chapters.length === 0 || contentType === "image/gif") return column;
+  if (chapters.length === 0 || contentType.startsWith("image/")) return column;
 
   const list = (
     <ChapterList

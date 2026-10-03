@@ -177,6 +177,7 @@ export function ExportDialog({
             result={result}
             state={state}
             share={share}
+            still={isStill}
             poster={still ?? poster}
             transcript={transcript}
           />
@@ -522,12 +523,15 @@ function Finished({
   result,
   state,
   share,
+  still,
   poster,
   transcript,
 }: {
   result: NonNullable<ExportState["result"]>;
   state: ExportState;
   share: ShareState;
+  /** Whether this export is a screenshot, which is what the share button says. */
+  still: boolean;
   poster: string | null;
   transcript: ShareTranscript | null;
 }) {
@@ -633,7 +637,7 @@ function Finished({
           <Action
             tone={share.uploading ? "running" : "go"}
             icon={share.uploading ? undefined : <LinkIcon />}
-            label={shareLabel(auth.status, share, pendingShare)}
+            label={shareLabel(auth.status, share, pendingShare, still)}
             hoverSuffix={share.uploading ? "Cancel" : null}
             fraction={share.fraction}
             onClick={() => {
@@ -919,8 +923,20 @@ function fractionOf(state: ExportState): number | null {
  * `waiting` is its own word because the app is doing nothing visible while a
  * browser is open somewhere else, and a button still reading "Share video"
  * through all of that is a button people press again.
+ *
+ * And it says *video* only about a video. The button under a finished
+ * screenshot read "Share video" over a PNG — which is the same word the file
+ * row above it had just got right, two lines apart.
  */
-function shareLabel(status: AuthState["status"], share: ShareState, pendingShare: boolean): string {
+function shareLabel(
+  status: AuthState["status"],
+  share: ShareState,
+  pendingShare: boolean,
+  /** Whether this is a screenshot — not merely a picture. A GIF is a video to
+      everybody who makes one, and "Share screenshot" over one would be wrong in
+      the other direction. */
+  still: boolean,
+): string {
   if (share.uploading) {
     return share.fraction === null
       ? "Preparing…"
@@ -934,7 +950,7 @@ function shareLabel(status: AuthState["status"], share: ShareState, pendingShare
   if (status === "signed-out")
     return pendingShare ? "Waiting for your browser…" : "Sign in to share";
 
-  return share.error ? "Try again" : "Share video";
+  return share.error ? "Try again" : still ? "Share screenshot" : "Share video";
 }
 
 /**

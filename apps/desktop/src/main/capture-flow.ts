@@ -392,14 +392,37 @@ export class CaptureFlow {
     });
   }
 
+  /**
+   * Opens the panel on one source, set up to take a screenshot rather than a
+   * recording.
+   *
+   * The switch *and* the source, because from the tray they are one decision:
+   * somebody choosing "Screenshot a Window" has said both, and leaving the
+   * panel on video would open a window picker whose confirm button starts
+   * recording.
+   *
+   * Through the same picker a recording goes through rather than shooting on
+   * the spot. The overlay is what names the target — and the confirm button
+   * there already reads the capture mode, so the one path to a capture stays
+   * one path. See `capture`.
+   */
+  shootMode(mode: ScreenMode): void {
+    this.setCaptureMode("photo");
+    this.openMode(mode);
+  }
+
   /** Opens a recording for editing, hiding the recorder's floating UI. */
   openEditor(dir: string): void {
     this.deps.workspace?.open(dir);
   }
 
   /** Opens the Projects grid, for the tray to reach through the flow. */
-  openProjects(): void {
-    this.deps.workspace?.open();
+  openProjects(section: WorkspaceSection = "projects"): void {
+    if (section === "projects") {
+      this.deps.workspace?.open();
+      return;
+    }
+    this.deps.workspace?.openSection(section);
   }
 
   /**

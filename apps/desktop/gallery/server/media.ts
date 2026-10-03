@@ -32,6 +32,8 @@ import { fileURLToPath } from "node:url";
 
 import type { Plugin, ViteDevServer } from "vite";
 
+import { STILL_FILE_NAME } from "../../src/shared/manifest";
+
 export interface GalleryOptions {
   /** `~/Movies/Prequel/.recordings`, where the app writes takes. */
   recordings: string;
@@ -227,6 +229,9 @@ function fixture(pathname: string, options: GalleryOptions): unknown | null {
           // edit is a picture out of date. A fixture with a stale poster is
           // therefore a card that composes itself while the shot is taken.
           poster: fresh(dir) ? media("poster.jpg") : null,
+          // The same one-stat test `listProjects` makes, so the two libraries
+          // are split in the gallery exactly as they are in the app.
+          still: existsSync(join(options.recordings, name, STILL_FILE_NAME)),
         };
       })
       .sort((a, b) => b.createdAt - a.createdAt);

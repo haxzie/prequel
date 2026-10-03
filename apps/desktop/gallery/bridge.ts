@@ -401,11 +401,14 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     },
 
     projects: {
-      list: async (limit = 24, offset = 0) => {
+      list: async (limit = 24, offset = 0, still?: boolean) => {
         const all = (await json<ProjectSummary[]>("/fixture/recordings.json")) ?? [];
+        // Filtered before the slice, exactly as `listProjects` does it: a page
+        // filtered afterwards is a library whose cards keep being thrown away.
+        const wanted = still === undefined ? all : all.filter((one) => one.still === still);
         return {
           ok: true as const,
-          value: { projects: all.slice(offset, offset + limit), total: all.length },
+          value: { projects: wanted.slice(offset, offset + limit), total: wanted.length },
         };
       },
       rename: () => ok(undefined),

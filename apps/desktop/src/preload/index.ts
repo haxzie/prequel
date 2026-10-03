@@ -593,8 +593,13 @@ const api = {
      * before the grid can draw the twelve it is about to show. `total` counts
      * candidate folders, so the grid knows whether to keep asking.
      */
-    list: (limit?: number, offset?: number): Promise<IpcResult<ProjectPage>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.projectsList, limit, offset),
+    list: (
+      limit?: number,
+      offset?: number,
+      /** True for the screenshots, false for the recordings, absent for both. */
+      still?: boolean,
+    ): Promise<IpcResult<ProjectPage>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsList, limit, offset, still),
 
     rename: (dir: string, name: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsRename, dir, name),

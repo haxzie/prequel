@@ -1042,6 +1042,21 @@ export function isImageExport(name: string): boolean {
   return IMAGE_EXPORTS.some((suffix) => lower.endsWith(suffix));
 }
 
+/**
+ * What a finished export is, as a media type.
+ *
+ * Off the same list `isImageExport` reads, because the two answers have to
+ * agree: a file shown as a picture and uploaded as `video/mp4` is a share link
+ * whose page puts a `<video>` on a PNG — a black rectangle with controls, no
+ * error anywhere. The API only accepts the three below.
+ */
+export function exportContentType(name: string): "video/mp4" | "image/gif" | "image/png" {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".png")) return "image/png";
+  return "video/mp4";
+}
+
 export interface ExportRequest {
   /** The recording's directory — where the source media is read from. */
   dir: string;
@@ -1975,6 +1990,16 @@ export interface ProjectSummary {
    * makes the missing ones and asks main to keep them.
    */
   poster: string | null;
+  /**
+   * Whether this session is a screenshot rather than a take.
+   *
+   * What splits the library in two. Read off the picture on disk rather than
+   * out of the manifest, which is where `isStill` would answer properly: this
+   * listing deliberately opens no `session.json` at all — a recording's carries
+   * tens of thousands of cursor samples, and parsing every one of them to draw
+   * a grid is what `createdAt` has a paragraph about.
+   */
+  still: boolean;
 }
 
 /**
@@ -2108,7 +2133,15 @@ export type LibraryView = "list" | "grid";
  * The account is deliberately absent. It is reported at the foot of the sidebar
  * rather than being a pane, so there is nothing for anything to ask to be shown.
  */
-export type WorkspaceSection = "projects" | "exports" | "settings";
+/**
+ * Which pane the app window is showing.
+ *
+ * `projects` is the recordings, and keeps its name: it is a persisted
+ * preference and an IPC channel, and renaming it would strand both for a word
+ * nobody reads. `screenshots` is the stills, which are a separate library
+ * rather than a filter over the same one — see `ProjectSummary.still`.
+ */
+export type WorkspaceSection = "projects" | "screenshots" | "exports" | "settings";
 
 /**
  * How far along an update is.

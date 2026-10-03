@@ -14,7 +14,12 @@ import { basename, extname } from "node:path";
 
 import { toEveryWindow } from "./broadcast.js";
 
-import { IPC_CHANNELS, type ShareProgress, type ShareRequest } from "../shared/contract.js";
+import {
+  exportContentType,
+  IPC_CHANNELS,
+  type ShareProgress,
+  type ShareRequest,
+} from "../shared/contract.js";
 import { apiFetch, ApiError } from "./api.js";
 import { authToken } from "./auth.js";
 import { track } from "./analytics.js";
@@ -104,7 +109,11 @@ export async function startShare(share: ShareRequest): Promise<void> {
     track("share_started");
 
     const { size } = await stat(share.path);
-    const contentType = extname(share.path).toLowerCase() === ".gif" ? "image/gif" : "video/mp4";
+    // Off the file's own name, through the one function that answers this —
+    // the Exports pane and the export dialog read the same list. A screenshot
+    // uploaded as `video/mp4` is a share page with a `<video>` pointed at a
+    // PNG, which draws a black rectangle with controls and says nothing.
+    const contentType = exportContentType(share.path);
     const poster = decodePoster(share.poster);
 
     const created = await apiFetch<Created>("/v1/videos", {

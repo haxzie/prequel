@@ -12,7 +12,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { basename, join } from "node:path";
 
 import type { ProjectSummary } from "../shared/contract.js";
-import { MANIFEST_FILE_NAME, parseManifest } from "../shared/manifest.js";
+import { MANIFEST_FILE_NAME, parseManifest, STILL_FILE_NAME } from "../shared/manifest.js";
 import { mediaUrl } from "../shared/media-url.js";
 import { PROJECT_FILE_NAME } from "../shared/project.js";
 import { loadProject, saveProject } from "./editor-project.js";
@@ -56,6 +56,20 @@ export const POSTER_FILE_NAME = "poster.jpg";
 export function listProjects(
   limit?: number,
   offset = 0,
+  /**
+   * Which library this is: the recordings, the screenshots, or both.
+   *
+   * Filtered here rather than by the caller, and it has to be: the grid pages
+   * through this twelve at a time, and a page filtered after it arrived would
+   * be twelve recordings with no screenshots in it — an empty library that
+   * loads for ever. `total` follows the filter for the same reason.
+   *
+   * The cost is one `existsSync` per candidate rather than per page, which is
+   * the one scan this function otherwise refuses. It is a stat on a name
+   * already in hand, where the thing it stands in for — parsing every
+   * `session.json` — is the cost that paragraph above exists to avoid.
+   */
+  still?: boolean,
   dir = SESSIONS_DIR,
 ): { projects: ProjectSummary[]; total: number } {
   if (!existsSync(dir)) return { projects: [], total: 0 };
@@ -70,9 +84,14 @@ export function listProjects(
     return { projects: [], total: 0 };
   }
 
-  const total = entries.length;
+  const candidates =
+    still === undefined
+      ? entries
+      : entries.filter((name) => existsSync(join(dir, name, STILL_FILE_NAME)) === still);
+
+  const total = candidates.length;
   const wanted =
-    limit === undefined ? entries.slice(offset) : entries.slice(offset, offset + limit);
+    limit === undefined ? candidates.slice(offset) : candidates.slice(offset, offset + limit);
 
   const projects: ProjectSummary[] = [];
   for (const name of wanted) {
@@ -85,6 +104,11 @@ export function listProjects(
         createdAt: statSync(join(path, MANIFEST_FILE_NAME)).mtimeMs,
         editedAt: edited,
         poster: freshPoster(path, edited) ? mediaUrl(name, POSTER_FILE_NAME) : null,
+        // One stat, where the manifest is the proper answer and costs a parse
+        // per card — see `ProjectSummary.still`. A still is the one session
+        // with this file in it, and `takeScreenshot` is the only thing that
+        // writes it.
+        still: existsSync(join(path, STILL_FILE_NAME)),
       });
     } catch {
       // No manifest, or unreadable. Not a recording we can open.
