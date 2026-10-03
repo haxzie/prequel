@@ -36,12 +36,18 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Granted here rather than on the job that needs them, because the `build` job
+# below calls a reusable workflow — and a called workflow cannot be given more
+# than its caller holds. `build.yml` asks for `contents: write` to create the
+# release; with these on the `version` job alone, the call is refused before any
+# job starts, as a run with no jobs in it and nothing anywhere saying why.
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     outputs:
       tagged: ${{ steps.tag.outputs.tagged }}
       tag: ${{ steps.tag.outputs.tag }}
@@ -84,3 +90,14 @@ jobs:
         id: tag
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: pnpm release:tag
+
+  # The disk image, the GitHub release and the CDN copy. Called rather than
+  # triggered: the tag above was pushed by this workflow's own token, and GitHub
+  # raises no `push` event for those.
+  build:
+    needs: version
+    if: needs.version.outputs.tagged == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit
