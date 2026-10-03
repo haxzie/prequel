@@ -21,6 +21,7 @@ import {
   layoutBoxes,
   loupeAt,
   LOUPE_HASTE,
+  pictureMoved,
   placement,
   presetFitsFrame,
   rectAt,
@@ -2982,6 +2983,46 @@ describe("zooming", () => {
     const { keys } = motionOf(zooms);
     return keys.reduce((best, key) => (key.width > best.width ? key : best), keys[0]!);
   };
+
+  /**
+   * The preview puts handles on a picture, and the picture has to be there.
+   *
+   * The bug: whether a shot was in flight was answered from the zoom list, by
+   * asking whether the moment fell inside a span. A span is how long a shot
+   * *holds* — the move that brings the picture in starts well before it and the
+   * move out settles well after — so for the better part of a second either side
+   * the ring was drawn around the resting box while the picture on screen was
+   * elsewhere, and the handles read as having come loose from what they move.
+   */
+  describe("whether the picture is where its settings put it", () => {
+    const shot = region({ source: { start: 2 * S, end: 6 * S } });
+
+    it("says no while the move is still carrying it in", () => {
+      const plan = planWith([shot]);
+      // Both of these are outside the span and inside the move: the picture
+      // has already left the box a drag would write, or has not yet come back
+      // to it.
+      expect(pictureMoved(plan, "screen", 1.8 * S)).toBe(true);
+      expect(pictureMoved(plan, "screen", 6.3 * S)).toBe(true);
+    });
+
+    it("says no between two shots that never come back to rest", () => {
+      // The second opens before the first has finished leaving, so the picture
+      // travels straight from one to the other and is never at its resting box
+      // in the gap between the spans.
+      const plan = planWith([shot, region({ id: "z2", source: { start: 6.4 * S, end: 9 * S } })]);
+      expect(pictureMoved(plan, "screen", 6.2 * S)).toBe(true);
+      expect(pictureMoved(plan, "screen", 6.35 * S)).toBe(true);
+    });
+
+    it("says yes where nothing is moving it", () => {
+      const plan = planWith([shot]);
+      expect(pictureMoved(plan, "screen", 0)).toBe(false);
+      expect(pictureMoved(plan, "screen", 12 * S)).toBe(false);
+      // And on a clip with no shots at all, where there is no track to read.
+      expect(pictureMoved(planWith([]), "screen", 4 * S)).toBe(false);
+    });
+  });
 
   /**
    * A window capture spends most of its length with the pointer somewhere else.
