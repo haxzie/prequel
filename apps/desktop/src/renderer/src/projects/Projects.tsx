@@ -261,6 +261,7 @@ export function Projects({
                 <Card
                   key={project.dir}
                   project={project}
+                  still={still}
                   view={view}
                   poster={project.poster ?? posters.get(project.dir) ?? null}
                   renaming={renaming === project.dir}
@@ -394,6 +395,7 @@ function Sentinel({ view, onVisible }: { view: LibraryView; onVisible: () => voi
  */
 function Card({
   project,
+  still,
   view,
   poster,
   renaming,
@@ -407,6 +409,8 @@ function Card({
   onDelete,
 }: {
   project: ProjectSummary;
+  /** Whether this is a screenshot, which wears no name in the grid. */
+  still: boolean;
   view: LibraryView;
   poster: string | null;
   renaming: boolean;
@@ -542,9 +546,18 @@ function Card({
         </div>
       </div>
 
+      {/* A screenshot's name is the moment it was taken, which the line under
+          it already says in words anybody reads faster. Twelve of those
+          timestamps down a grid is a column of near-identical strings over the
+          one thing that actually tells them apart — the picture. So the name
+          goes, and renaming stays on the pencil, which is where it is on the
+          recordings too.
+
+          Still shown while it is being renamed, or the pencil would open an
+          editor with nowhere to type. */}
       {renaming ? (
         <RenameField name={project.name} onDone={onRenamed} onCancel={onCancelRename} />
-      ) : (
+      ) : still ? null : (
         <button
           type="button"
           onClick={onRename}
@@ -557,7 +570,10 @@ function Card({
       {/* No "Opening…" here any more. A click navigates on the spot, so this
           card is gone before it could say so, and the editor route names the
           recording it is fetching instead. */}
-      <span className="-mt-1.5 text-[12px] text-editor-muted">
+      {/* The negative margin only exists to close the gap under the name. With
+          no name above it there is nothing to close, and the same rule would
+          pull the line into the tile. */}
+      <span className={cn("text-[12px] text-editor-muted", !still && "-mt-1.5")}>
         {formatTimeAgo(project.createdAt)}
       </span>
     </div>
