@@ -10,6 +10,19 @@
     "gallery/server/**/*.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
-    "src/shared/**/*.ts"
+    "src/shared/**/*.ts",
+    "src/cli/**/*.ts",
+    // The editor modules main legitimately imports, for a headless render and
+    // a headless share: the slice builder, the share transcript's conversion to
+    // file time, and the pure lookups both stand on. Listed
+    // one by one rather than as `src/renderer/**` because the rest of that
+    // folder is React and canvas code this project has no DOM types for —
+    // which is also the reason `exportSlices.ts` takes a tag *resolver* rather
+    // than the map of rasterised tags. See `main/render.ts`.
+    "src/renderer/src/editor/exportSlices.ts",
+    "src/renderer/src/editor/shareTranscript.ts",
+    "src/renderer/src/editor/segments.ts",
+    "src/renderer/src/editor/state.ts",
+    "src/renderer/src/editor/timeline.ts"
   ]
 }

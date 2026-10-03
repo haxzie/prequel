@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { augmentZooms, autoZooms, whileTyping, type Moment } from "./autoedit.js";
+import { augmentZooms, autoZooms, momentsOf, whileTyping, type Moment } from "./autoedit.js";
 import { DEFAULT_ZOOM, type ZoomSlice } from "./project.js";
 
 const S = 1_000_000_000;
@@ -374,5 +374,51 @@ describe("running it again over an edit", () => {
     const twice = augmentZooms(once, moments, OPTIONS);
 
     expect(twice).toEqual(once);
+  });
+});
+
+/**
+ * The first cut, read off a manifest.
+ *
+ * Two things make it now — the editor when a recording is first opened, and the
+ * command line when a take it recorded stops — so the reading of the arrays is
+ * here rather than in either of them. A recording whose zooms depended on which
+ * got there first would be the kind of disagreement nobody notices until the
+ * video is already sent.
+ */
+describe("momentsOf", () => {
+  const S = 1_000_000_000;
+
+  it("reads a click as a moment where it happened", () => {
+    const moments = momentsOf({ clicks: [{ at: 2 * S, x: 0.25, y: 0.75 }] });
+
+    expect(moments).toEqual([{ at: 2 * S, x: 0.25, y: 0.75, kind: "click" }]);
+  });
+
+  it("aims a typing moment at the middle of the field", () => {
+    const moments = momentsOf({
+      typing: [{ at: S, x: 0.2, y: 0.4, width: 0.4, height: 0.2 }],
+      keys: [{ start: 0, end: 2 * S }],
+    });
+
+    expect(moments).toEqual([{ at: S, x: 0.4, y: 0.5, kind: "typing" }]);
+  });
+
+  it("ignores a field that was focused while nobody typed", () => {
+    // A terminal, a chat box, a form that focuses its first field on arrival:
+    // all sit focused for the whole recording, and none of that is something
+    // that happened.
+    const moments = momentsOf({
+      typing: [{ at: 10 * S, x: 0, y: 0, width: 1, height: 1 }],
+      keys: [{ start: 0, end: S }],
+    });
+
+    expect(moments).toEqual([]);
+  });
+
+  it("says nothing about a recording that recorded nothing", () => {
+    // Which is every take made without the Accessibility grant, and the case
+    // the command line hits most: no moments, no zooms, and no pretending.
+    expect(momentsOf({})).toEqual([]);
   });
 });

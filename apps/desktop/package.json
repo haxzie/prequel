@@ -6,9 +6,10 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/sync-backgrounds.mjs && electron-vite dev --watch",
-    "build": "node scripts/sync-backgrounds.mjs && electron-vite build",
+    "build": "node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/build-cli.mjs",
     "preview": "electron-vite preview",
-    "package": "pnpm --filter @prequel/recorder build && node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/check-release-env.mjs && electron-builder",
+    "cli": "node scripts/build-cli.mjs",
+    "package": "pnpm --filter @prequel/recorder build && node scripts/sync-backgrounds.mjs && electron-vite build && node scripts/build-cli.mjs && node scripts/check-release-env.mjs && electron-builder",
     "install:app": "node scripts/install.mjs",
     "ship": "pnpm package && pnpm install:app",
     "test": "node scripts/sync-backgrounds.mjs && vitest run",

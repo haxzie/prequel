@@ -15,7 +15,7 @@ mod matte;
 mod recorder;
 
 pub use blob::HARMONICS;
-pub use devices::{CameraDevice, list_cameras};
+pub use devices::{AudioDevice, CameraDevice, list_cameras, list_microphones};
 pub use matte::{MatteSummary, MatteWorker, Segmenter, VisionSegmenter};
 pub use recorder::{
     CAMERA_FILE, CameraOptions, CameraRecorder, CameraSummary, DEFAULT_FPS, WarmCamera,

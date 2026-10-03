@@ -535,6 +535,38 @@ pub fn list_cameras() -> Vec<CameraDevice> {
         .collect()
 }
 
+#[napi(object)]
+#[derive(Debug)]
+pub struct MicrophoneDevice {
+    /// `AVCaptureDevice.uniqueID`.
+    pub id: String,
+    /// `AVCaptureDevice.localizedName`.
+    pub name: String,
+    /// Whether macOS treats this as the input to use.
+    ///
+    /// A take records the default input — ScreenCaptureKit captures "the
+    /// microphone" and is not handed a device — so this is the field that says
+    /// which of these will actually be heard.
+    pub is_default: bool,
+}
+
+/// Every audio input attached, with the default marked.
+///
+/// Listed for the command line and for anything else that has to name the
+/// microphone before a recording: the renderer gets its own list from
+/// `navigator.mediaDevices`, which main cannot reach.
+#[napi]
+pub fn list_microphones() -> Vec<MicrophoneDevice> {
+    camera::list_microphones()
+        .into_iter()
+        .map(|device| MicrophoneDevice {
+            id: device.id,
+            name: device.name,
+            is_default: device.is_default,
+        })
+        .collect()
+}
+
 // ── Recording ───────────────────────────────────────────────────────────────
 //
 // Recording is a process-wide singleton: macOS gives one Screen Recording

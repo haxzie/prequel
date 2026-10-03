@@ -3,11 +3,12 @@
  */
 import { fileURLToPath } from "node:url";
 
-import { app, Menu, nativeImage, shell, Tray } from "electron";
+import { app, dialog, Menu, nativeImage, shell, Tray } from "electron";
 import type { MenuItemConstructorOptions, NativeImage } from "electron";
 
 import { authState, beginSignIn, openDashboard } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
+import { installShim, shimInstalled } from "./cli/shim.js";
 import { log, logPath } from "./log.js";
 import type { RecordingSession, SessionState } from "./session.js";
 import { acceleratorGlyphs } from "../shared/accelerator.js";
@@ -338,6 +339,15 @@ export class AppTray {
         click: () => shell.showItemInFolder(logPath()),
       },
       { type: "separator" },
+      // The command line, which is also how an agent drives the app. Named for
+      // what it leaves behind rather than for the file it writes, and
+      // "Reinstall" once it is there so the row is not a thing to keep doing.
+      {
+        label: shimInstalled() ? "Reinstall Command Line Tool" : "Install Command Line Tool",
+        icon: symbol("terminal"),
+        click: () => installCommandLineTool(),
+      },
+      { type: "separator" },
       ...(authState().status === "signed-in"
         ? []
         : [{ label: "Sign In…", icon: symbol("person.crop.circle"), click: () => beginSignIn() }]),
@@ -368,6 +378,36 @@ export class AppTray {
       },
     ]);
   }
+}
+
+/**
+ * Writes the shim and says where it went.
+ *
+ * A dialog rather than a silent write, because the one thing the user has to
+ * know is a thing the app cannot do for them: whether `~/.local/bin` is on the
+ * PATH their shell reads. The PATH this process sees came from `launchd` and is
+ * not theirs, so the message offers the line to add rather than claiming it is
+ * needed.
+ */
+function installCommandLineTool(): void {
+  const { path } = installShim();
+
+  void dialog
+    .showMessageBox({
+      type: "info",
+      message: "The prequel command is installed.",
+      detail:
+        `Written to ${path}.\n\n` +
+        `Try \`prequel status\`. If your shell cannot find it, add this to ~/.zshrc:\n\n` +
+        `  export PATH="$HOME/.local/bin:$PATH"\n\n` +
+        `\`prequel guide\` prints everything it can do, which is also what an agent reads.`,
+      buttons: ["Done", "Show in Finder"],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    .then(({ response }) => {
+      if (response === 1) shell.showItemInFolder(path);
+    });
 }
 
 /**

@@ -1,0 +1,97 @@
+export const title = "Command line";
+export const description = "Record, edit and render from a terminal — or from an agent.";
+export const faq = [
+  {
+    question: "How do I install the prequel command?",
+    answer:
+      "Open the menu bar icon and choose Install Command Line Tool. It writes a small script to ~/.local/bin/prequel that runs Prequel's own command line. You can also install the app and the command together with: curl -fsSL https://prequel.sh/install.sh | sh",
+  },
+  {
+    question: "Can an AI agent use Prequel?",
+    answer:
+      "Yes. Every command takes --json and answers with one object, and `prequel guide --json` describes the whole tool so an agent can read it before it starts. `prequel skill install` writes a skill for Claude Code into ~/.claude/skills/prequel.",
+  },
+  {
+    question: "How do I update the prequel command?",
+    answer:
+      "Run prequel upgrade. The command line is a part of the app, so one command updates both — Prequel quits and comes back on the new version. prequel upgrade --check says what is available without installing it.",
+  },
+  {
+    question: "How do I edit a recording from the command line?",
+    answer:
+      "By editing the recording's own project.json, the same file the editor reads and writes. `prequel project path <id>` says where it is, `prequel project schema` describes every field, and `prequel project check <id>` tells you whether an edit will load before you render it.",
+  },
+];
+
+## Installing it
+
+From the menu bar: **Install Command Line Tool**. It writes `~/.local/bin/prequel`, which runs Prequel's command line under the app's own runtime — there is nothing else to install.
+
+To install the app and the command in one go:
+
+```sh
+curl -fsSL https://prequel.sh/install.sh | sh
+```
+
+If your shell cannot find `prequel` afterwards, add `~/.local/bin` to your PATH:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+## Recording
+
+```sh
+prequel status                 # permissions, sign-in, whether a take is running
+prequel target list --windows  # ids, titles, apps
+prequel record window 4221     # or: record display [id], record area 0,0,1280,800
+prequel record stop --render   # keeps the take and renders the first cut
+```
+
+Nothing is recorded that was not asked for: no camera, no microphone and no system audio unless you pass `--camera`, `--microphone` or `--system-audio`. Those flags become the panel's own settings, so what the app shows is what is being captured.
+
+The app is started if it is not running, and stays in the menu bar rather than opening a panel over the screen you are about to record.
+
+## Editing
+
+There is no command for moving a zoom or trimming a clip. The edit is `project.json`, beside the recording, and you edit that file directly — it is the same file the editor reads.
+
+```sh
+prequel recordings list        # ids, newest first
+prequel project path <id>      # where project.json is
+prequel project schema         # every field, its units and its allowed values
+prequel project check <id>     # does this edit load? what did it adjust?
+prequel render <id> --out demo.mp4
+```
+
+`prequel project check` runs the app's own sanitiser over the file and names anything it would clamp or drop, which is the difference between an edit that took and one you believed took.
+
+Everything a project can be set to is listable with the app closed: `prequel filters list`, `cursors list`, `layouts list`, `presets list`, `sounds list`, `backgrounds list`, `scenes list`.
+
+## Rendering
+
+```sh
+prequel render <id> [--out file.mp4] [--format h264|hevc|gif] [--preset 9:16] [--short-edge 1080]
+```
+
+Rendering happens on your Mac and nothing is uploaded unless you add `--share`. Frame counts are printed while it runs.
+
+Burned-in captions, text overlays and a named cursor tag are drawn by the editor's window, so a recording using any of them cannot be rendered from the command line. It says so rather than quietly leaving them out — open the recording and export from there.
+
+## Updating
+
+```sh
+prequel upgrade --check   # what is available
+prequel upgrade           # update Prequel, and the command with it
+```
+
+The command line is part of the app, so updating one updates both. Prequel quits and comes back on the new version, and it will not do that while you are recording.
+
+## For agents
+
+Every command takes `--json`, and answers with JSON whenever its output is not going to a terminal. Progress goes to the error stream, so the answer stays parseable. Exit codes: `0` done, `1` the command failed, `2` the command line was wrong, with `{"error":{"code","message"}}` on the failures.
+
+```sh
+prequel guide --json     # every command, flag and answer
+prequel skill install    # the Claude Code skill, into ~/.claude/skills/prequel
+```

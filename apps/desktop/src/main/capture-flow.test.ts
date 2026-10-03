@@ -913,3 +913,144 @@ describe("adding a recording to a project", () => {
     expect(flow.state().extending).toBe(false);
   });
 });
+
+/**
+ * The way in from the command line.
+ *
+ * `recordTarget` is the only path to `record` that does not go through a
+ * picker — there is nobody at the screen to click a window — and `stop`'s
+ * `open` is what keeps an editor window from appearing over the demo an agent
+ * is in the middle of. Both are asserted against the request the recorder
+ * actually receives, like everything else here.
+ */
+describe("recording a target chosen from outside the app", () => {
+  const WINDOW: Target = {
+    kind: "Window",
+    id: 4221,
+    title: "Prequel — the cinematic screen recorder",
+    appName: "Safari",
+    appPath: "/Applications/Safari.app",
+    bounds: { x: 20, y: 40, width: 1200, height: 800 },
+    scaleFactor: 2,
+  };
+
+  it("captures the target it was handed, with no picker opened", async () => {
+    const { flow, selection } = makeFlow();
+
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "Safari" });
+
+    expect(selection.opened).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ targetKind: "Window", targetId: 4221 });
+  });
+
+  it("carries a crop through for an area", async () => {
+    const { flow } = makeFlow();
+    const crop = { x: 10, y: 20, width: 640, height: 480 };
+
+    await flow.recordTarget({ mode: "area", target: WINDOW, crop, label: "Area" });
+
+    expect(requests[0]?.crop).toEqual(crop);
+  });
+
+  it("records at the panel's rate unless one was asked for", async () => {
+    // 60 is `RecordingSession.start`'s fallback and the rate the panel has
+    // always recorded at. The command line overriding it must not become a
+    // second default that only agents get.
+    const { flow } = makeFlow();
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+    expect(requests[0]?.fps).toBe(60);
+    // Stopped before the next one: the recorder is a process-wide singleton,
+    // so a second take started over the first is refused by the addon rather
+    // than by anything here.
+    await flow.stop({ open: false });
+
+    const second = makeFlow();
+    await second.flow.recordTarget(
+      { mode: "window", target: WINDOW, crop: null, label: "" },
+      { fps: 30 },
+    );
+    expect(requests[1]?.fps).toBe(30);
+  });
+
+  it("tells the panel what is being captured", async () => {
+    // The panel may well be on screen while an agent records. Left unset it
+    // would describe the last thing a person picked.
+    const { flow } = makeFlow();
+    await flow.recordTarget({ mode: "area", target: WINDOW, crop: null, label: "Area" });
+    expect(flow.state().activeMode).toBe("area");
+  });
+
+  it("refuses while a take is already running", async () => {
+    // Rejected rather than ignored: a command that returns successfully having
+    // recorded nothing is indistinguishable from one that worked.
+    const { flow } = makeFlow();
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+
+    await expect(
+      flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" }),
+    ).rejects.toThrow(/BUSY/);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("keeps the panel and the bubble off the screen when asked", async () => {
+    // A take nobody is standing over. The pill and the camera bubble are
+    // Prequel's own furniture over the screen being captured, and they are
+    // excluded from the video — so the only person they could reach is the one
+    // who did not ask for them.
+    const { flow, dockCalls, camera } = makeFlow({ cameraId: "cam-1", cameraLabel: "FaceTime" });
+    const shownBefore = dockCalls.shown;
+
+    await flow.recordTarget(
+      { mode: "window", target: WINDOW, crop: null, label: "" },
+      { quiet: true },
+    );
+
+    expect(dockCalls.shown).toBe(shownBefore);
+    expect(dockCalls.visible).toBe(false);
+    expect(camera.shown).toBe(false);
+  });
+
+  it("shows the panel for an ordinary take", async () => {
+    // The default, and the button's behaviour: a person who pressed Record has
+    // to be able to see the take running and stop it from where they are.
+    const { flow, dockCalls } = makeFlow();
+
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+
+    expect(dockCalls.visible).toBe(true);
+  });
+
+  it("puts the panel back for the take after a quiet one", async () => {
+    // The flag belongs to the take, not to the flow. Left set, every recording
+    // after an agent's would be invisible to the person making it.
+    const { flow, dockCalls } = makeFlow();
+
+    await flow.recordTarget(
+      { mode: "window", target: WINDOW, crop: null, label: "" },
+      { quiet: true },
+    );
+    await flow.stop({ open: false });
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+
+    expect(dockCalls.visible).toBe(true);
+  });
+
+  it("opens no editor when the stop asked for none", async () => {
+    const { flow, workspace } = makeFlow();
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+    await flow.stop({ open: false });
+
+    expect(workspace.opened).toEqual([]);
+  });
+
+  it("still opens the editor for a stop that did not say", async () => {
+    // The default is the button's behaviour, which must not change because the
+    // command line wanted something else.
+    const { flow, workspace } = makeFlow();
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+    await flow.stop();
+
+    expect(workspace.opened).toHaveLength(1);
+  });
+});

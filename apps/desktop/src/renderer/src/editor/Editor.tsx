@@ -32,7 +32,7 @@ import {
   presetNeedsBackground,
   type ScenePreset,
 } from "../../../shared/scene-presets";
-import { augmentZooms, autoZooms, whileTyping, type Moment } from "../../../shared/autoedit";
+import { augmentZooms, autoZooms, momentsOf } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
 import { FRAME_BAR, TITLE_BAR } from "./surfaces";
@@ -1885,20 +1885,6 @@ function useAutoFrame(
  * Shared by the first cut and the wand, so the two can never disagree about
  * what counts as a moment.
  */
-function momentsOf(session: EditorSession): Moment[] {
-  return [
-    ...(session.manifest.clicks ?? []).map((click) => ({ ...click, kind: "click" as const })),
-    // The middle of the field, which is what a zoom would frame anyway. Only
-    // the samples taken while keys were going down: the rest are a field that
-    // was focused, which is not something that happened.
-    ...whileTyping(session.manifest.typing ?? [], session.manifest.keys).map((span) => ({
-      at: span.at,
-      x: span.x + span.width / 2,
-      y: span.y + span.height / 2,
-      kind: "typing" as const,
-    })),
-  ];
-}
 
 /**
  * Makes the first cut, once — and runs it again, scoped, when a take lands.
@@ -1944,7 +1930,7 @@ function useFirstCut(
 
       // Source time, the same clock `moment.at` is on — a slice's `source` and
       // a manifest sample were shifted onto it by the same merge.
-      const moments = momentsOf(session).filter(
+      const moments = momentsOf(session.manifest).filter(
         (moment) => moment.at >= added.source.start && moment.at < added.source.end,
       );
       if (moments.length === 0) return;
@@ -1964,7 +1950,7 @@ function useFirstCut(
     // the question is actually about.
     if (state.revision !== 0 || session.project.zooms.length > 0) return;
 
-    const moments = momentsOf(session);
+    const moments = momentsOf(session.manifest);
     if (moments.length === 0) return;
 
     const zooms = autoZooms(moments, {

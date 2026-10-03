@@ -85,7 +85,13 @@ export const DOCS = [
   {
     id: "reference",
     title: "Reference",
-    pages: ["keyboard-shortcuts", "settings", "troubleshooting", "where-files-live"],
+    pages: [
+      "keyboard-shortcuts",
+      "command-line",
+      "settings",
+      "troubleshooting",
+      "where-files-live",
+    ],
   },
 ] as const satisfies readonly { id: string; title: string; pages: readonly string[] }[];
 
