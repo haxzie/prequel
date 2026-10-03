@@ -16,9 +16,21 @@ Not the marketing site's prose, which is `[[site-copy]]`. Not a commit log —
 > using the app can now do, and most releases contain a good deal of the first
 > and very little of the second. Anything that changed only for us stays out.
 
+## Where the entry is written now
+
+**In a changeset, not in the `.mdx`.** The files under
+`apps/web/src/content/changelog` are generated: `release.yml` collects the
+pending changesets, writes `<version>.mdx` from their sentences, adds the
+version to `RELEASES` and tags the result. Writing one by hand puts it in the
+way of the generator.
+
+So this file is still the voice — every rule below applies to the sentence in a
+changeset, which is published verbatim — and the `changeset` skill is the shape
+and the bump. Read both.
+
 ## The rule
 
-**The changelog entry is written before the work reaches `main`** — in the same
+**The changeset is written before the work reaches `main`** — in the same
 branch, in the same PR, before the push. Not afterwards.
 
 Written after the fact it gets written from `git log`, by someone reconstructing
@@ -27,8 +39,8 @@ a dev log. Written alongside the work, the question is still "what will somebody
 notice?" rather than "what did I change?".
 
 So: before `git push` to `main`, and before opening a PR that targets `main`,
-check whether the branch changes anything a user can see. If it does and the
-changelog does not mention it, stop and write the line.
+check whether the branch changes anything a user can see. If it does and there
+is no changeset for it, stop and write one.
 
 Nothing to add is a normal answer. Refactors, tests, build fixes, internal
 renames and fixes to features that never shipped all belong in no release.
@@ -95,8 +107,8 @@ nothing a user needs went with them.
 
 ## Where it lives
 
-One file per release, `apps/web/src/content/changelog/<version>.mdx`, an
-ordinary Markdown list:
+One file per release, `apps/web/src/content/changelog/<version>.mdx` — written
+by `scripts/version-packages.mjs`, not by you. What it generates:
 
 ```mdx
 export const date = "2026-09-25";
@@ -106,23 +118,23 @@ export const draft = true;
 - Put a filter over the whole picture: CRT, VHS, film, fish eye and seven more.
 ```
 
-- `date` — ISO. The day it ships, not the day the first line was written.
-- `highlight` — the fragment above. Every release has one.
-- `draft` — `true` while the version is unreleased; `published()` keeps drafts
-  off production and the page shows a "draft" pill in development. **Delete the
-  line when the version is tagged.**
-- Add the version to the top of `RELEASES` in
+- `date` — the day the release was versioned, which is the day it ships.
+- `highlight` — the fragment above. Taken from a
+  `<!-- highlight: … -->` comment in a changeset, or from the most significant
+  one's sentence.
+- The version is added to the top of `RELEASES` in
   `apps/web/src/content/changelog.ts`, which is what orders the page — a
   directory sorted as text puts `0.0.9` after `0.0.13`.
 
-Adding to a release that is still a draft is normal: keep editing that file
-until it ships rather than starting the next one.
+There is no `draft` export any more. An entry exists once the release is
+versioned, and before that the pending release is the set of files in
+`.changeset` — which is also where you add to it.
 
 ## Check
 
 ```bash
-npx prettier --check "apps/web/src/content/changelog/*.mdx"
-pnpm --filter @prequel/web dev   # /docs/changelog
+pnpm changeset status --since=origin/main   # what this branch would ship
+pnpm --filter @prequel/web dev              # /docs/changelog, once released
 ```
 
 Then read the release as a stranger who has just updated. If any line makes you

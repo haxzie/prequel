@@ -90,18 +90,26 @@ comments do not hedge.
 
 ## Before anything reaches `main`
 
-**If the branch changes something a user can see, the changelog says so before
+**If the branch changes something a user can see, it carries a changeset before
 you push** — same branch, same PR, not afterwards. Written after the fact it
 gets reconstructed from commit subjects, which is how a changelog turns into a
 dev log.
 
-One file per release under `apps/web/src/content/changelog`. One sentence per
-entry, about twenty words, in the words on the buttons — no causes, no API
-names, no "it used to". Read the `changelog` skill before writing one; that
-voice is not this file's voice, and this file's voice leaks.
+A changeset is one file under `.changeset`: the package, the bump, and one
+sentence of about twenty words in the words on the buttons — no causes, no API
+names, no "it used to". That sentence _is_ the changelog entry; it is published
+verbatim. Read the `changeset` skill for the shape and the `changelog` skill for
+the voice, which is not this file's voice and leaks constantly.
 
 Nothing to add is a normal answer: refactors, tests, build fixes and fixes to
 features that never shipped belong in no release.
+
+**Nothing about a release is written by hand.** The version in
+`apps/desktop/package.json`, the entry in `apps/web/src/content/changelog`, the
+order in `changelog.ts` and the tag are all produced from the changesets by
+`release.yml` — which opens a pull request called "Release x.y.z" and ships when
+it is merged. Editing any of the four by hand either loses the edit or fails the
+tag check in `build.yml`.
 
 ## Invariants that fail silently
 

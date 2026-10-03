@@ -83,6 +83,20 @@ jobs:
 
       - run: pnpm typecheck
 
+      # The command line, run from the bundle `pnpm build` just wrote. `guide`
+      # needs no app, no socket and no permissions, so this costs a moment and
+      # catches a bundle that cannot start at all — a bad import, the wrong
+      # module format — long before anybody packages one. What a packaged build
+      # does with the same file is checked again in `build.yml`, from inside the
+      # app, because the two can fail independently.
+      - name: Check the command line runs
+        run: |
+          node apps/desktop/out/cli/prequel.cjs guide --json | node -e '
+            const guide = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            if (!guide.commands?.length) throw new Error("the guide is empty");
+            console.log(`prequel protocol ${guide.protocol}, ${guide.commands.length} commands`);
+          '
+
       - name: Test (JavaScript)
         run: pnpm turbo run test
 
