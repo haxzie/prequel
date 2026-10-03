@@ -42,12 +42,12 @@ const STYLES = [
   // silhouette nobody would take for one.
   { id: "modern-black", shape: "pointer", fill: 0, stroke: 255, alpha: 255 },
   { id: "modern-white", shape: "pointer", fill: 255, stroke: 0, alpha: 255 },
-  { id: "black", shape: "solar", fill: 0, stroke: 255, alpha: 255 },
+  { id: "black", shape: "arrow", fill: 0, stroke: 255, alpha: 255 },
   { id: "black-hand", shape: "hand", fill: 0, stroke: 255, alpha: 255 },
   { id: "black-text", shape: "ibeam", fill: 0, stroke: 255, alpha: 255 },
   { id: "black-resize-h", shape: "resize-h", fill: 0, stroke: 255, alpha: 255 },
   { id: "black-resize-v", shape: "resize-v", fill: 0, stroke: 255, alpha: 255 },
-  { id: "white", shape: "solar", fill: 255, stroke: 0, alpha: 255 },
+  { id: "white", shape: "arrow", fill: 255, stroke: 0, alpha: 255 },
   { id: "white-hand", shape: "hand", fill: 255, stroke: 0, alpha: 255 },
   { id: "white-text", shape: "ibeam", fill: 255, stroke: 0, alpha: 255 },
   { id: "white-resize-h", shape: "resize-h", fill: 255, stroke: 0, alpha: 255 },
@@ -85,6 +85,25 @@ const OUTLINE = SIZE * 0.055;
 const SAMPLES = 4;
 
 /**
+ * The macOS arrow, as fractions of its own bounding box, tip at the origin.
+ *
+ * Wound as one closed loop: straight down the left edge, out to the notch, down
+ * the tail, and back up to the tip.
+ */
+const ARROW = [
+  [0, 0],
+  [0, 0.75],
+  [0.19, 0.58],
+  [0.3, 0.86],
+  [0.43, 0.81],
+  [0.32, 0.53],
+  [0.56, 0.53],
+];
+
+/** Ratio of the arrow's own width to its height. */
+const ASPECT = 0.56 / 0.86;
+
+/**
  * The shapes taken from icon sets, as the `d` attribute of each glyph, verbatim.
  *
  * Copied in rather than fetched: a build must not need a network or an SVG
@@ -93,7 +112,7 @@ const SAMPLES = 4;
  * list of absolute commands, which was right, but only provably so by
  * converting it again.
  *
- * Three families. The pointer and the resize arrows are Fluent UI System Icons
+ * Two families. The pointer and the resize arrows are Fluent UI System Icons
  * (MIT, Microsoft). The hand is Font Awesome's, because Fluent's `hand_point`
  * is a mitten — a thumb and a lump — and a link cursor with no fingers on it
  * reads as a smudge at the size a pointer is drawn. Font Awesome Free is
@@ -110,11 +129,6 @@ const GLYPHS = {
   // ic_fluent_cursor_28_filled
   pointer:
     "M6 3.604c0-1.346 1.56-2.09 2.607-1.243l16.88 13.669c1.018.824.435 2.47-.875 2.47h-9.377a2.25 2.25 0 0 0-1.749.835l-4.962 6.134C7.682 26.51 6 25.915 6 24.576z",
-  // Solar `cursor` in the Bold set, by 480 Design — CC BY 4.0,
-  // https://creativecommons.org/licenses/by/4.0/. The classic pointer: a
-  // chunkier arrow with a tail, where the Fluent one is a plain wedge.
-  solar:
-    "M16.5744 19.1999L12.6361 15.2616L11.4334 16.4643C10.2022 17.6955 9.58656 18.3111 8.92489 18.1658C8.26322 18.0204 7.96225 17.2035 7.3603 15.5696L5.3527 10.1205C4.15187 6.86106 3.55146 5.23136 4.39141 4.39141C5.23136 3.55146 6.86106 4.15187 10.1205 5.35271L15.5696 7.3603C17.2035 7.96225 18.0204 8.26322 18.1658 8.92489C18.3111 9.58656 17.6955 10.2022 16.4643 11.4334L15.2616 12.6361L19.1999 16.5744C19.6077 16.9821 19.8116 17.186 19.9058 17.4135C20.0314 17.7168 20.0314 18.0575 19.9058 18.3608C19.8116 18.5882 19.6077 18.7921 19.1999 19.1999C18.7921 19.6077 18.5882 19.8116 18.3608 19.9058C18.0575 20.0314 17.7168 20.0314 17.4135 19.9058C17.186 19.8116 16.9821 19.6077 16.5744 19.1999Z",
   // Font Awesome 7 Solid `hand-pointer`, by Dave Gandy — CC BY 4.0,
   // https://creativecommons.org/licenses/by/4.0/
   hand: "M224 104c0-22.1 17.9-40 40-40s40 17.9 40 40v148.2c8.5-7.6 19.7-12.2 32-12.2c20.6 0 38.2 13 45 31.2c8.8-9.3 21.2-15.2 35-15.2c25.3 0 46 19.5 47.9 44.3c8.5-7.7 19.8-12.3 32.1-12.3c26.5 0 48 21.5 48 48v112c0 70.7-57.3 128-128 128h-85.3c-5 0-9.9-.3-14.7-1c-55.3-5.6-106.2-34-140-79l-72-96c-13.3-17.7-9.7-42.7 8-56s42.7-9.7 56 8l56 74.7zm112 264c0-8.8-7.2-16-16-16s-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16zm48-16c-8.8 0-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16v-96c0-8.8-7.2-16-16-16m80 16c0-8.8-7.2-16-16-16s-16 7.2-16 16v96c0 8.8 7.2 16 16 16s16-7.2 16-16z",
@@ -352,8 +366,6 @@ function fitted(shape, tip) {
 /** Which point of a glyph does the pointing, for `fitted`. */
 const TIPS = {
   pointer: (best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best),
-  // Rounded at the tip like the pointer, so measured the same way.
-  solar: (best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best),
   hand: (best, p) => (p[1] < best[1] ? p : best),
 };
 
@@ -395,8 +407,12 @@ function rings(shape) {
   if (shape in GLYPHS) return fitted(shape, TIPS[shape]).rings;
 
   // Centred rather than anchored to the corner, because it points with its
-  // middle.
-  return [centred(IBEAM, IBEAM_ASPECT, span)];
+  // middle. The arrow points with a corner and is laid out from it, which is
+  // what makes its hotspot the small fraction below.
+  if (shape === "ibeam") return [centred(IBEAM, IBEAM_ASPECT, span)];
+
+  const width = span * ASPECT;
+  return [ARROW.map(([x, y]) => [OUTLINE + (x / 0.56) * width, OUTLINE + (y / 0.86) * span])];
 }
 
 /**
@@ -557,10 +573,12 @@ function encodePng(rgba) {
 
 /** Where each shape actually points, as a fraction of its image. */
 function hotspot(shape) {
-  // The pointers' tips are rounded off and the hand's fingertip is the
-  // crown of an arc, so each is measured from the artwork rather than assumed
+  // The arrow's tip sits one outline in from the top-left corner.
+  if (shape === "arrow") return { x: OUTLINE / SIZE, y: OUTLINE / SIZE };
+  // The modern pointer's tip is rounded off and the hand's fingertip is the
+  // crown of an arc, so both are measured from the artwork rather than assumed
   // to be a corner — see `fitted()`.
-  if (shape in TIPS) {
+  if (shape === "pointer" || shape === "hand") {
     const { tip } = fitted(shape, TIPS[shape]);
     return { x: tip[0] / SIZE, y: tip[1] / SIZE };
   }
