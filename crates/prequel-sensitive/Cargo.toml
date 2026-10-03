@@ -1,0 +1,24 @@
+[package]
+name = "prequel-sensitive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+# Deliberately free of Apple framework dependencies, like `prequel-session` and
+# `prequel-keysound`: deciding whether a string is a card number is arithmetic
+# over text, and arithmetic can be tested on any machine. Vision reads the
+# pixels, `prequel-ocr` calls Vision, and neither of them decides anything.
+#
+# That split is the point. Precision is the only thing that makes this feature
+# shippable — a mask over the wrong thing ruins a take — and precision is a
+# property of a corpus of strings, not of a video. Keeping the rules here means
+# the whole question is answerable in `cargo test` with no display, no TCC grant
+# and no recording.
+
+[dependencies]
+prequel-session = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }

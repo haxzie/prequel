@@ -109,6 +109,18 @@ impl VideoReader {
         self.current.as_ref().map(|(_, buf)| buf.as_ref())
     }
 
+    /// The presentation time of the frame being held, if one has been pulled.
+    ///
+    /// Asked by the sensitive-text scan rather than the export, which has no use
+    /// for it. Because `frame_at` repeats a frame when nothing changed, a pts
+    /// that has not advanced since the last sample means the picture is
+    /// byte-identical — and re-reading text out of a frame already read is the
+    /// single largest avoidable cost in a pass over a screen recording, most of
+    /// which is a still picture.
+    pub fn current_pts(&self) -> Option<u64> {
+        self.current.as_ref().map(|(pts, _)| *pts)
+    }
+
     fn next(&mut self) -> Option<(u64, arc::R<cv::PixelBuf>)> {
         let sample = self.output.next_sample_buf().ok().flatten()?;
         let pts = nanos(sample.pts());

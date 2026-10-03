@@ -27,8 +27,8 @@ pub mod timeline;
 
 // Private, except to the GPUI spike. The `spike` feature is off by default, so
 // the crate's public surface is unchanged for every ordinary build — but the
-// spike has to drive the *real* compositor and the *real* reader, because
-// proving a reimplementation of them would prove nothing at all.
+// spike has to drive the *real* compositor, because proving a reimplementation
+// of it would prove nothing at all. The reader below is public outright.
 #[cfg(not(feature = "spike"))]
 mod compositor;
 #[cfg(feature = "spike")]
@@ -37,9 +37,12 @@ pub mod compositor;
 mod export;
 mod image;
 
-#[cfg(not(feature = "spike"))]
-mod reader;
-#[cfg(feature = "spike")]
+// Public, unlike the compositor above: the sensitive-text scan walks a recorded
+// file to decide where a mask belongs, and the export walks it to draw one. Two
+// implementations of "which frame was on screen at this moment" is how those two
+// come to disagree about a position — the same reason geometry is computed once.
+// `frame_at`'s hold-the-last-frame behaviour is the whole reason a sampled scan
+// is correct at all, and it is not a detail worth reimplementing twice.
 pub mod reader;
 
 pub use export::{CancelFlag, ExportRequest, ExportSummary, OutputFormat, Progress, Stage, export};

@@ -18,6 +18,7 @@ prequel-session = { path = "crates/prequel-session" }
 prequel-encode = { path = "crates/prequel-encode" }
 prequel-keysound = { path = "crates/prequel-keysound" }
 prequel-render = { path = "crates/prequel-render" }
+prequel-sensitive = { path = "crates/prequel-sensitive" }
 prequel-speech = { path = "crates/prequel-speech" }
 prequel-voice = { path = "crates/prequel-voice" }
 
@@ -29,6 +30,14 @@ prequel-voice = { path = "crates/prequel-voice" }
 # tracks Apple SDKs closely, so a floating minor could break the build.
 cidre = { version = "=0.20.0", default-features = false }
 
+# The secret rules are a couple of dozen vendor prefixes — `sk-ant-api03-`,
+# `ghp_`, `AKIA` + 16 base36, a JWT's three base64url segments. One `RegexSet`
+# answers "does this token match any rule" in a single pass over it, where two
+# dozen hand-rolled scanners would be two dozen chances to get a character class
+# subtly wrong and mask the wrong thing. Only `prequel-sensitive` uses it, and
+# only for shape: every category still has its own validator afterwards, and the
+# byte-to-UTF-16 offset table a Vision rect needs is hand-built either way.
+regex = "1"
 serde = "1"
 serde_json = "1"
 thiserror = "2"
