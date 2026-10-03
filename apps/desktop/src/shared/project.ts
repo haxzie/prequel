@@ -1939,6 +1939,9 @@ function windowCornerRadius(
     defaults.background,
     { screen: window, camera: null },
     "screen",
+    // The default arrangement, which places the picture itself — the slack a
+    // screenshot gets is only ever read under `custom`.
+    false,
   );
   if (!placed || placed.srcRect.width <= 0) return defaults.background.cornerRadius;
 

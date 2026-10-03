@@ -1827,8 +1827,8 @@ function ring(
       : selected === "watermark"
         ? watermarkRect(frame, settings.watermark)
         : selected
-          ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
-            null)
+          ? (placement(frame, settings.layout, settings.background, sources, selected, still)
+              ?.dstRect ?? null)
           : null;
 
   // A zoom moves the picture on its own track, leaving the box a drag reads and

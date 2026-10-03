@@ -964,7 +964,8 @@ export function buildRenderPlan(
   // "where is it" cannot be answered by two different pieces of arithmetic.
   const leaving =
     enter && sources.camera
-      ? placement(frame, enter.from.layout, enter.from.background, sources, "camera")
+      ? // Never a screenshot: a still has one clip and nothing to arrive from.
+        placement(frame, enter.from.layout, enter.from.background, sources, "camera", false)
       : null;
 
   if (sources.screen && boxes.screen) {
@@ -6060,12 +6061,14 @@ export function placement(
   /**
    * Whether this composition is a screenshot — see `layoutBoxes`.
    *
-   * The preview answers this the same way the plan does, and has to: this is
-   * what its ring and its hit testing are built from, and a handle clamped to
-   * the frame on a picture that is allowed past it is a corner you can see and
-   * cannot grab.
+   * **Required, where `layoutBoxes` defaults it.** Every caller of this one is
+   * answering "where is the picture" for something that has to agree with what
+   * was drawn — the ring, the handles, the hit testing — and a default is a way
+   * to forget. It was forgotten exactly once: the ring stayed clamped inside
+   * the frame while the picture it belongs to was dragged past the edge, which
+   * is a box bound to the viewport rather than to the thing it rings.
    */
-  still = false,
+  still: boolean,
 ): (Slot & { dstRect: Rect; srcRect: Rect }) | null {
   const source = sources[which];
   const slot = layoutBoxes(frame, layout, background, sources, still)[which];

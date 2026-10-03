@@ -138,6 +138,7 @@ describe("the camera shaped by the person in it", () => {
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: CAMERA },
       "camera",
+      false,
     )!.dstRect;
 
   it("is the size of the bubble, not of the picture behind it", () => {
@@ -724,6 +725,7 @@ describe("the camera", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "camera",
+        false,
       )!.dstRect;
       expect(bubble.x + bubble.width).toBeCloseTo(1920, 6);
       expect(bubble.y + bubble.height).toBeCloseTo(1080, 6);
@@ -741,6 +743,7 @@ describe("the camera", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "camera",
+        false,
       )!.dstRect;
       // The centre sits on the corner: half the box is out of shot.
       expect(cut.x + cut.width / 2).toBeCloseTo(1920, 6);
@@ -2550,6 +2553,7 @@ describe("the arrangements", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "screen",
+        false,
       )!.dstRect;
 
     expect(drawn("over-column").width).toBeCloseTo(drawn("over-padded").width);
@@ -5922,6 +5926,7 @@ describe("a screenshot pushed into", () => {
       current.background,
       { screen: SCREEN, camera: null },
       "screen",
+      false,
     )!;
 
     expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);

@@ -234,7 +234,14 @@ describe("newProject", () => {
     const { layout, background } = project.defaults;
 
     const frame = { width: window.width, height: window.height };
-    const placed = placement(frame, layout, background, { screen: window, camera: null }, "screen");
+    const placed = placement(
+      frame,
+      layout,
+      background,
+      { screen: window, camera: null },
+      "screen",
+      false,
+    );
     if (!placed) throw new Error("the screen has a place in the default layout");
 
     const drawn = background.cornerRadius * Math.min(frame.width, frame.height);
