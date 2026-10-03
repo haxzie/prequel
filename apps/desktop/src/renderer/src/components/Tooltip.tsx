@@ -49,10 +49,50 @@ const GAP = 6;
 /** The label is kept at least this far inside the window. */
 const MARGIN = 6;
 
+/**
+ * What a tooltip says.
+ *
+ * A string for the great majority of them — a control whose name is the whole
+ * explanation, which is every icon in the dock and every tab in the rail.
+ *
+ * The long form is for a control that does something a name cannot carry on
+ * its own: a drawing tool is a verb with a gesture attached, and "Mask" says
+ * nothing about dragging a rectangle over what you want hidden. It also holds
+ * the key that reaches it, because a toolbar of eight modes is exactly where a
+ * shortcut is worth learning and exactly where nobody goes looking for a list.
+ *
+ * One shape rather than a second component beside this one. There is one
+ * tooltip per window on purpose — it is what lets the bubble glide from one
+ * button to its neighbour rather than blink — and a richer bubble elsewhere
+ * would be a second thing that has to be told to close.
+ */
+export type TooltipLabel =
+  | string
+  | {
+      title: string;
+      /** One short line under the title. What the control does, not what it is. */
+      detail?: string;
+      /** The key that reaches it, already written the way a menu writes one. */
+      keys?: string;
+    };
+
 interface Anchor {
-  label: string;
+  label: TooltipLabel;
   side: TooltipSide;
   element: HTMLElement;
+}
+
+/** The title alone, which is what a label is compared and read by. */
+function titleOf(label: TooltipLabel): string {
+  return typeof label === "string" ? label : label.title;
+}
+
+function detailOf(label: TooltipLabel): string | undefined {
+  return typeof label === "string" ? undefined : label.detail;
+}
+
+function keysOf(label: TooltipLabel): string | undefined {
+  return typeof label === "string" ? undefined : label.keys;
 }
 
 /**
@@ -124,7 +164,7 @@ const request = (next: Anchor) => {
  * `pointerenter` — and a wrapper element would put a box between a flex row
  * and its items.
  */
-export function useTooltip(label: string, side: TooltipSide = "top") {
+export function useTooltip(label: TooltipLabel, side: TooltipSide = "top") {
   const element = useRef<HTMLElement | null>(null);
   // `pointerdown` dismisses the label — a person who has just pressed the
   // button does not need to be told what it was — and this is what keeps the
@@ -138,10 +178,22 @@ export function useTooltip(label: string, side: TooltipSide = "top") {
   // for a label changed by something other than the pointer.
   useEffect(() => {
     const current = element.current;
-    if (current && anchor?.element === current && anchor.label !== label) {
-      show({ label, side, element: current });
-    }
-  }, [label, side]);
+    if (!current || anchor?.element !== current) return;
+
+    // Compared by the words rather than by identity: the long form is an
+    // object literal, so a control that re-renders hands in a new one every
+    // time and an identity check would re-show the bubble on every render —
+    // which restarts its entrance animation under a motionless pointer.
+    const was = anchor.label;
+    const same =
+      titleOf(was) === titleOf(label) &&
+      detailOf(was) === detailOf(label) &&
+      keysOf(was) === keysOf(label);
+    if (!same) show({ label, side, element: current });
+    // The label is a literal at most call sites; see above for why its
+    // identity is not what decides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titleOf(label), detailOf(label), keysOf(label), side]);
 
   // Detaching is the unmount path: a control that leaves while its label is
   // up — the setup row collapsing into the recording view — takes the label
@@ -247,6 +299,9 @@ export function TooltipLayer() {
 
   if (!shown) return null;
 
+  const detail = detailOf(shown.label);
+  const keys = keysOf(shown.label);
+
   return (
     <div
       ref={bubble}
@@ -258,7 +313,11 @@ export function TooltipLayer() {
       // `pointer-events-none`: the bubble sits an inset from the control, and
       // a pointer drifting into it must not count as leaving the button.
       className={cn(
-        "pointer-events-none fixed top-0 left-0 z-50 whitespace-nowrap",
+        "pointer-events-none fixed top-0 left-0 z-50",
+        // Only the short form stays on one line. A description has to wrap, and
+        // `whitespace-nowrap` on the box around it would lay the whole sentence
+        // out in a strip the width of the sentence.
+        detail === undefined && "whitespace-nowrap",
         "transition-transform duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
       )}
     >
@@ -273,7 +332,11 @@ export function TooltipLayer() {
         // is: the chip floats over a frosted panel and the bare desktop
         // alike, and a fixed dark edge drawn on either reads as a smudge.
         className={cn(
-          "rounded-md border border-white/8 bg-[#1c1e22] px-2 py-1 text-[11px] leading-[14px] text-[#eceef1]",
+          "rounded-md border border-white/8 bg-[#1c1e22] text-[11px] leading-[14px] text-[#eceef1]",
+          // Roomier once there is a sentence in it: a two-line chip at the
+          // one-line padding reads as cramped, where the one-liner at this
+          // padding reads as a box around a word.
+          detail === undefined ? "px-2 py-1" : "w-[15rem] px-2.5 py-2",
           "shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
           "animate-tooltip-in transition-opacity ease-out",
           "data-[open=false]:opacity-0 motion-reduce:animate-none motion-reduce:transition-none",
@@ -287,7 +350,27 @@ export function TooltipLayer() {
           } as CSSProperties
         }
       >
-        {shown.label}
+        {detail === undefined && keys === undefined ? (
+          titleOf(shown.label)
+        ) : (
+          <>
+            {/* The name and its key on one row, pushed apart. The key is the
+                answer to "is there a faster way", which is a question asked
+                about the control rather than about the sentence under it. */}
+            <div className="flex items-baseline gap-3">
+              <span className="font-medium">{titleOf(shown.label)}</span>
+              {keys !== undefined && (
+                <span className="ml-auto shrink-0 rounded border border-white/10 bg-white/8 px-1 py-px text-[10px] leading-[13px] text-[#eceef1]/70">
+                  {keys}
+                </span>
+              )}
+            </div>
+
+            {detail !== undefined && (
+              <p className="mt-1 text-[11px] leading-[15px] text-[#eceef1]/60">{detail}</p>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

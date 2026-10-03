@@ -22,9 +22,10 @@
  * place twice. Each tool puts itself down once it has drawn, so the mode is
  * never left behind.
  */
-import type { Dispatch } from "react";
+import type { Dispatch, ReactNode } from "react";
 
 import type { AnnotationKind } from "../../../shared/annotations";
+import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import {
   AddTextIcon,
@@ -57,19 +58,67 @@ const HELD = "bg-selected text-white hover:bg-selected hover:brightness-110";
  * then the highlighter, then the mask. The pointer is separated from them: it
  * is the absence of a tool rather than another one.
  */
-const TOOLS: { tool: AnnotationKind; label: string; Icon: typeof ArrowToolIcon }[] = [
-  { tool: "arrow", label: "Arrow", Icon: ArrowToolIcon },
-  { tool: "line", label: "Line", Icon: LineToolIcon },
-  { tool: "rect", label: "Box", Icon: BoxToolIcon },
-  { tool: "ellipse", label: "Ellipse", Icon: EllipseToolIcon },
-  { tool: "pen", label: "Draw", Icon: PenToolIcon },
-  { tool: "highlight", label: "Highlighter", Icon: HighlighterToolIcon },
+const TOOLS: {
+  tool: AnnotationKind;
+  label: string;
+  detail: string;
+  keys: string;
+  Icon: typeof ArrowToolIcon;
+}[] = [
+  {
+    tool: "arrow",
+    label: "Arrow",
+    detail: "Drag from anywhere to the thing you are pointing at.",
+    keys: "A",
+    Icon: ArrowToolIcon,
+  },
+  {
+    tool: "line",
+    label: "Line",
+    detail: "Drag to rule a straight line.",
+    keys: "L",
+    Icon: LineToolIcon,
+  },
+  {
+    tool: "rect",
+    label: "Box",
+    detail: "Drag a rectangle around something. Only the outline is drawn.",
+    keys: "R",
+    Icon: BoxToolIcon,
+  },
+  {
+    tool: "ellipse",
+    label: "Ellipse",
+    detail: "Drag an oval around something.",
+    keys: "O",
+    Icon: EllipseToolIcon,
+  },
+  {
+    tool: "pen",
+    label: "Draw",
+    detail: "Draw freehand, as if with a pen.",
+    keys: "P",
+    Icon: PenToolIcon,
+  },
+  {
+    tool: "highlight",
+    label: "Highlighter",
+    detail: "Drag a band over a line of text, like a marker.",
+    keys: "H",
+    Icon: HighlighterToolIcon,
+  },
   // Last, and the only one that takes something away rather than adding it: a
   // mask hides a patch of the picture instead of drawing on top of it. Its
   // strength and whether it blurs or blocks up are in the panel, like every
   // other mark's own settings — the row sets what the *next* mark is, and a
   // mask has nothing in common with the swatches beside it.
-  { tool: "mask", label: "Mask", Icon: MaskToolIcon },
+  {
+    tool: "mask",
+    label: "Mask",
+    detail: "Drag over anything private, then blur or pixelate it in the panel.",
+    keys: "M",
+    Icon: MaskToolIcon,
+  },
 ];
 
 /**
@@ -81,14 +130,153 @@ const TOOLS: { tool: AnnotationKind; label: string; Icon: typeof ArrowToolIcon }
  * not what the arrow is for. The selected mark's own colour can still be
  * changed to anything, in the inspector's Marks panel.
  */
-const INKS = ["#e5484d", "#f5a524", "#ffd84d", "#46a758", "#3b82f6", "#ffffff"];
+const INKS: { color: string; label: string; keys: string }[] = [
+  { color: "#e5484d", label: "Red", keys: "1" },
+  { color: "#f5a524", label: "Orange", keys: "2" },
+  { color: "#ffd84d", label: "Yellow", keys: "3" },
+  { color: "#46a758", label: "Green", keys: "4" },
+  { color: "#3b82f6", label: "Blue", keys: "5" },
+  { color: "#ffffff", label: "White", keys: "6" },
+];
 
 /** Thicknesses, as fractions of the frame's shorter edge. */
-const WIDTHS: { label: string; width: number }[] = [
-  { label: "Thin", width: 0.0025 },
+const WIDTHS: { label: string; width: number; keys?: string }[] = [
+  { label: "Thin", width: 0.0025, keys: "[" },
+  // No key of its own. The brackets step rather than name — see `stepped` —
+  // so the middle is where `[` arrives from the thick end and `]` from the
+  // thin one, and a tooltip claiming a key for it would be claiming one that
+  // does not go straight there.
   { label: "Medium", width: 0.0045 },
-  { label: "Thick", width: 0.008 },
+  { label: "Thick", width: 0.008, keys: "]" },
 ];
+
+/**
+ * The key each tool answers to, by `KeyboardEvent.code`.
+ *
+ * Built from `TOOLS` rather than written out beside it, so a tool's key is
+ * stated once: the tooltip shows what this table dispatches, and two lists
+ * would drift the first time one was changed. The pointer is here too and is
+ * not in `TOOLS` — it is the absence of a tool, and V is what every drawing
+ * program has called it since Illustrator.
+ */
+const TOOL_KEYS: Record<string, AnnotationKind | null> = {
+  KeyV: null,
+  ...Object.fromEntries(TOOLS.map((entry) => [`Key${entry.keys}`, entry.tool])),
+};
+
+/**
+ * What a key press on a screenshot does, or null for one that means nothing
+ * here.
+ *
+ * In this file because the keys *are* the toolbar: every one of them is a
+ * button above, and the tables the tooltips read are the tables this answers
+ * from. The editor owns when to ask — a key typed into a field is not a
+ * shortcut — and this owns what the answer is.
+ */
+export function stillShortcut(
+  event: KeyboardEvent,
+  /** The hand: what it is holding, and what it would draw with. */
+  hand: { tool: AnnotationKind | null; ink: { width: number } },
+): EditorAction | null {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+
+  if (event.code in TOOL_KEYS) {
+    const picked = TOOL_KEYS[event.code]!;
+    // The same toggle the buttons have: pressing the tool already in hand puts
+    // it down rather than doing nothing.
+    return { type: "pickTool", tool: picked === hand.tool ? null : picked };
+  }
+
+  const ink = INKS.find((entry) => entry.keys === event.key);
+  if (ink) {
+    // The highlighter's own colour, exactly as the swatches write it — see
+    // `EditorState.ink`.
+    return {
+      type: "setInk",
+      ink: hand.tool === "highlight" ? { highlight: ink.color } : { color: ink.color },
+    };
+  }
+
+  // The brackets step through the three weights rather than naming one each,
+  // because that is what a bracket means everywhere else it sets a brush size.
+  if (event.code === "BracketLeft" || event.code === "BracketRight") {
+    return {
+      type: "setInk",
+      ink: { width: stepped(hand.ink.width, event.code === "BracketRight") },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * The next weight up or down, held at the ends rather than wrapping.
+ *
+ * Held, because a brush size that jumps from thick back to thin is a control
+ * nobody can hold a key on: the press that was meant to go one further undoes
+ * the two before it.
+ */
+function stepped(width: number, up: boolean): number {
+  const at = WIDTHS.findIndex((entry) => entry.width === width);
+  // A width set from the panel's own slider is on no step at all. Stepping up
+  // from it goes to the thickest and down to the thinnest, which is the
+  // nearest thing to "one along" when there is no along.
+  const from = at === -1 ? (up ? WIDTHS.length - 2 : 1) : at;
+  const next = Math.min(Math.max(from + (up ? 1 : -1), 0), WIDTHS.length - 1);
+  return WIDTHS[next]!.width;
+}
+
+/**
+ * One button in the row, with the label that explains it.
+ *
+ * Its own component because `useTooltip` is a hook and the rows are maps: a
+ * hook cannot be called per item inside one component, and the alternative —
+ * a `title` attribute — is the native chip this editor deliberately does not
+ * use. See `components/Tooltip.tsx`.
+ */
+function BarButton({
+  label,
+  detail,
+  keys,
+  pressed,
+  disabled,
+  className,
+  onClick,
+  children,
+}: {
+  label: string;
+  detail?: string;
+  keys?: string;
+  pressed?: boolean;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const tooltip = useTooltip({ title: label, detail, keys });
+
+  return (
+    <button
+      type="button"
+      // The name a screen reader reads is the title alone. The sentence under
+      // it is for somebody looking at the row and wondering what a glyph does,
+      // and read out before every button it would be in the way.
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      className={className}
+      ref={tooltip.ref}
+      onPointerEnter={tooltip.onPointerEnter}
+      onPointerLeave={tooltip.onPointerLeave}
+      onPointerDown={tooltip.onPointerDown}
+      onFocus={tooltip.onFocus}
+      onBlur={tooltip.onBlur}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function AnnotateBar({
   tool,
@@ -138,26 +326,26 @@ export function AnnotateBar({
       className={cn("flex flex-none items-center gap-2 rounded-full px-2 py-1.5", FLOATING)}
     >
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-        <button
-          type="button"
-          title="Select and move marks"
-          aria-label="Select and move marks"
-          aria-pressed={tool === null}
+        <BarButton
+          label="Select"
+          detail="Pick a mark to move it, pull a corner, or change it in the panel."
+          keys="V"
+          pressed={tool === null}
           className={cn(BUTTON, tool === null && HELD)}
           onClick={() => dispatch({ type: "pickTool", tool: null })}
         >
           <PointerToolIcon />
-        </button>
+        </BarButton>
       </div>
 
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-        {TOOLS.map(({ tool: kind, label, Icon }) => (
-          <button
+        {TOOLS.map(({ tool: kind, label, detail, keys, Icon }) => (
+          <BarButton
             key={kind}
-            type="button"
-            title={label}
-            aria-label={label}
-            aria-pressed={tool === kind}
+            label={label}
+            detail={detail}
+            keys={keys}
+            pressed={tool === kind}
             className={cn(BUTTON, tool === kind && HELD)}
             // Pressing the tool already in hand puts it down, so the row is a
             // toggle rather than a trap: there is no "none" to go back to
@@ -166,7 +354,7 @@ export function AnnotateBar({
             onClick={() => dispatch({ type: "pickTool", tool: tool === kind ? null : kind })}
           >
             <Icon />
-          </button>
+          </BarButton>
         ))}
       </div>
 
@@ -177,13 +365,13 @@ export function AnnotateBar({
           control wearing the same clothes. The selected mark's own colour is in
           the inspector. */}
       <div className="flex items-center gap-1 rounded-lg bg-white/5 px-1.5 py-1">
-        {INKS.map((color) => (
-          <button
+        {INKS.map(({ color, label, keys }) => (
+          <BarButton
             key={color}
-            type="button"
-            title={`Draw in ${color}`}
-            aria-label={`Draw in ${color}`}
-            aria-pressed={colour.toLowerCase() === color}
+            label={label}
+            detail="The colour the next mark is drawn in."
+            keys={keys}
+            pressed={colour.toLowerCase() === color}
             disabled={masking}
             // A ring outside the swatch rather than a border inside it: a
             // border eats into a 14px circle and makes the chosen colour read
@@ -194,20 +382,28 @@ export function AnnotateBar({
                 ? "ring-2 ring-white ring-offset-1 ring-offset-editor-veil"
                 : "ring-1 ring-white/25",
             )}
-            style={{ backgroundColor: color }}
             onClick={() => setColour(color)}
-          />
+          >
+            {/* The colour itself, drawn by a child rather than by the button's
+                own background: `BarButton` takes no style of its own, and a
+                swatch is the one control here whose *fill* is the label. */}
+            <span
+              aria-hidden
+              className="block size-full rounded-full"
+              style={{ backgroundColor: color }}
+            />
+          </BarButton>
         ))}
       </div>
 
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-        {WIDTHS.map(({ label, width }) => (
-          <button
+        {WIDTHS.map(({ label, width, keys }) => (
+          <BarButton
             key={label}
-            type="button"
-            title={`${label} stroke`}
-            aria-label={`${label} stroke`}
-            aria-pressed={ink.width === width}
+            label={`${label} stroke`}
+            detail="How heavy the next mark is drawn."
+            keys={keys}
+            pressed={ink.width === width}
             // Dead while the highlighter is in hand rather than hidden. A band
             // is not a stroke weight — the marker sets its own — and three
             // buttons vanishing and reappearing as tools are picked up would
@@ -227,7 +423,7 @@ export function AnnotateBar({
               className="block w-4 rounded-full bg-current"
               style={{ height: Math.max(1, Math.round(width * 620)) }}
             />
-          </button>
+          </BarButton>
         ))}
       </div>
 
@@ -237,34 +433,40 @@ export function AnnotateBar({
             the position panel every recording's titles use — so this button
             adds one of those rather than a second kind of text that would have
             to grow its own typography. */}
-        <button
-          type="button"
-          title="Add text"
-          aria-label="Add text"
+        <BarButton
+          label="Add text"
+          detail="Drops a line on the picture, ready to type."
+          keys="T"
           className={BUTTON}
           disabled={!canAddText}
           onClick={onAddText}
         >
           <AddTextIcon />
-        </button>
+        </BarButton>
 
-        <button
-          type="button"
-          title="Delete"
-          aria-label="Delete"
+        <BarButton
+          label="Delete"
+          detail="Removes whatever is selected."
+          keys="⌫"
           className={BUTTON}
           disabled={!canDelete}
           onClick={onDelete}
         >
           <TrashIcon />
-        </button>
+        </BarButton>
 
         {/* Hidden until there is a step back rather than disabled, for the
             reason the transport's is: an empty history has nothing to say. */}
         {canUndo && (
-          <button type="button" title="Undo" aria-label="Undo" className={BUTTON} onClick={onUndo}>
+          <BarButton
+            label="Undo"
+            detail="Steps back one change."
+            keys="⌘Z"
+            className={BUTTON}
+            onClick={onUndo}
+          >
             <UndoIcon />
-          </button>
+          </BarButton>
         )}
       </div>
     </div>

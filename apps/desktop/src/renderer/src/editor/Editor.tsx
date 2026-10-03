@@ -55,7 +55,7 @@ import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { maskRegions } from "../../../shared/annotations";
-import { AnnotateBar } from "./AnnotateBar";
+import { AnnotateBar, stillShortcut } from "./AnnotateBar";
 import { Annotations } from "./Annotations";
 import { Preview, type Grab, type Picked } from "./Preview";
 import { asCard } from "./poster";
@@ -2603,6 +2603,23 @@ function useShortcuts(
       }
 
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+
+      // A screenshot's own keys, which are the toolbar's.
+      //
+      // Their own branch rather than more cases below, because the two sets
+      // barely overlap: R records more footage on a take and draws a box on a
+      // still, and a switch holding both would be one `still &&` per case for
+      // a row of keys that only exists on one of them. The letters are the
+      // ones every drawing tool has used for twenty years — V, A, L, R, O, P —
+      // which is the whole reason a shortcut is worth having here.
+      if (still) {
+        const shot = stillShortcut(event, latest.current);
+        if (shot) {
+          event.preventDefault();
+          dispatch(shot);
+          return;
+        }
+      }
 
       // Every shortcut below but T and Backspace is about a clock, and a
       // screenshot has none: Space would play one second of a still picture,
