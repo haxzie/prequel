@@ -223,7 +223,7 @@ export const competitors: Competitor[] = [
       camera: true,
       backgrounds: true,
       layouts: "Camera over the screen, or full screen",
-      cameraCutout: false,
+      cameraCutout: "Yes, in beta since version 4",
       tiltFocus: false,
       localCaptions: true,
       timeline: true,
@@ -241,7 +241,7 @@ export const competitors: Competitor[] = [
     },
     strength:
       "The automatic zoom and cursor smoothing that made this category, and still the output most people are comparing everything else against.",
-    verifiedOn: "2026-08-22",
+    verifiedOn: "2026-10-03",
     sources: [
       { label: "Screen Studio", url: "https://screen.studio/" },
       { label: "screen.studio pricing", url: "https://screen.studio/#pricing" },
@@ -249,6 +249,7 @@ export const competitors: Competitor[] = [
         label: "Dynamic camera layouts",
         url: "https://screen.studio/guide/dynamic-camera-layouts-",
       },
+      { label: "Screen Studio changelog", url: "https://screen.studio/changelog" },
       {
         label: "Screen Studio 3.7.5 installer",
         url: "https://screenstudioassets.com/releases/3.7.5-4595/Screen%20Studio%203.7.5-4595%20Apple%20Silicon.dmg",

@@ -344,6 +344,13 @@ Add an entry to `ENTRIES` in `posts.ts`. `readingMinutes` is written by hand;
 count roughly 200 words a minute. The sitemap picks it up from `posts`, so
 there is nothing else to add.
 
+**`releases` names the Prequel versions that shipped what the post is
+about**, as `["0.0.35", "0.0.19"]`. The post draws an "In the changelog" list
+from it and `/docs/changelog` lists the post under each release, so set it
+whenever the post shows a feature; a version that does not exist fails the
+typecheck. Link a version you cite in the prose as
+`[0.0.19](/docs/changelog#v0.0.19)`.
+
 `faq` is required, so a post cannot ship without one; that is deliberate, since
 "remember to add an FAQ" as a convention is forgotten on the next post. The
 template renders it after the conclusion and emits it as `FAQPage` structured

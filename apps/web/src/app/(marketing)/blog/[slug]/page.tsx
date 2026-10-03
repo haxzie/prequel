@@ -6,6 +6,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
 import { Byline } from "@/components/blog/Byline";
 import { TryItAside } from "@/components/blog/TryItAside";
+import { headsOf } from "@/content/changelog";
 import { clusterOf, findPost, formatDate, posts } from "@/content/posts";
 import { blogPostingJsonLd, breadcrumbJsonLd, faqPageJsonLd, pageMetadata } from "@/lib/seo";
 
@@ -48,6 +49,7 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
   // parent that does not list it back.
   const parent = post.pillar ? findPost(post.pillar) : undefined;
   const cluster = clusterOf(post.slug);
+  const shipped = await headsOf(post.releases ?? []);
 
   return (
     <Container className="py-20">
@@ -97,6 +99,32 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
         {/* Element styling comes from src/mdx-components.tsx, so the MDX itself
             stays free of class names. */}
         <Body />
+
+        {/* The releases this post describes, as links to their place on the
+            changelog. The changelog lists the post back under each one, off
+            the same `releases` field. After the body: it is where a reader
+            who wants to know when a feature landed goes next. */}
+        {shipped.length > 0 ? (
+          <section className="mt-16">
+            <h2 className="text-2xl font-medium tracking-tight text-fg">In the changelog</h2>
+            <ul className="mt-6 flex flex-col gap-px overflow-hidden rounded-2xl border border-line bg-line">
+              {shipped.map((release) => (
+                <li key={release.version} className="bg-bg transition-colors hover:bg-surface">
+                  <Link
+                    href={`/docs/changelog#v${release.version}`}
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-6 py-4"
+                  >
+                    <span className="font-mono text-sm text-fg">v{release.version}</span>
+                    <span className="text-[0.9375rem] text-fg">{release.highlight}</span>
+                    <time dateTime={release.date} className="ml-auto text-sm text-muted">
+                      {formatDate(release.date)}
+                    </time>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {/* The other half of `pillar`: everything filed under this page. Only
             renders on a pillar, since an ordinary post has an empty cluster. */}

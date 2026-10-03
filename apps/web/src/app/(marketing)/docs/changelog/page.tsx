@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { DocsShell } from "@/components/docs/DocsShell";
 import { JsonLd } from "@/components/JsonLd";
 import { Eyebrow } from "@/components/Section";
-import { published } from "@/content/changelog";
+import { published, type Version } from "@/content/changelog";
 import { outline } from "@/content/docs";
+import { postsAbout } from "@/content/posts";
 import { breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -48,7 +50,14 @@ export default async function Changelog() {
 
       <ol className="mt-14 border-l border-line pl-7 sm:pl-9">
         {shipped.map((release) => (
-          <li key={release.version} className="relative pb-12 last:pb-0">
+          // The id is what a blog post's "In the changelog" links land on, and
+          // `scroll-mt-16` keeps the version clear of the fixed nav when it
+          // does, as on the features page.
+          <li
+            key={release.version}
+            id={`v${release.version}`}
+            className="relative scroll-mt-16 pb-12 last:pb-0"
+          >
             {/* The node. `bg-bg` on the ring is what hides the rail behind
                 it, so the line reads as passing through the point rather
                 than under it. */}
@@ -101,6 +110,12 @@ export default async function Changelog() {
             <div className="[&_ul]:mt-3.5 [&_ul]:mb-0 [&_ul]:space-y-2.5 [&_li]:leading-relaxed [&_li]:text-fg/85 [&_ul]:marker:text-fg">
               <release.Body />
             </div>
+
+            {/* The posts that describe this release. Off each post's
+                `releases`, the same field that draws the post's own links
+                back here, so a post cannot point at a release that does not
+                point back. Nothing renders for a release with no post. */}
+            <WrittenAbout version={release.version} />
           </li>
         ))}
       </ol>
@@ -112,5 +127,27 @@ export default async function Changelog() {
         ])}
       />
     </DocsShell>
+  );
+}
+
+function WrittenAbout({ version }: { version: Version }) {
+  const about = postsAbout(version);
+  if (about.length === 0) return null;
+
+  return (
+    <p className="mt-4 text-sm text-muted">
+      Written about in{" "}
+      {about.map((post, i) => (
+        <span key={post.slug}>
+          {i > 0 ? (i === about.length - 1 ? " and " : ", ") : null}
+          <Link
+            href={`/blog/${post.slug}`}
+            className="text-fg underline decoration-line underline-offset-4 transition-colors hover:decoration-accent"
+          >
+            {post.title}
+          </Link>
+        </span>
+      ))}
+    </p>
   );
 }
