@@ -13,6 +13,7 @@
  *  up and is typechecked.
  */
 
+import type { Version } from "@/content/changelog";
 import type { FaqEntry } from "@/lib/faq";
 
 export type Post = {
@@ -54,6 +55,19 @@ export type Post = {
    * Absent on a pillar page, which is what makes it a pillar.
    */
   pillar?: string;
+  /**
+   * The releases that shipped what this post is about, by version.
+   *
+   * One field, both directions, for the same reason as `pillar`: the post
+   * renders these as links into the changelog, and the changelog lists this
+   * post under each of them. Written by hand on both sides, the changelog is
+   * the side that gets forgotten, because nobody reopens a release to add a
+   * post written a week after it shipped.
+   *
+   * Typed against `RELEASES`, so a version that does not exist is a typecheck
+   * failure rather than a link to an anchor that is not on the page.
+   */
+  releases?: Version[];
 };
 
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
@@ -66,6 +80,7 @@ const ENTRIES: Post[] = [
     date: "2026-10-02",
     tag: "Guide",
     readingMinutes: 12,
+    releases: ["0.0.24", "0.0.21", "0.0.18"],
     pillar: "product-demo-videos",
     faq: [
       {
@@ -108,6 +123,7 @@ const ENTRIES: Post[] = [
     date: "2026-10-02",
     tag: "Comparison",
     readingMinutes: 7,
+    releases: ["0.0.35", "0.0.32", "0.0.28", "0.0.22", "0.0.21", "0.0.19", "0.0.13"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
@@ -150,6 +166,7 @@ const ENTRIES: Post[] = [
     date: "2026-10-02",
     tag: "Comparison",
     readingMinutes: 7,
+    releases: ["0.0.35", "0.0.32", "0.0.28", "0.0.22", "0.0.21", "0.0.19", "0.0.13"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
@@ -474,6 +491,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-06",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.30", "0.0.13", "0.0.9"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
@@ -516,6 +534,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 8,
+    releases: ["0.0.17"],
     faq: [
       {
         question: "How do I record my screen on a Mac?",
@@ -552,6 +571,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 7,
+    releases: ["0.0.35", "0.0.24", "0.0.22", "0.0.21"],
     faq: [
       {
         question: "How long should a product demo video be?",
@@ -588,6 +608,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.32"],
     faq: [
       {
         question: "What resolution should I record my screen at for YouTube?",
@@ -624,6 +645,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.34", "0.0.32"],
     faq: [
       {
         question: "Which Mac screen recorders have no watermark?",
@@ -661,6 +683,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.32", "0.0.27"],
     faq: [
       {
         question: "How do I record internal audio on a Mac?",
@@ -698,6 +721,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.35", "0.0.31", "0.0.19", "0.0.12", "0.0.7"],
     faq: [
       {
         question: "Can macOS record the screen and webcam at the same time?",
@@ -787,6 +811,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 7,
+    releases: ["0.0.12"],
     faq: [
       {
         question: "What is the best open source screen recorder for Mac?",
@@ -824,6 +849,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.35", "0.0.19", "0.0.18", "0.0.12", "0.0.10"],
     faq: [
       {
         question: "Which Mac screen recorder has automatic mouse zoom?",
@@ -861,6 +887,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.31", "0.0.19", "0.0.12"],
     faq: [
       {
         question: "Can QuickTime record the screen and webcam at the same time?",
@@ -943,6 +970,11 @@ export function findPost(slug: string): Post | undefined {
 /** The posts filed under a pillar, newest first. Empty for an ordinary post. */
 export function clusterOf(slug: string): Post[] {
   return posts.filter((post) => post.pillar === slug);
+}
+
+/** The posts that describe a release, newest first. The changelog's half of `releases`. */
+export function postsAbout(version: Version): Post[] {
+  return posts.filter((post) => post.releases?.includes(version));
 }
 
 export function formatDate(date: string): string {
