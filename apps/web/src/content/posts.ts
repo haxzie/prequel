@@ -71,12 +71,12 @@ const ENTRIES: Post[] = [
       {
         question: "What is Jev by TypeSafe AI?",
         answer:
-          "Jev is a System One decision model from TypeSafe AI, released in early access on 15 September 2026. It does not generate text. You send it state and typed questions (Choice, Score or Noul, a yes or no) and it returns the chosen answer with a probability for every option, in 70 to 500 ms. It is priced at $0.042 per million input tokens with output free.",
+          "Jev is a System One decision model from TypeSafe AI, released on 15 September 2026 and open to everyone since 27 September. It does not generate text. You send it state and typed questions (Choice, Score or Noul, a yes or no) and it returns the chosen answer with a probability for every option, in 70 to 500 ms. It is priced at $0.042 per million input tokens with output free.",
       },
       {
         question: "What is OpenAI's Decisions API?",
         answer:
-          "The Decisions API is OpenAI's decision model, announced at DevDay on 29 September 2026 and built on a specialised version of GPT-6 Luna. You define questions with a fixed set of answers and supply text or images, and it returns a choice with a confidence score in about 150 ms. As of 2 October 2026 it is in limited preview, with no published schema or price.",
+          "The Decisions API is OpenAI's decision model, announced at DevDay on 29 September 2026 and built on a specialised version of GPT-6 Luna. You define questions with a fixed set of answers and supply text or images, and it returns a choice with a confidence score in about 150 ms. As of 3 October 2026 it is in limited preview, with no published documentation or price.",
       },
       {
         question: "How do you use a decision model in a browser agent?",
@@ -104,7 +104,7 @@ const ENTRIES: Post[] = [
     slug: "screen-studio-4",
     title: "Screen Studio 4: what's new, and what it still costs",
     excerpt:
-      "Screen Studio 4 is out, with an on-device upscaler as its headline. We went through what is in it, what did not change, and what the rest of the category shipped while Screen Studio was on 3.7.",
+      "Screen Studio 4 is out, with a glass loupe, a camera cutout and editing by transcript. We went through the changelog, put a date next to each headline feature, and listed what it still does not do.",
     date: "2026-10-02",
     tag: "Comparison",
     readingMinutes: 7,
@@ -113,7 +113,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is new in Screen Studio 4?",
         answer:
-          "Screen Studio 4, released on 2 October 2026, adds an upscaler: a model trained on around 5,000 synthetic macOS screenshots that sharpens a recording up to 6.5 times its size, running on the Mac with nothing uploaded. The rest of the app, from the automatic zooms to the 4K 60 export ceiling and the subscription price, carries over from version 3.",
+          "Screen Studio 4, released on 2 October 2026, adds a glass loupe, a camera cut out of its background (in beta), face tracking, colour grading for the camera with twelve looks and LUT support, editing by transcript, split screen layouts, sharper zoomed-in text from a model that runs on the Mac, and exports up to 3x faster. Export still tops out at 4K and 60 fps.",
       },
       {
         question: "How much does Screen Studio 4 cost?",
@@ -123,22 +123,22 @@ const ENTRIES: Post[] = [
       {
         question: "Is Screen Studio 4 a free upgrade?",
         answer:
-          "For anyone on a current Screen Studio subscription, yes. Both the monthly and the yearly plan include every feature, so version 4 and its upscaler arrive as an ordinary update. The price of the subscription itself did not change with the release: $29 a month, or $108 a year.",
+          "For anyone on a current Screen Studio subscription, yes. Both the monthly and the yearly plan include all Screen Studio features and new features as they ship, so version 4 arrives as an ordinary update. Projects saved in version 4 do not open in version 3, so keep a copy of any version 3 project you care about.",
       },
       {
         question: "Does Screen Studio 4 export at 120 fps?",
         answer:
-          "No. Screen Studio 4 exports at up to 4K and 60 frames a second, the same ceiling as version 3. Prequel exports at up to 4K and 120 fps on every plan, in H.264 or HEVC, with no watermark.",
+          "No. Screen Studio 4 exports at up to 4K and 60 frames a second on both plans, the same ceiling as version 3. Prequel exports at up to 4K and 120 fps on every plan, in H.264 or HEVC, with no watermark.",
       },
       {
-        question: "Does Screen Studio have a loupe or magnifier zoom?",
+        question: "Does Screen Studio 4 have typing sounds or filters?",
         answer:
-          "The Screen Studio 4 announcement does not list one; its zooms enlarge the whole frame. Prequel has a Loupe method on any zoom, which brings a magnifying glass down over the work and leaves the rest of the screen readable, with controls for curvature, colour fringing and reflection.",
+          "No. Screen Studio has mouse click sounds, but neither its site nor its changelog lists sounds for the keyboard, or filters over the whole picture. Prequel makes typing sounds in the app with five keyboards to choose from, ten mouse clicks, and more than 15 filters such as CRT, VHS and film, set per clip.",
       },
       {
         question: "What is the best alternative to Screen Studio 4?",
         answer:
-          "On a Mac, Prequel. It places zooms on clicks and typing, adds a loupe, keyboard and mouse sounds, more than 15 filters, a teleprompter and camera colour looks, and exports at up to 4K 120. It costs $29 once or $9 a month, and shipped 30 releases between 28 August and 2 October 2026. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "On a Mac, Prequel. It has had editing by transcript since 6 September 2026 and a camera cutout since 13 September, and adds a loupe, typing sounds, filters, titles over the recording, a prompter that follows your voice and export at up to 4K 120. It costs $29 once or $9 a month. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -146,21 +146,21 @@ const ENTRIES: Post[] = [
     slug: "should-you-upgrade-to-screen-studio-4",
     title: "Should you upgrade to Screen Studio 4 in 2026?",
     excerpt:
-      "Screen Studio 4 brings an upscaler and keeps the $29 monthly price. We put it next to Prequel feature by feature, with five questions to settle before you renew.",
+      "Screen Studio 4 adds a loupe, a camera cutout and transcript editing, and keeps the $29 monthly price. We put it next to Prequel feature by feature, with five questions to settle before you renew.",
     date: "2026-10-02",
     tag: "Comparison",
-    readingMinutes: 6,
+    readingMinutes: 7,
     pillar: "screen-recording-on-mac",
     faq: [
       {
         question: "Should I upgrade to Screen Studio 4?",
         answer:
-          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription, and its upscaler sharpens zooms on small captures. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $29 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
+          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription and adds a loupe, a camera cutout and editing by transcript. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $29 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
       },
       {
         question: "Is Screen Studio worth it in 2026?",
         answer:
-          "Screen Studio is still a polished Mac recorder, but at $29 a month, or $108 a year up front, it is the most expensive tool in its category, and version 4 adds one headline feature, an upscaler. Prequel does the same automatic zooms and adds a loupe, keyboard and mouse sounds, filters and a teleprompter for $29 once or $9 a month.",
+          "Screen Studio is still a polished Mac recorder, and version 4 is a large release. At $29 a month, or $108 a year up front, it is also among the most expensive tools in its category, and it still exports at 60 fps. Prequel has the same automatic zooms, a loupe, a camera cutout and transcript editing, and adds typing sounds, filters and titles for $29 once or $9 a month.",
       },
       {
         question: "Is Screen Studio a one-time purchase?",
@@ -175,12 +175,12 @@ const ENTRIES: Post[] = [
       {
         question: "Does Screen Studio add keyboard and click sounds?",
         answer:
-          "Typing and click sounds are not listed in the Screen Studio 4 announcement. Prequel makes them in the app: pick a keyboard (Tactile, Linear, Clicky, Thock or the iPhone's) and one of ten mouse clicks, and the export carries a sound for every press, timed to the picture, with no microphone involved.",
+          "Screen Studio has mouse click sound effects, and none for the keyboard. Prequel makes both in the app: pick a keyboard (Tactile, Linear, Clicky, Thock or the iPhone's) and one of ten mouse clicks, and the export carries a sound for every press, timed to the picture, with no microphone involved.",
       },
       {
         question: "What does a year of Screen Studio 4 cost compared to Prequel?",
         answer:
-          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $29 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 28 September 2026.",
+          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $29 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 3 October 2026.",
       },
     ],
   },

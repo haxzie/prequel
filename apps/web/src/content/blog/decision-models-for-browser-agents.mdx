@@ -24,11 +24,11 @@ source agents that already run on Jev, and where it breaks.
 
 ## The decision models you can use today
 
-| Model                         | From         | Input                            | Latency       | Price                                        | Status                             |
-| ----------------------------- | ------------ | -------------------------------- | ------------- | -------------------------------------------- | ---------------------------------- |
-| **Jev** (`jev-1.13.0`)        | TypeSafe AI  | Text and JSON                    | 70–500 ms     | $0.042 per million input tokens, output free | Early access since 15 September    |
-| **Decisions API**             | OpenAI       | Text and images                  | About 150 ms  | Not published                                | Limited preview since 29 September |
-| **WebJev**, Laya, OneJev, Vev | Open weights | Text; OneJev and Vev take images | Your hardware | Your hardware                                | Downloadable now                   |
+| Model                         | From         | Input                            | Latency       | Price                                        | Status                              |
+| ----------------------------- | ------------ | -------------------------------- | ------------- | -------------------------------------------- | ----------------------------------- |
+| **Jev** (`jev-1.13.0`)        | TypeSafe AI  | Text and JSON                    | 70–500 ms     | $0.042 per million input tokens, output free | Open to everyone since 27 September |
+| **Decisions API**             | OpenAI       | Text and images                  | About 150 ms  | Not published                                | Limited preview since 29 September  |
+| **WebJev**, Laya, OneJev, Vev | Open weights | Text; OneJev and Vev take images | Your hardware | Your hardware                                | Downloadable now                    |
 
 Figures from each vendor's announcement and the projects' own repositories,
 checked on 2 October 2026.
@@ -37,7 +37,8 @@ checked on 2 October 2026.
 
 Jev is the first System One model and still the one with the most built on
 it. TypeSafe released it in limited early access on 15 September 2026,
-alongside a $40 million seed round led by DCVC. It runs as a hosted, closed
+alongside a $40 million seed round led by DCVC, and dropped the waitlist on
+27 September, so anyone can make a key now. It runs as a hosted, closed
 weights API, and there is no local version.
 
 It answers three shapes of question, and one request can carry several:
@@ -68,10 +69,10 @@ three uses, next to classifying content and routing requests.
 [OpenAI's announcement on X](https://x.com/OpenAIDevs/status/2105003318917697873)
 
 It is in limited preview for selected customers, with a broad release
-promised "in the coming days". As of 2 October there is no published
-request schema, response schema or price for it. Luna itself lists at $0.10
-per million input tokens and $0.50 per million output, and OpenAI has not
-said whether decisions bill at that rate. Build against Jev today, and keep
+promised "in the coming days". As of 3 October its documentation page still
+returns a 404, and OpenAI's pricing page has no row for it. Luna itself lists
+at $0.10 per million input tokens, and OpenAI has not said whether decisions
+bill at that rate. Build against Jev today, and keep
 the decision call behind one function so you can swap it when the schema
 ships.
 
