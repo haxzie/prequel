@@ -954,9 +954,10 @@ impl Compositor {
 
                 // A zoom moves, scales and tilts the whole picture over time.
                 let now = rect_at(motion, at as i64, *dst_rect, shape.radius);
-                // Cut to the frame, with the source cropped to match, so a zoom
-                // that scales the picture past every edge still draws its
-                // rounded corners. The same arithmetic the preview runs.
+                // Cut to the frame — a radius outside it, so a zoom that
+                // scales the picture past an edge rounds its corners where they
+                // actually are, off screen, rather than on the frame's own
+                // corners. The same arithmetic the preview runs.
                 let (cut, crop) = crop_to_frame(
                     now.rect,
                     *src_rect,
@@ -965,6 +966,7 @@ impl Compositor {
                         height: frame[1] as f64,
                     },
                     !now.quad.is_empty(),
+                    now.radius,
                     *mirror,
                 );
 

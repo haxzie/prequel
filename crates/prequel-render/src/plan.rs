@@ -637,11 +637,19 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
 /// Mirrors `cropToFrame` in `apps/desktop/src/shared/layout.ts`, and is pinned
 /// to it by fixtures that are deliberately identical.
 ///
-/// A zoom scales the destination well past every edge, so the picture's own
-/// corners end up off screen and there is nothing left to round. Cutting the
-/// destination back and taking the matching slice of the source shows exactly
-/// the same pixels — the part outside was never drawn — and puts the corners
-/// back where they can be seen. The radius is kept, which is the whole point.
+/// A zoom scales the destination well past every edge, so most of what is drawn
+/// is never seen. Cutting the destination back and taking the matching slice of
+/// the source shows exactly the same pixels — the part outside was never drawn
+/// — and saves a multiple of the frame in fragments on the most expensive layer
+/// there is.
+///
+/// The cut stops a corner `radius` outside the frame rather than on its edge. A
+/// corner reaches exactly that far along each of its edges and no further, so
+/// an edge cut there leaves the rounding off screen and the visible edge
+/// straight. Cutting flush instead rebuilt the picture's corners on the
+/// *frame's* corners, and a zoom pushed into the middle of a recording came out
+/// as a rounded card the size of the player. An edge that was never past the
+/// frame is not moved, so a corner the zoom still shows stays where it is.
 ///
 /// Applied where a picture is drawn rather than baked into its motion track:
 /// the track describes the zoom, and the pointer is placed at a fraction of it,
@@ -661,19 +669,25 @@ pub fn crop_to_frame(
     src: Rect,
     frame: Size,
     tilted: bool,
+    radius: f64,
     mirror: bool,
 ) -> (Rect, Rect) {
     if tilted || rect.width <= 0.0 || rect.height <= 0.0 {
         return (rect, src);
     }
 
-    let x = rect.x.max(0.0);
-    let y = rect.y.max(0.0);
-    let right = (rect.x + rect.width).min(frame.width);
-    let bottom = (rect.y + rect.height).min(frame.height);
+    // Not `-radius`: a radius of zero negates to negative zero, and the two
+    // sides of this arithmetic are pinned to each other by their numbers.
+    let keep = radius.max(0.0);
+    let outside = if keep > 0.0 { -keep } else { 0.0 };
+    let x = rect.x.max(outside);
+    let y = rect.y.max(outside);
+    let right = (rect.x + rect.width).min(frame.width + keep);
+    let bottom = (rect.y + rect.height).min(frame.height + keep);
 
-    // Fully on screen, which is every moment that is not zoomed in — and off
-    // screen entirely, where cutting to nothing would divide by zero.
+    // Nothing past the frame worth cutting, which is every moment that is not
+    // zoomed in — and off screen entirely, where cutting to nothing would
+    // divide by zero.
     let untouched = x == rect.x
         && y == rect.y
         && right == rect.x + rect.width
@@ -2003,6 +2017,7 @@ mod tests {
             source,
             frame,
             false,
+            0.0,
             false,
         );
 
@@ -2016,6 +2031,44 @@ mod tests {
         assert_eq!(crop.y, 360.0);
         assert_eq!(crop.width, 1280.0);
         assert_eq!(crop.height, 720.0);
+    }
+
+    #[test]
+    fn keeps_a_zoomed_picture_s_rounding_off_screen() {
+        // Deliberately the same numbers as "keeps a zoomed picture's rounding
+        // off screen" in `layout.test.ts`. A corner reaches exactly its radius
+        // along each edge, so the cut stops that far outside the frame and the
+        // edge on screen is straight. Cutting flush drew the recording's
+        // corners on the player's corners.
+        let frame = Size {
+            width: 1920.0,
+            height: 1080.0,
+        };
+        let source = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 2560.0,
+            height: 1440.0,
+        };
+
+        let (cut, _) = crop_to_frame(
+            Rect {
+                x: -960.0,
+                y: -540.0,
+                width: 3840.0,
+                height: 2160.0,
+            },
+            source,
+            frame,
+            false,
+            24.0,
+            false,
+        );
+
+        assert_eq!(cut.x, -24.0);
+        assert_eq!(cut.y, -24.0);
+        assert_eq!(cut.width, 1968.0);
+        assert_eq!(cut.height, 1128.0);
     }
 
     #[test]
@@ -2040,7 +2093,7 @@ mod tests {
         // Fully on screen: the common case, and it must not drift or every
         // unzoomed frame moves.
         assert_eq!(
-            crop_to_frame(inside, source, frame, false, false),
+            crop_to_frame(inside, source, frame, false, 32.0, false),
             (inside, source)
         );
 
@@ -2053,7 +2106,7 @@ mod tests {
             height: 3000.0,
         };
         assert_eq!(
-            crop_to_frame(over, source, frame, true, false),
+            crop_to_frame(over, source, frame, true, 32.0, false),
             (over, source)
         );
     }
@@ -2084,7 +2137,7 @@ mod tests {
             height: 500.0,
         };
 
-        let (cut, crop) = crop_to_frame(rect, source, frame, false, true);
+        let (cut, crop) = crop_to_frame(rect, source, frame, false, 0.0, true);
         assert_eq!(cut.x, 0.0);
         assert_eq!(cut.width, 700.0);
         assert!(
@@ -2094,7 +2147,7 @@ mod tests {
         assert!((crop.width - 700.0).abs() < 1e-9);
 
         // Un-mirrored, the same cut comes off the same side.
-        let (_, plain) = crop_to_frame(rect, source, frame, false, false);
+        let (_, plain) = crop_to_frame(rect, source, frame, false, 0.0, false);
         assert!(
             (plain.x - 300.0).abs() < 1e-9,
             "from the source's right: {plain:?}"

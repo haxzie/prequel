@@ -6465,12 +6465,26 @@ function grow(rect: Rect, by: number): Rect {
  * A picture cut to the frame, with the source cropped to match.
  *
  * A zoom scales the destination well past every edge — a 1920-wide frame holds
- * a 3379-wide picture — so the picture's own corners end up off screen and
- * there is nothing left to round. Cutting the destination back to the frame and
- * taking the matching slice of the source shows exactly the same pixels, since
- * the part outside was never drawn, and puts the corners back where they can be
- * seen. The radius is kept: that is the whole point, so a zoomed moment is
- * still a rounded picture in a frame rather than a full-bleed rectangle.
+ * a 3379-wide picture — so most of what is drawn is never seen. Cutting the
+ * destination back and taking the matching slice of the source shows exactly
+ * the same pixels, since the part outside was never drawn, and saves the
+ * rasterisers a multiple of the frame in fragments on the most expensive layer
+ * there is.
+ *
+ * **The cut stops a corner radius outside the frame rather than on its edge**,
+ * and that is the whole of the arithmetic below that is not obvious. A corner
+ * reaches exactly `radius` along each of its edges and no further, so an edge
+ * cut that far out leaves the rounding entirely off screen and the visible edge
+ * straight. Cutting flush to the frame instead rebuilt the picture's corners on
+ * the *frame's* corners: a zoom pushed hard into the middle of a recording came
+ * out as a rounded card the size of the player, with the rounding tracing an
+ * edge the recording does not have. The real edge is off screen, so nothing
+ * should be drawn round it — which is also why the border and the shadow,
+ * neither of which is cut, simply leave with it.
+ *
+ * An edge that was never past the frame is not moved, so a zoom that still
+ * shows one of the recording's own corners keeps that corner where it is, round
+ * as ever.
  *
  * Applied where a picture is *drawn* rather than baked into its motion track,
  * and that distinction is load-bearing. The track describes the zoom, and other
@@ -6490,6 +6504,12 @@ export function cropToFrame(
   frame: Size,
   tilted: boolean,
   /**
+   * The picture's corner radius in output pixels, which is how far outside the
+   * frame the cut has to stop. Zero squares the corners off at the frame's own
+   * edge, which is only right for a picture that has none.
+   */
+  radius = 0,
+  /**
    * Whether the picture is drawn flipped. The rasterisers mirror *within* the
    * source rect they are handed, so a cut on the left of a mirrored picture
    * has to come off the *right* of the source — otherwise the slice that
@@ -6500,12 +6520,16 @@ export function cropToFrame(
 ): { rect: Rect; src: Rect } {
   if (tilted || rect.width <= 0 || rect.height <= 0) return { rect, src };
 
-  const x = Math.max(rect.x, 0);
-  const y = Math.max(rect.y, 0);
-  const right = Math.min(rect.x + rect.width, frame.width);
-  const bottom = Math.min(rect.y + rect.height, frame.height);
+  // Not `-radius`: a radius of zero negates to negative zero, which survives
+  // into the plan and compares unequal to the zero every other path produces.
+  const keep = radius > 0 ? radius : 0;
+  const x = Math.max(rect.x, keep > 0 ? -keep : 0);
+  const y = Math.max(rect.y, keep > 0 ? -keep : 0);
+  const right = Math.min(rect.x + rect.width, frame.width + keep);
+  const bottom = Math.min(rect.y + rect.height, frame.height + keep);
 
-  // Fully on screen, which is every moment that is not zoomed in.
+  // Nothing past the frame worth cutting, which is every moment that is not
+  // zoomed in.
   if (
     x === rect.x &&
     y === rect.y &&
