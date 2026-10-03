@@ -60,6 +60,10 @@ export const FEATURE_ROWS = [
   { key: "separateTracks", label: "Separate audio tracks" },
   { key: "systemAudio", label: "System audio without a virtual driver" },
   { key: "verticalReframe", label: "Reframe to vertical without cropping" },
+  { key: "loupe", label: "Magnifying-glass loupe over the work" },
+  { key: "looks", label: "Colour looks and filters" },
+  { key: "noiseReduction", label: "Microphone noise reduction" },
+  { key: "importVideo", label: "Import a video you already have" },
   { key: "localOnly", label: "Records and exports without uploading" },
   { key: "shareLinks", label: "Shareable links" },
   { key: "workspace", label: "Team workspace" },
@@ -110,6 +114,15 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   separateTracks: true,
   systemAudio: true,
   verticalReframe: true,
+  // Zoom Method > Loupe, 0.0.35: a lens with curvature, fringing and reflection
+  // that follows the pointer or holds a region.
+  loupe: true,
+  // Seventeen looks over the whole picture, and six for the camera alone.
+  looks: true,
+  // Light or Strong, 0.0.32 — Apple's sound isolation, on the Mac.
+  noiseReduction: true,
+  // Add Clip > Import Video, 0.0.30.
+  importVideo: true,
   // Still true with Pro in the picture: recording and export never need the
   // network, and the upload is a thing you ask for. That is the distinction
   // worth holding — "local-first" is not "no server exists".
@@ -120,13 +133,13 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   // capture — see `TargetKind` in apps/desktop/src/shared/contract.ts.
   iosCapture: false,
   maxExport: "4K, 120 fps",
-  // The `.dmg` on the v0.0.19 GitHub release, 102,171,961 bytes. Every size on
+  // The `.dmg` on the v0.0.35 release, 103,625,550 bytes. Every size on
   // this row is the vendor's own Apple Silicon `.dmg` as served on 2026-09-14
   // — `Content-Length` of the URL the Homebrew cask points at, in decimal
   // megabytes, and the version in the source's label — so a number here can
   // be re-measured with one `curl -I` rather than trusted. Ours moves with
   // every release; re-read it when it is bumped.
-  downloadSize: "102 MB",
+  downloadSize: "104 MB",
   platforms: "macOS 14+, Apple Silicon",
   licence: "$9/month or $29 once, 7-day trial",
 };
@@ -230,6 +243,10 @@ export const competitors: Competitor[] = [
       separateTracks: true,
       systemAudio: true,
       verticalReframe: true,
+      loupe: "Yes, new in version 4",
+      looks: "LUTs",
+      noiseReduction: true,
+      importVideo: "Yes, an mp4, without cursor animation",
       localOnly: "Records locally; shareable links upload",
       shareLinks: "Yes, 30-minute cap, branded page",
       workspace: false,
@@ -253,6 +270,11 @@ export const competitors: Competitor[] = [
       {
         label: "Screen Studio 3.7.5 installer",
         url: "https://screenstudioassets.com/releases/3.7.5-4595/Screen%20Studio%203.7.5-4595%20Apple%20Silicon.dmg",
+      },
+      { label: "Screen Studio roadmap", url: "https://screen.studio/roadmap" },
+      {
+        label: "Create a project from an existing video",
+        url: "https://screen.studio/guide/creating-project-from-existing-video",
       },
     ],
     heading: "Looking for a Screen Studio alternative?",
@@ -322,6 +344,10 @@ export const competitors: Competitor[] = [
       separateTracks: false,
       systemAudio: true,
       verticalReframe: false,
+      loupe: false,
+      looks: false,
+      noiseReduction: "After recording, in the web player only",
+      importVideo: "Yes, on paid plans",
       localOnly: "No — recordings upload to Loom",
       shareLinks: true,
       workspace: true,
@@ -351,6 +377,18 @@ export const competitors: Competitor[] = [
       {
         label: "Loom 0.374.2 installer",
         url: "https://packages.loom.com/desktop-packages/Loom-0.374.2-arm64.dmg",
+      },
+      {
+        label: "Suppress background noise",
+        url: "https://support.atlassian.com/loom/docs/suppress-background-noise/",
+      },
+      {
+        label: "Upload or import videos",
+        url: "https://support.atlassian.com/loom/docs/upload-or-import-videos/",
+      },
+      {
+        label: "Edit your Loom video",
+        url: "https://support.atlassian.com/loom/docs/edit-your-loom-video/",
       },
     ],
     heading: "Looking for a Loom alternative?",
@@ -419,6 +457,10 @@ export const competitors: Competitor[] = [
       separateTracks: true,
       systemAudio: true,
       verticalReframe: "Change the canvas and re-position by hand",
+      loupe: "Cursor magnify, around the pointer",
+      looks: true,
+      noiseReduction: true,
+      importVideo: true,
       localOnly: true,
       shareLinks: "Via Screencast Pro",
       workspace: true,
@@ -449,6 +491,22 @@ export const competitors: Competitor[] = [
       {
         label: "Camtasia 2026.2.2 installer",
         url: "https://download.techsmith.com/camtasiamac/releases/2026.2.2/Camtasia.dmg",
+      },
+      {
+        label: "Camtasia cursor effects",
+        url: "https://www.techsmith.com/learn/tutorials/camtasia/cursor-effects/",
+      },
+      {
+        label: "Camtasia video filters",
+        url: "https://www.techsmith.com/camtasia/features/video-filters/",
+      },
+      {
+        label: "Remove background noise",
+        url: "https://www.techsmith.com/camtasia/features/remove-background-noise-from-video/",
+      },
+      {
+        label: "Import and manage media",
+        url: "https://www.techsmith.com/learn/tutorials/camtasia/import-manage-media/",
       },
     ],
     heading: "Looking for a lighter Camtasia alternative?",
@@ -509,6 +567,10 @@ export const competitors: Competitor[] = [
       separateTracks: true,
       systemAudio: true,
       verticalReframe: "Change the canvas and re-position by hand",
+      loupe: "Callouts and magnify actions",
+      looks: true,
+      noiseReduction: true,
+      importVideo: true,
       localOnly: true,
       shareLinks: false,
       workspace: false,
@@ -542,6 +604,11 @@ export const competitors: Competitor[] = [
       {
         label: "ScreenFlow 10.5.2 installer",
         url: "https://www.telestream.net/download-files/screenflow/10-5/ScreenFlow-10.5.2.dmg",
+      },
+      { label: "ScreenFlow overview", url: "https://www.telestream.net/screenflow/overview.htm" },
+      {
+        label: "ScreenFlow audio help",
+        url: "https://www.telestream.net/telestream-support/screen-flow/help/Editing.06.21.html",
       },
     ],
     heading: "Looking for a ScreenFlow alternative?",
@@ -607,6 +674,10 @@ export const competitors: Competitor[] = [
       separateTracks: true,
       systemAudio: true,
       verticalReframe: true,
+      loupe: false,
+      looks: true,
+      noiseReduction: true,
+      importVideo: true,
       localOnly: "No — projects and media are stored on their servers",
       shareLinks: true,
       workspace: true,
@@ -626,6 +697,19 @@ export const competitors: Competitor[] = [
       {
         label: "Descript 114.0.4 installer",
         url: "https://electron.descript.com/Descript-114.0.4-release.20250509.32955-arm64.dmg",
+      },
+      {
+        label: "Descript effects overview",
+        url: "https://help.descript.com/hc/en-us/articles/13593402120333-Effects-overview",
+      },
+      {
+        label: "Descript colour adjustments",
+        url: "https://help.descript.com/hc/en-us/articles/10327606944653-Color-adjustments",
+      },
+      { label: "Descript Studio Sound", url: "https://www.descript.com/studio-sound" },
+      {
+        label: "Import files into Descript",
+        url: "https://help.descript.com/hc/en-us/articles/10119645307789-Import-and-upload-files-into-Descript",
       },
     ],
     heading: "Looking for a Descript alternative for screen recording?",
@@ -689,6 +773,10 @@ export const competitors: Competitor[] = [
       separateTracks: true,
       systemAudio: true,
       verticalReframe: true,
+      loupe: false,
+      looks: true,
+      noiseReduction: true,
+      importVideo: "Yes, on paid plans",
       localOnly: "No — recordings are hosted by Tella",
       shareLinks: true,
       workspace: true,
@@ -710,6 +798,15 @@ export const competitors: Competitor[] = [
         url: "https://www.tella.com/help/recording/blur-your-camera-background",
       },
       { label: "Tella 2.33 installer", url: "https://mac.tella.tv/Tella-2.33-254.dmg" },
+      { label: "Tella: add a zoom", url: "https://www.tella.com/help/editing/add-a-zoom" },
+      {
+        label: "Tella: Studio Voice",
+        url: "https://tella.com/help/eliminate-background-noise-mac",
+      },
+      {
+        label: "Tella: upload existing videos",
+        url: "https://tella.com/docs/help/recording/upload-existing-videos",
+      },
     ],
     heading: "Looking for a Tella alternative?",
     lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $9 a month, under both Tella's $13 Pro and its $19 Premium, or $29 once.",

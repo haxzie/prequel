@@ -66,7 +66,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "Which is the smallest screen recorder to download?",
     answer:
-      "Prequel is 102 MB, with the recorder and the whole editor in it. Screen Studio is 366 MB, Camtasia 435 MB, Descript 255 MB and Loom 228 MB. ScreenFlow is 89 MB. Tella's 25 MB app is only the recorder, and its editor is a web page.",
+      "Prequel is 104 MB, with the recorder and the whole editor in it. Screen Studio is 366 MB, Camtasia 435 MB, Descript 255 MB and Loom 228 MB. ScreenFlow is 89 MB. Tella's 25 MB app is only the recorder, and its editor is a web page.",
   },
   {
     question: "Is there a free screen recorder with automatic zoom for Mac?",
