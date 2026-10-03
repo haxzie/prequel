@@ -151,6 +151,10 @@ export function useExport(
         bitmaps.current.cues,
         bitmaps.current.texts,
         (layout) => tagFor(layout, bitmaps.current.tags),
+        // A still, and this is the only call site that says so: the file below
+        // is written by the same compositor that drew the preview, so there is
+        // one rasteriser and a mask cannot go missing from it.
+        true,
       );
 
       const bytes =

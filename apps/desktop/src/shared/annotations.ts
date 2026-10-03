@@ -1,6 +1,6 @@
 /**
- * Marks drawn over a screenshot: arrows, lines, boxes, ellipses, freehand and
- * highlighter.
+ * Marks drawn over a screenshot: arrows, lines, boxes, ellipses, freehand, the
+ * highlighter, and the mask that hides what is under it.
  *
  * **Not plan items, and that is the one decision here worth explaining.**
  * Everything in a composition — the picture, the camera, a title, a caption —
@@ -11,6 +11,10 @@
  * and the export is strictly stronger than a plan item would be: there is no
  * second rasteriser for the two to disagree in, rather than two that have to be
  * kept in step.
+ *
+ * The mask is the one exception, and it is the exception that proves the rule:
+ * it *is* a plan item, because what it draws is the pixels beneath it — see
+ * `maskRegions`. Everything else here is ink.
  *
  * Which is also the limit, said plainly: annotations are screenshots only. A
  * video goes through the Rust exporter, which does not share this file, so one
@@ -34,14 +38,14 @@ import type { Rect, Size } from "./layout.js";
  * What a mark is.
  *
  * `line` and `arrow` are one shape with and without a head, and `rect`,
- * `ellipse` and `highlight` are three outlines of two boxes — they are separate
- * kinds rather than flags because that is how they are chosen: a toolbar of six
- * tools, not three tools and three checkboxes.
+ * `ellipse`, `highlight` and `mask` are four treatments of one box — they are
+ * separate kinds rather than flags because that is how they are chosen: a
+ * toolbar of seven tools, not three tools and four checkboxes.
  *
  * `pen` is the only one whose points are not a pair. Everything else is
  * defined by two corners, which is what a drag gives.
  */
-export type AnnotationKind = "arrow" | "line" | "pen" | "rect" | "ellipse" | "highlight";
+export type AnnotationKind = "arrow" | "line" | "pen" | "rect" | "ellipse" | "highlight" | "mask";
 
 /** Kinds drawn from exactly two points — a drag's start and its end. */
 export const DRAGGED_KINDS: readonly AnnotationKind[] = [
@@ -50,7 +54,19 @@ export const DRAGGED_KINDS: readonly AnnotationKind[] = [
   "rect",
   "ellipse",
   "highlight",
+  "mask",
 ];
+
+/**
+ * What a mask does to what is under it.
+ *
+ * Two, because they fail differently and both are asked for. A blur is the
+ * gentler one and reads as "this was deliberately hidden"; a pixelation is
+ * coarser and survives being scaled down, which is what matters when the
+ * picture is going into a document at half size. Neither is recoverable: both
+ * are drawn into the file, not laid over it as a note somebody could take off.
+ */
+export type MaskMode = "blur" | "pixelate";
 
 export interface Point {
   /** Fraction of the frame's width. May fall outside 0–1: a mark can hang off. */
@@ -85,6 +101,17 @@ export interface Annotation {
   width: number;
   /** 0 to 1. Below 1 for the highlighter, and nothing else by default. */
   opacity: number;
+  /**
+   * What a `mask` does to the pixels it covers, and how hard.
+   *
+   * Only on a mask, and absent on every other kind rather than ignored there:
+   * the panel reads these to decide whether to offer the control at all, and a
+   * `mode` sitting on an arrow would be a field with no meaning that still has
+   * to be sanitised, saved and reasoned about.
+   */
+  mask?: MaskMode;
+  /** 0 to 1. How much blur, or how coarse the blocks. See `MASK_STRENGTH`. */
+  strength?: number;
 }
 
 /**
@@ -120,6 +147,19 @@ export const DEFAULT_COLOUR = "#e5484d";
 /** The highlighter's, which has to read as ink on paper rather than as a box. */
 export const HIGHLIGHT_COLOUR = "#ffd84d";
 
+/**
+ * How hard a fresh mask works, 0 to 1.
+ *
+ * Over halfway, because the default has to be strong enough to actually hide
+ * what it was drawn over. A mask that leaves an email address legible is worse
+ * than no mask at all: somebody checks that they put one there, sees a smudge
+ * where the address was, and ships it.
+ */
+export const MASK_STRENGTH = 0.6;
+
+/** What a fresh mask does, and the gentler of the two. */
+export const MASK_MODE: MaskMode = "blur";
+
 /** A fresh mark of one kind, from the drag that made it. */
 export function newAnnotation(
   id: string,
@@ -128,6 +168,23 @@ export function newAnnotation(
   style?: { color?: string; width?: number },
 ): Annotation {
   const highlight = kind === "highlight";
+  // A mask has no ink: it is not drawn over the picture, it replaces the pixels
+  // it covers — see `maskRegions`. The colour and the thickness below are the
+  // stock ones rather than the hand's, so nothing about the toolbar's swatches
+  // reaches a mark they cannot be seen on.
+  if (kind === "mask") {
+    return {
+      id,
+      kind,
+      points,
+      color: DEFAULT_COLOUR,
+      width: DEFAULT_WIDTH,
+      opacity: 1,
+      mask: MASK_MODE,
+      strength: MASK_STRENGTH,
+    };
+  }
+
   return {
     id,
     kind,
@@ -195,9 +252,11 @@ export function annotationHit(
   const points = annotation.points.map((point) => annotationPoint(frame, point));
 
   switch (annotation.kind) {
+    case "mask":
     case "highlight":
       // Filled, so anywhere inside counts — which is what makes a band over a
-      // line of text grabbable along its whole length.
+      // line of text grabbable along its whole length, and a mask grabbable
+      // anywhere on the patch it is hiding.
       return inside(annotationBox(points), at, reach);
 
     case "rect":
@@ -332,6 +391,15 @@ export function sanitiseAnnotations(stored: unknown): Annotation[] {
       color: typeof mark.color === "string" ? mark.color : DEFAULT_COLOUR,
       width: number(mark.width, DEFAULT_WIDTH, 0.0005, 0.2),
       opacity: number(mark.opacity, 1, 0, 1),
+      // Only on a mask, and defaulted rather than refused: a stored mask with
+      // no mode is one written by a build that had only the blur, and the
+      // picture it was saved from had a blur on it.
+      ...(mark.kind === "mask"
+        ? {
+            mask: mark.mask === "pixelate" ? ("pixelate" as const) : ("blur" as const),
+            strength: number(mark.strength, MASK_STRENGTH, 0, 1),
+          }
+        : {}),
     });
   }
 
@@ -343,4 +411,46 @@ const KINDS: readonly AnnotationKind[] = [...DRAGGED_KINDS, "pen"];
 function number(value: unknown, fallback: number, min: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * The masks among a set of marks, resolved to output pixels.
+ *
+ * **The one place a mark reaches a plan**, and the exception is worth naming
+ * against the note at the top of this file. Everything else here is ink laid
+ * over the finished picture, which a 2D painter can do with no idea what is
+ * beneath it. A mask is not: what it draws *is* what is underneath, blurred or
+ * blocked up, and the only surface that has those pixels is the compositor that
+ * just put them there. So a mask is a plan item and the rest are not.
+ *
+ * It costs nothing of the invariant, because a screenshot's file is drawn by
+ * the same compositor as its preview — see `stillPng.ts`. There is still one
+ * rasteriser. It is also why the editor does not offer a mask on a recording:
+ * `shaders.metal` has no mode for one, so a masked recording would export with
+ * the pixels it was meant to hide.
+ */
+export function maskRegions(
+  frame: Size,
+  annotations: readonly Annotation[],
+): { rect: Rect; mode: MaskMode; strength: number }[] {
+  const regions: { rect: Rect; mode: MaskMode; strength: number }[] = [];
+
+  for (const mark of annotations) {
+    if (mark.kind !== "mask") continue;
+
+    // From the points rather than `annotationRect`, which grows its answer by
+    // half a stroke for the sake of hit testing: a mask has no stroke, and a
+    // patch a few pixels larger than the rectangle somebody drew would hide
+    // the edge of the thing beside the one they meant.
+    const rect = annotationBox(mark.points.map((point) => annotationPoint(frame, point)));
+    if (rect.width <= 0 || rect.height <= 0) continue;
+
+    regions.push({
+      rect,
+      mode: mark.mask ?? MASK_MODE,
+      strength: mark.strength ?? MASK_STRENGTH,
+    });
+  }
+
+  return regions;
 }

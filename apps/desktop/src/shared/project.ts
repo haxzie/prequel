@@ -170,6 +170,49 @@ export interface LayoutSettings {
   screenHeight: number;
   screenOffsetX: number;
   screenOffsetY: number;
+  /**
+   * How far into the screen picture to push. 1 shows all of it.
+   *
+   * A crop, not a scale: the card stays the size and shape the arrangement gave
+   * it and the content inside it is magnified, with `screenOffsetX/Y` choosing
+   * which part. The alternative — growing the box — enlarges the picture *and*
+   * its border, its corner and its shadow, and runs the whole card off the
+   * frame, which is a zoom of the composition rather than of the screen.
+   *
+   * **Not called `screenZoom`**, and that is not taste. There was a setting of
+   * that name on every recording until the zoom moments replaced it, and
+   * `migrateLayout` strips it from stored projects — so a key with the old name
+   * would be deleted on the next load, or if the strip were dropped, would
+   * resurrect a value some old recording was saved with and quietly re-crop it.
+   *
+   * The control is a screenshot's: a still has no timeline to put a zoom moment
+   * on, which is the whole of the objection the old one was removed for. See
+   * `NO_ZOOM` in `shared/layout.ts`.
+   */
+  screenMagnify: number;
+  /**
+   * How far the screen picture leans, in degrees, about each axis.
+   *
+   * The same pair a zoom carries and in the same units — a perspective tilt
+   * rather than a rotation, so the far edge is genuinely further away. Static
+   * here: a still has no span for a tilt to ease across, so these are the pose
+   * the picture is drawn in rather than one it moves into.
+   *
+   * On a recording they are zero and no control reaches them. A recording tilts
+   * through its zooms, where the lean arrives with the shot — a static one
+   * would be a second answer to the same question, which is the mistake
+   * `screenMagnify` has a paragraph about.
+   */
+  screenRotateX: number;
+  screenRotateY: number;
+  /**
+   * How strong that perspective is, 0 to 1, independent of the angle.
+   *
+   * The mirror of `ZoomLook.perspective`: at 0 the eye is far enough away that
+   * a tilt reads as a squeeze, and at 1 it is close enough that the near edge
+   * looms. Read only where one of the two angles is non-zero.
+   */
+  screenPerspective: number;
   cameraVisible: boolean;
   cameraShape: CameraShape;
   /** The bubble's size, both edges as fractions of the frame's shorter edge. */
@@ -1381,6 +1424,13 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenHeight: 1,
   screenOffsetX: 0,
   screenOffsetY: 0,
+  // Flat and whole, which is every recording and every screenshot that has not
+  // been tilted or pushed into. Each of these four is inert at its default, so
+  // a plan built from a project that has never seen them is the plan it was.
+  screenMagnify: 1,
+  screenRotateX: 0,
+  screenRotateY: 0,
+  screenPerspective: 0.5,
   cameraVisible: true,
   cameraShape: "squircle",
   cameraWidth: 0.35,

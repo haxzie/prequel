@@ -153,5 +153,14 @@ function paint(
       context.fillRect(box.x, box.y, box.width, box.height);
       return;
     }
+
+    case "mask":
+      // Nothing. A mask is not ink laid over the picture — it *is* the picture,
+      // blurred or blocked up — so it is drawn by the compositor, before this
+      // painter ever sees the frame. See `maskRegions` in
+      // `shared/annotations.ts`, and note the order that makes it work: the
+      // still export composites first and paints these over the result, so a
+      // mask is already in the pixels this is drawing on.
+      return;
   }
 }

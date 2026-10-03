@@ -9,6 +9,8 @@ import {
   type RefObject,
 } from "react";
 
+import type { Annotation, AnnotationKind, Point as MarkPoint } from "../../../shared/annotations";
+import { annotationBox, annotationHit, annotationPoint } from "../../../shared/annotations";
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
@@ -37,6 +39,7 @@ import {
   type TextSlice,
   type TextTrack,
   type ZoomSlice,
+  STILL_AT,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
 import { ambientColours, ambientGradient } from "./ambience";
@@ -111,12 +114,19 @@ export function Preview({
   rendered,
   tags,
   selectedTextId,
+  marks,
+  tool,
+  selectedMarkId,
+  masks,
   grab: grabRef,
   overlay,
   onPick,
   onPickText,
+  onPickMark,
+  onDrawMark,
   onDrag,
   onDragText,
+  onDragMark,
 }: {
   /**
    * Whether everything this draws with has arrived.
@@ -174,8 +184,13 @@ export function Preview({
    * screenshot's drawing surface and this file is about the composition. The
    * box it lands in is exactly the canvas's, so whatever is put here can place
    * itself in fractions of the picture without measuring anything.
+   *
+   * A function, because the drag in flight is this component's: the gesture
+   * that draws a mark starts on the canvas below, like every other gesture on
+   * the picture, and what is handed back is the mark it is about to become so
+   * the overlay can paint it. Null between gestures.
    */
-  overlay?: ReactNode;
+  overlay?: (drawing: { kind: AnnotationKind; points: MarkPoint[] } | null) => ReactNode;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
   /**
@@ -212,6 +227,34 @@ export function Preview({
    * selected text's panel, so the two have to agree on which one it is.
    */
   selectedTextId: string | null;
+  /**
+   * A screenshot's marks — arrows, boxes, freehand, masks.
+   *
+   * Here rather than only in the overlay that paints them, because this is
+   * where "what is under the pointer" is answered. The overlay is a canvas with
+   * no pointer events at all now: two surfaces listening for a drag over the
+   * same picture is how a press meant for the screenshot was eaten by a layer
+   * that had nothing to do with it, which is exactly the failure the note on
+   * the selection ring already warns about for handles.
+   */
+  marks?: readonly Annotation[];
+  /**
+   * The drawing tool in hand, or null for the pointer.
+   *
+   * With one held, a drag anywhere on the picture draws rather than selecting —
+   * so it has to be known here, where the drag begins.
+   */
+  tool?: AnnotationKind | null;
+  /** Which mark is ringed, or null. The editor's, like `selectedTextId`. */
+  selectedMarkId?: string | null;
+  /**
+   * The masks among those marks, already in output pixels.
+   *
+   * Resolved by the caller rather than derived from `marks` here, so this file
+   * does not have to know that a mask reaches the plan and the rest do not —
+   * see `maskRegions`.
+   */
+  masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
   /**
    * Filled in with a way to grab the current frame as a PNG data URL.
    *
@@ -258,6 +301,28 @@ export function Preview({
     textId: string,
     drag: { kind: "move"; x: number; y: number } | { kind: "size"; sizes: number[] },
   ) => void;
+  /** A mark was clicked, or the background was — null for the latter. */
+  onPickMark?: (markId: string | null) => void;
+  /**
+   * A drag with a tool in hand finished, and this is the mark it drew.
+   *
+   * The points are fractions of each edge, which is what a mark stores: the
+   * drag happens in this component's pixels and nothing outside it should have
+   * to know how big the picture was on screen at the time.
+   */
+  onDrawMark?: (kind: AnnotationKind, points: MarkPoint[]) => void;
+  /**
+   * A mark was moved, or pulled by a corner.
+   *
+   * A delta for a move and whole points for a resize, which is the same split
+   * a text's drag has and for the same reason: a move does not change the
+   * shape, and a freehand stroke is a few hundred samples to send back on
+   * every pointer event for nothing.
+   */
+  onDragMark?: (
+    markId: string,
+    drag: { kind: "move"; by: MarkPoint } | { kind: "size"; points: MarkPoint[] },
+  ) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -288,6 +353,31 @@ export function Preview({
    * that can change the arrangement out from under it.
    */
   const [selected, setSelected] = useState<Grabbable | null>(null);
+  /**
+   * The mark being drawn, in a ref *and* in state.
+   *
+   * The ref is the truth and the state is what repaints the overlay. Both,
+   * because the two readers want different things: the overlay has to be handed
+   * the stroke as it grows, and the pointer handlers have to read and finish
+   * the gesture without going through a state updater — which would land the
+   * finished mark a render late and leave it unselected.
+   */
+  const live = useRef<Drawing | null>(null);
+  const [drawing, setDrawing] = useState<Drawing | null>(null);
+  /**
+   * Where the drag that is drawing began on screen, and whether it has moved.
+   *
+   * On screen rather than in the frame, because what it answers is whether a
+   * hand moved far enough to mean a drag — which is a question about the
+   * display, not about the output's resolution. A ref and not state: it is read
+   * when the pointer is let go and never drawn.
+   */
+  const liveFrom = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  /** Writes both at once, so they cannot come apart. */
+  const setLive = (next: Drawing | null) => {
+    live.current = next;
+    setDrawing(next);
+  };
 
   // Read through refs so changing a setting does not restart the loop — the
   // next frame simply picks the new values up.
@@ -398,6 +488,9 @@ export function Preview({
     rendered,
     tags,
     selectedTextId,
+    marks,
+    masks,
+    selectedMarkId,
   });
   latest.current = {
     frame,
@@ -415,6 +508,9 @@ export function Preview({
     rendered,
     tags,
     selectedTextId,
+    marks,
+    masks,
+    selectedMarkId,
   };
 
   // Fits the frame's aspect ratio into whatever space the window is giving
@@ -469,6 +565,9 @@ export function Preview({
         texts: rows,
         rendered: drawnTexts,
         tags: drawnTags,
+        marks: drawnMarks,
+        masks: hidden,
+        selectedMarkId: ringedMark,
         selectedTextId: ringedText,
       } = latest.current;
       const screen = media.getElement("screen");
@@ -545,6 +644,7 @@ export function Preview({
         drawnTexts,
         drawnTags,
         blobTrack,
+        hidden,
       ] as const;
 
       const previous = cached.current;
@@ -577,13 +677,17 @@ export function Preview({
               rows,
               drawnTexts,
               blobTrack,
+              // Present only for a screenshot — see `buildRenderPlan`. It
+              // carries the masks and it is what lets the picture be dragged
+              // past the frame's edge.
+              frozen ? { masks: hidden } : undefined,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };
 
       // Source time, because that is what the pointer track is indexed by —
       // the same clock the media elements are seeked on.
-      const at = media.sourceAt(now) ?? 0;
+      const at = frozen ? STILL_AT : (media.sourceAt(now) ?? 0);
       compositor.current.draw(element, plan, sources, loaded, backing, at);
 
       // The ring rides along with the picture from here rather than from a
@@ -601,6 +705,8 @@ export function Preview({
         at,
         ringedText ? textAt(rows, ringedText, at) : null,
         drawnTexts,
+        drawnMarks?.find((candidate) => candidate.id === ringedMark) ?? null,
+        frozen !== null,
       );
 
       // Read here and nowhere else. The context is created without
@@ -710,12 +816,44 @@ export function Preview({
     };
   };
 
-  /** The two sources' own dimensions, read off the elements the loop draws. */
+  /**
+   * The moment the composition is sampled at, in source time.
+   *
+   * `STILL_AT` for a screenshot, whatever the clock says, and that is a real
+   * divergence closed rather than a tidiness: a still's export draws the plan
+   * at that moment — see `stillPng.ts` — while this followed a playhead sitting
+   * at zero. Every span in a plan is half-open and begins at the clip's start,
+   * so a text added to a screenshot was in the written file and invisible in
+   * the preview until something happened to seek the clock into its span. Hit
+   * tested on the same moment, or clicking the words you can see would ask
+   * about an instant they are not on screen at.
+   */
+  const sampleAt = (now?: number): number => (shot ? STILL_AT : (media.sourceAt(now) ?? 0));
+
+  /**
+   * The two sources' own dimensions, read off the elements the loop draws.
+   *
+   * The shot stands in for the screen when there is one, exactly as it does in
+   * the loop — and it has to, or everything downstream of this answers "there
+   * is no screen" for a screenshot: `placement` returns null without a source
+   * size, so the picture had no box, which left it with no ring, no handles and
+   * nothing to grab. A screenshot could not be moved at all.
+   *
+   * `complete` and a real width, not truthiness: an `<img>` is in the DOM with
+   * a width of zero until it has decoded, and a box worked out from nothing is
+   * a box of nothing.
+   */
   const sourceSizes = (): SourceSizes => {
     const screen = media.getElement("screen");
     const camera = media.getElement("camera");
     return {
-      screen: isReady(screen) ? { width: screen!.videoWidth, height: screen!.videoHeight } : null,
+      screen: shot
+        ? shot.complete && shot.naturalWidth > 0
+          ? { width: shot.naturalWidth, height: shot.naturalHeight }
+          : null
+        : isReady(screen)
+          ? { width: screen!.videoWidth, height: screen!.videoHeight }
+          : null,
       camera:
         media.visible.has("camera") && isReady(camera)
           ? { width: camera!.videoWidth, height: camera!.videoHeight }
@@ -733,8 +871,14 @@ export function Preview({
     const sources = sourceSizes();
     const { layout, background } = settings;
     return {
-      screen: placement(frame, layout, background, sources, "screen"),
-      camera: layout.cameraVisible ? placement(frame, layout, background, sources, "camera") : null,
+      // `shot !== null` is the same answer the plan is built with, and it has
+      // to be: this is what the ring and the hit testing are measured in, and a
+      // box clamped to the frame while the picture is allowed past it is a
+      // corner you can see and cannot grab.
+      screen: placement(frame, layout, background, sources, "screen", shot !== null),
+      camera: layout.cameraVisible
+        ? placement(frame, layout, background, sources, "camera", shot !== null)
+        : null,
       sources,
     };
   };
@@ -771,7 +915,7 @@ export function Preview({
     const plan = cached.current?.plan;
     if (!plan) return false;
 
-    const at = media.sourceAt() ?? 0;
+    const at = sampleAt();
 
     return plan.items.some(
       (item) => item.kind === "caption" && inside(captionAt(item, at)?.dst ?? EMPTY, point),
@@ -815,7 +959,7 @@ export function Preview({
    * not on screen. Highest row first, because that is the one drawn on top.
    */
   const textsUnder = (): { text: TextSlice; box: Rect }[] => {
-    const at = media.sourceAt() ?? 0;
+    const at = sampleAt();
     const found: { text: TextSlice; box: Rect }[] = [];
     for (let track = texts.length - 1; track >= 0; track -= 1) {
       for (const { text, span } of texts[track]!) {
@@ -827,10 +971,61 @@ export function Preview({
     return found;
   };
 
+  /**
+   * A point in output pixels as the fraction of each edge a mark stores.
+   *
+   * Edge fractions rather than the shorter edge's, because that is what an
+   * annotation's points are — see `shared/annotations.ts`.
+   */
+  const markPoint = (point: Point): MarkPoint => ({
+    x: point.x / Math.max(frame.width, 1),
+    y: point.y / Math.max(frame.height, 1),
+  });
+
+  /** A mark's own corners in output pixels, which is the box a resize pulls. */
+  const markBox = (mark: Annotation): Rect =>
+    annotationBox(mark.points.map((at) => annotationPoint(frame, at)));
+
+  /** The topmost mark under a point, or null. Last drawn is first hit. */
+  const markUnder = (point: Point): Annotation | null => {
+    const reach = SLACK * grain();
+    for (let index = (marks?.length ?? 0) - 1; index >= 0; index -= 1) {
+      const mark = marks![index]!;
+      if (annotationHit(frame, mark, point, reach)) return mark;
+    }
+    return null;
+  };
+
   /** What is under the pointer: a corner to pull, a picture to drag, or nothing. */
   const find = (point: Point): Grip | null => {
     const near = HANDLE * grain();
     const { screen, camera } = pictures();
+
+    // Marks before everything, because they are painted over everything: the
+    // overlay is the topmost layer on the picture, so what can be seen there is
+    // what a press should land on. The selected one's corners first, for the
+    // reason the ringed picture's are below — the handles are what say a corner
+    // is there.
+    if (marks && marks.length > 0) {
+      const held = marks.find((mark) => mark.id === selectedMarkId);
+      if (held) {
+        const box = markBox(held);
+        const corner = cornerAt(box, point, near);
+        if (corner) {
+          return {
+            kind: "sizeMark",
+            markId: held.id,
+            corner,
+            box,
+            from: point,
+            points: held.points,
+          };
+        }
+      }
+
+      const under = markUnder(point);
+      if (under) return { kind: "moveMark", markId: under.id, from: point };
+    }
 
     // Texts before the pictures: they are drawn over everything but the
     // captions, and the selected one's corners before its body, for the
@@ -862,7 +1057,7 @@ export function Preview({
     // same answer the ring uses, so what can be grabbed and what shows handles
     // cannot disagree — off the last plan drawn, which is the one on screen.
     const away = (which: PlanSource) =>
-      cached.current ? pictureMoved(cached.current.plan, which, media.sourceAt() ?? 0) : false;
+      cached.current ? pictureMoved(cached.current.plan, which, sampleAt()) : false;
 
     const boxes: Record<Grabbable, Rect | null> = {
       watermark: watermarkBox(),
@@ -1045,6 +1240,27 @@ export function Preview({
     };
   };
 
+  /**
+   * The end of a gesture, however it ended.
+   *
+   * Named rather than written inline because two events reach it — see the
+   * note at the call site.
+   */
+  const release = (event: PointerEvent<HTMLCanvasElement>) => {
+    grab.current = null;
+    event.currentTarget.style.cursor = "";
+    hideGuides();
+
+    const stroke = live.current;
+    const moved = liveFrom.current?.moved ?? false;
+    liveFrom.current = null;
+    setLive(null);
+    // A click rather than a drag makes nothing. A mark with no length is one
+    // nobody can see or select, and leaving one in the project reads as the
+    // tool having stopped working.
+    if (stroke && moved) onDrawMark?.(stroke.kind, stroke.points);
+  };
+
   const patchFor = (
     grip: Extract<Grip, { kind: "move" | "resize" | "pan" }>,
     point: Point,
@@ -1058,27 +1274,33 @@ export function Preview({
       const source = sourceSizes()[grip.target];
       if (!found || !source) return { section: "layout", patch: {} };
 
-      // Under `cover` the picture travels with the pointer, so the crop window
+      // Whether there is a window to move, which is the question the fit used to
+      // stand in for. A `contain` picture magnified past 1 is cropped too — see
+      // `LayoutSettings.screenMagnify` — and asking the fit answered "no
+      // window" for it, so panning a zoomed screenshot slid the whole picture
+      // out of its card instead of moving the crop.
+      //
+      // With a window, the picture travels with the pointer and the window
       // travels against it — by as much of the source as the pointer covered of
       // the picture. `place` clamps the result, so a pan stops at the edge of
       // the recording rather than sampling nothing.
       //
-      // Under `contain` there is no window: the whole source is on show, and
-      // the offset slides the picture around inside the area it was given. Same
-      // gesture, opposite sign, and the fraction is of the area rather than of
-      // the source.
-      const [dx, dy] =
-        found.fit === "cover"
-          ? [
-              -((point.x - grip.from.x) / found.dstRect.width) *
-                (found.srcRect.width / source.width),
-              -((point.y - grip.from.y) / found.dstRect.height) *
-                (found.srcRect.height / source.height),
-            ]
-          : [
-              (point.x - grip.from.x) / Math.max(found.area.width, 1),
-              (point.y - grip.from.y) / Math.max(found.area.height, 1),
-            ];
+      // Without one the whole source is on show, and the offset slides the
+      // picture around inside the area it was given. Same gesture, opposite
+      // sign, and the fraction is of the area rather than of the source.
+      const cropped =
+        found.srcRect.width < source.width - 0.5 || found.srcRect.height < source.height - 0.5;
+
+      const [dx, dy] = cropped
+        ? [
+            -((point.x - grip.from.x) / found.dstRect.width) * (found.srcRect.width / source.width),
+            -((point.y - grip.from.y) / found.dstRect.height) *
+              (found.srcRect.height / source.height),
+          ]
+        : [
+            (point.x - grip.from.x) / Math.max(found.area.width, 1),
+            (point.y - grip.from.y) / Math.max(found.area.height, 1),
+          ];
 
       return {
         section: "layout",
@@ -1313,6 +1535,18 @@ export function Preview({
 
             const point = framePoint(event);
 
+            // A tool in hand draws, wherever the press lands — including on the
+            // background around the picture, which is part of the frame a mark
+            // may be drawn on. Nothing is selected and nothing is hit tested:
+            // the gesture is making something new.
+            if (tool) {
+              const at = markPoint(point);
+              setLive({ kind: tool, points: [at, at] });
+              liveFrom.current = { x: event.clientX, y: event.clientY, moved: false };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+
             // Captions first, because they are drawn over everything else — a
             // cue sitting on the recording would otherwise be unreachable, and
             // clicking the words you can see would select what is behind them.
@@ -1327,6 +1561,17 @@ export function Preview({
 
             const found = find(point);
 
+            // A mark, whose ring is the editor's for the reason a text's is:
+            // the panel beside this shows what is selected, so the two have to
+            // agree on which one it is.
+            if (found?.kind === "moveMark" || found?.kind === "sizeMark") {
+              setSelected(null);
+              onPickMark?.(found.markId);
+              grab.current = found;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              return;
+            }
+
             // A text: the ring is the editor's, not this component's, so the
             // picture ring comes off and the editor is told which text.
             if (found?.kind === "moveText" || found?.kind === "sizeText") {
@@ -1338,8 +1583,10 @@ export function Preview({
             }
 
             // Empty background drops the selection, the same click that would
-            // drop it on a canvas anywhere else.
+            // drop it on a canvas anywhere else — a mark's included, which is
+            // the only way to put a ring down without reaching for Escape.
             setSelected(found?.target ?? null);
+            if (!found) onPickMark?.(null);
             if (!found) return;
             onPick?.(found.target);
 
@@ -1370,18 +1617,68 @@ export function Preview({
           onPointerMove={(event) => {
             const point = framePoint(event);
 
+            // A mark being drawn, which is the one gesture that is not a grip:
+            // there is nothing to grab yet.
+            const stroke = live.current;
+            if (stroke) {
+              const from = liveFrom.current;
+              if (from && !from.moved) {
+                from.moved = Math.hypot(event.clientX - from.x, event.clientY - from.y) >= MIN_DRAG;
+              }
+
+              if (stroke.kind !== "pen") {
+                setLive({ ...stroke, points: [stroke.points[0]!, markPoint(point)] });
+                return;
+              }
+
+              // A stroke, thinned as it is taken — see `SAMPLE_GAP`.
+              const last = annotationPoint(frame, stroke.points[stroke.points.length - 1]!);
+              if (Math.hypot(point.x - last.x, point.y - last.y) < SAMPLE_GAP) return;
+              setLive({ ...stroke, points: [...stroke.points, markPoint(point)] });
+              return;
+            }
+
             if (!grab.current) {
               // Written straight to the element: this fires far more often than a
               // render, and routing a cursor change through state would rebuild
               // the editor to change one CSS property.
+              // A tool in hand is about to draw, which is the one cursor that
+              // does not depend on what is under the pointer.
+              if (tool) {
+                event.currentTarget.style.cursor = "crosshair";
+                return;
+              }
+
               const found = find(point);
               event.currentTarget.style.cursor = !found
                 ? ""
-                : found.kind === "resize" || found.kind === "sizeText"
+                : found.kind === "resize" || found.kind === "sizeText" || found.kind === "sizeMark"
                   ? CORNER_CURSOR[found.corner]
-                  : event.altKey && found.kind !== "moveText"
+                  : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
                     ? "move"
                     : "grab";
+              return;
+            }
+
+            if (grab.current.kind === "moveMark" || grab.current.kind === "sizeMark") {
+              if (grab.current.kind === "moveMark") {
+                event.currentTarget.style.cursor = "grabbing";
+                // A delta from the last event rather than from the press, so
+                // the mark follows the pointer instead of being sent the whole
+                // offset again on every move — which runs it off the frame.
+                const by = {
+                  x: (point.x - grab.current.from.x) / Math.max(frame.width, 1),
+                  y: (point.y - grab.current.from.y) / Math.max(frame.height, 1),
+                };
+                grab.current = { ...grab.current, from: point };
+                onDragMark?.(grab.current.markId, { kind: "move", by });
+                return;
+              }
+
+              onDragMark?.(grab.current.markId, {
+                kind: "size",
+                points: pulledPoints(grab.current, point, event.shiftKey, frame),
+              });
               return;
             }
 
@@ -1399,11 +1696,12 @@ export function Preview({
             onDrag(section, patch);
             showGuides();
           }}
-          onPointerUp={(event) => {
-            grab.current = null;
-            event.currentTarget.style.cursor = "";
-            hideGuides();
-          }}
+          onPointerUp={release}
+          // Cancelled as well as released. A gesture the system takes away —
+          // the window losing focus mid-drag — leaves the stroke in flight
+          // otherwise, and the overlay goes on painting a mark that is not
+          // being drawn by anything.
+          onPointerCancel={release}
           onPointerLeave={(event) => {
             if (grab.current) return;
             event.currentTarget.style.cursor = "";
@@ -1415,7 +1713,7 @@ export function Preview({
         {/* Between the picture and the ring. A mark is part of the picture —
             it is written into the file — so it goes over the composition; the
             ring is chrome and stays on top of both. */}
-        {overlay}
+        {overlay?.(drawing)}
 
         {/* Drawn over the picture, never in it: the canvas is the composition
             and this is a note about it, so it must not reach the export or the
@@ -1504,6 +1802,16 @@ function ring(
   /** The selected text, when it is on screen at this moment. */
   text: TextSlice | null,
   rendered: ReadonlyMap<string, RenderedText>,
+  /**
+   * The selected mark, when there is one.
+   *
+   * Its own box rather than `annotationRect`'s, which is grown by half a stroke
+   * for hit testing: the ring is what says where the corners are, and corners
+   * half a stroke outside the shape would resize it from somewhere it is not.
+   */
+  mark: Annotation | null,
+  /** Whether this is a screenshot, which may be dragged past the frame's edge. */
+  still: boolean,
 ): void {
   if (!element) return;
 
@@ -1512,14 +1820,16 @@ function ring(
   // placed by nothing but the four numbers below it. A text's comes from the
   // same `placeText` the plan is built from, so the ring is around what the
   // exporter draws.
-  const box = text
-    ? textBlockRect(frame, text, rendered)
-    : selected === "watermark"
-      ? watermarkRect(frame, settings.watermark)
-      : selected
-        ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
-          null)
-        : null;
+  const box = mark
+    ? annotationBox(mark.points.map((at) => annotationPoint(frame, at)))
+    : text
+      ? textBlockRect(frame, text, rendered)
+      : selected === "watermark"
+        ? watermarkRect(frame, settings.watermark)
+        : selected
+          ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
+            null)
+          : null;
 
   // A zoom moves the picture on its own track, leaving the box a drag reads and
   // writes exactly where it was. Following the zoom would put handles on a
@@ -1530,7 +1840,7 @@ function ring(
   // Through `pictureMoved`, which asks the plan. A text is placed by nothing a
   // zoom touches, and the logo is not a picture a plan moves.
   const moving =
-    !text && selected !== null && selected !== "watermark"
+    !text && !mark && selected !== null && selected !== "watermark"
       ? pictureMoved(plan, selected, at)
       : false;
 
@@ -1593,10 +1903,65 @@ type Grip =
       from: Point;
       /** Every field's size at the grab, which the ratio is applied to. */
       sizes: number[];
+    }
+  // A mark, which is a `Grabbable` even less than a text is: it has no settings
+  // at all, only its own points.
+  | { kind: "moveMark"; markId: string; from: Point }
+  | {
+      kind: "sizeMark";
+      markId: string;
+      corner: Corner;
+      box: Rect;
+      from: Point;
+      /** The shape at the grab, so a resize is measured from where it started
+          rather than compounding frame by frame. */
+      points: readonly MarkPoint[];
     };
+
+/**
+ * A mark being drawn, as the overlay is handed it.
+ *
+ * Deliberately not a `Grip`: a grip is something taken hold of, and there is
+ * nothing here to hold yet. It lives in its own ref for the same reason — the
+ * handlers ask "is a mark being drawn" before they ask "what was grabbed".
+ */
+interface Drawing {
+  kind: AnnotationKind;
+  points: MarkPoint[];
+}
 
 /** How close to a corner counts as grabbing it, in points on screen. */
 const HANDLE = 12;
+
+/**
+ * How far off a mark still counts as on it, in points on screen.
+ *
+ * A two-pixel arrow needs a target bigger than two pixels, and the slack is in
+ * screen points rather than output pixels because what it is really about is
+ * how accurately a hand can aim — which does not change when the same picture
+ * is shown larger.
+ */
+const SLACK = 6;
+
+/**
+ * The shortest drag that makes a mark, in points on screen.
+ *
+ * Below this it was a click. An arrow of no length draws nothing and still
+ * lands in the project as a mark nobody can see or select, which is how a tool
+ * comes to look like it has stopped working.
+ */
+const MIN_DRAG = 6;
+
+/**
+ * How far apart freehand samples are kept, in output pixels.
+ *
+ * A pointer reports every few milliseconds and a slow hand produces dozens of
+ * samples in the same place; left in, they are stored, re-smoothed and
+ * re-painted for ever. Dropping anything nearer than this costs nothing visible
+ * — the painter already curves through the midpoints — and keeps a long stroke
+ * to a few hundred points rather than a few thousand.
+ */
+const SAMPLE_GAP = 2;
 
 /**
  * How close a dragged edge has to come before it snaps, in *screen* pixels.
@@ -1671,6 +2036,37 @@ function cornerAt(rect: Rect, point: Point, near: number): Corner | null {
  * pixel across at worst: a box collapsed to nothing has no corners left to grab
  * and could never be recovered.
  */
+/**
+ * A mark's points after a corner has been pulled.
+ *
+ * Mapped out of the box they were in and into the box the drag made, so every
+ * kind resizes with one piece of arithmetic — a freehand stroke's three hundred
+ * samples and an arrow's two ends are the same problem.
+ *
+ * An edge of no extent keeps its coordinate rather than being scaled: a
+ * horizontal line's box has no height, and dividing by it would send the whole
+ * mark to `NaN` — which draws nothing at all and cannot be undone by dragging
+ * back, because there is no longer a box to grab.
+ */
+function pulledPoints(
+  grip: Extract<Grip, { kind: "sizeMark" }>,
+  point: Point,
+  keepAspect: boolean,
+  frame: Size,
+): MarkPoint[] {
+  const box = pulled(grip.box, grip.corner, point, keepAspect);
+
+  return grip.points.map((at) => {
+    const was = { x: at.x * frame.width, y: at.y * frame.height };
+    const x =
+      grip.box.width > 0 ? box.x + ((was.x - grip.box.x) / grip.box.width) * box.width : was.x;
+    const y =
+      grip.box.height > 0 ? box.y + ((was.y - grip.box.y) / grip.box.height) * box.height : was.y;
+
+    return { x: x / Math.max(frame.width, 1), y: y / Math.max(frame.height, 1) };
+  });
+}
+
 function pulled(rect: Rect, corner: Corner, point: Point, keepAspect: boolean): Rect {
   const anchor = {
     x: corner === "nw" || corner === "sw" ? rect.x + rect.width : rect.x,

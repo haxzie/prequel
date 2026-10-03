@@ -25,6 +25,7 @@ import {
   type RenderedText,
   type Size,
 } from "../../../shared/layout";
+import { maskRegions } from "../../../shared/annotations";
 import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
 import {
   captionLook,
@@ -65,6 +66,21 @@ export function buildSlices(
    * into the main process, which cannot run it.
    */
   tag: (layout: Pick<LayoutSettings, "cursorStyle" | "cursorName">) => CursorTag | undefined,
+  /**
+   * Whether this is a screenshot's export.
+   *
+   * False everywhere but the one path that draws a still through the renderer's
+   * own compositor, and it is a flag rather than something read off the project
+   * because of what is on the other side of it: a mask is drawn by a mode
+   * `shaders.metal` does not have, so one handed to the video exporter is a
+   * patch that is in the preview and missing from the file — the pixels it was
+   * drawn to hide, shipped. See `maskRegions`.
+   *
+   * It also widens how far a dragged picture may sit off the frame, which is
+   * the other thing a still does differently — see `SCREEN_SLACK`. One flag,
+   * because it is one fact about the composition.
+   */
+  still = false,
 ): ExportSlice[] {
   const all = slicesOf(project);
   const laid = place(all);
@@ -159,6 +175,7 @@ export function buildSlices(
           // and last sample past either end, so a clip that starts mid-take is
           // drawn with the shape that was there.
           session.blobs,
+          still ? { masks: maskRegions(frame, project.annotations) } : undefined,
         ),
       ),
       speed: slice.speed,

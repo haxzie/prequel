@@ -825,6 +825,54 @@ export function HighlighterToolIcon() {
   );
 }
 
+/**
+ * The mask: a rectangle with the detail inside it broken up.
+ *
+ * A box with a scatter of short strokes in it rather than Lucide's own
+ * `square-dashed` or a droplet. What the tool does is take a rectangle out of
+ * the picture, and both the shape and the ruin have to be in the glyph — a
+ * plain dashed box reads as a selection and a droplet reads as a colour.
+ */
+export function MaskToolIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="M7 10h3" />
+      <path d="M13 10h4" />
+      <path d="M7 14h5" />
+      <path d="M15 14h2" />
+    </svg>
+  );
+}
+
+/**
+ * A double arrow across, and the same one down: which way a pan moves.
+ *
+ * Two glyphs rather than `MoveIcon` twice. The two rows under the Zoom slider
+ * differ only in their axis, and a column of identical icons makes the label
+ * the only thing telling them apart — which is the one job an icon beside a
+ * label has.
+ */
+export function PanXIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M3 12h18" />
+      <path d="m6 9-3 3 3 3" />
+      <path d="m18 9 3 3-3 3" />
+    </svg>
+  );
+}
+
+export function PanYIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M12 3v18" />
+      <path d="m9 6 3-3 3 3" />
+      <path d="m9 18 3 3 3-3" />
+    </svg>
+  );
+}
+
 /** `TextIcon` with a plus beside it: the transport's Add Text button. */
 export function AddTextIcon() {
   return (

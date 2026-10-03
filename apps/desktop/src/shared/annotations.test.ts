@@ -13,8 +13,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COLOUR,
   DEFAULT_WIDTH,
+  MASK_STRENGTH,
   annotationHit,
   annotationRect,
+  maskRegions,
   newAnnotation,
   sanitiseAnnotations,
   strokeWidth,
@@ -241,5 +243,101 @@ describe("a fresh mark", () => {
     expect(mark.color).toBe("#3b82f6");
     expect(mark.width).toBe(0.008);
     expect(mark.opacity).toBe(1);
+  });
+});
+
+describe("a mask", () => {
+  const mask = (): Annotation =>
+    newAnnotation("m", "mask", [
+      { x: 0.25, y: 0.5 },
+      { x: 0.75, y: 0.6 },
+    ]);
+
+  it("opens strong enough to hide what it was drawn over", () => {
+    // Not a detail of taste. A mask that leaves an email address legible is
+    // worse than no mask at all: somebody checks that they put one there, sees
+    // a smudge where the address was, and ships it.
+    const fresh = mask();
+    expect(fresh.mask).toBe("blur");
+    expect(fresh.strength).toBe(MASK_STRENGTH);
+    expect(fresh.strength).toBeGreaterThan(0.5);
+  });
+
+  it("carries no ink, whatever the toolbar is set to", () => {
+    const fresh = newAnnotation("m", "mask", [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ]);
+    expect(fresh.color).toBe(DEFAULT_COLOUR);
+    expect(fresh.opacity).toBe(1);
+  });
+
+  it("is grabbed anywhere on the patch it is hiding", () => {
+    // Filled, like the highlighter: the whole point of the rectangle is that
+    // there is nothing to see inside it, so an outline-only hit test would
+    // leave it selectable along a one-pixel border nobody can find.
+    const inside = { x: 0.5 * FRAME.width, y: 0.55 * FRAME.height };
+    expect(annotationHit(FRAME, mask(), inside, 0)).toBe(true);
+  });
+
+  it("covers exactly the rectangle that was dragged", () => {
+    // From the points, never `annotationRect`, which grows its answer by half a
+    // stroke for hit testing — a patch a few pixels larger would hide the edge
+    // of whatever sits beside the thing it was aimed at.
+    const [region] = maskRegions(FRAME, [mask()]);
+
+    expect(region).toEqual({
+      rect: { x: 0.25 * 1920, y: 0.5 * 1080, width: 0.5 * 1920, height: 0.1 * 1080 },
+      mode: "blur",
+      strength: MASK_STRENGTH,
+    });
+
+    const padded = annotationRect(FRAME, mask());
+    expect(padded.width).toBeGreaterThan(region!.rect.width);
+  });
+
+  it("leaves every other kind out of the plan", () => {
+    // The one mark that reaches a plan, and the only one that may: a mask draws
+    // the pixels beneath it, and the rest are ink the 2D painter lays on top.
+    expect(maskRegions(FRAME, [arrow()])).toEqual([]);
+  });
+
+  it("is read back off disk with a mode, however old the file", () => {
+    const [read] = sanitiseAnnotations([
+      {
+        id: "m",
+        kind: "mask",
+        points: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.5 },
+        ],
+        color: DEFAULT_COLOUR,
+        width: DEFAULT_WIDTH,
+        opacity: 1,
+      },
+    ]);
+
+    // A stored mask with no mode was written by a build that had only the blur,
+    // and the picture it was saved from had a blur on it.
+    expect(read?.mask).toBe("blur");
+    expect(read?.strength).toBe(MASK_STRENGTH);
+  });
+
+  it("clamps a strength from outside the slider", () => {
+    const [read] = sanitiseAnnotations([
+      {
+        id: "m",
+        kind: "mask",
+        mask: "pixelate",
+        strength: 40,
+        points: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.5 },
+        ],
+      },
+    ]);
+
+    expect(read?.mask).toBe("pixelate");
+    expect(read?.strength).toBe(1);
   });
 });

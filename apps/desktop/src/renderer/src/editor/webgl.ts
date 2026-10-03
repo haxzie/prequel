@@ -105,6 +105,43 @@ const MODE_IMAGE = 2;
 const MODE_SHADOW = 3;
 const MODE_STROKE = 4;
 const MODE_LOUPE = 5;
+/**
+ * The two masks, as two modes rather than one with a flag.
+ *
+ * A mode is an integer the shader already switches on, and the alternative is
+ * another uniform written on every draw in the frame for the sake of two
+ * branches in one of them.
+ */
+const MODE_MASK_BLUR = 6;
+const MODE_MASK_PIXELATE = 7;
+
+/**
+ * How wide a mask blurs at full strength, as a fraction of its own shorter
+ * edge.
+ *
+ * **Its own edge, not the frame's**, and that is the whole of this number. What
+ * a mask has to destroy is whatever it was drawn around — a line of text, a
+ * face, a row of a table — and the height of that thing is the height of the
+ * patch. Measured against the frame instead, a mask over one line of an address
+ * came out with a blur of two or three pixels and left the words readable,
+ * while one over half the picture was a smear; the setting would have meant two
+ * different amounts of hiding at the same number.
+ *
+ * A quarter, which at the top of the slider is very nearly one flat colour.
+ * The slider is there to choose how *obvious* the mask is, not whether it
+ * works: nothing in its travel should leave what is under it legible.
+ */
+const MASK_BLUR_REACH = 0.25;
+
+/**
+ * And how large a block is at full strength, on the same measure.
+ *
+ * Far smaller than the blur's, because the two are not the same question: a
+ * blur has to reach across a letter to destroy it, and a mosaic only has to be
+ * coarser than one. At the default this is about nine blocks across the patch,
+ * which reads as a deliberate pixelation — three would read as a broken render.
+ */
+const MASK_BLOCK_REACH = 0.18;
 
 /**
  * The two shader sources, exported for `webgl.test.ts` and nothing else.
@@ -939,6 +976,62 @@ void main() {
     // coverage, so an arriving lens is see-through rather than popping in.
     float shown = cover * u_loupe.w;
     fragColor = vec4(lit * shown, shown + (1.0 - shown) * shade);
+    return;
+  }
+
+  // A mask, which draws the frame back over itself with the detail taken out.
+  //
+  // u_backdrop is a copy of exactly this rectangle, taken a moment ago with a
+  // mip chain over it — so the blur is the chain's own box pyramid rather than
+  // a kernel this has to walk, and a mosaic is one tap per block of the level
+  // whose texels *are* the blocks. Both destroy what they cover rather than
+  // smearing it: a mask that leaves a legible ghost of an email address is
+  // worse than no mask, because somebody checks that they put one there.
+  //
+  // Flipped in v, because a WebGL colour buffer runs bottom-up and
+  // copyTexImage2D copies it as it stands. No u_src dance like the lens's: a
+  // mask is a screenshot's, screenshots are drawn by this file in both the
+  // preview and the export, and there is no second rasteriser to state an
+  // orientation for.
+  if (u_mode == 6 || u_mode == 7) {
+    float shown = 1.0 - smoothstep(-0.5, 0.5,
+                                   shapeDistance(v_local - u_rect.zw * 0.5, u_rect.zw * 0.5,
+                                                 u_shape.x, u_shape.y));
+    if (shown <= 0.0) discard;
+
+    vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
+
+    // u_weight is how wide, in *output* pixels, and the chain is indexed in the
+    // copy's own texels — which are not the same thing. The copy is taken at
+    // whatever the drawing buffer is: the preview's is the window times the
+    // device ratio, capped at two, and the export's is the file. Asking for a
+    // level by output pixels blurred the preview by however far apart those two
+    // happened to be — a patch that came out black on screen and merely soft in
+    // the file, which is the one failure a shared compositor is supposed to
+    // make impossible. As a fraction of the rectangle it is the same picture at
+    // either size.
+    vec2 grain = vec2(textureSize(u_backdrop, 0));
+    float across = u_weight / max(u_rect.z, 1.0) * grain.x;
+    // A level is a halving, so the level whose texels span that many is its log.
+    float lod = log2(max(across, 1.0));
+
+    vec4 taken;
+    if (u_mode == 7) {
+      // The block grid, in the rectangle's own uv. Sampled at the middle of a
+      // block and at the level whose texels are that size, so each block is the
+      // average of what it covers rather than one pixel out of it — which is
+      // what makes a mosaic read as deliberate rather than as a sampling fault.
+      vec2 cell = max(u_weight, 1.0) / max(u_rect.zw, vec2(1.0));
+      taken = textureLod(u_backdrop, (floor(uv / cell) + 0.5) * cell, lod);
+    } else {
+      taken = textureLod(u_backdrop, uv, lod);
+    }
+
+    // Unpremultiplied and put back opaque. The copy carries the frame's own
+    // alpha, and drawing a translucent average over the sharp pixels still
+    // underneath would leave what the mask is hiding showing through it.
+    vec3 colour = taken.a > 0.0 ? taken.rgb / taken.a : taken.rgb;
+    fragColor = premultiplied(colour, shown);
     return;
   }
 
@@ -1799,6 +1892,40 @@ export class WebGlCompositor {
         drawQuad(gl);
         break;
       }
+
+      case "mask": {
+        // How wide the blur, or how large a block, in output pixels — see
+        // `MASK_BLUR_REACH` for why both are measured against the patch rather
+        // than the frame, and why the two scales differ.
+        //
+        // A floor of two output pixels: at one, a blur is the level the chain
+        // starts at and a mosaic is a block the size of a pixel, so the control
+        // would appear to do nothing over the first part of its travel.
+        const reach = Math.max(
+          2,
+          Math.min(item.rect.width, item.rect.height) *
+            (item.mode === "pixelate" ? MASK_BLOCK_REACH : MASK_BLUR_REACH) *
+            Math.min(Math.max(item.strength, 0), 1),
+        );
+
+        // The patch as it stands, with a mip chain over it — which is what the
+        // shader reads instead of walking a kernel. Taken here rather than once
+        // per frame: each mask covers a different rectangle, and the copy is
+        // the size of that rectangle alone.
+        this.grabBackdrop(gl, item.rect, frame, true);
+
+        set(gl, p, {
+          rect: item.rect,
+          // Square-cornered: a mask is the rectangle somebody dragged, and a
+          // radius would leave four slivers of what they were hiding in the
+          // corners of it.
+          shape: { radius: 0, exponent: 2 },
+          mode: item.mode === "pixelate" ? MODE_MASK_PIXELATE : MODE_MASK_BLUR,
+          weight: reach,
+        });
+        drawQuad(gl);
+        break;
+      }
     }
   }
 
@@ -1985,7 +2112,19 @@ export class WebGlCompositor {
    * hundred pixels — the shader averages sixteen taps across it and never
    * looks at a single texel, so nothing is lost by it being small.
    */
-  private grabBackdrop(gl: WebGL2RenderingContext, rect: Rect, frame: Size): void {
+  private grabBackdrop(
+    gl: WebGL2RenderingContext,
+    rect: Rect,
+    frame: Size,
+    /**
+     * Build a mip chain over the copy.
+     *
+     * Only a mask wants one, and it wants it badly: the chain *is* its blur.
+     * The caption's tint averages sixteen taps of its own and would be paying
+     * for a pyramid nothing samples, once per line per frame.
+     */
+    mips = false,
+  ): void {
     const p = this.program;
     if (!p) return;
 
@@ -2023,7 +2162,17 @@ export class WebGlCompositor {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.backdrop);
     gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, x, y, width, height, 0);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    // The chain, over the copy that was just taken — not over a framebuffer
+    // attachment, which is the feedback loop the filter pass has a paragraph
+    // about. This texture is never attached to anything.
+    if (mips) gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(
+      gl.TEXTURE_2D,
+      gl.TEXTURE_MIN_FILTER,
+      // Mipmap filtering on a texture with no chain is *incomplete* and samples
+      // as black, so this follows the chain rather than being set once.
+      mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR,
+    );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

@@ -486,6 +486,29 @@ export type PlanItem =
        * multiplied in, so a look with a coloured fill would lose it.
        */
       tint: { onDark: string; onLight: string } | null;
+    }
+  | {
+      /**
+       * A patch of the finished frame hidden — blurred, or blocked up.
+       *
+       * The one item that neither draws a source nor leaves what is beneath it
+       * alone: it reads the pixels already composited inside `rect` and puts
+       * them back softened. A lens is its nearest relative and the opposite of
+       * it — that one magnifies what is under it and this one destroys it.
+       *
+       * **Screenshots only**, and the reason is `shaders.metal`: it has no mode
+       * for this, so a mask on a recording would be in the preview and absent
+       * from the export — the pixels it was drawn to hide, shipped. A still is
+       * written by the compositor that drew its preview, so there is one
+       * rasteriser and the question does not arise. See `maskRegions` in
+       * `shared/annotations.ts`, which is the only thing that emits one.
+       */
+      kind: "mask";
+      /** The patch, in output pixels. */
+      rect: Rect;
+      mode: "blur" | "pixelate";
+      /** 0 to 1. How wide the blur, or how coarse the blocks. */
+      strength: number;
     };
 
 /**
@@ -883,6 +906,23 @@ export function buildRenderPlan(
   texts?: readonly (readonly PlacedText[])[],
   rendered?: ReadonlyMap<string, RenderedText>,
   blobs?: BlobTrack | null,
+  /**
+   * Present when this composition is a screenshot, carrying what only a
+   * screenshot has.
+   *
+   * One parameter rather than two, because it is one fact: a still is dragged
+   * under looser bounds than a recording — see `SCREEN_SLACK` — and a still is
+   * the only thing that may carry masks. Absent is a recording, which is every
+   * other caller.
+   *
+   * The masks are passed in rather than read off the project, because the
+   * project is not here, and because the *caller* is what decides whether they
+   * are allowed at all. A video export must never be handed any: `shaders.metal`
+   * has no mode for one, so the item would be dropped by the exporter and the
+   * picture shipped with what the mask was hiding still in it. See
+   * `maskRegions`.
+   */
+  still?: { masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[] },
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -917,7 +957,7 @@ export function buildRenderPlan(
 
   // Where each picture goes, worked out once for both of them. Everything below
   // only fits a source into the box it was given and decides how to dress it.
-  const boxes = layoutBoxes(frame, layout, background, sources);
+  const boxes = layoutBoxes(frame, layout, background, sources, still !== undefined);
 
   // Where the camera was a frame ago, on the far side of the cut. Resolved
   // through the same `placement` the drag handles use, so "where was it" and
@@ -936,6 +976,11 @@ export function buildRenderPlan(
       NO_ZOOM,
       layout.screenOffsetX,
       layout.screenOffsetY,
+      // A crop rather than a scale, which is what keeps the card the size the
+      // arrangement gave it while the picture inside it comes closer — see
+      // `LayoutSettings.screenMagnify`, and `NO_ZOOM` for why the screen has no
+      // zoom of the other kind.
+      layout.screenMagnify,
     );
     const shape: Shape = { radius: background.cornerRadius * unit, exponent: 2 };
 
@@ -965,11 +1010,7 @@ export function buildRenderPlan(
     // outside it, and the shadow cast by the two of them together. Separate
     // because each is a different rectangle put through the same tilt, and a
     // tilted rectangle cannot be grown after the fact — see `keyFor`.
-    const {
-      keys: motion,
-      border: borderMotion,
-      shadow: shadowMotion,
-    } = zoomKeys(
+    const zoomed = zoomKeys(
       shots,
       frame,
       dstRect,
@@ -980,6 +1021,43 @@ export function buildRenderPlan(
       border,
       cursor,
     );
+
+    // A screenshot's static lean, as one key apiece.
+    //
+    // Through the same `keyFor` a zoom's samples go through, so a tilted still
+    // and a tilted shot are the same four corners worked out by the same
+    // projection — and both rasterisers read the quad off a key already,
+    // knowing nothing about why it is there. One key rather than a pair:
+    // `rectAt` answers with it at every moment, which is what a pose that does
+    // not move is.
+    //
+    // Only where there are no zoom keys, and that is the whole interaction
+    // between the two: a zoom's track already carries its own lean and a plan
+    // item holds one `motion`. Nothing can reach both — the tilt is a
+    // screenshot's control and a screenshot has no timeline to put a zoom on —
+    // so the zoom wins rather than the two being blended into a third answer.
+    const leaning = layout.screenRotateX !== 0 || layout.screenRotateY !== 0;
+    const tilted =
+      leaning && zoomed.keys.length === 0
+        ? keyFor(
+            {
+              rect: dstRect,
+              radius: shape.radius,
+              rotateX: layout.screenRotateX,
+              rotateY: layout.screenRotateY,
+              perspective: layout.screenPerspective,
+              vignette: 0,
+              focus: null,
+            },
+            0,
+            spread,
+            border,
+          )
+        : null;
+
+    const motion = tilted ? [tilted.key] : zoomed.keys;
+    const borderMotion = tilted ? [tilted.border] : zoomed.border;
+    const shadowMotion = tilted ? [tilted.shadow] : zoomed.shadow;
     const moving = motion.length > 0 ? { motion } : {};
 
     // Against the picture that was just placed, and after `motion` exists: a
@@ -1487,6 +1565,18 @@ export function buildRenderPlan(
   // Last, so captions sit over everything. A caption behind the camera bubble
   // is a caption nobody can read, and the bubble is the thing that moves.
   items.push(...captionItems(frame, settings.captions, cues));
+
+  // After the captions, which is after everything: a mask hides whatever is
+  // under it, and what is under it is whatever the composition put there. One
+  // drawn over a title hides the title, because that is where it was drawn —
+  // the alternative is a patch that covers the screenshot and leaves the words
+  // somebody was redacting sitting on top of it.
+  //
+  // The marks an arrow or a box is made of are not here and never will be; see
+  // `maskRegions` for the one line that separates this from those.
+  for (const mask of still?.masks ?? []) {
+    items.push({ kind: "mask", rect: mask.rect, mode: mask.mode, strength: mask.strength });
+  }
 
   const filter = planFilter(settings.effects);
   // Spread rather than always present, so a clip with no look produces exactly
@@ -5529,6 +5619,21 @@ function boxAt(
 }
 
 /**
+ * How far a screenshot's picture may be pushed off the frame: half of it.
+ *
+ * A screenshot is a picture being composed rather than a demonstration being
+ * watched, and running one edge of it off the frame — a window bleeding off the
+ * right, a corner shown large — is a composition somebody asks for. A recording
+ * keeps the old rule and stays wholly inside: there, a picture half off the edge
+ * is nearly always a drag that overshot, and the export would ship it.
+ *
+ * Half, for the reason the cutout's slack is half: the centre never leaves the
+ * frame, so whatever has been dragged off can always be dragged back. Any more
+ * and the picture can be put somewhere its own handles cannot be reached.
+ */
+const SCREEN_SLACK = 0.5;
+
+/**
  * How far a cutout's box may be pushed off the frame: half of it, so the
  * centre never leaves and the person cannot be lost entirely.
  *
@@ -5726,6 +5831,14 @@ export function layoutBoxes(
   layout: LayoutSettings,
   background: BackgroundSettings,
   sources: SourceSizes,
+  /**
+   * Whether this composition is a screenshot.
+   *
+   * It decides one thing and only one: how far the dragged picture may leave
+   * the frame — see `SCREEN_SLACK`. Every arrangement but `custom` places the
+   * picture itself and is unaffected.
+   */
+  still = false,
 ): { screen: Slot | null; camera: Slot | null } {
   const unit = Math.min(frame.width, frame.height);
   const gap = background.padding * unit;
@@ -5920,6 +6033,7 @@ export function layoutBoxes(
             layout.screenY,
             Math.max(1, layout.screenWidth * unit),
             Math.max(1, layout.screenHeight * unit),
+            still ? SCREEN_SLACK : 0,
           ),
           fit: "cover",
           card: true,
@@ -5943,14 +6057,31 @@ export function placement(
   background: BackgroundSettings,
   sources: SourceSizes,
   which: PlanSource,
+  /**
+   * Whether this composition is a screenshot — see `layoutBoxes`.
+   *
+   * The preview answers this the same way the plan does, and has to: this is
+   * what its ring and its hit testing are built from, and a handle clamped to
+   * the frame on a picture that is allowed past it is a corner you can see and
+   * cannot grab.
+   */
+  still = false,
 ): (Slot & { dstRect: Rect; srcRect: Rect }) | null {
   const source = sources[which];
-  const slot = layoutBoxes(frame, layout, background, sources)[which];
+  const slot = layoutBoxes(frame, layout, background, sources, still)[which];
   if (!source || !slot) return null;
 
   const fitted =
     which === "screen"
-      ? place(source, slot.area, slot.fit, NO_ZOOM, layout.screenOffsetX, layout.screenOffsetY)
+      ? place(
+          source,
+          slot.area,
+          slot.fit,
+          NO_ZOOM,
+          layout.screenOffsetX,
+          layout.screenOffsetY,
+          layout.screenMagnify,
+        )
       : place(
           source,
           slot.area,
@@ -6117,12 +6248,18 @@ function halves(area: Rect, gap: number): [Rect, Rect] {
 }
 
 /**
- * What the screen is placed at, now that it has no zoom of its own.
+ * What the screen is scaled by, which is never anything.
  *
- * The static `screenZoom` slider is gone: how far into the recording to push is
- * what a zoom moment answers, and two controls for one question are two ways
- * for the shot in the preview and the shot on the timeline to disagree. The
- * camera keeps its own, which crops a different picture entirely.
+ * The old `screenZoom` slider scaled the picture inside its area, and it is
+ * gone: how far into a *recording* to push is what a zoom moment answers, and
+ * two controls for one question are two ways for the shot in the preview and
+ * the shot on the timeline to disagree. The camera keeps its own, which scales
+ * a different picture entirely.
+ *
+ * `screenMagnify` is not that control coming back. It crops rather than scales
+ * — the card does not move — and it is a screenshot's, which has no timeline to
+ * put a zoom moment on and so nothing for it to disagree with. See
+ * `LayoutSettings.screenMagnify`.
  */
 const NO_ZOOM = 1;
 
@@ -6150,6 +6287,19 @@ function place(
   zoomLevel: number,
   offsetX: number,
   offsetY: number,
+  /**
+   * How far to crop into the source, on top of whatever the fit does. 1 is all
+   * of it.
+   *
+   * A second number rather than more `zoomLevel`, because under `contain` the
+   * two mean different things and only one of them is wanted: `zoomLevel`
+   * scales the picture inside its area — which is what the camera's own zoom
+   * has always done there, growing the card and eating the padding — and this
+   * crops into the picture and leaves the card exactly where it was. Folding
+   * them together would change the camera in the two `camera-*` arrangements,
+   * which is not what a screenshot's Zoom control was added to do.
+   */
+  magnify = 1,
 ): { dstRect: Rect; srcRect: Rect } {
   const whole: Rect = { x: 0, y: 0, width: source.width, height: source.height };
   if (area.width <= 0 || area.height <= 0) {
@@ -6157,6 +6307,51 @@ function place(
   }
 
   const zoom = Math.max(0.05, zoomLevel);
+  const closer = Math.max(1, magnify);
+
+  // Magnified and letterboxed: the card stays the box `contain` gave it and the
+  // window inside the source shrinks, so what is on show comes closer without
+  // the picture, its corner or its border changing size.
+  //
+  // The window keeps the source's own shape, so the destination is exactly the
+  // box an unmagnified `contain` would have produced. That is the property this
+  // branch exists for: pushing in must not reshape the card.
+  //
+  // The offsets move the *window* here rather than sliding the picture inside
+  // its area, which is what they do at 1. Same rule as `cover`, and the same
+  // sentence as the note in the preview's panner: an offset means whatever
+  // there is to move, and once the picture is cropped the thing to move is the
+  // crop.
+  if (fit !== "cover" && closer > 1) {
+    const windowWidth = source.width / closer;
+    const windowHeight = source.height / closer;
+    const scale = Math.min(area.width / windowWidth, area.height / windowHeight);
+    const width = windowWidth * scale;
+    const height = windowHeight * scale;
+
+    return {
+      dstRect: {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+      },
+      srcRect: {
+        x: clamp(
+          (source.width - windowWidth) / 2 + offsetX * source.width,
+          0,
+          source.width - windowWidth,
+        ),
+        y: clamp(
+          (source.height - windowHeight) / 2 + offsetY * source.height,
+          0,
+          source.height - windowHeight,
+        ),
+        width: windowWidth,
+        height: windowHeight,
+      },
+    };
+  }
 
   // `contain` shows all of it, letterboxed: the whole source, scaled to fit.
   if (fit !== "cover") {
@@ -6177,7 +6372,9 @@ function place(
 
   // `cover` fills the area and lets the crop take the overflow, which is what
   // makes a 16:9 recording usable in a vertical frame at all.
-  const scale = Math.max(area.width / source.width, area.height / source.height) * zoom;
+  // Both, multiplied: under `cover` a zoom is already a crop, so there is only
+  // one thing for the two numbers to do and they do it together.
+  const scale = Math.max(area.width / source.width, area.height / source.height) * zoom * closer;
   let windowWidth = area.width / scale;
   let windowHeight = area.height / scale;
 

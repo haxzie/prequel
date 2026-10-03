@@ -277,7 +277,18 @@ export type EditorAction =
    */
   | { type: "addText"; track: number; at: MediaTime; to?: MediaTime; templateId?: string }
   /** The transport's Add Text: project time, the first row with room. */
-  | { type: "addTextNear"; at: MediaTime; templateId?: string }
+  /**
+   * Adds a text near a moment.
+   *
+   * `still` takes the entrance and the exit off it, and that is not a
+   * simplification for a simpler editor — it is what makes the text *visible*.
+   * A screenshot is drawn at one fixed moment, `STILL_AT`, and a text added
+   * there begins its span exactly there: the first key of an entrance is the
+   * text not yet arrived, so the one frame a still has is the frame before it
+   * appears. On a clock nobody can scrub, an animation is a text that is never
+   * seen.
+   */
+  | { type: "addTextNear"; at: MediaTime; templateId?: string; still?: boolean }
   | { type: "selectText"; textId: string | null }
   | { type: "deleteText"; textId: string }
   /** Picks up a drawing tool, or puts it down with null. */
@@ -756,7 +767,7 @@ function apply(
       return addText(state, action.track, action.at, action.to, action.templateId);
 
     case "addTextNear":
-      return addTextNear(state, action.at, action.templateId);
+      return addTextNear(state, action.at, action.templateId, action.still);
 
     case "deleteText":
       return deleteText(state, action.textId);
@@ -975,6 +986,7 @@ function addTextNear(
   state: EditorState,
   at: MediaTime,
   templateId: string | undefined,
+  still = false,
 ): EditorState {
   // `at` is already project time — the playhead's own clock, and the one the
   // row's spans are measured on.
@@ -982,10 +994,15 @@ function addTextNear(
   if (!found) return state;
   const place = pinned(placedSlices(state.project), found.span);
   if (!place) return state;
+  const text = textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place);
+
   return placeNewText(
     state,
     found.track,
-    textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place),
+    // See the note on the action: a still is drawn at one moment and that
+    // moment is the text's first, which under an entrance is the frame before
+    // it has arrived.
+    still ? { ...text, enter: "none", exit: "none", enterMs: 0, exitMs: 0 } : text,
   );
 }
 

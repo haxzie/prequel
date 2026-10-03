@@ -54,6 +54,7 @@ import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
 import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
+import { maskRegions } from "../../../shared/annotations";
 import { AnnotateBar } from "./AnnotateBar";
 import { Annotations } from "./Annotations";
 import { Preview, type Grab, type Picked } from "./Preview";
@@ -289,6 +290,38 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       setPanelOpen(true);
     },
     [dispatch],
+  );
+  /**
+   * A mark was clicked in the preview.
+   *
+   * The same two lines a text gets, and for the same reason: selecting it is
+   * what shows its panel, so this only has to make sure there is a panel to
+   * show it in. Without the open, clicking an arrow set a selection behind a
+   * closed panel — a ring appeared and nothing else did, which reads as a click
+   * that half worked.
+   *
+   * Null is a deselect and must *not* open anything: clicking the background is
+   * how a ring is taken off, and a panel that sprang open on that would be the
+   * one gesture in the editor that reveals a panel by being told to show
+   * nothing.
+   */
+  const pickMark = useCallback(
+    (annotationId: string | null) => {
+      dispatch({ type: "selectAnnotation", annotationId });
+      if (annotationId !== null) setPanelOpen(true);
+    },
+    [dispatch],
+  );
+  /**
+   * The masks among this screenshot's marks, in the frame's own pixels.
+   *
+   * Memoised because the preview's plan is cached on identity: a new array on
+   * every render would rebuild the whole plan sixty times a second, which on a
+   * 6K screenshot is the one thing that cache exists to prevent.
+   */
+  const masks = useMemo(
+    () => (still ? maskRegions(state.project.frame, state.project.annotations) : undefined),
+    [still, state.project.frame, state.project.annotations],
   );
   /**
    * What the panel is showing, and so what brings it back.
@@ -1494,22 +1527,53 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // marks would be in the preview and missing from the file; see
               // `shared/annotations.ts`.
               overlay={
-                still ? (
-                  <Annotations
-                    // The *project's* frame, which is what the picture beside
-                    // it is drawn at — not the export's, which is the same
-                    // shape scaled. Every coordinate here is a fraction, so the
-                    // two would agree; the one that matches the canvas is the
-                    // one a hit test should be measured in.
-                    frame={state.project.frame}
-                    annotations={state.project.annotations}
-                    tool={state.tool}
-                    ink={state.ink}
-                    selectedId={state.selectedAnnotationId}
-                    dispatch={dispatch}
-                  />
-                ) : undefined
+                still
+                  ? (drawing) => (
+                      <Annotations
+                        // The *project's* frame, which is what the picture
+                        // beside it is drawn at — not the export's, which is
+                        // the same shape scaled. Every coordinate here is a
+                        // fraction, so the two would agree; the one that
+                        // matches the canvas is the one to paint in.
+                        frame={state.project.frame}
+                        annotations={state.project.annotations}
+                        drawing={drawing}
+                        ink={state.ink}
+                      />
+                    )
+                  : undefined
               }
+              // The marks themselves go to the preview, which is where every
+              // gesture on the picture is worked out — see `Preview.marks`.
+              // Only on a screenshot: a recording has none, and handing it an
+              // empty list would put a hit test on every frame of one.
+              marks={still ? state.project.annotations : undefined}
+              tool={still ? state.tool : null}
+              selectedMarkId={state.selectedAnnotationId}
+              // The masks among them, resolved to the frame the preview draws.
+              // `maskRegions` is the only thing that puts a mark in a plan, and
+              // this is the only call that reaches the preview's — see the note
+              // on `buildSlices`'s own flag for what must never be handed one.
+              masks={masks}
+              onPickMark={pickMark}
+              onDrawMark={(kind, points) => {
+                dispatch({ type: "addAnnotation", kind, points });
+                // The tool is put down once it has drawn, so the mark can be
+                // nudged and recoloured straight away. Drawing three arrows is
+                // three presses of the tool, which is the trade: the
+                // alternative leaves somebody who has finished drawing unable
+                // to click anything without drawing again.
+                dispatch({ type: "pickTool", tool: null });
+              }}
+              onDragMark={(annotationId, drag) => {
+                // A fresh gesture gets its own undo entry rather than joining
+                // the last one's — see `beginEdit`.
+                if (drag.kind === "move") {
+                  dispatch({ type: "moveAnnotation", annotationId, by: drag.by });
+                } else {
+                  dispatch({ type: "setAnnotation", annotationId, patch: { points: drag.points } });
+                }
+              }}
               images={images}
               cursor={session.cursor}
               blobs={session.blobs}
@@ -1769,7 +1833,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             // still: one text per row and five rows.
             canAddText={textSpanNear(state.project, STILL_AT) !== null}
             onAddText={() => {
-              dispatch({ type: "addTextNear", at: STILL_AT });
+              dispatch({ type: "addTextNear", at: STILL_AT, still: true });
               // Adding text with a drawing tool in hand would leave the next
               // click on the picture drawing an arrow rather than editing the
               // words that have just appeared.
@@ -2492,6 +2556,20 @@ function useShortcuts(
       ) {
         return;
       }
+      // Escape, before the chord guard: it has no modifier to be confused with
+      // and it is the way out of two states at once. The tool first and the
+      // selection second, because one press should undo one of them — somebody
+      // holding the arrow tool who presses Escape wants the pointer back, not
+      // to lose the ring they had before they picked it up.
+      if (event.key === "Escape") {
+        const { tool, selectedAnnotationId } = latest.current;
+        if (tool !== null) dispatch({ type: "pickTool", tool: null });
+        else if (selectedAnnotationId !== null) {
+          dispatch({ type: "selectAnnotation", annotationId: null });
+        }
+        return;
+      }
+
       // Before the guard below, which exists to keep single-key shortcuts from
       // firing on system chords — and ⌘Z is exactly such a chord.
       if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ" && !event.shiftKey) {
@@ -2540,7 +2618,11 @@ function useShortcuts(
         // picture is drawn at rather than wherever the clock happens to sit.
         case "KeyT":
           event.preventDefault();
-          dispatch({ type: "addTextNear", at: still ? STILL_AT : media.playback.position() });
+          dispatch({
+            type: "addTextNear",
+            at: still ? STILL_AT : media.playback.position(),
+            still,
+          });
           addedText.current();
           return;
 
@@ -2554,9 +2636,15 @@ function useShortcuts(
 
         case "Backspace":
         case "Delete": {
-          // Whichever of the three is selected — they are mutually exclusive,
+          // Whichever of the four is selected — they are mutually exclusive,
           // so there is never a question of which one Backspace means.
-          const { selectedSliceId, selectedZoomId, selectedTextId } = latest.current;
+          const { selectedSliceId, selectedZoomId, selectedTextId, selectedAnnotationId } =
+            latest.current;
+          if (selectedAnnotationId) {
+            event.preventDefault();
+            dispatch({ type: "deleteAnnotation", annotationId: selectedAnnotationId });
+            return;
+          }
           if (selectedTextId) {
             event.preventDefault();
             dispatch({ type: "deleteText", textId: selectedTextId });

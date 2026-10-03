@@ -5851,3 +5851,246 @@ describe("the loupe", () => {
     expect(loupeAt(keys, 6 * S)).toBeNull();
   });
 });
+
+describe("a screenshot pushed into", () => {
+  // The property the control exists for. A zoom that grew the picture's box
+  // would enlarge its border, its corner and its shadow and run the whole card
+  // off the frame, which is a zoom of the composition rather than of the
+  // screen. See `LayoutSettings.screenMagnify`.
+  it("crops the source and leaves the card exactly where it was", () => {
+    const flat = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
+    const close = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2 } }),
+    );
+
+    const was = image(flat, "screen")!;
+    const now = image(close, "screen")!;
+
+    expect(now.dstRect.x).toBeCloseTo(was.dstRect.x);
+    expect(now.dstRect.y).toBeCloseTo(was.dstRect.y);
+    expect(now.dstRect.width).toBeCloseTo(was.dstRect.width);
+    expect(now.dstRect.height).toBeCloseTo(was.dstRect.height);
+
+    // Half of each edge of the source, centred — which is what twice as close
+    // means with nothing panned.
+    expect(now.srcRect.width).toBeCloseTo(SCREEN.width / 2);
+    expect(now.srcRect.height).toBeCloseTo(SCREEN.height / 2);
+    expect(now.srcRect.x).toBeCloseTo(SCREEN.width / 4);
+    expect(now.srcRect.y).toBeCloseTo(SCREEN.height / 4);
+  });
+
+  it("keeps the window the same shape as the box it is drawn in", () => {
+    // The invariant `place` exists to hold, restated for the magnified path: a
+    // window of one shape drawn into a rectangle of another is a stretched
+    // picture, and nothing about pushing in may break it.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2.7 } }),
+    );
+    const { srcRect, dstRect } = image(plan, "screen")!;
+
+    expect(srcRect.width / srcRect.height).toBeCloseTo(dstRect.width / dstRect.height, 4);
+  });
+
+  it("never lets a pan walk the window off the source", () => {
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, screenMagnify: 2, screenOffsetX: 5 },
+      }),
+    );
+    const { srcRect } = image(plan, "screen")!;
+
+    expect(srcRect.x).toBeGreaterThanOrEqual(0);
+    expect(srcRect.x + srcRect.width).toBeLessThanOrEqual(SCREEN.width + 0.001);
+  });
+
+  it("is where the drag reads the box from too", () => {
+    // `placement` is what the preview's ring and hit testing ask, so it has to
+    // answer with the same box the plan drew — otherwise the handles sit on a
+    // card the picture is not in.
+    const layout = { ...DEFAULT_SETTINGS.layout, screenMagnify: 1.8 };
+    const current = settings({ layout });
+    const plan = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, current);
+    const placed = placement(
+      LANDSCAPE,
+      layout,
+      current.background,
+      { screen: SCREEN, camera: null },
+      "screen",
+    )!;
+
+    expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);
+    expect(placed.srcRect).toEqual(image(plan, "screen")!.srcRect);
+  });
+});
+
+describe("a screenshot leaning", () => {
+  const leaning = (patch: Partial<LayoutSettings>) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, ...patch } }),
+    );
+
+  it("gives the picture, its border and its shadow one key each", () => {
+    const plan = leaning({ screenRotateX: 12, screenPerspective: 0.6 });
+
+    const screen = image(plan, "screen")!;
+    const stroke = plan.items.find((item) => item.kind === "stroke");
+    const shadow = plan.items.find((item) => item.kind === "shadow");
+
+    expect(screen.motion).toHaveLength(1);
+    expect(screen.motion![0]!.quad).toHaveLength(12);
+    // Each a different rectangle through the same tilt — a tilted rectangle
+    // cannot be grown after the fact, which is why there are three.
+    expect(stroke?.kind === "stroke" ? stroke.motion?.[0]?.quad : null).toHaveLength(12);
+    expect(shadow?.kind === "shadow" ? shadow.motion?.[0]?.quad : null).toHaveLength(12);
+  });
+
+  it("draws nothing extra while it is flat", () => {
+    // Inert at its default, so a plan built from a project that has never seen
+    // these keys is the plan it always was.
+    const plan = leaning({ screenPerspective: 0.9 });
+    expect(image(plan, "screen")!.motion).toBeUndefined();
+  });
+
+  it("leaves the picture grabbable", () => {
+    // A lean changes the corners and not the rectangle, so the box a drag reads
+    // and writes is still where the picture is. The preview takes its handles
+    // off a picture a zoom has carried away; a tilted still has not gone
+    // anywhere, and it must not be treated as though it had.
+    const plan = leaning({ screenRotateX: -14, screenRotateY: 9 });
+    expect(pictureMoved(plan, "screen", 0)).toBe(false);
+  });
+});
+
+describe("a screenshot's masks", () => {
+  it("reach the plan only when they are handed over", () => {
+    const bare = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
+    expect(bare.items.some((item) => item.kind === "mask")).toBe(false);
+
+    const masked = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        masks: [{ rect: { x: 10, y: 20, width: 30, height: 40 }, mode: "pixelate", strength: 0.4 }],
+      },
+    );
+
+    expect(masked.items.at(-1)).toEqual({
+      kind: "mask",
+      rect: { x: 10, y: 20, width: 30, height: 40 },
+      mode: "pixelate",
+      strength: 0.4,
+    });
+  });
+
+  it("is drawn over everything else", () => {
+    // What a mask hides is whatever the composition put under it, and it was
+    // drawn where it was drawn — over a title included.
+    const masked = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { masks: [{ rect: { x: 0, y: 0, width: 100, height: 100 }, mode: "blur", strength: 1 }] },
+    );
+
+    const mask = masked.items.findIndex((item) => item.kind === "mask");
+    expect(mask).toBe(masked.items.length - 1);
+  });
+});
+
+describe("a screenshot dragged off the frame", () => {
+  /** The picture pushed hard to the right, as a drag would write it. */
+  const pushed = (still: boolean) =>
+    layoutBoxes(
+      LANDSCAPE,
+      {
+        ...DEFAULT_SETTINGS.layout,
+        preset: "custom",
+        screenX: 1.4,
+        screenY: 0.5,
+        screenWidth: 1,
+        screenHeight: 0.56,
+      },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: null },
+      still,
+    ).screen!.area;
+
+  it("may hang off the edge", () => {
+    const area = pushed(true);
+    expect(area.x + area.width).toBeGreaterThan(LANDSCAPE.width);
+  });
+
+  it("never loses its own middle", () => {
+    // What makes it recoverable: whatever has been dragged off can be dragged
+    // back, because the centre is always on the frame.
+    const area = pushed(true);
+    expect(area.x + area.width / 2).toBeLessThanOrEqual(LANDSCAPE.width);
+  });
+
+  it("is still held inside the frame on a recording", () => {
+    // The old rule, kept: there a picture half off the edge is nearly always a
+    // drag that overshot, and the export would ship it.
+    const area = pushed(false);
+    expect(area.x + area.width).toBeLessThanOrEqual(LANDSCAPE.width + 0.001);
+  });
+
+  it("puts the handles where the picture is", () => {
+    // The ring and the hit testing read `placement`, so it has to clamp exactly
+    // as the plan does — otherwise there is a corner you can see and cannot
+    // grab.
+    const layout = {
+      ...DEFAULT_SETTINGS.layout,
+      preset: "custom" as const,
+      screenX: 1.4,
+      screenY: 0.5,
+      screenWidth: 1,
+      screenHeight: 0.56,
+    };
+    const placed = placement(
+      LANDSCAPE,
+      layout,
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: null },
+      "screen",
+      true,
+    )!;
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ layout }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);
+  });
+});

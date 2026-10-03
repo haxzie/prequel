@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 
 import type { Annotation, AnnotationKind } from "../../../shared/annotations";
+import { MASK_STRENGTH } from "../../../shared/annotations";
 import { captionStyle } from "../../../shared/captions";
 import { cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
@@ -106,6 +107,9 @@ import {
   PaddingIcon,
   PenToolIcon,
   PencilIcon,
+  MaskToolIcon,
+  PanXIcon,
+  PanYIcon,
   PerspectiveIcon,
   PlaceIcon,
   PortraitIcon,
@@ -601,40 +605,72 @@ function InspectorPanels(props: InspectorProps) {
                 className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
               >
                 <div className="flex min-w-0 flex-1 flex-col animate-view-in">
-                  <Section>
-                    <ColorField
-                      icon={<DropletIcon />}
-                      label="Colour"
-                      value={mark.color}
-                      onChange={(color) => change({ color })}
-                    />
+                  {/* A mask has nothing in common with the other six. They are
+                      ink — a colour, a thickness, an opacity — and this is a
+                      hole in the picture: what it needs said is which way it
+                      hides what is under it and how hard. A column of colour
+                      and thickness controls doing nothing to it would be the
+                      panel claiming otherwise. */}
+                  {mark.kind === "mask" ? (
+                    <Section>
+                      <Field icon={<MaskToolIcon />} label="Hide with">
+                        <Segmented
+                          value={mark.mask ?? "blur"}
+                          options={[
+                            { value: "blur", label: "Blur", icon: <BlurIcon /> },
+                            { value: "pixelate", label: "Pixelate", icon: <MaskToolIcon /> },
+                          ]}
+                          onChange={(value) => change({ mask: value })}
+                        />
+                      </Field>
 
-                    <Slider
-                      icon={<BorderIcon />}
-                      label="Thickness"
-                      value={mark.width}
-                      min={0.001}
-                      max={mark.kind === "highlight" ? 0.12 : 0.016}
-                      step={0.0005}
-                      // As a fraction of the frame's shorter edge, read out as
-                      // the pixels it comes to in the export — which is the
-                      // number anybody judging a stroke is actually looking at.
-                      format={(value) =>
-                        `${String(Math.max(1, Math.round(value * Math.min(props.frame.width, props.frame.height))))} px`
-                      }
-                      onChange={(width) => change({ width })}
-                    />
+                      <Slider
+                        icon={<StrengthIcon />}
+                        label="Strength"
+                        value={mark.strength ?? MASK_STRENGTH}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        format={percent}
+                        onChange={(strength) => change({ strength })}
+                      />
+                    </Section>
+                  ) : (
+                    <Section>
+                      <ColorField
+                        icon={<DropletIcon />}
+                        label="Colour"
+                        value={mark.color}
+                        onChange={(color) => change({ color })}
+                      />
 
-                    <Slider
-                      icon={<OpacityIcon />}
-                      label="Opacity"
-                      value={mark.opacity}
-                      min={0.05}
-                      max={1}
-                      format={percent}
-                      onChange={(opacity) => change({ opacity })}
-                    />
-                  </Section>
+                      <Slider
+                        icon={<BorderIcon />}
+                        label="Thickness"
+                        value={mark.width}
+                        min={0.001}
+                        max={mark.kind === "highlight" ? 0.12 : 0.016}
+                        step={0.0005}
+                        // As a fraction of the frame's shorter edge, read out as
+                        // the pixels it comes to in the export — which is the
+                        // number anybody judging a stroke is actually looking at.
+                        format={(value) =>
+                          `${String(Math.max(1, Math.round(value * Math.min(props.frame.width, props.frame.height))))} px`
+                        }
+                        onChange={(width) => change({ width })}
+                      />
+
+                      <Slider
+                        icon={<OpacityIcon />}
+                        label="Opacity"
+                        value={mark.opacity}
+                        min={0.05}
+                        max={1}
+                        format={percent}
+                        onChange={(opacity) => change({ opacity })}
+                      />
+                    </Section>
+                  )}
                 </div>
               </div>
             </div>
@@ -672,13 +708,19 @@ function InspectorPanels(props: InspectorProps) {
       },
       onBeginEdit: () => dispatch({ type: "beginEdit" }),
     };
-    const showingTextTab = TEXT_TABS.find((entry) => entry.id === textTab) ?? TEXT_TABS[0]!;
+    // Not Animate on a screenshot. A motion is a thing that happens over a
+    // span, and a still is one moment: every control on that tab would change a
+    // picture nobody can play — and the text is given no entrance there at all,
+    // because the moment a still is drawn at is the one its entrance begins on.
+    // See the note on the `addTextNear` action.
+    const textTabs = props.still ? TEXT_TABS.filter((entry) => entry.id !== "animate") : TEXT_TABS;
+    const showingTextTab = textTabs.find((entry) => entry.id === textTab) ?? textTabs[0]!;
 
     return (
       <div className={SHELL}>
         <Rail
-          items={TEXT_TABS}
-          value={textTab}
+          items={textTabs}
+          value={showingTextTab.id}
           onChange={(id) => {
             setTextTab(id);
             pushed.close();
@@ -723,14 +765,14 @@ function InspectorPanels(props: InspectorProps) {
                   in words that are no longer there. On the scroller, for the
                   reason the clip panel's is. */}
               <div
-                key={`${textTab}:${text.id}`}
+                key={`${showingTextTab.id}:${text.id}`}
                 className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
               >
                 <div className="flex min-w-0 flex-1 flex-col animate-view-in">
-                  {textTab === "text" && <TextContentPanel {...panel} />}
-                  {textTab === "style" && <TextStylePanel {...panel} />}
-                  {textTab === "animate" && <TextMotionPanel {...panel} />}
-                  {textTab === "position" && <TextPositionPanel {...panel} />}
+                  {showingTextTab.id === "text" && <TextContentPanel {...panel} />}
+                  {showingTextTab.id === "style" && <TextStylePanel {...panel} />}
+                  {showingTextTab.id === "animate" && <TextMotionPanel {...panel} />}
+                  {showingTextTab.id === "position" && <TextPositionPanel {...panel} />}
                 </div>
               </div>
             </div>
@@ -764,6 +806,22 @@ function InspectorPanels(props: InspectorProps) {
     // already the output's own dimensions two lines above `FrameBar`, and one
     // word meaning two things in one editor is one too many.
     { id: "recording", label: props.still ? "Screenshot" : "Recording", Icon: ScreenIcon },
+    // A screenshot's two, straight after the panel that dresses the picture,
+    // because they are about the same picture: how far into it to look, and
+    // which way it leans.
+    //
+    // Only on a screenshot, and this is the one place in the editor where that
+    // is not simply "a still has less". A recording answers both of these on
+    // the timeline — a zoom moment pushes in and carries its own lean — and a
+    // static pair beside it would be a second answer to the same question,
+    // which is what `NO_ZOOM` in `shared/layout.ts` is a note about. A still
+    // has no timeline to put a moment on, so the only place left is here.
+    ...(props.still
+      ? [
+          { id: "zoom" as const, label: "Zoom", Icon: ZoomIcon },
+          { id: "perspective" as const, label: "Angle", Icon: PerspectiveIcon },
+        ]
+      : []),
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
@@ -811,6 +869,11 @@ function InspectorPanels(props: InspectorProps) {
     layout: { section: "layout" },
     background: { section: "background", keys: PAINT_KEYS },
     recording: { section: "background", keys: FRAME_KEYS },
+    // Three views onto `layout` now, and each resets only its own keys: Zoom
+    // and Angle sit over the same section as Camera and Cursor do, and a Reset
+    // that put the whole of it back would take the arrangement with it.
+    zoom: { section: "layout", keys: ZOOM_KEYS },
+    perspective: { section: "layout", keys: TILT_KEYS },
     filters: { section: "effects" },
     watermark: { section: "watermark" },
     camera: { section: "layout" },
@@ -1079,6 +1142,14 @@ function InspectorPanels(props: InspectorProps) {
                       if (slice) dispatch({ type: "setSliceSpeed", sliceId: slice.id, speed });
                     }}
                   />
+                )}
+
+                {active === "zoom" && (
+                  <ScreenZoomPanel settings={settings} field={field} set={set} />
+                )}
+
+                {active === "perspective" && (
+                  <ScreenAnglePanel settings={settings} field={field} set={set} />
                 )}
 
                 {active === "filters" && (
@@ -1395,6 +1466,8 @@ export type CategoryId =
   | "layout"
   | "background"
   | "recording"
+  | "zoom"
+  | "perspective"
   | "camera"
   | "audio"
   | "cursor"
@@ -1457,6 +1530,7 @@ const MARK_LABELS: Record<AnnotationKind, string> = {
   rect: "Box",
   ellipse: "Ellipse",
   highlight: "Highlighter",
+  mask: "Mask",
 };
 
 /**
@@ -1473,6 +1547,7 @@ const MARK_ICONS: Record<AnnotationKind, () => React.JSX.Element> = {
   rect: BoxToolIcon,
   ellipse: EllipseToolIcon,
   highlight: HighlighterToolIcon,
+  mask: MaskToolIcon,
 };
 
 interface Category {
@@ -3467,6 +3542,214 @@ function BackgroundPanel({
  * Every value here is a fraction of the frame's shorter edge, so a look
  * survives 16:9 becoming 9:16.
  */
+
+/** What Zoom owns of `layout`, for its Reset and its apply-to-all. */
+const ZOOM_KEYS: (keyof LayoutSettings)[] = ["screenMagnify", "screenOffsetX", "screenOffsetY"];
+
+/** And what Angle owns of it. */
+const TILT_KEYS: (keyof LayoutSettings)[] = ["screenRotateX", "screenRotateY", "screenPerspective"];
+
+/**
+ * How far into a screenshot to look, and at what.
+ *
+ * A screenshot's only, and the panel says what it is rather than being a
+ * slider nobody can place: the card stays exactly the size the arrangement
+ * gave it and the picture inside it comes closer, which is a crop — see
+ * `LayoutSettings.screenMagnify`. A control that grew the card would be a zoom
+ * of the composition, and the composition is already sized by the frame bar.
+ *
+ * The two offsets are the same pan ⌥-dragging the picture writes, which is how
+ * anybody actually chooses where to look — these are here to say where it has
+ * got to, and to be put back without hunting for the middle.
+ */
+function ScreenZoomPanel({
+  settings,
+  field,
+  set,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+}) {
+  const { layout } = settings;
+  const magnified = layout.screenMagnify > 1.005;
+
+  return (
+    <Section>
+      <Slider
+        icon={<ZoomIcon />}
+        label="Zoom"
+        {...field("layout", "screenMagnify")}
+        value={layout.screenMagnify}
+        min={1}
+        max={4}
+        step={0.01}
+        // A magnification, read as one. "100%" for the whole picture would
+        // invite reading the top of the slider as four hundred per cent of the
+        // frame, which is not what it does to anything.
+        format={(value) => `${String(Number(value.toFixed(2)))}×`}
+        onChange={(value) => set("layout", "screenMagnify", value)}
+      />
+
+      {/* Dead until there is something to pan, rather than hidden. At 1× the
+          whole picture is on show and there is nowhere to move the window to —
+          and two rows appearing the moment the slider leaves its stop would
+          push everything under them down mid-drag. */}
+      <Slider
+        icon={<PanXIcon />}
+        label="Pan X"
+        {...field("layout", "screenOffsetX")}
+        value={layout.screenOffsetX}
+        min={-0.5}
+        max={0.5}
+        step={0.005}
+        disabled={!magnified}
+        format={(value) => (Math.abs(value) < 0.003 ? "Centred" : percent(value))}
+        onChange={(value) => set("layout", "screenOffsetX", value)}
+      />
+
+      <Slider
+        icon={<PanYIcon />}
+        label="Pan Y"
+        {...field("layout", "screenOffsetY")}
+        value={layout.screenOffsetY}
+        min={-0.5}
+        max={0.5}
+        step={0.005}
+        disabled={!magnified}
+        format={(value) => (Math.abs(value) < 0.003 ? "Centred" : percent(value))}
+        onChange={(value) => set("layout", "screenOffsetY", value)}
+      />
+    </Section>
+  );
+}
+
+/**
+ * Which way a screenshot leans.
+ *
+ * The same three numbers a zoom's Angle tab sets, and deliberately the same
+ * controls — the pad, the row of angles, the depth. A tilt is a tilt whether it
+ * arrives with a shot or is simply the pose a picture is in, and
+ * `rotatedQuad` is the one piece of arithmetic behind both.
+ *
+ * Static here, which is the whole difference: a zoom eases into its lean across
+ * a span, and a screenshot has no span. See the note beside `keyFor`'s caller
+ * in `buildRenderPlan` for what the plan carries instead.
+ */
+function ScreenAnglePanel({
+  settings,
+  field,
+  set,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+}) {
+  const { layout } = settings;
+
+  return (
+    <Section>
+      {/* Drag the picture, not the numbers — the same argument the zoom's own
+          pad makes, and the same control. */}
+      <Field icon={<PerspectiveIcon />} label="Perspective">
+        <PerspectivePad
+          rotateX={layout.screenRotateX}
+          rotateY={layout.screenRotateY}
+          perspective={layout.screenPerspective}
+          limit={TILT_LIMIT}
+          onChange={(next) => {
+            set("layout", "screenRotateX", next.rotateX);
+            set("layout", "screenRotateY", next.rotateY);
+          }}
+        />
+      </Field>
+
+      <Field icon={<AngleIcon />} label="Angles">
+        <div className="grid grid-cols-3 gap-1">
+          {TILTS.map((preset) => {
+            const here =
+              Math.abs(layout.screenRotateX - preset.rotateX) < 0.5 &&
+              Math.abs(layout.screenRotateY - preset.rotateY) < 0.5;
+
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                aria-pressed={here}
+                className={cn(
+                  "flex flex-col items-center gap-1 rounded-md px-1 py-1.5",
+                  "text-[10px] transition-colors",
+                  here
+                    ? "bg-selected text-white"
+                    : "bg-white/5 text-editor-muted hover:bg-white/10",
+                )}
+                onClick={() => {
+                  set("layout", "screenRotateX", preset.rotateX);
+                  set("layout", "screenRotateY", preset.rotateY);
+                }}
+              >
+                <span
+                  className="grid h-6 w-full place-items-center"
+                  style={{ perspective: THUMB_PERSPECTIVE }}
+                  aria-hidden="true"
+                >
+                  <PerspectivePlate
+                    rotateX={preset.rotateX}
+                    rotateY={preset.rotateY}
+                    className={cn(
+                      "h-4 w-7 rounded-[2px] border",
+                      here ? "border-white/70 bg-white/25" : "border-white/25 bg-white/10",
+                    )}
+                  />
+                </span>
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <Slider
+        icon={<DepthIcon />}
+        label="Depth"
+        {...field("layout", "screenPerspective")}
+        value={layout.screenPerspective}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
+        onChange={(value) => set("layout", "screenPerspective", value)}
+      />
+
+      <Slider
+        icon={<TiltIcon />}
+        label="Tilt"
+        {...field("layout", "screenRotateX")}
+        value={layout.screenRotateX}
+        min={-TILT_LIMIT}
+        max={TILT_LIMIT}
+        step={1}
+        // Degrees, and signed: the sign is the whole difference between leaning
+        // towards the viewer and away from them.
+        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+        onChange={(value) => set("layout", "screenRotateX", value)}
+      />
+
+      <Slider
+        icon={<YawIcon />}
+        label="Yaw"
+        {...field("layout", "screenRotateY")}
+        value={layout.screenRotateY}
+        min={-TILT_LIMIT}
+        max={TILT_LIMIT}
+        step={1}
+        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+        onChange={(value) => set("layout", "screenRotateY", value)}
+      />
+    </Section>
+  );
+}
+
 /** Quick-select stops under the speed slider. */
 const SPEED_PRESETS = [0.25, 0.5, 1, 2, 4] as const;
 

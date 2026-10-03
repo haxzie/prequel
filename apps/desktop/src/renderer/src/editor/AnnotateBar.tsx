@@ -25,6 +25,7 @@ import {
   EllipseToolIcon,
   HighlighterToolIcon,
   LineToolIcon,
+  MaskToolIcon,
   PenToolIcon,
   PointerToolIcon,
   TrashIcon,
@@ -44,8 +45,8 @@ const HELD = "bg-selected text-white hover:bg-selected hover:brightness-110";
  *
  * Arrow first because it is most of what anybody draws on a screenshot, then
  * the plain line, then the two shapes that enclose something, then freehand,
- * then the highlighter. The pointer is separated from them: it is the absence
- * of a tool rather than another one.
+ * then the highlighter, then the mask. The pointer is separated from them: it
+ * is the absence of a tool rather than another one.
  */
 const TOOLS: { tool: AnnotationKind; label: string; Icon: typeof ArrowToolIcon }[] = [
   { tool: "arrow", label: "Arrow", Icon: ArrowToolIcon },
@@ -54,6 +55,12 @@ const TOOLS: { tool: AnnotationKind; label: string; Icon: typeof ArrowToolIcon }
   { tool: "ellipse", label: "Ellipse", Icon: EllipseToolIcon },
   { tool: "pen", label: "Draw", Icon: PenToolIcon },
   { tool: "highlight", label: "Highlighter", Icon: HighlighterToolIcon },
+  // Last, and the only one that takes something away rather than adding it: a
+  // mask hides a patch of the picture instead of drawing on top of it. Its
+  // strength and whether it blurs or blocks up are in the panel, like every
+  // other mark's own settings — the row sets what the *next* mark is, and a
+  // mask has nothing in common with the swatches beside it.
+  { tool: "mask", label: "Mask", Icon: MaskToolIcon },
 ];
 
 /**
@@ -102,6 +109,10 @@ export function AnnotateBar({
   // shows and writes whichever tool is in hand, so the swatch that is lit is
   // always the colour the next mark will be.
   const marking = tool === "highlight";
+  // A mask has no ink at all — it takes the picture out rather than drawing on
+  // it — so both rows go dead rather than away. Hidden, they would shuffle
+  // everything to the right of them along the row every time the tool changed.
+  const masking = tool === "mask";
   const colour = marking ? ink.highlight : ink.color;
   const setColour = (value: string) =>
     dispatch({ type: "setInk", ink: marking ? { highlight: value } : { color: value } });
@@ -163,11 +174,12 @@ export function AnnotateBar({
             title={`Draw in ${color}`}
             aria-label={`Draw in ${color}`}
             aria-pressed={colour.toLowerCase() === color}
+            disabled={masking}
             // A ring outside the swatch rather than a border inside it: a
             // border eats into a 14px circle and makes the chosen colour read
             // as a different, darker one.
             className={cn(
-              "size-3.5 rounded-full",
+              "size-3.5 rounded-full disabled:pointer-events-none disabled:opacity-35",
               colour.toLowerCase() === color
                 ? "ring-2 ring-white ring-offset-1 ring-offset-editor-veil"
                 : "ring-1 ring-white/25",
@@ -190,11 +202,11 @@ export function AnnotateBar({
             // is not a stroke weight — the marker sets its own — and three
             // buttons vanishing and reappearing as tools are picked up would
             // shuffle everything to the right of them along the row.
-            disabled={marking}
+            disabled={marking || masking}
             className={cn(
               "grid h-8 w-7 place-items-center rounded-lg text-editor-fg hover:bg-white/10",
               "disabled:pointer-events-none disabled:opacity-35",
-              ink.width === width && !marking && HELD,
+              ink.width === width && !marking && !masking && HELD,
             )}
             onClick={() => dispatch({ type: "setInk", ink: { width } })}
           >
