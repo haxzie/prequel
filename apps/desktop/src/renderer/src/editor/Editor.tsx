@@ -42,7 +42,7 @@ import {
 import { augmentZooms, autoZooms, momentsOf } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
-import { FRAME_BAR, TITLE_BAR } from "./surfaces";
+import { ANNOTATE_BAR, FRAME_BAR, TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
 import type { CaptionEditing } from "./CaptionEditor";
@@ -1476,7 +1476,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // it are read together, and a window where they differ by four
               // pixels looks like it is sagging.
               headroom={`calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`}
-              footroom="1.5rem"
+              // And the room the tool row needs, on a screenshot: it floats
+              // over the board too, so the picture has to clear it the way it
+              // clears the frame bar. Its own gutter plus the one it is
+              // anchored at — `bottom-6` on the strip above — so the gap over
+              // the bar is the gap under it.
+              footroom={still ? `calc(${ANNOTATE_BAR} + 3rem)` : "1.5rem"}
               ready={ready}
               frame={state.project.frame}
               // `drawnSettings`, not `previewSettings`: the compositor looks the
@@ -1539,6 +1544,57 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 }
               }}
             />
+
+            {/* The still's verbs, floating over the board at the bottom in the
+                same material the frame picker wears at the top — see
+                `AnnotateBar` for why this is not the strip the transport is.
+
+                Inset by the panel and anchored to the bottom, which is the
+                frame bar's arrangement mirrored: `pointer-events-none` on the
+                full-width strip and `auto` on the pill, or the invisible half
+                would swallow every press meant for the board underneath,
+                including the one that deselects. */}
+            {still && (
+              <div
+                className={
+                  "pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center " +
+                  "transition-[padding] duration-200 ease-out"
+                }
+                style={{ paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
+              >
+                <span className="pointer-events-auto">
+                  <AnnotateBar
+                    tool={state.tool}
+                    ink={state.ink}
+                    canDelete={state.selectedAnnotationId !== null || state.selectedTextId !== null}
+                    canUndo={canUndo(state)}
+                    // Asked from the middle of the still's clock, which is where the
+                    // playhead is pinned — see `STILL_AT`. There is always room on a
+                    // still: one text per row and five rows.
+                    canAddText={textSpanNear(state.project, STILL_AT) !== null}
+                    onAddText={() => {
+                      dispatch({ type: "addTextNear", at: STILL_AT });
+                      // Adding text with a drawing tool in hand would leave the next
+                      // click on the picture drawing an arrow rather than editing the
+                      // words that have just appeared.
+                      dispatch({ type: "pickTool", tool: null });
+                    }}
+                    onDelete={() => {
+                      if (state.selectedAnnotationId) {
+                        dispatch({
+                          type: "deleteAnnotation",
+                          annotationId: state.selectedAnnotationId,
+                        });
+                      } else if (state.selectedTextId) {
+                        dispatch({ type: "deleteText", textId: state.selectedTextId });
+                      }
+                    }}
+                    onUndo={() => dispatch({ type: "undo" })}
+                    dispatch={dispatch}
+                  />
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Always mounted, so it has something to animate out of. Width is
@@ -1753,38 +1809,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               captionRange={captionRange}
             />
           </>
-        )}
-
-        {/* The still's verbs, in the row the transport occupies on a recording:
-            the two are the same thing at the same moment — what to do with what
-            is on screen — and a screenshot has no clock to scrub. */}
-        {still && (
-          <AnnotateBar
-            tool={state.tool}
-            ink={state.ink}
-            canDelete={state.selectedAnnotationId !== null || state.selectedTextId !== null}
-            canUndo={canUndo(state)}
-            // Asked from the middle of the still's clock, which is where the
-            // playhead is pinned — see `STILL_AT`. There is always room on a
-            // still: one text per row and five rows.
-            canAddText={textSpanNear(state.project, STILL_AT) !== null}
-            onAddText={() => {
-              dispatch({ type: "addTextNear", at: STILL_AT });
-              // Adding text with a drawing tool in hand would leave the next
-              // click on the picture drawing an arrow rather than editing the
-              // words that have just appeared.
-              dispatch({ type: "pickTool", tool: null });
-            }}
-            onDelete={() => {
-              if (state.selectedAnnotationId) {
-                dispatch({ type: "deleteAnnotation", annotationId: state.selectedAnnotationId });
-              } else if (state.selectedTextId) {
-                dispatch({ type: "deleteText", textId: state.selectedTextId });
-              }
-            }}
-            onUndo={() => dispatch({ type: "undo" })}
-            dispatch={dispatch}
-          />
         )}
       </div>
 

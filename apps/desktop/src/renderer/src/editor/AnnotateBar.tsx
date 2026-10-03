@@ -1,10 +1,18 @@
 /**
  * The screenshot editor's tool row.
  *
- * It stands where the transport does in a recording — the bottom of the window,
- * full width, over the board — because the two are the same thing at the same
- * moment: the verbs for what is on screen. A still has no clock to scrub, so
- * what the row carries instead is what to draw with.
+ * A pill floating over the board at the bottom, in the same material the frame
+ * picker wears at the top — not the full-width strip the transport is on a
+ * recording. The two look like the same kind of thing because they are: a
+ * handful of controls about the picture, sitting on it.
+ *
+ * The strip is right for the transport and wrong here. A transport is one half
+ * of a pair with the timeline under it, and the two together are a section with
+ * a rule above them; this has no timeline, so a full-width strip was a band of
+ * board the composition could not reach and the background's own light could
+ * not cross — the wash stopped dead at a horizontal line across the bottom of
+ * the window, which is the same fault the frame bar was moved off a row to
+ * avoid. Floating, the board is one surface and the bar sits on it.
  *
  * Tools here are modes, which the transport's own note argues against for its
  * buttons. The difference is what the gesture is: Split and Delete act on
@@ -31,6 +39,7 @@ import {
   UndoIcon,
 } from "./icons";
 import type { EditorAction } from "./state";
+import { FLOATING } from "./surfaces";
 
 const BUTTON =
   "grid size-8 place-items-center rounded-lg text-editor-fg hover:bg-white/10 " +
@@ -109,12 +118,13 @@ export function AnnotateBar({
   return (
     // Named by attribute for the documentation screenshots, the same convention
     // `data-panel="transport"` uses.
+    //
+    // Sized to its contents rather than stretched: the caller centres it, so a
+    // bar that filled the width would be centred on nothing. `flex-none` for
+    // the same reason the frame picker carries it.
     <div
       data-panel="annotate"
-      className={
-        "flex flex-none items-center justify-center gap-3 " +
-        "border-t border-editor-line bg-editor-veil px-4 py-2"
-      }
+      className={cn("flex flex-none items-center gap-2 rounded-full px-2 py-1.5", FLOATING)}
     >
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
         <button

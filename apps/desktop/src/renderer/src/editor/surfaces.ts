@@ -32,6 +32,20 @@ export const TITLE_BAR = "2.625rem";
 export const FRAME_BAR = "2.375rem";
 
 /**
+ * How tall the screenshot editor's tool row is.
+ *
+ * `FRAME_BAR`'s counterpart at the other end of the board, and here for exactly
+ * the same reason: the bar floats over the composition rather than taking a row
+ * under it, so the stage has to hold its own space clear.
+ *
+ * Measured from the thing rather than imposed on it, and the arithmetic is
+ * worth writing down because it is two short of the obvious answer: a 32px
+ * button, a 2px tray around it and 6px of pill either side come to 48, and the
+ * hairline `FLOATING` draws adds the last two.
+ */
+export const ANNOTATE_BAR = "3.125rem";
+
+/**
  * What the editor's floating things are made of.
  *
  * One constant rather than the same four utilities written out wherever
