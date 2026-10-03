@@ -17,6 +17,7 @@ import {
   captionAt,
   cropToFrame,
   cursorAt,
+  fillsTheFrame,
   layoutBoxes,
   loupeAt,
   LOUPE_HASTE,
@@ -2243,28 +2244,133 @@ describe("filling the frame", () => {
       }),
     );
 
-  it("crops nothing from a recording already the shape of the frame, at no padding", () => {
-    // What choosing Fill writes: padding zero. Then the box is the frame and a
-    // 16:9 recording in a 16:9 frame loses nothing.
-    const { srcRect } = image(shot("over-full", 0), "screen")!;
+  it("crops nothing from a recording already the shape of the frame", () => {
+    // The bug this pins. Padding is a fraction of the frame's *shorter* edge,
+    // so taking it off all four sides leaves a box wider than the frame — and
+    // filling that box cropped a 16:9 recording in a 16:9 frame to a shape
+    // nothing was ever recorded in. Six per cent of the picture, spent on
+    // nothing. The box keeps the frame's shape now, so there is nothing to crop.
+    //
+    // Every padding, not one: at zero this passes whatever the box is, which is
+    // exactly how a weaker version of this test let the bug back in.
+    //
+    // Close rather than equal, because the box is arrived at by scaling rather
+    // than by naming the frame's own numbers, and a ratio of floats lands a
+    // fraction of a millionth of a pixel out.
+    for (const padding of [0, 0.02, 0.06, 0.1, 0.2]) {
+      const { srcRect } = image(shot("over-full", padding), "screen")!;
 
-    expect(srcRect).toEqual({ x: 0, y: 0, width: SCREEN.width, height: SCREEN.height });
+      expect(srcRect.x).toBeCloseTo(0, 6);
+      expect(srcRect.y).toBeCloseTo(0, 6);
+      expect(srcRect.width).toBeCloseTo(SCREEN.width, 6);
+      expect(srcRect.height).toBeCloseTo(SCREEN.height, 6);
+    }
   });
 
-  it("reaches the edges at no padding", () => {
+  it("keeps the frame's shape whatever the padding", () => {
+    // What makes the above true, stated directly: a box that is not similar to
+    // the frame is a box `cover` has to crop to.
+    for (const padding of [0.02, 0.06, 0.2]) {
+      const { dstRect } = image(shot("over-full", padding), "screen")!;
+
+      expect(dstRect.width / dstRect.height).toBeCloseTo(LANDSCAPE.width / LANDSCAPE.height, 6);
+    }
+  });
+
+  it("actually reaches the edges", () => {
+    // And it did not even fill what it cropped for: the picture stopped at the
+    // padding, so "Fill" left a border on all four sides. With none asked for
+    // it reaches them exactly.
     const { dstRect } = image(shot("over-full", 0), "screen")!;
 
     expect(dstRect).toEqual({ x: 0, y: 0, width: LANDSCAPE.width, height: LANDSCAPE.height });
   });
 
   it("honours the padding it is given", () => {
-    // The slider used to do nothing under Fill, which read as broken. Padding
-    // is a setting like any other here, and the picture stands in from the edge.
+    // The slider did nothing under Fill, which read as broken. Padding is a
+    // setting like any other here, and the picture stands in from the edge.
     const { dstRect } = image(shot("over-full", 0.1), "screen")!;
 
     expect(dstRect.x).toBeGreaterThan(0);
     expect(dstRect.y).toBeGreaterThan(0);
     expect(dstRect.width).toBeLessThan(LANDSCAPE.width);
+    // Centred in what it gave up, rather than pushed into a corner.
+    expect(dstRect.x + dstRect.width / 2).toBeCloseTo(LANDSCAPE.width / 2, 6);
+    expect(dstRect.y + dstRect.height / 2).toBeCloseTo(LANDSCAPE.height / 2, 6);
+  });
+
+  it("fills a screen-only frame the same way", () => {
+    // The arrangement the report came in about. `screen-full` and `over-full`
+    // are the same box with and without a camera over it, and a fix to one that
+    // missed the other would be found by eye rather than here.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, preset: "screen-full" },
+        background: { ...DEFAULT_SETTINGS.background, padding: 0.06 },
+      }),
+    );
+    const { srcRect, dstRect } = image(plan, "screen")!;
+
+    expect(srcRect.width).toBeCloseTo(SCREEN.width, 6);
+    expect(srcRect.height).toBeCloseTo(SCREEN.height, 6);
+    expect(dstRect.x).toBeGreaterThan(0);
+    expect(dstRect.width / dstRect.height).toBeCloseTo(LANDSCAPE.width / LANDSCAPE.height, 6);
+  });
+
+  it("gives a full-frame arrangement the whole frame to draw in", () => {
+    // What the picker's tile shows. Picking one of these clears the padding, so
+    // the cell is drawn at zero — and the slot it gets must then be the frame
+    // itself. A tile called "full frame" with a margin on it promises something
+    // the pick immediately takes away, which is how the grid came to disagree
+    // with the thing it was offering.
+    for (const preset of ["screen-full", "over-full"] as const) {
+      expect(fillsTheFrame(preset)).toBe(true);
+
+      const { area } = layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset },
+        { ...DEFAULT_SETTINGS.background, padding: 0 },
+        { screen: SCREEN, camera: CAMERA },
+      ).screen!;
+
+      expect(area).toEqual({ x: 0, y: 0, width: LANDSCAPE.width, height: LANDSCAPE.height });
+    }
+
+    // And the arrangements that keep their margin are not among them, or the
+    // pick would clear the very thing they exist for.
+    for (const preset of ["screen-padded", "screen-inset", "over-padded"] as const) {
+      expect(fillsTheFrame(preset)).toBe(false);
+    }
+  });
+
+  it("gives the three screen-only arrangements three different slots", () => {
+    // What the picker promises. Every cell in it is drawn from `layoutBoxes`,
+    // and it draws the *slot* rather than the picture fitted into it — so the
+    // three screen-only cells are told apart by their areas and nothing else.
+    // Filling the padded box made Fill's slot identical to Padded's, which is
+    // how two of the three cells became one picture drawn twice.
+    //
+    // At the floor the thumbnails use, which is the size they are compared at.
+    // At the padding the picker draws each cell at: zero for the one that
+    // fills the frame, its fixed thumbnail padding for the rest.
+    const area = (preset: "screen-full" | "screen-padded" | "screen-inset") =>
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset },
+        { ...DEFAULT_SETTINGS.background, padding: fillsTheFrame(preset) ? 0 : 0.1 },
+        { screen: SCREEN, camera: null },
+      ).screen!.area;
+
+    const widths = [area("screen-full"), area("screen-padded"), area("screen-inset")].map(
+      (box) => box.width,
+    );
+
+    // Distinct, which is all the picker needs. Not ordered: a `contain` slot is
+    // wider than the picture it ends up holding, so Padded's box is the widest
+    // of the three while the picture inside it is not.
+    expect(new Set(widths).size).toBe(3);
   });
 
   it("still leaves room around a picture that is contained", () => {

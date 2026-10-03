@@ -5510,6 +5510,39 @@ function inset(frame: Size, by: number): Rect {
 }
 
 /**
+ * The frame stood in from every edge, keeping its own shape.
+ *
+ * For the arrangements that `cover`. [`inset`] takes the same number off all
+ * four sides, which leaves a box *wider* than the frame it sits in — so filling
+ * it crops the recording to a shape nothing was recorded in. A 16:9 screen in a
+ * 16:9 frame lost six per cent of its picture to a padding setting that was
+ * only ever asking for a margin.
+ *
+ * Scaling keeps the box similar to the frame, so `cover` crops exactly what it
+ * cropped at full bleed — nothing, when the recording and the frame already
+ * agree. The margin is then wider on the long edges than the short ones, which
+ * is the trade: an even gap and an uncropped picture cannot both be had under
+ * `cover`, and of the two it is the crop that costs somebody their work.
+ *
+ * One consequence worth knowing rather than discovering. When the recording is
+ * already the shape of the frame there is nothing for `cover` to crop, so Fill
+ * and Padded resolve to the very same picture. That is arithmetic rather than a
+ * bug — the two arrangements differ by what they do with a *mismatch*, and at
+ * no mismatch there is nothing to differ about. They stay distinct in the
+ * picker, which draws the slot rather than the picture fitted into it.
+ *
+ * `contain` arrangements keep [`inset`], where an even gap costs nothing.
+ */
+function scaled(frame: Size, fraction: number): Rect {
+  // Twice, because the fraction comes off both ends of the shorter edge.
+  const scale = Math.max(0, 1 - fraction * 2);
+  const width = frame.width * scale;
+  const height = frame.height * scale;
+
+  return { x: (frame.width - width) / 2, y: (frame.height - height) / 2, width, height };
+}
+
+/**
  * The shape the camera is guaranteed in a shared frame, as width over height.
  *
  * A share of the row is the wrong thing to promise. Matching the screen's
@@ -5613,6 +5646,23 @@ export function cameraFloats(layout: LayoutSettings): boolean {
   }
 }
 
+/**
+ * Whether an arrangement fills the frame, and so starts with no margin.
+ *
+ * The one place this is decided, for the reason [`cameraFloats`] is: picking
+ * one of these clears the padding in the inspector, and the picker draws its
+ * thumbnail at no padding to match. Two places to state which arrangements they
+ * are is one place for the grid to promise a margin the pick then removes.
+ *
+ * `camera-full` is not among them. It fills the frame too, but `layoutBoxes`
+ * does not honour the padding under it, so there is nothing for a pick to
+ * clear — and a thumbnail drawn flush would then be telling the truth for the
+ * wrong reason.
+ */
+export function fillsTheFrame(preset: LayoutPreset): boolean {
+  return preset === "over-full" || preset === "screen-full";
+}
+
 export function layoutBoxes(
   frame: Size,
   layout: LayoutSettings,
@@ -5622,6 +5672,9 @@ export function layoutBoxes(
   const unit = Math.min(frame.width, frame.height);
   const gap = background.padding * unit;
   const padded = inset(frame, gap);
+  // What the `cover` arrangements stand in by. See `scaled`: an even gap would
+  // change the box's shape, and filling a differently shaped box is a crop.
+  const filled = scaled(frame, background.padding);
   const whole: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
 
   // The camera wherever the arrangement leaves it free to be placed. `card` is
@@ -5647,16 +5700,17 @@ export function layoutBoxes(
   const withCamera = layout.cameraVisible && sources.camera !== null;
 
   switch (layout.preset) {
-    // Fill is `cover` into the padded box, and nothing else.
+    // Fill honours the padding, through a box that keeps the frame's shape.
     //
-    // It used to ignore the padding altogether, which made the slider do
-    // nothing here with no sign why. Choosing the arrangement now writes zero
-    // padding, radius and border into the settings, so a full-bleed picture is
-    // still what it opens as — but the controls say so, and a hand that moves
-    // one gets what it asked for.
+    // `filled` rather than `padded`, and that distinction is the whole of it:
+    // taking the padding off all four sides leaves a box wider than the frame,
+    // and filling *that* cropped a recording whose shape already matched — six
+    // per cent of the picture, and it still stopped short of the edges. See
+    // `scaled`, which also covers why Fill and Padded come out identical on a
+    // recording the shape of the frame.
     case "over-full":
       return {
-        screen: { area: padded, fit: "cover", card: true },
+        screen: { area: filled, fit: "cover", card: true },
         camera: withCamera ? free() : null,
       };
 
@@ -5718,7 +5772,7 @@ export function layoutBoxes(
     }
 
     case "screen-full":
-      return { screen: { area: padded, fit: "cover", card: true }, camera: null };
+      return { screen: { area: filled, fit: "cover", card: true }, camera: null };
 
     case "screen-padded":
       return { screen: { area: padded, fit: "contain", card: true }, camera: null };

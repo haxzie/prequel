@@ -13,7 +13,7 @@ import {
   type FilterParam,
   type FilterSpec,
 } from "../../../shared/filters";
-import { cameraFloats, shapeAspect, type Size } from "../../../shared/layout";
+import { cameraFloats, fillsTheFrame, shapeAspect, type Size } from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
   CLICK_SOUNDS,
@@ -1395,14 +1395,20 @@ function LayoutPanel({
             // while the frame plainly has no camera in it.
             set("layout", "cameraVisible", !SCREEN_ONLY.has(preset));
 
-            // A Fill arrangement is the picture on its own, so it writes that
-            // into the controls rather than leaving geometry to ignore them:
-            // no padding, no corners, no border. They stay ordinary settings
-            // afterwards — move one and the picture follows.
-            if (preset === "screen-full" || preset === "over-full") {
+            // A full-frame arrangement starts flush to the edges.
+            //
+            // `layoutBoxes` honours the padding under these two now, so without
+            // this the cell called "full frame" opens with a margin its own
+            // name denies. Written rather than ignored so the slider still
+            // means something afterwards: turn it up and the picture stands in.
+            //
+            // Padding only. Corner radius and border already work here and
+            // always did, so clearing them would discard two settings somebody
+            // chose in order to describe one they did not. And nothing here
+            // touches the picker: its thumbnails are drawn at a fixed padding
+            // precisely so a write like this cannot redraw fourteen cells.
+            if (fillsTheFrame(preset)) {
               set("background", "padding", 0);
-              set("background", "cornerRadius", 0);
-              set("background", "borderWidth", 0);
             }
 
             // Picking an arrangement starts it clean.
@@ -1542,6 +1548,9 @@ function cameraShapeFor(preset: LayoutPreset): CameraShape | null {
 }
 
 /** Arrangements with no camera in them. */
+// Not the set that clears the padding — see `fillsTheFrame`. "Screen only,
+// padded" is in this group and is the arrangement whose whole point is the
+// margin, so clearing its padding would make it the cell above it.
 const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded", "screen-inset"]);
 
 /** Arrangements where the camera is a card beside the screen, not a bubble over it. */

@@ -8,7 +8,7 @@ import type {
 } from "../../../../shared/project";
 import { DEFAULT_LAYOUT } from "../../../../shared/project";
 import { gradientCss } from "../../../../shared/presets";
-import { layoutBoxes, presetFitsFrame, type Size } from "../../../../shared/layout";
+import { fillsTheFrame, layoutBoxes, presetFitsFrame, type Size } from "../../../../shared/layout";
 import { PersonIcon } from "../icons";
 import { cn } from "../../lib/cn";
 
@@ -36,12 +36,19 @@ import { cn } from "../../lib/cn";
  * changed — silently, in the one place whose whole job is to promise what the
  * export will look like.
  *
- * The composition's own background goes behind them, and its own padding sets
- * the inset. Both used to be the defaults: a padded arrangement then drew its
- * gap in near-black against a near-black plate, so the six arrangements that
- * differ from their neighbours *only* by that gap were six copies of the same
- * picture — and a project whose padding had been turned up or off was described
- * by a thumbnail that showed neither.
+ * The composition's own background goes behind them, so a padded arrangement
+ * draws its gap against the plate it will actually sit on — in near-black
+ * against a near-black default, the six arrangements that differ from their
+ * neighbours *only* by that gap were six copies of the same picture.
+ *
+ * The *geometry*, though, is fixed. A cell answers "what is this arrangement",
+ * and that question has the same answer whatever the project's padding happens
+ * to be set to — so it is drawn at [`THUMB_PADDING`] rather than at the
+ * composition's own. Threading the live padding in made the whole grid redraw
+ * as the slider moved, which is fourteen pictures changing to describe one
+ * setting, and at a low enough value it collapsed arrangements that differ only
+ * by their margin into copies of each other. The panel below the grid is where
+ * the current value is read; the grid is the menu, not the dish.
  */
 
 /**
@@ -117,19 +124,19 @@ const GROUPS: {
 const THUMB_SOURCES = { screen: { width: 16, height: 9 }, camera: { width: 16, height: 9 } };
 
 /**
- * The least padding a thumbnail will draw, whatever the composition's is.
+ * The padding every thumbnail is drawn at, whatever the composition's is.
  *
- * A deliberate and narrow lie. Everywhere else these plates are exact, because
- * a picker that promises one thing and exports another is worse than no picker
- * — but a plate is about forty pixels tall, and the default 0.06 of the shorter
- * edge comes to a pixel and a half on it. At that size "padded" and "full
- * frame" are the same picture, and two cells that cannot be told apart are a
- * worse failure than a gap drawn wider than it will be.
+ * Wider than the 0.06 default, and deliberately. A plate is about forty pixels
+ * tall, so 0.06 of its shorter edge comes to a pixel and a half: at that size
+ * "padded" and "full frame" are the same picture, and two cells that cannot be
+ * told apart are a worse failure than a gap drawn wider than it will be.
  *
- * Only a floor: turn the padding up and the thumbnail follows it exactly, which
- * is the case anyone actually checks a thumbnail against.
+ * Fixed rather than a floor over the live value. As a floor, turning the
+ * padding up redrew all fourteen cells to describe one slider — and the three
+ * screen-only cells, which differ from one another *only* by their margin, kept
+ * changing what they were promising while the thing being chosen stood still.
  */
-const THUMB_MIN_PADDING = 0.1;
+const THUMB_PADDING = 0.1;
 
 // Square, so the cell is the same size whatever shape the output frame is and
 // the grid does not reflow when someone switches to a vertical preset.
@@ -296,9 +303,15 @@ function Plate({
   const boxes = layoutBoxes(
     frame,
     { ...DEFAULT_LAYOUT, preset } as LayoutSettings,
-    // Floored, and only for the geometry — see `THUMB_MIN_PADDING`. The paint
-    // below still comes from the composition's own background untouched.
-    { ...background, padding: Math.max(background.padding, THUMB_MIN_PADDING) },
+    // Fixed, and only for the geometry — see `THUMB_PADDING`. The paint below
+    // still comes from the composition's own background untouched, which is
+    // what a gap is drawn against rather than what decides its size.
+    //
+    // Zero for an arrangement that fills the frame, because picking one clears
+    // the padding: a cell shows what you get the moment you choose it, and a
+    // tile called "full frame" drawn with a margin promises something the pick
+    // immediately takes away.
+    { ...background, padding: fillsTheFrame(preset) ? 0 : THUMB_PADDING },
     THUMB_SOURCES,
   );
 
