@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
-import type { EditorSession } from "../../../shared/contract";
+import type { EditorSession, SessionDetails } from "../../../shared/contract";
 import { navigate } from "../lib/route";
 import { Editor } from "./Editor";
 import { Opening } from "./Opening";
+
+/** Where the route is: asking main, drawing an editor, or pointing at nothing. */
+type RouteState =
+  { status: "loading" } | { status: "ready"; session: EditorSession } | { status: "missing" };
 
 /**
  * One recording's editor, fetched for the route it is on.
@@ -19,11 +23,14 @@ import { Opening } from "./Opening";
  * its very first render, and seeding that with a placeholder is how the first
  * cut once came to replace a saved project's zooms on every reopen. So the
  * loading state here renders `Opening`, never an `Editor` with nothing in it.
+ *
+ * That loading state is now the length of a few file reads, not of a media probe
+ * and a desktop screenshot: `editor:session` answers from the manifest and this
+ * asks `editor:sessionDetails` for the rest once the editor is drawn. The whole
+ * window used to sit on "Opening …" until both were done.
  */
 export function EditorRoute({ name }: { name: string }) {
-  const [state, setState] = useState<
-    { status: "loading" } | { status: "ready"; session: EditorSession } | { status: "missing" }
-  >({ status: "loading" });
+  const [state, setState] = useState<RouteState>({ status: "loading" });
   /**
    * Bumped when main says the recording has changed on disk.
    *
@@ -74,6 +81,8 @@ export function EditorRoute({ name }: { name: string }) {
     };
   }, [name, reloads]);
 
+  useDetails(name, reloads, state.status === "ready" ? state.session : null, setState);
+
   if (state.status === "loading") return <Opening name={name} />;
   if (state.status === "missing") return <Missing name={name} />;
 
@@ -87,6 +96,66 @@ export function EditorRoute({ name }: { name: string }) {
       onBack={() => navigate("/workspace")}
     />
   );
+}
+
+/**
+ * Fetches the slow half of the session and merges it into the fast one.
+ *
+ * Merged rather than kept beside it, because every consumer already reads these
+ * off `EditorSession` and a second source for "how long is the camera track"
+ * would be a second answer. The merge is safe for the reducer the moment the
+ * project is left alone: `Editor` reads `session.project` once, to seed itself,
+ * and what arrives here is the probe's numbers and one flag about a picture.
+ *
+ * A failure is not retried and is not reported. What it costs is precision — the
+ * manifest's durations instead of the files' own — and the editor is fully usable
+ * on those; a dialog over a working editor would be worse than the difference.
+ */
+function useDetails(
+  name: string,
+  reloads: number,
+  session: EditorSession | null,
+  setState: Dispatch<SetStateAction<RouteState>>,
+) {
+  // What this has already been asked for, so a re-render of the route does not
+  // ask twice. A ref rather than a dependency on the session, which is a new
+  // object the moment the answer is merged into it — and keyed on the reload
+  // count as well as the directory, because a take appended to the recording
+  // adds a file the probe has never seen.
+  const asked = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    const key = `${session.dir}:${String(reloads)}`;
+    if (asked.current === key) return;
+    asked.current = key;
+
+    let live = true;
+
+    void window.prequel.editor.details(name).then((result) => {
+      if (!live || !result.ok || !result.value) return;
+      const details: SessionDetails = result.value;
+
+      setState((current) => {
+        // The route moved on while the probe ran, which is long enough for
+        // somebody to have gone back to the library and opened something else.
+        if (current.status !== "ready" || current.session.dir !== details.dir) return current;
+
+        return {
+          status: "ready",
+          session: {
+            ...current.session,
+            media: details.media,
+            backgroundMissing: details.backgroundMissing,
+          },
+        };
+      });
+    });
+
+    return () => {
+      live = false;
+    };
+  }, [name, reloads, session, setState]);
 }
 
 /**

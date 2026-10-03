@@ -27,6 +27,7 @@ import type {
   ScreenMode,
   SelectionResult,
   SelectionSetup,
+  SessionDetails,
   ShareProgress,
   ShareRequest,
   SoundBank,
@@ -81,6 +82,7 @@ export type {
   ScreenMode,
   SelectionResult,
   SelectionSetup,
+  SessionDetails,
   Target,
   TeleprompterJump,
   TeleprompterPosition,
@@ -260,6 +262,16 @@ const api = {
      */
     session: (name: string): Promise<IpcResult<EditorSession | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorSession, name),
+
+    /**
+     * The rest of the recording, asked for once the editor is on screen.
+     *
+     * Separate from `session` because this is the slow half — the media probe
+     * and the background's picture — and the editor is drawn without it. See
+     * `SessionDetails`.
+     */
+    details: (name: string): Promise<IpcResult<SessionDetails | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorSessionDetails, name),
 
     /**
      * Says this route is done with its recording.

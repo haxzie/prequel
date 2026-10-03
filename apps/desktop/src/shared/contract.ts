@@ -643,6 +643,16 @@ export const IPC_CHANNELS = {
    */
   editorSession: "editor:session",
   /**
+   * Editor renderer → main: the rest of the recording, once it is on screen.
+   *
+   * A second call rather than more of the first, because the first is what the
+   * editor is waiting on and this is not: the probe walks every media file and
+   * the background may be a screenshot of the desktop or a download. Asked for
+   * once the editor exists, so those arrive into a window that already has a
+   * timeline, a panel and a transport. See `SessionDetails`.
+   */
+  editorSessionDetails: "editor:sessionDetails",
+  /**
    * Renders the voices of one keyboard or mouse, by id.
    *
    * A separate call from the session because a bank is a few megabytes and
@@ -1741,6 +1751,35 @@ export interface EditorSession {
    * anywhere durable it would move the selection on every open for ever.
    */
   focusSliceId: string | null;
+  /**
+   * Whether the default background's picture turned out not to be there.
+   *
+   * False on the way in and only ever set by `SessionDetails`, because the
+   * answer is not known until the picture has been looked for — and looking for
+   * it can mean a screenshot of the desktop or a download. The editor falls back
+   * to a gradient on it; see `provideBackground`.
+   */
+  backgroundMissing: boolean;
+}
+
+/**
+ * The part of a recording that is not worth waiting for to open it.
+ *
+ * Fetched after `EditorSession` and merged into it. Everything here either
+ * refines something the manifest already answers — the probe's durations and
+ * dimensions, which the manifest carries too — or concerns a file that has to be
+ * put beside the recording before it can be drawn. Both used to be awaited
+ * inside `editor:session`, which held the whole editor behind a desktop
+ * screenshot and a pass over every media file: the window showed "Opening …"
+ * and not one control of the editor existed until they were done.
+ */
+export interface SessionDetails {
+  /** The recording this describes, so a late answer for another is ignored. */
+  dir: string;
+  /** `EditorSession.media`, with each first-take file's own account preferred. */
+  media: TrackMedia[];
+  /** See `EditorSession.backgroundMissing`. */
+  backgroundMissing: boolean;
 }
 
 /** One segment of one track, as the renderer plays it. */

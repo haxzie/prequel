@@ -514,8 +514,13 @@ export function useEditorPlayback(
    * Keeping the map across a restart is also the more correct answer: a slice
    * edit that genuinely moves the playhead into a different take still changes
    * the key, and `crossed` still says so.
+   *
+   * On the directory and not the session object, which the route replaces when
+   * `SessionDetails` arrives with the probe's durations. That is the same
+   * recording and the same files, and clearing the map for it hard-seeked every
+   * track at the exact moment the preview was revealing.
    */
-  useEffect(() => () => active.current.clear(), [session]);
+  useEffect(() => () => active.current.clear(), [session?.dir]);
 
   const register = useCallback(
     (key: MediaKey) => (element: HTMLMediaElement | null) => {

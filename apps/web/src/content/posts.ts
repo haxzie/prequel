@@ -13,6 +13,7 @@
  *  up and is typechecked.
  */
 
+import type { Version } from "@/content/changelog";
 import type { FaqEntry } from "@/lib/faq";
 
 export type Post = {
@@ -54,24 +55,81 @@ export type Post = {
    * Absent on a pillar page, which is what makes it a pillar.
    */
   pillar?: string;
+  /**
+   * The releases that shipped what this post is about, by version.
+   *
+   * One field, both directions, for the same reason as `pillar`: the post
+   * renders these as links into the changelog, and the changelog lists this
+   * post under each of them. Written by hand on both sides, the changelog is
+   * the side that gets forgotten, because nobody reopens a release to add a
+   * post written a week after it shipped.
+   *
+   * Typed against `RELEASES`, so a version that does not exist is a typecheck
+   * failure rather than a link to an anchor that is not on the page.
+   */
+  releases?: Version[];
 };
 
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "decision-models-for-browser-agents",
+    title: "How to build a fast browser agent with Jev and OpenAI's Decisions API",
+    excerpt:
+      "Decision models like TypeSafe's Jev and OpenAI's new Decisions API pick a browser agent's next click in about 150 ms. We read the two open source agents built on Jev and wrote down the loop, the code, the numbers and where it breaks.",
+    date: "2026-10-02",
+    tag: "Guide",
+    readingMinutes: 12,
+    releases: ["0.0.24", "0.0.21", "0.0.18"],
+    pillar: "product-demo-videos",
+    faq: [
+      {
+        question: "What is Jev by TypeSafe AI?",
+        answer:
+          "Jev is a System One decision model from TypeSafe AI, released on 15 September 2026 and open to everyone since 27 September. It does not generate text. You send it state and typed questions (Choice, Score or Noul, a yes or no) and it returns the chosen answer with a probability for every option, in 70 to 500 ms. It is priced at $0.042 per million input tokens with output free.",
+      },
+      {
+        question: "What is OpenAI's Decisions API?",
+        answer:
+          "The Decisions API is OpenAI's decision model, announced at DevDay on 29 September 2026 and built on a specialised version of GPT-6 Luna. You define questions with a fixed set of answers and supply text or images, and it returns a choice with a confidence score in about 150 ms. As of 3 October 2026 it is in limited preview, with no published documentation or price.",
+      },
+      {
+        question: "How do you use a decision model in a browser agent?",
+        answer:
+          "Turn the page into a numbered list of controls, then ask the decision model in one request which operation to perform and which element to perform it on. Code checks the answer, gates it on confidence and risk, and executes it. A language model writes any text and handles low-confidence steps, and code verifies the outcome. Browser Use's Jev Ultrafast and hunch both work this way.",
+      },
+      {
+        question: "Is Jev faster than an LLM for browser automation?",
+        answer:
+          "Per decision, yes. Hunch measured a median of 153 ms for Jev against 678 ms for gpt-4o-mini in JSON mode on the same page states, with both correct on all 24 calls. Browser Use's Jev Ultrafast completed a Google Flights search in 7.1 seconds. The page snapshot and the browser action cost the same with any model, so the end-to-end gain is smaller than the per-decision gap.",
+      },
+      {
+        question: "Can Jev read screenshots?",
+        answer:
+          "No. Jev reads text and JSON, so a browser agent sends it a text description of the page's controls. OpenAI's Decisions API accepts images, and open-weight Jev-style models such as OneJev and Vev take screenshots in the state, which helps with canvas apps and pages without accessible labels.",
+      },
+      {
+        question: "Is there an open source alternative to Jev?",
+        answer:
+          "Several open-weight models answer the same Choice, Score and Noul questions through a Jev-compatible endpoint. WebJev is trained for browser agents and needs one 80 GB GPU. Laya runs locally, including in a browser. OneJev and Vev accept images. Each needs testing on your own task before you rely on its probabilities.",
+      },
+    ],
+  },
+  {
     slug: "screen-studio-4",
     title: "Screen Studio 4: what's new, and what it still costs",
     excerpt:
-      "Screen Studio 4 is out, with an on-device upscaler as its headline. We went through what is in it, what did not change, and what the rest of the category shipped while Screen Studio was on 3.7.",
+      "Screen Studio 4 is out, with a glass loupe, a camera cutout and editing by transcript. We went through the changelog, put a date next to each headline feature, and listed what it still does not do.",
     date: "2026-10-02",
     tag: "Comparison",
     readingMinutes: 7,
+    releases: ["0.0.35", "0.0.32", "0.0.28", "0.0.22", "0.0.21", "0.0.19", "0.0.13"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
         question: "What is new in Screen Studio 4?",
         answer:
-          "Screen Studio 4, released on 2 October 2026, adds an upscaler: a model trained on around 5,000 synthetic macOS screenshots that sharpens a recording up to 6.5 times its size, running on the Mac with nothing uploaded. The rest of the app, from the automatic zooms to the 4K 60 export ceiling and the subscription price, carries over from version 3.",
+          "Screen Studio 4, released on 2 October 2026, adds a glass loupe, a camera cut out of its background (in beta), face tracking, colour grading for the camera with twelve looks and LUT support, editing by transcript, split screen layouts, sharper zoomed-in text from a model that runs on the Mac, and exports up to 3x faster. Export still tops out at 4K and 60 fps.",
       },
       {
         question: "How much does Screen Studio 4 cost?",
@@ -81,22 +139,22 @@ const ENTRIES: Post[] = [
       {
         question: "Is Screen Studio 4 a free upgrade?",
         answer:
-          "For anyone on a current Screen Studio subscription, yes. Both the monthly and the yearly plan include every feature, so version 4 and its upscaler arrive as an ordinary update. The price of the subscription itself did not change with the release: $29 a month, or $108 a year.",
+          "For anyone on a current Screen Studio subscription, yes. Both the monthly and the yearly plan include all Screen Studio features and new features as they ship, so version 4 arrives as an ordinary update. Projects saved in version 4 do not open in version 3, so keep a copy of any version 3 project you care about.",
       },
       {
         question: "Does Screen Studio 4 export at 120 fps?",
         answer:
-          "No. Screen Studio 4 exports at up to 4K and 60 frames a second, the same ceiling as version 3. Prequel exports at up to 4K and 120 fps on every plan, in H.264 or HEVC, with no watermark.",
+          "No. Screen Studio 4 exports at up to 4K and 60 frames a second on both plans, the same ceiling as version 3. Prequel exports at up to 4K and 120 fps on every plan, in H.264 or HEVC, with no watermark.",
       },
       {
-        question: "Does Screen Studio have a loupe or magnifier zoom?",
+        question: "Does Screen Studio 4 have typing sounds or filters?",
         answer:
-          "The Screen Studio 4 announcement does not list one; its zooms enlarge the whole frame. Prequel has a Loupe method on any zoom, which brings a magnifying glass down over the work and leaves the rest of the screen readable, with controls for curvature, colour fringing and reflection.",
+          "No. Screen Studio has mouse click sounds, but neither its site nor its changelog lists sounds for the keyboard, or filters over the whole picture. Prequel makes typing sounds in the app with five keyboards to choose from, ten mouse clicks, and more than 15 filters such as CRT, VHS and film, set per clip.",
       },
       {
         question: "What is the best alternative to Screen Studio 4?",
         answer:
-          "On a Mac, Prequel. It places zooms on clicks and typing, adds a loupe, keyboard and mouse sounds, more than 15 filters, a teleprompter and camera colour looks, and exports at up to 4K 120. It costs $29 once or $9 a month, and shipped 30 releases between 28 August and 2 October 2026. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "On a Mac, Prequel. It has had editing by transcript since 6 September 2026 and a camera cutout since 13 September, and adds a loupe, typing sounds, filters, titles over the recording, a prompter that follows your voice and export at up to 4K 120. It costs $29 once or $9 a month. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -104,21 +162,22 @@ const ENTRIES: Post[] = [
     slug: "should-you-upgrade-to-screen-studio-4",
     title: "Should you upgrade to Screen Studio 4 in 2026?",
     excerpt:
-      "Screen Studio 4 brings an upscaler and keeps the $29 monthly price. We put it next to Prequel feature by feature, with five questions to settle before you renew.",
+      "Screen Studio 4 adds a loupe, a camera cutout and transcript editing, and keeps the $29 monthly price. We put it next to Prequel feature by feature, with five questions to settle before you renew.",
     date: "2026-10-02",
     tag: "Comparison",
-    readingMinutes: 6,
+    readingMinutes: 7,
+    releases: ["0.0.35", "0.0.32", "0.0.28", "0.0.22", "0.0.21", "0.0.19", "0.0.13"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
         question: "Should I upgrade to Screen Studio 4?",
         answer:
-          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription, and its upscaler sharpens zooms on small captures. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $29 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
+          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription and adds a loupe, a camera cutout and editing by transcript. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $29 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
       },
       {
         question: "Is Screen Studio worth it in 2026?",
         answer:
-          "Screen Studio is still a polished Mac recorder, but at $29 a month, or $108 a year up front, it is the most expensive tool in its category, and version 4 adds one headline feature, an upscaler. Prequel does the same automatic zooms and adds a loupe, keyboard and mouse sounds, filters and a teleprompter for $29 once or $9 a month.",
+          "Screen Studio is still a polished Mac recorder, and version 4 is a large release. At $29 a month, or $108 a year up front, it is also among the most expensive tools in its category, and it still exports at 60 fps. Prequel has the same automatic zooms, a loupe, a camera cutout and transcript editing, and adds typing sounds, filters and titles for $29 once or $9 a month.",
       },
       {
         question: "Is Screen Studio a one-time purchase?",
@@ -133,12 +192,12 @@ const ENTRIES: Post[] = [
       {
         question: "Does Screen Studio add keyboard and click sounds?",
         answer:
-          "Typing and click sounds are not listed in the Screen Studio 4 announcement. Prequel makes them in the app: pick a keyboard (Tactile, Linear, Clicky, Thock or the iPhone's) and one of ten mouse clicks, and the export carries a sound for every press, timed to the picture, with no microphone involved.",
+          "Screen Studio has mouse click sound effects, and none for the keyboard. Prequel makes both in the app: pick a keyboard (Tactile, Linear, Clicky, Thock or the iPhone's) and one of ten mouse clicks, and the export carries a sound for every press, timed to the picture, with no microphone involved.",
       },
       {
         question: "What does a year of Screen Studio 4 cost compared to Prequel?",
         answer:
-          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $29 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 28 September 2026.",
+          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $29 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 3 October 2026.",
       },
     ],
   },
@@ -432,6 +491,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-06",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.30", "0.0.13", "0.0.9"],
     pillar: "screen-recording-on-mac",
     faq: [
       {
@@ -474,6 +534,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 8,
+    releases: ["0.0.17"],
     faq: [
       {
         question: "How do I record my screen on a Mac?",
@@ -510,6 +571,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 7,
+    releases: ["0.0.35", "0.0.24", "0.0.22", "0.0.21"],
     faq: [
       {
         question: "How long should a product demo video be?",
@@ -546,6 +608,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.32"],
     faq: [
       {
         question: "What resolution should I record my screen at for YouTube?",
@@ -582,6 +645,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.34", "0.0.32"],
     faq: [
       {
         question: "Which Mac screen recorders have no watermark?",
@@ -619,6 +683,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Guide",
     readingMinutes: 6,
+    releases: ["0.0.32", "0.0.27"],
     faq: [
       {
         question: "How do I record internal audio on a Mac?",
@@ -656,6 +721,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.35", "0.0.31", "0.0.19", "0.0.12", "0.0.7"],
     faq: [
       {
         question: "Can macOS record the screen and webcam at the same time?",
@@ -745,6 +811,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 7,
+    releases: ["0.0.12"],
     faq: [
       {
         question: "What is the best open source screen recorder for Mac?",
@@ -782,6 +849,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.35", "0.0.19", "0.0.18", "0.0.12", "0.0.10"],
     faq: [
       {
         question: "Which Mac screen recorder has automatic mouse zoom?",
@@ -819,6 +887,7 @@ const ENTRIES: Post[] = [
     date: "2026-09-02",
     tag: "Comparison",
     readingMinutes: 6,
+    releases: ["0.0.31", "0.0.19", "0.0.12"],
     faq: [
       {
         question: "Can QuickTime record the screen and webcam at the same time?",
@@ -901,6 +970,11 @@ export function findPost(slug: string): Post | undefined {
 /** The posts filed under a pillar, newest first. Empty for an ordinary post. */
 export function clusterOf(slug: string): Post[] {
   return posts.filter((post) => post.pillar === slug);
+}
+
+/** The posts that describe a release, newest first. The changelog's half of `releases`. */
+export function postsAbout(version: Version): Post[] {
+  return posts.filter((post) => post.releases?.includes(version));
 }
 
 export function formatDate(date: string): string {

@@ -21,6 +21,7 @@
  * edited in: a release is added at the top, with its `.mdx` beside it.
  */
 export const RELEASES = [
+  "0.0.36",
   "0.0.35",
   "0.0.34",
   "0.0.33",
@@ -53,9 +54,12 @@ export const RELEASES = [
   "0.0.5",
 ] as const;
 
+/** A version that exists, which is what lets a post name one and be checked. */
+export type Version = (typeof RELEASES)[number];
+
 export interface Release {
   /** Without the leading `v`, which the page adds. */
-  version: string;
+  version: Version;
   /** ISO, rendered with `toLocaleDateString`. */
   date: string;
   /**
@@ -157,4 +161,39 @@ export async function published(): Promise<Release[]> {
 export async function latest(): Promise<Pick<Release, "version" | "highlight"> | undefined> {
   const [newest] = await published();
   return newest && { version: newest.version, highlight: newest.highlight };
+}
+
+/**
+ * The head of each named release, for a blog post's links into the changelog.
+ *
+ * Only the versions asked for are imported, so a post pays for the three
+ * releases it names rather than all thirty. Drafts are dropped on the same
+ * terms as `published`: a production page must not link to a release the
+ * changelog does not show, because the anchor would not be there.
+ */
+export async function headsOf(
+  versions: readonly Version[],
+): Promise<Pick<Release, "version" | "date" | "highlight">[]> {
+  const heads = await Promise.all(
+    versions.map(async (version) => {
+      const {
+        date,
+        highlight,
+        draft = false,
+      } = (await import(`./changelog/${version}.mdx`)) as {
+        date: string;
+        highlight: string;
+        draft?: boolean;
+      };
+      return { version, date, highlight, draft };
+    }),
+  );
+
+  return (
+    heads
+      .filter((head) => !head.draft || process.env.NODE_ENV !== "production")
+      // `RELEASES` order, not date: two releases can share a day.
+      .sort((a, b) => RELEASES.indexOf(a.version) - RELEASES.indexOf(b.version))
+      .map(({ version, date, highlight }) => ({ version, date, highlight }))
+  );
 }

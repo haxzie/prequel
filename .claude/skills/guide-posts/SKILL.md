@@ -221,6 +221,13 @@ lists the post on the pillar page, so the two cannot disagree. A post without
 a pillar is a pillar, and that is a decision to make with the user, not
 alone.
 
+**`releases` names the Prequel versions that shipped what the post is
+about**, as `["0.0.35", "0.0.19"]`. The post draws an "In the changelog" list
+from it and `/docs/changelog` lists the post under each release, so set it
+whenever the post shows a feature; a version that does not exist fails the
+typecheck. Link a version you cite in the prose as
+`[0.0.19](/docs/changelog#v0.0.19)`.
+
 **`faq` is required**, which is deliberate: "remember to add one" is a
 convention that is forgotten on the next post. Four to six for a guide. Each
 question is one somebody types into a search box ("can macOS record the screen

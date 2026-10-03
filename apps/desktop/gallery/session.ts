@@ -131,6 +131,9 @@ export async function loadSession(
     // Nothing has just been added here — the gallery opens fixtures, it does not
     // record into them.
     focusSliceId: null,
+    // Already resolved above: this builds the whole session in one pass, so it
+    // has `withBackground`'s answer rather than the editor's late one.
+    backgroundMissing: false,
   };
 }
 
