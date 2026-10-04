@@ -2,12 +2,13 @@
 
 use std::path::PathBuf;
 
+use cidre::cv;
 use prequel_render::reader::VideoReader;
 use prequel_sensitive::track::{Track, Tracker};
-use prequel_sensitive::{Candidate, scan_frame};
+use prequel_sensitive::{Candidate, NormRect, scan_frame};
 use prequel_session::MediaTime;
 
-use crate::reader::{FaceReader, TextReader, VisionFaceReader, VisionTextReader};
+use crate::reader::{Face, FaceReader, TextReader, VisionFaceReader, VisionTextReader};
 use crate::{CancelFlag, Error, Result};
 
 /// How often a frame is read, in nanoseconds.
@@ -41,6 +42,47 @@ pub const DEFAULT_INTERVAL: MediaTime = 1_000_000_000;
 /// padding every face box already carries.
 pub const DEFAULT_FACE_INTERVAL: MediaTime = 100_000_000;
 
+/// How often the whole frame is swept for faces nobody is following yet, in
+/// nanoseconds.
+///
+/// Once a second. A sweep is many requests where following is one, so this is
+/// the expensive half and the cadence above is the cheap one — and a face that
+/// walks on is not on screen for less than a second before it matters.
+pub const DEFAULT_FACE_SWEEP: MediaTime = 1_000_000_000;
+
+/// How wide a sweep's regions are, in pixels of the frame.
+///
+/// Vision's face detector has a floor on how large a face must be **as a
+/// fraction of what it is given**, and a screen recording is the worst case for
+/// it: a face inside a video inside a feed is a couple of per cent of a 3024
+/// wide frame. Measured on one such frame, the same pixels that yield three
+/// faces at 518×354 yield *none* at 3024×1898, and cutting the frame up brings
+/// them back — nothing at 1024px regions, two at 768, three at around 500.
+///
+/// 768 is where that curve turns: fifteen regions over a 3024×1898 frame, about
+/// a hundred milliseconds, and the faces anybody would call a face. Smaller
+/// regions find a 35-pixel avatar too and cost twice as much to do it, which is
+/// a trade to make on evidence rather than by guess.
+pub const FACE_REGION: f64 = 768.0;
+
+/// How far one region is stepped from the last, as a fraction of its width.
+///
+/// Three quarters, so every point of the frame is whole inside some region. At
+/// a full step a face lying across a seam is cut in two and found by neither
+/// side, and on a page that does not move it would never be found at all.
+const FACE_REGION_STEP: f64 = 0.75;
+
+/// How far around a face its own region reaches when it is being followed, as a
+/// multiple of its size.
+///
+/// Five, which is two of itself in every direction. Wide enough for a head
+/// turning or a page easing, and tight enough that the face is still a fifth of
+/// what Vision is given — which is the whole reason a region is used rather
+/// than the frame. Beyond this it stops helping: a flick scroll moves a face
+/// further than any box worth asking for, and what answers that is the sweep
+/// below rather than a wider guess.
+const FACE_FOLLOW: f32 = 5.0;
+
 /// One file to read, and where it sits on the session clock.
 #[derive(Debug, Clone)]
 pub struct ScanSegment {
@@ -65,8 +107,12 @@ pub struct ScanRequest {
     pub segments: Vec<ScanSegment>,
     /// How often the text is read. See [`DEFAULT_INTERVAL`].
     pub interval: MediaTime,
-    /// How often the faces are looked for. See [`DEFAULT_FACE_INTERVAL`].
+    /// How often a face already being followed is looked for. See
+    /// [`DEFAULT_FACE_INTERVAL`].
     pub face_interval: MediaTime,
+    /// How often the whole frame is swept for new ones. See
+    /// [`DEFAULT_FACE_SWEEP`].
+    pub face_sweep: MediaTime,
     /// BCP-47 tags, most preferred first. Empty leaves Vision's own default.
     pub langs: Vec<String>,
     /// Per-recording, so the same card in two recordings does not produce the
@@ -88,6 +134,7 @@ impl ScanRequest {
             segments,
             interval: DEFAULT_INTERVAL,
             face_interval: DEFAULT_FACE_INTERVAL,
+            face_sweep: DEFAULT_FACE_SWEEP,
             langs: Vec::new(),
             salt,
             text: true,
@@ -112,6 +159,98 @@ pub struct ScanSummary {
     /// is left out so the next scan retries it rather than treating an empty
     /// result as "nothing sensitive here".
     pub covered: Vec<String>,
+}
+
+/// The regions one sweep of a frame is made of, in top-left fractions.
+///
+/// Stepped by [`FACE_REGION_STEP`] so every point of the frame is whole inside
+/// one of them, and never past the edge: the last region in a row is pulled
+/// back rather than hanging off, which keeps every one the same size and so
+/// every face the same fraction of what Vision is given.
+fn sweep_regions(width: f64, height: f64) -> Vec<NormRect> {
+    // A frame smaller than one region is one region.
+    let across = FACE_REGION.min(width).max(1.0);
+    let down = FACE_REGION.min(height).max(1.0);
+    let step_x = across * FACE_REGION_STEP;
+    let step_y = down * FACE_REGION_STEP;
+
+    let cols = ((width - across).max(0.0) / step_x).ceil() as usize + 1;
+    let rows = ((height - down).max(0.0) / step_y).ceil() as usize + 1;
+
+    let mut regions = Vec::with_capacity(cols * rows);
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = (col as f64 * step_x).min(width - across).max(0.0);
+            let y = (row as f64 * step_y).min(height - down).max(0.0);
+            regions.push(NormRect::new(
+                (x / width) as f32,
+                (y / height) as f32,
+                (across / width) as f32,
+                (down / height) as f32,
+            ));
+        }
+    }
+    regions
+}
+
+/// The region a known face is looked for in at the next sample.
+///
+/// Its own box grown by [`FACE_FOLLOW`] and clamped to the frame. Following in a
+/// box rather than sweeping again is what makes the fine cadence affordable: one
+/// request per face against fifteen for a sweep.
+fn follow_region(face: NormRect) -> NormRect {
+    let grow_x = face.w * (FACE_FOLLOW - 1.0) / 2.0;
+    let grow_y = face.h * (FACE_FOLLOW - 1.0) / 2.0;
+    let x = (face.x - grow_x).clamp(0.0, 1.0);
+    let y = (face.y - grow_y).clamp(0.0, 1.0);
+    NormRect::new(
+        x,
+        y,
+        (face.w * FACE_FOLLOW).min(1.0 - x),
+        (face.h * FACE_FOLLOW).min(1.0 - y),
+    )
+}
+
+/// Whether two sightings are the same face.
+///
+/// The regions overlap, and a face near a seam is inside two of them — so the
+/// same face comes back twice and would be offered to the tracker as two.
+/// Centres within a quarter of the smaller box: close enough that two different
+/// people are never merged, far enough that one person found twice is not two.
+fn same_face(a: NormRect, b: NormRect) -> bool {
+    let reach = a.w.min(b.w).max(a.h.min(b.h)) / 4.0;
+    let (ax, ay) = a.centre();
+    let (bx, by) = b.centre();
+    (ax - bx).abs() <= reach && (ay - by).abs() <= reach
+}
+
+/// Every face on one frame: the ones already being followed, and — when a sweep
+/// is due — whatever else is there.
+///
+/// The followed ones first, so that where the same face is found twice the one
+/// kept is the one from the tighter region, which is the better measurement.
+fn faces_on<R: FaceReader>(
+    reader: &mut R,
+    frame: &cv::PixelBuf,
+    following: &[NormRect],
+    sweep: Option<&[NormRect]>,
+    reads: &mut u64,
+) -> Result<Vec<Face>> {
+    let mut found: Vec<Face> = Vec::new();
+
+    let regions = following.iter().copied().map(Some);
+    let sweeping = sweep.unwrap_or(&[]).iter().copied().map(Some);
+
+    for region in regions.chain(sweeping) {
+        *reads += 1;
+        for face in reader.read(frame, region)? {
+            if !found.iter().any(|seen| same_face(seen.rect, face.rect)) {
+                found.push(face);
+            }
+        }
+    }
+
+    Ok(found)
 }
 
 /// Scans a recording with Apple's Vision.
@@ -176,10 +315,15 @@ pub fn scan_with(
         // stand in for the text at the next sample that needed it — and the
         // text would quietly stop being covered.
         let mut read_text: Option<(u64, Vec<Candidate>)> = None;
-        let mut read_faces: Option<(u64, Vec<Candidate>)> = None;
+        let mut read_faces: Option<(u64, Vec<Candidate>, Vec<NormRect>)> = None;
         let mut at: MediaTime = 0;
         // When the text is next due. Faces are read at every step.
         let mut text_due: MediaTime = 0;
+        // And when the frame is next swept for faces nobody is following.
+        let mut sweep_due: MediaTime = 0;
+        // The regions of one sweep, worked out once the first frame has said
+        // how large the picture is.
+        let mut sweep: Vec<NormRect> = Vec::new();
 
         // Bounded by the segment's duration, not by whether a frame came back.
         // `frame_at` repeats the last frame for ever, so the other bound never
@@ -206,26 +350,80 @@ pub fn scan_with(
             // so a track stays unbroken and its cover reaches the moment the
             // picture actually changes.
             if request.faces {
-                let found = match &read_faces {
-                    Some((seen, candidates)) if *seen == pts => candidates.clone(),
+                // The picture has not changed, so neither have the faces on it
+                // — and neither has where to look for them next.
+                let (found, seen) = match &read_faces {
+                    Some((pts_before, candidates, boxes)) if *pts_before == pts => {
+                        (candidates.clone(), boxes.clone())
+                    }
                     _ => {
                         let Some(frame) = frames.frame_at(at) else {
                             break;
                         };
-                        let found: Vec<Candidate> = faces
-                            .read(frame)?
+
+                        if sweep.is_empty() {
+                            sweep = sweep_regions(frame.width() as f64, frame.height() as f64);
+                        }
+
+                        // Where the faces were at the last sample, grown. A
+                        // face moves very little in a tenth of a second, and a
+                        // region of its own is both the cheapest and the surest
+                        // place to find it again.
+                        let following: Vec<NormRect> = read_faces
+                            .as_ref()
+                            .map(|(_, _, boxes)| boxes.clone())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(follow_region)
+                            .collect();
+
+                        let due = at >= sweep_due;
+                        let mut faces_now = faces_on(
+                            faces,
+                            frame,
+                            &following,
+                            due.then_some(sweep.as_slice()),
+                            &mut summary.read,
+                        )?;
+
+                        // Something that was there a moment ago is not where it
+                        // was. Sweep now rather than at the next due time: a
+                        // page flicks further in a tenth of a second than any
+                        // region worth asking for reaches, and the alternative
+                        // is a cover that blinks out until the next sweep and
+                        // comes back as a *different* cover — which is what the
+                        // recording this was written against did, twice.
+                        //
+                        // It costs a sweep exactly when one is warranted, and
+                        // nothing on the samples where everybody is where they
+                        // were.
+                        if !due && faces_now.len() < following.len() {
+                            faces_now = faces_on(
+                                faces,
+                                frame,
+                                &[],
+                                Some(sweep.as_slice()),
+                                &mut summary.read,
+                            )?;
+                        }
+
+                        if due {
+                            sweep_due = at.saturating_add(request.face_sweep.max(1));
+                        }
+
+                        let boxes: Vec<NormRect> = faces_now.iter().map(|face| face.rect).collect();
+                        let found: Vec<Candidate> = faces_now
                             .into_iter()
                             .filter_map(|face| {
                                 prequel_sensitive::face(face.rect, face.confidence, request.salt)
                             })
                             .collect();
-                        summary.read += 1;
-                        found
+                        (found, boxes)
                     }
                 };
 
                 face_tracker.offer(segment.start + at, &found);
-                read_faces = Some((pts, found));
+                read_faces = Some((pts, found, seen));
             }
 
             if request.text && at >= text_due {

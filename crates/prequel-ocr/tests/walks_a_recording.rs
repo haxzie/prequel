@@ -81,7 +81,11 @@ fn still(dir: &Path, seconds: u64) -> PathBuf {
 struct NoFaces;
 
 impl FaceReader for NoFaces {
-    fn read(&mut self, _frame: &cv::PixelBuf) -> prequel_ocr::Result<Vec<Face>> {
+    fn read(
+        &mut self,
+        _frame: &cv::PixelBuf,
+        _region: Option<NormRect>,
+    ) -> prequel_ocr::Result<Vec<Face>> {
         Ok(Vec::new())
     }
 }
@@ -277,7 +281,13 @@ fn covers_the_segments_it_read() {
 
 /// A face that drifts down the frame, and a count of how often it was asked for.
 struct MovingFace {
+    /// Every ask, whatever region it was for. The cadence assertion's number.
     reads: AtomicUsize,
+    /// Asks for a region around the face itself rather than a sweep of the
+    /// frame, which is one per sample — so this is also where the face is up to.
+    follows: AtomicUsize,
+    /// Asks that swept the whole frame.
+    sweeps: AtomicUsize,
 }
 
 impl MovingFace {
@@ -295,10 +305,39 @@ impl MovingFace {
 }
 
 impl FaceReader for MovingFace {
-    fn read(&mut self, _frame: &cv::PixelBuf) -> prequel_ocr::Result<Vec<Face>> {
-        let n = self.reads.fetch_add(1, Ordering::Relaxed);
+    /// Moves the face on each ask that is *following* it, which the loop makes
+    /// exactly once a sample — so the face's position is the sample number, and
+    /// the test can say where the cover should have been at each one.
+    ///
+    /// A sweep's region covers the whole of this frame and a follow's is three
+    /// times the face, which is how the two are told apart here. Answering only
+    /// where the face actually is matters as much: a fake that said yes to any
+    /// region would pass whether the following worked or not.
+    fn read(
+        &mut self,
+        _frame: &cv::PixelBuf,
+        region: Option<NormRect>,
+    ) -> prequel_ocr::Result<Vec<Face>> {
+        self.reads.fetch_add(1, Ordering::Relaxed);
+
+        let sweeping = region.is_none_or(|area| area.w > 0.9);
+        let step = if sweeping {
+            self.sweeps.fetch_add(1, Ordering::Relaxed);
+            self.follows.load(Ordering::Relaxed)
+        } else {
+            self.follows.fetch_add(1, Ordering::Relaxed) + 1
+        };
+
+        let rect = NormRect::new(0.4, Self::y(step), 0.1, 0.1);
+        if let Some(area) = region {
+            let (cx, cy) = rect.centre();
+            if cx < area.x || cy < area.y || cx > area.x + area.w || cy > area.y + area.h {
+                return Ok(Vec::new());
+            }
+        }
+
         Ok(vec![Face {
-            rect: NormRect::new(0.4, Self::y(n), 0.1, 0.1),
+            rect,
             confidence: 0.9,
         }])
     }
@@ -335,6 +374,8 @@ fn looks_for_faces_far_more_often_than_it_reads_text() {
     let text = &mut Fake::new("nothing sensitive here");
     let faces = &mut MovingFace {
         reads: AtomicUsize::new(0),
+        follows: AtomicUsize::new(0),
+        sweeps: AtomicUsize::new(0),
     };
 
     let mut ask = request(path, 0, 4 * SECOND);
@@ -367,7 +408,7 @@ fn looks_for_faces_far_more_often_than_it_reads_text() {
     // Not a key count, because the keys are thinned: a stretch the
     // interpolation already draws correctly keeps only the two ends of itself.
     let mut worst = 0.0f32;
-    for n in 0..read_faces {
+    for n in 0..faces.follows.load(Ordering::Relaxed) {
         let when = n as u64 * 100_000_000;
         if when > face.end() {
             break;
@@ -381,5 +422,116 @@ fn looks_for_faces_far_more_often_than_it_reads_text() {
         worst < 0.01,
         "the cover drifted {:.1}% of the frame from the face it is on",
         worst * 100.0
+    );
+}
+
+/// A face that sits still in one place, and a note of how it was asked for.
+struct StillFace {
+    rect: NormRect,
+    sweeps: AtomicUsize,
+    follows: AtomicUsize,
+}
+
+impl FaceReader for StillFace {
+    fn read(
+        &mut self,
+        _frame: &cv::PixelBuf,
+        region: Option<NormRect>,
+    ) -> prequel_ocr::Result<Vec<Face>> {
+        let sweeping = region.is_none_or(|area| area.w > 0.9);
+        if sweeping {
+            self.sweeps.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.follows.fetch_add(1, Ordering::Relaxed);
+        }
+
+        if let Some(area) = region {
+            let (cx, cy) = self.rect.centre();
+            if cx < area.x || cy < area.y || cx > area.x + area.w || cy > area.y + area.h {
+                return Ok(Vec::new());
+            }
+        }
+
+        Ok(vec![Face {
+            rect: self.rect,
+            confidence: 0.9,
+        }])
+    }
+}
+
+#[test]
+fn sweeps_the_frame_for_faces_nobody_is_following() {
+    // Why a sweep exists at all. Vision's face detector has a floor on how
+    // large a face must be as a fraction of what it is given, and a screen
+    // recording is the worst case for it — the same pixels that yield three
+    // faces at 518×354 yield none inside a 3024×1898 frame. The frame is read
+    // in regions so each face is above that floor again.
+    //
+    // A sweep is many asks where following is one, so it runs on its own
+    // cadence: the fine one keeps hold of what is already known, and this is
+    // what notices anybody new.
+    let dir = scratch("sweep");
+    let path = video(&dir, 4, "30");
+    let text = &mut Fake::new("nothing sensitive here");
+    let faces = &mut StillFace {
+        rect: NormRect::new(0.4, 0.4, 0.1, 0.1),
+        sweeps: AtomicUsize::new(0),
+        follows: AtomicUsize::new(0),
+    };
+
+    let mut ask = request(path, 0, 4 * SECOND);
+    ask.faces = true;
+
+    let summary = scan_with(&ask, text, faces, &CancelFlag::new(), &mut |_| {}).expect("the scan");
+
+    let sweeps = faces.sweeps.load(Ordering::Relaxed);
+    let follows = faces.follows.load(Ordering::Relaxed);
+
+    // Four seconds, a sweep a second. The frame here is small enough to be one
+    // region, so one ask each.
+    assert!(
+        (4..=5).contains(&sweeps),
+        "a sweep a second over four seconds, not {sweeps}"
+    );
+    // And the rest of the samples cost one ask, not a sweep's worth.
+    assert!(
+        follows >= sweeps * 5,
+        "the fine cadence should be following rather than sweeping: {follows} against {sweeps}"
+    );
+
+    // The face is covered from the first sweep onwards.
+    let face = summary
+        .tracks
+        .iter()
+        .find(|track| track.category_label() == "face")
+        .expect("the face was found");
+    assert_eq!(face.start(), 0);
+}
+
+#[test]
+fn a_face_is_found_by_a_sweep_and_then_kept_by_following() {
+    // The two halves doing their own jobs: a sweep notices somebody, and from
+    // then on the cheap ask is what holds the cover on them. Without the sweep
+    // nobody new is ever found; without the following every sample costs a
+    // sweep.
+    let dir = scratch("sweep-then-follow");
+    let path = video(&dir, 2, "30");
+    let text = &mut Fake::new("nothing");
+    let faces = &mut StillFace {
+        rect: NormRect::new(0.4, 0.4, 0.1, 0.1),
+        sweeps: AtomicUsize::new(0),
+        follows: AtomicUsize::new(0),
+    };
+
+    let mut ask = request(path, 0, 2 * SECOND);
+    ask.faces = true;
+    scan_with(&ask, text, faces, &CancelFlag::new(), &mut |_| {}).expect("the scan");
+
+    // Every sample but the ones a sweep was due at found the face by following
+    // it: twenty samples over two seconds, two of them sweeps.
+    assert!(
+        faces.follows.load(Ordering::Relaxed) >= 17,
+        "the face should have been followed at nearly every sample: {}",
+        faces.follows.load(Ordering::Relaxed)
     );
 }

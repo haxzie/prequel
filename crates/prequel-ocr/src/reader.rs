@@ -1,6 +1,6 @@
 //! Reading the text off one frame, with Vision.
 
-use cidre::{arc, cv, ns, vn};
+use cidre::{arc, cg, cv, ns, vn};
 use prequel_sensitive::{Line, NormRect, RangeRects};
 
 use crate::{Error, Result};
@@ -87,8 +87,20 @@ impl RangeRects for Reading {
 /// a recording can want either without the other, and a reader that had to
 /// answer both would make "find faces but not text" impossible to ask for.
 pub trait FaceReader {
-    /// The faces, in top-left fractions of the frame.
-    fn read(&mut self, frame: &cv::PixelBuf) -> Result<Vec<Face>>;
+    /// The faces in `region` of the frame, in top-left fractions of the *whole*
+    /// frame. `None` reads all of it.
+    ///
+    /// A region rather than always the whole frame, and it is the difference
+    /// between finding the faces on a screen recording and finding none.
+    /// Vision's face detector has a floor on how large a face must be **as a
+    /// fraction of what it is given**: the same picture that yields three faces
+    /// at 518×354 yields none when those exact pixels sit inside a 3024×1898
+    /// frame, which is what a Retina screen recording is. Cutting the frame into
+    /// regions puts each face back above the floor.
+    ///
+    /// The answers come back in whole-frame coordinates whatever the region, so
+    /// nothing above has to map them back.
+    fn read(&mut self, frame: &cv::PixelBuf, region: Option<NormRect>) -> Result<Vec<Face>>;
 }
 
 /// One face, where it is and how sure Vision is of it.
@@ -129,7 +141,28 @@ impl Default for VisionFaceReader {
 }
 
 impl FaceReader for VisionFaceReader {
-    fn read(&mut self, frame: &cv::PixelBuf) -> Result<Vec<Face>> {
+    fn read(&mut self, frame: &cv::PixelBuf, region: Option<NormRect>) -> Result<Vec<Face>> {
+        // Vision measures its region from the lower left, like everything else
+        // it answers in — `NormRect::from_vision` is the other half of this
+        // conversion and the only other place it happens.
+        let area = region.unwrap_or(NormRect::new(0.0, 0.0, 1.0, 1.0));
+
+        // Held inside the unit square *after* the conversion to f64, and this
+        // is not pedantry: a region computed in f32 as a third of a frame lands
+        // a hair over 1 when its origin and size are added back together in
+        // f64, and Vision refuses the whole request — "the region of interest
+        // is not within the normalized bounds of [0 0 1 1]" — which fails the
+        // scan rather than that one region.
+        let x = f64::from(area.x).clamp(0.0, 1.0);
+        let y = f64::from(1.0 - area.y - area.h).clamp(0.0, 1.0);
+        self.request.set_region_of_interest(cg::Rect {
+            origin: cg::Point { x, y },
+            size: cg::Size {
+                width: f64::from(area.w).clamp(0.0, 1.0 - x),
+                height: f64::from(area.h).clamp(0.0, 1.0 - y),
+            },
+        });
+
         let handler = vn::ImageRequestHandler::with_cv_pixel_buf(frame, None)
             .ok_or_else(|| Error::Read("Vision refused the frame".to_owned()))?;
 
