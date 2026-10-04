@@ -22,12 +22,13 @@
  * place twice. Each tool puts itself down once it has drawn, so the mode is
  * never left behind.
  */
-import type { Dispatch, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode } from "react";
 
 import type { AnnotationKind } from "../../../shared/annotations";
 import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
 import {
+  ChevronUpIcon,
   AddTextIcon,
   ArrowToolIcon,
   BoxToolIcon,
@@ -49,6 +50,15 @@ const BUTTON =
 
 /** The tool in hand, which keeps its fill on hover rather than lighting up. */
 const HELD = "bg-selected text-white hover:bg-selected hover:brightness-110";
+
+/**
+ * The seam between the ink and the weight.
+ *
+ * `SetupPanel`'s divider, in the editor's own line token. Short of the group's
+ * full height and centred, so it reads as a seam inside one control rather than
+ * as the edge of two.
+ */
+const DIVIDER = "h-5 w-px flex-none self-center bg-editor-line";
 
 /**
  * The tools, in the order they are reached for.
@@ -234,6 +244,152 @@ function stepped(width: number, up: boolean): number {
  * a `title` attribute — is the native chip this editor deliberately does not
  * use. See `components/Tooltip.tsx`.
  */
+/**
+ * The ink, as one swatch that opens a row of them.
+ *
+ * Six swatches on the bar were six controls wide for a choice made once and
+ * then left alone — and on a pill that already carries eight tools, three
+ * weights and four verbs, they were the group that pushed it past the width of
+ * the picture. One swatch says what the next mark is drawn in; the row behind
+ * it is there for the moment that is the question.
+ *
+ * The whole chip opens it, not the chevron alone. A 14px circle that does
+ * nothing when pressed is a control reporting that it is not one, and the
+ * chevron is there to say there is more behind it rather than to be a second,
+ * smaller target beside it.
+ *
+ * The keys 1 to 6 still pick a colour with this shut. They are answered in
+ * `stillShortcut`, which reads `INKS` and never the DOM, so a swatch being
+ * behind a press changes nothing about reaching it.
+ */
+function InkSwatch({
+  colour,
+  disabled,
+  onPick,
+}: {
+  colour: string;
+  disabled: boolean;
+  onPick: (colour: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const { ref: attach, ...hover } = useTooltip({
+    title: "Colour",
+    detail: "The colour the next mark is drawn in.",
+    keys: "1–6",
+  });
+
+  // The label's ref and ours, merged — and stable, which `useTooltip`'s own
+  // note on `ref` is explicit about: React calls a ref callback again whenever
+  // its identity changes, passing `null` first, so an inline merge would run
+  // the hook's detach on every render and take the label down with it.
+  const setTrigger = useCallback(
+    (node: HTMLButtonElement | null) => {
+      trigger.current = node;
+      attach(node);
+    },
+    [attach],
+  );
+
+  // Shut when the control goes dead under it. A mask has no ink, so a row of
+  // swatches left standing over the bar would be offering a choice that does
+  // nothing to the tool in hand.
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  return (
+    <div className="relative">
+      <button
+        ref={setTrigger}
+        type="button"
+        aria-label="Colour"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        className={cn(
+          "flex h-8 items-center gap-1 rounded-lg px-1.5 text-editor-fg hover:bg-white/10",
+          "disabled:pointer-events-none disabled:opacity-35",
+          open && "bg-white/10",
+        )}
+        onClick={() => setOpen(!open)}
+        {...hover}
+      >
+        {/* The colour itself, which is the label. A ring outside it rather
+            than a border inside: a border eats into a 14px circle and makes
+            the chosen colour read as a darker one. */}
+        <span
+          aria-hidden
+          className="size-3.5 flex-none rounded-full ring-1 ring-white/25"
+          style={{ backgroundColor: colour }}
+        />
+        {/* Smaller and dimmer than the swatch, following `Add Clip` at the
+            other end of the window: it says there is more behind the button,
+            and it is not the thing being chosen. */}
+        <span aria-hidden className="text-editor-muted/60 [&_svg]:size-3">
+          <ChevronUpIcon />
+        </span>
+      </button>
+
+      {open && (
+        <>
+          {/* Click-away under the row and over everything else, at the two
+              levels the timeline's menu and `Add Clip` already use — the bar
+              floats at `z-20` and the inspector at `z-30`, so anything summoned
+              by a press has to sit above both. */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            role="menu"
+            // Centred on the chip and opening upward: the bar is at the foot of
+            // the window, so there is nowhere below it to open into.
+            className={
+              "absolute bottom-full left-1/2 z-50 mb-1.5 flex -translate-x-1/2 items-center gap-1 " +
+              "rounded-xl border border-editor-line bg-editor-panel p-1.5 " +
+              "shadow-[0_8px_28px_rgba(0,0,0,0.5)]"
+            }
+            // Escape from inside the row as well as from the chip: the pointer
+            // is over the swatches by the time anybody wants out of it.
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              setOpen(false);
+              trigger.current?.focus();
+            }}
+          >
+            {INKS.map(({ color, label, keys }) => (
+              <BarButton
+                key={color}
+                label={label}
+                detail="The colour the next mark is drawn in."
+                keys={keys}
+                pressed={colour.toLowerCase() === color}
+                className={cn(
+                  "size-5 rounded-full",
+                  colour.toLowerCase() === color
+                    ? "ring-2 ring-white ring-offset-1 ring-offset-editor-panel"
+                    : "ring-1 ring-white/25",
+                )}
+                onClick={() => {
+                  onPick(color);
+                  // Shut on choosing. The row answers one question and a
+                  // palette left open over the picture is in the way of
+                  // drawing with what was just picked.
+                  setOpen(false);
+                }}
+              >
+                <span
+                  aria-hidden
+                  className="block size-full rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+              </BarButton>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function BarButton({
   label,
   detail,
@@ -358,45 +514,16 @@ export function AnnotateBar({
         ))}
       </div>
 
-      {/* The ink, next to the tools that use it. It sets what the *next* mark
-          is drawn in rather than recolouring the selection — a row of swatches
-          beside a toolbar is read as the tool's setting, and one that silently
-          repainted whatever happened to be selected would be a different
-          control wearing the same clothes. The selected mark's own colour is in
-          the inspector. */}
-      <div className="flex items-center gap-1 rounded-lg bg-white/5 px-1.5 py-1">
-        {INKS.map(({ color, label, keys }) => (
-          <BarButton
-            key={color}
-            label={label}
-            detail="The colour the next mark is drawn in."
-            keys={keys}
-            pressed={colour.toLowerCase() === color}
-            disabled={masking}
-            // A ring outside the swatch rather than a border inside it: a
-            // border eats into a 14px circle and makes the chosen colour read
-            // as a different, darker one.
-            className={cn(
-              "size-3.5 rounded-full disabled:pointer-events-none disabled:opacity-35",
-              colour.toLowerCase() === color
-                ? "ring-2 ring-white ring-offset-1 ring-offset-editor-veil"
-                : "ring-1 ring-white/25",
-            )}
-            onClick={() => setColour(color)}
-          >
-            {/* The colour itself, drawn by a child rather than by the button's
-                own background: `BarButton` takes no style of its own, and a
-                swatch is the one control here whose *fill* is the label. */}
-            <span
-              aria-hidden
-              className="block size-full rounded-full"
-              style={{ backgroundColor: color }}
-            />
-          </BarButton>
-        ))}
-      </div>
-
+      {/* The ink and the weight in one group: they are the two things every
+          mark carries, they are set together, and six swatches strung along the
+          bar took as much room as the tools did for a choice made once. A
+          hairline between them rather than two plates — the pair is one group
+          with a seam, not two groups that happen to touch. */}
       <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+        <InkSwatch colour={colour} disabled={masking} onPick={setColour} />
+
+        <span aria-hidden className={DIVIDER} />
+
         {WIDTHS.map(({ label, width, keys }) => (
           <BarButton
             key={label}
