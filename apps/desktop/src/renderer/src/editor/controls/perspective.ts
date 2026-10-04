@@ -54,7 +54,7 @@ export function shadingStrength(rotateX: number, rotateY: number): number {
 /**
  * The lean, in degrees, at which the shading reaches full strength.
  *
- * Below the editor's own 30° limit on purpose: the angles anyone actually uses
+ * Far below the editor's own 45° limit on purpose: the angles anyone actually uses
  * live under 15°, and scaling to the limit would leave every real setting
  * shaded so faintly that the cue is not there when it is needed.
  */
