@@ -5,5 +5,97 @@
     { "id": "display", "label": "Display" },
     { "id": "mono", "label": "Mono" }
   ],
-  "families": []
+  "families": [
+    {
+      "id": "inter",
+      "label": "Inter",
+      "google": "Inter",
+      "category": "sans",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 500, "italic": false },
+        { "weight": 600, "italic": false },
+        { "weight": 700, "italic": false },
+        { "weight": 800, "italic": false },
+        { "weight": 400, "italic": true },
+        { "weight": 600, "italic": true }
+      ]
+    },
+    {
+      "id": "jakarta",
+      "label": "Plus Jakarta Sans",
+      "google": "Plus Jakarta Sans",
+      "category": "sans",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 500, "italic": false },
+        { "weight": 700, "italic": false },
+        { "weight": 800, "italic": false }
+      ]
+    },
+    {
+      "id": "instrument-serif",
+      "label": "Instrument Serif",
+      "google": "Instrument Serif",
+      "category": "serif",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 400, "italic": true }
+      ]
+    },
+    {
+      "id": "fraunces",
+      "label": "Fraunces",
+      "google": "Fraunces",
+      "category": "serif",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 700, "italic": false },
+        { "weight": 900, "italic": false }
+      ]
+    },
+    {
+      "id": "anton",
+      "label": "Anton",
+      "google": "Anton",
+      "category": "display",
+      "licence": "OFL-1.1",
+      "variants": [{ "weight": 400, "italic": false }]
+    },
+    {
+      "id": "bebas-neue",
+      "label": "Bebas Neue",
+      "google": "Bebas Neue",
+      "category": "display",
+      "licence": "OFL-1.1",
+      "variants": [{ "weight": 400, "italic": false }]
+    },
+    {
+      "id": "caveat",
+      "label": "Caveat",
+      "google": "Caveat",
+      "category": "display",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 700, "italic": false }
+      ]
+    },
+    {
+      "id": "jetbrains-mono",
+      "label": "JetBrains Mono",
+      "google": "JetBrains Mono",
+      "category": "mono",
+      "licence": "OFL-1.1",
+      "variants": [
+        { "weight": 400, "italic": false },
+        { "weight": 700, "italic": false },
+        { "weight": 400, "italic": true }
+      ]
+    }
+  ]
 }

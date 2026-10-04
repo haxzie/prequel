@@ -27,6 +27,7 @@ import type {
   ExportSummary,
   IpcResult,
   PermissionState,
+  FontsCatalogue,
   ProjectSummary,
   TeleprompterPosition,
   TeleprompterState,
@@ -384,11 +385,13 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         sweep: () => ok(undefined),
       },
 
-      // No hosted faces in the gallery: the shots are set in the macOS list,
-      // which needs nothing fetched.
+      // The repo's own `fonts/`, served as the catalogue the Worker would —
+      // see the fixture endpoint. Nothing is fetched because nothing has to
+      // be: the files are already on disk and `prequel-media://font/` reaches
+      // them, which is what `ensure` answers for.
       fonts: {
-        catalogue: () => ok(null),
-        ensure: () => ok(false),
+        catalogue: async () => ok(await json<FontsCatalogue>("/fixture/fonts.json")),
+        ensure: () => ok(true),
       },
     },
 

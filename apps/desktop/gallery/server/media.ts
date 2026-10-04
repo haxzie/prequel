@@ -131,6 +131,24 @@ function resolveMedia(pathname: string, options: GalleryOptions): string | null 
     return null;
   }
 
+  // The repo's own `fonts/`, flattened the way the bucket flattens it: the app
+  // asks for `inter-400.woff2` and the folder holds `inter/400.woff2`. Resolved
+  // against the listing rather than by splitting on the last hyphen, because a
+  // family id has hyphens of its own — `instrument-serif-400.woff2` splits two
+  // ways and only one of them is a file.
+  if (host === "font") {
+    if (rest.length !== 1) return null;
+    const [file] = rest as [string];
+    const root = join(PACKAGE_ROOT, "../../fonts");
+
+    for (const family of fontFamilies(root)) {
+      if (!file.startsWith(`${family}-`)) continue;
+      const path = join(root, family, file.slice(family.length + 1));
+      if (inside(root, path) && existsSync(path)) return path;
+    }
+    return null;
+  }
+
   if (host === "asset") {
     if (rest.length !== 1) return null;
     const [file] = rest as [string];
@@ -169,6 +187,24 @@ function resolveMedia(pathname: string, options: GalleryOptions): string | null 
   return null;
 }
 
+/**
+ * The font family ids in the repo's listing, or none when there is no listing.
+ *
+ * Read per request rather than held: the gallery runs against a working tree
+ * where a family is added by dropping a folder in, and a cached list would
+ * serve a 404 for it until the server was restarted.
+ */
+function fontFamilies(root: string): string[] {
+  try {
+    const listing = JSON.parse(readFileSync(join(root, "families.json"), "utf8")) as {
+      families: { id: string }[];
+    };
+    return listing.families.map((family) => family.id);
+  } catch {
+    return [];
+  }
+}
+
 /** `freshPoster` from `main/projects.ts`: is the still older than the edit? */
 function fresh(dir: string): boolean {
   try {
@@ -195,6 +231,52 @@ function fixture(pathname: string, options: GalleryOptions): unknown | null {
     const path = join(options.recordings, decodeURIComponent(file[1]!), `${file[2]}.json`);
     if (!inside(options.recordings, path) || !existsSync(path)) return null;
     return JSON.parse(readFileSync(path, "utf8"));
+  }
+
+  // The catalogue the Worker would serve, built from the working tree. The
+  // gallery has no R2 and no API; what it has is the same files, and a picker
+  // drawn against them is the one way to see a face before it is uploaded.
+  if (pathname === "/fixture/fonts.json") {
+    const root = join(PACKAGE_ROOT, "../../fonts");
+    const listingPath = join(root, "families.json");
+    if (!existsSync(listingPath)) return null;
+
+    const listing = JSON.parse(readFileSync(listingPath, "utf8")) as {
+      categories: { id: string; label: string }[];
+      families: { id: string; label: string; category: string }[];
+    };
+
+    const families = listing.families.flatMap((family) => {
+      const folder = join(root, family.id);
+      if (!existsSync(folder)) return [];
+
+      const variants = readdirSync(folder)
+        .sort()
+        .flatMap((file) => {
+          const match = /^(\d{3})(-italic)?\.(woff2|woff|ttf|otf)$/i.exec(file);
+          if (!match) return [];
+          const italic = Boolean(match[2]);
+          return [
+            {
+              weight: Number(match[1]),
+              italic,
+              file: `${family.id}-${match[1]!}${italic ? "-italic" : ""}.${match[3]!.toLowerCase()}`,
+              md5: "0".repeat(32),
+              bytes: statSync(join(folder, file)).size,
+              url: "",
+            },
+          ];
+        });
+
+      return variants.length > 0 ? [{ ...family, variants }] : [];
+    });
+
+    return {
+      version: 1,
+      updated: new Date().toISOString(),
+      categories: listing.categories,
+      families,
+    };
   }
 
   if (pathname === "/fixture/recordings.json") {
