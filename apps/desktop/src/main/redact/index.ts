@@ -190,7 +190,7 @@ export async function startRedact(
     const masks = covers(JSON.parse(update.findings ?? "[]") as Finding[], groups);
     log("info", `read ${basename(dir)} and found ${String(masks.length)} thing(s) to cover`);
 
-    broadcast({ dir, stage: "done", progress: 1, error: null, masks, mode, strength });
+    broadcast({ dir, stage: "done", progress: 1, error: null, masks, mode, strength, groups });
   } catch (cause) {
     const error =
       cause instanceof RedactError

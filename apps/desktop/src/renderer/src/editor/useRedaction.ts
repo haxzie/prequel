@@ -30,30 +30,60 @@ export interface Redaction {
 }
 
 /**
- * What a second reading leaves alone.
+ * What a second reading replaces, and what it leaves alone.
  *
- * Everything already on the project, and that is the whole rule. A cover the
- * user turned off keeps its `visible: false`; one they restyled keeps its
- * style; one they dragged keeps its keys. Only a finding whose id is not here
- * yet is added.
+ * It takes the place of every cover it was looking for, and keeps every
+ * decision made about one.
  *
- * Which makes the id load-bearing: it comes from the bucket and the first
- * moment, so the same thing found again in the same place is the same id. An id
- * that changed between scans would add a second cover over the first and lose
- * the switch the user had set on it.
+ * It used to keep the covers themselves — everything already on the project,
+ * adding only a finding whose id was not there yet. That reads as the careful
+ * choice and is the wrong one: the reader is the only thing that knows where
+ * a cover goes, so a cover found by an older reader kept its geometry for
+ * ever. A scan that followed a face ten times a second could not replace one
+ * that followed it once, and pressing Scan again did nothing visible at all.
+ * Which is exactly how it was reported — "it still happens", after the reading
+ * had been fixed twice.
+ *
+ * So the geometry is the reading's and the decisions are the user's:
+ *
+ * - **`visible` survives**, by id and then by bucket. The rule the feature's
+ *   credibility rests on: a cover arrives covering, so turning one off is
+ *   somebody saying "that is my work, not a leak", and no reading may overrule
+ *   it. The bucket is the fallback because an id carries the first moment with
+ *   it, and a reader that samples more often finds the same thing a little
+ *   earlier — a dismissal must not be lost to that.
+ * - **The look survives** where the same cover is found again, so a restyled
+ *   one is not dressed again in the panel's current setting.
+ * - **A hand-drawn cover is never touched.** Its geometry is the user's, not a
+ *   reading's, and no reading knows anything about it.
+ * - **Only the groups that were read are replaced.** A reading asked for faces
+ *   alone has nothing to say about the card number the last one found, and
+ *   replacing that would be a leak introduced by looking for something else.
  */
 export function merged(
   existing: readonly MaskSlice[],
   found: readonly MaskSlice[],
   look: { mode: MaskSlice["mode"]; strength: number },
+  groups: readonly RedactGroup[],
 ): MaskSlice[] {
-  const seen = new Set(existing.map((mask) => mask.id));
+  const read = new Set(groups);
+  const byId = new Map(existing.map((mask) => [mask.id, mask]));
+  // Every bucket somebody has turned off, whatever id it had at the time.
+  const hidden = new Set(existing.filter((mask) => !mask.visible).map((mask) => mask.bucket));
+
+  const kept = existing.filter((mask) => mask.origin === "manual" || !read.has(mask.group));
 
   return [
-    ...existing,
-    ...found
-      .filter((mask) => !seen.has(mask.id))
-      .map((mask) => ({ ...mask, mode: look.mode, strength: look.strength })),
+    ...kept,
+    ...found.map((mask) => {
+      const before = byId.get(mask.id);
+      return {
+        ...mask,
+        mode: before?.mode ?? look.mode,
+        strength: before?.strength ?? look.strength,
+        visible: before ? before.visible : !hidden.has(mask.bucket),
+      };
+    }),
   ];
 }
 
@@ -115,10 +145,19 @@ export function useRedaction(
 
         dispatch({
           type: "setMasks",
-          masks: merged(session.project.masks, update.masks ?? [], {
-            mode: update.mode ?? wanted.current.mode,
-            strength: update.strength ?? wanted.current.strength,
-          }),
+          masks: merged(
+            session.project.masks,
+            update.masks ?? [],
+            {
+              mode: update.mode ?? wanted.current.mode,
+              strength: update.strength ?? wanted.current.strength,
+            },
+            // What this reading was asked to look for, echoed back, rather than
+            // what the panel has switched on now: the two differ the moment
+            // anybody touches a group while a reading is in flight, and the
+            // merge would then replace covers this reading never looked for.
+            update.groups ?? wanted.current.groups,
+          ),
         });
       }),
     // `session.project.masks` is read inside and deliberately not a dependency:

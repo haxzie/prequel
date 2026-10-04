@@ -22,7 +22,7 @@ import type {
   TypingSample,
 } from "./manifest.js";
 import type { BlobTrack, CursorTrack, RenderPlan } from "./layout.js";
-import type { MaskSlice, Project, SliceSettings } from "./project.js";
+import type { MaskSlice, Project, RedactGroup, SliceSettings } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
 export type { RecordingResult };
@@ -2048,6 +2048,14 @@ export interface RedactProgress {
   /** What a fresh cover should do, echoed back from what was asked. */
   mode?: "blur" | "pixelate";
   strength?: number;
+  /**
+   * Which groups this reading looked for, echoed back from what was asked.
+   *
+   * What makes the merge safe to do by replacement: a reading asked only for
+   * faces has nothing to say about the card number found last time, so only
+   * the groups named here are replaced by it.
+   */
+  groups?: readonly RedactGroup[];
 }
 
 export interface ProjectComposition {
