@@ -11,6 +11,15 @@
  * background, and the blurred shadow behind the screen. Redrawing those sixty
  * times a second is what makes a preview with two video sources crawl, so they
  * are rendered once into a cached layer and blitted.
+ *
+ * **Nothing draws through this any more.** `Preview.tsx` builds a
+ * `WebGlCompositor`, and the only thing imported from here elsewhere is the
+ * `Images` type. It is kept because it is the readable statement of what a plan
+ * means, and it is behind: there is no lens branch and no mask branch in it.
+ *
+ * That matters for one of them. A mask is the one item whose absence is a leak
+ * rather than a missing effect, so a half-correct branch here would be a
+ * privacy claim with no code behind it — better to draw nothing and say so.
  */
 import {
   cursorAt,
@@ -278,7 +287,10 @@ function drawItem(
  * the item's own geometry, which is every item in a plan with no zoom in it.
  */
 function moving(
-  item: Extract<PlanItem, { motion?: RectKey[] }>,
+  // A mask carries `motion` too and has no `shape` — it is a square-cornered
+  // patch by definition. Excluded rather than given a branch, because this
+  // file draws no mask at all: see the note at the top of it.
+  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" }>,
   at: number,
 ): { rect: Rect; shape: Shape } {
   const rect = "rect" in item ? item.rect : item.dstRect;

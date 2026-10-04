@@ -19,6 +19,7 @@ import {
   cursorAt,
   fillsTheFrame,
   layoutBoxes,
+  maskReach,
   loupeAt,
   LOUPE_HASTE,
   pictureMoved,
@@ -40,6 +41,7 @@ import {
   DEFAULT_EFFECTS,
   DEFAULT_SETTINGS,
   DEFAULT_ZOOM,
+  type MaskSlice,
   SHAPE_RADIUS,
   type LayoutPreset,
   type LayoutSettings,
@@ -5994,6 +5996,139 @@ describe("a screenshot leaning", () => {
   });
 });
 
+describe("a recording's covers", () => {
+  const cover = (patch: Partial<MaskSlice> = {}): MaskSlice => ({
+    id: "m1",
+    origin: "auto",
+    group: "contact",
+    label: "Email address",
+    preview: "a\u2022\u2022\u2022@example.com",
+    bucket: 1,
+    source: { start: 0, end: 2_000_000_000 },
+    mode: "blur",
+    strength: 0.6,
+    visible: true,
+    // The middle of the recording's frame, a fifth across and a twentieth down.
+    keys: [{ at: 0, x: 0.4, y: 0.45, width: 0.2, height: 0.05 }],
+    ...patch,
+  });
+
+  const planWith = (masks: MaskSlice[], zooms?: ZoomSlice[]) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings(),
+      null,
+      zooms,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      masks,
+    );
+
+  const maskOf = (plan: RenderPlan) => plan.items.find((item) => item.kind === "mask");
+
+  it("is named in the picture's own surface, not the frame's", () => {
+    // The keys are fractions of the *recording*; the cover is drawn as a pass
+    // over the picture's quad, so what reaches the plan is a patch in that
+    // quad's uv. Named against the frame instead it would be off by the
+    // padding — a little, which is the dangerous amount, because it still looks
+    // like the feature worked.
+    const plan = planWith([cover()]);
+    const mask = maskOf(plan);
+    const picture = image(plan, "screen")!;
+
+    expect(mask).toBeDefined();
+    // The quad is the picture's, verbatim: that is what carries a zoom and a
+    // lean into the cover without either being composed into it.
+    expect(mask!.rect).toEqual(picture.dstRect);
+    expect(mask!.srcRect).toEqual(picture.srcRect);
+
+    // And the patch sits inside the picture rather than spanning it.
+    const patch = mask!.region[0]!;
+    expect(patch.x).toBeGreaterThan(0);
+    expect(patch.x + patch.width).toBeLessThan(1);
+    expect(patch.height).toBeGreaterThan(0);
+  });
+
+  it("is left out when it has been turned off", () => {
+    // Not emitted transparent: a cover nobody can see is one the exporter still
+    // pays a backdrop copy for on every frame.
+    expect(maskOf(planWith([cover({ visible: false })]))).toBeUndefined();
+  });
+
+  it("is drawn after the picture it hides", () => {
+    // The WebGL rasteriser leans on this. It binds the screen's texture for a
+    // cover with `live: false` — reusing what the picture's own draw uploaded
+    // rather than sending a 4K frame again per cover per frame — and that is
+    // only the right frame if the picture was drawn first. Pushed before it, a
+    // cover would sample the previous frame, which on a scroll is the text it
+    // is meant to be hiding, one frame stale and perfectly legible.
+    const plan = planWith([cover()]);
+    const picture = plan.items.findIndex(
+      (item) => item.kind === "image" && item.source === "screen",
+    );
+    const mask = plan.items.findIndex((item) => item.kind === "mask");
+
+    expect(picture).toBeGreaterThanOrEqual(0);
+    expect(mask).toBeGreaterThan(picture);
+  });
+
+  it("carries the blur it was asked for, floored", () => {
+    const mask = maskOf(planWith([cover({ strength: 0 })]));
+
+    // Zero strength still covers. The floor is what makes the control safe at
+    // every point in its travel — see `maskReach`.
+    expect(mask!.reach).toBeGreaterThan(0);
+  });
+
+  it("is sampled wherever the picture moves", () => {
+    // How a cover comes to follow a zoom. Its own keys say where the thing it
+    // covers is on the *recording*; the picture those are mapped through is
+    // carried by the zoom. So the track is sampled at the union of the two —
+    // `cursorItems` does the same, and its note says why: interpolating a
+    // cover's screen position between two of its own keys, a second apart,
+    // would drag it across a picture that was itself moving.
+    //
+    // Asserted as the union rather than by naming a moment and checking the
+    // cover moved: a zoom eases in and out and this one travels mostly
+    // vertically, so a named moment tests the fixture's arithmetic instead of
+    // the mapping.
+    const zoom: ZoomSlice = {
+      ...DEFAULT_ZOOM,
+      id: "z1",
+      source: { start: 0, end: 2_000_000_000 },
+      target: "region",
+      x: 0.2,
+      y: 0.2,
+      level: 2,
+    };
+
+    const still = planWith([cover()]);
+    const zoomed = planWith([cover()], [zoom]);
+
+    // Not vacuous: the zoom really does give the picture a track, and without
+    // one there is nothing for a cover to be sampled against.
+    expect(image(still, "screen")!.motion ?? []).toHaveLength(0);
+    const track = image(zoomed, "screen")!.motion ?? [];
+    expect(track.length).toBeGreaterThan(1);
+
+    // No zoom, no track: a cover over a motionless picture is one rectangle.
+    expect(maskOf(still)!.motion ?? []).toHaveLength(0);
+
+    // With one, every moment the picture is described at — inside the cover's
+    // own span — is a moment the cover is described at too.
+    const covered = new Set((maskOf(zoomed)!.motion ?? []).map((key) => key.at));
+    const wanted = track.filter((key) => key.at >= 0 && key.at <= 2_000_000_000);
+
+    expect(wanted.length).toBeGreaterThan(1);
+    for (const key of wanted) expect(covered.has(key.at)).toBe(true);
+  });
+});
+
 describe("a screenshot's masks", () => {
   it("reach the plan only when they are handed over", () => {
     const bare = buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings());
@@ -6016,12 +6151,26 @@ describe("a screenshot's masks", () => {
       },
     );
 
-    expect(masked.items.at(-1)).toEqual({
-      kind: "mask",
-      rect: { x: 10, y: 20, width: 30, height: 40 },
-      mode: "pixelate",
-      strength: 0.4,
-    });
+    const rect = { x: 10, y: 20, width: 30, height: 40 };
+    const item = masked.items.at(-1)!;
+    const picture = image(masked, "screen")!;
+
+    expect(item.kind).toBe("mask");
+    if (item.kind !== "mask") throw new Error("the mask is the last item");
+    expect(item.mode).toBe("pixelate");
+    expect(item.strength).toBe(0.4);
+    // Resolved here rather than by each rasteriser — see `maskReach`. Asserted
+    // through the same function rather than as a number, so the test says *that
+    // it is resolved* rather than pinning today's constants.
+    expect(item.reach).toBe(maskReach(rect, "pixelate", 0.4));
+
+    // A screenshot's mask arrives in output pixels, because a hand drew it on a
+    // picture that cannot move — and is expressed in the picture's uv all the
+    // same, so there is one mask item and one shader branch rather than two.
+    expect(item.rect).toEqual(picture.dstRect);
+    const patch = item.region[0]!;
+    expect(patch.x).toBeCloseTo((rect.x - picture.dstRect.x) / picture.dstRect.width, 6);
+    expect(patch.width).toBeCloseTo(rect.width / picture.dstRect.width, 6);
   });
 
   it("is drawn over everything else", () => {

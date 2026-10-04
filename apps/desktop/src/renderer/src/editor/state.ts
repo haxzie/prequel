@@ -32,6 +32,8 @@ import {
   type TextSlice,
   type TextStyle,
   type TextTrack,
+  type MaskSlice,
+  type RedactionState,
   type ZoomSlice,
 } from "../../../shared/project";
 import {
@@ -269,6 +271,20 @@ export type EditorAction =
    */
   | { type: "addZoomNear"; at: MediaTime }
   | { type: "setZooms"; zooms: ZoomSlice[] }
+  /**
+   * What a reader found, as the whole list, plus the record that it ran.
+   *
+   * One action rather than two, because they are one fact: a scan that found
+   * nothing still has to write `scanned`, or it runs again on the next open and
+   * finds nothing again. See `useRedaction`.
+   */
+  | { type: "setMasks"; masks: MaskSlice[] }
+  /** Uncovers one, or covers it again. The review. */
+  | { type: "setMaskVisible"; maskId: string; visible: boolean }
+  | { type: "setMask"; maskId: string; patch: Partial<MaskSlice> }
+  | { type: "deleteMask"; maskId: string }
+  /** What a reader is asked for. Changing it is what re-runs one. */
+  | { type: "setRedaction"; patch: Partial<RedactionState> }
   | { type: "selectZoom"; zoomId: string | null }
   | { type: "deleteZoom"; zoomId: string }
   /** Copies a zoom's look onto a fresh span, in the first gap after it. */
@@ -512,6 +528,13 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "deleteZoom":
     case "duplicateZoom":
     case "setZooms":
+    case "setMasks":
+    // Uncovering something is the single most consequential thing in this
+    // panel, so it banks an entry rather than coalescing: undo has to be able
+    // to put a cover back.
+    case "setMaskVisible":
+    case "deleteMask":
+    case "setRedaction":
     case "addText":
     case "addTextNear":
     case "deleteText":
@@ -745,6 +768,48 @@ function apply(
       // as an edit, so the project is written and the cut is not remade next
       // time the recording is opened.
       return edit(state, (project) => ({ ...project, zooms: action.zooms }));
+
+    case "setMasks":
+      // Replaces the list wholesale, which only a scan does. It counts as an
+      // edit, so the project is written and `scanned` sticks — without which
+      // the next open reads the whole recording again.
+      return edit(state, (project) => ({
+        ...project,
+        masks: action.masks,
+        redaction: { ...project.redaction, scanned: true },
+      }));
+
+    case "setMaskVisible":
+      return edit(state, (project) => ({
+        ...project,
+        masks: project.masks.map((mask) =>
+          mask.id === action.maskId ? { ...mask, visible: action.visible } : mask,
+        ),
+      }));
+
+    case "setMask":
+      return edit(state, (project) => ({
+        ...project,
+        masks: project.masks.map((mask) =>
+          mask.id === action.maskId ? { ...mask, ...action.patch, id: mask.id } : mask,
+        ),
+      }));
+
+    case "deleteMask":
+      // A hand-drawn cover is deleted outright; one a reader found is turned
+      // off instead, so a rescan recognises it and leaves it off. The caller
+      // decides which, because only it knows whether the user pressed Delete or
+      // the switch.
+      return edit(state, (project) => ({
+        ...project,
+        masks: project.masks.filter((mask) => mask.id !== action.maskId),
+      }));
+
+    case "setRedaction":
+      return edit(state, (project) => ({
+        ...project,
+        redaction: { ...project.redaction, ...action.patch },
+      }));
 
     case "deleteZoom":
       return {

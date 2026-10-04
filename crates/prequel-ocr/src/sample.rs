@@ -7,7 +7,7 @@ use prequel_sensitive::track::{Track, Tracker};
 use prequel_sensitive::{Candidate, scan_frame};
 use prequel_session::MediaTime;
 
-use crate::reader::{TextReader, VisionTextReader};
+use crate::reader::{FaceReader, TextReader, VisionFaceReader, VisionTextReader};
 use crate::{CancelFlag, Error, Result};
 
 /// How often a frame is read, in nanoseconds.
@@ -47,6 +47,14 @@ pub struct ScanRequest {
     /// Per-recording, so the same card in two recordings does not produce the
     /// same bucket. See `prequel_sensitive::bucket`.
     pub salt: u64,
+    /// Whether to read the text at all.
+    ///
+    /// A recording of somebody talking over a slide has nothing to read and a
+    /// face in every frame; turning this off is the difference between a scan
+    /// that costs a read per sample and one that costs a tenth of that.
+    pub text: bool,
+    /// Whether to look for faces.
+    pub faces: bool,
 }
 
 impl ScanRequest {
@@ -56,6 +64,8 @@ impl ScanRequest {
             interval: DEFAULT_INTERVAL,
             langs: Vec::new(),
             salt,
+            text: true,
+            faces: false,
         }
     }
 }
@@ -80,8 +90,9 @@ pub fn scan(
     cancel: &CancelFlag,
     report: &mut impl FnMut(f32),
 ) -> Result<ScanSummary> {
-    let mut reader = VisionTextReader::new(&request.langs);
-    scan_with(request, &mut reader, cancel, report)
+    let mut text = VisionTextReader::new(&request.langs);
+    let mut faces = VisionFaceReader::new();
+    scan_with(request, &mut text, &mut faces, cancel, report)
 }
 
 /// The same, against any [`TextReader`] — which is how the loop is tested
@@ -89,6 +100,7 @@ pub fn scan(
 pub fn scan_with(
     request: &ScanRequest,
     text: &mut impl TextReader,
+    faces: &mut impl FaceReader,
     cancel: &CancelFlag,
     report: &mut impl FnMut(f32),
 ) -> Result<ScanSummary> {
@@ -111,10 +123,11 @@ pub fn scan_with(
         // The reader is opened over the *file's* timeline, which starts at
         // zero. `segment.start` is where that zero sits on the session clock
         // and is added below, once.
-        let mut frames = VideoReader::open(&segment.path, 0, duration).map_err(|e| Error::Open {
-            path: segment.path.display().to_string(),
-            reason: format!("{e:?}"),
-        })?;
+        let mut frames =
+            VideoReader::open(&segment.path, 0, duration).map_err(|e| Error::Open {
+                path: segment.path.display().to_string(),
+                reason: format!("{e:?}"),
+            })?;
 
         let mut previous: Option<(u64, Vec<Candidate>)> = None;
         let mut at: MediaTime = 0;
@@ -154,9 +167,26 @@ pub fn scan_with(
                     let Some(frame) = frames.frame_at(at) else {
                         break;
                     };
-                    let reading = text.read(frame)?;
+
+                    let mut found = Vec::new();
+
+                    if request.text {
+                        let reading = text.read(frame)?;
+                        found.extend(scan_frame(&reading.lines, &reading, request.salt));
+                    }
+
+                    if request.faces {
+                        // After the text, so a face box that happens to overlap
+                        // a line does not take the line's place in the list.
+                        // Both are kept: they are covering different things and
+                        // a reader dismissing one should not lose the other.
+                        found.extend(faces.read(frame)?.into_iter().filter_map(|face| {
+                            prequel_sensitive::face(face.rect, face.confidence, request.salt)
+                        }));
+                    }
+
                     summary.read += 1;
-                    scan_frame(&reading.lines, &reading, request.salt)
+                    found
                 }
             };
 

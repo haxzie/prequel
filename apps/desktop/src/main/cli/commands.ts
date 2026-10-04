@@ -838,6 +838,10 @@ export function cliHandlers(context: CliContext): Record<string, Handler> {
             })),
             intervalMs: count(params, "interval"),
             langs,
+            // Faces are a second Vision request over every frame, so they are
+            // asked for rather than assumed.
+            faces: flag(params, "faces"),
+            text: !flag(params, "no-text"),
             // A fresh salt per scan, because nothing is persisted yet. Once an
             // artefact is written this has to come from it instead, or a second
             // scan buckets the same text differently and every dismissal is

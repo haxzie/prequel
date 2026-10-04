@@ -177,6 +177,10 @@ export function buildSlices(
           // drawn with the shape that was there.
           session.blobs,
           still ? { at: STILL_AT, masks: maskRegions(frame, project.annotations) } : undefined,
+          // The covers. The whole list, not this clip's slice of it: a cover
+          // whose span falls outside simply never draws, and filtering here
+          // would be a second answer to a question the plan already answers.
+          project.masks,
         ),
       ),
       speed: slice.speed,

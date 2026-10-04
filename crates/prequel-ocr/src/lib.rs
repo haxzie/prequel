@@ -34,7 +34,7 @@
 mod reader;
 mod sample;
 
-pub use reader::{Reading, TextReader, VisionTextReader};
+pub use reader::{Face, FaceReader, Reading, TextReader, VisionFaceReader, VisionTextReader};
 pub use sample::{ScanRequest, ScanSegment, ScanSummary, scan, scan_with};
 
 pub use prequel_render::CancelFlag;

@@ -45,8 +45,22 @@ const MIN_HEX: usize = 32;
 
 /// Words that, appearing just before a token, make it a credential.
 const CREDENTIAL_WORDS: &[&str] = &[
-    "key", "token", "secret", "password", "passwd", "pwd", "api", "auth", "bearer", "credential",
-    "apikey", "access", "private", "signature", "session", "cookie",
+    "key",
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "pwd",
+    "api",
+    "auth",
+    "bearer",
+    "credential",
+    "apikey",
+    "access",
+    "private",
+    "signature",
+    "session",
+    "cookie",
 ];
 
 /// Named tier-one rules: `(name, pattern)`.
@@ -68,18 +82,36 @@ const CREDENTIAL_WORDS: &[&str] = &[
 /// The regex crate has no lookahead, so this cannot be expressed in the
 /// patterns themselves.
 const RULES: &[(&str, &str)] = &[
-    ("Anthropic API key", r"^sk-ant-(api|sid)[0-9]{2}-[A-Za-z0-9_-]{20,}$"),
+    (
+        "Anthropic API key",
+        r"^sk-ant-(api|sid)[0-9]{2}-[A-Za-z0-9_-]{20,}$",
+    ),
     ("OpenAI API key", r"^sk-(proj-)?[A-Za-z0-9_-]{20,}$"),
     ("GitHub token", r"^gh[pousr]_[A-Za-z0-9]{36,}$"),
-    ("GitHub fine-grained token", r"^github_pat_[A-Za-z0-9_]{50,}$"),
+    (
+        "GitHub fine-grained token",
+        r"^github_pat_[A-Za-z0-9_]{50,}$",
+    ),
     ("AWS access key id", r"^(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}$"),
     ("Google API key", r"^AIza[A-Za-z0-9_-]{35}$"),
     ("Slack token", r"^xox[baprs]-[A-Za-z0-9-]{10,}$"),
-    ("Slack webhook", r"^https://hooks\.slack\.com/services/[A-Za-z0-9/]{20,}$"),
-    ("SendGrid API key", r"^SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}$"),
-    ("Stripe secret key", r"^(sk|rk)_(live|test)_[A-Za-z0-9]{20,}$"),
+    (
+        "Slack webhook",
+        r"^https://hooks\.slack\.com/services/[A-Za-z0-9/]{20,}$",
+    ),
+    (
+        "SendGrid API key",
+        r"^SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}$",
+    ),
+    (
+        "Stripe secret key",
+        r"^(sk|rk)_(live|test)_[A-Za-z0-9]{20,}$",
+    ),
     ("Stripe webhook secret", r"^whsec_[A-Za-z0-9]{20,}$"),
-    ("Shopify access token", r"^shp(at|ca|pa|ss)_[a-fA-F0-9]{32}$"),
+    (
+        "Shopify access token",
+        r"^shp(at|ca|pa|ss)_[a-fA-F0-9]{32}$",
+    ),
     ("GitLab token", r"^glpat-[A-Za-z0-9_-]{20,}$"),
     ("npm token", r"^npm_[A-Za-z0-9]{36}$"),
     ("DigitalOcean token", r"^dop_v1_[a-f0-9]{64}$"),
@@ -87,7 +119,10 @@ const RULES: &[(&str, &str)] = &[
     ("Twilio API key", r"^SK[a-f0-9]{32}$"),
     ("Mailgun API key", r"^key-[a-f0-9]{32}$"),
     ("PyPI token", r"^pypi-[A-Za-z0-9_-]{50,}$"),
-    ("JSON web token", r"^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$"),
+    (
+        "JSON web token",
+        r"^eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$",
+    ),
     ("Private key", r"^-----BEGIN [A-Z ]*PRIVATE KEY-----$"),
 ];
 
@@ -195,9 +230,11 @@ fn is_excluded(token: &str, census: Census) -> bool {
 
     // A hex colour, with or without alpha.
     if let Some(rest) = token.strip_prefix('#')
-        && matches!(rest.len(), 3 | 4 | 6 | 8) && rest.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return true;
-        }
+        && matches!(rest.len(), 3 | 4 | 6 | 8)
+        && rest.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return true;
+    }
 
     // A URL. Its own category, and never a secret by entropy — a signed URL's
     // query string would otherwise light up every time.
@@ -223,9 +260,7 @@ fn credential_context(context: &str) -> bool {
     // The assignment punctuation on its own is enough: `=`, `:` or a quote
     // immediately before a generated token is how every config file and every
     // header writes one.
-    let assigns = context
-        .trim_end()
-        .ends_with(['=', ':', '"', '\'']);
+    let assigns = context.trim_end().ends_with(['=', ':', '"', '\'']);
 
     assigns || CREDENTIAL_WORDS.iter().any(|word| context.contains(word))
 }
@@ -262,13 +297,25 @@ mod tests {
 
         for (expected, token) in [
             ("OpenAI API key", fixture(&["sk-", "proj-", tail])),
-            ("Anthropic API key", fixture(&["sk-", "ant-", "api03-", tail])),
+            (
+                "Anthropic API key",
+                fixture(&["sk-", "ant-", "api03-", tail]),
+            ),
             ("GitHub token", fixture(&["ghp", "_", tail])),
             ("AWS access key id", fixture(&["AKIA", "IOSFODNN7EXAMPLE"])),
             // 39 characters: `AIza` and exactly 35 more, which is the format.
-            ("Google API key", fixture(&["AIza", "SyA1234567890abcdefghijklmnopqrstuv"])),
-            ("Slack token", fixture(&["xoxb", "-123456789012-abcdefghijkl"])),
-            ("Stripe secret key", fixture(&["sk", "_live_", "abcdefghijklmnopqrstuvwx"])),
+            (
+                "Google API key",
+                fixture(&["AIza", "SyA1234567890abcdefghijklmnopqrstuv"]),
+            ),
+            (
+                "Slack token",
+                fixture(&["xoxb", "-123456789012-abcdefghijkl"]),
+            ),
+            (
+                "Stripe secret key",
+                fixture(&["sk", "_live_", "abcdefghijklmnopqrstuvwx"]),
+            ),
             ("npm token", fixture(&["npm", "_", tail])),
         ] {
             assert_eq!(
@@ -314,10 +361,7 @@ mod tests {
         // On its own it is a cache-busting hash, an asset name, an id.
         assert_eq!(classify(token, "sprite "), None);
         // Named as a credential it is a credential.
-        assert_eq!(
-            classify(token, "export api_key="),
-            Some(Secret::Generated)
-        );
+        assert_eq!(classify(token, "export api_key="), Some(Secret::Generated));
         // Assignment punctuation alone is enough.
         assert_eq!(classify(token, "authorization: "), Some(Secret::Generated));
     }
@@ -326,8 +370,7 @@ mod tests {
     fn a_generated_secret_is_not_a_known_one() {
         // So the review list never claims a vendor it did not recognise.
         assert_eq!(
-            classify("k3Jx9Qm2VpL7bR4tZwN8cF6hT1yS5dG0", "token=")
-                .map(Secret::label),
+            classify("k3Jx9Qm2VpL7bR4tZwN8cF6hT1yS5dG0", "token=").map(Secret::label),
             Some("Possible secret")
         );
     }

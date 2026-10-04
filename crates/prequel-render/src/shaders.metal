@@ -84,6 +84,13 @@ struct Uniforms {
     float4 grade_a;
     float4 grade_b;
     float4 grade_c;
+    // The patch a mask covers, in the picture's own uv — x, y, width, height.
+    //
+    // The *picture's* uv and not the frame's, which is the whole of why a mask
+    // is drawn as a second pass over the picture's own quad: a zoom moves the
+    // quad and a lean turns it into a trapezium, and a region in uv rides both
+    // without knowing either happened. Only a mask sets it.
+    float4 mask_region;
     // One texel of the sampled image, so a blur is measured in its own pixels.
     float2 texel;
     // Superellipse: x = radius, y = exponent.
@@ -96,7 +103,8 @@ struct Uniforms {
     // Gradient direction, already resolved from an angle.
     float2 gradient;
 
-    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke, 5 loupe.
+    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke, 5 loupe,
+    // 6 mask (blurred), 7 mask (blocked up).
     uint mode;
     // Stroke width, or shadow blur radius, in pixels.
     float weight;
@@ -124,6 +132,28 @@ struct Uniforms {
     // itself, so both sides write them out.
     float2 _tail;
 };
+
+/// How many taps across a mosaic block is averaged.
+///
+/// Four, so sixteen per block. Enough that a block of text comes out as one
+/// tone — which is the only thing a mosaic has to do — without a loop long
+/// enough to show on a frame that may carry a dozen of them.
+constexpr constant int MASK_TAPS = 4;
+
+/// How many taps a blurred patch is averaged over.
+///
+/// Sixteen, where a bare spiral needed thirty-two and still was not enough. A
+/// blur is a mosaic first and a spiral second — see the branch below — so each
+/// of these taps is already an average of a block rather than a single texel,
+/// and sixteen of those is smooth.
+constexpr constant int MASK_SPIRAL = 16;
+
+/// And how many across each of a blur's blocks.
+///
+/// Two, so four per block, against the pure mosaic's sixteen. The blur averages
+/// sixteen blocks on top of this, so the block itself only has to be roughly
+/// right; the mosaic has nothing after it and has to be exact.
+constexpr constant int MASK_BLOCK_TAPS = 2;
 
 struct Vertex {
     float4 position [[position]];
@@ -773,6 +803,107 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
     // Declared here rather than bound: clamped so a sample a hair outside the
     // crop cannot wrap to the far edge of the frame, which shows as a seam.
     constexpr sampler smp(filter::linear, address::clamp_to_edge);
+
+    // A patch of the *picture*, blurred or blocked up.
+    //
+    // Drawn as a second pass over the picture's own quad rather than as
+    // something laid on the finished frame, and that is the whole design. The
+    // vertex function above has already put this quad where the picture is —
+    // zoomed by `rect`, leaned by `quad`, with the projective divide applied
+    // per fragment — so `in.uv` is the picture's own surface whatever has been
+    // done to it. A patch named in that uv rides a zoom and a lean without
+    // knowing either happened.
+    //
+    // Laid on the frame instead, it had to be an axis-aligned rectangle in
+    // output pixels: a zoom then needed its track composed with the picture's,
+    // which drifts between keys, and a lean could not be followed at all —
+    // a leaning picture is a trapezium and a rectangle laid over it covers the
+    // wrong corners.
+    //
+    // It samples the picture, not a copy of the frame. So it hides what the
+    // recording held and not what the composition made of it, which is also why
+    // nothing has to be copied out of the target first.
+    if (u.mode == 6 || u.mode == 7) {
+        // Outside the patch is the rest of the picture, already drawn. Discard
+        // rather than blend: this pass covers the whole quad and only a patch
+        // of it is being replaced.
+        float2 patch = (in.uv - u.mask_region.xy) / max(u.mask_region.zw, float2(1e-6));
+        if (any(patch < 0.0) || any(patch > 1.0)) {
+            discard_fragment();
+        }
+
+        // The picture's own crop, so the taps below land on the recording
+        // rather than on whatever the texture holds outside it.
+        float2 uv = u.src.xy + in.uv * u.src.zw;
+
+        // How far to reach, in the sampled image's own uv. `weight` is a width
+        // in output pixels against the picture at rest, so a zoom magnifies it
+        // along with the pixels it is destroying — which is what keeps a cover
+        // looking the same at every magnification.
+        float2 reach = (u.weight / max(u.rect.zw, float2(1.0))) * u.src.zw;
+
+        float4 taken;
+        if (u.mode == 7) {
+            // Snapped to a block, then averaged across it. The average is what
+            // destroys the detail — sampling one pixel out of the middle of a
+            // block leaves letter shapes legible across a mosaic — and a fixed
+            // tap grid is enough at any sane block size.
+            float2 cell = max(reach, float2(1e-6));
+            float2 corner = floor((in.uv - u.mask_region.xy) / cell) * cell + u.mask_region.xy;
+
+            float4 sum = float4(0.0);
+            for (int y = 0; y < MASK_TAPS; y++) {
+                for (int x = 0; x < MASK_TAPS; x++) {
+                    float2 step = (float2(float(x), float(y)) + 0.5) / float(MASK_TAPS);
+                    float2 at = u.src.xy + (corner + step * cell) * u.src.zw;
+                    sum += image.sample(smp, at);
+                }
+            }
+            taken = sum / float(MASK_TAPS * MASK_TAPS);
+        } else {
+            // A mosaic, and then a golden-angle spiral over the blocks.
+            //
+            // Both halves are load-bearing and only one of them hides anything.
+            // The spiral is the same disc `sample_focused` walks, for the same
+            // reason — taps spread over a disc read as a blur where a grid of
+            // them reads as a grid — but a spiral is a *sparse* sampling of
+            // that disc, and sparsely sampling a high-contrast pattern leaves a
+            // beat of it standing. `a_cover_leans_with_the_picture` measured 46
+            // of contrast surviving a thirty-two-tap spiral over a stripe the
+            // mosaic flattened completely. So the mosaic is what destroys the
+            // information and the spiral is only what stops the result looking
+            // like Minecraft.
+            //
+            // Blocks half the reach across: large enough to swallow a glyph
+            // stroke, small enough that sixteen of them across the disc still
+            // average to something smooth.
+            float2 cell = max(reach * 0.5, float2(1e-6));
+
+            float4 sum = float4(0.0);
+            for (int i = 0; i < MASK_SPIRAL; i++) {
+                float t = (float(i) + 0.5) / float(MASK_SPIRAL);
+                float angle = float(i) * 2.399963;
+                float2 tap = uv + float2(cos(angle), sin(angle)) * sqrt(t) * reach;
+                // Snapped in the source's own uv, so the grid is anchored to
+                // the recording and not to wherever the patch happens to be —
+                // a grid that moved with the patch would shimmer as it tracked.
+                float2 corner = floor(tap / cell) * cell;
+
+                for (int y = 0; y < MASK_BLOCK_TAPS; y++) {
+                    for (int x = 0; x < MASK_BLOCK_TAPS; x++) {
+                        float2 step = (float2(float(x), float(y)) + 0.5) / float(MASK_BLOCK_TAPS);
+                        sum += image.sample(smp, corner + step * cell);
+                    }
+                }
+            }
+            taken = sum / float(MASK_SPIRAL * MASK_BLOCK_TAPS * MASK_BLOCK_TAPS);
+        }
+
+        // One pixel of feathering at the patch's edge, like every other edge in
+        // here — a hard edge on a leaning picture crawls as it moves.
+        float3 colour = taken.a > 0.0 ? taken.rgb / taken.a : taken.rgb;
+        return premultiplied(colour, 1.0);
+    }
 
     // The lens, first, because nothing else in here applies to it: its quad is a
     // square grown around the glass for the shadow, and the shape that matters is

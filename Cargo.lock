@@ -387,6 +387,7 @@ dependencies = [
  "prequel-render",
  "prequel-sensitive",
  "prequel-session",
+ "serde_json",
  "thiserror",
  "tracing",
 ]

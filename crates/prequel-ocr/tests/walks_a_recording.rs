@@ -10,7 +10,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cidre::cv;
-use prequel_ocr::{CancelFlag, Reading, ScanRequest, ScanSegment, TextReader, scan_with};
+use prequel_ocr::{
+    CancelFlag, Face, FaceReader, Reading, ScanRequest, ScanSegment, TextReader, scan_with,
+};
 use prequel_sensitive::{Line, NormRect};
 
 const SECOND: u64 = 1_000_000_000;
@@ -70,6 +72,20 @@ fn still(dir: &Path, seconds: u64) -> PathBuf {
     video(dir, seconds, "10")
 }
 
+/// A reader that finds no faces.
+///
+/// Every test here is about the loop rather than about what is on the frame,
+/// and `ScanRequest` leaves faces off by default — so this is never asked.
+/// Present because the signature wants one, which is the signature saying out
+/// loud that a scan has two readers in it now.
+struct NoFaces;
+
+impl FaceReader for NoFaces {
+    fn read(&mut self, _frame: &cv::PixelBuf) -> prequel_ocr::Result<Vec<Face>> {
+        Ok(Vec::new())
+    }
+}
+
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("prequel-ocr-{name}"));
     std::fs::create_dir_all(&dir).expect("a scratch directory");
@@ -102,13 +118,18 @@ fn puts_findings_on_the_session_clock() {
     let summary = scan_with(
         &request(path, offset, offset + 4 * SECOND),
         &mut Fake::new("Email accounts@example.com for a copy"),
+        &mut NoFaces,
         &CancelFlag::new(),
         &mut |_| {},
     )
     .expect("the scan");
 
     let track = summary.tracks.first().expect("one finding");
-    assert_eq!(track.start(), offset, "the first key sits at the file's zero");
+    assert_eq!(
+        track.start(),
+        offset,
+        "the first key sits at the file's zero"
+    );
     assert!(
         track.end() < offset + 4 * SECOND,
         "and the last stays inside the segment: {}",
@@ -129,6 +150,7 @@ fn stops_at_the_end_of_the_file() {
     let summary = scan_with(
         &request(path, 0, 3 * SECOND),
         &mut Fake::new("Email accounts@example.com for a copy"),
+        &mut NoFaces,
         &CancelFlag::new(),
         &mut |_| {},
     )
@@ -155,8 +177,14 @@ fn does_not_read_a_frame_it_has_already_read() {
     let path = video(&dir, 10, "1/5");
     let fake = &mut Fake::new("Email accounts@example.com for a copy");
 
-    let summary = scan_with(&request(path, 0, 10 * SECOND), fake, &CancelFlag::new(), &mut |_| {})
-        .expect("the scan");
+    let summary = scan_with(
+        &request(path, 0, 10 * SECOND),
+        fake,
+        &mut NoFaces,
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("the scan");
 
     assert_eq!(summary.sampled, 10, "ten samples");
     assert!(
@@ -186,11 +214,15 @@ fn cancels_between_samples() {
     let result = scan_with(
         &request(path, 0, 6 * SECOND),
         &mut Fake::new("Email accounts@example.com for a copy"),
+        &mut NoFaces,
         &cancel,
         &mut |_| {},
     );
 
-    assert!(matches!(result, Err(prequel_ocr::Error::Cancelled)), "{result:?}");
+    assert!(
+        matches!(result, Err(prequel_ocr::Error::Cancelled)),
+        "{result:?}"
+    );
 }
 
 #[test]
@@ -202,6 +234,7 @@ fn reports_progress_that_only_goes_forward() {
     scan_with(
         &request(path, 0, 4 * SECOND),
         &mut Fake::new("nothing sensitive here"),
+        &mut NoFaces,
         &CancelFlag::new(),
         &mut |fraction| seen.push(fraction),
     )
@@ -227,6 +260,7 @@ fn covers_the_segments_it_read() {
     let summary = scan_with(
         &request(path, 0, 2 * SECOND),
         &mut Fake::new("nothing sensitive here"),
+        &mut NoFaces,
         &CancelFlag::new(),
         &mut |_| {},
     )

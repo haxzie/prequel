@@ -392,7 +392,7 @@ export const COMMANDS: readonly CliCommandSpec[] = [
 
   {
     path: ["scan"],
-    summary: "Read a recording for sensitive text: card numbers, keys, addresses, IDs",
+    summary: "Read a recording for card numbers, keys, addresses, IDs — and faces",
     args: [{ name: "id", kind: "string", required: true, summary: "From `recordings list`" }],
     flags: [
       {
@@ -409,6 +409,16 @@ export const COMMANDS: readonly CliCommandSpec[] = [
         name: "all",
         value: "none",
         summary: "Include the guesses as well — findings too uncertain to cover unasked",
+      },
+      {
+        name: "faces",
+        value: "none",
+        summary: "Find faces too. A second pass over every frame, so it is off unless asked",
+      },
+      {
+        name: "no-text",
+        value: "none",
+        summary: "Skip the text and look for faces alone",
       },
     ],
     returns:

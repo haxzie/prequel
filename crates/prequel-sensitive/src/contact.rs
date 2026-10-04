@@ -16,9 +16,9 @@
 /// them turns every sidebar in an editor into a list of web addresses.
 const COMMON_TLDS: &[&str] = &[
     "com", "org", "net", "edu", "gov", "mil", "int", "io", "co", "ai", "app", "dev", "uk", "de",
-    "fr", "nl", "eu", "ca", "au", "in", "jp", "cn", "br", "es", "it", "se", "no", "dk", "fi",
-    "ch", "at", "be", "ie", "nz", "za", "mx", "info", "biz", "me", "tv", "cc", "xyz", "cloud",
-    "store", "online", "tech", "site", "blog", "news",
+    "fr", "nl", "eu", "ca", "au", "in", "jp", "cn", "br", "es", "it", "se", "no", "dk", "fi", "ch",
+    "at", "be", "ie", "nz", "za", "mx", "info", "biz", "me", "tv", "cc", "xyz", "cloud", "store",
+    "online", "tech", "site", "blog", "news",
 ];
 
 /// Whether `token` is an email address.
@@ -110,7 +110,9 @@ fn is_hostname(host: &str, dotted: bool) -> bool {
             && label.len() <= 63
             && !label.starts_with('-')
             && !label.ends_with('-')
-            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
     })
 }
 
@@ -302,7 +304,10 @@ mod tests {
         // Ungrouped and unnamed, this is an order number.
         assert_eq!(classify_phone("4155552671", ""), None);
         // Named, it is a phone number.
-        assert_eq!(classify_phone("4155552671", "mobile: "), Some(Phone::Likely));
+        assert_eq!(
+            classify_phone("4155552671", "mobile: "),
+            Some(Phone::Likely)
+        );
     }
 
     #[test]

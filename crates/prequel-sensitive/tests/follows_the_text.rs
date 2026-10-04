@@ -198,3 +198,30 @@ fn a_cover_never_outlives_the_text_by_more_than_the_tolerance() {
     let held = tracks[0].keys.iter().filter(|key| key.lost).count();
     assert!(held <= 3, "{held} held keys is an unbounded cover");
 }
+
+/// A face Vision is ordinarily sure of is covered without being asked.
+///
+/// The regression this pins cost the feature its whole point: Vision scores a
+/// plain front-on face at about 0.8 to 0.9, the threshold for covering
+/// something is 0.9, and the two numbers were compared directly — so every face
+/// in a recording came back just under the line and was filed as a guess. Two
+/// faces found, neither hidden.
+#[test]
+fn a_face_is_covered_rather_than_merely_suggested() {
+    use prequel_sensitive::{MASK_THRESHOLD, NormRect, face};
+
+    let box_ = NormRect::new(0.4, 0.3, 0.1, 0.2);
+
+    // The range Vision actually answers with for an ordinary face.
+    for score in [0.80, 0.83, 0.88, 0.95] {
+        let found = face(box_, score, 1).expect("a face in frame is a candidate");
+        assert!(
+            found.confidence >= MASK_THRESHOLD,
+            "a face scored {score} should be covered, not suggested"
+        );
+    }
+
+    // And a marginal one is still only a suggestion.
+    let maybe = face(box_, 0.2, 1).expect("a candidate");
+    assert!(maybe.confidence < MASK_THRESHOLD);
+}

@@ -45,6 +45,12 @@ pub struct ScanOptions {
     /// Per-recording, so the same card in two recordings does not land in the
     /// same bucket. Crosses as a string because a u64 does not survive JSON.
     pub salt: String,
+    /// Whether to read the text. Absent means yes, which is what a scan was
+    /// before faces existed.
+    pub text: Option<bool>,
+    /// Whether to look for faces. Absent means no: it is a second Vision
+    /// request per frame and most recordings have nobody in them.
+    pub faces: Option<bool>,
 }
 
 #[napi(object)]
@@ -85,7 +91,10 @@ pub fn text_recognition_langs() -> Vec<String> {
 
 /// Starts a scan. Returns immediately; everything else is on the callback.
 #[napi]
-pub fn start_scan(options: ScanOptions, on_progress: ThreadsafeFunction<ScanUpdate, ()>) -> Result<()> {
+pub fn start_scan(
+    options: ScanOptions,
+    on_progress: ThreadsafeFunction<ScanUpdate, ()>,
+) -> Result<()> {
     let cancel = CancelFlag::new();
 
     {
@@ -93,7 +102,9 @@ pub fn start_scan(options: ScanOptions, on_progress: ThreadsafeFunction<ScanUpda
             .lock()
             .map_err(|_| Error::from_reason("SCAN_POISONED: the scan lock is poisoned"))?;
         if slot.is_some() {
-            return Err(Error::from_reason("ALREADY_SCANNING: a scan is already running"));
+            return Err(Error::from_reason(
+                "ALREADY_SCANNING: a scan is already running",
+            ));
         }
         *slot = Some(cancel.clone());
     }
@@ -124,6 +135,8 @@ pub fn start_scan(options: ScanOptions, on_progress: ThreadsafeFunction<ScanUpda
 
         let mut request = ScanRequest::new(segments, salt);
         request.langs = options.langs.clone();
+        request.text = options.text.unwrap_or(true);
+        request.faces = options.faces.unwrap_or(false);
         if let Some(ms) = options.interval_ms {
             request.interval = u64::from(ms) * 1_000_000;
         }

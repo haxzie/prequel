@@ -22,15 +22,25 @@ import { SHADER_SOURCE } from "./webgl";
  *
  * None of them does anything today; all of them are a compile error used as an
  * identifier. Several read as perfectly ordinary variable names — `cast`,
- * `filter`, `input`, `output`, `this`, `resource` — which is exactly why they
- * are worth a test rather than care.
+ * `filter`, `input`, `output`, `this`, `resource`, `patch`, `sample` — which is
+ * exactly why they are worth a test rather than care.
+ *
+ * The list has to be the whole of §3.7 rather than the plausible-looking half of
+ * it. `patch` was missing, a cover's local variable was called that, and the
+ * fragment shader stopped compiling in its entirety — so the editor drew an
+ * empty preview, every item gone, with one line in a log a packaged build has
+ * no console for.
  */
 const RESERVED = [
   "active",
   "asm",
+  "atomic_uint",
+  "attribute",
   "cast",
   "class",
+  "coherent",
   "common",
+  "double",
   "enum",
   "extern",
   "external",
@@ -44,26 +54,62 @@ const RESERVED = [
   "hvec2",
   "hvec3",
   "hvec4",
+  "iimage1D",
+  "iimage1DArray",
+  "iimage2D",
+  "iimage2DArray",
+  "iimage3D",
+  "iimageBuffer",
+  "iimageCube",
+  "image1D",
+  "image1DArray",
+  "image1DArrayShadow",
+  "image1DShadow",
+  "image2D",
+  "image2DArray",
+  "image2DArrayShadow",
+  "image2DShadow",
+  "image3D",
+  "imageBuffer",
+  "imageCube",
   "inline",
   "input",
   "interface",
   "long",
   "namespace",
   "noinline",
+  "noperspective",
   "output",
   "partition",
+  "patch",
+  "prototype",
   "public",
+  "readonly",
   "resource",
+  "restrict",
+  "sample",
+  "sampler3DRect",
   "short",
   "sizeof",
   "static",
+  "subroutine",
   "superp",
   "template",
   "this",
   "typedef",
+  "uimage1D",
+  "uimage1DArray",
+  "uimage2D",
+  "uimage2DArray",
+  "uimage3D",
+  "uimageBuffer",
+  "uimageCube",
   "union",
   "unsigned",
   "using",
+  "varying",
+  "volatile",
+  "writeonly",
 ];
 
 /** The source with its comments taken out — prose may say "this" freely. */

@@ -146,7 +146,14 @@ fn every_rectangle_stays_inside_the_frame() {
     // The key fragment is joined rather than written out: a secret scanner
     // cannot tell a fixture from a leak, and GitHub's push protection refuses a
     // file carrying one. See `fixture` in `secrets.rs`.
-    let line = ["a@b.com 4242424242424242 ", "sk-", "ant-", "api03-", &"a".repeat(22)].concat();
+    let line = [
+        "a@b.com 4242424242424242 ",
+        "sk-",
+        "ant-",
+        "api03-",
+        &"a".repeat(22),
+    ]
+    .concat();
     let (lines, _) = frame(&[&line]);
     let found = scan_frame(&lines, &Edge, 1);
     assert!(!found.is_empty());

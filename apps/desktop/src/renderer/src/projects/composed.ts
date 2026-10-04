@@ -97,7 +97,30 @@ export async function captureComposition(spec: ProjectComposition): Promise<stri
     if (frame.width <= 0 || frame.height <= 0) return null;
 
     const images = await pictures(spec.images);
-    const plan = buildRenderPlan(frame, sizes, spec.settings);
+    // The covers go in, and this is the call that matters most for them: the
+    // picture this composes is the library's tile *and* the poster `share.ts`
+    // uploads to a public URL. Composed without them, sharing a redacted
+    // recording would publish an unredacted still of it.
+    //
+    // Every argument between is a thing a tile has none of — no pointer track,
+    // no zooms, no arrival, no captions, no texts, no camera outline, and it is
+    // never a screenshot's static masks. Named by position because that is what
+    // `buildRenderPlan` takes; see the note on its last parameter for why the
+    // covers are at the end.
+    const plan = buildRenderPlan(
+      frame,
+      sizes,
+      spec.settings,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      spec.masks,
+    );
 
     const sources: Sources = {
       screen: sizes.screen ? screen : null,

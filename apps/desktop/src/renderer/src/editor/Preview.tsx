@@ -34,6 +34,7 @@ import {
 import {
   captionLook,
   type LayoutSettings,
+  type MaskSlice,
   type WatermarkSettings,
   type SliceSettings,
   type TextSlice,
@@ -118,6 +119,7 @@ export function Preview({
   tool,
   selectedMarkId,
   masks,
+  covers,
   grab: grabRef,
   overlay,
   onPick,
@@ -255,6 +257,15 @@ export function Preview({
    * see `maskRegions`.
    */
   masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
+  /**
+   * A recording's covers, in source time and recording fractions.
+   *
+   * Its own prop rather than more in `masks`, because the two are different
+   * things: those are a screenshot's, already in output pixels and never
+   * moving, and these follow what they cover through a scroll and a zoom.
+   * `buildRenderPlan` maps them onto the picture wherever it is.
+   */
+  covers?: readonly MaskSlice[];
   /**
    * Filled in with a way to grab the current frame as a PNG data URL.
    *
@@ -490,6 +501,7 @@ export function Preview({
     selectedTextId,
     marks,
     masks,
+    covers,
     selectedMarkId,
   });
   latest.current = {
@@ -510,6 +522,7 @@ export function Preview({
     selectedTextId,
     marks,
     masks,
+    covers,
     selectedMarkId,
   };
 
@@ -567,6 +580,7 @@ export function Preview({
         tags: drawnTags,
         marks: drawnMarks,
         masks: hidden,
+        covers,
         selectedMarkId: ringedMark,
         selectedTextId: ringedText,
       } = latest.current;
@@ -681,6 +695,10 @@ export function Preview({
               // carries the masks and it is what lets the picture be dragged
               // past the frame's edge.
               frozen ? { at: STILL_AT, masks: hidden } : undefined,
+              // A recording's covers. Drawn in the preview from the same list
+              // the export reads, which is the whole point of them being on the
+              // project rather than worked out twice.
+              covers,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };
