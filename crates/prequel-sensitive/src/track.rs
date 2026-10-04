@@ -47,16 +47,6 @@ const MAX_SIZE_CHANGE: f32 = 0.6;
 /// for a second is both a leak and reads as a bug.
 const GAP_TOLERANCE: usize = 3;
 
-/// And the least time that may be, whatever the cadence.
-///
-/// Three samples is three seconds for the text, which is read once a second,
-/// and a third of a second for the faces, which are read ten times as often —
-/// and a third of a second is a blink, a turn of the head or one frame Vision
-/// happened to miss. Counting samples alone would close a face's track on all
-/// three and open a new one the moment it came back, which costs the cover its
-/// identity and so whatever the user had set on it.
-const MIN_GAP: MediaTime = 1_000_000_000;
-
 /// How far a key may sit from the line between its neighbours and still be
 /// dropped, as a fraction of the frame.
 ///
@@ -258,9 +248,7 @@ impl Tracker {
             }
 
             open.missed += 1;
-            // Whichever is longer: three samples, or a second. See `MIN_GAP`.
-            let gap = at.saturating_sub(open.last_at);
-            if open.missed > GAP_TOLERANCE && gap > MIN_GAP {
+            if open.missed > GAP_TOLERANCE {
                 // Closed at its last real sighting — *at* it, which is what the
                 // trim is for. The keys held while it was missing were a guess
                 // that it would come back, and it did not; left on, the cover
@@ -299,6 +287,22 @@ impl Tracker {
         let lead = self.lead();
         for track in &mut self.done {
             track.lead = lead;
+
+            // And a face's own tag, now rather than when the track opened.
+            // While it is being built the bucket is what says "this candidate
+            // continues this track", and every face carries the same one — so a
+            // tag applied at birth would match no face to its own track and
+            // every sample would start a new one. By here the matching is over
+            // and the bucket's only remaining job is identity.
+            if track.category == Category::Face {
+                let first = track
+                    .keys
+                    .first()
+                    .map_or((0, crate::NormRect::new(0.0, 0.0, 0.0, 0.0)), |key| {
+                        (key.at, key.rect)
+                    });
+                track.bucket = crate::tag(track.bucket, first.0, first.1);
+            }
         }
 
         // Now that no more samples can raise a confidence, each track can say

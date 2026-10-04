@@ -34,6 +34,7 @@ pub mod track;
 
 use std::ops::Range;
 
+use prequel_session::MediaTime;
 use serde::{Deserialize, Serialize};
 
 pub use geom::NormRect;
@@ -521,6 +522,39 @@ pub fn bucket(salt: u64, category: Category, canonical: &str) -> u32 {
     for byte in category.iter().chain(canonical.as_bytes()) {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(PRIME);
+    }
+
+    (hash >> (64 - BUCKET_BITS)) as u32
+}
+
+/// One face's own tag, so a cover made for it is never a cover for another.
+///
+/// Every face hashes to the same bucket: there is no text under a face to hash,
+/// and telling *who* somebody is is a thing this does not do and should not
+/// start doing to make an id stickier. The cost used to be that the identity of
+/// a face's cover was the identity of "a face" — so the panel's dismissal of one
+/// applied to every other, and a second reading could not tell two of them apart
+/// at all.
+///
+/// Mixed from where and when the face was first seen instead, which is the one
+/// thing about it that is both its own and reproducible: a second reading of the
+/// same recording walks the same frames and opens the track at the same sample.
+/// Quantised to a thousandth of the frame so that a hair's difference in the box
+/// does not orphan a dismissal.
+///
+/// The same FNV-1a and the same truncation as [`bucket`], for the reason given
+/// there: it has to be stable forever, and the truncation is what protects it.
+pub fn tag(bucket: u32, at: MediaTime, rect: NormRect) -> u32 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut hash = OFFSET ^ u64::from(bucket);
+    let place = [at, (rect.x * 1000.0) as u64, (rect.y * 1000.0) as u64];
+    for part in place {
+        for byte in part.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(PRIME);
+        }
     }
 
     (hash >> (64 - BUCKET_BITS)) as u32

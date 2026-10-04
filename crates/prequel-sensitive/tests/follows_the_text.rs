@@ -328,3 +328,89 @@ fn a_cover_reaches_half_a_sample_past_its_own_sightings() {
     let tracks = tracker.finish();
     assert_eq!(tracks[0].lead, SECOND / 2);
 }
+
+/// A sighting of a face at a position, as `prequel_sensitive::face` makes one.
+fn face_at(x: f32, y: f32) -> Candidate {
+    prequel_sensitive::face(NormRect::new(x, y, 0.1, 0.12), 0.9, 7).expect("a face candidate")
+}
+
+#[test]
+fn a_cover_does_not_move_to_a_different_face() {
+    // The report: "if there is multiple faces, it keeps moving to the second
+    // face". Every face hashes to the same bucket — there is no text under one
+    // — so the geometry is the whole of the identity, and the drift budget
+    // grows at over a frame width a second. A track that had been held through
+    // a gap could therefore continue onto *any* face anywhere, and did: on a
+    // real recording a cover sat where its face had been for nearly a second
+    // and then jumped half the frame onto somebody else.
+    let mut tracker = Tracker::new(SECOND / 10);
+
+    // Somebody at the bottom of the frame, for three samples.
+    for step in 0..3u64 {
+        tracker.offer(step * SECOND / 10, &[face_at(0.3, 0.7)]);
+    }
+    // They leave. Nothing for long enough that the track closes.
+    for step in 3..9u64 {
+        tracker.offer(step * SECOND / 10, &[]);
+    }
+    // Somebody else, elsewhere.
+    for step in 9..12u64 {
+        tracker.offer(step * SECOND / 10, &[face_at(0.3, 0.2)]);
+    }
+
+    let tracks = tracker.finish();
+    assert_eq!(tracks.len(), 2, "two faces, two covers: {tracks:?}");
+
+    let (first, second) = (&tracks[0], &tracks[1]);
+    assert_eq!(
+        first.end(),
+        2 * SECOND / 10,
+        "the first cover should end when its face left: {:?}",
+        first.keys
+    );
+    assert!(
+        first.keys.iter().all(|key| (key.rect.y - 0.7).abs() < 0.2),
+        "the first cover never moved to the second face: {:?}",
+        first.keys
+    );
+    assert_eq!(second.start(), 9 * SECOND / 10);
+}
+
+#[test]
+fn two_faces_are_two_covers_that_can_be_told_apart() {
+    // What "tag the face and the mask together" asks for. Without a tag every
+    // face carries the same bucket, so the identity of one cover is the
+    // identity of "a face" — the panel's dismissal of one would silence the
+    // other, and a second reading could not match either to the right one.
+    let mut tracker = Tracker::new(SECOND / 10);
+
+    for step in 0..3u64 {
+        tracker.offer(step * SECOND / 10, &[face_at(0.2, 0.2), face_at(0.7, 0.6)]);
+    }
+
+    let tracks = tracker.finish();
+    assert_eq!(tracks.len(), 2, "two faces at once: {tracks:?}");
+    assert_ne!(
+        tracks[0].bucket, tracks[1].bucket,
+        "each face should carry its own tag"
+    );
+    // And each stayed on its own face rather than swapping.
+    assert!(tracks.iter().any(|t| (t.keys[0].rect.y - 0.2).abs() < 0.2));
+    assert!(tracks.iter().any(|t| (t.keys[0].rect.y - 0.6).abs() < 0.2));
+}
+
+#[test]
+fn a_face_keeps_its_tag_when_the_recording_is_read_again() {
+    // The other half of a tag. It is what a dismissal is remembered by, so it
+    // has to come out the same on the next reading of the same recording — the
+    // same frames, the same sample, the same place.
+    let read = || {
+        let mut tracker = Tracker::new(SECOND / 10);
+        for step in 0..3u64 {
+            tracker.offer(step * SECOND / 10, &[face_at(0.3, 0.7)]);
+        }
+        tracker.finish()[0].bucket
+    };
+
+    assert_eq!(read(), read());
+}
