@@ -129,6 +129,17 @@ pub enum PlanItem {
         /// looks to drift out of step with it.
         #[serde(default)]
         grade: Option<Grade>,
+        /// How deep the glass on this picture's edge is, 0 to 1. Zero is no
+        /// glass, which is every item but a camera asked for one.
+        ///
+        /// The lens's curvature rather than a width: the rim is the loupe's own
+        /// surface laid on the camera, so this says how much of the shape's
+        /// radius is rolled over and each rasteriser works that radius out per
+        /// pixel. Mirrors `rim` in `apps/desktop/src/shared/layout.ts`.
+        /// Defaulted, so a plan written before the rim existed still parses —
+        /// and parses as a plain edge, which is what it drew.
+        #[serde(default)]
+        rim: f64,
     },
     Stroke {
         rect: Rect,

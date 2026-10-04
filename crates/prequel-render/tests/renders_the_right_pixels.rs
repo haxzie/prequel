@@ -239,6 +239,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
             matte: false,
             blobs: Vec::new(),
             grade: None,
+            rim: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -301,6 +302,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
             matte: false,
             blobs: Vec::new(),
             grade: None,
+            rim: 0.0,
         }],
         filter: None,
     };
@@ -379,6 +381,7 @@ fn draws_an_image_background() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -621,6 +624,7 @@ fn swaps_the_pointer_image_partway_through() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -715,6 +719,7 @@ fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -846,6 +851,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -957,6 +963,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -1185,6 +1192,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
@@ -1274,6 +1282,7 @@ fn a_zoom_past_every_edge_rounds_nothing() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -1362,6 +1371,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Stroke {
@@ -1441,6 +1451,7 @@ fn camera_over_red(matte: bool) -> RenderPlan {
                 matte,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -1575,6 +1586,7 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
             matte: false,
             blobs: Vec::new(),
             grade: None,
+            rim: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1748,6 +1760,7 @@ fn screen_filling(size: u32) -> RenderPlan {
             matte: false,
             blobs: Vec::new(),
             grade: None,
+            rim: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1889,6 +1902,7 @@ fn outlined(mirror: bool) -> RenderPlan {
                 }],
                 motion: Vec::new(),
                 grade: None,
+                rim: 0.0,
             },
         ],
         filter: None,
@@ -2058,6 +2072,7 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
                 matte: false,
                 blobs: Vec::new(),
                 grade: None,
+                rim: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Loupe {
@@ -2165,6 +2180,7 @@ fn the_glass_splits_colour_at_its_edge() {
                     matte: false,
                     blobs: Vec::new(),
                     grade: None,
+                    rim: 0.0,
                     motion: Vec::new(),
                 },
                 PlanItem::Loupe {
@@ -2294,6 +2310,7 @@ fn magnifying_a_picture_keeps_its_edges() {
         matte: false,
         blobs: Vec::new(),
         grade: None,
+        rim: 0.0,
         motion: Vec::new(),
     };
 
@@ -2451,6 +2468,7 @@ fn a_camera_look_leaves_the_screen_alone() {
                 // Pointedly none. The screen is lit by a display, not by the
                 // room, and the look is not for it.
                 grade: None,
+                rim: 0.0,
             },
             PlanItem::Image {
                 source: PlanSource::Camera,
@@ -2486,6 +2504,7 @@ fn a_camera_look_leaves_the_screen_alone() {
                     highlight_hue: 0.0,
                     highlight_amount: 0.0,
                 }),
+                rim: 0.0,
             },
         ],
         filter: None,
@@ -2583,6 +2602,7 @@ fn a_travelling_lens_smears_what_is_inside_it() {
                     blobs: Vec::new(),
                     motion: Vec::new(),
                     grade: None,
+                    rim: 0.0,
                 },
                 PlanItem::Loupe {
                     keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
@@ -2614,4 +2634,158 @@ fn a_travelling_lens_smears_what_is_inside_it() {
         moving < still * 0.6,
         "a travelling lens should soften it: {moving:.0} against {still:.0}"
     );
+}
+
+/// A green camera bubble on a red frame, with glass of `rim` depth on its edge.
+///
+/// A circle rather than a squircle: the band is then a plain annulus, so the
+/// assertions below can say where the glass is without re-deriving a
+/// superellipse to do it.
+fn bubble_with_rim(rim: f64) -> RenderPlan {
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "#ff0000".to_owned(),
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Camera,
+                // The middle of the wide source, so the bubble is one flat
+                // colour and anything that is not green came from the glass.
+                src_rect: Rect {
+                    x: 100.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 110.0,
+                    y: 70.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+                shape: Shape {
+                    radius: 50.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                grade: None,
+                motion: Vec::new(),
+                rim,
+            },
+        ],
+        filter: None,
+    }
+}
+
+#[test]
+fn catches_the_light_on_the_camera_s_glass_rim() {
+    // The rim is shading rather than geometry, so there is no plan to compare
+    // and no number to assert: what it draws is the only statement of whether
+    // it drew. Three properties, each a way it has gone wrong — the band lights
+    // up, the middle of the bubble does not, and neither does the frame.
+    //
+    // Measured as how much red and blue a pixel of a pure green camera has
+    // gained, which is nothing at all unless something white has been added to
+    // it. The glint is the brightest part of the edge and sits where the key
+    // light is, up and to the left; the highest in the band is taken rather
+    // than one coordinate, so a pixel of drift in where the surface turns over
+    // is not a failing test.
+    let dir = scratch("prequel-pixels-camera-rim");
+    record(
+        &dir,
+        "camera.mp4",
+        400,
+        200,
+        &solid_wide(400, 200, [0, 255, 0]),
+    );
+
+    // How white the whitest pixel of the band is, and of the middle.
+    let brightest = |plan: RenderPlan, name: &str| {
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+
+        let frame = first_frame(&output);
+        let white = |x: u32, y: u32| {
+            let (r, _, b) = frame.at(x, y);
+            r.min(b)
+        };
+
+        let mut band = 0;
+        let mut inside = 0;
+        for y in 70..170 {
+            for x in 110..210 {
+                let away = f64::hypot(f64::from(x) - 160.0, f64::from(y) - 120.0);
+                // Well inside the silhouette either way. The last few pixels
+                // of it are skipped rather than measured: a hard green edge on
+                // red comes back from a 4:2:0 encoder with a pale fringe on it,
+                // which has nothing to do with the glass and is bright enough
+                // to be mistaken for it.
+                if away > 46.0 {
+                    continue;
+                }
+                // The band is the outer quarter of the radius, which is the
+                // deepest rim the editor ever asks for.
+                if away > 37.5 {
+                    band = band.max(white(x, y));
+                } else {
+                    inside = inside.max(white(x, y));
+                }
+            }
+        }
+        (band, inside, frame)
+    };
+
+    let (plain_band, plain_inside, _) = brightest(bubble_with_rim(0.0), "plain");
+    // Half depth, which rolls the outer third or so of the radius over — the
+    // band the assertions below look in.
+    let (glass_band, glass_inside, frame) = brightest(bubble_with_rim(0.5), "glass");
+
+    // Nothing is drawn on an edge that was not asked for one — the control
+    // being off has to leave the bubble exactly as it was.
+    assert!(
+        plain_band < 40,
+        "without a rim the edge stays green, got {plain_band}"
+    );
+    // And with one, the glass catches the light.
+    assert!(
+        glass_band > plain_band + 60,
+        "the rim should light up: plain {plain_band}, glass {glass_band}"
+    );
+
+    // The middle of the bubble is left alone. The band is a fraction of the
+    // picture and not a wash over it: a Fresnel term applied across the whole
+    // quad would come out as a bubble with a haze on it, which reads as the
+    // camera being out of focus rather than as an edge.
+    assert!(
+        glass_inside < plain_inside + 30,
+        "the middle should be untouched: plain {plain_inside}, glass {glass_inside}"
+    );
+
+    // And the glass is inside its own silhouette. The rim is drawn in the band
+    // the coverage already cut, so a bevel that reached past it would be a ring
+    // of light on the wallpaper around the camera.
+    near(frame.at(20, 20), (255, 0, 0), "the frame beside the bubble");
+    near(frame.at(160, 120), (0, 255, 0), "the middle of the bubble");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -933,6 +933,79 @@ describe("the camera", () => {
     expect(camera.dstRect.width).toBe(camera.dstRect.height);
     expect(Number.isFinite(camera.dstRect.x)).toBe(true);
   });
+
+  describe("wearing a glass edge", () => {
+    const rimmed = (layout: Partial<LayoutSettings>) =>
+      image(
+        buildRenderPlan(
+          LANDSCAPE,
+          { screen: SCREEN, camera: CAMERA },
+          settings({
+            layout: {
+              ...DEFAULT_SETTINGS.layout,
+              cameraEdge: "glass",
+              cameraWidth: 0.22,
+              cameraHeight: 0.22,
+              ...layout,
+            },
+          }),
+        ),
+        "camera",
+      )!;
+
+    it("hands both rasterisers the depth, not a width", () => {
+      // The lens's curvature, passed through. A width would have to be measured
+      // against a radius, and on anything but a circle the shape has a different
+      // one in every direction — so the rasterisers work it out per pixel and
+      // this says only how much of it is glass.
+      expect(rimmed({ cameraEdgeDepth: 1 }).rim).toBe(1);
+      expect(rimmed({ cameraEdgeDepth: 0.4 }).rim).toBeCloseTo(0.4, 6);
+    });
+
+    it("says the same thing whatever size the bubble is", () => {
+      // The whole reason it is a fraction: the same setting has to be the same
+      // glass on a bubble in the corner and on a camera filling the frame, and a
+      // length would be a hairline on one and a marble on the other.
+      const small = rimmed({ cameraWidth: 0.15, cameraHeight: 0.15 });
+      const large = rimmed({ cameraWidth: 0.5, cameraHeight: 0.5 });
+
+      expect(small.rim).toBe(large.rim);
+    });
+
+    it("carries nothing at all without one", () => {
+      // Absent rather than zero, so a plan from a project that predates the rim
+      // serialises exactly as it did — and so both rasterisers skip the band on
+      // one field.
+      expect("rim" in rimmed({ cameraEdge: "none" })).toBe(false);
+      expect("rim" in rimmed({ cameraEdgeDepth: 0 })).toBe(false);
+    });
+
+    it("is never on a cutout, which has no edge to put glass on", () => {
+      // The matte is the outline there, and glass round a silhouette is a
+      // person traced in chrome. The same rule the shadow and the ring follow.
+      expect("rim" in rimmed({ cameraCutout: true })).toBe(false);
+    });
+
+    it("is on every shape that has an outline, the fitted one included", () => {
+      // Both rasterisers measure the band against whichever field they are
+      // drawing, so a camera that follows somebody wears the same edge.
+      for (const shape of ["circle", "squircle", "rounded", "wide", "portrait", "blob"] as const) {
+        const camera = rimmed({ cameraShape: shape, cameraCornerRadius: SHAPE_RADIUS[shape] });
+        expect(camera.rim, shape).toBeGreaterThan(0);
+      }
+    });
+
+    it("is never asked for more glass than there is radius", () => {
+      // Both shaders read it as a fraction of the shape's radius, so anything
+      // past 1 is a surface rolled through its own middle — a picture turned
+      // inside out rather than a deeper edge.
+      for (const depth of [0, 0.5, 1]) {
+        const value = rimmed({ cameraEdgeDepth: depth }).rim ?? 0;
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(1);
+      }
+    });
+  });
 });
 
 describe("changing the frame", () => {

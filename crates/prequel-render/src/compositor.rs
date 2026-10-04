@@ -159,9 +159,17 @@ struct Uniforms {
     ///
     /// Follows `alpha` in the Metal block. Only the camera ever sets it.
     matte: u32,
+    /// How deep the glass on this picture's edge is, 0 to 1 — the lens's own
+    /// curvature, which the shader turns into a surface over whatever shape it
+    /// is drawing.
+    ///
+    /// Zero on every draw but a camera asked for one. Follows `matte` in the
+    /// Metal block, in the first of the two slots the tail already carried, so
+    /// nothing above it moves.
+    rim: f32,
     /// Padding to the next 16, which is where MSL ends this block. Rust aligns
     /// `[f32; 4]` to 4 bytes and will not add it itself.
-    _tail: [f32; 2],
+    _tail: f32,
 }
 
 /// The video frames one output frame is drawn from.
@@ -780,7 +788,9 @@ impl Compositor {
             // the shape for every other draw.
             blob: [0.0; 4],
             harmonics: [[0.0; 4]; 2],
-            _tail: [0.0; 2],
+            // A plain edge unless a camera item asks for glass.
+            rim: 0.0,
+            _tail: 0.0,
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -914,6 +924,7 @@ impl Compositor {
                 matte,
                 blobs,
                 grade,
+                rim,
             } => {
                 let buffer = match source {
                     PlanSource::Screen => screen,
@@ -1019,6 +1030,10 @@ impl Compositor {
                         ),
                         blob,
                         harmonics,
+                        // The Depth control as it was set, not a length: there
+                        // is no one radius to measure it against until the
+                        // shader knows which way the pixel lies.
+                        rim: *rim as f32,
                         ..base
                     },
                     Some(alive.last().unwrap().texture.as_ref()),

@@ -1428,6 +1428,21 @@ export function VignetteIcon() {
   );
 }
 
+/**
+ * A shape inside the same shape, the band between them being the glass.
+ *
+ * Not a bevelled corner or a highlight: the rim is a band all the way round,
+ * and at 16px a glint on one corner reads as a shadow rather than as an edge.
+ */
+export function GlassEdgeIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="6" />
+      <rect width="10" height="10" x="7" y="7" rx="3.5" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
 /** How hard an effect is applied. */
 export function StrengthIcon() {
   return (

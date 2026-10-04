@@ -118,6 +118,19 @@ export type LayoutPreset =
 export type CameraShape = "circle" | "squircle" | "rounded" | "wide" | "portrait" | "blob";
 
 /**
+ * How the camera's own edge is treated.
+ *
+ * `glass` is the loupe's rim on the bubble: the band just inside the outline
+ * refracts the picture, splits its colour and catches the key light, so the
+ * edge reads as thick glass the person is behind rather than as a cut-out.
+ *
+ * A named option rather than a switch, because the edge is one question with
+ * one answer — a second treatment is another value here and not another toggle
+ * that has to be made to disagree with this one.
+ */
+export type CameraEdge = "none" | "glass";
+
+/**
  * The corner radius each shape stands for, as a fraction of the bubble's
  * shorter edge.
  *
@@ -343,6 +356,25 @@ export interface LayoutSettings {
    * hand-set radius snap back the moment anyone touched the shape again.
    */
   cameraCornerRadius: number;
+  /**
+   * The glass rim on the camera's edge, or none.
+   *
+   * Every shape but the cutout: the rim is a treatment of an edge, and a person
+   * standing on the wallpaper has none — the same reason the shape, the shadow
+   * and the border all go away there.
+   */
+  cameraEdge: CameraEdge;
+  /**
+   * How deep the glass is, 0 to 1. 0 is no glass at all, whatever `cameraEdge`
+   * says.
+   *
+   * The lens's own curvature — `loupeCurvature` is the same quantity on the
+   * loupe, and the glass is the same glass: how much of the camera's own radius
+   * is rolled over, between flat almost to the edge and turned over through half
+   * of itself. A fraction rather than a length, because the shape's radius is
+   * different in every direction on anything but a circle.
+   */
+  cameraEdgeDepth: number;
   /**
    * A border round the bubble, as a fraction of the frame's shorter edge.
    *
@@ -1500,6 +1532,20 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // what writes this. The two have to open agreeing or the first touch of the
   // shape control would visibly re-round a bubble nobody had asked it to.
   cameraCornerRadius: 0.5,
+  // No glass, for the reason the border is off: it is a look somebody chooses,
+  // and `none` is also what every project saved before the rim existed reads
+  // back as, with no migration — `sanitiseProject` spreads the file over these
+  // defaults and a plain edge is what it drew.
+  cameraEdge: "none",
+  // A quarter of the camera's radius rolled over: enough to read as glass, and
+  // no further in than it has to be.
+  //
+  // Lower than `loupeCurvature`, which is the same quantity on the lens, because
+  // the two are not looked at the same way. A loupe is the thing being looked
+  // at; a camera has somebody's face in it, and the fold is undivided by any
+  // magnification here — so the same setting reaches further into the picture
+  // and lands on the person rather than on the edge.
+  cameraEdgeDepth: 0.25,
   // Off, unlike the screen's border.
   //
   // The screen's earns its default by lifting a flat screenshot off a dark

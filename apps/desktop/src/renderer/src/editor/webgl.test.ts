@@ -357,3 +357,108 @@ describe("the loupe both rasterisers draw", () => {
     }
   });
 });
+
+/**
+ * The spellings, and the uniform block MSL passes where GLSL has globals.
+ *
+ * The rim's distance field takes the block, so MSL names it in the signature and
+ * at every call; GLSL reaches the same uniforms through file scope and names
+ * none of them. `arithmetic` already sees through the signature — this is the
+ * call sites, and the two languages' names for the same functions.
+ */
+const rim = (source: string) =>
+  arithmetic(source)
+    .replaceAll(/\bfield_distance\b/g, "fieldDistance")
+    .replaceAll(/\bshape_distance\b/g, "shapeDistance")
+    .replaceAll(/\brim_outward\b/g, "rimOutward")
+    .replaceAll(/\brim_normal\b/g, "rimNormal")
+    .replaceAll(/\brim_uv\b/g, "rimUv")
+    .replaceAll(/\brim_lit\b/g, "rimLit")
+    .replaceAll(/\blens_bend\b/g, "lensBend")
+    .replaceAll(/\bhue_colour\b/g, "hueColour")
+    .replaceAll(", u)", ")");
+
+/**
+ * The glass rim both rasterisers draw.
+ *
+ * The lens's edge on the camera's own outline, and shading rather than geometry
+ * for the same reason the lens is: the plan carries how wide the band is and
+ * each side works out for itself where every pixel in it samples from and how
+ * the light lands on it. Two slightly different edges is a bubble that is glass
+ * on screen and plastic in the file — and the two are never side by side, so
+ * nobody would see it until a frame of each was put next to the other.
+ */
+describe("the camera's glass rim", () => {
+  it("measures the same distance field on each side", () => {
+    // The one both the coverage and the rim read. A difference here is a bevel
+    // on a different outline from the picture it is dressing.
+    const glsl = body(SHADER_SOURCE().fragment, "float fieldDistance(");
+    const msl = body(METAL, "static float field_distance(");
+
+    expect(glsl, "fieldDistance in the GLSL").not.toBeNull();
+    expect(msl, "field_distance in the MSL").not.toBeNull();
+    expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("finds which way the outline faces the same way on each side", () => {
+    // Central differences, a pixel either side. Two different steps is glass
+    // that rolls over a shade sooner in one rasteriser than the other, which
+    // shows most on an outline fitted to somebody — the field with the steepest
+    // slope on it.
+    const glsl = body(SHADER_SOURCE().fragment, "vec2 rimOutward(");
+    const msl = body(METAL, "static float2 rim_outward(");
+
+    expect(glsl, "rimOutward in the GLSL").not.toBeNull();
+    expect(msl, "rim_outward in the MSL").not.toBeNull();
+    expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("has the same surface on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 rimNormal(");
+    const msl = body(METAL, "static float3 rim_normal(");
+
+    expect(glsl, "rimNormal in the GLSL").not.toBeNull();
+    expect(msl, "rim_normal in the MSL").not.toBeNull();
+    expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("refracts the same way on each side", () => {
+    // Where the band's squeeze comes from, and the fringing with it.
+    const glsl = body(SHADER_SOURCE().fragment, "vec2 rimUv(");
+    const msl = body(METAL, "static float2 rim_uv(");
+
+    expect(glsl, "rimUv in the GLSL").not.toBeNull();
+    expect(msl, "rim_uv in the MSL").not.toBeNull();
+    expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("lights the glass the same way on each side", () => {
+    // The Fresnel term, the room it reflects and the glint. A difference here
+    // is an edge that is brighter in the preview than in the file, which is
+    // exactly the kind of thing that is only ever noticed after an export.
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 rimLit(");
+    const msl = body(METAL, "static float3 rim_lit(");
+
+    expect(glsl, "rimLit in the GLSL").not.toBeNull();
+    expect(msl, "rim_lit in the MSL").not.toBeNull();
+    expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("is ground from the same glass on each side", () => {
+    // The constants the two shaders cannot share, one being a template literal
+    // in TypeScript and the other a Metal file.
+    // The stretch and the spread are not among them: the rim is ground from the
+    // lens's own, which the loupe's test already pins on both sides.
+    for (const declaration of [
+      "RIM_SHEEN = 0.22",
+      "RIM_SPREAD = 0.04",
+      "RIM_GLINT = 0.7",
+      "RIM_SPECTRUM = 0.12",
+      "RIM_FRINGE = 0.05",
+      "RIM_FRINGE_FROM = 0.5",
+    ]) {
+      expect(rim(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);
+      expect(rim(METAL), `${declaration} in the MSL`).toContain(declaration);
+    }
+  });
+});

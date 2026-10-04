@@ -31,6 +31,7 @@ import {
   overriddenKeys,
   type Background,
   type BackgroundSettings,
+  type CameraEdge,
   type CameraShape,
   type CaptionPlace,
   type CaptionSettings,
@@ -63,6 +64,7 @@ import {
   AberrationIcon,
   AngleIcon,
   AudioIcon,
+  GlassEdgeIcon,
   GlassIcon,
   ImageIcon,
   LookIcon,
@@ -2076,6 +2078,47 @@ function CameraPanel({
             disabled={off}
             format={percent}
             onChange={(value) => set("layout", "cameraLookStrength", value)}
+          />
+        )}
+
+        {/* The lens's edge, on the camera.
+
+            Labelled, unlike the look above it: that row is a grid of swatches
+            that says what it is, and this one is two words in a pill that could
+            be anything. Greyed under Remove background rather than taken away,
+            the same trade the Border width makes — a person on the wallpaper has
+            no edge to put glass on, and a row that vanishes takes the fact that
+            the option exists with it. */}
+        <Field icon={<GlassEdgeIcon />} label="Edge" {...field("layout", "cameraEdge")}>
+          <Segmented<CameraEdge>
+            value={layout.cameraEdge}
+            disabled={off || cutout}
+            options={[
+              { value: "none", label: "None" },
+              {
+                value: "glass",
+                label: "Glass",
+                title: "A thick glass edge, the loupe's, round the camera",
+              },
+            ]}
+            onChange={(value) => set("layout", "cameraEdge", value)}
+          />
+        </Field>
+
+        {/* Only once there is glass, for the reason the look's Amount is: at
+            None it is a slider for the depth of nothing. */}
+        {layout.cameraEdge === "glass" && (
+          <Slider
+            icon={<StrengthIcon />}
+            label="Depth"
+            {...field("layout", "cameraEdgeDepth")}
+            value={layout.cameraEdgeDepth}
+            min={0}
+            max={1}
+            step={0.01}
+            disabled={off || cutout}
+            format={percent}
+            onChange={(value) => set("layout", "cameraEdgeDepth", value)}
           />
         )}
       </Section>

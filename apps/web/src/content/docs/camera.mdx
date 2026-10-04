@@ -1,5 +1,6 @@
 export const title = "Camera";
-export const description = "The shape, size, position, colour look and border of your camera.";
+export const description =
+  "The shape, size, position, colour look, glass edge and border of your camera.";
 export const faq = [
   {
     question: "Can I remove the background behind me?",
@@ -10,6 +11,11 @@ export const faq = [
     question: "Can I improve how I look on camera?",
     answer:
       "Open Effects in the Camera panel and pick a look. Warm is for a cold room or a window behind you, Cool for a warm bulb overhead, and Film for lifted blacks and warm highlights. Hover a look to see it on your face before you choose, and set Amount for how much of it you want.",
+  },
+  {
+    question: "Can I put a glass edge on my camera?",
+    answer:
+      "Yes. Open Effects in the Camera panel and set Edge to Glass, then use Depth for how far into the bubble the glass reaches. It works on every shape except Remove background, which has no edge to put glass on.",
   },
   {
     question: "Why is my camera mirrored?",
@@ -63,6 +69,12 @@ Each look carries a swatch showing it on a reference picture, so you can compare
 **Amount** fades the look towards your untouched camera, and appears once you have picked one.
 
 Every look is built for skin first. The saturation they add spares faces and lands on the room instead, so the picture comes up without you going orange.
+
+## Edge
+
+**Glass** puts the zoom lens's edge on the camera. The band just inside the outline bends the picture, splits its colour and catches the light, so the bubble reads as thick glass rather than a picture cut to a shape. **Depth** says how far into the bubble the glass reaches.
+
+It works on every shape, the one that follows you included. Remove background is the exception: there is no edge to put glass on when it is just you over the background.
 
 ## Border
 

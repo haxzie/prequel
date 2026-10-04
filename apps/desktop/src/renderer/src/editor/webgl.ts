@@ -392,6 +392,9 @@ uniform vec4 u_glass;
 // How far the picture inside the glass smears, as a vector in output pixels.
 // Zero wherever the lens is still, which is most of the time it is on screen.
 uniform vec4 u_motion;
+// How deep the glass on this picture's edge is, 0 to 1 — the lens's own
+// curvature. Zero on every draw but a camera asked for one.
+uniform float u_rim;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -879,6 +882,249 @@ vec3 lensTap(vec2 centre, vec2 offset, float edge, float magnify, float ior,
   return behind(centre + offset * reach * radius + smear * ((1.0 - reach) * along));
 }
 
+// ── The camera's glass rim ──────────────────────────────────────────────────
+//
+// The lens, lying on the camera instead of on the frame, with nothing magnified.
+// Mirrored verbatim in crates/prequel-render/src/shaders.metal for the reason
+// the lens is — this is shading rather than geometry, so the plan cannot carry
+// the answer and each rasteriser works it out itself.
+//
+// The *same* surface, which is the whole of why it reads as glass. It was a band
+// of fixed width hugging the outline to begin with, and on a circle that is very
+// nearly the lens; on anything else it is a chamfer stuck to the edge. A rounded
+// rectangle came out with a strip of even width running round it and stopping
+// dead on its inner side, which reads as a border drawn on the picture, and a
+// wide camera got a sliver down each short side and nothing anywhere else.
+//
+// What the lens actually does is measure the roll as a fraction of its own
+// radius, so the glass is a surface over the whole of it rather than a treatment
+// of its edge, and the shape's roundness comes through by itself. Below, that
+// radius is the shape's: how far it is from the middle of the camera to its
+// outline along the way this pixel lies. On a circle it is the lens exactly —
+// lensNormal and lensReach with the magnification at 1 — and on every other
+// shape it is the same surface stretched onto it.
+//
+// u_rim carries the Depth control, 0 to 1, and it is the lens's own curvature:
+// how much of the radius is rolled over, between LOUPE_EDGE_FLAT and
+// LOUPE_EDGE_FULL. Not a width in pixels, which is what the plan used to carry —
+// a width is a chamfer's parameter, and it cannot be one here because the radius
+// it is a fraction of changes with the direction the pixel lies in.
+
+// The stretch across the glass is the lens's own —
+// LOUPE_STRETCH, read from there rather than restated here. The dispersion is
+// not; see RIM_SPREAD below.
+//
+// Ground softer to begin with, on the theory that a loupe is held over text
+// while this is lying on a face. What it actually did was take the colour out of
+// the edge: the three channels are separated by how much their bend differs
+// across the band, so a shallower fold and a narrower spread multiply, and the
+// fringe came out under two pixels on an ordinary bubble — present in the
+// arithmetic and invisible on screen. Two glasses with no difference anybody
+// could point to is one glass and a second set of numbers to keep.
+
+// How far the three channels are pulled apart at the outline itself, as a
+// fraction of the band, and where across the band that starts.
+//
+// A term of its own rather than more index: the walk above is measured against
+// the rim's own bend through a smoothstep, so every channel clamps to the same
+// value at the outline and the three taps converge exactly where glass shows the
+// most colour. The fringe peaked a little inside the edge and faded out of the
+// last of it, which reads as a soft edge rather than as glass. This is scaled by
+// how far the channel's index is from crown glass — so it is still the
+// dispersion the taps were taken at, and the middle channel is still unmoved —
+// and it grows to the rim rather than away from it.
+//
+// Held off the inner third of the band so the colour stays on the edge and off
+// the face: the whole point of the control is the outline, and a fringe that
+// reaches into the picture is a camera that looks mis-converged.
+// How far either side of crown glass the red and the blue ends of the rim sit.
+//
+// The lens's own LOUPE_SPREAD to begin with, and that was right while the fold
+// was a fraction of a narrow band. It is a fraction of the whole radius now, and
+// the dispersion rides on the fold: what the two channels differ by is a share
+// of how far the picture is pulled, so the same spread over a fold six times
+// deeper is a fringe six times wider. At the lens's figure the edge came out
+// with thirty pixels between red and blue, which is not glass — it is an oil
+// slick.
+//
+// The lens divides its own fold by the magnification, and it is never used at 1.
+// This is, so it folds as hard as a loupe can and needs the spread the loupe
+// would have had at that depth.
+const float RIM_SPREAD = 0.04;
+
+// Both are a fraction of the rolled band, and the band is now a fraction of the
+// shape's own radius rather than a fixed width — several times wider on a large
+// camera than the number these were first set against. Tuned back down to suit:
+// at the old figures the edge came out as an oil slick rather than as glass.
+const float RIM_FRINGE = 0.05;
+const float RIM_FRINGE_FROM = 0.5;
+
+// How much of the room the rim reflects, how hard the key light glints off it,
+// and how much of its own spectrum it carries. Not controls — the depth already
+// says how much glass there is, and a slider each for how shiny and how
+// colourful it is would be three answers to one question.
+//
+// The sheen is a fraction of what the lens uses, and the reason is that the lens
+// has something to reflect. It mixes the frame beside it in at 55% and only
+// tops that up with a studio gradient; a camera is drawn straight into the
+// composition and has no copy of its surroundings, so the gradient is all there
+// is — and at the lens's strength the Fresnel term, which reaches 1 at the
+// outline, laid a flat pale grey over the whole band. That read as a white
+// overlay round the picture rather than as a reflection on it, and it washed the
+// colour out of the edge as well.
+const float RIM_SHEEN = 0.22;
+const float RIM_GLINT = 0.7;
+// The iridescence, which is the other half of the colour at the edge.
+//
+// The split taps are dispersion: they only show where something with contrast
+// crosses the rim, so against a plain wall the edge comes out grey however far
+// apart the three are pulled. Real glass that thin carries colour anyway — the
+// rim of a paperweight is a spectrum whatever is under it — and this is that
+// spectrum, run around the edge by the angle the surface is leaning at. Centred
+// on zero through hueColour, so it shifts the rim's hue without lifting it.
+const float RIM_SPECTRUM = 0.12;
+
+/**
+ * Distance to whichever outline this draw has, in output pixels.
+ *
+ * The camera's free-form outline, when it has one, otherwise the rounded
+ * rectangle every other primitive is. Negative inside, like both of them.
+ *
+ * Switched on the outline's own radius, which is above zero only for that
+ * camera. A moment with nobody in front of it has a presence of zero instead,
+ * which makes the radius zero here and draws nothing — where falling back to
+ * the rounded rectangle would draw the whole uncropped camera picture flashed
+ * across the frame.
+ *
+ * One function rather than the choice written at each place that needs it, so
+ * the rim's surface is measured against the same field the coverage is cut
+ * from: a bevel on a different outline from the picture it dresses is a glass
+ * edge floating over somebody's shoulder.
+ */
+float fieldDistance(vec2 p, vec2 screen, vec2 extent) {
+  return u_blob.z > 0.0 ? blobDistance(screen)
+                        : shapeDistance(p, extent, u_shape.x, u_shape.y);
+}
+
+/**
+ * How far through the glass this pixel is, and how far the glass reaches here.
+ *
+ * x runs 0 at the middle of the camera to 1 on its outline, and y is the
+ * distance from the middle to the outline along the way this pixel lies — the
+ * lens's radius, for a shape that has a different one in every direction.
+ *
+ * len - d is that distance: exact on a circle, where it is the radius itself,
+ * and on a cornered shape a little longer than the straight run to the outline,
+ * since d is measured square to the edge rather than along this ray. Which errs
+ * the right way — the surface bulges a shade at the corners, where glass is
+ * thickest anyway.
+ */
+vec2 rimRadius(vec2 p, vec2 screen, vec2 extent) {
+  float d = fieldDistance(p, screen, extent);
+  // Measured from the middle of whichever outline this is. The free-form one
+  // carries its own centre; every other shape is centred on its quad, which is
+  // what p is already relative to.
+  float len = u_blob.z > 0.0 ? length(screen - u_blob.xy) : length(p);
+  float reach = max(len - d, 1e-4);
+  return vec2(len / reach, reach);
+}
+
+/**
+ * Which way the outline faces where this pixel is.
+ *
+ * Central differences a pixel either side rather than an analytic normal: there
+ * are two fields here — a superellipse and an outline fitted to a person — and
+ * one body covers both, which is also one body for the two rasterisers to
+ * agree on.
+ */
+vec2 rimOutward(vec2 p, vec2 screen, vec2 extent) {
+  vec2 across = vec2(1.0, 0.0);
+  vec2 down = vec2(0.0, 1.0);
+  vec2 slope = vec2(
+      fieldDistance(p + across, screen + across, extent)
+          - fieldDistance(p - across, screen - across, extent),
+      fieldDistance(p + down, screen + down, extent)
+          - fieldDistance(p - down, screen - down, extent));
+  float steep = length(slope);
+  // Nothing where the field has no slope, which is the middle of a circle and
+  // nowhere near the band. A zero vector leaves the surface level, and level
+  // glass neither bends nor shines.
+  return steep > 1e-4 ? slope / steep : vec2(0.0);
+}
+
+/**
+ * The surface of the glass where a pixel sits. t runs from 0 at the inner edge
+ * of the band to 1 at the outline itself.
+ *
+ * The same aspheric the lens is ground to, and the same reason: a surface
+ * shallow enough to leave the picture alone is very nearly flat everywhere, so
+ * both the squeeze and the glint collapse into the last pixel and there is
+ * nothing to see. Flat across the picture, then rolled over through the band
+ * until it stands almost on end where the picture ends.
+ */
+vec3 rimNormal(vec2 outward, float t) {
+  float roll = smoothstep(0.0, 1.0, t) * LOUPE_ROLL;
+  return vec3(outward * roll, sqrt(max(1.0 - roll * roll, 1e-6)));
+}
+
+/**
+ * Where a pixel in the band samples from, in the source's own uv.
+ *
+ * Inwards, by how much faster the refracted ray is leaving the axis here than
+ * it is at the outline — which is nothing across the picture and most at the
+ * edge. So a thin ring of the camera just inside the band is smeared across the
+ * whole of it, and the picture *meets* its own edge instead of stopping at one.
+ *
+ * Measured against the rim's bend at crown glass rather than at this channel's
+ * index, which is the whole of the fringing: normalising each channel against
+ * its own rim divides the dispersion straight back out. The same note on
+ * lensReach has the long version.
+ */
+vec2 rimUv(vec2 uv, vec2 outward, float t, float radius, float band, float ior, vec2 scale) {
+  float bend = lensBend(rimNormal(outward, t), ior);
+  float edge = lensBend(rimNormal(outward, 1.0), LOUPE_IOR);
+  // Against the whole radius, not the band, which is what the lens does with its
+  // own: the fold is a fraction of the glass rather than of the lip, so a deep
+  // setting and a shallow one fold the picture by the same amount and differ in
+  // how much of it is folded. A walk measured off the band instead made the
+  // Depth control a strength slider, and the surface read as a chamfer of
+  // adjustable harshness rather than as glass of adjustable thickness.
+  float walk = radius * LOUPE_STRETCH * smoothstep(0.0, 1.0, bend / max(edge, 1e-4));
+  // -1, 0 and 1 for the three taps, so the middle one is never moved by this.
+  // Off the band rather than the radius: the fringe belongs to the rolled lip,
+  // and spread over the whole glass it would be a mis-converged picture.
+  float apart = (ior - LOUPE_IOR) / RIM_SPREAD;
+  float fringe = band * RIM_FRINGE * apart * smoothstep(RIM_FRINGE_FROM, 1.0, t);
+  return uv - outward * (walk + fringe) * scale;
+}
+
+/**
+ * The light the glass carries, over the picture it has already bent.
+ *
+ * Schlick's approximation, as the lens uses: barely reflective looked at
+ * straight on, a mirror where the surface has turned away. What it reflects is
+ * a plain studio gradient and nothing else — the lens mixes in the frame beside
+ * it, but a camera is drawn straight into the composition and has no copy of
+ * what is around it to read. The room alone is also what keeps a bubble on a
+ * dark background from coming out as a hole cut in it.
+ */
+vec3 rimLit(vec3 rgb, vec3 normal) {
+  float fresnel = 0.04 + 0.96 * pow(1.0 - normal.z, 5.0);
+  vec3 room = mix(vec3(0.04), vec3(0.92), smoothstep(-0.5, 0.75, -normal.y));
+  vec3 lit = mix(rgb, room, fresnel * RIM_SHEEN);
+  // The spectrum, turning with the surface. The angle is where this part of the
+  // rim faces, so the colour runs round the edge the way it does round the lip
+  // of a glass rather than sitting on one side of it — and it rides on the
+  // Fresnel term, so it is on the rim alone and nowhere near the face.
+  float turns = atan(normal.y, normal.x) / 6.2831853;
+  lit += hueColour(turns) * fresnel * RIM_SPECTRUM;
+  // One light, and a broad sheen under the tight term: the first is the
+  // reflection of the source itself and the second is the glass being lit at
+  // all, and without the second the first reads as a sticker.
+  float facing = max(dot(normal, LOUPE_LIGHT), 0.0);
+  return lit + RIM_GLINT * (pow(facing, 40.0) * 0.7 + pow(facing, 4.0) * 0.08);
+}
+
 void main() {
   // The lens, first, because nothing else in here applies to it: its quad is a
   // square grown around the glass for the shadow, and the shape that matters is
@@ -1037,17 +1283,12 @@ void main() {
 
   vec2 halfSize = u_rect.zw * 0.5;
   vec2 p = v_local - halfSize;
-  // The outline, when the camera has one, otherwise the rounded rectangle every
-  // other primitive is. In output pixels either way, which is what lets the one
-  // pixel of feathering further down mean the same thing.
-  //
-  // Switched on the outline's own radius, which is above zero only for that
-  // camera. A moment with nobody in front of it has a presence of zero instead,
-  // which makes the radius zero here and draws nothing — where falling back to
-  // the rounded rectangle would draw the whole uncropped camera picture flashed
-  // across the frame.
-  float d = u_blob.z > 0.0 ? blobDistance(v_screen)
-                           : shapeDistance(p, halfSize, u_shape.x, u_shape.y);
+  // In output pixels, which is what lets the one pixel of feathering further
+  // down mean the same thing on either outline. Through fieldDistance, which is
+  // also what the rim measures its surface against — one place the choice is
+  // made, so a bevel cannot end up on a different outline from the one the
+  // picture is cut to.
+  float d = fieldDistance(p, v_screen, halfSize);
 
   // Shadows are the same shape, softened — so the blur follows the silhouette
   // rather than the bounding box.
@@ -1103,7 +1344,39 @@ void main() {
       } else {
         // Mirroring first, so it flips the crop rather than moving it.
         uv = u_src.xy + cursorUv * u_src.zw;
-        sampled = sampleFocused(uv);
+        // The glass this pixel is under: how far through the roll it is, which
+        // way the surface leans here, and how far the lens reaches. All nothing
+        // on every draw but a camera wearing one.
+        //
+        // edge is the lens's own curvature, from the Depth control — how much of
+        // the radius is rolled over. rim is then where this pixel sits across
+        // that roll, 0 where the glass is still flat and 1 on the outline, which
+        // is exactly what lensNormal measures with smoothstep(1 - edge, 1, r).
+        vec2 glass = rimRadius(p, v_screen, halfSize);
+        float edge = mix(LOUPE_EDGE_FLAT, LOUPE_EDGE_FULL, clamp(u_rim, 0.0, 1.0));
+        float band = edge * glass.y;
+        float rim = u_rim > 0.0 ? clamp((glass.x - (1.0 - edge)) / max(edge, 1e-4), 0.0, 1.0) : 0.0;
+        vec2 outward = rim > 0.0 ? rimOutward(p, v_screen, halfSize) : vec2(0.0);
+        if (rim > 0.0) {
+          // Output pixels into the source's own uv, flipped with the picture: a
+          // mirror flips the quad's uv, so a step outward in the frame is a step
+          // the other way through the file.
+          vec2 scale = u_src.zw / max(u_rect.zw, vec2(1.0));
+          if (u_mirror != 0) scale.x = -scale.x;
+          // Three taps rather than one blurred one: a fringe is each channel
+          // landing somewhere slightly different, not all of them being soft.
+          // The middle one carries the alpha, and is where the matte and
+          // everything below read the picture from — a mask taken at the unbent
+          // uv would cut the person out of where they no longer are.
+          vec2 red = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR - RIM_SPREAD, scale);
+          vec2 green = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR, scale);
+          vec2 blue = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR + RIM_SPREAD, scale);
+          vec4 middle = sampleFocused(green);
+          sampled = vec4(sampleFocused(red).r, middle.g, sampleFocused(blue).b, middle.a);
+          uv = green;
+        } else {
+          sampled = sampleFocused(uv);
+        }
         // The mask is a separate, smaller stream sampled at the *same* uv as
         // the picture, so mirror and crop reach it for free and its size need
         // not match. Multiplied through every channel: the picture is
@@ -1117,6 +1390,13 @@ void main() {
         // and folded back in or a translucent edge would grade twice.
         if (u_gradeC.z > 0.0 && sampled.a > 0.0) {
           sampled = vec4(graded(sampled.rgb / sampled.a, u_gradeA, u_gradeB, u_gradeC) * sampled.a,
+                         sampled.a);
+        }
+        // And the light the glass carries, after the look so that grading a
+        // face does not also grade the glint off the edge in front of it.
+        // Premultiplied for the reason the grade is.
+        if (rim > 0.0 && sampled.a > 0.0) {
+          sampled = vec4(rimLit(sampled.rgb / sampled.a, rimNormal(outward, rim)) * sampled.a,
                          sampled.a);
         }
       }
@@ -1187,6 +1467,7 @@ interface Program {
   useMatte: WebGLUniformLocation | null;
   loupe: WebGLUniformLocation | null;
   glass: WebGLUniformLocation | null;
+  rim: WebGLUniformLocation | null;
   view: WebGLUniformLocation | null;
   motion: WebGLUniformLocation | null;
   gradeA: WebGLUniformLocation | null;
@@ -1698,6 +1979,8 @@ export class WebGlCompositor {
           // The camera's look. Absent on the screen, which is lit by a display
           // rather than by the room and wants none of it.
           ...(item.grade ? { grade: item.grade } : {}),
+          // And its glass edge, absent on the screen for the same reason.
+          ...(item.rim !== undefined ? { rim: item.rim } : {}),
           // Resolved here rather than held in the plan, exactly as the pointer's
           // position is: the plan is built once per clip and this changes every
           // frame. Then carried by whatever the rectangle is doing, so a zoom
@@ -2480,6 +2763,15 @@ interface Draw {
   loupe?: LoupeKey;
   /** The camera's colour look, already resolved. Only the camera sets it. */
   grade?: CameraGrade;
+  /**
+   * How deep the glass on this picture's edge is, 0 to 1.
+   *
+   * Left out for every draw but a camera wearing glass, which is what leaves it
+   * at zero and the rim out of the picture. The lens's curvature rather than a
+   * width — the shader works out how far that reaches in pixels, because the
+   * radius it is a fraction of is different in every direction.
+   */
+  rim?: number;
 }
 
 /** The outline this frame, moved by whatever the picture's rectangle is doing. */
@@ -2592,6 +2884,10 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
     loupe?.aberration ?? 0,
     loupe?.reflection ?? 0,
   );
+  // Written every draw for the reason the outline, the lens and the look are: a
+  // uniform holds its value until it is changed, and a band left over from the
+  // camera would put a glass edge on whatever was drawn next.
+  gl.uniform1f(p.rim, draw.rim ?? 0);
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -2779,6 +3075,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     harmonics: at("u_harmonics"),
     loupe: at("u_loupe"),
     glass: at("u_glass"),
+    rim: at("u_rim"),
     view: at("u_view"),
     motion: at("u_motion"),
     gradeA: at("u_gradeA"),

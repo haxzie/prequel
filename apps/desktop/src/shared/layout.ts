@@ -376,6 +376,22 @@ export type PlanItem =
        * shape, which is what leaves `shape` as the outline.
        */
       blobs?: BlobKey[];
+      /**
+       * How deep the glass on this picture's edge is, 0 to 1.
+       *
+       * Only ever set on the camera, and absent whenever there is no glass —
+       * which is the default, so an ordinary plan carries nothing for it and
+       * both rasterisers skip the rim on one field.
+       *
+       * The lens's curvature, not a width: the glass is the loupe's surface laid
+       * on the camera, so what this says is how much of the shape's own radius is
+       * rolled over. A width in pixels cannot say it, because the radius it would
+       * be a fraction of is different in every direction on anything but a circle
+       * — which is exactly how a fixed band came to read as a chamfer stuck to a
+       * rounded rectangle. Both rasterisers work the radius out per pixel; see
+       * the note on the rim in `shaders.metal`.
+       */
+      rim?: number;
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
@@ -1396,6 +1412,18 @@ export function buildRenderPlan(
     const outer = grow(dstRect, border);
     const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
 
+    // The glass, passed through as the depth it is set to — the lens's curvature,
+    // which each rasteriser turns into a surface over whatever shape it is
+    // drawing. Nothing is measured here, because there is no one length to
+    // measure: the radius the roll is a fraction of changes with the direction.
+    //
+    // Every shape but the cutout, which has no edge to put glass on: the matte
+    // *is* the outline there, and glass round a silhouette is a person traced in
+    // chrome. A camera that follows somebody keeps it — that outline is an edge,
+    // and both rasterisers measure the surface against whichever of the two
+    // shapes they are drawing.
+    const rim = cutout || layout.cameraEdge !== "glass" ? 0 : layout.cameraEdgeDepth;
+
     // Arriving from wherever the previous slice had it — or from nothing, when
     // that arrangement had no camera at all. Growing out of the middle of where
     // it is going is the one entrance that needs no opacity: a plan item has no
@@ -1473,6 +1501,7 @@ export function buildRenderPlan(
       ...moving,
       ...(cutout ? { matte: true } : {}),
       ...(grade ? { grade } : {}),
+      ...(rim > 0 ? { rim } : {}),
       ...(outline
         ? {
             blobs: placedBlobs(
@@ -1546,6 +1575,12 @@ export function buildRenderPlan(
     // all, so its own border width says nothing about the bubble on its way out.
     const border = wasCutout ? 0 : enter.from.layout.cameraBorderWidth * unit;
 
+    // The rim it was wearing, from the settings it was drawn under, for the
+    // reason the ring and the look above are: this arrangement has no camera,
+    // so its own edge setting says nothing about the bubble on its way out.
+    const rim =
+      wasCutout || enter.from.layout.cameraEdge !== "glass" ? 0 : enter.from.layout.cameraEdgeDepth;
+
     // Nothing to shrink under a zoom here: this camera is on its way out, and
     // where it is going is nowhere.
     const {
@@ -1591,6 +1626,7 @@ export function buildRenderPlan(
         mirror: enter.from.layout.cameraMirror,
         motion,
         ...(wasCutout ? { matte: true } : {}),
+        ...(rim > 0 ? { rim } : {}),
         // The look the camera was wearing on the far side of the cut, not the
         // one it is wearing now. This is the outgoing bubble: it belongs to the
         // clip that is ending, and grading it with the incoming clip's look

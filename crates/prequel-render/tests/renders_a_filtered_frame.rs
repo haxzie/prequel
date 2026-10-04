@@ -197,6 +197,7 @@ fn plan(filter: Option<PlanFilter>) -> RenderPlan {
             blobs: Vec::new(),
             motion: Vec::new(),
             grade: None,
+            rim: 0.0,
         }],
         filter,
     }
