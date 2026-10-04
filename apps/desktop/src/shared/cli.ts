@@ -390,6 +390,32 @@ export const COMMANDS: readonly CliCommandSpec[] = [
     launches: true,
   },
 
+  {
+    path: ["scan"],
+    summary: "Read a recording for sensitive text: card numbers, keys, addresses, IDs",
+    args: [{ name: "id", kind: "string", required: true, summary: "From `recordings list`" }],
+    flags: [
+      {
+        name: "interval",
+        value: "number",
+        summary: "Milliseconds between the frames that are read. Default: 1000",
+      },
+      {
+        name: "langs",
+        value: "string",
+        summary: "Comma-separated BCP-47 tags to read. Default: the system's language",
+      },
+      {
+        name: "all",
+        value: "none",
+        summary: "Include the guesses as well — findings too uncertain to cover unasked",
+      },
+    ],
+    returns:
+      "{ findings: [{ category, label, preview, confidence, startMs, endMs, samples }], sampled, read, covered }",
+    launches: true,
+  },
+
   // ── Rendering ─────────────────────────────────────────────────────────────
   {
     path: ["render"],

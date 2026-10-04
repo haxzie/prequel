@@ -83,6 +83,14 @@ pub struct Track {
     /// user has already dismissed. See [`crate::bucket`].
     pub bucket: u32,
     pub confidence: f32,
+    /// Whether this is covered without being asked.
+    ///
+    /// Decided here rather than by whoever reads the artefact, so
+    /// [`crate::MASK_THRESHOLD`] is named in one place. A consumer comparing a
+    /// confidence against its own copy of the number is a second threshold that
+    /// drifts from this one, and the drift shows up as a cover appearing in a
+    /// preview and not in an export.
+    pub covered: bool,
     /// Whether any sample needed a character corrected to pass its checksum.
     pub repaired: bool,
     /// Whether any sample was held rather than found. The panel sorts these
@@ -93,6 +101,19 @@ pub struct Track {
 }
 
 impl Track {
+    /// The category's own name, for a line of output.
+    pub fn category_label(&self) -> &'static str {
+        match self.category {
+            Category::Email => "email",
+            Category::Phone => "phone",
+            Category::Url => "url",
+            Category::Card => "card",
+            Category::Iban => "iban",
+            Category::NationalId => "id",
+            Category::Secret => "secret",
+        }
+    }
+
     pub fn start(&self) -> MediaTime {
         self.keys.first().map_or(0, |key| key.at)
     }
@@ -220,6 +241,12 @@ impl Tracker {
             }
         }
 
+        // Now that no more samples can raise a confidence, each track can say
+        // whether it is covered.
+        for track in &mut self.done {
+            track.covered = track.confidence >= crate::MASK_THRESHOLD;
+        }
+
         self.done.sort_by_key(Track::start);
         self.done
     }
@@ -239,6 +266,8 @@ impl Open {
                 preview: candidate.preview.clone(),
                 bucket: candidate.bucket,
                 confidence: candidate.confidence,
+                // Settled in `finish`, once every sample has had its say.
+                covered: false,
                 repaired: candidate.repaired,
                 uncertain: false,
                 keys: vec![MaskKey {

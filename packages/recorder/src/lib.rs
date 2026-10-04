@@ -18,6 +18,7 @@ mod export;
 mod listen;
 mod logging;
 mod probe;
+mod scan;
 mod screen;
 mod sound;
 mod still;
@@ -31,6 +32,7 @@ pub use probe::{
     CaptureWallpaper, MediaProbe, ProbeMedia, ProbeSession, TrackProbe, capture_wallpaper,
     probe_media, probe_session,
 };
+pub use scan::{cancel_scan, start_scan, text_recognition_langs};
 pub use screen::{DisplaySafeArea, display_safe_area};
 pub use sound::{
     SoundBank, SoundCues, SoundEvents, SoundSample, sound_bank, sound_cues, sound_sample,

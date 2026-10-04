@@ -344,7 +344,7 @@ pub fn scan_frame(lines: &[Line], rects: &impl RangeRects, salt: u64) -> Vec<Can
                 confidence: found.confidence.min(0.5 + line.confidence / 2.0),
                 repaired: found.repaired,
                 bucket: bucket(salt, found.category, &found.canonical),
-                preview: preview(found.category, &found.canonical),
+                preview: preview(found.category, &line.text[found.bytes.clone()]),
                 canonical: found.canonical,
             });
         }
@@ -409,28 +409,36 @@ pub fn bucket(salt: u64, category: Category, canonical: &str) -> u32 {
 /// identify nothing. A secret shows nothing at all: the label already names the
 /// vendor, which is what makes the row findable, and any part of a key is part
 /// of a key.
-pub fn preview(category: Category, canonical: &str) -> String {
+///
+/// Built from the text **as it was read**, not from the canonical form. The
+/// canonical form exists to be hashed, so it drops the separators that make a
+/// domain a domain — and a row reading `a•••@examplecom` looks like a bug in
+/// the thing that is supposed to be reassuring people.
+pub fn preview(category: Category, raw: &str) -> String {
     const DOTS: &str = "\u{2022}\u{2022}\u{2022}\u{2022}";
 
+    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+    let alnum: String = raw.chars().filter(char::is_ascii_alphanumeric).collect();
+
     match category {
-        Category::Card => match canonical.len() {
-            4.. => format!("{DOTS} {}", &canonical[canonical.len() - 4..]),
+        Category::Card => match digits.len() {
+            4.. => format!("{DOTS} {}", &digits[digits.len() - 4..]),
             _ => DOTS.to_owned(),
         },
-        // The last two digits of an IBAN or a phone number are not identifying,
-        // and they are what makes one row tellable from the next.
-        Category::Iban | Category::NationalId | Category::Phone => match canonical.len() {
-            5.. => format!("{DOTS} {}", &canonical[canonical.len() - 2..]),
+        // The last two characters of an IBAN, an ID or a phone number are not
+        // identifying, and they are what makes one row tellable from the next.
+        Category::Iban | Category::NationalId | Category::Phone => match alnum.len() {
+            5.. => format!("{DOTS} {}", &alnum[alnum.len() - 2..]),
             _ => DOTS.to_owned(),
         },
-        Category::Email => match canonical.split_once('@') {
+        Category::Email => match raw.split_once('@') {
             Some((local, domain)) => {
                 let head = local.chars().next().unwrap_or('\u{2022}');
                 format!("{head}\u{2022}\u{2022}\u{2022}@{domain}")
             }
             None => DOTS.to_owned(),
         },
-        Category::Url => match canonical.split('/').next() {
+        Category::Url => match raw.split('/').next() {
             Some(host) if !host.is_empty() => format!("{host}/\u{2022}\u{2022}\u{2022}"),
             _ => DOTS.to_owned(),
         },

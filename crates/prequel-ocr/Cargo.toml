@@ -1,0 +1,31 @@
+[package]
+name = "prequel-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+# The Apple half of the sensitive-text pass, and nothing else. Vision reads the
+# pixels here; `prequel-sensitive` decides what the words mean and follows them
+# across samples, with no framework dependency at all.
+#
+# The split is what makes the hard part testable. Precision is the whole product
+# and it is a property of a corpus of strings, so the rules live where a corpus
+# can be run against them on any machine. What is left here is a loop and a
+# framework call.
+
+[dependencies]
+prequel-render = { workspace = true }
+prequel-sensitive = { workspace = true }
+prequel-session = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# `vn` brings `ns` with it. `cv` is the pixel buffer a frame arrives in.
+cidre = { workspace = true, features = ["vn", "cv"] }
+
+[dev-dependencies]
+# The loop's tests build a still video with `ffmpeg` and read it with a stand-in
+# for Vision, so a `cv::PixelBuf` has to be nameable in a test signature.
+prequel-sensitive = { workspace = true }
