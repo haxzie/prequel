@@ -34,7 +34,13 @@ import {
   type TextTrack,
   type ZoomSlice,
 } from "../../../shared/project";
-import { retemplated, textFromTemplate, textTemplate } from "../../../shared/text-templates";
+import {
+  DEFAULT_STILL_TEMPLATE,
+  DEFAULT_TEXT_TEMPLATE,
+  retemplated,
+  textFromTemplate,
+  textTemplate,
+} from "../../../shared/text-templates";
 import type { Annotation, AnnotationKind, Point } from "../../../shared/annotations";
 import {
   DEFAULT_COLOUR,
@@ -994,14 +1000,22 @@ function addTextNear(
   if (!found) return state;
   const place = pinned(placedSlices(state.project), found.span);
   if (!place) return state;
-  const text = textFromTemplate(textTemplate(templateId ?? "title"), nextTextId(state), place);
+  // A screenshot's own look rather than the video set's first, which is a
+  // title that rises into frame — see `STILL_MOTION`.
+  const template = templateId
+    ? textTemplate(templateId)
+    : still
+      ? DEFAULT_STILL_TEMPLATE
+      : DEFAULT_TEXT_TEMPLATE;
+  const text = textFromTemplate(template, nextTextId(state), place);
 
+  // The look already carries that — see `STILL_MOTION` — and this is the
+  // belt: a template named by id from somewhere else is not guaranteed to be
+  // one of the still looks, and a text that arrives on a still is a text
+  // nobody can see.
   return placeNewText(
     state,
     found.track,
-    // See the note on the action: a still is drawn at one moment and that
-    // moment is the text's first, which under an entrance is the frame before
-    // it has arrived.
     still ? { ...text, enter: "none", exit: "none", enterMs: 0, exitMs: 0 } : text,
   );
 }

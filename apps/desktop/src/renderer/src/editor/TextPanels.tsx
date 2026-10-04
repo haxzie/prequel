@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Size } from "../../../shared/layout";
 import type { TextAlign, TextField, TextRole, TextSlice, TextStyle } from "../../../shared/project";
 import { TEXT_MOTIONS, type TextMotionId } from "../../../shared/text-motion";
-import { TEXT_TEMPLATES } from "../../../shared/text-templates";
+import { textTemplatesFor } from "../../../shared/text-templates";
 import { cn } from "../lib/cn";
 import { CameraMap } from "./controls/CameraMap";
 import { Field, Section } from "./controls/Field";
@@ -97,6 +97,8 @@ export interface TextPanelProps {
    * holds this beside the project and has to find the field again later.
    */
   onPreviewFont: (index: number, style: { font: string; weight: number } | null) => void;
+  /** Whether this is a screenshot, which is offered its own set of looks. */
+  still: boolean;
   onTemplate: (templateId: string) => void;
   /** A new run of typing is starting, so it is its own undo step. */
   onBeginEdit: () => void;
@@ -415,12 +417,17 @@ function Words({
 }
 
 /** Which template the text wears. The first thing anyone changes on a new one. */
-export function TextStylePanel({ text, onTemplate }: TextPanelProps) {
+export function TextStylePanel({ text, still, fonts, onTemplate }: TextPanelProps) {
+  // A screenshot's looks, or a recording's. Never a mix: half the recording's
+  // are animations and the rest are built around footage — see
+  // `TextTemplate.still`.
+  const templates = textTemplatesFor(still);
+
   return (
     <>
-      <Section title="Template">
+      <Section title={still ? "Style" : "Template"}>
         <div className="grid grid-cols-2 gap-2">
-          {TEXT_TEMPLATES.map((template) => (
+          {templates.map((template) => (
             <button
               key={template.id}
               type="button"
@@ -443,6 +450,7 @@ export function TextStylePanel({ text, onTemplate }: TextPanelProps) {
                     className="max-w-full truncate leading-none"
                     style={{
                       fontSize: `${String(Math.max(7, Math.min(16, field.style.size * 160)))}px`,
+                      fontFamily: fonts.stack(field.style.font),
                       fontWeight: field.style.weight,
                       fontStyle: field.style.italic ? "italic" : "normal",
                       color: field.style.color,
@@ -451,6 +459,14 @@ export function TextStylePanel({ text, onTemplate }: TextPanelProps) {
                       background: field.style.plateColor ?? "transparent",
                       borderRadius: field.style.plateColor ? "3px" : 0,
                       padding: field.style.plateColor ? "1px 4px" : 0,
+                      // The glow, which is the whole of what tells Neon from
+                      // Classic. Scaled off the same card size the type is, so
+                      // the halo stays in proportion to the letters rather than
+                      // swallowing them at this size.
+                      textShadow:
+                        field.style.shadowBlur > 0
+                          ? `0 ${String(field.style.shadowDy * 12)}px ${String(field.style.shadowBlur * 14)}px ${field.style.shadowColor}`
+                          : undefined,
                     }}
                   >
                     {field.text}

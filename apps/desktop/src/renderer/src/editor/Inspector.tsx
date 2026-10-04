@@ -687,6 +687,7 @@ function InspectorPanels(props: InspectorProps) {
   if (text) {
     const panel = {
       text,
+      still: props.still,
       frame: props.frame,
       fonts: props.fonts,
       onChange: (patch: TextPatch) => {
