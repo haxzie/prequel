@@ -459,6 +459,28 @@ export function createFakeRecorder(): Recorder {
 
     cancelTranscribe: () => undefined,
 
+    // No Vision behind the fake. An empty list rather than a plausible one, so
+    // a caller that branches on "can this machine read text" takes the same
+    // path it would on a build where the framework is missing.
+    textRecognitionLangs: () => [],
+
+    // Failed rather than silently done, for the reason the transcription is: a
+    // caller waiting on findings that will never arrive is a bar that never
+    // fills.
+    startScan: (_options, onProgress) => {
+      setTimeout(
+        () =>
+          onProgress(null, {
+            stage: "failed",
+            code: "FAILED",
+            message: "the fake recorder cannot read text",
+          }),
+        0,
+      );
+    },
+
+    cancelScan: () => undefined,
+
     // No audio unit behind the fake. Reported as absent rather than as a pass
     // that writes nothing, so the editor hides the control instead of offering
     // one that leaves the track exactly as it was.

@@ -15,6 +15,8 @@ import type {
   RecordingState,
   SoundBank,
   SoundCues,
+  ScanOptions,
+  ScanUpdate,
   SoundEvents,
   SoundSample,
   SpeechAvailability,
@@ -34,6 +36,8 @@ export type {
   RecordingResult,
   RecordingState,
   SoundBank,
+  ScanOptions,
+  ScanUpdate,
   SoundCues,
   SoundEvents,
   SoundSample,
@@ -349,6 +353,29 @@ export interface Recorder {
 
   /** Asks the running transcription to stop. Safe when nothing is running. */
   cancelTranscribe(): void;
+
+  /**
+   * The languages Vision can read text in on this machine, as BCP-47 tags.
+   *
+   * Cheap and prompt-free, like `speechAvailability`: reading text off a frame
+   * needs no grant, and the scan asks so it can send the languages the person
+   * actually reads rather than letting Vision guess per frame.
+   */
+  textRecognitionLangs(): string[];
+
+  /**
+   * Starts reading a recording for sensitive text. Same shape as
+   * `startTranscribe`, and for the same reasons — a long job on its own thread
+   * with completion arriving as a terminal update rather than a resolved
+   * promise.
+   */
+  startScan(
+    options: ScanOptions,
+    onProgress: (error: Error | null, update: ScanUpdate) => void,
+  ): void;
+
+  /** Asks the running scan to stop. Safe when nothing is running. */
+  cancelScan(): void;
 
   /**
    * Whether this machine has Apple's voice isolation unit.

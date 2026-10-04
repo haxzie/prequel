@@ -14,6 +14,7 @@ prequel-camera = { workspace = true }
 prequel-capture = { workspace = true }
 prequel-encode = { workspace = true }
 prequel-keysound = { workspace = true }
+prequel-ocr = { workspace = true }
 prequel-render = { workspace = true }
 prequel-session = { workspace = true }
 prequel-speech = { workspace = true }

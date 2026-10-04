@@ -368,6 +368,7 @@ dependencies = [
  "prequel-capture",
  "prequel-encode",
  "prequel-keysound",
+ "prequel-ocr",
  "prequel-render",
  "prequel-session",
  "prequel-speech",
@@ -376,6 +377,18 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "prequel-ocr"
+version = "0.1.0"
+dependencies = [
+ "cidre",
+ "prequel-render",
+ "prequel-sensitive",
+ "prequel-session",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
