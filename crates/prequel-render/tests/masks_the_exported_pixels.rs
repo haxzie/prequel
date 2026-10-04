@@ -229,6 +229,7 @@ fn plan(mask: Option<(MaskMode, f64)>) -> RenderPlan {
         blobs: Vec::new(),
         motion: Vec::new(),
         grade: None,
+        rim: 0.0,
     }];
 
     if let Some((mode, reach)) = mask {
@@ -311,6 +312,7 @@ fn moving_plan() -> RenderPlan {
                 blobs: Vec::new(),
                 motion: Vec::new(),
                 grade: None,
+                rim: 0.0,
             },
             PlanItem::Mask {
                 rect: full,
@@ -459,6 +461,7 @@ fn leaning_plan() -> RenderPlan {
                 blobs: Vec::new(),
                 motion: vec![key(full, quad.clone())],
                 grade: None,
+                rim: 0.0,
             },
             PlanItem::Mask {
                 rect: full,
