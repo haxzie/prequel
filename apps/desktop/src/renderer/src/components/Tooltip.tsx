@@ -273,12 +273,27 @@ export function TooltipLayer() {
 
   const bubble = useRef<HTMLDivElement>(null);
 
+  /**
+   * Whether the bubble on screen has been put somewhere yet.
+   *
+   * What separates an appearance from a move. See the note in the effect below:
+   * the first placement must not animate, and every one after it must.
+   */
+  const placed = useRef(false);
+
   // Measured after the text is in the DOM, because the label's width is what
   // centres it, and written straight to the element: React state here would
   // paint the bubble once at the old position and once at the new one.
   useLayoutEffect(() => {
+    // Gone. Whatever comes next is a fresh appearance rather than a move, so
+    // the snap below applies to it again.
+    if (!shown) {
+      placed.current = false;
+      return;
+    }
+
     const node = bubble.current;
-    if (!node || !shown) return;
+    if (!node) return;
 
     const control = shown.element.getBoundingClientRect();
     const { width, height } = node.getBoundingClientRect();
@@ -294,6 +309,32 @@ export function TooltipLayer() {
     // edge rather than being pushed off the other side by the clamp.
     const left = Math.round(Math.max(MARGIN, Math.min(x, maxX)));
     const top = Math.round(Math.max(MARGIN, Math.min(y, maxY)));
+
+    // The first placement is a snap, not a glide.
+    //
+    // The box is `fixed top-0 left-0` and put where it belongs by `transform`,
+    // so until this line runs it is in the top-left corner of the window — and
+    // the measurement above has already flushed style, which makes
+    // `transform: none` the value `transition-transform` animates *from*. So
+    // every label's first appearance flew in from the corner of the screen,
+    // across whatever was under it, while the inner element was doing its own
+    // 140ms rise out of the control at the same time.
+    //
+    // Suppressed for this one frame only: `placed` is false exactly once per
+    // appearance, and every placement after it is the bubble moving between
+    // neighbouring controls, which is what the transition is for.
+    if (!placed.current) {
+      node.style.transition = "none";
+      node.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
+      // Forces the style to settle while the transition is still off. Without
+      // it, restoring the transition below and the transform above land in one
+      // frame and the animation happens anyway.
+      void node.offsetWidth;
+      node.style.transition = "";
+      placed.current = true;
+      return;
+    }
+
     node.style.transform = `translate(${String(left)}px, ${String(top)}px)`;
   }, [shown]);
 

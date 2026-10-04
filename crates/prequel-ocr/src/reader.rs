@@ -80,6 +80,85 @@ impl RangeRects for Reading {
     }
 }
 
+/// Anything that can find the faces on a frame.
+///
+/// Its own trait beside [`TextReader`] rather than more returned from that one.
+/// The two are different requests with different revisions and different costs,
+/// a recording can want either without the other, and a reader that had to
+/// answer both would make "find faces but not text" impossible to ask for.
+pub trait FaceReader {
+    /// The faces, in top-left fractions of the frame.
+    fn read(&mut self, frame: &cv::PixelBuf) -> Result<Vec<Face>>;
+}
+
+/// One face, where it is and how sure Vision is of it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Face {
+    pub rect: NormRect,
+    pub confidence: f32,
+}
+
+/// Apple's face detection, via Vision.
+pub struct VisionFaceReader {
+    request: arc::R<vn::DetectFaceRectanglesRequest>,
+    /// Built once, for the reason the text reader's is.
+    requests: arc::R<ns::Array<vn::Request>>,
+}
+
+impl VisionFaceReader {
+    pub fn new() -> Self {
+        let mut request = vn::DetectFaceRectanglesRequest::new();
+
+        // The newest revision this build knows. Unlike the text request's,
+        // which is pinned so a reading cannot change under a stored finding,
+        // this only decides *where* a box lands — and a later revision finding
+        // a face an earlier one missed is the whole of what it is for.
+        request.set_revision(vn::DetectFaceRectanglesRequest::REVISION_3);
+
+        let base: &vn::Request = &request;
+        let requests = ns::Array::from_slice(&[base]);
+
+        Self { request, requests }
+    }
+}
+
+impl Default for VisionFaceReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FaceReader for VisionFaceReader {
+    fn read(&mut self, frame: &cv::PixelBuf) -> Result<Vec<Face>> {
+        let handler = vn::ImageRequestHandler::with_cv_pixel_buf(frame, None)
+            .ok_or_else(|| Error::Read("Vision refused the frame".to_owned()))?;
+
+        handler
+            .perform(&self.requests)
+            .map_err(|e| Error::Read(format!("{e:?}")))?;
+
+        let Some(results) = self.request.results() else {
+            return Ok(Vec::new());
+        };
+
+        Ok(results
+            .iter()
+            .map(|observation| {
+                let rect = observation.bounding_box();
+                Face {
+                    rect: NormRect::from_vision(
+                        rect.origin.x as f32,
+                        rect.origin.y as f32,
+                        rect.size.width as f32,
+                        rect.size.height as f32,
+                    ),
+                    confidence: observation.confidence(),
+                }
+            })
+            .collect())
+    }
+}
+
 /// Apple's text recognition, via Vision.
 pub struct VisionTextReader {
     request: arc::R<vn::RecognizeTextRequest>,
@@ -112,7 +191,8 @@ impl VisionTextReader {
         request.set_min_text_height(MIN_TEXT_HEIGHT);
 
         if !langs.is_empty() {
-            let tags: Vec<arc::R<ns::String>> = langs.iter().map(|tag| ns::String::with_str(tag)).collect();
+            let tags: Vec<arc::R<ns::String>> =
+                langs.iter().map(|tag| ns::String::with_str(tag)).collect();
             let refs: Vec<&ns::String> = tags.iter().map(AsRef::as_ref).collect();
             request.set_recognition_langs(&ns::Array::from_slice(&refs));
         }

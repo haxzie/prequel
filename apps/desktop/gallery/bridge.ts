@@ -339,6 +339,15 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         onProgress: subscribe("transcribeProgress"),
       },
 
+      // Never reads anything. The gallery exists to look at the panel's states,
+      // and each is reached by changing the fixture rather than by waiting on a
+      // minute of Vision the gallery has no recording to run it over.
+      redact: {
+        start: () => ok(undefined),
+        cancel: () => ok(undefined),
+        onProgress: subscribe("redactProgress"),
+      },
+
       backgrounds: {
         catalogue: async () => ({
           ok: true as const,

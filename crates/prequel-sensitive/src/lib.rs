@@ -54,6 +54,24 @@ pub const MASK_THRESHOLD: f32 = 0.9;
 /// between two samples, which lags the text during a fast scroll.
 pub const RECT_PADDING: f32 = 0.25;
 
+/// And how much a face's box is grown by.
+///
+/// Wider than the text's. Vision returns the face itself — brow to chin, ear to
+/// ear — and a cover cut to that leaves the hairline, the jaw and the ears
+/// around it, which is most of what makes somebody recognisable at a glance.
+/// Erring outwards costs a little of the picture beside them; erring inwards
+/// costs the whole point of the cover.
+pub const FACE_PADDING: f32 = 0.45;
+
+/// How sure Vision has to be that something is a face.
+///
+/// Half. Its face score is a detection score rather than a measure of how much
+/// of a face is showing, and it sits around 0.8 to 0.9 for an ordinary one —
+/// well clear of this. The floor is here for the marginal case: a pattern in a
+/// chair, a face on a poster behind somebody, half of one leaving the frame.
+/// Those come back as a suggestion rather than as a cover.
+pub const FACE_FLOOR: f32 = 0.5;
+
 /// What sort of sensitive thing a finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +83,8 @@ pub enum Category {
     Iban,
     NationalId,
     Secret,
+    /// Somebody's face. The one category that is not text at all.
+    Face,
 }
 
 impl Category {
@@ -74,6 +94,7 @@ impl Category {
             Self::Email | Self::Phone | Self::Url => Group::Contact,
             Self::Card | Self::Iban | Self::NationalId => Group::Financial,
             Self::Secret => Group::Credential,
+            Self::Face => Group::People,
         }
     }
 }
@@ -88,6 +109,7 @@ pub enum Group {
     Contact,
     Financial,
     Credential,
+    People,
 }
 
 /// One recognised line of text from one frame.
@@ -135,24 +157,52 @@ pub fn scan_line(line: &str) -> Vec<Match> {
         let context = text::context_before(line, span.start);
 
         if luhn::is_card(&digits) {
-            out.push(spanned(Category::Card, "Card number", span, &map, &digits, 0.97));
+            out.push(spanned(
+                Category::Card,
+                "Card number",
+                span,
+                &map,
+                &digits,
+                0.97,
+            ));
             continue;
         }
 
         if let Some(id) = ids::classify(raw, &context) {
-            out.push(spanned(Category::NationalId, id.label(), span, &map, &digits, 0.95));
+            out.push(spanned(
+                Category::NationalId,
+                id.label(),
+                span,
+                &map,
+                &digits,
+                0.95,
+            ));
             continue;
         }
 
         match contact::classify_phone(raw, &context) {
             Some(contact::Phone::International) => {
-                out.push(spanned(Category::Phone, "Phone number", span, &map, &digits, 0.92));
+                out.push(spanned(
+                    Category::Phone,
+                    "Phone number",
+                    span,
+                    &map,
+                    &digits,
+                    0.92,
+                ));
             }
             Some(contact::Phone::Likely) => {
                 // Below the threshold on purpose: a grouped ten-digit run is a
                 // phone number most of the time and an identifier the rest, and
                 // being wrong here covers the thing being demonstrated.
-                out.push(spanned(Category::Phone, "Phone number", span, &map, &digits, 0.7));
+                out.push(spanned(
+                    Category::Phone,
+                    "Phone number",
+                    span,
+                    &map,
+                    &digits,
+                    0.7,
+                ));
             }
             None => {}
         }
@@ -183,7 +233,13 @@ pub fn scan_line(line: &str) -> Vec<Match> {
         let canonical = text::canonical(token.text);
 
         if contact::is_email(token.text) {
-            out.push(tokenised(Category::Email, "Email address", &token, canonical, 0.95));
+            out.push(tokenised(
+                Category::Email,
+                "Email address",
+                &token,
+                canonical,
+                0.95,
+            ));
             continue;
         }
 
@@ -195,7 +251,13 @@ pub fn scan_line(line: &str) -> Vec<Match> {
                 // enough that it may not cover anything unasked.
                 secrets::Secret::Generated => 0.65,
             };
-            out.push(tokenised(Category::Secret, secret.label(), &token, canonical, confidence));
+            out.push(tokenised(
+                Category::Secret,
+                secret.label(),
+                &token,
+                canonical,
+                confidence,
+            ));
             continue;
         }
 
@@ -205,14 +267,26 @@ pub fn scan_line(line: &str) -> Vec<Match> {
         }
 
         if let Some(id) = ids::classify(token.text, &context) {
-            out.push(tokenised(Category::NationalId, id.label(), &token, canonical, 0.95));
+            out.push(tokenised(
+                Category::NationalId,
+                id.label(),
+                &token,
+                canonical,
+                0.95,
+            ));
             continue;
         }
 
         if contact::is_url(token.text) {
             // The lowest of the lot, and off by default in the panel: people
             // point a camera at an address bar on purpose.
-            out.push(tokenised(Category::Url, "Web address", &token, canonical, 0.6));
+            out.push(tokenised(
+                Category::Url,
+                "Web address",
+                &token,
+                canonical,
+                0.6,
+            ));
         }
     }
 
@@ -234,8 +308,7 @@ fn iban_from(line: &str, token: &text::Token<'_>) -> Option<Range<usize>> {
     let head = head.to_ascii_uppercase();
     let bytes = head.as_bytes();
 
-    if !bytes[..2].iter().all(u8::is_ascii_alphabetic)
-        || !bytes[2..].iter().all(u8::is_ascii_digit)
+    if !bytes[..2].iter().all(u8::is_ascii_alphabetic) || !bytes[2..].iter().all(u8::is_ascii_digit)
     {
         return None;
     }
@@ -353,6 +426,57 @@ pub fn scan_frame(lines: &[Line], rects: &impl RangeRects, salt: u64) -> Vec<Can
     out
 }
 
+/// A face, as a candidate the tracker can follow.
+///
+/// Built here rather than in `prequel-ocr` so every candidate in the system is
+/// made in one place, and so the padding and the bucket are decided by the same
+/// rules the text ones answer to.
+///
+/// **The tracker follows it with no changes at all**, which is worth saying
+/// because it looks like it should need some. Identity there is a content hash
+/// and then geometry — and an empty `canonical` gives every face in a recording
+/// the same bucket, so the bucket stops discriminating and the geometry does all
+/// the work: nearest box, gated on how far it could have moved and how much it
+/// could have changed size. That *is* face tracking, and it falls out of the
+/// rules written for text rather than needing its own.
+///
+/// The cost of the shared bucket is that a dismissal of one face applies to any
+/// face, since there is nothing else to tell them apart by. A face has no stable
+/// identity to key on without recognising *who* it is, which is a thing this
+/// does not do and should not start doing to make a dismissal stickier.
+pub fn face(rect: NormRect, confidence: f32, salt: u64) -> Option<Candidate> {
+    let rect = rect.padded(FACE_PADDING).clamped()?;
+
+    // Vision's own certainty is not this finding's.
+    //
+    // The two numbers answer different questions, and conflating them is a real
+    // bug this had: Vision returns about 0.8 to 0.9 for a plain, well-lit,
+    // front-on face, and [`MASK_THRESHOLD`] is 0.9 — so every face in a
+    // recording came back a hair under the line, was filed as a guess, and
+    // nothing was covered. A feature that found two faces and hid neither.
+    //
+    // What [`Candidate::confidence`] means here is "should this be covered
+    // without being asked", and once Vision says there is a face there the
+    // answer is yes. Its number is a detection score, so it is used as a floor
+    // on *whether* there is a face rather than as a measure of how much of one.
+    let confidence = if confidence >= FACE_FLOOR {
+        0.95
+    } else {
+        confidence * 0.5
+    };
+
+    Some(Candidate {
+        category: Category::Face,
+        label: "Face",
+        rect,
+        confidence,
+        repaired: false,
+        bucket: bucket(salt, Category::Face, ""),
+        preview: preview(Category::Face, ""),
+        canonical: String::new(),
+    })
+}
+
 /// How many bits of a match's hash are kept.
 ///
 /// Twenty-four, and the number is the whole security argument, so it is worth
@@ -443,5 +567,8 @@ pub fn preview(category: Category, raw: &str) -> String {
             _ => DOTS.to_owned(),
         },
         Category::Secret => DOTS.to_owned(),
+        // Nothing to mask and nothing to leak: the category is the whole of
+        // what was found, and a face has no text form to abbreviate.
+        Category::Face => "Face".to_owned(),
     }
 }

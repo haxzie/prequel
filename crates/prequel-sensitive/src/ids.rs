@@ -300,7 +300,13 @@ mod tests {
 
     #[test]
     fn rejects_unissued_social_security_ranges() {
-        for raw in ["000-45-6789", "666-45-6789", "900-45-6789", "123-00-6789", "123-45-0000"] {
+        for raw in [
+            "000-45-6789",
+            "666-45-6789",
+            "900-45-6789",
+            "123-00-6789",
+            "123-45-0000",
+        ] {
             assert_eq!(classify(raw, ""), None, "{raw}");
         }
     }

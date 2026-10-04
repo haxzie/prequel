@@ -27,6 +27,7 @@ import {
   cropToFrame,
   cursorAt,
   loupeAt,
+  maskRegionAt,
   rectAt,
   LOUPE_BLEED,
   LOUPE_SCRIM,
@@ -116,32 +117,15 @@ const MODE_MASK_BLUR = 6;
 const MODE_MASK_PIXELATE = 7;
 
 /**
- * How wide a mask blurs at full strength, as a fraction of its own shorter
- * edge.
+ * How many taps across a mosaic block is averaged, and how many a blur is.
  *
- * **Its own edge, not the frame's**, and that is the whole of this number. What
- * a mask has to destroy is whatever it was drawn around — a line of text, a
- * face, a row of a table — and the height of that thing is the height of the
- * patch. Measured against the frame instead, a mask over one line of an address
- * came out with a blur of two or three pixels and left the words readable,
- * while one over half the picture was a smear; the setting would have meant two
- * different amounts of hiding at the same number.
- *
- * A quarter, which at the top of the slider is very nearly one flat colour.
- * The slider is there to choose how *obvious* the mask is, not whether it
- * works: nothing in its travel should leave what is under it legible.
+ * `MASK_TAPS` and `MASK_SPIRAL` in `shaders.metal`, which is where the
+ * reasoning for both numbers lives. Here because a GLSL loop needs a constant
+ * bound, and declared beside the modes so the pair is read together.
  */
-const MASK_BLUR_REACH = 0.25;
-
-/**
- * And how large a block is at full strength, on the same measure.
- *
- * Far smaller than the blur's, because the two are not the same question: a
- * blur has to reach across a letter to destroy it, and a mosaic only has to be
- * coarser than one. At the default this is about nine blocks across the patch,
- * which reads as a deliberate pixelation — three would read as a broken render.
- */
-const MASK_BLOCK_REACH = 0.18;
+const MASK_TAPS = 4;
+const MASK_SPIRAL = 16;
+const MASK_BLOCK_TAPS = 2;
 
 /**
  * The two shader sources, exported for `webgl.test.ts` and nothing else.
@@ -316,6 +300,8 @@ precision highp float;
 
 uniform vec4 u_rect;
 uniform vec4 u_src;
+// The patch a cover hides, in the picture's own uv. Only a cover sets it.
+uniform vec4 u_maskRegion;
 uniform vec2 u_shape;
 uniform vec4 u_colorA;
 uniform vec4 u_colorB;
@@ -704,6 +690,9 @@ float vignette(vec2 screen) {
 // shadow has somewhere to fall off. Interpolated from shared/layout.ts, which
 // is what grows the quad in the first place — one number rather than two that
 // could drift.
+const int MASK_TAPS = ${String(MASK_TAPS)};
+const int MASK_SPIRAL = ${String(MASK_SPIRAL)};
+const int MASK_BLOCK_TAPS = ${String(MASK_BLOCK_TAPS)};
 const float LOUPE_BLEED = ${LOUPE_BLEED.toFixed(2)};
 const float LOUPE_SCRIM_REACH = ${LOUPE_SCRIM_REACH.toFixed(2)};
 const float LOUPE_SCRIM = ${LOUPE_SCRIM.toFixed(2)};
@@ -1240,44 +1229,71 @@ void main() {
   // preview and the export, and there is no second rasteriser to state an
   // orientation for.
   if (u_mode == 6 || u_mode == 7) {
-    float shown = 1.0 - smoothstep(-0.5, 0.5,
-                                   shapeDistance(v_local - u_rect.zw * 0.5, u_rect.zw * 0.5,
-                                                 u_shape.x, u_shape.y));
-    if (shown <= 0.0) discard;
+    // Outside the patch is the rest of the picture, already drawn. Discard
+    // rather than blend: this pass covers the whole quad and only a patch of it
+    // is being replaced.
+    // Named inside rather than patch, because patch is a reserved word in
+    // GLSL ES 3.00 — held for tessellation — and using one fails the whole
+    // fragment shader, so the preview drew nothing at all, covers or not.
+    // No backticks in here either: this is inside a template literal.
+    vec2 inside = (v_uv - u_maskRegion.xy) / max(u_maskRegion.zw, vec2(1e-6));
+    if (any(lessThan(inside, vec2(0.0))) || any(greaterThan(inside, vec2(1.0)))) discard;
 
-    vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
+    // The picture's own crop, so the taps land on the recording rather than on
+    // whatever the texture holds outside it.
+    vec2 uv = u_src.xy + v_uv * u_src.zw;
 
-    // u_weight is how wide, in *output* pixels, and the chain is indexed in the
-    // copy's own texels — which are not the same thing. The copy is taken at
-    // whatever the drawing buffer is: the preview's is the window times the
-    // device ratio, capped at two, and the export's is the file. Asking for a
-    // level by output pixels blurred the preview by however far apart those two
-    // happened to be — a patch that came out black on screen and merely soft in
-    // the file, which is the one failure a shared compositor is supposed to
-    // make impossible. As a fraction of the rectangle it is the same picture at
-    // either size.
-    vec2 grain = vec2(textureSize(u_backdrop, 0));
-    float across = u_weight / max(u_rect.z, 1.0) * grain.x;
-    // A level is a halving, so the level whose texels span that many is its log.
-    float lod = log2(max(across, 1.0));
+    // How far to reach, in the sampled image's own uv. u_weight is a width in
+    // output pixels against the picture at rest, so a zoom magnifies it along
+    // with the pixels it is destroying.
+    vec2 reach = (u_weight / max(u_rect.zw, vec2(1.0))) * u_src.zw;
 
     vec4 taken;
     if (u_mode == 7) {
-      // The block grid, in the rectangle's own uv. Sampled at the middle of a
-      // block and at the level whose texels are that size, so each block is the
-      // average of what it covers rather than one pixel out of it — which is
-      // what makes a mosaic read as deliberate rather than as a sampling fault.
-      vec2 cell = max(u_weight, 1.0) / max(u_rect.zw, vec2(1.0));
-      taken = textureLod(u_backdrop, (floor(uv / cell) + 0.5) * cell, lod);
+      vec2 cell = max(reach, vec2(1e-6));
+      vec2 corner = floor((v_uv - u_maskRegion.xy) / cell) * cell + u_maskRegion.xy;
+
+      vec4 sum = vec4(0.0);
+      for (int y = 0; y < MASK_TAPS; y++) {
+        for (int x = 0; x < MASK_TAPS; x++) {
+          vec2 offset = (vec2(float(x), float(y)) + 0.5) / float(MASK_TAPS);
+          sum += texture(u_image, u_src.xy + (corner + offset * cell) * u_src.zw);
+        }
+      }
+      taken = sum / float(MASK_TAPS * MASK_TAPS);
     } else {
-      taken = textureLod(u_backdrop, uv, lod);
+      // A mosaic, and then a golden-angle spiral over the blocks. The mosaic is
+      // the half that hides anything: a spiral is a sparse sampling of a disc,
+      // and sparsely sampling a high-contrast pattern leaves a beat of it
+      // standing. The reasoning in full is in shaders.metal, beside the same
+      // arithmetic.
+      vec2 cell = max(reach * 0.5, vec2(1e-6));
+
+      vec4 sum = vec4(0.0);
+      for (int i = 0; i < MASK_SPIRAL; i++) {
+        float t = (float(i) + 0.5) / float(MASK_SPIRAL);
+        float angle = float(i) * 2.399963;
+        vec2 tap = uv + vec2(cos(angle), sin(angle)) * sqrt(t) * reach;
+        // Snapped in the source's own uv, so the grid is anchored to the
+        // recording rather than to wherever the patch is — a grid that moved
+        // with the patch would shimmer as it tracked.
+        vec2 corner = floor(tap / cell) * cell;
+
+        for (int y = 0; y < MASK_BLOCK_TAPS; y++) {
+          for (int x = 0; x < MASK_BLOCK_TAPS; x++) {
+            vec2 spot = (vec2(float(x), float(y)) + 0.5) / float(MASK_BLOCK_TAPS);
+            sum += texture(u_image, corner + spot * cell);
+          }
+        }
+      }
+      taken = sum / float(MASK_SPIRAL * MASK_BLOCK_TAPS * MASK_BLOCK_TAPS);
     }
 
-    // Unpremultiplied and put back opaque. The copy carries the frame's own
-    // alpha, and drawing a translucent average over the sharp pixels still
-    // underneath would leave what the mask is hiding showing through it.
+    // Unpremultiplied and put back opaque. Drawing a translucent average over
+    // the sharp pixels still underneath would leave what the cover is hiding
+    // showing through it.
     vec3 colour = taken.a > 0.0 ? taken.rgb / taken.a : taken.rgb;
-    fragColor = premultiplied(colour, shown);
+    fragColor = premultiplied(colour, 1.0);
     return;
   }
 
@@ -1440,6 +1456,7 @@ interface Program {
   program: WebGLProgram;
   rect: WebGLUniformLocation | null;
   src: WebGLUniformLocation | null;
+  maskRegion: WebGLUniformLocation | null;
   shape: WebGLUniformLocation | null;
   frame: WebGLUniformLocation | null;
   colorA: WebGLUniformLocation | null;
@@ -2177,34 +2194,52 @@ export class WebGlCompositor {
       }
 
       case "mask": {
-        // How wide the blur, or how large a block, in output pixels — see
-        // `MASK_BLUR_REACH` for why both are measured against the patch rather
-        // than the frame, and why the two scales differ.
-        //
-        // A floor of two output pixels: at one, a blur is the level the chain
-        // starts at and a mosaic is a block the size of a pixel, so the control
-        // would appear to do nothing over the first part of its travel.
-        const reach = Math.max(
-          2,
-          Math.min(item.rect.width, item.rect.height) *
-            (item.mode === "pixelate" ? MASK_BLOCK_REACH : MASK_BLUR_REACH) *
-            Math.min(Math.max(item.strength, 0), 1),
-        );
+        // The picture's own geometry at this moment, so the cover is drawn over
+        // exactly the quad the picture occupies — leaned corners included. The
+        // lean and the zoom are the vertex shader's business and the cover
+        // never learns either happened; see the note in `shaders.metal`.
+        const now = rectAt(item.motion ?? [], at, item.rect, 0);
+        const patch = maskRegionAt(item.region, at);
+        if (!patch || patch.width <= 0 || patch.height <= 0) break;
 
-        // The patch as it stands, with a mip chain over it — which is what the
-        // shader reads instead of walking a kernel. Taken here rather than once
-        // per frame: each mask covers a different rectangle, and the copy is
-        // the size of that rectangle alone.
-        this.grabBackdrop(gl, item.rect, frame, true);
+        // The recording's own frame, which a cover samples rather than a copy
+        // of the composition — that is what makes it hide what the recording
+        // held. Always the screen: a cover is anchored to the picture and
+        // `maskItems` emits none without one. The exporter reaches for the same
+        // buffer for the same reason.
+        //
+        // Nothing was bound here at all until this was written, so a cover
+        // sampled whichever texture the item before it happened to leave on
+        // unit 0 — a caption atlas, the camera, a wallpaper.
+        const source = sources.screen;
+        if (!source) break;
+
+        // `live: false`, and it depends on an ordering that holds by
+        // construction: the picture is pushed in `buildRenderPlan` long before
+        // its covers, so by the time one is drawn the texture under this key
+        // already holds this frame. Asking for a re-upload instead would send a
+        // whole 4K frame again per cover per frame, which is the cost that
+        // decides whether the feature is usable on the recordings it is for.
+        // `a_cover_is_drawn_after_the_picture_it_hides` pins the order.
+        if (!this.upload(gl, "screen", source, false)) break;
+
+        const grain = sizeOf(source);
 
         set(gl, p, {
-          rect: item.rect,
-          // Square-cornered: a mask is the rectangle somebody dragged, and a
-          // radius would leave four slivers of what they were hiding in the
-          // corners of it.
+          rect: { x: now.x, y: now.y, width: now.width, height: now.height },
+          ...(now.quad ? { quad: now.quad } : {}),
+          // In the texture's own 0-1, as every other sampling draw passes it.
+          // In pixels the shader samples thousands of texels off the edge and
+          // the cover is a flat smear of the last row.
+          src: normalised(item.srcRect, grain.width, grain.height),
+          maskRegion: [patch.x, patch.y, patch.width, patch.height],
+          // Square-cornered and un-feathered: the quad here is the whole
+          // picture, and the patch's own edge is what the shader feathers.
           shape: { radius: 0, exponent: 2 },
           mode: item.mode === "pixelate" ? MODE_MASK_PIXELATE : MODE_MASK_BLUR,
-          weight: reach,
+          // The blur's radius or a block's pitch, in output pixels against the
+          // picture at rest. Resolved by `maskReach` in `shared/layout.ts`.
+          weight: item.reach,
         });
         drawQuad(gl);
         break;
@@ -2678,7 +2713,11 @@ export class WebGlCompositor {
 
 /** The item's rectangle and shape at a moment, honouring a zoom's motion. */
 function moving(
-  item: Extract<PlanItem, { motion?: RectKey[] }>,
+  // A mask carries `motion` too and has no `shape` — it is square-cornered by
+  // definition. Excluded rather than branched on: the mask case above samples
+  // its own movement, because it also has to copy the backdrop at the place it
+  // has moved to, which nothing else here needs.
+  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" }>,
   at: number,
 ): {
   rect: Rect;
@@ -2721,6 +2760,8 @@ interface Draw {
   mode: number;
   quad?: number[];
   src?: [number, number, number, number];
+  /** The patch a cover hides, in the picture's own uv. */
+  maskRegion?: [number, number, number, number];
   colorA?: string;
   colorB?: string;
   gradient?: [number, number];
@@ -2794,6 +2835,11 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
 
   const src = draw.src ?? [0, 0, 1, 1];
   gl.uniform4f(p.src, src[0], src[1], src[2], src[3]);
+
+  // No patch on every draw but a cover's. A zero-width region covers nothing,
+  // which is what the branch wants of it.
+  const patch = draw.maskRegion ?? [0, 0, 0, 0];
+  gl.uniform4f(p.maskRegion, patch[0], patch[1], patch[2], patch[3]);
 
   const a = rgba(draw.colorA ?? "#00000000");
   gl.uniform4f(p.colorA, a[0], a[1], a[2], a[3]);
@@ -3048,6 +3094,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     program,
     rect: at("u_rect"),
     src: at("u_src"),
+    maskRegion: at("u_maskRegion"),
     shape: at("u_shape"),
     frame: at("u_frame"),
     colorA: at("u_colorA"),

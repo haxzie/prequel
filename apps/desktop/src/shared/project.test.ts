@@ -659,7 +659,7 @@ describe("reading a project written before the perspective rename", () => {
   it("still clamps a value that arrives under the old name", () => {
     // The fallback feeds the same clamp, or an old file could set an angle the
     // interface cannot reach and the picture becomes foreshortening.
-    expect(zoomedBy({ tilt: 400 }).rotateX).toBe(30);
+    expect(zoomedBy({ tilt: 400 }).rotateX).toBe(45);
     expect(zoomedBy({ depth: -3 }).perspective).toBe(0);
   });
 

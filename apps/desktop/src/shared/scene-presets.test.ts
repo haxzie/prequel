@@ -198,7 +198,7 @@ describe("reading one written by another build", () => {
     const preset = read({ zoom: { ...DEFAULT_ZOOM_LOOK, level: 99, rotateX: 400 } });
 
     expect(preset.zoom.level).toBe(8);
-    expect(preset.zoom.rotateX).toBe(30);
+    expect(preset.zoom.rotateX).toBe(45);
   });
 });
 

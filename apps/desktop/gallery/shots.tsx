@@ -442,6 +442,7 @@ export const SHOTS: readonly Shot[] = [
   },
   inspector("inspector-captions", "Captions"),
   inspector("inspector-filters", "Filters"),
+  inspector("inspector-privacy", "Privacy"),
   // A look actually on the picture, rather than the panel that chooses it.
   // The whole frame, because the point of the shot is the preview: this is the
   // only place a filter is *seen* rather than asserted, and the WebGL pass it

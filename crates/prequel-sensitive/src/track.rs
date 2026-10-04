@@ -111,6 +111,7 @@ impl Track {
             Category::Iban => "iban",
             Category::NationalId => "id",
             Category::Secret => "secret",
+            Category::Face => "face",
         }
     }
 

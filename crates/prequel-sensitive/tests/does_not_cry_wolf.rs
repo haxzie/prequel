@@ -90,8 +90,14 @@ fn still_finds_the_things_it_is_for() {
     .concat();
 
     let wanted: &[(&str, Category)] = &[
-        ("Charge to 4242 4242 4242 4242 expiring 04/27", Category::Card),
-        ("Transfer to GB82 WEST 1234 5698 7654 32 today", Category::Iban),
+        (
+            "Charge to 4242 4242 4242 4242 expiring 04/27",
+            Category::Card,
+        ),
+        (
+            "Transfer to GB82 WEST 1234 5698 7654 32 today",
+            Category::Iban,
+        ),
         ("Email accounts@example.com for a copy", Category::Email),
         (&key, Category::Secret),
         (&jwt, Category::Secret),

@@ -10,11 +10,22 @@ use serde::{Deserialize, Serialize};
 /// Top-left because that is what `shared/layout.ts`, the render plan and
 /// `ZoomSlice.x`/`y` all use — Vision is the odd one out, and [`from_vision`]
 /// is the single place that is reconciled.
+/// Renamed on the wire, not in Rust: `w` and `h` read well in the arithmetic
+/// below and badly everywhere a rectangle crosses a boundary. `plan.rs`'s
+/// `MaskKey`, `shared/project.ts`'s `MaskKey` and `shared/layout.ts`'s all
+/// spell these `width` and `height`, and a scan that emitted `w`/`h` landed in
+/// TypeScript as two `undefined`s — which `JSON.stringify` drops, so the saved
+/// cover had a position and no size and was discarded the next time the project
+/// was read. Nothing caught it: the TypeScript end is a hand-written
+/// declaration of this struct's JSON, and a hand-written declaration cannot
+/// disagree with itself.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct NormRect {
     pub x: f32,
     pub y: f32,
+    #[serde(rename = "width")]
     pub w: f32,
+    #[serde(rename = "height")]
     pub h: f32,
 }
 
@@ -54,9 +65,15 @@ impl NormRect {
     /// Corners arrive in Vision's own lower-left space, so this flips too.
     pub fn from_vision_quad(corners: [(f32, f32); 4]) -> Self {
         let min_x = corners.iter().map(|c| c.0).fold(f32::INFINITY, f32::min);
-        let max_x = corners.iter().map(|c| c.0).fold(f32::NEG_INFINITY, f32::max);
+        let max_x = corners
+            .iter()
+            .map(|c| c.0)
+            .fold(f32::NEG_INFINITY, f32::max);
         let min_y = corners.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
-        let max_y = corners.iter().map(|c| c.1).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = corners
+            .iter()
+            .map(|c| c.1)
+            .fold(f32::NEG_INFINITY, f32::max);
 
         Self::from_vision(min_x, min_y, max_x - min_x, max_y - min_y)
     }

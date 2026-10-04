@@ -26,6 +26,8 @@ tracing = { workspace = true }
 cidre = { workspace = true, features = ["vn", "cv"] }
 
 [dev-dependencies]
+serde_json = { workspace = true }
+
 # The loop's tests build a still video with `ffmpeg` and read it with a stand-in
 # for Vision, so a `cv::PixelBuf` has to be nameable in a test signature.
 prequel-sensitive = { workspace = true }
