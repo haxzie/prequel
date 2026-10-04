@@ -7,6 +7,7 @@
 
 use prequel_sensitive::track::{MaskKey, Tracker};
 use prequel_sensitive::{Candidate, Category, NormRect, bucket};
+use prequel_session::MediaTime;
 
 const SECOND: u64 = 1_000_000_000;
 
@@ -29,6 +30,26 @@ fn rects(keys: &[MaskKey]) -> Vec<(f32, f32)> {
     keys.iter().map(|key| (key.rect.x, key.rect.y)).collect()
 }
 
+/// Where the cover's top edge is at `when`, the way both rasterisers read it.
+///
+/// A straight line between the two keys either side — `maskRegionAt` in
+/// `shared/layout.ts` and `mask_region_at` in `plan.rs`, which is what makes a
+/// key that already lies on that line redundant.
+fn at(keys: &[MaskKey], when: MediaTime) -> f32 {
+    let after = keys.iter().position(|key| key.at >= when).unwrap_or(0);
+    if after == 0 {
+        return keys[0].rect.y;
+    }
+    let (a, b) = (keys[after - 1], keys[after]);
+    let span = b.at.saturating_sub(a.at);
+    let t = if span > 0 {
+        when.saturating_sub(a.at) as f32 / span as f32
+    } else {
+        0.0
+    };
+    a.rect.y + (b.rect.y - a.rect.y) * t
+}
+
 #[test]
 fn follows_a_scroll() {
     let mut tracker = Tracker::new(SECOND);
@@ -43,16 +64,25 @@ fn follows_a_scroll() {
     assert_eq!(tracks.len(), 1, "one address, one cover: {tracks:?}");
 
     let track = &tracks[0];
-    assert_eq!(track.keys.len(), 5);
     assert!(!track.uncertain);
 
     // The keys describe the movement, so the rasterisers' interpolation puts
-    // the cover over the text at every frame in between.
-    let ys: Vec<f32> = track.keys.iter().map(|key| key.rect.y).collect();
-    assert!(
-        ys.windows(2).all(|pair| pair[1] < pair[0]),
-        "the cover should move up with the text: {ys:?}"
-    );
+    // the cover over the text at every frame in between. Asserted by
+    // interpolating rather than by counting keys: a scroll at a steady rate is
+    // a straight line, and a key that lies on the line between the two around
+    // it is dropped — it draws nothing the interpolation would not.
+    for step in 0..5u64 {
+        let want = 0.8 - 0.1 * step as f32;
+        let got = at(&track.keys, step * SECOND);
+        assert!(
+            (got - want).abs() < 0.01,
+            "at {step}s the cover should be at {want}, not {got}: {:?}",
+            track.keys
+        );
+    }
+    // Halfway between two samples as well, which is where a cover that was
+    // held rather than followed would show.
+    assert!((at(&track.keys, SECOND / 2) - 0.75).abs() < 0.01);
     // And the keys stay in time order, which both samplers assume.
     assert!(track.keys.windows(2).all(|pair| pair[1].at > pair[0].at));
 }
@@ -150,7 +180,11 @@ fn a_slightly_different_reading_is_the_same_text() {
 
     let tracks = tracker.finish();
     assert_eq!(tracks.len(), 1, "one address read three times: {tracks:?}");
-    assert_eq!(tracks[0].keys.len(), 3);
+    // Covered for the whole of it. Not a key count: all three readings put the
+    // address in the same place, so the middle key lies on the line between
+    // the other two and is dropped as saying nothing.
+    assert_eq!(tracks[0].start(), 0);
+    assert_eq!(tracks[0].end(), 2 * SECOND);
 }
 
 #[test]

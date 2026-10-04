@@ -197,8 +197,14 @@ fn does_not_read_a_frame_it_has_already_read() {
 
     // And the cover still reaches every sample: skipping the read must not skip
     // the finding, or a mask would blink out over a screen that never changed.
+    //
+    // The span and the holds rather than a key per sample. The finding never
+    // moves, so every key between the first and the last lies on the line
+    // between them and is dropped as saying nothing — which is what keeps a
+    // still screen from writing a key a sample into the project.
     let track = summary.tracks.first().expect("one finding");
-    assert_eq!(track.keys.len(), 10);
+    assert_eq!(track.start(), 0, "covered from the first sample");
+    assert_eq!(track.end(), 9 * SECOND, "and still covered at the last");
     assert!(track.keys.iter().all(|key| !key.lost));
 }
 
@@ -267,4 +273,113 @@ fn covers_the_segments_it_read() {
     .expect("the scan");
 
     assert_eq!(summary.covered, vec!["screen.mp4".to_owned()]);
+}
+
+/// A face that drifts down the frame, and a count of how often it was asked for.
+struct MovingFace {
+    reads: AtomicUsize,
+}
+
+impl MovingFace {
+    /// Where the face is at the `n`th reading, which is `n` face intervals in.
+    ///
+    /// A curve rather than a line, and that is the point: a straight move is
+    /// drawn exactly by two keys however far apart they are, so a test against
+    /// one would pass at any cadence at all. A head leans and a page eases; what
+    /// a cover has to survive is the part of the movement an interpolation
+    /// between two distant samples cannot see.
+    fn y(n: usize) -> f32 {
+        let turns = n as f32 / 10.0;
+        0.4 + 0.25 * (turns * std::f32::consts::TAU / 2.0).sin()
+    }
+}
+
+impl FaceReader for MovingFace {
+    fn read(&mut self, _frame: &cv::PixelBuf) -> prequel_ocr::Result<Vec<Face>> {
+        let n = self.reads.fetch_add(1, Ordering::Relaxed);
+        Ok(vec![Face {
+            rect: NormRect::new(0.4, Self::y(n), 0.1, 0.1),
+            confidence: 0.9,
+        }])
+    }
+}
+
+/// Where a track puts its cover at `when`, the way both rasterisers read it:
+/// a straight line between the two keys either side.
+fn cover_y(keys: &[prequel_ocr::MaskKey], when: u64) -> f32 {
+    let after = keys.iter().position(|key| key.at >= when).unwrap_or(0);
+    if after == 0 {
+        return keys[0].rect.y;
+    }
+    let (a, b) = (keys[after - 1], keys[after]);
+    let span = b.at.saturating_sub(a.at);
+    let t = if span > 0 {
+        when.saturating_sub(a.at) as f32 / span as f32
+    } else {
+        0.0
+    };
+    a.rect.y + (b.rect.y - a.rect.y) * t
+}
+
+#[test]
+fn looks_for_faces_far_more_often_than_it_reads_text() {
+    // The two readers cost nothing like each other — about 300 ms for an
+    // accurate text recognition against about 5 ms for face rectangles — and
+    // they are chasing different things: text sits still until the page
+    // scrolls, a face in a video playing inside the recording moves in every
+    // frame. One cadence for both meant the faces were sampled at the text's
+    // rate, and the cover between two samples is a straight line drawn across a
+    // second of movement — which lands it where nobody is.
+    let dir = scratch("cadence");
+    let path = video(&dir, 4, "30");
+    let text = &mut Fake::new("nothing sensitive here");
+    let faces = &mut MovingFace {
+        reads: AtomicUsize::new(0),
+    };
+
+    let mut ask = request(path, 0, 4 * SECOND);
+    ask.faces = true;
+
+    let summary = scan_with(&ask, text, faces, &CancelFlag::new(), &mut |_| {}).expect("the scan");
+
+    let read_text = text.reads.load(Ordering::Relaxed);
+    let read_faces = faces.reads.load(Ordering::Relaxed);
+
+    // Four seconds: four text reads, forty face reads.
+    assert_eq!(read_text, 4, "the text is still read once a second");
+    assert!(
+        read_faces >= read_text * 8,
+        "the faces should be looked for far more often: {read_faces} against {read_text}"
+    );
+
+    let face = summary
+        .tracks
+        .iter()
+        .find(|track| track.category_label() == "face")
+        .expect("the face was followed");
+    assert!(face.keys.iter().all(|key| !key.lost));
+
+    // Where the cover actually lands, which is the only thing that matters and
+    // the only thing a key count never said. The padded box is 0.45 of its
+    // height either side, so a tenth of the frame out is a reveal; this asks
+    // for an order better than that at every reading.
+    //
+    // Not a key count, because the keys are thinned: a stretch the
+    // interpolation already draws correctly keeps only the two ends of itself.
+    let mut worst = 0.0f32;
+    for n in 0..read_faces {
+        let when = n as u64 * 100_000_000;
+        if when > face.end() {
+            break;
+        }
+        // The padding the candidate carries, taken back off to compare like
+        // with like.
+        let got = cover_y(&face.keys, when) + 0.1 * 0.45;
+        worst = worst.max((got - MovingFace::y(n)).abs());
+    }
+    assert!(
+        worst < 0.01,
+        "the cover drifted {:.1}% of the frame from the face it is on",
+        worst * 100.0
+    );
 }

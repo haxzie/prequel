@@ -47,6 +47,31 @@ const MAX_SIZE_CHANGE: f32 = 0.6;
 /// for a second is both a leak and reads as a bug.
 const GAP_TOLERANCE: usize = 3;
 
+/// And the least time that may be, whatever the cadence.
+///
+/// Three samples is three seconds for the text, which is read once a second,
+/// and a third of a second for the faces, which are read ten times as often —
+/// and a third of a second is a blink, a turn of the head or one frame Vision
+/// happened to miss. Counting samples alone would close a face's track on all
+/// three and open a new one the moment it came back, which costs the cover its
+/// identity and so whatever the user had set on it.
+const MIN_GAP: MediaTime = 1_000_000_000;
+
+/// How far a key may sit from the line between its neighbours and still be
+/// dropped, as a fraction of the frame.
+///
+/// The keys are interpolated by both rasterisers, so a key that lies on the
+/// line between the two around it draws exactly what it would draw if it were
+/// not there. Sampling the faces ten times a second without this writes a key
+/// every 100 ms into `project.json` — a few hundred kilobytes for one face in a
+/// five-minute take, rewritten on every edit — and almost all of them say what
+/// the two either side already said.
+///
+/// A third of a percent of the frame: about four pixels at 1080, and well
+/// inside the padding every rectangle already carries, so thinning can move a
+/// cover by less than the slack it was given.
+const THIN_EPSILON: f32 = 0.003;
+
 /// How different two readings of the same text may be and still be the same
 /// text, as an edit distance.
 ///
@@ -210,7 +235,9 @@ impl Tracker {
             }
 
             open.missed += 1;
-            if open.missed > GAP_TOLERANCE {
+            // Whichever is longer: three samples, or a second. See `MIN_GAP`.
+            let gap = at.saturating_sub(open.last_at);
+            if open.missed > GAP_TOLERANCE && gap > MIN_GAP {
                 // Closed at its last real sighting. Bridging a longer gap would
                 // sweep a cover diagonally across content it was never over.
                 self.done.push(open.track);
@@ -295,6 +322,7 @@ impl Open {
             rect: candidate.rect,
             lost: false,
         });
+        self.thin();
         // The highest confidence any sample had. A finding read clearly once is
         // that finding, however poorly the next frame rendered it.
         self.track.confidence = self.track.confidence.max(candidate.confidence);
@@ -302,6 +330,51 @@ impl Open {
         self.last = candidate.rect;
         self.last_at = at;
         self.missed = 0;
+    }
+
+    /// Drops the key before last when it says nothing the two either side do
+    /// not already say.
+    ///
+    /// Both rasterisers draw a straight line between two keys, so a key that
+    /// already lies on that line is a key whose only effect is its size on
+    /// disk. One backward step rather than a pass over the whole track: it runs
+    /// per sample, and repeated application collapses a still finding to the
+    /// two keys that span it anyway.
+    ///
+    /// A held key is never dropped and never thinned across. `lost` is a fact
+    /// about that sample rather than a position — the panel sorts by it and
+    /// `finish` trims a held tail — and a run of them is exactly where the
+    /// rectangle is least to be trusted.
+    fn thin(&mut self) {
+        let len = self.track.keys.len();
+        if len < 3 {
+            return;
+        }
+
+        let (a, b, c) = (
+            self.track.keys[len - 3],
+            self.track.keys[len - 2],
+            self.track.keys[len - 1],
+        );
+        if a.lost || b.lost || c.lost {
+            return;
+        }
+
+        let span = c.at.saturating_sub(a.at);
+        if span == 0 {
+            return;
+        }
+        let t = b.at.saturating_sub(a.at) as f32 / span as f32;
+        let on_the_line = |from: f32, to: f32, actual: f32| (from + (to - from) * t - actual).abs();
+
+        let off = on_the_line(a.rect.x, c.rect.x, b.rect.x)
+            .max(on_the_line(a.rect.y, c.rect.y, b.rect.y))
+            .max(on_the_line(a.rect.w, c.rect.w, b.rect.w))
+            .max(on_the_line(a.rect.h, c.rect.h, b.rect.h));
+
+        if off <= THIN_EPSILON {
+            self.track.keys.remove(len - 2);
+        }
     }
 }
 

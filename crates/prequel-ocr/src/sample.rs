@@ -19,6 +19,28 @@ use crate::{CancelFlag, Error, Result};
 /// miss a scroll.
 pub const DEFAULT_INTERVAL: MediaTime = 1_000_000_000;
 
+/// How often a frame is read *for faces*, in nanoseconds.
+///
+/// Ten times as often as the text, and the two are separate because their costs
+/// are nowhere near each other: an accurate text recognition is about 300 ms a
+/// frame, a face rectangles request is about five. Measured over a 1920×1080
+/// take, the face pass at this cadence costs a fifth more wall clock than at one
+/// a second — which buys ten times the resolution in *time*, and time is the
+/// whole of the accuracy here.
+///
+/// It matters because text and faces move differently. Text sits still except
+/// when the page scrolls; a face in a video playing inside the recording moves
+/// in every frame, and the cover between two samples is a straight line drawn
+/// between where it was and where it went. At one sample a second that line is
+/// a second long, and a person who leans or a page that scrolls leaves the
+/// cover somewhere they are not — which is a reveal, and the one failure this
+/// feature cannot have.
+///
+/// Not finer still: below about this the cost stops being flat — at 50 ms the
+/// same take took nearly twice as long — and the gain is small against the
+/// padding every face box already carries.
+pub const DEFAULT_FACE_INTERVAL: MediaTime = 100_000_000;
+
 /// One file to read, and where it sits on the session clock.
 #[derive(Debug, Clone)]
 pub struct ScanSegment {
@@ -41,7 +63,10 @@ impl ScanSegment {
 #[derive(Debug, Clone)]
 pub struct ScanRequest {
     pub segments: Vec<ScanSegment>,
+    /// How often the text is read. See [`DEFAULT_INTERVAL`].
     pub interval: MediaTime,
+    /// How often the faces are looked for. See [`DEFAULT_FACE_INTERVAL`].
+    pub face_interval: MediaTime,
     /// BCP-47 tags, most preferred first. Empty leaves Vision's own default.
     pub langs: Vec<String>,
     /// Per-recording, so the same card in two recordings does not produce the
@@ -62,6 +87,7 @@ impl ScanRequest {
         Self {
             segments,
             interval: DEFAULT_INTERVAL,
+            face_interval: DEFAULT_FACE_INTERVAL,
             langs: Vec::new(),
             salt,
             text: true,
@@ -74,9 +100,13 @@ impl ScanRequest {
 pub struct ScanSummary {
     pub tracks: Vec<Track>,
     /// Samples taken, including the ones that reused an unchanged frame.
+    ///
+    /// At the face cadence when faces were asked for, which is ten times the
+    /// text's — so this is no longer one per text reading.
     pub sampled: u64,
-    /// Frames actually handed to Vision. The gap between this and `sampled` is
-    /// what the unchanged-frame skip saved.
+    /// Requests actually made of Vision, counting a text reading and a look for
+    /// faces separately. The gap between this and the samples each reader was
+    /// due at is what the unchanged-frame skip saved.
     pub read: u64,
     /// Segment names that were read all the way through. A segment that failed
     /// is left out so the next scan retries it rather than treating an empty
@@ -105,7 +135,19 @@ pub fn scan_with(
     report: &mut impl FnMut(f32),
 ) -> Result<ScanSummary> {
     let interval = request.interval.max(1);
-    let mut tracker = Tracker::new(interval);
+    let face_interval = request.face_interval.max(1);
+    // The loop walks at the finer of the two and reads each thing when it is
+    // due. One tracker each, rather than one fed both: a tracker sweeps every
+    // track it holds at every sample it is offered, so a text track offered
+    // nothing at the nine face-only samples between its own would be counted as
+    // missed nine times and closed before its next reading arrived.
+    let step = if request.faces {
+        face_interval.min(interval)
+    } else {
+        interval
+    };
+    let mut text_tracker = Tracker::new(interval);
+    let mut face_tracker = Tracker::new(face_interval);
     let mut summary = ScanSummary::default();
 
     // Progress is weighted by how much of the recording each segment is, the
@@ -129,8 +171,15 @@ pub fn scan_with(
                 reason: format!("{e:?}"),
             })?;
 
-        let mut previous: Option<(u64, Vec<Candidate>)> = None;
+        // One cache each, keyed on the presentation time the reading came off.
+        // Shared, the faces read at a sample where the text was not due would
+        // stand in for the text at the next sample that needed it — and the
+        // text would quietly stop being covered.
+        let mut read_text: Option<(u64, Vec<Candidate>)> = None;
+        let mut read_faces: Option<(u64, Vec<Candidate>)> = None;
         let mut at: MediaTime = 0;
+        // When the text is next due. Faces are read at every step.
+        let mut text_due: MediaTime = 0;
 
         // Bounded by the segment's duration, not by whether a frame came back.
         // `frame_at` repeats the last frame for ever, so the other bound never
@@ -153,47 +202,51 @@ pub fn scan_with(
             summary.sampled += 1;
 
             // The picture has not changed since the last sample, so neither has
-            // its text. Offered again at this instant rather than skipped, so a
-            // track stays unbroken and its cover reaches the moment the picture
-            // actually changes.
-            let unchanged = match &previous {
-                Some((seen, candidates)) if *seen == pts => Some(candidates.clone()),
-                _ => None,
-            };
+            // what is on it. Offered again at this instant rather than skipped,
+            // so a track stays unbroken and its cover reaches the moment the
+            // picture actually changes.
+            if request.faces {
+                let found = match &read_faces {
+                    Some((seen, candidates)) if *seen == pts => candidates.clone(),
+                    _ => {
+                        let Some(frame) = frames.frame_at(at) else {
+                            break;
+                        };
+                        let found: Vec<Candidate> = faces
+                            .read(frame)?
+                            .into_iter()
+                            .filter_map(|face| {
+                                prequel_sensitive::face(face.rect, face.confidence, request.salt)
+                            })
+                            .collect();
+                        summary.read += 1;
+                        found
+                    }
+                };
 
-            let candidates = match unchanged {
-                Some(candidates) => candidates,
-                None => {
-                    let Some(frame) = frames.frame_at(at) else {
-                        break;
-                    };
+                face_tracker.offer(segment.start + at, &found);
+                read_faces = Some((pts, found));
+            }
 
-                    let mut found = Vec::new();
-
-                    if request.text {
+            if request.text && at >= text_due {
+                let found = match &read_text {
+                    Some((seen, candidates)) if *seen == pts => candidates.clone(),
+                    _ => {
+                        let Some(frame) = frames.frame_at(at) else {
+                            break;
+                        };
                         let reading = text.read(frame)?;
-                        found.extend(scan_frame(&reading.lines, &reading, request.salt));
+                        summary.read += 1;
+                        scan_frame(&reading.lines, &reading, request.salt)
                     }
+                };
 
-                    if request.faces {
-                        // After the text, so a face box that happens to overlap
-                        // a line does not take the line's place in the list.
-                        // Both are kept: they are covering different things and
-                        // a reader dismissing one should not lose the other.
-                        found.extend(faces.read(frame)?.into_iter().filter_map(|face| {
-                            prequel_sensitive::face(face.rect, face.confidence, request.salt)
-                        }));
-                    }
+                text_tracker.offer(segment.start + at, &found);
+                read_text = Some((pts, found));
+                text_due = at.saturating_add(interval);
+            }
 
-                    summary.read += 1;
-                    found
-                }
-            };
-
-            tracker.offer(segment.start + at, &candidates);
-            previous = Some((pts, candidates));
-
-            at = at.saturating_add(interval);
+            at = at.saturating_add(step);
 
             if total > 0 {
                 report(((done + at.min(duration)) as f64 / total as f64) as f32);
@@ -204,7 +257,11 @@ pub fn scan_with(
         summary.covered.push(segment.name.clone());
     }
 
-    summary.tracks = tracker.finish();
+    // Both, in one list sorted by when each was first seen — which is the order
+    // `Tracker::finish` already puts its own in, and the order the panel reads.
+    summary.tracks = text_tracker.finish();
+    summary.tracks.extend(face_tracker.finish());
+    summary.tracks.sort_by_key(Track::start);
     report(1.0);
 
     Ok(summary)
