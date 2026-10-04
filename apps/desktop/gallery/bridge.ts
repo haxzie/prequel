@@ -455,6 +455,7 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     // waiting on a network this has none of.
     feedback: {
       send: () => ok(undefined),
+      rate: () => ok(undefined),
     },
 
     update: {
