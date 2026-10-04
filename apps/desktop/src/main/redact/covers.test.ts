@@ -23,7 +23,7 @@ vi.mock("../recorder.js", () => ({ getRecorder: () => undefined }));
 vi.mock("../log.js", () => ({ log: () => undefined }));
 
 import { sanitiseMasks } from "../../shared/project.js";
-import { covers, type Finding } from "./index.js";
+import { covers, saltFor, type Finding } from "./index.js";
 
 const finding = (over: Partial<Finding> = {}): Finding => ({
   category: "face",
@@ -79,5 +79,33 @@ describe("a cover from a scan", () => {
 
     expect(read.visible).toBe(true);
     expect(read.source.end).toBeGreaterThan(read.source.start);
+  });
+});
+
+describe("the salt a recording's buckets are made with", () => {
+  it("is the same every time the same recording is read", () => {
+    // What a cover's id rests on, through its bucket. A salt that changed
+    // between readings gave the same thing a new id each time — so a cover
+    // somebody had turned off came back beside its own dismissal, and every
+    // other one was added a second time. `merged` can only tell "already here"
+    // from "new" if this holds still.
+    expect(saltFor("rec-2026-10-04-abc")).toBe(saltFor("rec-2026-10-04-abc"));
+  });
+
+  it("is a different one for a different recording", () => {
+    // The reason it is salted at all: the same card number in two recordings
+    // must not bucket the same way, or an artefact travelling beside one video
+    // says something about another.
+    expect(saltFor("rec-one")).not.toBe(saltFor("rec-two"));
+  });
+
+  it("is a decimal the addon can read as a number", () => {
+    // It crosses as a string because a u64 does not survive JSON, and Rust
+    // parses it with `u64::from_str` — anything else lands as a zero salt,
+    // silently, which would put every recording in the same buckets.
+    const salt = saltFor("rec-2026-10-04-abc");
+
+    expect(salt).toMatch(/^\d+$/);
+    expect(BigInt(salt)).toBeLessThan(2n ** 64n);
   });
 });

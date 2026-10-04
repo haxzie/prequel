@@ -33,6 +33,23 @@ import { readFileSync } from "node:fs";
  */
 let running: string | null = null;
 
+/**
+ * The recording's id as a number the scan can salt its buckets with.
+ *
+ * FNV-1a over the id, which is a string and cannot cross as one: the addon
+ * takes a decimal string because a `u64` does not survive JSON. Not a
+ * cryptographic hash and not trying to be — the salt's job is to keep one
+ * recording's buckets out of another's, and the id it is made from is already
+ * sitting in the folder beside the video.
+ */
+export function saltFor(id: string): string {
+  let hash = 0xcbf2_9ce4_8422_2325n;
+  for (const unit of new TextEncoder().encode(id)) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(unit)) * 0x1_0000_0001b3n);
+  }
+  return hash.toString();
+}
+
 /** Which groups a `prequel-sensitive` category belongs to. */
 const GROUP_OF: Record<string, RedactGroup> = {
   email: "contact",
@@ -124,10 +141,23 @@ export async function startRedact(
           })),
           intervalMs: undefined,
           langs: [],
-          // A fresh salt per scan. It only has to be stable *within* one set of
-          // findings — a mask carries its bucket, and a later scan compares
-          // against that bucket rather than recomputing it.
-          salt: String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+          // The recording's own, so the same thing read twice buckets the same
+          // way both times.
+          //
+          // It was a fresh number per scan, on the reasoning that a bucket only
+          // has to be stable within one set of findings. It has to be stable
+          // across them: a mask's id is its bucket and its first moment, and
+          // that id is what `merged` uses to tell "already here" from "new". A
+          // salt that changed meant every cover came back under a new id on the
+          // next reading — so a dismissed one reappeared beside its own
+          // dismissal, and every other one was duplicated. Both are the failure
+          // the id was introduced to prevent.
+          //
+          // Per recording rather than global, which is what `bucket` in
+          // `prequel-sensitive` asks for: the same card number in two
+          // recordings must not land in the same bucket, or an artefact
+          // travelling beside one video says something about another.
+          salt: saltFor(manifest.id),
           text: groups.some((group) => group !== "people"),
           faces: groups.includes("people"),
         },
