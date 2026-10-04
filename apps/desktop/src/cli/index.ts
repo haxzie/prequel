@@ -75,7 +75,26 @@ const SKEW_TIMEOUT_MS = 3_000;
  * of whatever built the CLI, which is exactly the lie worth avoiding here.
  */
 function version(): string {
-  for (const path of [join(here, "..", "..", "package.json"), join(here, "..", "package.json")]) {
+  const candidates = [
+    join(here, "..", "..", "package.json"),
+    join(here, "..", "package.json"),
+    // Inside the archive, which is where a packaged build actually keeps it.
+    //
+    // `prequel.cjs` is in `asarUnpack` because it is spawned as a file, so it
+    // sits in `app.asar.unpacked/out/cli/` — while `package.json` is not
+    // unpacked and stays in `app.asar/`. Neither path above crosses from one to
+    // the other, so every packaged build reported its version as "unknown",
+    // and `build.yml`'s check on exactly that has been failing since. Electron
+    // patches `fs` to read through an asar, so naming it is all this takes.
+    join(
+      here.replace(`${sep}app.asar.unpacked${sep}`, `${sep}app.asar${sep}`),
+      "..",
+      "..",
+      "package.json",
+    ),
+  ];
+
+  for (const path of candidates) {
     try {
       const parsed = JSON.parse(readFileSync(path, "utf8")) as { version?: unknown };
       if (typeof parsed.version === "string") return parsed.version;
