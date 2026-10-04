@@ -6104,6 +6104,41 @@ describe("a recording's covers", () => {
 
   const maskOf = (plan: RenderPlan) => plan.items.find((item) => item.kind === "mask");
 
+  it("carries the span the cover is on screen for", () => {
+    // Without it a cover is drawn for the whole clip. `maskRegionAt` holds the
+    // first key before the track and the last after it — which is right inside
+    // the span and is a cover parked on unrelated content outside it, for as
+    // long as the recording runs.
+    const mask = maskOf(planWith([cover({ source: { start: 1e9, end: 4e9 } })]));
+
+    expect(mask).toBeDefined();
+    expect(mask!.kind === "mask" && mask!.span).toEqual({ start: 1e9, end: 4e9 });
+  });
+
+  it("takes the span from the slice rather than from its keys", () => {
+    // The two are not the same thing. The scan widens the span by half a sample
+    // either side — the thing appeared at some unknown moment between the
+    // sample that missed it and the one that caught it — and a cover the user
+    // has retimed keeps what they gave it. Reading it off the keys would throw
+    // both away.
+    const mask = maskOf(
+      planWith([
+        cover({
+          source: { start: 500_000_000, end: 3_500_000_000 },
+          keys: [
+            { at: 1e9, x: 0.4, y: 0.45, width: 0.2, height: 0.05 },
+            { at: 3e9, x: 0.4, y: 0.45, width: 0.2, height: 0.05 },
+          ],
+        }),
+      ]),
+    );
+
+    expect(mask!.kind === "mask" && mask!.span).toEqual({
+      start: 500_000_000,
+      end: 3_500_000_000,
+    });
+  });
+
   it("is named in the picture's own surface, not the frame's", () => {
     // The keys are fractions of the *recording*; the cover is drawn as a pass
     // over the picture's quad, so what reaches the plan is a patch in that

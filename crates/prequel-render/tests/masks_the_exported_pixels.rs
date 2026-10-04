@@ -24,7 +24,7 @@ use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
     AudioMix, CancelFlag, ExportRequest, MaskKey, MaskMode, OutputFormat, PlanItem, PlanSource,
-    Rect, RectKey, RenderPlan, SegmentRef, Shape, Size, SliceMedia, SliceRender, export,
+    Rect, RectKey, RenderPlan, SegmentRef, Shape, Size, SliceMedia, SliceRender, Span, export,
 };
 use prequel_session::TrackKind;
 
@@ -246,6 +246,10 @@ fn plan(mask: Option<(MaskMode, f64)>) -> RenderPlan {
                 width: PATCH.2,
                 height: PATCH.3,
             }],
+            // Unbounded, like a screenshot's: on for as long as the picture
+            // is. A recording's cover carries its own span, which is its own
+            // test below.
+            span: None,
             mode,
             strength: 0.6,
             reach,
@@ -318,6 +322,7 @@ fn moving_plan() -> RenderPlan {
                 rect: full,
                 src_rect: full,
                 region: vec![away, there],
+                span: None,
                 mode: MaskMode::Blur,
                 strength: 0.6,
                 reach: 32.0,
@@ -473,6 +478,7 @@ fn leaning_plan() -> RenderPlan {
                     width: PATCH.2,
                     height: PATCH.3,
                 }],
+                span: None,
                 mode: MaskMode::Blur,
                 strength: 0.6,
                 reach: 32.0,
@@ -609,4 +615,159 @@ fn a_mosaic_destroys_the_detail_under_it_and_nothing_else() {
     );
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The frame with a cover over the middle that is on screen only for `span`.
+fn spanned_plan(span: Span) -> RenderPlan {
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: full,
+                dst_rect: full,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                motion: Vec::new(),
+                grade: None,
+                rim: 0.0,
+            },
+            PlanItem::Mask {
+                rect: full,
+                src_rect: full,
+                region: vec![MaskKey {
+                    at: 0,
+                    x: PATCH.0,
+                    y: PATCH.1,
+                    width: PATCH.2,
+                    height: PATCH.3,
+                }],
+                span: Some(span),
+                mode: MaskMode::Blur,
+                strength: 0.6,
+                reach: 32.0,
+                motion: Vec::new(),
+            },
+        ],
+        filter: None,
+    }
+}
+
+/// One decoded frame of an export, by index.
+fn frame_at(video: &Path, index: u32) -> Frame {
+    let out = video.with_extension(format!("{index}.rgb"));
+    let _ = std::fs::remove_file(&out);
+
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(video)
+        .args([
+            "-vf",
+            &format!("select=eq(n\\,{index})"),
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-y",
+        ])
+        .arg(&out)
+        .status()
+        .expect("ffmpeg must be installed to verify exported pixels");
+    assert!(
+        status.success(),
+        "ffmpeg could not decode {}",
+        video.display()
+    );
+
+    let pixels = std::fs::read(&out).expect("read the decoded frame");
+    let _ = std::fs::remove_file(&out);
+    assert_eq!(pixels.len(), (OUT_W * OUT_H * 3) as usize);
+
+    Frame {
+        pixels,
+        width: OUT_W,
+    }
+}
+
+#[test]
+fn a_cover_leaves_when_the_thing_it_covers_does() {
+    // The report this was written for: a cover that never leaves. Both
+    // samplers hold a track's last key for ever, so without a span a cover is
+    // drawn for the whole clip — parked over whatever the recording moved on
+    // to, minutes after the thing it was hiding had gone.
+    //
+    // Pixels rather than a plan assertion, because the plan was never the
+    // problem: the span was on the project all along and neither rasteriser
+    // read it.
+    let dir = scratch("prequel-mask-span");
+    let source = striped_frame(OUT_W, OUT_H);
+    record(&dir, "screen.mp4", OUT_W, OUT_H, &source);
+
+    let output = dir.join("export.mp4");
+    // On for the first half of the second, gone for the rest.
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![SliceRender {
+            start: 0,
+            end: S,
+            plan: spanned_plan(Span {
+                start: 0,
+                end: (S / 2) as i64,
+            }),
+            audio: AudioMix::tracks(1.0, 1.0),
+            speed: 1.0,
+            media: SliceMedia {
+                screen: Some(SegmentRef {
+                    file: TrackKind::Screen.file_name().into(),
+                    offset: 0,
+                }),
+                camera: None,
+                matte: None,
+                mic: None,
+                system: None,
+            },
+        }],
+        sound: None,
+    };
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
+
+    let ((ix, iy), _) = runs();
+
+    // Inside the span: the stripes under the patch are destroyed.
+    let covered = frame_at(&output, 1).contrast(ix, iy, ACROSS);
+    assert!(
+        covered < 40,
+        "inside its span the cover should still hide the stripes — contrast {covered}"
+    );
+
+    // Past it: the picture is its own again, and sharp.
+    let after = frame_at(&output, FPS - 2).contrast(ix, iy, ACROSS);
+    assert!(
+        after > 120,
+        "the cover outlived the thing it covers — contrast {after} where the stripes should be"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

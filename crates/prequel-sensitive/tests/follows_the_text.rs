@@ -259,3 +259,72 @@ fn a_face_is_covered_rather_than_merely_suggested() {
     let maybe = face(box_, 0.2, 1).expect("a candidate");
     assert!(maybe.confidence < MASK_THRESHOLD);
 }
+
+#[test]
+fn a_cover_ends_where_the_thing_it_covers_was_last_seen() {
+    // The report this was written for: a cover that never leaves. Two halves to
+    // it, and this is the first — a track closed by the gap kept the keys it
+    // held while the thing was missing, so the cover outlived the address by
+    // however long the tracker was willing to wait for it.
+    let mut tracker = Tracker::new(SECOND);
+
+    for step in 0..3u64 {
+        tracker.offer(step * SECOND, &[seen("a@example.com", 0.3, 0.5)]);
+    }
+    // Gone: a navigation, not a tooltip. Offered nothing for long enough that
+    // the track closes.
+    for step in 3..9u64 {
+        tracker.offer(step * SECOND, &[]);
+    }
+
+    let tracks = tracker.finish();
+    assert_eq!(tracks.len(), 1, "one address: {tracks:?}");
+
+    let track = &tracks[0];
+    assert_eq!(
+        track.end(),
+        2 * SECOND,
+        "the cover should end at the last sighting, not at the end of the wait: {:?}",
+        track.keys
+    );
+    assert!(
+        track.keys.iter().all(|key| !key.lost),
+        "no held key should survive on the end of a closed track: {:?}",
+        track.keys
+    );
+}
+
+#[test]
+fn a_cover_still_bridges_a_gap_it_comes_back_from() {
+    // The other direction, and the reason the held keys exist. A tooltip over
+    // the address for a sample or two must not blink the cover off it — this is
+    // the case the trim above must not break.
+    let mut tracker = Tracker::new(SECOND);
+
+    tracker.offer(0, &[seen("a@example.com", 0.3, 0.5)]);
+    tracker.offer(SECOND, &[]);
+    tracker.offer(2 * SECOND, &[seen("a@example.com", 0.3, 0.5)]);
+
+    let tracks = tracker.finish();
+    assert_eq!(
+        tracks.len(),
+        1,
+        "one address, covered throughout: {tracks:?}"
+    );
+    assert_eq!(tracks[0].start(), 0);
+    assert_eq!(tracks[0].end(), 2 * SECOND);
+    assert!(tracks[0].uncertain, "and the panel is told it was held");
+}
+
+#[test]
+fn a_cover_reaches_half_a_sample_past_its_own_sightings() {
+    // The thing appeared at an unknown moment between the sample that missed it
+    // and the one that caught it, so the span has to reach back towards the
+    // miss. Erring inwards is a frame of it uncovered, which is the one
+    // direction this feature may not fail in.
+    let mut tracker = Tracker::new(SECOND);
+    tracker.offer(2 * SECOND, &[seen("a@example.com", 0.3, 0.5)]);
+
+    let tracks = tracker.finish();
+    assert_eq!(tracks[0].lead, SECOND / 2);
+}

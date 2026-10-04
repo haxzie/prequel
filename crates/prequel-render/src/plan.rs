@@ -236,6 +236,18 @@ pub enum PlanItem {
         /// that moment is `motion`'s business, and keeping the two apart is
         /// what stops them being multiplied into one approximate answer.
         region: Vec<MaskKey>,
+        /// The source-time range the cover is on screen for, or `None` to cover
+        /// for as long as the picture is drawn.
+        ///
+        /// `None` is a screenshot's mask, which is on the one frame there is.
+        /// A recording's is bounded, and it has to be: `mask_region_at` holds
+        /// the first key before the track and the last after it, so a cover
+        /// without a span is drawn over the whole clip — parked where the thing
+        /// was first seen until it appears, and where it was last seen for ever
+        /// after. Defaulted, so a plan written before this still parses, and
+        /// parses as unbounded, which is what it drew.
+        #[serde(default)]
+        span: Option<Span>,
         mode: MaskMode,
         /// 0 to 1, as the control reads. Carried for the artefact rather than
         /// used here; `reach` is what this side samples by.

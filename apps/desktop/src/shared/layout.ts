@@ -557,6 +557,22 @@ export type PlanItem =
        * apart is what stops them being multiplied into one approximate answer.
        */
       region: MaskKey[];
+      /**
+       * The source-time range the cover is on screen for, or absent to cover
+       * for as long as the picture is drawn.
+       *
+       * Absent is a screenshot's mask, which is on the one frame there is. A
+       * recording's is bounded, and it has to be: `maskRegionAt` holds the
+       * first key before the track and the last one after it, so a cover
+       * without a span is drawn over the whole clip — parked where the thing
+       * was first seen until it appears, and where it was last seen for ever
+       * after. That is a cover sitting on unrelated content for minutes, which
+       * is both wrong and reads as the feature being broken.
+       *
+       * Holding is still right *inside* the span: the thing was there, and a
+       * rectangle a frame stale beats a frame of it uncovered.
+       */
+      span?: { start: number; end: number };
       mode: "blur" | "pixelate";
       /** 0 to 1. How wide the blur, or how coarse the blocks. */
       strength: number;
@@ -616,7 +632,10 @@ const MASK_MIN_REACH = 2;
  * Where a cover is on the picture at `at`, in its uv.
  *
  * Holds at either end rather than extrapolating: a cover whose track has run
- * out stays where it was last seen, which is the direction that keeps covering.
+ * out stays where it was last seen, which is the direction that keeps covering
+ * — *within its span*. Outside it there is nothing to cover and the item is not
+ * drawn at all; whoever draws one checks the span first, because this cannot:
+ * the keys say where, and only the slice says for how long.
  *
  * Mirrors `mask_region_at` in `plan.rs`, and shared with the WebGL rasteriser
  * for the reason every sampler here is — two interpolators is how a preview and
@@ -4644,6 +4663,12 @@ function maskItems(
       rect: dstRect,
       srcRect,
       region,
+      // What the scan said, which is the first and last time the thing was
+      // actually seen, already widened by half a sample either side — see
+      // `Track::lead` in `prequel-sensitive`. Taken from the slice rather than
+      // from the keys so a cover the user has dragged or retimed keeps the
+      // span they gave it.
+      span: { start: mask.source.start, end: mask.source.end },
       mode: mask.mode,
       strength: mask.strength,
       // Against the patch as it sits on the picture at rest. A zoom magnifies

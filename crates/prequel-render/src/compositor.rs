@@ -1084,11 +1084,22 @@ impl Compositor {
                 rect,
                 src_rect,
                 region,
+                span,
                 mode,
                 reach,
                 motion,
                 strength: _,
             } => {
+                // Before the thing appeared or after it went. Outside its own
+                // span a cover has nothing to cover: the keys hold at either
+                // end, so without this it is drawn for the whole clip, parked
+                // over whatever the recording moved on to.
+                if let Some(span) = span
+                    && (at < span.start as u64 || at > span.end as u64)
+                {
+                    return Ok(None);
+                }
+
                 // Gone from the frame, or not yet arrived. Skipped rather than
                 // drawn at nothing, which would still cost a full-quad pass.
                 let Some(patch) = mask_region_at(region, at as i64) else {

@@ -54,6 +54,12 @@ export interface Finding {
   confidence: number;
   covered: boolean;
   uncertain: boolean;
+  /**
+   * How far either side of its own sightings this cover should reach, in
+   * nanoseconds — half the cadence it was found at, so the faces get a tenth of
+   * what the text does. Absent on a reading from an addon that predates it.
+   */
+  lead?: number;
   keys: { at: number; x: number; y: number; width: number; height: number; lost?: boolean }[];
 }
 
@@ -213,7 +219,19 @@ export function covers(findings: readonly Finding[], groups: readonly RedactGrou
         label: finding.label,
         preview: finding.preview,
         bucket: finding.bucket,
-        source: { start: keys[0]!.at, end: keys[keys.length - 1]!.at },
+        // When the cover is on screen, and it is the first and last time the
+        // thing was *seen* — widened by half a sample either side, because it
+        // arrived at some unknown moment between the sample that missed it and
+        // the one that caught it. Erring inwards is a frame of it uncovered.
+        //
+        // Load-bearing rather than informational: both rasterisers hold a
+        // cover's first and last key outside this range, so a span that was
+        // wrong by a minute would be a cover sitting on unrelated content for a
+        // minute.
+        source: {
+          start: Math.max(0, keys[0]!.at - (finding.lead ?? 0)),
+          end: keys[keys.length - 1]!.at + (finding.lead ?? 0),
+        },
         mode: "blur",
         strength: 0.6,
         visible: true,

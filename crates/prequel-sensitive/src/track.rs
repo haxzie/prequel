@@ -122,6 +122,16 @@ pub struct Track {
     /// first, because a cover that lost its anchor is the one most likely to be
     /// over the wrong thing.
     pub uncertain: bool,
+    /// How far either side of its first and last sightings this cover should
+    /// reach, in nanoseconds.
+    ///
+    /// Half the cadence it was found at. The thing appeared at some unknown
+    /// moment between the sample that missed it and the one that caught it, and
+    /// erring inwards is a frame of it uncovered. Per track rather than per
+    /// scan, because the faces are sampled ten times as often as the text and
+    /// so need a tenth of the slack.
+    #[serde(default)]
+    pub lead: MediaTime,
     pub keys: Vec<MaskKey>,
 }
 
@@ -152,6 +162,19 @@ impl Track {
 /// So the common case — a key that was found — writes nothing for it.
 fn not(value: &bool) -> bool {
     !*value
+}
+
+/// Drops the run of held keys at the end of a track.
+///
+/// A held key says "it was not found here and the last rectangle is standing
+/// in", which is the right thing to draw while the thing is coming back — a
+/// tooltip over an address, a head turned away — and the wrong thing to leave
+/// on the end of a track that never came back. There it is a cover sitting on
+/// content it was never over, for as long as the tracker was willing to wait.
+fn trim_held(track: &mut Track) {
+    while track.keys.last().is_some_and(|key| key.lost) {
+        track.keys.pop();
+    }
 }
 
 /// A track still being built.
@@ -238,8 +261,12 @@ impl Tracker {
             // Whichever is longer: three samples, or a second. See `MIN_GAP`.
             let gap = at.saturating_sub(open.last_at);
             if open.missed > GAP_TOLERANCE && gap > MIN_GAP {
-                // Closed at its last real sighting. Bridging a longer gap would
-                // sweep a cover diagonally across content it was never over.
+                // Closed at its last real sighting — *at* it, which is what the
+                // trim is for. The keys held while it was missing were a guess
+                // that it would come back, and it did not; left on, the cover
+                // outlives what it was covering by the whole of the gap, parked
+                // over whatever is there now.
+                trim_held(&mut open.track);
                 self.done.push(open.track);
             } else {
                 // Held, not dropped. The text may be behind a tooltip.
@@ -261,12 +288,17 @@ impl Tracker {
         for mut open in self.open.drain(..) {
             // A track that was still being held when the footage ran out was
             // never seen again, so the held keys are guesses about nothing.
-            while open.track.keys.last().is_some_and(|key| key.lost) {
-                open.track.keys.pop();
-            }
+            trim_held(&mut open.track);
             if !open.track.keys.is_empty() {
                 self.done.push(open.track);
             }
+        }
+
+        // The slack each cover gets either side of its own sightings, which is
+        // this tracker's cadence rather than any other's. See `Track::lead`.
+        let lead = self.lead();
+        for track in &mut self.done {
+            track.lead = lead;
         }
 
         // Now that no more samples can raise a confidence, each track can say
@@ -298,6 +330,8 @@ impl Open {
                 covered: false,
                 repaired: candidate.repaired,
                 uncertain: false,
+                // Settled in `finish`, from the tracker's own cadence.
+                lead: 0,
                 keys: vec![MaskKey {
                     at,
                     rect: candidate.rect,

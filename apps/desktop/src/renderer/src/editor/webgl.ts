@@ -2198,6 +2198,12 @@ export class WebGlCompositor {
         // exactly the quad the picture occupies — leaned corners included. The
         // lean and the zoom are the vertex shader's business and the cover
         // never learns either happened; see the note in `shaders.metal`.
+        // Before the thing appeared or after it went. Outside its own span a
+        // cover has nothing to cover: the keys hold at either end, so without
+        // this it is drawn for the whole clip, parked over whatever the
+        // recording moved on to. The exporter checks the same bound.
+        if (item.span && (at < item.span.start || at > item.span.end)) break;
+
         const now = rectAt(item.motion ?? [], at, item.rect, 0);
         const patch = maskRegionAt(item.region, at);
         if (!patch || patch.width <= 0 || patch.height <= 0) break;
