@@ -1869,8 +1869,7 @@ export function buildRenderPlan(
       // Against the mark's own shorter edge, so the same logo looks the same
       // at any size — and clamped to half of it, where the shape has run out
       // of corner to round and any more would start eating the middle.
-      radius:
-        Math.min(mark.watermarkRadius, 0.5) * Math.min(markRect.width, markRect.height),
+      radius: Math.min(mark.watermarkRadius, 0.5) * Math.min(markRect.width, markRect.height),
     });
   }
 
