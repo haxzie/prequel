@@ -2,4 +2,4 @@
 "@prequel/desktop": patch
 ---
 
-The camera can wear a glass edge, with Depth for how far into the bubble it reaches. Every shape but Remove background.
+The camera can wear a glass edge, with Depth for how thick it is and Fringing for how much colour it splits.

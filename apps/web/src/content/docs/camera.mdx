@@ -15,7 +15,7 @@ export const faq = [
   {
     question: "Can I put a glass edge on my camera?",
     answer:
-      "Yes. Open Effects in the Camera panel and set Edge to Glass, then use Depth for how far into the bubble the glass reaches. It works on every shape except Remove background, which has no edge to put glass on.",
+      "Yes. Open Effects in the Camera panel and set Edge to Glass. Depth is how thick the glass is and Fringing is how much colour it splits at the edge. It works on every shape except Remove background, which has no edge to put glass on.",
   },
   {
     question: "Why is my camera mirrored?",
@@ -72,7 +72,11 @@ Every look is built for skin first. The saturation they add spares faces and lan
 
 ## Edge
 
-**Glass** puts the zoom lens's edge on the camera. The band just inside the outline bends the picture, splits its colour and catches the light, so the bubble reads as thick glass rather than a picture cut to a shape. **Depth** says how far into the bubble the glass reaches.
+**Glass** puts the zoom lens's edge on the camera. The band just inside the outline bends the picture, splits its colour and catches the light, so the bubble reads as thick glass rather than a picture cut to a shape.
+
+**Depth** is how thick the glass is — how much of the camera's own radius rolls over. **Fringing** is how much colour it splits out at the edge. At nothing it still bends the picture and catches the light, which is what plain glass looks like.
+
+The edge takes its colour from what it is over, so it comes up warm along a jumper and clear against a white wall.
 
 It works on every shape, the one that follows you included. Remove background is the exception: there is no edge to put glass on when it is just you over the background.
 
