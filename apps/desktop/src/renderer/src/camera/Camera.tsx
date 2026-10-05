@@ -64,14 +64,19 @@ export function Camera() {
 
   return (
     // Same inset as the panel, for the same reason: the window is square, the
-    // bubble is round, and a window shadow would be square around it. The ring
-    // and shadow are drawn here rather than on the window, and the bubble
-    // itself is the drag handle.
+    // bubble is round, and a window shadow would be square around it. The
+    // shadow is drawn here rather than on the window, and the bubble itself is
+    // the drag handle.
+    //
+    // No ring. A white hairline round the edge is what a camera bubble looks
+    // like everywhere, and it is also the thing that makes it look stuck on
+    // top of whatever is behind it; the shadow alone is enough to separate the
+    // picture from the screen.
     <div
       className={
         "drag squircle relative m-(--panel-inset) h-[calc(100%-var(--panel-inset)*2)] " +
-        "w-[calc(100%-var(--panel-inset)*2)] overflow-hidden rounded-[60%] border-2 " +
-        "border-white/22 bg-[#101114] shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
+        "w-[calc(100%-var(--panel-inset)*2)] overflow-hidden rounded-[60%] " +
+        "bg-[#101114] shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
       }
     >
       {error ? (

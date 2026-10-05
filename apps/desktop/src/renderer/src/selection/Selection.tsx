@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
 
 import type {
   CaptureMode,
@@ -23,11 +23,20 @@ const COUNTDOWN_STEP_MS = 1000;
 /** A rectangle in overlay-local CSS pixels. */
 type Rect = { x: number; y: number; width: number; height: number };
 
-/** Dark enough to read as modal, light enough to still see what you pick. */
-const OVERLAY = "fixed inset-0 cursor-crosshair bg-[rgba(6,7,9,0.4)]";
+/**
+ * Dark enough to read as modal, light enough to still see what you pick.
+ *
+ * The plain pointer, because on every mode but one the sheet is not a thing
+ * you aim at: screen and window are confirmed from a button on a card, the
+ * overlay itself is deliberately not clickable in either, and a crosshair over
+ * them promises a drag that does nothing. The same applies once an area is
+ * drawn — what is left to do is grab an edge, and the grips carry their own
+ * cursors.
+ */
+const OVERLAY = "fixed inset-0 cursor-default bg-[rgba(6,7,9,0.4)]";
 
-/** The same sheet once a region is drawn: nothing left on it to aim at. */
-const OVERLAY_SETTLED = "fixed inset-0 cursor-default bg-[rgba(6,7,9,0.4)]";
+/** The one state the crosshair belongs to: an area waiting to be dragged out. */
+const OVERLAY_DRAWING = "fixed inset-0 cursor-crosshair bg-[rgba(6,7,9,0.4)]";
 
 /**
  * The outline of what will be recorded.
@@ -279,8 +288,6 @@ function WindowSelection({
           />
         </div>
       )}
-
-      {!hovered && <Hint title="Move over a window" detail="Click to choose · Esc to cancel" />}
     </div>
   );
 }
@@ -348,12 +355,25 @@ function AreaSelection({
   const currentRef = useRef<Point | null>(null);
   /** A pending flush of `currentRef` into state. See the mousemove handler. */
   const frame = useRef(0);
+  /** The bubble at the pointer, moved by hand rather than by a render. */
+  const cursorHint = useRef<HTMLDivElement>(null);
 
   // Nothing to flush once the component is gone, and a `setState` after unmount
   // is a warning in the console of an overlay nobody can open again.
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const drawn = useMemo(() => regionOf(origin, current), [origin, current]);
+
+  // Written on every move, including the ones the rectangle's own update
+  // coalesces away: a bubble that moved at a frame's resolution while the
+  // pointer moved at the trackpad's would lag behind the crosshair it is
+  // attached to, which is the one thing it must not do.
+  const followPointer = (x: number, y: number) => {
+    const node = cursorHint.current;
+    if (!node) return;
+    node.style.transform = `translate3d(${x + CURSOR_HINT_OFFSET.x}px, ${y + CURSOR_HINT_OFFSET.y}px, 0)`;
+    node.style.opacity = "1";
+  };
 
   const start = useCallback(
     (dragged: Region) => {
@@ -425,7 +445,7 @@ function AreaSelection({
 
   return (
     <div
-      className={settled ? OVERLAY_SETTLED : OVERLAY}
+      className={settled ? OVERLAY : OVERLAY_DRAWING}
       onMouseDown={(event) => {
         // Deaf once a region is drawn. This used to start a fresh drag from
         // wherever it landed and clear `settled` on the way — so a press
@@ -444,6 +464,8 @@ function AreaSelection({
         setCurrent(point);
       }}
       onMouseMove={(event) => {
+        followPointer(event.clientX, event.clientY);
+
         const held = grip.current;
         if (held) {
           const point = { x: event.clientX, y: event.clientY };
@@ -523,11 +545,10 @@ function AreaSelection({
         </div>
       )}
 
-      {settled ? (
-        <Hint title="Drag the edges to adjust" detail="Or drag inside to move it · Esc to cancel" />
-      ) : (
-        <Hint title="Drag to select an area" detail="Release to confirm · Esc to cancel" />
-      )}
+      {/* Only before the drag. Once the rectangle exists it carries its own
+          size badge at the pointer end, and two labels chasing one crosshair
+          is one too many. */}
+      {!settled && !origin && <CursorHint ref={cursorHint} />}
     </div>
   );
 }
@@ -695,17 +716,44 @@ function regionOf(a: Point | null, b: Point | null): Region | null {
   };
 }
 
-function Hint({ title, detail }: { title: string; detail: string }) {
+/**
+ * "Drag to select an area", pinned to the pointer until the drag starts.
+ *
+ * The only instruction the overlay gives, and it replaced a panel pinned to
+ * the bottom of the display — which said the same thing where nobody was
+ * looking. The pointer is at the corner the drag is about to start from, and
+ * on a large display that is most of a screen away from the bottom edge.
+ *
+ * Positioned by writing `transform` straight to the node on every mousemove
+ * rather than through React state. A pointer delivers moves at twice the
+ * refresh rate and this is one of two things on screen that track it; the
+ * other is the rectangle, which is coalesced to a frame because it re-renders
+ * the card as well. A style write is not worth a render to begin with.
+ *
+ * Square on the top-left corner and rounded on the other three, which is what
+ * points it at the pointer. A tail was tried and is the obvious thing — it is
+ * also 9px of rotated square hanging off a 20px bubble, and at that size it
+ * reads as a chip of the corner broken off rather than as a tail.
+ *
+ * Hidden until the first move, because that is when there is a position to put
+ * it at: the overlay opens wherever the pointer already was and no event has
+ * said where that is. A bubble parked at the top-left corner until the pointer
+ * twitched would be worse than one that arrives a frame late.
+ */
+const CURSOR_HINT =
+  "pointer-events-none fixed top-0 left-0 z-10 rounded-lg rounded-tl-none bg-selected " +
+  "px-2 py-1 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 " +
+  "shadow-[0_4px_16px_rgba(0,0,0,0.4)]";
+
+/** Where the bubble sits relative to the pointer: below and to the right, so
+    the square corner lands beside the crosshair and the bubble is clear of
+    the rectangle the drag draws down and right from it. */
+const CURSOR_HINT_OFFSET = { x: 14, y: 14 };
+
+function CursorHint({ ref }: { ref: Ref<HTMLDivElement> }) {
   return (
-    <div
-      className={
-        "pointer-events-none fixed bottom-16 left-1/2 flex max-w-[70vw] flex-col items-center " +
-        "gap-0.5 [transform:translateX(-50%)] rounded-xl bg-[rgba(20,21,24,0.92)] px-[18px] " +
-        "py-2.5 text-[#f2f3f5] shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-[20px]"
-      }
-    >
-      <strong className="max-w-full truncate text-[13px]">{title}</strong>
-      <span className="text-[11px] opacity-65">{detail}</span>
+    <div className={CURSOR_HINT} ref={ref}>
+      Drag to select an area
     </div>
   );
 }

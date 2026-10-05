@@ -65,6 +65,7 @@
   --color-dock-hover: var(--dock-hover);
   --color-dock-selected: var(--dock-selected);
   --color-dock-mode: var(--dock-mode);
+  --color-dock-mode-fg: var(--dock-mode-fg);
   --color-dock-meter: var(--dock-meter);
   --color-dock-record: var(--dock-record);
   --color-dock-warn: var(--dock-warn);
@@ -689,21 +690,28 @@ body {
      tone so it stays lighter whatever is behind it. */
   --dock-hover: rgba(255, 255, 255, 0.12);
   --dock-selected: var(--selected);
-  /* The capture switch — video or screenshot — which is green where the three
-     source buttons beside it are blue.
+  /* The capture switch — video or screenshot — which wears a white fill with a
+     dark glyph where the three source buttons beside it are solid blue.
 
-     The colour is doing the separating, because the gap between the two trays
-     cannot: five icon buttons in a row read as one group of five whatever sits
-     between them, and these answer two different questions — what you are
-     making, and what it is of. Blue is "this is the one you picked" throughout
-     the panel, so the switch had to be something else rather than a second
-     blue.
+     The value is doing the separating, not a second hue: five icon buttons in
+     a row read as one group of five whatever sits between them, and these
+     answer two different questions — what you are making, and what it is of.
+     A blue chip beside a white one reads as two kinds of choice; two chips in
+     two colours read as two palettes.
 
-     Green, and the darker of the app's two: this button carries a white glyph,
-     and `--dot-on`'s system green is tuned for black on green. The same figure
-     the editor's Export button uses, written out rather than shared — that one
-     is declared inside `editor-theme`, which this panel is never inside. */
-  --dock-mode: #30a46c;
+     Opaque rather than translucent white. `--dock-group` and `--dock-hover`
+     are both white over the panel, and a third at a higher alpha would be the
+     same material one step further on — the selection has to be a different
+     thing, not a brighter version of the tray it sits in.
+
+     A unit short of pure, which is where the panel's own white stops:
+     `--dock-fg` is #eceef1, and a chip at #fff beside text at that figure
+     reads as the one blown-out thing in the strip. */
+  --dock-mode: #e8eaed;
+  /* The glyph on that fill. The panel's own near-black rather than a mid grey:
+     this chip is the brightest surface in the dock, so the mark on it wants
+     full contrast or the icon reads as disabled on a lit button. */
+  --dock-mode-fg: #202021;
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
   /* A missing permission, and now the panel's only amber: a device that is on

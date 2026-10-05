@@ -492,6 +492,8 @@ export type DockMenu =
   | {
       kind: "teleprompter";
       anchor: { x: number; y: number };
+      /** Whether the prompter is showing. Off is an item in this menu. */
+      enabled: boolean;
       mode: TeleprompterMode;
       size: TeleprompterSize;
       /**
@@ -518,6 +520,7 @@ export type DockMenuPick =
   | { kind: "permission"; id: PermissionId }
   | { kind: "relaunch" }
   | { kind: "teleprompterEdit" }
+  | { kind: "teleprompterEnabled"; enabled: boolean }
   | { kind: "teleprompterMode"; mode: TeleprompterMode }
   | { kind: "teleprompterSize"; size: TeleprompterSize }
   | { kind: "teleprompterDisplay"; display: string | null };

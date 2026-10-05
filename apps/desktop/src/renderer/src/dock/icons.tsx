@@ -206,21 +206,24 @@ export function VideoIcon() {
 /**
  * Screenshot: a stills camera.
  *
- * Paired with `VideoIcon` and drawn to read against it at a glance, which on a
- * 30px button is the whole job: one is wider than it is tall with a lens on the
+ * Paired with `VideoIcon` and read against it at a glance, which on a 30px
+ * button is the whole job: one is wider than it is tall with a lens on the
  * side, this one is square-ish with a lens in the middle and a hump on top.
+ *
+ * The one icon here on a 56-unit grid rather than the 20 the rest share, and
+ * the only one whose weight comes from a fill instead of a stroke. Drawn that
+ * way where it came from, and rescaling the path to the shared box would
+ * change the shape, not just the numbers — the outer rule it draws is about
+ * a unit and a half wide at this size, which is where the `1.5` strokes
+ * beside it land.
  */
 export function PhotoIcon() {
   return (
-    <svg {...box}>
+    <svg viewBox="0 0 56 56" aria-hidden={true}>
       <path
-        d="M7.3 4.5h5.4l1 2H16a1.8 1.8 0 0 1 1.8 1.8v5.4A1.8 1.8 0 0 1 16 15.5H4A1.8 1.8 0 0 1 2.2 13.7V8.3A1.8 1.8 0 0 1 4 6.5h2.3z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
+        fill="currentColor"
+        d="M7.809 50.348H48.19c4.875 0 7.36-2.438 7.36-7.266V18.543c0-4.828-2.485-7.242-7.36-7.242h-5.484c-1.828 0-2.39-.375-3.445-1.547l-1.899-2.11c-1.148-1.288-2.343-1.992-4.781-1.992h-9.328c-2.414 0-3.61.704-4.781 1.992l-1.899 2.11c-1.031 1.148-1.617 1.547-3.445 1.547h-5.32c-4.875 0-7.36 2.414-7.36 7.242v24.539c0 4.828 2.485 7.266 7.36 7.266m.07-3.774c-2.32 0-3.656-1.242-3.656-3.68v-24.14c0-2.438 1.336-3.68 3.656-3.68h6.187c2.11 0 3.235-.398 4.407-1.71l1.851-2.063c1.336-1.5 2.016-1.875 4.102-1.875h6.984c2.086 0 2.766.375 4.102 1.875l1.851 2.062c1.172 1.313 2.297 1.711 4.407 1.711h6.351c2.32 0 3.657 1.242 3.657 3.68v24.14c0 2.438-1.336 3.68-3.657 3.68Zm20.11-3.726a12.76 12.76 0 0 0 12.796-12.82c0-7.126-5.672-12.82-12.797-12.82c-7.078 0-12.773 5.694-12.773 12.82c0 7.124 5.695 12.82 12.773 12.82m16.851-18.54c1.594 0 2.906-1.288 2.906-2.882a2.906 2.906 0 1 0-5.812 0c0 1.594 1.312 2.883 2.906 2.883m-16.85 14.977c-5.086 0-9.234-4.125-9.234-9.258s4.125-9.257 9.234-9.257a9.247 9.247 0 0 1 9.258 9.257a9.247 9.247 0 0 1-9.258 9.258"
       />
-      <circle cx="10" cy="11" r="2.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }

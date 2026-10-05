@@ -20,10 +20,11 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * Which fill `selected` uses.
    *
    * `accent` is the panel's blue and means "this is the one you picked".
-   * `mode` is the green the capture switch wears, and means something else —
-   * see `--dock-mode`. A prop rather than a class the caller appends, because
-   * utilities all carry the same specificity: an override would be left to
-   * stylesheet order, which is exactly the note on the fills below.
+   * `mode` is the white chip the capture switch wears, and means something
+   * else — see `--dock-mode`. A prop rather than a class the caller
+   * appends, because utilities all carry the same specificity: an override
+   * would be left to stylesheet order, which is exactly the note on the fills
+   * below.
    */
   tone?: "accent" | "mode";
   /** The device this controls is switched off — present, but not in use. */
@@ -116,11 +117,20 @@ export function IconButton({
         // would leave that outcome down to stylesheet order.
         selected
           ? tone === "mode"
-            ? "bg-dock-mode text-white hover:brightness-110"
+            ? // Down rather than up. The fill is all but white, so there is
+              // nothing above it for `brightness-110` to reach and the button
+              // would read as dead under the pointer; taking it the other way
+              // is the only move the chip has left.
+              "bg-dock-mode text-dock-mode-fg hover:brightness-95"
             : "bg-dock-selected text-white hover:brightness-110"
           : off
             ? "text-dock-muted not-disabled:hover:bg-dock-hover"
-            : "text-dock-fg not-disabled:hover:bg-dock-hover",
+            : // Held back from full `--dock-fg`, so the one that is picked is
+              // the brightest thing in its tray and the rest read as the
+              // alternatives. Eight tenths rather than less: `--dock-muted` is
+              // a little below seven, and an unpicked button that lands on top
+              // of it would say the device is switched off.
+              "text-dock-fg/80 not-disabled:hover:bg-dock-hover not-disabled:hover:text-dock-fg",
         className,
       )}
       {...props}

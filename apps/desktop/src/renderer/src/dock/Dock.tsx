@@ -77,18 +77,17 @@ export function Dock() {
         // grows, and a scrollbar flicks in and out across the bottom of the
         // pill while the window catches up. Clipped, the name is revealed as
         // the panel widens, which is what the animation is for.
-        // The same `--dock-line` the dividers inside use, rather than a figure of
-        // its own: the rim and the rules are one light, and two numbers that
-        // have to be kept equal by hand eventually are not. `dock-theme` is on
-        // this element, so the variable it declares resolves for this element's
-        // own border.
+        // No rim. The shadow is what lifts the pill off the desktop, and with
+        // one of those a hairline round the outside only shows up as a seam
+        // where the two meet. `--dock-line` still draws the rules inside.
         //
-        // Translucent white, so the rim takes a little of the wallpaper with it
-        // instead of drawing a flat line round the panel — that is what makes
-        // the pill read as an object floating over the desktop rather than as a
-        // smear on it. The shadow below is what lifts it off.
+        // Close and shallow. A wide one reads as height, and the panel sits on
+        // the desktop rather than above a window — at 14px of blur the dark
+        // spread around it was the first thing the eye found on a light
+        // wallpaper. The offset stays below the blur so the edge the light
+        // comes from is still the top one.
         "dock-theme m-(--panel-inset) mt-(--dock-headroom) flex-1 overflow-hidden rounded-[10px] " +
-        "border border-dock-line bg-dock-bg text-dock-fg shadow-[0_4px_14px_rgba(0,0,0,0.45)]"
+        "bg-dock-bg text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}

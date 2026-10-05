@@ -73,18 +73,18 @@ describe("the teleprompter menu", () => {
   const PROMPTER: DockMenu = {
     kind: "teleprompter",
     anchor: { x: 0, y: 0 },
+    enabled: true,
     mode: "voice",
     size: "medium",
     displays: ["Built-in Retina Display"],
     display: null,
   };
 
-  it("offers the script first, then the mode and size with the current ones ticked", () => {
+  it("offers Off and how it runs, then the size, and the script last", () => {
     const template = dockMenuTemplate(PROMPTER, () => undefined);
 
     expect(template.map((item) => item.label ?? item.type)).toEqual([
-      "Edit Script…",
-      "separator",
+      "Off",
       "Follow My Voice",
       "Auto-scroll",
       "Manual",
@@ -92,11 +92,31 @@ describe("the teleprompter menu", () => {
       "Small Text",
       "Medium Text",
       "Large Text",
+      "separator",
+      "Edit Script…",
     ]);
     expect(template.filter((item) => item.checked).map((item) => item.label)).toEqual([
       "Follow My Voice",
       "Medium Text",
     ]);
+  });
+
+  it("ticks Off and no mode when the prompter is hidden", () => {
+    const template = dockMenuTemplate({ ...PROMPTER, enabled: false }, () => undefined);
+
+    expect(template.filter((item) => item.checked).map((item) => item.label)).toEqual([
+      "Off",
+      "Medium Text",
+    ]);
+  });
+
+  it("resolves with Off", async () => {
+    const menus = new DockMenuPopup();
+    const picked = menus.open(PROMPTER, WINDOW);
+
+    pickItem(0);
+
+    await expect(picked).resolves.toEqual({ kind: "teleprompterEnabled", enabled: false });
   });
 
   it("offers the displays only when there is more than one to choose from", () => {
@@ -111,7 +131,8 @@ describe("the teleprompter menu", () => {
       },
       () => undefined,
     );
-    expect(two.slice(-3).map((item) => [item.label, item.checked])).toEqual([
+    // Before the rule that closes the menu with Edit Script.
+    expect(two.slice(-5, -2).map((item) => [item.label, item.checked])).toEqual([
       ["Follow the Camera", false],
       ["On Built-in Retina Display", false],
       ["On Studio Display", true],
@@ -122,7 +143,7 @@ describe("the teleprompter menu", () => {
     const menus = new DockMenuPopup();
     const picked = menus.open(PROMPTER, WINDOW);
 
-    pickItem(3);
+    pickItem(2);
 
     await expect(picked).resolves.toEqual({ kind: "teleprompterMode", mode: "timed" });
   });

@@ -1,35 +1,26 @@
 import { useRef } from "react";
 
-import type { TeleprompterMode } from "../../../shared/contract";
 import { cn } from "../lib/cn";
 import { ChevronIcon, PrompterIcon, PrompterOffIcon } from "./icons";
-import { IconButton } from "./IconButton";
-
-const MODE_LABEL: Record<TeleprompterMode, string> = {
-  voice: "Voice",
-  timed: "Auto",
-  manual: "Manual",
-};
 
 /**
- * The prompter's place on the panel: a switch, and a chevron for the rest.
+ * The prompter's place on the panel: one control that opens the menu.
  *
- * The same two-part shape as a device control, so the row reads as one
- * family — but not `DeviceMenu` itself, whose props are a device list and a
- * level meter. What sits beside the chevron is the mode, which is the one
- * choice worth seeing without opening the menu.
+ * The same shape as a device control, so the row reads as one family — but not
+ * `DeviceMenu` itself, whose props are a device list and a level meter.
+ *
+ * It was a switch and a chevron with the mode spelled out between them. Off is
+ * an item in the menu now, which puts "should this run, and how" in one place
+ * instead of splitting it across a button and a list, and takes the mode's
+ * word off a strip that had five of them.
  */
 export function TeleprompterMenu({
   enabled,
-  mode,
   open,
-  onToggle,
   onOpen,
 }: {
   enabled: boolean;
-  mode: TeleprompterMode;
   open: boolean;
-  onToggle: (enabled: boolean) => void;
   /** This control's top-left, for main to pop the menu from — as on `DeviceMenu`. */
   onOpen: (anchor: { x: number; y: number }) => void;
 }) {
@@ -40,43 +31,44 @@ export function TeleprompterMenu({
   };
 
   return (
-    <div className="flex items-center gap-0.5">
-      <IconButton
-        off={!enabled}
-        title={enabled ? "Hide the teleprompter" : "Show the teleprompter"}
-        aria-pressed={enabled}
-        onClick={() => onToggle(!enabled)}
+    <button
+      ref={trigger}
+      type="button"
+      className={cn(
+        "no-drag flex h-[30px] items-center gap-1 rounded-lg px-1.5 text-dock-fg",
+        "[&_svg]:flex-none",
+        open ? "bg-dock-hover" : "hover:bg-dock-hover",
+      )}
+      aria-label={enabled ? "Teleprompter on" : "Teleprompter off"}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      onClick={openMenu}
+    >
+      <span
+        className={cn(
+          "grid flex-none place-items-center [&_svg]:size-[18px]",
+          enabled ? "text-dock-fg" : "text-dock-muted",
+        )}
+        aria-hidden="true"
       >
         {enabled ? <PrompterIcon /> : <PrompterOffIcon />}
-      </IconButton>
-
-      <button
-        ref={trigger}
-        type="button"
+      </span>
+      {/* The same dot the devices carry. No error state: nothing about showing
+          the words can fail the way opening a camera can. */}
+      <span
+        className={cn("size-1.5 flex-none rounded-full", enabled ? "bg-dot-on" : "bg-dot-off")}
+        aria-hidden="true"
+      />
+      <span
         className={cn(
-          "no-drag flex h-[30px] items-center gap-1.5 rounded-lg px-1.5 text-xs text-dock-fg",
-          "[&_svg]:size-[11px] [&_svg]:flex-none [&_svg]:text-dock-muted",
-          open ? "bg-dock-hover" : "hover:bg-dock-hover",
+          "flex-none text-dock-muted/60 transition-transform duration-200 [&_svg]:size-[9px]",
+          "ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
+          open && "rotate-180",
         )}
-        aria-label={`Teleprompter: ${MODE_LABEL[mode]}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={openMenu}
+        aria-hidden="true"
       >
-        <span className={cn("truncate text-left", !enabled && "text-dock-muted")}>
-          {MODE_LABEL[mode]}
-        </span>
-        <span
-          className={cn(
-            "flex-none transition-transform duration-200",
-            "ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
-            open && "rotate-180",
-          )}
-          aria-hidden="true"
-        >
-          <ChevronIcon />
-        </span>
-      </button>
-    </div>
+        <ChevronIcon />
+      </span>
+    </button>
   );
 }

@@ -85,10 +85,13 @@ export function dockMenuTemplate(
   }
 
   if (menu.kind === "teleprompter") {
+    // Unticked while the prompter is off, where Off carries the tick: the mode
+    // is still remembered, but a menu showing both Off and Follow My Voice
+    // ticked would be answering one question twice.
     const mode = (value: TeleprompterMode, label: string): MenuItemConstructorOptions => ({
       label,
       type: "checkbox",
-      checked: menu.mode === value,
+      checked: menu.enabled && menu.mode === value,
       click: () => pick({ kind: "teleprompterMode", mode: value }),
     });
     const size = (value: TeleprompterSize, label: string): MenuItemConstructorOptions => ({
@@ -105,13 +108,26 @@ export function dockMenuTemplate(
       click: () => pick({ kind: "teleprompterDisplay", display: value }),
     });
 
-    // Edit first: it is what the chevron is reached for. The choices under it
-    // are checkboxes for the reason the device lists are — see below. The
-    // displays come last and only when there is a choice to make: one display
-    // is where the island goes whatever is ticked.
+    // Off at the head of the modes, in the group rather than below it: "not at
+    // all" is one of the answers to "how should this run", so the four are one
+    // choice and a separator between them would say they were two. Picking a
+    // mode while Off is ticked turns it on, which is what the caller does with
+    // the pick.
+    //
+    // The displays appear only when there is a choice to make: one display is
+    // where the island goes whatever is ticked.
+    //
+    // Edit Script last. It is the one item here that opens a window rather
+    // than setting something, so it sits after everything that does — and it
+    // is next to the pointer when the menu opens upward, which is where the
+    // item people come back for belongs.
     return [
-      { label: "Edit Script…", click: () => pick({ kind: "teleprompterEdit" }) },
-      { type: "separator" },
+      {
+        label: "Off",
+        type: "checkbox",
+        checked: !menu.enabled,
+        click: () => pick({ kind: "teleprompterEnabled", enabled: false }),
+      },
       mode("voice", "Follow My Voice"),
       mode("timed", "Auto-scroll"),
       mode("manual", "Manual"),
@@ -126,6 +142,8 @@ export function dockMenuTemplate(
             ...menu.displays.map((name) => display(name, `On ${name}`)),
           ]
         : []),
+      { type: "separator" },
+      { label: "Edit Script…", click: () => pick({ kind: "teleprompterEdit" }) },
     ];
   }
 

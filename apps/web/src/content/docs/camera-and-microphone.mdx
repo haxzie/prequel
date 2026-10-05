@@ -4,7 +4,7 @@ export const faq = [
   {
     question: "Why does my camera show a red dot?",
     answer:
-      "The camera is switched on in Prequel but cannot be opened. It may have been unplugged, or another app may be holding it. Pick it again from the chevron menu, or choose another device.",
+      "The camera is switched on in Prequel but cannot be opened. It may have been unplugged, or another app may be holding it. Pick it again from its menu in the dock, or choose another device.",
   },
   {
     question: "Is the camera bubble part of the recording?",
@@ -18,15 +18,14 @@ export const faq = [
   },
 ];
 
-## Toggles and menus
+## Device menus
 
-The dock has a camera control and a microphone control. Each is an icon that turns the device on or off, and a name with a chevron that opens the list of devices.
+The dock has a camera control and a microphone control. Each one is the device's icon, a status dot and a chevron. Pressing it opens a menu of every camera or microphone the Mac can see, plus **Off**. Hover to see which device is chosen.
 
-- A green dot beside the name means the device is on and available.
-- The microphone's dot fills with the live level while it is on, so you can see it hears you before you start.
+- Picking a device switches it on. Picking **Off** switches it off.
+- A green dot means the device is on and available. A grey dot means it is off.
+- The microphone's icon fills with the live level while it is on, so you can see it hears you.
 - A red dot means the device is switched on but cannot be used: it was unplugged, or another app holds it.
-
-The chevron opens a menu of every camera or microphone the Mac can see, plus **Off**. With exactly one device, turning it on picks it without a menu.
 
 Prequel remembers the device by name, so the same camera is chosen again after a restart even when macOS gives it a new identifier.
 

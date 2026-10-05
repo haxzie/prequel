@@ -826,21 +826,24 @@ export function HighlighterToolIcon() {
 }
 
 /**
- * The mask: a rectangle with the detail inside it broken up.
+ * The mask: a square filled with diagonal hatching.
  *
- * A box with a scatter of short strokes in it rather than Lucide's own
- * `square-dashed` or a droplet. What the tool does is take a rectangle out of
- * the picture, and both the shape and the ruin have to be in the glyph — a
- * plain dashed box reads as a selection and a droplet reads as a colour.
+ * A filled glyph on a stroked rail, which is deliberate rather than an
+ * oversight — the hatching is the whole idea, and strokes thin enough to read
+ * as hatching at 24 units are thinner than anything else here draws. The fill
+ * is what lets it be that fine without disappearing.
+ *
+ * The shape and the ruin both have to be in it: what the tool does is take a
+ * rectangle out of the picture, and a plain dashed box reads as a selection
+ * while a droplet reads as a colour.
  */
 export function MaskToolIcon() {
   return (
-    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
-      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
-      <path d="M7 10h3" />
-      <path d="M13 10h4" />
-      <path d="M7 14h5" />
-      <path d="M15 14h2" />
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M19.58 3.08L3.15 19.51c.09.34.27.65.51.9c.25.24.56.42.9.51L21 4.49c-.19-.69-.73-1.23-1.42-1.41M11.95 3l-8.88 8.88v2.83L14.78 3zM5.07 3c-1.1 0-2 .9-2 2v2l4-4zm14 18c.55 0 1.05-.22 1.41-.59c.37-.36.59-.86.59-1.41v-2l-4 4zm-9.71 0h2.83l8.88-8.88V9.29z"
+      />
     </svg>
   );
 }

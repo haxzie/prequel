@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useRef, type ComponentType } from "react";
 
 import type { MediaDevice } from "../../../shared/contract";
-import { withoutDeviceIds } from "../../../shared/contract";
 import { useTooltip } from "../components/Tooltip";
 import { useAudioLevel } from "../hooks/useAudioLevel";
 import { useDock } from "../hooks/useDock";
 import { cn } from "../lib/cn";
 import { ChevronIcon } from "./icons";
-import { IconButton } from "./IconButton";
 
 /** The dot's colour per state. One green for both: a device that is on is a
-    device that is on, whichever it is, and the level meter beside a microphone
-    is what says whether it can hear you. */
-const STATUS_COLOUR: Record<DeviceStatus, Record<"camera" | "microphone", string>> = {
-  on: { camera: "bg-dot-on", microphone: "bg-dot-on" },
-  off: { camera: "bg-dot-off", microphone: "bg-dot-off" },
-  error: { camera: "bg-dock-record", microphone: "bg-dock-record" },
+    device that is on, whichever it is, and the level filling the microphone's
+    own glyph is what says whether it can hear you. */
+const STATUS_COLOUR: Record<DeviceStatus, string> = {
+  on: "bg-dot-on",
+  off: "bg-dot-off",
+  error: "bg-dock-record",
 };
 
 /**
@@ -24,7 +22,8 @@ const STATUS_COLOUR: Record<DeviceStatus, Record<"camera" | "microphone", string
  * `error` is not decorative: a device can be listed and still be unusable —
  * unplugged between enumeration and use, or refusing to open — and without it
  * the panel would show a broken camera as merrily on right up until the
- * recording came back without it.
+ * recording came back without it. It is also the one state the glyph cannot
+ * carry on its own: a camera that will not open still draws as a camera.
  */
 export type DeviceStatus = "on" | "off" | "error";
 
@@ -70,11 +69,19 @@ interface DeviceMenuProps {
 }
 
 /**
- * A device toggle, a status dot, and a chevron that opens the chooser.
+ * One control: the device's icon, a status dot, and a chevron that opens the
+ * list.
  *
- * The icon click toggles the device on and off; the chevron opens the list.
- * That split matters because the common action by far is "turn my camera on
- * with the same one as last time", which should not require picking from a menu.
+ * The icon used to be a button of its own that toggled the device, with the
+ * dot, the device's name and the chevron beside it opening the chooser. Two
+ * controls for one question — "which camera, if any" — and the toggle was the
+ * half that could not answer it: switching on picked whatever was last used,
+ * which is a different choice from the one the menu offers. Off is an item in
+ * the list, so the whole answer is in one place.
+ *
+ * The name went with the split. They are long — "MacBook Pro Microphone
+ * (Built-in)" — and two of them side by side were most of the panel's width,
+ * spent on something that changes about once; the tooltip carries it now.
  */
 export function DeviceMenu({
   kind,
@@ -127,31 +134,21 @@ export function DeviceMenu({
   // still listed and would not open. Either way it will not be recorded.
   const status: DeviceStatus = !enabled ? "off" : error || !selected ? "error" : "on";
 
-  // With exactly one device there is nothing to choose between, so turning it
-  // on picks it — no menu, no decision.
-  const flip = () => {
-    if (enabled) {
-      onSelect(null);
-      return;
-    }
-    const fallback = selected ?? devices[0];
-    if (fallback) onSelect(fallback);
-  };
-
-  // The remembered device even when switched off, so it is clear what turning
-  // it back on would pick. Falls back to the kind when nothing is known yet.
-  const chosen = selected?.label ?? selectedLabel ?? null;
-  const display = chosen ? withoutDeviceIds(chosen) : kind === "camera" ? "Camera" : "Microphone";
-  const name = chosen ?? kind;
+  // The remembered device even when switched off, so the tooltip can say what
+  // turning it back on would pick. Falls back to the kind when nothing is
+  // known yet.
+  const name = selected?.label ?? selectedLabel ?? kind;
   const label = unavailable
     ? `No ${kind} available`
     : status === "error"
       ? `${name} — ${error ?? "unavailable"}`
       : `${name} ${status}`;
 
-  // The full name and the state, which the truncated label beside the dot
-  // cannot always carry. Shares the button's ref with the anchor measurement
-  // above; see `IconButton` for why the merged ref has to be stable.
+  // The only place the device's name appears. A glyph, a dot and a chevron say
+  // what kind of device this is and what state it is in, but not which one —
+  // so this is load-bearing here in a way it is not on the buttons beside it.
+  // Shares the button's ref with the anchor measurement above; see
+  // `IconButton` for why the merged ref has to be stable.
   const tooltip = useTooltip(label, "top");
   const triggerRef = useCallback(
     (node: HTMLButtonElement | null) => {
@@ -162,13 +159,29 @@ export function DeviceMenu({
   );
 
   return (
-    <div className="flex items-center gap-0.5">
-      <IconButton
-        off={!enabled}
-        title={unavailable ? label : `Turn ${kind} ${enabled ? "off" : "on"}`}
-        aria-pressed={enabled}
-        disabled={unavailable}
-        onClick={flip}
+    <button
+      {...tooltip}
+      ref={triggerRef}
+      type="button"
+      className={cn(
+        "no-drag flex h-[30px] items-center gap-1 rounded-lg px-1.5 text-dock-fg",
+        "disabled:opacity-35 [&_svg]:flex-none",
+        open ? "bg-dock-hover" : "not-disabled:hover:bg-dock-hover",
+      )}
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      disabled={unavailable}
+      onClick={openMenu}
+    >
+      {/* At the size the icon buttons draw theirs, so the row reads as one
+          line of controls rather than this one sitting a size down. */}
+      <span
+        className={cn(
+          "grid flex-none place-items-center [&_svg]:size-[18px]",
+          enabled ? "text-dock-fg" : "text-dock-muted",
+        )}
+        aria-hidden="true"
       >
         {!enabled ? (
           <OffIcon />
@@ -188,52 +201,25 @@ export function DeviceMenu({
         ) : (
           <OnIcon />
         )}
-      </IconButton>
-
-      {/* The state, the name and the chevron are one control: they all answer
-          "which device is this, and can I change it", so making only the
-          chevron clickable turns a wide, obvious target into a 16px one. */}
-      <button
-        {...tooltip}
-        ref={triggerRef}
-        type="button"
+      </span>
+      <span
+        className={cn("size-1.5 flex-none rounded-full", STATUS_COLOUR[status])}
+        aria-hidden="true"
+      />
+      {/* Turned to point at the menu while it is up: the list opens above the
+          panel, so a chevron still pointing down under an open menu points at
+          nothing. The same easing as the tooltip's slide, so the two motions
+          in this panel read as one. */}
+      <span
         className={cn(
-          "no-drag flex h-[30px] items-center gap-1.5 rounded-lg px-1.5 text-xs text-dock-fg",
-          "disabled:opacity-35 [&_svg]:size-[11px] [&_svg]:flex-none [&_svg]:text-dock-muted",
-          open ? "bg-dock-hover" : "not-disabled:hover:bg-dock-hover",
+          "flex-none text-dock-muted/60 transition-transform duration-200 [&_svg]:size-[9px]",
+          "ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
+          open && "rotate-180",
         )}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={unavailable}
-        onClick={openMenu}
+        aria-hidden="true"
       >
-        <span
-          className={cn("size-1.5 flex-none rounded-full", STATUS_COLOUR[status][kind])}
-          aria-hidden="true"
-        />
-        {/* Sized to the name, capped so one long device cannot push the panel
-            across the screen. Long names are the norm — "MacBook Pro Microphone
-            (Built-in)" — and the panel cannot grow to fit them, so they clip
-            with the full name on hover. */}
-        <span className={cn("max-w-[132px] truncate text-left", !enabled && "text-dock-muted")}>
-          {display}
-        </span>
-        {/* Turned to point at the menu while it is up: the list opens above the
-            panel, so a chevron still pointing down under an open menu points
-            at nothing. The same easing as the tooltip's slide, so the two
-            motions in this panel read as one. */}
-        <span
-          className={cn(
-            "flex-none transition-transform duration-200",
-            "ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none",
-            open && "rotate-180",
-          )}
-          aria-hidden="true"
-        >
-          <ChevronIcon />
-        </span>
-      </button>
-    </div>
+        <ChevronIcon />
+      </span>
+    </button>
   );
 }

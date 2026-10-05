@@ -136,7 +136,14 @@ export function SetupPanel({ state }: { state: DockState }) {
       case "teleprompterEdit":
         void window.prequel.teleprompter.openScript();
         return;
+      case "teleprompterEnabled":
+        togglePrompter(pick.enabled);
+        return;
       case "teleprompterMode":
+        // Picking how it runs turns it on, the way picking a device does —
+        // otherwise choosing Auto-scroll from a menu whose Off is ticked
+        // changes a setting and nothing visible, which reads as a dead item.
+        if (!preferences.teleprompter) togglePrompter(true);
         void window.prequel.dock.updatePreferences({ teleprompterMode: pick.mode });
         return;
       case "teleprompterSize":
@@ -289,9 +296,7 @@ export function SetupPanel({ state }: { state: DockState }) {
           {preferences.micId !== null && (
             <TeleprompterMenu
               enabled={preferences.teleprompter}
-              mode={preferences.teleprompterMode}
               open={open === "teleprompter"}
-              onToggle={togglePrompter}
               onOpen={(anchor) => void openMenu("teleprompter", anchor)}
             />
           )}
@@ -358,6 +363,7 @@ function buildMenu(
     return {
       kind,
       anchor,
+      enabled: from.preferences.teleprompter,
       mode: from.preferences.teleprompterMode,
       size: from.preferences.teleprompterSize,
       // Main fills the list in: a renderer cannot see the displays.
