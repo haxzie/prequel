@@ -1,8 +1,8 @@
 /**
  * The editor's icons, copied from `apps/desktop/src/renderer/src/editor/icons.tsx`.
  *
- * Ten of the app's icons rather than the whole set, because ten is what the
- * picture of the editor draws. Copied and not imported, for the reason set out in
+ * As many of the app's icons as the site draws, rather than the whole set.
+ * Copied and not imported, for the reason set out in
  * `AppPreview`: `apps/web` shares no code with `apps/desktop`, so a marketing
  * page cannot become a second reason for a product module to change. The paths
  * are verbatim — a redrawn icon would be a different app in the picture.
@@ -320,6 +320,192 @@ export function ZoomInIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M11 5v12h2V5zM5 11h12v2H5z" />
+    </svg>
+  );
+}
+
+/* The dock's two newest destinations, and the chrome around the panel. */
+
+/**
+ * Framework7 `camera_filters`: the look laid over the whole frame.
+ *
+ * Its own 56-unit box rather than the 24 every other glyph here is drawn in.
+ * The rail sizes each one by its box, so it lands the same size as its
+ * neighbours either way, and rescaling the path by hand would be a second
+ * drawing of somebody else's icon.
+ */
+export function FilterIcon() {
+  return (
+    <svg viewBox="0 0 56 56" fill="currentColor" aria-hidden="true">
+      <path d="M18.964 51.506q3.31 0 6.202-1.247a16.3 16.3 0 0 0 5.09-3.436a15.9 15.9 0 0 0 3.436-5.09q1.236-2.903 1.235-6.214q0-3.288-1.247-6.179a16.17 16.17 0 0 0-8.514-8.515q-2.892-1.247-6.202-1.247q-3.288 0-6.19 1.247a16.13 16.13 0 0 0-8.527 8.515Q3 32.231 3 35.52q0 3.31 1.247 6.213a16.1 16.1 0 0 0 3.436 5.09a16.1 16.1 0 0 0 5.09 3.436q2.903 1.247 6.19 1.247m0-3.628a12 12 0 0 1-4.785-.964a12.6 12.6 0 0 1-3.945-2.653a12.2 12.2 0 0 1-2.653-3.934q-.953-2.246-.953-4.808q0-2.54.953-4.773a12.2 12.2 0 0 1 2.653-3.923a12.6 12.6 0 0 1 3.945-2.653a12 12 0 0 1 4.785-.964q2.562 0 4.796.964a12.5 12.5 0 0 1 6.576 6.576q.963 2.234.963 4.773q0 2.563-.963 4.808a12.46 12.46 0 0 1-6.576 6.587q-2.235.963-4.796.964m9.047-11.95q3.288 0 6.18-1.236a16 16 0 0 0 5.09-3.436a16 16 0 0 0 3.436-5.09q1.236-2.892 1.235-6.202t-1.235-6.19a16.1 16.1 0 0 0-3.436-5.08a16.2 16.2 0 0 0-5.09-3.447Q31.299 4 28.01 4q-3.31 0-6.201 1.247a16.2 16.2 0 0 0-5.091 3.447a16.3 16.3 0 0 0-3.447 5.08q-1.247 2.88-1.247 6.19t1.247 6.202a16.2 16.2 0 0 0 3.447 5.09a16.1 16.1 0 0 0 5.09 3.436q2.892 1.236 6.202 1.236m0-3.629q-2.562 0-4.807-.952a12.2 12.2 0 0 1-3.934-2.653a12.6 12.6 0 0 1-2.653-3.934q-.964-2.235-.964-4.796t.964-4.785a12.7 12.7 0 0 1 2.653-3.923a12.4 12.4 0 0 1 3.934-2.664q2.246-.964 4.807-.964q2.54 0 4.774.964q2.233.963 3.934 2.653a12.2 12.2 0 0 1 2.653 3.923q.952 2.234.952 4.796t-.952 4.796a12.4 12.4 0 0 1-2.653 3.934a12.4 12.4 0 0 1-3.934 2.653q-2.234.952-4.774.952m9.048 19.207q3.288 0 6.18-1.247a16.3 16.3 0 0 0 5.09-3.436a15.9 15.9 0 0 0 3.435-5.09Q53 38.83 53 35.519q0-3.288-1.236-6.179a15.9 15.9 0 0 0-3.435-5.08a16.3 16.3 0 0 0-5.09-3.435q-2.892-1.247-6.18-1.247q-3.31 0-6.213 1.247a16.13 16.13 0 0 0-8.526 8.515q-1.247 2.891-1.247 6.18q0 3.31 1.247 6.213a16.1 16.1 0 0 0 3.435 5.09a16.1 16.1 0 0 0 5.09 3.436q2.904 1.247 6.214 1.247m0-3.628q-2.562 0-4.807-.964a12.5 12.5 0 0 1-3.934-2.653a12.5 12.5 0 0 1-2.654-3.934q-.963-2.246-.963-4.808q0-2.54.963-4.773a12.46 12.46 0 0 1 6.587-6.576q2.246-.963 4.808-.964q2.54 0 4.773.964a12.5 12.5 0 0 1 6.576 6.576q.964 2.234.964 4.773q0 2.563-.952 4.808a12.3 12.3 0 0 1-2.642 3.934a12.5 12.5 0 0 1-3.934 2.653a12 12 0 0 1-4.785.964" />
+    </svg>
+  );
+}
+
+/** A covered line of text: what the reader lays over a card number or a key. */
+export function MaskToolIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="M7 10h3" />
+      <path d="M13 10h4" />
+      <path d="M7 14h5" />
+      <path d="M15 14h2" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `image`: the Background panel.
+ *
+ * It was a palette for a long time — the glyph moved to the text panel's Style
+ * tab, where a look is chosen, and what this panel mostly holds is wallpapers.
+ */
+export function ImageIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </svg>
+  );
+}
+
+export function AddZoomIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+      <path d="M11 8v6" />
+      <path d="M8 11h6" />
+    </svg>
+  );
+}
+
+export function AddTextIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M3 7V5h12v2" />
+      <path d="M9 5v14" />
+      <path d="M6 19h6" />
+      <path d="M18 12v6" />
+      <path d="M15 15h6" />
+    </svg>
+  );
+}
+
+export function AddRecordingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M11 8H9v3H6v2h3v3h2v-3h3v-2h-3z" />
+      <path d="M18 7c0-1.103-.897-2-2-2H4c-1.103 0-2 .897-2 2v10c0 1.103.897 2 2 2h12c1.103 0 2-.897 2-2v-3.333L22 17V7l-4 3.333zm-1.999 10H4V7h12v5z" />
+    </svg>
+  );
+}
+
+export function ChevronUpIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m18 15-6-6-6 6" />
+    </svg>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+export function UndoIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
+  );
+}
+
+export function ResetIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+    </svg>
+  );
+}
+
+export function CloseIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+/* The title bar, which is now three groups on the board rather than a bar. */
+
+export function FolderIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}
+
+export function BugIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m8 2 1.88 1.88" />
+      <path d="M14.12 3.88 16 2" />
+      <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
+      <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6" />
+      <path d="M12 20v-9" />
+      <path d="M6.53 9C4.6 8.8 3 7.1 3 5" />
+      <path d="M6 13H2" />
+      <path d="M3 21c0-2.1 1.7-3.9 3.8-4" />
+      <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
+      <path d="M22 13h-4" />
+      <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4" />
+    </svg>
+  );
+}
+
+export function ExportIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.8} aria-hidden="true">
+      <path d="M12 15V3m0 0L8 7m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </svg>
+  );
+}
+
+/** A dial with its needle: how fast a clip runs. */
+export function SpeedIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M4 18a9 9 0 1 1 16 0" />
+      <path d="M12 18 16 10" />
+    </svg>
+  );
+}
+
+/** A drop: the colour of the border round the recording. */
+export function DropletIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 3c3.5 4 6 7 6 10a6 6 0 0 1-12 0c0-3 2.5-6 6-10z" />
+    </svg>
+  );
+}
+
+/** A capital T on its baseline. The text row's glyph. */
+export function TextIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M4 7V5h16v2" />
+      <path d="M12 5v14" />
+      <path d="M9 19h6" />
     </svg>
   );
 }

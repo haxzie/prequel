@@ -124,16 +124,22 @@ export function Slider({
     <div className="flex items-center gap-2">
       <Glyph>{icon}</Glyph>
 
-      <div className={`group relative flex-1 overflow-hidden rounded-md bg-white/5 ${CONTROL_H}`}>
+      {/* A pill, like every other control on a row here — see `ROW_SHAPE` in
+          the app. The fill inside takes the same radius, or the filled end of a
+          track would be square inside a round trough. */}
+      <div className={`group relative flex-1 overflow-hidden rounded-full bg-white/5 ${CONTROL_H}`}>
         {/* Rounded like the track it sits in, so the filled end follows the same
             curve as the rim rather than stopping square inside it. The floor on
             the width keeps that rounded end at zero instead of collapsing into a
             sliver against the left edge. */}
         <div
-          className="absolute inset-y-0 left-0 rounded-md bg-white/12"
+          className="absolute inset-y-0 left-0 rounded-full bg-white/12"
           style={{ width: `max(0.75rem, ${value * 100}%)` }}
         >
-          <span className="absolute top-1/2 right-1.5 h-3.5 w-0.5 -translate-y-1/2 rounded-full bg-white" />
+          {/* Dimmed at rest. It only has to be found when somebody is reaching
+              for it, and at full white it was the brightest thing in a panel of
+              muted rows. */}
+          <span className="absolute top-1/2 right-2 h-3.5 w-0.5 -translate-y-1/2 rounded-full bg-white/60" />
         </div>
 
         {/* Over the fill, so a mark on the filled side is not swallowed by it,
@@ -163,19 +169,21 @@ export function Slider({
  * worth reading across a panel of controls; a white knob because it has to stay
  * the same object as it slides.
  *
- * Squared off rather than a pill — everything else in the panel is a rounded
- * rectangle at the same radius, and a capsule among them was the one shape from
- * a different set. The two radii are concentric: the knob's is the track's less
- * the gap between them, 6 − 2 = 4.
+ * Drawn as the platform's own switch: a capsule track and a knob that is a wide
+ * capsule rather than a disc, the way macOS 26 draws it. A switch is the one
+ * control everyone already knows from System Settings, and one that matches it
+ * reads as a switch before it reads as anything else. The proportions are the
+ * system's, scaled to the row: the knob is three fifths of the track's width and
+ * sits two pixels inside it.
  */
 export function Switch({ on }: { on: boolean }) {
   return (
     <span
       aria-hidden
-      className={`relative block h-[18px] w-8 flex-none rounded-md ${on ? "bg-toggle" : "bg-white/15"}`}
+      className={`relative block h-[18px] w-10 flex-none rounded-full ${on ? "bg-toggle" : "bg-white/15"}`}
     >
       <span
-        className={`absolute top-0.5 size-3.5 rounded bg-white ${on ? "left-4" : "left-0.5"}`}
+        className={`absolute top-0.5 left-0.5 h-3.5 w-6 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] ${on ? "translate-x-3" : ""}`}
       />
     </span>
   );
@@ -186,16 +194,18 @@ export function Switch({ on }: { on: boolean }) {
  *
  * The whole row is the button in the app, not just the switch: a 28×16 target
  * beside a label that did nothing was the smallest thing in the panel and the
- * one people missed. So the label sits in a well of its own at the slider's
- * height, in white rather than muted — it is a control's own label, not a
- * caption over one.
+ * one people missed.
+ *
+ * No fill behind the label. A slider carries one because the fill *is* the
+ * reading — how far along the track the value sits — and a switch has no such
+ * thing to show: the trough was borrowed from a control that needed one.
  */
 export function ToggleField({ icon, label, on }: { icon: ReactNode; label: string; on: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <Glyph>{icon}</Glyph>
       <div
-        className={`flex flex-1 items-center justify-between gap-2 rounded-md bg-white/5 px-2.5 ${CONTROL_H}`}
+        className={`flex flex-1 items-center justify-between gap-2 rounded-full px-2.5 ${CONTROL_H}`}
       >
         <span className="truncate text-[11px] text-white">{label}</span>
         <Switch on={on} />
@@ -216,16 +226,16 @@ export function Segmented({ options, at }: { options: string[]; at: number }) {
   const slot = `calc((100% - 0.25rem - ${options.length - 1} * 0.125rem) / ${options.length})`;
 
   return (
-    <div className="relative flex gap-0.5 rounded-lg bg-white/5 p-0.5" role="radiogroup">
+    <div className="relative flex gap-0.5 rounded-full bg-white/5 p-0.5" role="radiogroup">
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md bg-white/12"
+        className="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-full bg-white/12"
         style={{ width: slot, transform: `translateX(calc(${at} * (100% + 0.125rem)))` }}
       />
       {options.map((option, index) => (
         <span
           key={option}
-          className={`relative z-10 flex flex-1 items-center justify-center gap-1 rounded-md px-2 text-[11px] whitespace-nowrap ${CONTROL_H} ${
+          className={`relative z-10 flex flex-1 items-center justify-center gap-1 rounded-full px-2 text-[11px] whitespace-nowrap ${CONTROL_H} ${
             index === at ? "font-medium text-editor-fg" : "text-editor-muted"
           }`}
         >
@@ -250,16 +260,19 @@ export function ColorField({ icon, hex }: { icon: ReactNode; hex: string }) {
     <div className="flex items-center gap-2">
       <Glyph>{icon}</Glyph>
       <div
-        className={`flex flex-1 items-stretch overflow-hidden rounded-md bg-white/5 ${CONTROL_H}`}
+        className={`flex flex-1 items-stretch overflow-hidden rounded-full bg-white/5 ${CONTROL_H}`}
       >
         <span className="flex flex-none items-center gap-1 pr-1.5 pl-2">
-          <span className="size-4 rounded-[3px]" style={{ backgroundColor: hex }} aria-hidden />
+          {/* Round, like the slider's grip and everything else in a row here. A
+              rounded square of colour beside a pill of text was the last
+              squared-off thing left in the panels. */}
+          <span className="size-4 rounded-full" style={{ backgroundColor: hex }} aria-hidden />
           {/* After the swatch, not before it: a chevron leads the eye to what it
               opens, and what opens here is the picker the swatch stands for. */}
           <span className="text-editor-muted" aria-hidden>
             <svg viewBox="0 0 24 24" fill="none" className="size-3" aria-hidden>
               <path
-                d="m6 9 6 6 6-6"
+                d="m9 18 6-6-6-6"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
@@ -320,23 +333,84 @@ export function Group({ children }: { children: ReactNode }) {
   );
 }
 
-/** The panel the groups sit in. `w-80`, as the app has it. */
+/**
+ * What the editor's floating things are made of. `FLOATING` in the app.
+ *
+ * One constant rather than the same four utilities written wherever something
+ * sits on top of the board: the frame bar, the dock and the inspector are meant
+ * to be one material, and they drift the moment they are written apart.
+ *
+ * The shadow is deliberately slight. These float over a board lit by the
+ * recording's own colours, and a deep one puts a dark halo round each of them —
+ * a hole punched in the light rather than an object resting on it.
+ *
+ * **No `backdrop-filter`, where the app has a wide one.** It earns its place
+ * there because the board behind it is a live composition: a 48px dock sitting
+ * on a lamp would pick up a hot spot while a 320px panel beside it averaged the
+ * lamp and the dark board either side, and the blur is what makes the three
+ * converge on one material instead of reporting whatever happens to be under
+ * them. Here there is nothing to average — the board is a flat scrim with an
+ * already-blurred wash on it, so the filter changed no pixel anybody could
+ * name.
+ *
+ * It was not free. A backdrop filter re-samples everything behind its element,
+ * three of these sit inside a fourth, and the region they sample holds two
+ * playing videos — so every video frame re-blurred all four, thirty times a
+ * second, for a result identical to not blurring at all. That is what made the
+ * landing page stutter as it scrolled past.
+ */
+export const FLOATING =
+  "border border-editor-line bg-editor-scrim shadow-[0_2px_10px_rgba(0,0,0,0.28)]";
+
+/**
+ * The panel the groups sit in. `w-80`, as the app has it.
+ *
+ * It floats, where it used to be flush. A left border and square corners were
+ * right for a column that was part of the window; this one is an object resting
+ * on a lit board, and the two things that say so are a border on all four sides
+ * and daylight around it. `my-2 mr-2`, not `m-2`: the gap to the dock is the
+ * dock's own margin, and a left margin here would double it.
+ */
 export function Panel({ children }: { children: ReactNode }) {
   return (
-    <aside className="flex w-80 flex-none flex-col overflow-hidden border-l border-editor-line bg-editor-veil">
+    <aside
+      className={`my-2 mr-2 flex w-80 flex-none flex-col overflow-hidden rounded-2xl ${FLOATING}`}
+    >
       {children}
     </aside>
   );
 }
 
-/** The panel's heading: the glyph, the name, and nothing under it. */
-export function PanelHeader({ icon, title }: { icon: ReactNode; title: string }) {
+/**
+ * The panel's heading: the glyph, the name, and the controls acting on the whole
+ * panel.
+ *
+ * A rule along the bottom. The list below is cut off against it rather than
+ * faded under it, so the edge has to be drawn rather than implied.
+ *
+ * `controls` draws the two glyphs in the corner — Reset, then Close. Off by
+ * default: the feature illustrations show a panel as a slab of settings, and a
+ * close button on one that was never opened is a control pointing at nothing.
+ */
+export function PanelHeader({
+  icon,
+  title,
+  controls,
+}: {
+  icon: ReactNode;
+  title: string;
+  controls?: ReactNode;
+}) {
   return (
-    <header className="relative flex flex-none items-center gap-2.5 px-3 py-2.5">
+    <header className="relative flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
+      {/* Bare, at the text's own colour. It used to be a chip tinted from the
+          timeline's palette, which made the header a second place the selection
+          was colour-coded — competing with the timeline itself. */}
       <span className="flex-none [&_svg]:size-4" aria-hidden>
         {icon}
       </span>
       <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</p>
+      {controls}
     </header>
   );
 }
@@ -360,20 +434,33 @@ export function Rail({
   items,
   at,
 }: {
-  items: { id: string; Icon: () => ReactNode }[];
+  items: { id: string; label: string; Icon: () => ReactNode }[];
   at: number;
 }) {
   return (
-    <nav className="relative my-2 mr-2 flex flex-none flex-col gap-1 self-start rounded-[10px] border border-editor-line bg-editor-panel p-1.5 shadow-[0_1px_6px_rgba(0,0,0,0.3)]">
+    // Fully round rather than concentric with its buttons: a 48px column of
+    // round buttons has no corners of its own to be concentric with, and a 10px
+    // radius around them read as a rounded rectangle that happened to contain
+    // circles. Margin outside, padding in — without the margin the dock's own
+    // corners meet the panel's edge, which is the one thing a floating object
+    // must not do.
+    <nav
+      aria-hidden
+      className={`relative my-2 mr-2 flex flex-none flex-col gap-1 self-start rounded-full p-1.5 ${FLOATING}`}
+    >
+      {/* The mark travels down a column of round icons, so it is round too: a
+          rounded square sliding between them reads as a different object
+          arriving rather than as the same mark moving. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute top-1.5 left-1.5 size-9 rounded bg-selected"
+        className="pointer-events-none absolute top-1.5 left-1.5 size-9 rounded-full bg-selected"
         style={{ transform: `translateY(calc(${at} * 2.5rem))` }}
       />
-      {items.map(({ id, Icon }) => (
+      {items.map(({ id, label, Icon }) => (
         <span
           key={id}
-          className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
+          title={label}
+          className="relative z-10 grid size-9 place-items-center rounded-full text-white [&_svg]:size-[18px]"
         >
           <Icon />
         </span>

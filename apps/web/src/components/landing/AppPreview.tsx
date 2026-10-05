@@ -3,18 +3,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  AddRecordingIcon,
+  AddTextIcon,
+  AddZoomIcon,
   AngleIcon,
   AudioIcon,
-  BackdropIcon,
   BlurIcon,
+  BugIcon,
   BorderIcon,
   CameraIcon,
   CaptionsIcon,
+  ChevronUpIcon,
   ClockIcon,
+  CloseIcon,
   CornerRadiusIcon,
   CursorIcon,
+  DropletIcon,
+  ExportIcon,
+  FilterIcon,
+  FolderIcon,
+  ImageIcon,
   LayoutIcon,
   LinesIcon,
+  MaskToolIcon,
   OffsetIcon,
   OpacityIcon,
   PaddingIcon,
@@ -22,6 +33,7 @@ import {
   PerspectiveIcon,
   PlayIcon,
   PresetsIcon,
+  ResetIcon,
   ScissorsIcon,
   ScreenIcon,
   ShadowIcon,
@@ -31,12 +43,24 @@ import {
   SkipStartIcon,
   SmoothingIcon,
   SpeakerIcon,
+  SpeedIcon,
+  TextIcon,
   TrashIcon,
+  UndoIcon,
   WatermarkIcon,
   ZoomIcon,
   ZoomInIcon,
 } from "@/components/landing/editor-icons";
-import { ColorField, Segmented, Slider, ToggleField } from "@/components/editor-controls";
+import {
+  ColorField,
+  FLOATING,
+  Panel,
+  PanelHeader,
+  Rail,
+  Segmented,
+  Slider,
+  ToggleField,
+} from "@/components/editor-controls";
 import { ASSETS } from "@/lib/assets";
 /**
  * The editor, drawn on the landing page.
@@ -188,19 +212,21 @@ const ZOOMS = [
 ];
 
 /**
- * The dock's nine destinations and what each one puts in the panel.
+ * The dock's eleven destinations and what each one puts in the panel.
  *
  * `CATEGORIES` in `Inspector.tsx`, in its order and with its labels — including
  * "Logo" for the `watermark` id, which is the one place the two differ. The app
  * hides Camera, Audio, Cursor and Captions when a recording has no camera, no
  * audio, no cursor track or no transcript; this is a take that has all four.
+ * Focus and Angle are left out for the opposite reason: they belong to a
+ * screenshot, and this is a recording.
  *
  * The rows are the controls those panels actually carry, in the order they carry
  * them, each slider with the glyph the app puts beside it — read off
  * `Inspector.tsx` rather than invented, because a panel of plausible-looking
- * settings is a picture of a different app. Two of them are not lists of settings
- * at all: Presets is a grid of saved looks and Layout is a grid of arrangements,
- * so they are drawn as grids.
+ * settings is a picture of a different app. Four of them are not lists of
+ * settings at all: Presets is a grid of saved looks, Layout a grid of
+ * arrangements and Filters a grid of looks, so they are drawn as grids.
  *
  * What is a fixture here is the *values*. A real panel reads those off the
  * selected clip's settings, and this has no clip.
@@ -210,120 +236,303 @@ type Row =
   | { kind: "toggle"; label: string; on: boolean; Icon: () => React.ReactElement }
   | { kind: "segmented"; options: string[]; at: number }
   | { kind: "colour"; label: string; hex: string; Icon: () => React.ReactElement }
+  | { kind: "chips"; options: string[]; at: number }
   | { kind: "grid"; columns: number; items: string[]; at: number };
 
-const PRESETS_TAB = {
+/**
+ * A group of fields, divided from the next by a rule — the app's `Section`.
+ *
+ * The title is usually absent, and that is the app's rule rather than an
+ * omission here: the panel header already names what is showing, so a heading
+ * saying it again was that word twice, stacked, in two type sizes. It earns its
+ * place on the panels with several groups, where it names something the header
+ * does not.
+ */
+type Group = { title?: string; rows: Row[] };
+
+type Category = { id: string; label: string; Icon: () => React.ReactElement; groups: Group[] };
+
+const PRESETS_TAB: Category = {
   id: "presets",
   label: "Presets",
   Icon: PresetsIcon,
-  rows: [
-    { kind: "grid", columns: 2, items: ["Studio", "Keynote", "Plain", "Save this look"], at: 0 },
-  ] satisfies Row[],
+  groups: [
+    {
+      rows: [
+        {
+          kind: "grid",
+          columns: 2,
+          items: ["Studio", "Keynote", "Plain", "Save this look"],
+          at: 0,
+        },
+      ],
+    },
+  ],
 };
 
-const CATEGORIES: { id: string; label: string; Icon: () => React.ReactElement; rows: Row[] }[] = [
+const CATEGORIES: Category[] = [
   PRESETS_TAB,
   {
     id: "layout",
     label: "Layout",
     Icon: LayoutIcon,
-    // `LayoutPicker`, which is the whole panel: no label over it, because a grid
-    // of arrangements is a control that shows what it is.
-    rows: [
+    // `LayoutPicker`, which is the whole panel: no label over it, because a
+    // grid of arrangements is a control that shows what it is.
+    groups: [
       {
-        kind: "grid",
-        columns: 3,
-        items: ["Full", "Corner", "Beside", "Under", "Split", "Screen only"],
-        at: 1,
+        rows: [
+          {
+            kind: "grid",
+            columns: 3,
+            items: ["Full", "Corner", "Beside", "Under", "Split", "Screen only"],
+            at: 1,
+          },
+        ],
       },
     ],
   },
   {
     id: "background",
+    // A picture, not a palette: the palette glyph went to the text panel's
+    // Style tab, where a look is chosen, and what this panel mostly holds is
+    // wallpapers.
     label: "Background",
-    Icon: BackdropIcon,
-    rows: [
-      { kind: "segmented", options: ["Image", "Colour", "None"], at: 0 },
-      { kind: "slider", label: "Blur", value: 0.36, read: "24", Icon: BlurIcon },
-      { kind: "slider", label: "Angle", value: 0.5, read: "0°", Icon: AngleIcon },
+    Icon: ImageIcon,
+    groups: [
+      {
+        rows: [
+          { kind: "segmented", options: ["Image", "Colour", "None"], at: 0 },
+          { kind: "slider", label: "Blur", value: 0.36, read: "24%", Icon: BlurIcon },
+          { kind: "slider", label: "Angle", value: 0.5, read: "0°", Icon: AngleIcon },
+        ],
+      },
     ],
   },
   {
     id: "recording",
     label: "Recording",
     Icon: ScreenIcon,
-    rows: [
-      { kind: "slider", label: "Padding", value: 0.4, read: "12%", Icon: PaddingIcon },
-      { kind: "slider", label: "Corner radius", value: 0.28, read: "18", Icon: CornerRadiusIcon },
-      { kind: "slider", label: "Width", value: 0.14, read: "1", Icon: BorderIcon },
-      { kind: "colour", label: "Colour", hex: "#2A2D33", Icon: OpacityIcon },
-      { kind: "slider", label: "Opacity", value: 0.55, read: "55%", Icon: ShadowIcon },
-      { kind: "slider", label: "Blur", value: 0.42, read: "32", Icon: BlurIcon },
-      { kind: "slider", label: "Offset", value: 0.33, read: "12", Icon: ShadowOffsetIcon },
+    groups: [
+      {
+        title: "Speed",
+        rows: [
+          { kind: "slider", label: "Speed", value: 0.2, read: "1×", Icon: SpeedIcon },
+          // `SPEED_PRESETS`: stops for the common cases, so reaching for 2×
+          // is a click rather than a drag landing near enough.
+          { kind: "chips", options: ["0.25×", "0.5×", "1×", "2×", "4×"], at: 2 },
+        ],
+      },
+      {
+        rows: [
+          { kind: "slider", label: "Padding", value: 0.4, read: "9%", Icon: PaddingIcon },
+          {
+            kind: "slider",
+            label: "Corner radius",
+            value: 0.28,
+            read: "3%",
+            Icon: CornerRadiusIcon,
+          },
+        ],
+      },
+      {
+        title: "Border",
+        rows: [
+          { kind: "slider", label: "Width", value: 0.3, read: "0.6%", Icon: BorderIcon },
+          { kind: "colour", label: "Colour", hex: "#2A2D33", Icon: DropletIcon },
+          { kind: "slider", label: "Opacity", value: 0.55, read: "55%", Icon: OpacityIcon },
+        ],
+      },
+      {
+        title: "Shadow",
+        rows: [
+          { kind: "slider", label: "Opacity", value: 0.45, read: "45%", Icon: ShadowIcon },
+          { kind: "slider", label: "Blur", value: 0.42, read: "6%", Icon: BlurIcon },
+          { kind: "slider", label: "Offset", value: 0.33, read: "3%", Icon: ShadowOffsetIcon },
+        ],
+      },
     ],
   },
   {
     id: "camera",
     label: "Camera",
     Icon: CameraIcon,
-    rows: [
-      { kind: "toggle", label: "Camera", on: true, Icon: CameraIcon },
-      { kind: "segmented", options: ["Circle", "Squircle", "Rectangle"], at: 0 },
-      { kind: "slider", label: "Roundness", value: 0.9, read: "90%", Icon: CornerRadiusIcon },
-      { kind: "slider", label: "Size", value: 0.34, read: "18%", Icon: SizeIcon },
-      { kind: "slider", label: "Zoom", value: 0.2, read: "1.2×", Icon: ZoomIcon },
-      { kind: "toggle", label: "Mirror", on: true, Icon: PerspectiveIcon },
-      { kind: "toggle", label: "Shrink on zoom", on: false, Icon: ZoomIcon },
-      { kind: "slider", label: "Size while zoomed", value: 0.5, read: "12%", Icon: ZoomInIcon },
+    groups: [
+      {
+        rows: [
+          { kind: "toggle", label: "Camera", on: true, Icon: CameraIcon },
+          // Five shapes, where there were three. The two at the end are the
+          // camera at its own proportions rather than cropped square.
+          {
+            kind: "segmented",
+            options: ["Circle", "Squircle", "Rounded", "Wide", "Portrait"],
+            at: 0,
+          },
+          { kind: "slider", label: "Roundness", value: 0.9, read: "90%", Icon: CornerRadiusIcon },
+          { kind: "slider", label: "Size", value: 0.34, read: "18%", Icon: SizeIcon },
+          { kind: "slider", label: "Zoom", value: 0.2, read: "1.2×", Icon: ZoomIcon },
+          { kind: "toggle", label: "Mirror", on: true, Icon: PerspectiveIcon },
+          { kind: "toggle", label: "Shrink on zoom", on: false, Icon: ZoomIcon },
+          { kind: "slider", label: "Size while zoomed", value: 0.5, read: "12%", Icon: ZoomInIcon },
+        ],
+      },
     ],
   },
   {
     id: "audio",
     label: "Audio",
     Icon: AudioIcon,
-    rows: [
-      { kind: "toggle", label: "Include", on: true, Icon: SpeakerIcon },
-      { kind: "slider", label: "Volume", value: 0.8, read: "80%", Icon: SpeakerIcon },
+    groups: [
+      {
+        rows: [
+          { kind: "toggle", label: "Include", on: true, Icon: SpeakerIcon },
+          { kind: "slider", label: "Volume", value: 0.8, read: "80%", Icon: SpeakerIcon },
+        ],
+      },
     ],
   },
   {
     id: "cursor",
     label: "Cursor",
     Icon: CursorIcon,
-    rows: [
-      { kind: "toggle", label: "Pointer", on: true, Icon: CursorIcon },
-      { kind: "slider", label: "Size", value: 0.52, read: "1.3×", Icon: SizeIcon },
-      { kind: "slider", label: "Smoothing", value: 0.66, read: "66%", Icon: SmoothingIcon },
-      { kind: "slider", label: "Motion blur", value: 0.24, read: "24%", Icon: BlurIcon },
-      { kind: "toggle", label: "Hide while typing", on: true, Icon: CursorIcon },
-      { kind: "toggle", label: "Hide when still", on: false, Icon: ClockIcon },
-      { kind: "slider", label: "After", value: 0.35, read: "1.2s", Icon: ClockIcon },
+    groups: [
+      {
+        rows: [
+          { kind: "toggle", label: "Pointer", on: true, Icon: CursorIcon },
+          { kind: "slider", label: "Size", value: 0.52, read: "1.3×", Icon: SizeIcon },
+          { kind: "slider", label: "Smoothing", value: 0.66, read: "66%", Icon: SmoothingIcon },
+          { kind: "slider", label: "Motion blur", value: 0.24, read: "24%", Icon: BlurIcon },
+          { kind: "toggle", label: "Hide while typing", on: true, Icon: CursorIcon },
+          { kind: "toggle", label: "Hide when still", on: false, Icon: ClockIcon },
+          { kind: "slider", label: "After", value: 0.35, read: "1.2s", Icon: ClockIcon },
+        ],
+      },
     ],
   },
   {
     id: "captions",
     label: "Captions",
     Icon: CaptionsIcon,
-    rows: [
-      { kind: "toggle", label: "Show captions", on: true, Icon: CaptionsIcon },
-      { kind: "slider", label: "Size", value: 0.48, read: "42", Icon: SizeIcon },
-      { kind: "slider", label: "Distance from edge", value: 0.2, read: "6%", Icon: OffsetIcon },
-      { kind: "slider", label: "Lines", value: 0.5, read: "2", Icon: LinesIcon },
-      { kind: "colour", label: "Spoken word", hex: "#FFD60A", Icon: OpacityIcon },
+    groups: [
+      {
+        rows: [
+          { kind: "toggle", label: "Show captions", on: true, Icon: CaptionsIcon },
+          { kind: "slider", label: "Size", value: 0.48, read: "42", Icon: SizeIcon },
+          { kind: "slider", label: "Distance from edge", value: 0.2, read: "6%", Icon: OffsetIcon },
+          { kind: "slider", label: "Lines", value: 0.5, read: "2", Icon: LinesIcon },
+          { kind: "colour", label: "Spoken word", hex: "#FFD60A", Icon: DropletIcon },
+        ],
+      },
+    ],
+  },
+  {
+    // Past the conditional ones, and beside the logo rather than among the
+    // panels above: everything above dresses a picture the recording already
+    // has, and a look is laid over the finished composition.
+    id: "filters",
+    label: "Filters",
+    Icon: FilterIcon,
+    groups: [
+      {
+        rows: [
+          {
+            kind: "grid",
+            columns: 3,
+            items: ["None", "Warm", "Cool", "Mono", "Faded", "Velvia"],
+            at: 0,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // Unconditional, even when nothing was found: a panel that appeared only
+    // when there was something to show is a panel nobody knows exists, and
+    // "nothing was found" is the most reassuring thing it can say.
+    id: "privacy",
+    label: "Privacy",
+    Icon: MaskToolIcon,
+    groups: [
+      {
+        rows: [
+          { kind: "segmented", options: ["Blur", "Pixelate"], at: 0 },
+          { kind: "toggle", label: "Email and phone numbers", on: true, Icon: MaskToolIcon },
+          { kind: "toggle", label: "Cards and ID numbers", on: true, Icon: MaskToolIcon },
+          { kind: "toggle", label: "Keys and secrets", on: true, Icon: MaskToolIcon },
+          { kind: "toggle", label: "Faces", on: false, Icon: MaskToolIcon },
+        ],
+      },
     ],
   },
   {
     id: "watermark",
     label: "Logo",
     Icon: WatermarkIcon,
-    rows: [
-      { kind: "slider", label: "Size", value: 0.26, read: "8%", Icon: SizeIcon },
-      { kind: "slider", label: "Opacity", value: 0.6, read: "60%", Icon: OpacityIcon },
+    groups: [
+      {
+        rows: [
+          { kind: "slider", label: "Size", value: 0.26, read: "8%", Icon: SizeIcon },
+          { kind: "slider", label: "Opacity", value: 0.6, read: "60%", Icon: OpacityIcon },
+        ],
+      },
     ],
   },
 ];
 
 const FIRST_TAB = PRESETS_TAB;
+
+/**
+ * How tall the title bar is, and the frame bar under it.
+ *
+ * `TITLE_BAR` and `FRAME_BAR` in `surfaces.ts`. Constants because several things
+ * that are not the bars have to agree on them: neither takes a row of its own
+ * any more — both float over the board, which is what lets the dots and the
+ * recording's own light reach the top of the window — so everything underneath
+ * holds its own space clear. The stage's headroom is the two plus a gutter, and
+ * the dock and the panel start below the first.
+ */
+const TITLE_BAR = "2.625rem";
+const FRAME_BAR = "2.375rem";
+
+/**
+ * What the dock and the panel occupy together.
+ *
+ * The dock is 2.25rem of button, 0.75rem of padding, 0.125rem of border and
+ * 0.5rem of margin — 3.625rem — and the panel is 20rem plus the 0.5rem it is
+ * inset from the window edge by. The frame bar and the stage are both held off
+ * the right by it, so the picture and the controls over it stay centred on the
+ * part of the board anybody can see.
+ *
+ * Handed down as a custom property rather than written into a class: the pair is
+ * only on screen at `lg`, and a breakpoint cannot be expressed in an inline
+ * style. One number, read by `lg:pr-[var(--panel)]` in the two places that
+ * need it.
+ */
+const PANEL_WIDTH = "24.125rem";
+
+/**
+ * The wash of background colour behind the composition.
+ *
+ * `ambientGradient` in `ambience.ts`: three lamps of the background's own
+ * colours thrown on the board, so what reaches the eye is light rather than a
+ * shape. The app samples them off the wallpaper the recording is dressed in;
+ * these three are read off this take's, which is the lilac and pale green its
+ * first frame opens on.
+ *
+ * It is the reason the panels float rather than sit flush. A surface that
+ * stopped the light dead was a hole punched in it, which is what the old opaque
+ * sidebar and the old solid title bar both were.
+ *
+ * Each lamp fades to its own colour at zero alpha rather than to `transparent`,
+ * which is `rgb(0 0 0 / 0)` — a ramp to it travels towards black as well as
+ * towards nothing. Premultiplied interpolation hides that most of the time and
+ * not all of it, and fading to the same hue at zero changes only the alpha,
+ * which is the one channel a wash is allowed to move. Free, and right.
+ */
+const WASH = [
+  "radial-gradient(60% 60% at 22% 18%, rgb(186 169 249 / 0.50), rgb(186 169 249 / 0) 72%)",
+  "radial-gradient(60% 60% at 80% 26%, rgb(229 248 216 / 0.43), rgb(229 248 216 / 0) 72%)",
+  "radial-gradient(60% 60% at 50% 88%, rgb(207 186 245 / 0.35), rgb(207 186 245 / 0) 72%)",
+].join(", ");
 
 /** The ruler's marks: a major every five seconds, a minor every second. */
 const MARKS = Array.from({ length: Math.floor(DURATION) + 1 }, (_, at) => ({
@@ -348,7 +557,9 @@ export function AppPreview() {
   // Fixed: the rail is a picture. Named rather than inlined so the panel showing
   // and the dock's mark cannot drift apart.
   const tab = "recording";
+  const showing = CATEGORIES.find((category) => category.id === tab) ?? FIRST_TAB;
   const strip = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const camera = useRef<HTMLVideoElement>(null);
   const rail = useRef<HTMLDivElement>(null);
@@ -417,9 +628,11 @@ export function AppPreview() {
    * regardless, iOS in Low Power Mode being the common one, so the rejection is
    * swallowed and the poster stays up with the transport waiting to be pressed.
    *
-   * `ON_SCREEN` is the gate, and it is what replaced the camera's `autoPlay` and
-   * both files' `preload="auto"`. Below it the panel is `display: none`, which
-   * would have stopped neither: the bytes are the point, not the paint.
+   * There are two gates. `ON_SCREEN` is the width one, and it is what replaced
+   * the camera's `autoPlay` and both files' `preload="auto"`: below it the panel
+   * is `display: none`, which would have stopped neither, because the bytes are
+   * the point and not the paint. The observer below is the other — see the note
+   * on it — and the two are `&&`, so neither can start the files on its own.
    *
    * Not under `prefers-reduced-motion`. The site stops the wash, the demos and
    * the hero's entrance outright under that setting rather than slowing them
@@ -433,8 +646,13 @@ export function AppPreview() {
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const wide = window.matchMedia(ON_SCREEN);
 
+    // Whether the panel is in the viewport at all. Held outside the observer so
+    // a width change can ask the same question without waiting for the next
+    // intersection to be reported.
+    let showing = true;
+
     const start = () => {
-      if (!wide.matches) return;
+      if (!wide.matches || !showing) return;
 
       void camera.current?.play().catch(() => {
         // Refused, and there is no fallback frame to show. An empty corner is
@@ -450,13 +668,45 @@ export function AppPreview() {
       });
     };
 
+    const stop = () => {
+      video.current?.pause();
+      camera.current?.pause();
+    };
+
+    /**
+     * Both files run only while the panel is on screen.
+     *
+     * Two videos decoding is work the compositor does whether or not anybody
+     * can see them, and this sits near the top of a long page: left running,
+     * they went on decoding through every section below, which is the frame
+     * budget of the rest of the landing page spent on a picture nobody is
+     * looking at. It is also what the `rAF` loop above is gated on — pausing
+     * clears `playing`, and the loop stops with it.
+     *
+     * A margin, so the two are already running by the time the panel is
+     * reached rather than starting as it arrives: a video that begins playing
+     * the moment it comes into view reads as having been broken until then.
+     */
+    const watcher = new IntersectionObserver(
+      ([entry]) => {
+        showing = entry?.isIntersecting ?? true;
+        if (showing) start();
+        else stop();
+      },
+      { rootMargin: "200px" },
+    );
+
+    if (box.current) watcher.observe(box.current);
     start();
 
     // A window that opens narrow and is widened, or a phone turned on its side,
     // would otherwise keep the poster and an empty camera corner for as long as
     // the page is open.
     wide.addEventListener("change", start);
-    return () => wide.removeEventListener("change", start);
+    return () => {
+      watcher.disconnect();
+      wide.removeEventListener("change", start);
+    };
   }, []);
 
   const toggle = () => {
@@ -491,6 +741,7 @@ export function AppPreview() {
     // the top end that the window reads as sitting *on* the picture — at half
     // this it was a window with a coloured edge.
     <div
+      ref={box}
       className="squircle relative isolate overflow-hidden rounded-3xl bg-cover bg-center p-4 sm:p-9 lg:p-16"
       style={{ backgroundImage: `url(${BACKDROP})` }}
     >
@@ -498,68 +749,191 @@ export function AppPreview() {
           scrub that highlights the timecode as it goes reads as a broken text
           field. The shadow is what lifts the window off the wallpaper — without
           it the two are one flat picture and the inset reads as a mistake. */}
+      {/* `select-none` because every pointer gesture in here is a drag, and a
+          scrub that highlights the timecode as it goes reads as a broken text
+          field. The shadow is what lifts the window off the wallpaper — without
+          it the two are one flat picture and the inset reads as a mistake.
+
+          `bg-editor-glass`, not the opaque `--editor-bg` this was. Electron
+          gives a window one vibrancy material and the app paints three depths
+          of the same colour over it; the wallpaper reading faintly through the
+          chrome is that material, and it is what the floating panels inside are
+          floating on.
+
+          The tint and no `backdrop-filter`, which it carried for about a day.
+          What is behind this element is one smooth gradient, so blurring it
+          produced the same pixels at the cost of a backdrop root around two
+          playing videos — and a backdrop root is re-rastered in tiles as the
+          page scrolls, which is where the black band came from. See `FLOATING`
+          for the three inside it, dropped for the same reason. */}
       <div
-        className="editor-theme squircle relative flex select-none flex-col overflow-hidden rounded-2xl bg-editor-bg text-editor-fg shadow-[0_24px_60px_-20px_rgb(0_0_0_/_0.55)] ring-1 ring-black/20"
+        className="editor-theme squircle relative flex select-none flex-col overflow-hidden rounded-2xl bg-editor-glass text-editor-fg shadow-[0_24px_60px_-20px_rgb(0_0_0_/_0.55)] ring-1 ring-black/20"
         role="img"
         aria-label="The Prequel editor: a recording on the timeline with three zooms over it"
       >
-        {/* The window's title bar. `pl-20` in the app is the room the traffic
-          lights need; the dots are drawn here because without them the bar reads
-          as a web toolbar rather than as a macOS window. */}
-        <header className="flex h-[38px] flex-none items-center gap-1.5 border-b border-editor-line bg-editor-veil pr-3 pl-4">
+        {/* The window's title bar, which has no surface of its own. It was a
+          nearly-solid band matching the transport at the other end, so the two
+          read as the frame around the work — and that stopped being the
+          arrangement when the panels inside lifted off the board. A solid bar
+          above a window of floating things is the one thing left that is still
+          a wall.
+
+          So it floats over the board, which is what lets the dots and the
+          recording's own light run to the top of the window. Everything
+          underneath holds its own space clear; see `TITLE_BAR`.
+
+          `pl-20` in the app is the room macOS's own traffic lights need. The
+          dots are drawn here because without them the bar reads as a web
+          toolbar rather than as a macOS window. */}
+        <header
+          className="absolute inset-x-0 top-0 z-40 flex items-center gap-2 pr-2 pl-4"
+          style={{ height: TITLE_BAR }}
+        >
           <span aria-hidden className="mr-2 flex flex-none items-center gap-2">
             <span className="size-3 rounded-full bg-[#ff5f57]" />
             <span className="size-3 rounded-full bg-[#febc2e]" />
             <span className="size-3 rounded-full bg-[#28c840]" />
           </span>
-          <span className="flex flex-none items-center gap-1.5 rounded-lg px-1.5 py-1 text-[13px] text-editor-muted">
-            Projects
+
+          {/* Where this recording is and what can be done to it, as one group.
+            No plate under it: these are the window saying where you are, not
+            controls waiting to be used, and a plate made the bar read as three
+            objects competing with the picture below. Each part lights up on
+            hover, which is the only moment it is a control. */}
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="flex flex-none items-center gap-1.5 rounded-full px-2 py-1 text-[13px] text-editor-fg/75 [&_svg]:size-3.5">
+              <FolderIcon />
+              Recordings
+            </span>
+            <span aria-hidden className="flex-none text-[13px] text-editor-fg/40">
+              /
+            </span>
+            <span className="min-w-0 truncate px-1 text-[13px] font-medium">
+              Onboarding walkthrough
+            </span>
+            <span className="grid size-6 flex-none place-items-center rounded-full text-editor-muted [&_svg]:size-3.5">
+              <TrashIcon />
+            </span>
           </span>
-          <span aria-hidden className="flex-none text-[13px] text-editor-muted/50">
-            /
+
+          <span className="flex-1" />
+
+          {/* Text as well as the glyph, unlike anything else on this bar. The
+            rest are things somebody came here to do and will find by looking;
+            this one has to be noticed by somebody who was not looking for it. */}
+          <span className="hidden flex-none items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] text-editor-fg/75 sm:flex [&_svg]:size-3.5">
+            <BugIcon />
+            Found a bug?
           </span>
-          <span className="flex-1 truncate pr-1.5 text-[13px] font-medium">
-            Onboarding walkthrough
-          </span>
-          <span className="flex-none rounded-lg bg-white/10 px-2.5 py-1 text-[12px] font-medium">
+          {/* The only thing on the bar that is already a surface — a filled
+            button in the app's own green — because it is the only thing on it
+            that is a decision rather than a label. */}
+          <span className="flex h-7 flex-none items-center gap-1.5 rounded-full bg-export px-3 text-[11px] font-medium text-white [&_svg]:size-3.5">
+            <ExportIcon />
             Export
           </span>
         </header>
 
         {/* The board: the dots and the fill are on the row, so the surface runs
-          under the inspector as well as under the composition — one board with
-          panels on it rather than a patterned area and a plain one meeting at a
-          seam. */}
-        {/* `min-h` because the dock is nine buttons tall — 2.25rem each plus the
-          gaps, its padding, its border and its margin — and the board's own
-          height comes from the composition, which is shorter than that at
-          narrow widths. Without it the last categories fall past the panel and
-          the shell's `overflow-hidden` cuts them off. */}
-        <div className="dot-grid flex min-h-[25rem] flex-1 bg-editor-scrim">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* The frame bar, which shares its surface with the composition so it
-              reads as part of the canvas rather than as chrome above it. */}
-            <div className="relative flex flex-none items-center justify-center gap-3 px-4 py-2">
-              <span className="text-[11px] tracking-wide text-editor-muted uppercase">Frame</span>
-              <span className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs">
-                Landscape
-                <span className="tabular-nums text-editor-muted">16:9</span>
-              </span>
-              <span className="flex items-center gap-1.5 text-xs tabular-nums">
-                1920
-                <span className="text-editor-muted">×</span>
-                1080
+          under the inspector and under the title bar as well as under the
+          composition — one board with things sitting on it rather than a
+          patterned area and a plain one meeting at a seam.
+
+          `min-h` because the dock is eleven buttons tall — 2.25rem each plus
+          the gaps, its padding, its border and its margin, under a title bar —
+          and the board's own height comes from the composition, which is
+          shorter than that at narrow widths. Without it the last categories
+          fall past the panel and the shell's `overflow-hidden` cuts them off.
+
+          `relative`, because everything on it is positioned against it: the
+          bars, the dock and the panel all float rather than taking a column or
+          a row. */}
+        <div
+          className="dot-grid relative flex min-h-[34rem] flex-1 bg-editor-scrim"
+          style={{ "--panel": PANEL_WIDTH } as React.CSSProperties}
+        >
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            {/* The frame bar, floating over the board rather than taking a row
+              above the picture. As a row it was a strip of board the
+              composition could not reach and the light behind it could not
+              cross, so the wash ended in a straight horizontal line a third of
+              the way up the window — which reads as a rendering fault rather
+              than as light.
+
+              Inset by the panel for the reason the stage is: this column runs
+              the full width of the board, and a bar centred in it would sit
+              off-centre over the part of the board anybody can see. */}
+            <div
+              className="pointer-events-none absolute inset-x-0 z-20 flex justify-center lg:pr-[var(--panel)]"
+              style={{ top: TITLE_BAR }}
+            >
+              {/* Pill-shaped like the dock rather than rounded like the panel:
+                both of those are a line of controls, and the panel is a page of
+                them. White, not `--editor-muted` — that tone was chosen against
+                the opaque strip this used to be a row in, and over a surface lit
+                by the recording's own colours a muted grey is the one thing on
+                the bar you have to look twice at. */}
+              <span
+                className={`flex items-center gap-3 rounded-full px-4 py-1.5 ${FLOATING}`}
+                style={{ height: FRAME_BAR }}
+              >
+                <span className="text-[11px] tracking-wide text-editor-fg uppercase">Frame</span>
+                <span className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs">
+                  {/* A rectangle of the frame's proportions, at a glance. */}
+                  <span className="grid size-4 flex-none place-items-center" aria-hidden>
+                    <span className="h-[7.875px] w-3.5 rounded-[2px] border border-current" />
+                  </span>
+                  Landscape
+                  <span className="tabular-nums text-editor-fg">16:9</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-xs tabular-nums">
+                  <span className="rounded-full px-2 py-1">1920</span>
+                  <span className="text-editor-fg">×</span>
+                  <span className="rounded-full px-2 py-1">1080</span>
+                </span>
               </span>
             </div>
 
-            {/* The composition, which is a finished export playing. Nothing is
-              drawn over it: the background, the rounded screen, the camera and
-              the zoom and pan are all in the file, because the file came out of the
-              app. `loop` because it is a picture of the editor rather than
-              something to watch to the end — it should be moving whenever anyone
-              looks at it, and a still panel halfway down a page reads as broken.
-              `playsInline` so iOS does not take it fullscreen. */}
-            <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-4">
+            {/* The stage. The composition is a finished export playing: nothing
+              is drawn over it, because the background, the rounded screen, the
+              camera and the zoom and pan are all in the file, which came out of
+              the app. `loop` because it is a picture of the editor rather than
+              something to watch to the end — it should be moving whenever
+              anyone looks at it, and a still panel halfway down a page reads as
+              broken. `playsInline` so iOS does not take it fullscreen.
+
+              The headroom is the two bars plus the same gutter the picture has
+              from the transport below it, written as one sum so the space over
+              the picture and the space under it are the same number rather than
+              two that happen to agree.
+
+              `relative isolate` for the wash: a `-z-10` child is only behind its
+              own stacking context, and without one it goes behind the board's
+              own fill and is never seen. `overflow-hidden` keeps it on the
+              board, and it clips at the padding box — so the wash reaches under
+              the floating panel, which is the whole point of it being on the
+              stage rather than around the picture. */}
+            <div
+              className="relative isolate grid min-h-0 flex-1 place-items-center overflow-hidden px-6 lg:pr-[calc(1.5rem+var(--panel))]"
+              style={{
+                paddingTop: `calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`,
+                paddingBottom: "1.5rem",
+              }}
+            >
+              {/* No `blur()`, where the app carries 72px of it.
+                
+                The app samples its lamps off a photograph, so the filter is
+                what turns a picture into light. These three are radial
+                gradients, which are already a smooth ramp from the centre to
+                nothing — blurring one changes no pixel you can find in a
+                screenshot, and it was the largest filter left on the page
+                after the backdrops went. The softness lives in the stops. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -inset-[10%] -z-10"
+                style={{ background: WASH }}
+              />
+
               {/* `relative` and sized to the take, so the camera below is placed
                 against the composition's own edges rather than the column's —
                 the two differ at every width, and a bubble inset from the column
@@ -628,34 +1002,73 @@ export function AppPreview() {
           </div>
 
           {/* The dock and the panel, which the app counts as one thing — see
-            `PANEL_WIDTH`. The dock is what chooses the section, and it floats on
-            the board rather than sitting inside the panel. */}
-          {/* Both are fixed, and deliberately. The timeline is the one thing here
+            `PANEL_WIDTH`. The dock is what chooses the section.
+
+            Floating over the board rather than sitting beside it, and the
+            reason is the rail: those icons are drawn on the editor's own
+            background with nothing behind them, so as a column of its own the
+            rail was a vertical strip the light could not cross and the wash
+            stopped dead at it. Over the board, the light runs underneath and the
+            icons sit in it. `top` rather than `inset-y-0`: the board reaches the
+            top of the window and this must not, or it would slide up behind the
+            title bar's own controls.
+
+            Both are fixed, and deliberately. The timeline is the one thing here
             worth handing a visitor, because scrubbing is what shows that the
-            picture and the strip are the same edit. A rail that swapped nine
+            picture and the strip are the same edit. A rail that swapped eleven
             panels of settings is a toy: it invites somebody to hunt for the
             control that does something and find that none of them do. So this
-            shows one panel as a picture of the app, and the whole column is inert
-            — `pointer-events-none` rather than disabled controls, so nothing
-            offers a cursor or a hover it cannot honour. */}
-          <div className="pointer-events-none hidden flex-none select-none lg:flex">
-            <Rail value={tab} />
-            {/* The panel: `bg-editor-veil`, the timeline's surface rather than
-              `--editor-panel`, so the two meet as one continuous chrome down the
-              right and along the bottom instead of as two greys. A left border
-              and no shadow — the only edge that exists is the one facing the
-              composition. */}
-            <div className="flex w-64 flex-none overflow-hidden border-l border-editor-line bg-editor-veil">
-              {/* `Section` in the app: one group of fields, `gap-3`, with the
-                panel's own padding. No heading — the dock already says which one
-                is showing, and repeating it here was the word twice in two type
-                sizes. */}
-              <div className="flex flex-1 flex-col gap-3 overflow-y-auto border-b border-editor-line px-4 py-4">
-                {(CATEGORIES.find((t) => t.id === tab) ?? FIRST_TAB).rows.map((row, i) => (
-                  <PanelRow key={`${row.kind}-${i}`} row={row} />
+            shows one panel as a picture of the app, and the whole column is
+            inert — `pointer-events-none` rather than disabled controls, so
+            nothing offers a cursor or a hover it cannot honour. */}
+          <div
+            className="pointer-events-none absolute right-0 bottom-0 z-30 hidden select-none lg:flex"
+            style={{ top: TITLE_BAR }}
+          >
+            <Rail
+              items={CATEGORIES}
+              at={Math.max(
+                0,
+                CATEGORIES.findIndex((c) => c.id === tab),
+              )}
+            />
+            <Panel>
+              <PanelHeader
+                icon={<showing.Icon />}
+                title={showing.label}
+                controls={
+                  <>
+                    {/* Reset, then Close. The rail is a column of glyphs with no
+                      labels, so the panel it opens says the word — and every
+                      control acting on the panel is up here with it, where
+                      Reset used to be a word on a row of its own inside. */}
+                    <span className="grid size-6 flex-none place-items-center rounded-full text-editor-muted [&_svg]:size-3.5">
+                      <ResetIcon />
+                    </span>
+                    <span className="grid size-6 flex-none place-items-center rounded-full text-editor-muted [&_svg]:size-3.5">
+                      <CloseIcon />
+                    </span>
+                  </>
+                }
+              />
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                {showing.groups.map((group, index) => (
+                  <section
+                    key={group.title ?? index}
+                    className="flex flex-none flex-col gap-3 border-b border-editor-line px-4 py-4 last:border-b-0"
+                  >
+                    {group.title && (
+                      <h2 className="text-[11px] font-semibold tracking-wide uppercase">
+                        {group.title}
+                      </h2>
+                    )}
+                    {group.rows.map((row, i) => (
+                      <PanelRow key={`${row.kind}-${i}`} row={row} />
+                    ))}
+                  </section>
                 ))}
               </div>
-            </div>
+            </Panel>
           </div>
         </div>
 
@@ -663,17 +1076,51 @@ export function AppPreview() {
           it is centred on the row and not on what is left after the clock and
           the verbs have taken their share. */}
         <div className="grid flex-none grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-editor-line bg-editor-veil px-4 py-2">
-          <div className="flex items-center gap-1 text-xs tabular-nums">
-            {/* Rendered once. The frame loop rewrites its text, so React must not
-              — the app's clock is a ref for the same reason. */}
-            <span
-              ref={clock}
-              className="flex-none text-right text-editor-fg"
-              style={{ width: "7ch" }}
-            >
-              0:00.00
-            </span>
-            <span className="text-editor-muted">/ {timecode(DURATION)}</span>
+          {/* The verbs for the selection, then the clock. Both act on what you
+            have already picked, so they share a box; the two things that can be
+            added sit at the far end of the row, because those act on the
+            playhead instead. */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+              <span
+                className={`grid h-7 w-7 place-items-center rounded-md [&_svg]:size-[15px] ${
+                  selected ? "text-editor-muted" : "text-editor-muted/40"
+                }`}
+              >
+                <ScissorsIcon />
+              </span>
+              <span
+                className={`grid h-7 w-7 place-items-center rounded-md [&_svg]:size-[15px] ${
+                  selected ? "text-editor-muted" : "text-editor-muted/40"
+                }`}
+              >
+                <TrashIcon />
+              </span>
+              {/* Hidden until there is a step back, not disabled like the two
+                beside it: those are always the verbs for the current selection,
+                whereas undo is a claim that something happened. Last in the
+                group, so appearing extends it away from the edge rather than
+                moving the other two out from under the pointer. */}
+              <span className="grid h-7 w-7 place-items-center rounded-md text-editor-muted [&_svg]:size-[15px]">
+                <UndoIcon />
+              </span>
+            </div>
+
+            {/* The clock and what it is counting towards, as one thing: a time
+              and its total read as a single value, and spacing them like two
+              controls is what made this look wrong. */}
+            <div className="flex items-center gap-1 text-xs tabular-nums">
+              {/* Rendered once. The frame loop rewrites its text, so React must
+                not — the app's clock is a ref for the same reason. */}
+              <span
+                ref={clock}
+                className="flex-none text-right text-editor-fg"
+                style={{ width: "7ch" }}
+              >
+                0:00.00
+              </span>
+              <span className="text-editor-muted">/ {timecode(DURATION)}</span>
+            </div>
           </div>
           <div className="flex items-center justify-center gap-1">
             <button
@@ -712,16 +1159,29 @@ export function AppPreview() {
               <SkipEndIcon />
             </button>
           </div>
+          {/* The three things that can be added, in their own pill at the far
+            end. They are also the ones with a word on them: a bare magnifier
+            next to a pair of scissors reads as a search box. Add Clip carries a
+            chevron because footage can come from the screen or from a file, and
+            both arrive the same way — as another clip at the end. */}
           <div className="flex items-center justify-self-end gap-0.5 rounded-lg bg-white/5 p-0.5">
-            <span className="grid size-7 place-items-center rounded-md text-editor-muted [&_svg]:size-[15px]">
-              <ScissorsIcon />
+            <span className="hidden h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-editor-muted sm:flex [&_svg]:size-[15px]">
+              <AddZoomIcon />
+              Add Zoom
             </span>
-            <span
-              className={`grid size-7 place-items-center rounded-md [&_svg]:size-[15px] ${
-                selected ? "text-editor-muted" : "text-editor-muted/40"
-              }`}
-            >
-              <TrashIcon />
+            <span className="hidden h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-editor-muted sm:flex [&_svg]:size-[15px]">
+              <AddTextIcon />
+              Add Text
+            </span>
+            <span className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-editor-muted [&_svg]:size-[15px]">
+              <AddRecordingIcon />
+              Add Clip
+              {/* Smaller and dimmer than the glyph on the other side: it says
+                the button has more behind it, and it is not one of the two
+                things being chosen between. */}
+              <span className="text-editor-muted/60 [&_svg]:size-3">
+                <ChevronUpIcon />
+              </span>
             </span>
           </div>
         </div>
@@ -763,6 +1223,23 @@ export function AppPreview() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="h-2.5" />
+
+            {/* The text row, above the clips and empty, saying what it is for.
+              A take with no titles on it still shows one: the row is where a
+              title is drawn, and an invitation is the only way anybody finds
+              out that the strip has a layer for words at all. Thinner than the
+              clips and the zooms on purpose — a title is a line laid over the
+              picture, where a zoom changes the picture itself. */}
+            <div className="relative h-6">
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="flex items-center gap-1.5 rounded-md border border-dashed border-white/15 px-2.5 py-0.5 text-[10px] text-editor-muted [&_svg]:size-3">
+                  <TextIcon />
+                  Click or drag to add text
+                </span>
+              </span>
             </div>
 
             <div className="h-2.5" />
@@ -912,6 +1389,26 @@ function PanelRow({ row }: { row: Row }) {
     return <ColorField icon={<row.Icon />} hex={row.hex} />;
   }
 
+  // Stops under a slider, so reaching for a common value is a click rather than
+  // a drag landing near enough. Lit only on an exact match — a speed carried to
+  // 0.73× is not "close to 0.5×", and a preset marked for it would say so.
+  if (row.kind === "chips") {
+    return (
+      <div className="grid grid-cols-5 gap-1">
+        {row.options.map((option, index) => (
+          <span
+            key={option}
+            className={`rounded-full px-1 py-1.5 text-center text-[11px] tabular-nums ${
+              index === row.at ? "bg-white/15 text-white" : "text-editor-muted"
+            }`}
+          >
+            {option}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   // A picker: `ScenePresetCard` on Presets, `LayoutPicker` on Layout. Both are
   // grids of pictures rather than lists of settings, which is why neither panel
   // carries a label over it — the grid is a control that shows what it is. It
@@ -929,59 +1426,6 @@ function PanelRow({ row }: { row: Row }) {
           }`}
         >
           {item}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/**
- * The dock beside the panel, copied from `Inspector.tsx`'s `Rail`.
- *
- * A raised surface floating over the board rather than icons lying on it:
- * `self-start` keeps it the height of its own buttons, which is what makes it
- * read as an object placed on the composition. `editor-panel` is the app's own
- * floating-surface colour, a shade lighter than the panel beside it — that is
- * the difference between the two: the panel is part of the window, the dock sits
- * on top of it.
- *
- * The blue pill marks the category showing. In the app there is a second, white
- * one that follows the pointer, and a press slides the blue one over to meet it;
- * here neither moves, because nothing on this side is pressable — see the note
- * where it renders. What is left is the mark parked on the choice, which is what
- * the dock looks like when nobody is touching it.
- */
-function Rail({ value }: { value: string }) {
-  const at = Math.max(
-    0,
-    CATEGORIES.findIndex((item) => item.id === value),
-  );
-
-  // One step down the rail: a button (`size-9`) and the gap under it (`gap-1`).
-  const step = (index: number) => ({ transform: `translateY(calc(${index} * 2.5rem))` });
-  const pill = "pointer-events-none absolute top-1.5 left-1.5 size-9 rounded";
-
-  return (
-    // Margin outside, padding in. Without the margin the dock's own corners meet
-    // the panel's edge and the top of the row, which is the one thing a floating
-    // object must not do.
-    <div
-      aria-hidden
-      className="relative my-2 mr-2 flex flex-none flex-col gap-1 self-start rounded-[10px] border border-editor-line bg-editor-panel p-1.5 shadow-[0_1px_6px_rgba(0,0,0,0.3)]"
-    >
-      <span className={`${pill} bg-selected`} style={step(at)} />
-
-      {CATEGORIES.map(({ id, label, Icon }) => (
-        <span
-          key={id}
-          title={label}
-          // White whether or not it is the one showing: with no surface behind
-          // the rail there is nothing for a muted colour to read against, and a
-          // dimmed icon on the editor's own background looks disabled rather
-          // than merely unselected.
-          className="relative z-10 grid size-9 place-items-center rounded text-white [&_svg]:size-[18px]"
-        >
-          <Icon />
         </span>
       ))}
     </div>
