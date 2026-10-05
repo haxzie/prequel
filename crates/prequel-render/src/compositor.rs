@@ -1125,6 +1125,7 @@ impl Compositor {
                 path,
                 dst_rect,
                 opacity,
+                radius,
             } => {
                 let Some(held) = self.images.get(path) else {
                     // Not loaded, or missing. Skipped rather than filled with
@@ -1141,10 +1142,12 @@ impl Compositor {
                         // so there is no crop to take — `cover` here would
                         // silently trim a wide logo to a square.
                         src: [0.0, 0.0, 1.0, 1.0],
-                        // Square: a logo carries its own shape in its alpha, and
-                        // rounding the quad would cut the corners off one drawn
-                        // to the edges of its file.
-                        shape: [0.0, 2.0],
+                        // Square unless the mark asked otherwise: a logo
+                        // carries its own shape in its alpha, and rounding one
+                        // drawn to the edges of its file cuts the corners off
+                        // it — so the radius stays nought until somebody
+                        // reaches for the control.
+                        shape: [*radius as f32, 2.0],
                         mode: MODE_IMAGE,
                         alpha: *opacity as f32,
                         ..base

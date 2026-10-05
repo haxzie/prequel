@@ -717,6 +717,21 @@ export interface WatermarkSettings {
   watermarkHeight: number;
   /** How opaque it is, 0 to 1. A watermark is usually not a solid thing. */
   watermarkOpacity: number;
+  /**
+   * How round its corners are, as a fraction of the mark's own shorter edge.
+   *
+   * Its own edge and not the frame's, which is the one place this parts
+   * company with every other geometry leaf. A radius against the frame would
+   * mean the same mark drawn at two sizes was two different shapes, and the
+   * roundness of a logo is a property of the logo. Half is the most it can be,
+   * which turns a square mark into a circle and a wide one into a pill.
+   *
+   * Zero by default, because a logo carries its own shape in its alpha: one
+   * drawn to the edges of its file would have its corners cut off by a radius
+   * nobody asked for. This is for the marks that are a screenshot or a solid
+   * card, which is what asked for it.
+   */
+  watermarkRadius: number;
 }
 
 /**
@@ -1665,6 +1680,9 @@ export const DEFAULT_WATERMARK: WatermarkSettings = {
   // Present but not shouting, which is what a watermark is for. Solid enough to
   // read on a busy frame, faint enough not to compete with the recording.
   watermarkOpacity: 0.75,
+  // Square. See the note on the field: rounding a logo that is already the
+  // shape it wants to be is the damaging default, not the safe one.
+  watermarkRadius: 0,
 };
 
 export const DEFAULT_AUDIO: AudioSettings = {

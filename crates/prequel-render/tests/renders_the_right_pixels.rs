@@ -471,6 +471,84 @@ fn a_translucent_layer_lands_at_the_opacity_it_asks_for() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn rounds_the_logo_only_as_far_as_it_is_asked_to() {
+    // The watermark is the one item drawn through the shared shape uniform
+    // with its radius hard-wired to nought, and the radius is now a setting.
+    // Shape assertions cannot catch a corner: a logo whose radius never
+    // reached the shader exports at exactly the right size, in exactly the
+    // right place, with square corners — which is the bug.
+    let dir = scratch("prequel-pixels-logo-radius");
+    let output = dir.join("export.mp4");
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    // A 100px square of white, centred, with the radius at half its edge —
+    // which makes it a circle.
+    let mark = Rect {
+        x: 110.0,
+        y: 70.0,
+        width: 100.0,
+        height: 100.0,
+    };
+
+    write_png(&dir.join("logo.png"), &solid(64, [255, 255, 255]));
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: full,
+                paint: Paint::Solid {
+                    color: "#000000".to_owned(),
+                },
+            },
+            PlanItem::Watermark {
+                path: "logo.png".to_owned(),
+                dst_rect: mark,
+                opacity: 1.0,
+                radius: 50.0,
+            },
+        ],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+
+    // The middle is the logo, whatever the corners do.
+    near(frame.at(160, 120), (255, 255, 255), "the middle of the logo");
+
+    // Four pixels in from the top-left corner of the box. Inside a square
+    // mark, outside a circle of this radius — so this is the pixel that says
+    // the radius arrived. Left black by a rounded mark.
+    near(
+        frame.at(114, 74),
+        (0, 0, 0),
+        "the corner a radius of half the edge takes off",
+    );
+
+    // Still the logo where the circle actually reaches: the middle of the top
+    // edge is on the circle's rim, so a few pixels below it is well inside.
+    near(frame.at(160, 78), (255, 255, 255), "under the top edge");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// One frame of the exported video, by index, as packed RGB.
 ///
 /// `first_frame` is not enough for anything that changes over time: a pointer

@@ -1124,6 +1124,7 @@ describe("decoration", () => {
           watermarkWidth: 0.2,
           watermarkHeight: 0.1,
           watermarkOpacity: 0.5,
+          watermarkRadius: 0,
         },
       }),
     );
@@ -1138,6 +1139,53 @@ describe("decoration", () => {
     expect(mark.dstRect.x + mark.dstRect.width / 2).toBeCloseTo(LANDSCAPE.width * 0.5);
     expect(mark.dstRect.y + mark.dstRect.height / 2).toBeCloseTo(LANDSCAPE.height * 0.25);
     expect(mark.opacity).toBeCloseTo(0.5);
+  });
+
+  it("resolves the logo's radius against its own shorter edge, not the frame's", () => {
+    // The one geometry leaf measured against the thing it is on rather than
+    // against the frame: a radius against the frame would make the same logo
+    // two shapes at two sizes.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: {
+          ...DEFAULT_SETTINGS.watermark,
+          watermark: "watermark-abc.png",
+          watermarkWidth: 0.2,
+          watermarkHeight: 0.1,
+          watermarkRadius: 0.25,
+        },
+      }),
+    );
+
+    const mark = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "watermark" }> => item.kind === "watermark",
+    )!;
+
+    expect(mark.radius).toBeCloseTo(0.25 * Math.min(mark.dstRect.width, mark.dstRect.height));
+  });
+
+  it("stops the logo's radius at half its shorter edge", () => {
+    // Past half there is no corner left to round, and the rasterisers would be
+    // asked to eat into the middle of the mark.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: {
+          ...DEFAULT_SETTINGS.watermark,
+          watermark: "watermark-abc.png",
+          watermarkRadius: 4,
+        },
+      }),
+    );
+
+    const mark = plan.items.find(
+      (item): item is Extract<PlanItem, { kind: "watermark" }> => item.kind === "watermark",
+    )!;
+
+    expect(mark.radius).toBeCloseTo(Math.min(mark.dstRect.width, mark.dstRect.height) / 2);
   });
 
   it("puts the logo over both pictures and under the captions", () => {

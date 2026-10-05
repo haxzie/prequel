@@ -456,6 +456,16 @@ export type PlanItem =
       dstRect: Rect;
       /** 0 to 1, multiplied into whatever the picture's own alpha already is. */
       opacity: number;
+      /**
+       * Corner radius in output pixels. Zero for a square mark, which is the
+       * default and what every mark drew before the control existed.
+       *
+       * Resolved here rather than left as the fraction it is stored as, for
+       * the reason every other number in a plan is: three rasterisers draw
+       * this item and a fraction would be three chances to pick a different
+       * edge to measure it against.
+       */
+      radius: number;
     }
   | {
       kind: "cursor";
@@ -1853,6 +1863,11 @@ export function buildRenderPlan(
       path: mark.watermark,
       dstRect: markRect,
       opacity: mark.watermarkOpacity,
+      // Against the mark's own shorter edge, so the same logo looks the same
+      // at any size — and clamped to half of it, where the shape has run out
+      // of corner to round and any more would start eating the middle.
+      radius:
+        Math.min(mark.watermarkRadius, 0.5) * Math.min(markRect.width, markRect.height),
     });
   }
 

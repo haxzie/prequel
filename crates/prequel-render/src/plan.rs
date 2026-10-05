@@ -193,6 +193,15 @@ pub enum PlanItem {
         #[serde(rename = "dstRect")]
         dst_rect: Rect,
         opacity: f64,
+        /// Corner radius in output pixels, already resolved by the editor —
+        /// zero for a square mark, which is what every mark drew before the
+        /// control existed.
+        ///
+        /// Defaulted rather than required: a plan written by an older editor
+        /// has no field here, and `serde` would refuse the whole plan over a
+        /// corner nobody rounded.
+        #[serde(default)]
+        radius: f64,
     },
     /// The pointer, composited from positions sampled during capture.
     ///

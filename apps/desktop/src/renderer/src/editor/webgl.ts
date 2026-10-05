@@ -2085,11 +2085,12 @@ export class WebGlCompositor {
 
         set(gl, p, {
           rect: item.dstRect,
-          // Square, and the whole picture. A logo carries its own shape in its
-          // alpha, so rounding the quad would cut the corners off one drawn to
-          // the edges of its file — and cropping would trim a wide mark to fit
-          // a box nobody asked it to fill.
-          shape: { radius: 0, exponent: 2 },
+          // The whole picture, and square unless the mark asked otherwise. A
+          // logo carries its own shape in its alpha, so rounding one drawn to
+          // the edges of its file cuts the corners off it — which is why the
+          // radius is nought until somebody reaches for it. Cropping is never
+          // on: it would trim a wide mark to fit a box nobody asked it to fill.
+          shape: { radius: item.radius, exponent: 2 },
           src: [0, 0, 1, 1],
           mode: MODE_IMAGE,
           alpha: item.opacity,

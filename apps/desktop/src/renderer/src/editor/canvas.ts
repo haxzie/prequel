@@ -243,6 +243,13 @@ function drawItem(
 
       context.save();
       context.globalAlpha = item.opacity;
+      // Clipped only when there is a radius to clip to. A path and a clip on
+      // every frame for a corner nobody rounded is work for nothing, and the
+      // square case is the common one.
+      if (item.radius > 0) {
+        path(context, item.dstRect, { radius: item.radius, exponent: 2 }, 0, 0);
+        context.clip();
+      }
       // The whole picture into the box it was given, undistorted by anything
       // here — the box already carries the proportions the resize left it with.
       context.drawImage(

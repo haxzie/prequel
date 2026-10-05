@@ -2981,15 +2981,20 @@ function WatermarkPanel({
         />
 
         <Slider
-          icon={<OpacityIcon />}
-          label="Opacity"
-          {...field("watermark", "watermarkOpacity")}
-          value={mark.watermarkOpacity}
+          icon={<CornerRadiusIcon />}
+          label="Corner radius"
+          {...field("watermark", "watermarkRadius")}
+          value={mark.watermarkRadius}
           min={0}
-          max={1}
+          // Half the mark's shorter edge, where a square one has become a
+          // circle. The background's radius stops at a tenth because it is
+          // measured against the frame and a tenth of that is already a very
+          // round corner; this is measured against the mark itself, so the
+          // whole range is reachable and worth offering.
+          max={0.5}
           format={percent}
           disabled={off}
-          onChange={(value) => set("watermark", "watermarkOpacity", value)}
+          onChange={(value) => set("watermark", "watermarkRadius", value)}
         />
       </Section>
     </>
