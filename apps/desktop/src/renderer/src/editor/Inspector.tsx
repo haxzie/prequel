@@ -66,6 +66,7 @@ import {
   AudioIcon,
   GlassEdgeIcon,
   GlassIcon,
+  GlassLightIcon,
   ImageIcon,
   LookIcon,
   PushInIcon,
@@ -5017,10 +5018,11 @@ function ZoomPerspectivePanel({
  * and `Level` are what a loupe is adjusted by — and a column that mixes the two
  * makes the frequent controls something to scroll past.
  *
- * Four controls: the glass is three decisions — its shape, what it does to
- * colour, and what it does to light — and how much it smears when it moves. Every one of them is physical — the
- * shader refracts, disperses and reflects rather than drawing an effect — which
- * is why none of them has an "amount".
+ * Five controls: the glass is four decisions — its shape, what it does to
+ * colour, what it reflects and what it throws back onto the frame — and how much
+ * it smears when it moves. Every one of them is physical — the shader refracts,
+ * disperses, reflects and casts rather than drawing an effect — which is why
+ * none of them has an "amount".
  */
 function ZoomGlassPanel({
   zoom,
@@ -5068,6 +5070,17 @@ function ZoomGlassPanel({
         step={0.01}
         format={(value) => (value === 0 ? "None" : percent(value))}
         onChange={(loupeReflection) => onChange({ loupeReflection })}
+      />
+
+      <Slider
+        icon={<GlassLightIcon />}
+        label="Light"
+        value={zoom.loupeLight}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(value) => (value === 0 ? "None" : percent(value))}
+        onChange={(loupeLight) => onChange({ loupeLight })}
       />
 
       {/* Last, because it is the one glass control about the move rather than

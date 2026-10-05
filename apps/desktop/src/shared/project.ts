@@ -986,6 +986,15 @@ export interface ZoomSlice {
    */
   loupeReflection: number;
   /**
+   * How much light the glass throws onto the frame beside it, 0 to 1.
+   *
+   * A lens does not block the light it is under, it gathers it and puts it down
+   * again across itself — so what lies beside a loupe is a pool a little
+   * brighter than the frame, carrying the colour of whatever the glass is over.
+   * At 0 the lens sits flat against the picture.
+   */
+  loupeLight: number;
+  /**
    * How far the picture inside the glass smears as the lens travels, 0 to 1.
    *
    * On the contents, not on the glass. A lens is a hard-edged object and a
@@ -1053,6 +1062,10 @@ export const DEFAULT_ZOOM = {
   // crop rather than as something resting on the screen.
   loupeAberration: 0.45,
   loupeReflection: 0.5,
+  // Half. The top of the control is as much light as a lens this size can
+  // plausibly gather, and anywhere near it the frame reads as lit from behind
+  // the glass rather than as having a glass on it.
+  loupeLight: 0.5,
   // On, and moderate. A lens follows the pointer exactly, so it moves whenever
   // the hand does — and at thirty frames a second an unsmeared one steps rather
   // than travels.
@@ -1828,6 +1841,7 @@ export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomD
     loupeCurvature: clamp(number(zoom["loupeCurvature"], fallback.loupeCurvature), 0, 1),
     loupeAberration: clamp(number(zoom["loupeAberration"], fallback.loupeAberration), 0, 1),
     loupeReflection: clamp(number(zoom["loupeReflection"], fallback.loupeReflection), 0, 1),
+    loupeLight: clamp(number(zoom["loupeLight"], fallback.loupeLight), 0, 1),
     loupeBlur: clamp(number(zoom["loupeBlur"], fallback.loupeBlur), 0, 1),
   };
 }

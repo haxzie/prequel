@@ -1561,6 +1561,25 @@ export function ReflectionIcon() {
 }
 
 /**
+ * A disc with light coming off one side of it.
+ *
+ * Three short rays rather than one: a circle with a single stroke running off
+ * its lower right is a magnifying glass, which is the glyph on the Zoom tab two
+ * rows above this control. The rays are on the lower right because that is
+ * where the lens actually puts the light.
+ */
+export function GlassLightIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="10" cy="10" r="5.5" />
+      <path d="M17.5 12.5 20 13.2" />
+      <path d="M15.8 15.8 17.6 17.6" />
+      <path d="M12.5 17.5 13.2 20" />
+    </svg>
+  );
+}
+
+/**
  * Two arrows to opposite corners: the camera move, taking the whole picture out
  * past the frame. Lucide `maximize-2`.
  *

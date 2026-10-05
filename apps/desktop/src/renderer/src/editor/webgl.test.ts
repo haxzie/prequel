@@ -387,7 +387,12 @@ describe("the loupe both rasterisers draw", () => {
     // dispersion decide the mapping; the bleed has to agree with the quad the
     // plan grew, or the shadow is clipped on one side only.
     for (const declaration of [
-      "LOUPE_BLEED = 0.22",
+      "LOUPE_CAUSTIC = 0.09",
+      "LOUPE_CAUSTIC_DIR = N(0.5874, 0.8093)",
+      "LOUPE_CAUSTIC_DROP = 0.95",
+      "LOUPE_CAUSTIC_SPREAD = 0.85",
+      "LOUPE_CAUSTIC_SAMPLE = 0.7",
+      "LOUPE_CAUSTIC_TINT = 0.75",
       "LOUPE_IOR = 1.52",
       "LOUPE_LIGHT = N(-0.4508, -0.6211, 0.6411)",
       "LOUPE_ROLL = 0.995",

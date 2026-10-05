@@ -127,6 +127,11 @@ struct Uniforms {
     // How much colour the rim splits out, 0 to 1 — the Fringing control. In the
     // last of the padding the tail carried, so the block is the size it was.
     float fringe;
+    // How much light the lens throws on the frame beside it, 0 to 1 — the Light
+    // control. The first field past the 16 the tail filled, so it opens a fresh
+    // row and nothing above it moves; `compositor.rs` pads out the rest of that
+    // row by hand, because Rust will not.
+    float glow;
     // Padding to the next 16, which is where MSL ends this block.
 };
 
@@ -270,11 +275,6 @@ static float vignette(constant Uniforms &u, float2 screen) {
 // works it out itself — which only agrees if the arithmetic is the same
 // arithmetic. `webgl.test.ts` compares the two bodies.
 
-// How far past the glass the quad reaches, as a fraction of the radius, so the
-// shadow has somewhere to fall off. Mirrors `LOUPE_BLEED` in
-// `apps/desktop/src/shared/layout.ts`, which is what grows the quad.
-constant float LOUPE_BLEED = 0.22;
-
 // How far around the glass the lens's own render reaches, in radii. Mirrors
 // `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts`, which the preview
 // interpolates straight into its own shader.
@@ -323,6 +323,36 @@ constant int LOUPE_SMEAR_TAPS = 5;
 // shaders carry the same three literals — GLSL will not take a built-in call in
 // a `const` initialiser at all.
 constant float3 LOUPE_LIGHT = float3(-0.4508, -0.6211, 0.6411);
+
+// Where the light the glass gathers lands, as a direction on the frame and how
+// far down it the pool sits, in radii.
+//
+// Straight away from the key light: it is up and to the left, so the pool falls
+// down and to the right. A solid lens does not stop light, it bends it — what
+// is beside a glass blob on a lit desk is brighter than the desk, and the one
+// thing in here that read as a sticker was the drop shadow under it.
+constant float2 LOUPE_CAUSTIC_DIR = float2(0.5874, 0.8093);
+constant float LOUPE_CAUSTIC_DROP = 0.95;
+
+// How wide the pool is, in radii, and how bright it is in the middle of it.
+// Wide: a caustic off a surface this gently curved is a wash rather than the
+// hard knot a marble throws, and anything tighter read as a second glass.
+//
+// The brightness is what the Light control is at its top, and it is low: this
+// is light that came through a lens on its way here, and at anything the eye
+// reads as a glow the frame looks like it is behind frosted plastic.
+constant float LOUPE_CAUSTIC_SPREAD = 0.85;
+constant float LOUPE_CAUSTIC = 0.09;
+
+// How far into the glass the pool takes its colour from, in radii, and how much
+// of that colour it keeps.
+//
+// Light that has been through glass carries what the glass was over. Sampled
+// from the lens's own render on the side the pool is on, so a loupe over
+// something orange throws orange and one over a blue panel throws blue — a flat
+// warm wash is what gave the shadow away as drawn rather than cast.
+constant float LOUPE_CAUSTIC_SAMPLE = 0.7;
+constant float LOUPE_CAUSTIC_TINT = 0.75;
 
 // How far over the glass has turned at its rim, as the sine of the slope.
 // Just short of standing on end: at exactly vertical the refracted ray runs
@@ -1074,22 +1104,36 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         float2 offset = (in.screen - u.loupe.xy) / radius;
         float r = length(offset);
 
-        // The shadow the glass casts, drawn in the bleed the quad was grown by.
-        // The same logistic falloff the rectangle shadows use — a blurred edge
-        // decays rather than stopping — dropped by a fraction of the radius so
-        // the lens stands off the picture instead of sitting in it.
-        float sigma = LOUPE_BLEED * 0.42;
-        float under = length(offset - float2(0.0, LOUPE_BLEED * 0.3)) - 1.0;
-        float shadow = 0.16 * u.loupe.w / (1.0 + exp(1.702 * under / sigma));
-        float scrim = LOUPE_SCRIM * u.loupe.w * (1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r));
-        float shade = shadow + scrim * (1.0 - shadow);
+        // The light the glass throws, drawn in the room the quad was grown by. A
+        // pool, not a falloff from the rim: the glass gathers the key light and puts
+        // it down on the frame at one place, and that place is across the lens from
+        // the source — down and to the right of a light LOUPE_LIGHT puts up and left.
+        float pool = length(offset - LOUPE_CAUSTIC_DIR * LOUPE_CAUSTIC_DROP) / LOUPE_CAUSTIC_SPREAD;
+        // Taken to nothing by the edge of the quad. At the corner the pool is
+        // still a couple of levels above the frame, and a couple of levels that
+        // stop on a straight line is a visible box round the lens.
+        float glow = LOUPE_CAUSTIC * u.glow * u.loupe.w * exp(-pool * pool)
+          * (1.0 - smoothstep(LOUPE_SCRIM_REACH - 0.5, LOUPE_SCRIM_REACH, r));
+        // What the glass is over where the light leaves it. Divided by its own peak,
+        // so this is the hue and none of the brightness — the same thing the rim's
+        // tint does, and for the same reason: how bright the pool is was decided
+        // above, and a dark picture must not put the light out.
+        float3 through = behind(backdrop, smp, u, u.loupe.xy + LOUPE_CAUSTIC_DIR * radius * LOUPE_CAUSTIC_SAMPLE);
+        float3 thrown = mix(float3(1.0), through / max(max_of(through), 1e-3), LOUPE_CAUSTIC_TINT);
+        // The scrim stays — it has no direction and reaches two radii out, so it is
+        // what sets the glass off a picture of its own colour rather than a shadow —
+        // but the pool lifts it where it lands. Light does not fall on shade.
+        float shade = LOUPE_SCRIM * u.loupe.w * (1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r));
+        shade *= 1.0 - min(glow / max(LOUPE_CAUSTIC * u.glow, 1e-3), 1.0);
 
         // One pixel of feathering at the rim, in pixels, like every other edge.
         float cover = 1.0 - smoothstep(-0.5, 0.5, (r - 1.0) * radius);
         if (cover <= 0.0) {
-            // Only the shadow out here. Premultiplied black, so it darkens
-            // whatever the frame already put down.
-            return premultiplied(float3(0.0), shade);
+            // Only what the glass throws out here. The scrim rides in the
+            // alpha and darkens what the frame put down; the pool rides in the
+            // colour, which with no alpha of its own adds to it rather than
+            // covering it.
+            return float4(thrown * glow, shade);
         }
 
         // Flat almost to the rim at one end, half of it turned over at the other.
@@ -1162,11 +1206,13 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         float facing = max(dot(normal, LOUPE_LIGHT), 0.0);
         lit += shine * (pow(facing, 40.0) * 0.7 + pow(facing, 4.0) * 0.08);
 
-        // The glass over its own shadow, both premultiplied: what is left of the
-        // shadow is the part the glass does not cover. Presence rides on the
-        // coverage, so an arriving lens is see-through rather than popping in.
+        // The glass over the scrim, both premultiplied: what is left of the
+        // scrim is the part the glass does not cover, and the pool is on that
+        // part too. Presence rides on the coverage, so an arriving lens is
+        // see-through rather than popping in.
         float shown = cover * u.loupe.w;
-        return float4(lit * shown, shown + (1.0 - shown) * shade);
+        return float4(lit * shown + thrown * glow * (1.0 - shown),
+                      shown + (1.0 - shown) * shade);
     }
 
     float2 half_size = u.rect.zw * 0.5;

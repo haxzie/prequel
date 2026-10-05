@@ -2137,6 +2137,7 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
         curvature: 0.34,
         aberration: 0.0,
         reflection: 0.0,
+        light: 0.0,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -2197,6 +2198,127 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The glass throws light onto the frame beside it, on the side away from the key.
+///
+/// Which side is the whole claim. A lens that puts its pool on the lit side is
+/// lit from the wrong place, and nothing about one frame of it looks wrong —
+/// the glass still reads as glass, it simply disagrees with every shadow in the
+/// composition, which is the sort of thing that is noticed on a cut and never
+/// traced back. The same arithmetic in the preview is pinned by `webgl.test.ts`.
+///
+/// A flat mid-grey picture, so the only thing that can vary between the two
+/// exports is the light: everything else about the lens is identical and the
+/// control is the only field that moves.
+#[test]
+fn the_glass_throws_light_away_from_the_key() {
+    let dir = scratch("prequel-pixels-loupe-light");
+    let source = solid_wide(320, 240, [90, 90, 90]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    let centre = (160.0, 120.0);
+    let radius = 60.0;
+
+    let lit = |light: f64| {
+        let glass = move |at: i64| LoupeKey {
+            at,
+            x: centre.0,
+            y: centre.1,
+            radius,
+            magnify: 2.0,
+            presence: 1.0,
+            curvature: 0.34,
+            // Off, both of them: a fringe and a highlight are the two other
+            // things that put light near the rim, and either would be measured
+            // here as the pool.
+            aberration: 0.0,
+            reflection: 0.0,
+            light,
+            smear_x: 0.0,
+            smear_y: 0.0,
+        };
+        let plan = RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 320.0,
+                        height: 240.0,
+                    },
+                    dst_rect: full,
+                    shape: Shape {
+                        radius: 0.0,
+                        exponent: 2.0,
+                    },
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    grade: None,
+                    rim: 0.0,
+                    fringe: 0.0,
+                    motion: Vec::new(),
+                },
+                PlanItem::Loupe {
+                    keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+                },
+            ],
+            filter: None,
+        };
+        let output = dir.join(format!("light-{}.mp4", (light * 100.0) as i64));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+        first_frame(&output)
+    };
+
+    let off = lit(0.0);
+    let on = lit(1.0);
+
+    // Where the pool lands: down and to the right along `LOUPE_CAUSTIC_DIR`,
+    // and past the rim rather than at the pool's own middle, which the glass
+    // covers — the lens is opaque over it, so the only part of the light that
+    // reaches the frame is the part outside the circle.
+    let pool = (
+        (centre.0 + 0.5874 * 1.25 * radius) as u32,
+        (centre.1 + 0.8093 * 1.25 * radius) as u32,
+    );
+    // The same distance the other way, which is the lit side and must stay as
+    // it was. A pool drawn symmetrically would pass every test but this one.
+    let away = (
+        (centre.0 - 0.5874 * 1.25 * radius) as u32,
+        (centre.1 - 0.8093 * 1.25 * radius) as u32,
+    );
+
+    let level = |pixel: (u8, u8, u8)| pixel.0 as i32 + pixel.1 as i32 + pixel.2 as i32;
+    let thrown = level(on.at(pool.0, pool.1)) - level(off.at(pool.0, pool.1));
+    let behind = level(on.at(away.0, away.1)) - level(off.at(away.0, away.1));
+
+    assert!(
+        thrown > 12,
+        "the glass threw no light where it should: {thrown} over three channels"
+    );
+    assert!(
+        behind < thrown / 3,
+        "the glass lit the side the key is on: {behind} against {thrown}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A greyscale picture, seen through the glass, comes out with colour at the rim.
 ///
 /// The fringing control shipped doing nothing at any setting, and nothing could
@@ -2236,8 +2358,10 @@ fn the_glass_splits_colour_at_its_edge() {
         presence: 1.0,
         curvature: 0.34,
         aberration,
-        // Off, or the highlight would put light of its own on the glass.
+        // Both off, or the highlight and the pool the glass throws would each
+        // put colour of their own near the rim being measured.
         reflection: 0.0,
+        light: 0.0,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -2420,6 +2544,7 @@ fn magnifying_a_picture_keeps_its_edges() {
         curvature: 0.34,
         aberration: 0.0,
         reflection: 0.0,
+        light: 0.0,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -2670,10 +2795,11 @@ fn a_travelling_lens_smears_what_is_inside_it() {
             magnify: 2.0,
             presence: 1.0,
             curvature: 0.4,
-            // Both off: a fringe and a highlight would both put their own
-            // gradients across the edge being measured.
+            // All off: a fringe, a highlight and the pool the glass throws
+            // would each put their own gradient across the edge being measured.
             aberration: 0.0,
             reflection: 0.0,
+            light: 0.0,
             // Across the edge, which is the direction that blurs it.
             smear_x: smear,
             smear_y: 0.0,

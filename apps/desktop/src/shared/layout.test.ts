@@ -6030,7 +6030,7 @@ describe("a screenshot's focus area", () => {
   });
 
   it("wears the same glass a recording's lens does", () => {
-    // `LOUPE_CURVATURE` and its two neighbours are `DEFAULT_ZOOM`'s, copied
+    // `LOUPE_CURVATURE` and its three neighbours are `DEFAULT_ZOOM`'s, copied
     // rather than imported to keep `project.ts` and `layout.ts` from importing
     // values both ways. This is what stops the two drifting.
     const plan = focused({ focusMode: "loupe" });
@@ -6040,6 +6040,7 @@ describe("a screenshot's focus area", () => {
     expect(glass?.curvature).toBeCloseTo(DEFAULT_ZOOM.loupeCurvature);
     expect(glass?.aberration).toBeCloseTo(DEFAULT_ZOOM.loupeAberration);
     expect(glass?.reflection).toBeCloseTo(DEFAULT_ZOOM.loupeReflection);
+    expect(glass?.light).toBeCloseTo(DEFAULT_ZOOM.loupeLight);
   });
 
   it("softens and darkens around a lens instead", () => {

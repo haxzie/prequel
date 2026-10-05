@@ -172,6 +172,18 @@ struct Uniforms {
     /// Follows `rim` in the Metal block, in the last of the padding the tail
     /// carried, so the block is the size it was.
     fringe: f32,
+    /// How much light the lens throws on the frame beside it, 0 to 1 — the
+    /// Light control. Zero on every draw but a loupe.
+    ///
+    /// The first field past the 16 bytes the tail filled, so it opens a fresh
+    /// row and nothing above it moves.
+    glow: f32,
+    /// Padding to the end of that row.
+    ///
+    /// MSL rounds the block up to a multiple of 16 and Rust does not: without
+    /// this the two disagree about the block's size, which compiles, runs, and
+    /// hands the shader whatever was after the buffer.
+    _tail: [f32; 3],
 }
 
 /// The video frames one output frame is drawn from.
@@ -795,6 +807,8 @@ impl Compositor {
             // A plain edge unless a camera item asks for glass.
             rim: 0.0,
             fringe: 0.0,
+            glow: 0.0,
+            _tail: [0.0; 3],
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -1076,9 +1090,9 @@ impl Compositor {
                     return Ok(None);
                 };
 
-                // The quad is the glass grown for its scrim, which reaches further
-                // than the shadow's bleed. Mirrors the same three lines in
-                // `webgl.ts`.
+                // The quad is the glass grown for its scrim, which is the
+                // furthest anything the lens draws reaches. Mirrors the same
+                // three lines in `webgl.ts`.
                 let reach = (glass.radius * LOUPE_SCRIM_REACH) as f32;
                 Some((
                     Uniforms {
@@ -1090,7 +1104,7 @@ impl Compositor {
                         ],
                         // Square and un-rounded: the circle is the lens's own,
                         // measured from its centre, and a rounded quad would cut
-                        // the corners off the shadow.
+                        // the corners off the scrim.
                         shape: [0.0, 2.0],
                         mode: MODE_LOUPE,
                         loupe: [
@@ -1106,6 +1120,7 @@ impl Compositor {
                             glass.reflection as f32,
                         ],
                         motion: [glass.smear_x as f32, glass.smear_y as f32, 0.0, 0.0],
+                        glow: glass.light as f32,
                         // How this buffer is oriented, which is the one thing
                         // about the copy the two rasterisers do not share: the
                         // blit keeps the texture top-down. See `behind` in the
@@ -1880,10 +1895,13 @@ mod tests {
         // already carried.
         assert_eq!(offset_of!(Uniforms, rim), 424);
         assert_eq!(offset_of!(Uniforms, fringe), 428);
+        // The lens's thrown light, which opens the row after the one the tail
+        // filled exactly.
+        assert_eq!(offset_of!(Uniforms, glow), 432);
 
-        // MSL rounds the block to the next 16, so both sides are 432.
+        // MSL rounds the block to the next 16, so both sides are 448.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 432);
+        assert_eq!(size_of::<Uniforms>(), 448);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in

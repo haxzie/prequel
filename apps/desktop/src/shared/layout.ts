@@ -325,6 +325,8 @@ export interface LoupeKey {
   aberration: number;
   /** How much the glass mirrors what is beside it, 0 to 1. */
   reflection: number;
+  /** How much light it throws onto the frame beside it, 0 to 1. */
+  light: number;
   /**
    * How far the picture inside the glass smears, as a vector in output pixels.
    *
@@ -1336,6 +1338,7 @@ export function buildRenderPlan(
               curvature: LOUPE_CURVATURE,
               aberration: LOUPE_ABERRATION,
               reflection: LOUPE_REFLECTION,
+              light: LOUPE_LIGHT,
               // Nothing is moving, so there is nothing to smear.
               smearX: 0,
               smearY: 0,
@@ -2718,6 +2721,7 @@ interface Glass {
   curvature: number;
   aberration: number;
   reflection: number;
+  light: number;
   /** Always zero here. `withGlassSmear` fills it in once the track exists. */
   smearX: number;
   smearY: number;
@@ -2810,6 +2814,7 @@ function glassTrack(
       curvature: loupe.loupeCurvature,
       aberration: loupe.loupeAberration,
       reflection: loupe.loupeReflection,
+      light: loupe.loupeLight,
       // Filled in once the whole track exists — a streak is the difference
       // between neighbouring samples, and there are none yet.
       smearX: 0,
@@ -2855,6 +2860,7 @@ function glassAt(
         curvature: lerp(a.curvature, b.curvature, t),
         aberration: lerp(a.aberration, b.aberration, t),
         reflection: lerp(a.reflection, b.reflection, t),
+        light: lerp(a.light, b.light, t),
         smearX: 0,
         smearY: 0,
       },
@@ -2882,6 +2888,7 @@ function glassAt(
       curvature: full.curvature,
       aberration: full.aberration,
       reflection: full.reflection,
+      light: full.light,
       smearX: 0,
       smearY: 0,
     },
@@ -5567,21 +5574,6 @@ export function pictureMoved(plan: RenderPlan, which: PlanSource, at: number): b
 }
 
 /**
- * How far past the glass the lens quad reaches, as a fraction of its radius.
- *
- * Room for the shadow the lens casts on the frame to fall off in. A shadow is
- * drawn by the same quad as the thing casting it, and a fragment shader cannot
- * paint outside its own geometry — so without this the shadow would stop dead on
- * the rim, which reads as a dark hairline rather than as a glass standing off a
- * screen.
- *
- * Both rasterisers build the quad from this and the key's radius, the way the
- * pointer's quad is grown around its sprite. `LOUPE_BLEED` in `webgl.ts` and
- * `shaders.metal` mirror it; changing it here alone clips the shadow.
- */
-export const LOUPE_BLEED = 0.22;
-
-/**
  * How far around the glass the lens's own render has to reach, in radii.
  *
  * The lens does not sample the finished frame. It is handed a second render of
@@ -5599,8 +5591,12 @@ export const LOUPE_REACH = 1.75;
 
 /**
  * How far the scrim around the glass reaches, in radii, and how dark it is at
- * the rim. The quad is grown to this reach so the scrim is not cut off in a
- * square. Mirrors `LOUPE_SCRIM_REACH` in `shaders.metal` and `compositor.rs`.
+ * the rim.
+ *
+ * Both rasterisers grow the lens quad to this reach, and it is the only thing
+ * that does: a fragment shader cannot paint outside its own geometry, so the
+ * scrim and the light the glass throws beside it both have to fit inside it.
+ * Mirrors `LOUPE_SCRIM_REACH` in `shaders.metal` and `compositor.rs`.
  */
 export const LOUPE_SCRIM_REACH = 2.5;
 export const LOUPE_SCRIM = 0.1;
@@ -5653,6 +5649,7 @@ export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null 
     curvature: lerp(a.curvature, b.curvature, t),
     aberration: lerp(a.aberration, b.aberration, t),
     reflection: lerp(a.reflection, b.reflection, t),
+    light: lerp(a.light, b.light, t),
     smearX: lerp(a.smearX, b.smearX, t),
     smearY: lerp(a.smearY, b.smearY, t),
   };
@@ -5986,7 +5983,7 @@ const FOCUS_BLUR = 0.024;
 /**
  * The glass a screenshot's loupe is made of.
  *
- * `DEFAULT_ZOOM`'s three, repeated rather than imported: `project.ts` imports
+ * `DEFAULT_ZOOM`'s four, repeated rather than imported: `project.ts` imports
  * `placement` from this file, and a value imported back the other way is a
  * cycle between the two modules at runtime. Types cross freely; these do not.
  * Pinned by `a screenshot's loupe` in `layout.test.ts`, so the two cannot drift
@@ -5995,6 +5992,7 @@ const FOCUS_BLUR = 0.024;
 const LOUPE_CURVATURE = 0.4;
 const LOUPE_ABERRATION = 0.45;
 const LOUPE_REFLECTION = 0.5;
+const LOUPE_LIGHT = 0.5;
 
 /**
  * How far a screenshot's picture may be pushed off the frame: half of it.
