@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeRecorder } from "./recorder.fake.js";
 import { describeRecorderError, getRecorder, RecorderErrorCode, setRecorder } from "./recorder.js";
+import { CAPTURE_MARKER_FILE_NAME } from "./recover.js";
 import { newRecordingPath, RecordingSession } from "./session.js";
 
 // Never write into the user's real ~/Movies/Prequel from a test run.
@@ -106,6 +107,42 @@ describe("RecordingSession", () => {
 
     expect(outputPath).toBeTruthy();
     expect(s.snapshot().lastResult?.outputPath).toBe(outputPath);
+  });
+
+  it("marks the take as capturing until it is stopped", async () => {
+    const { session: s } = session();
+    const dir = join(SCRATCH, "marked");
+
+    await s.start({ target }, dir);
+    // The only thing on disk that would let this take be rebuilt if the app
+    // went away before the stop wrote a manifest — see `recover.ts`.
+    expect(existsSync(join(dir, CAPTURE_MARKER_FILE_NAME))).toBe(true);
+    expect(
+      JSON.parse(readFileSync(join(dir, CAPTURE_MARKER_FILE_NAME), "utf8")) as {
+        source: { kind: string };
+      },
+    ).toMatchObject({ source: { kind: "display", id: 1 }, cursor_baked: false });
+
+    await s.stop();
+    // Gone once the manifest is written, or the next launch would rebuild a
+    // take that is already whole.
+    expect(existsSync(join(dir, CAPTURE_MARKER_FILE_NAME))).toBe(false);
+  });
+
+  it("leaves the mark behind when the stop fails", async () => {
+    const recorder = createFakeRecorder();
+    recorder.stopRecording = async () => {
+      throw new Error("boom");
+    };
+    const s = new RecordingSession(async () => recorder);
+    const dir = join(SCRATCH, "stop-failed");
+
+    await s.start({ target }, dir);
+    await s.stop();
+
+    // A stop that threw finalised nothing. The mark is what gets the footage
+    // back on the next launch, so it has to survive exactly this case.
+    expect(existsSync(join(dir, CAPTURE_MARKER_FILE_NAME))).toBe(true);
   });
 
   it("ignores a second start instead of stacking recordings", async () => {

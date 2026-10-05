@@ -17,6 +17,7 @@ import type { Recorder, RecordingResult, StartRecordingRequest } from "./recorde
 import { log } from "./log.js";
 import { reportError } from "./errors.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
+import { clearCapturing, markCapturing } from "./recover.js";
 
 export type { SessionState, SessionStatus, StartOptions };
 
@@ -157,6 +158,25 @@ export class RecordingSession {
       throw cause;
     }
 
+    // After the start, which is what creates the directory: the capture crates
+    // make the folder they are handed. From here until the stop clears it, this
+    // file is the only thing that would let the take be rebuilt if the app went
+    // away — see `recover.ts`.
+    markCapturing(outputPath, {
+      started_at: request.startedAt ?? new Date().toISOString(),
+      source: {
+        // The same rule the recorder's own manifest follows: an area is a
+        // display capture with a crop, and nothing else tells the two apart.
+        kind: options.target.kind === "Window" ? "window" : options.crop ? "area" : "display",
+        id: options.target.id,
+        title: "",
+        app_name: "",
+        scale_factor: options.target.scaleFactor,
+        crop: options.crop ?? undefined,
+      },
+      cursor_baked: request.showCursor ?? false,
+    });
+
     this.status = "recording";
     this.target = options.target;
     this.excludedWindowIds = request.excludedWindowIds ?? [];
@@ -198,6 +218,10 @@ export class RecordingSession {
     const outputPath = this.outputPath;
     try {
       const result = await (await this.load()).stopRecording();
+      // The stop wrote the manifest, so the take no longer needs rebuilding.
+      // Only on the way through: a stop that threw leaves the marker, and the
+      // next launch recovers whatever the writers managed to flush.
+      if (outputPath) clearCapturing(outputPath);
       this.lastResult = outputPath ? { ...result, outputPath } : null;
       // A breadcrumb rather than a warning: no matte is the expected outcome
       // when there was no camera, and the Rust side already warns when the

@@ -28,7 +28,8 @@ import { permissionStates } from "./permissions.js";
 import { getRecorder, type Recorder } from "./recorder.js";
 import { MEDIA_SCHEME_PRIVILEGES, registerMediaProtocol } from "./media-protocol.js";
 import { Preferences } from "./preferences.js";
-import { RecordingSession } from "./session.js";
+import { RecordingSession, SESSIONS_DIR } from "./session.js";
+import { recoverInterruptedTakes } from "./recover.js";
 import {
   applyShortcuts,
   bindTeleprompterKeys,
@@ -119,6 +120,15 @@ let prompter: Teleprompter | null = null;
  * running with no way out but `kill -9`.
  */
 let quitting = false;
+/**
+ * True while the quit is waiting for a take to finish.
+ *
+ * `before-quit` fires again for the `app.quit()` that follows the stop, and
+ * without this the second pass would start another one — the session is idle
+ * by then, but a stop that is still in flight is not, and the app would sit
+ * there cancelling its own quit.
+ */
+let stopping = false;
 
 /**
  * Whether a real window of ours is on screen.
@@ -329,6 +339,23 @@ void app.whenReady().then(() => {
   // stops it reinstating itself after someone has turned it off.
   if (!preferences.get().welcomed) seedLoginItem();
 
+  /**
+   * Whatever the last run was part way through, finished.
+   *
+   * Before anything can list the library: a take the app never finished has
+   * its tracks on disk and no manifest, which makes it invisible to the grid
+   * and to the editor both. This writes the manifest the stop never got to —
+   * see `recover.ts` — and the recording turns up in the library as an
+   * ordinary one.
+   *
+   * Not awaited, and nothing waits on it: it reads a handful of directories
+   * and probes the files in them, and a library the user has to refresh once
+   * is a far smaller cost than a launch held behind the disk.
+   */
+  void recoverInterruptedTakes(SESSIONS_DIR).catch((cause) => {
+    console.error("[main] could not recover interrupted takes:", cause);
+  });
+
   void (async () => {
     const states = await permissionStates();
     const granted = states.find((state) => state.id === "screen")?.granted;
@@ -456,9 +483,26 @@ app.on("will-quit", () => {
 
 // Set here rather than in `will-quit`: the windows are closed between the two,
 // and it is those closures that must not be read as the user finishing up.
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   quitting = true;
   log("info", "before-quit");
+
+  // A take still running is finished before the app goes, and the quit waits
+  // for it. Without this the writers are never finalised: the frames are on
+  // disk, but what lines the tracks up is in memory and goes with the process,
+  // so every deliberate quit mid-recording cost the recording. `recover.ts`
+  // can rebuild one from the files, and a take that was stopped properly keeps
+  // its pointer track, its clicks and its typing — which recovery cannot.
+  if (session.isBusy() && !stopping) {
+    event.preventDefault();
+    stopping = true;
+    log("info", "before-quit: stopping the recording first");
+    void session
+      .stop()
+      .catch((cause) => console.error("[main] could not stop the recording to quit:", cause))
+      .finally(() => app.quit());
+    return;
+  }
 
   // Started, not awaited. `before-quit` and `will-quit` must not throw and must
   // not block — an exception here abandons the quit and strands the app with no
