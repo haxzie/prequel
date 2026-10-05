@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/cover.png" alt="Prequel" width="820">
+  <img src=".github/cover.jpg" alt="Prequel" width="820">
 </p>
 
 # prequel
