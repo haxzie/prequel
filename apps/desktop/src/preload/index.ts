@@ -37,14 +37,13 @@ import type {
   TeleprompterJump,
   TeleprompterPosition,
   TeleprompterState,
-  RedactProgress,
   TranscribeProgress,
   UpdateState,
   WorkspaceSection,
 } from "../shared/contract.js";
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
-import type { Project, RedactGroup } from "../shared/project.js";
+import type { Project } from "../shared/project.js";
 
 /**
  * Listens on a channel main broadcasts on, and hands back the way to stop.
@@ -468,27 +467,6 @@ const api = {
        */
       onProgress: (listener: (progress: TranscribeProgress) => void): (() => void) =>
         subscribe(IPC_CHANNELS.transcribeProgress, listener),
-    },
-
-    redact: {
-      start: (
-        dir: string,
-        groups: readonly RedactGroup[],
-        mode: "blur" | "pixelate",
-        strength: number,
-      ): Promise<IpcResult<void>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.redactStart, dir, groups, mode, strength),
-      cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.redactCancel),
-
-      /**
-       * Subscribes to the reading of a recording.
-       *
-       * The covers arrive on the terminal event rather than from `start`, for
-       * the reason the transcript's do: one channel, and no race between the
-       * result and the tick before it.
-       */
-      onProgress: (listener: (progress: RedactProgress) => void): (() => void) =>
-        subscribe(IPC_CHANNELS.redactProgress, listener),
     },
 
     backgrounds: {

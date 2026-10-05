@@ -1386,96 +1386,6 @@ export function outputFrame(
   };
 }
 
-/** What a mask does to the pixels it covers. Mirrors `MaskMode` in `plan.rs`. */
-export type MaskMode = "blur" | "pixelate";
-
-/** What a reader found, in the words the panel groups them by. */
-export const REDACT_GROUPS = ["contact", "financial", "credential", "people"] as const;
-export type RedactGroup = (typeof REDACT_GROUPS)[number];
-
-/**
- * Where a cover is at one moment, as fractions of the **recording's** frame.
- *
- * The recording's own frame and not the output's, because that is what the
- * thing being covered sits on: an address is at a place on the screen that was
- * captured, and it is still there when the output is reshaped from 16:9 to
- * 9:16 or a zoom carries the picture off the edge. `buildRenderPlan` maps these
- * through the picture's placement at the same moment — the pointer's own
- * mapping, for the same reason.
- */
-export interface MaskKey {
-  at: Ns;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/**
- * One thing being covered, over the time it is on screen.
- *
- * A list on the project beside `zooms` and `texts` rather than a leaf in
- * `defaults`, and for the reason `micDenoise`'s note gives: it is list-shaped
- * and recording-wide. A per-slice override would mean an address covered in one
- * clip and bare in the next, which nobody wants and is a leak if it is ever the
- * default.
- */
-export interface MaskSlice {
-  id: string;
-  /** Found by a reader, or drawn by hand. */
-  origin: "auto" | "manual";
-  group: RedactGroup;
-  /** What the panel calls it: "Card number", "Face". Never the thing found. */
-  label: string;
-  /**
-   * The pre-masked rendering shown in the list — `•••• 4242`, `j•••@a.test`.
-   *
-   * Never the text itself. This file is written beside an unredacted recording
-   * and travels with it, so a privacy feature that wrote the card number down
-   * next to the video would have made things worse than it found them.
-   */
-  preview: string;
-  /**
-   * Which bucket the found text falls in, truncated — see `bucket` in
-   * `prequel-sensitive`. What lets a second scan recognise what the first found
-   * without either of them storing it.
-   */
-  bucket: number;
-  /** Source time, the clock `zooms` and `texts` are on. */
-  source: { start: Ns; end: Ns };
-  mode: MaskMode;
-  /** 0 to 1. Floored before it reaches a rasteriser — see `maskReach`. */
-  strength: number;
-  /**
-   * Whether it is covering.
-   *
-   * The project format's first per-item switch, and it earns it: a finding
-   * arrives *already covered*, so reviewing means turning one off — and that
-   * has to survive a save and a rescan. A deletion could not: the scan would
-   * find it again and cover it again, every open.
-   */
-  visible: boolean;
-  /** Where it is over time. Empty is not valid; a mask with no keys is dropped. */
-  keys: MaskKey[];
-}
-
-/** What the reader was asked for, and what it has done. */
-export interface RedactionState {
-  /**
-   * Whether this recording has been read.
-   *
-   * Persisted rather than derived from `masks.length`, because "read it and
-   * found nothing" and "never read it" are different answers and only one of
-   * them should start a minute of work on the next open.
-   */
-  scanned: boolean;
-  /** Which groups a reader covers. */
-  groups: RedactGroup[];
-  /** What a fresh cover does, and how hard. */
-  mode: MaskMode;
-  strength: number;
-}
-
 export interface Project {
   version: number;
   /** The manifest `id` this edits. A project beside a different recording is
@@ -1553,15 +1463,6 @@ export interface Project {
    * words, so "has this been edited" is one null check.
    */
   transcript: { words: TranscriptWord[] } | null;
-  /**
-   * The covers over this recording, in source time.
-   *
-   * Beside `zooms` rather than in `defaults` — see `MaskSlice`. Absent on every
-   * project saved before this existed, which read back as none: exactly what
-   * they showed.
-   */
-  masks: MaskSlice[];
-  redaction: RedactionState;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────────
@@ -2032,12 +1933,6 @@ export function sourceShape(
  * everybody for the benefit of a few — and a face is the one category a user
  * can see for themselves without being told.
  */
-export const DEFAULT_REDACTION: RedactionState = {
-  scanned: false,
-  groups: ["contact", "financial", "credential"],
-  mode: "blur",
-  strength: 0.6,
-};
 
 export function newProject(
   recordingId: string,
@@ -2091,8 +1986,6 @@ export function newProject(
     ],
     output: { fps: 60, format: "h264", shortEdge: null },
     micDenoise: "off",
-    masks: [],
-    redaction: DEFAULT_REDACTION,
     transcript: null,
   };
 }
@@ -2348,115 +2241,6 @@ export function sanitiseProject(
       ? (stored.micDenoise as MicDenoise)
       : "off",
     transcript: sanitiseTranscriptEdit(stored.transcript),
-    masks: sanitiseMasks(stored.masks),
-    redaction: sanitiseRedaction(stored.redaction),
-  };
-}
-
-/**
- * The covers that can still be drawn, repaired one at a time.
- *
- * Per entry rather than all-or-nothing, unlike the transcript: a cover that
- * cannot be read is one thing left uncovered, where dropping the whole list
- * because of it would uncover everything else as well. The direction to fail in
- * is the one that keeps the most of them.
- */
-export function sanitiseMasks(value: unknown): MaskSlice[] {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((entry: unknown): MaskSlice | null => {
-      if (typeof entry !== "object" || entry === null) return null;
-      const mask = entry as Partial<MaskSlice> & Record<string, unknown>;
-
-      if (typeof mask.id !== "string" || mask.id.length === 0) return null;
-
-      const keys = Array.isArray(mask.keys)
-        ? mask.keys
-            .filter((key: unknown): key is MaskKey => {
-              if (typeof key !== "object" || key === null) return false;
-              const at = key as Partial<MaskKey>;
-              return (
-                [at.at, at.x, at.y, at.width, at.height].every(
-                  (number) => typeof number === "number" && Number.isFinite(number),
-                ) &&
-                (at.width ?? 0) > 0 &&
-                (at.height ?? 0) > 0
-              );
-            })
-            .map((key) => ({
-              at: Math.max(0, key.at),
-              // Clamped into the recording's frame. A key outside it is a cover
-              // that either vanishes or fills the picture depending on which
-              // rasteriser drew it, which is how a preview and an export come
-              // to disagree about what is hidden.
-              x: clamp(key.x, 0, 1),
-              y: clamp(key.y, 0, 1),
-              width: clamp(key.width, 0, 1),
-              height: clamp(key.height, 0, 1),
-            }))
-            .sort((a, b) => a.at - b.at)
-        : [];
-
-      // A cover with nowhere to be is not a cover.
-      if (keys.length === 0) return null;
-
-      const start = number(mask.source?.start, keys[0]!.at);
-      const end = number(mask.source?.end, keys[keys.length - 1]!.at);
-      if (end <= start) return null;
-
-      return {
-        id: mask.id,
-        origin: mask.origin === "manual" ? "manual" : "auto",
-        group: REDACT_GROUPS.includes(mask.group as RedactGroup)
-          ? (mask.group as RedactGroup)
-          : "contact",
-        label: typeof mask.label === "string" ? mask.label : "Hidden",
-        preview: typeof mask.preview === "string" ? mask.preview : "\u2022\u2022\u2022\u2022",
-        bucket: Math.max(0, Math.round(number(mask.bucket, 0))),
-        source: { start: Math.max(0, start), end },
-        // An unknown way of hiding something becomes a blur rather than being
-        // dropped: the cover still covers. It must never fall the other way.
-        mode: mask.mode === "pixelate" ? "pixelate" : "blur",
-        strength: clamp(number(mask.strength, DEFAULT_REDACTION.strength), 0, 1),
-        // Absent reads as covering. A project from a build that did not have
-        // the switch had every cover on, and a missing field must not uncover
-        // anything.
-        visible: mask.visible !== false,
-        keys,
-      };
-    })
-    .filter((mask): mask is MaskSlice => mask !== null);
-}
-
-/**
- * What the reader has been asked for.
- *
- * `scanned` is the field that matters. A project saved before any of this
- * existed reads back as **already scanned** when it has no masks, and that is
- * deliberate: a recording somebody reviewed and exported last month must not
- * acquire a set of grey boxes because they opened it again. Scanning one of
- * those is a button, not a consequence of arriving.
- */
-function sanitiseRedaction(value: unknown): RedactionState {
-  const stored = (typeof value === "object" && value !== null ? value : {}) as Partial<
-    Record<keyof RedactionState, unknown>
-  >;
-
-  const groups = Array.isArray(stored.groups)
-    ? REDACT_GROUPS.filter((group) => (stored.groups as unknown[]).includes(group))
-    : DEFAULT_REDACTION.groups;
-
-  return {
-    scanned:
-      typeof stored.scanned === "boolean"
-        ? stored.scanned
-        : // No field at all, so an older project. Treated as read, for the
-          // reason above.
-          true,
-    groups,
-    mode: stored.mode === "pixelate" ? "pixelate" : "blur",
-    strength: clamp(number(stored.strength, DEFAULT_REDACTION.strength), 0, 1),
   };
 }
 

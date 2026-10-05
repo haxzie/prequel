@@ -32,7 +32,7 @@ import type {
   ExportRequest,
   ShareRequest,
 } from "../shared/contract.js";
-import type { Project, RedactGroup } from "../shared/project.js";
+import type { Project } from "../shared/project.js";
 import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { chooseVideo, importVideo } from "./import-video.js";
@@ -54,7 +54,6 @@ import { entitlement, openUpgrade, refreshEntitlement, trackUpgradePrompt } from
 import { cancelShare, startShare } from "./share.js";
 import { cancelTranscribe, startTranscribe } from "./transcribe/index.js";
 import { permissionStates, relaunchApp, requestPermission } from "./permissions.js";
-import { cancelRedact, startRedact } from "./redact/index.js";
 import { describeRecorderError, getRecorder } from "./recorder.js";
 import { sendFeedback, sendRating } from "./feedback.js";
 import {
@@ -331,19 +330,6 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
   // The window says when it is mounted; main answers with the screen it should
   // be on. See `ready` on `WorkspaceWindow` for why this is not a push.
   ipcMain.handle(IPC_CHANNELS.workspaceReady, () => workspace.ready());
-
-  // Fire and forget, like `transcribeStart`: the answer arrives on
-  // `redactProgress` because a read takes minutes and the window must not be
-  // waiting on a promise for the whole of it.
-  ipcMain.handle(
-    IPC_CHANNELS.redactStart,
-    (_event, dir: string, groups: RedactGroup[], mode: "blur" | "pixelate", strength: number) => {
-      void startRedact(dir, groups, mode, strength);
-    },
-  );
-  ipcMain.handle(IPC_CHANNELS.redactCancel, () => {
-    cancelRedact();
-  });
 
   ipcMain.handle(IPC_CHANNELS.scenePresetsList, () => attempt(() => mine()));
 

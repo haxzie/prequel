@@ -33,7 +33,6 @@ import type {
   EffectsSettings,
   LayoutPreset,
   LayoutSettings,
-  MaskSlice,
   SliceSettings,
   TextSlice,
   TextTrack,
@@ -45,7 +44,11 @@ import { MAX_TEXT_BLUR, textKeys } from "./text-motion.js";
  * Where a cover is on the picture at one moment, in its uv.
  *
  * Deliberately not a `RectKey`: that one is output pixels and carries a radius,
- * a quad and a focus a cover has none of. Mirrors `MaskKey` in `plan.rs`.
+ * a quad and a focus a cover has none of.
+ *
+ * A track rather than a rectangle for a screenshot's single key, which is the
+ * shape left over from covers that followed what they covered through a
+ * recording. One key is what a still has, and `maskRegionAt` holds it.
  */
 export interface MaskKey {
   at: number;
@@ -1080,13 +1083,11 @@ export function buildRenderPlan(
    * The masks are passed in rather than read off the project, because the
    * project is not here.
    *
-   * It used to be the *only* way a mask could reach a plan, because
-   * `shaders.metal` had no mode for one and a masked recording would have
-   * exported with the pixels it was meant to hide. That is no longer true —
-   * both rasterisers draw a mask now, and `masks_the_exported_pixels.rs` is the
-   * proof in pixels — so this parameter is a screenshot's *static* masks rather
-   * than the whole of masking. A recording's follow what they cover and arrive
-   * with a `motion` track on them.
+   * A screenshot's, and only a screenshot's. `shaders.metal` has no mode for a
+   * mask, so one on a recording would be in the preview and absent from the
+   * export — the pixels it was drawn to hide, shipped. A still is written by
+   * the compositor that drew its preview, so there is one rasteriser and the
+   * question does not arise.
    */
   still?: {
     /**
@@ -1106,21 +1107,6 @@ export function buildRenderPlan(
     at: number;
     masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
   },
-  /**
-   * A recording's covers, in source time and recording fractions.
-   *
-   * Separate from `still.masks`, because they are a different shape for a
-   * different reason: a screenshot's is one rectangle somebody dragged on a
-   * picture that never moves, and a recording's follows what it covers through
-   * a scroll and a zoom. Passed in rather than read off the project for the
-   * reason the zooms are — the project is not here.
-   *
-   * **Last on purpose.** This list is positional and already eleven long, so a
-   * parameter added anywhere but the end silently reassigns every caller's
-   * arguments — `still` became `masks` when this sat above it, which typechecks
-   * at exactly one of the call sites.
-   */
-  masks?: readonly MaskSlice[],
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -1879,10 +1865,6 @@ export function buildRenderPlan(
   // A recording's covers, mapped onto the picture wherever the zoom has put it.
   // Before a screenshot's, which is academic — nothing is ever both — and after
   // everything else for the reason the loop below gives.
-  if (masks && masks.length > 0 && sources.screen && plane) {
-    items.push(...maskItems(masks, sources.screen, plane.srcRect, plane.dstRect, plane.motion));
-  }
-
   // A screenshot's, which arrive already in output pixels because a hand drew
   // them on a picture that cannot move.
   //
@@ -4609,86 +4591,6 @@ function smoothPath(samples: CursorTrack["samples"], strength: number): CursorTr
   }
 
   return out;
-}
-
-/**
- * A recording's covers, as passes over the picture's own quad.
- *
- * Almost nothing happens here now, and that is the point of the arrangement. A
- * cover's keys are fractions of the *recording's* frame; the picture draws
- * `srcRect` of that recording into its quad; so the patch in the quad's uv is
- * one division — and it does not vary with time, because a zoom moves the
- * picture's rectangle and leaves its crop alone.
- *
- * So there is no track to compose and no union of times to sample at. The cover
- * carries its own movement and the picture's, separately, and each rasteriser
- * interpolates the two independently — a zoom easing while an address scrolls
- * cannot drift, because the two were never multiplied together.
- */
-function maskItems(
-  masks: readonly MaskSlice[],
-  source: Size,
-  srcRect: Rect,
-  dstRect: Rect,
-  motion: readonly RectKey[],
-): PlanItem[] {
-  const items: PlanItem[] = [];
-
-  for (const mask of masks) {
-    // Turned off in the list. Not emitted at all rather than emitted
-    // transparent: a cover nobody can see is a pass over the whole picture the
-    // exporter still pays for on every frame.
-    if (!mask.visible || mask.keys.length === 0) continue;
-
-    const region: MaskKey[] = mask.keys.map((key) => {
-      const left = (key.x * source.width - srcRect.x) / srcRect.width;
-      const top = (key.y * source.height - srcRect.y) / srcRect.height;
-      const right = ((key.x + key.width) * source.width - srcRect.x) / srcRect.width;
-      const bottom = ((key.y + key.height) * source.height - srcRect.y) / srcRect.height;
-
-      return {
-        at: key.at,
-        x: left,
-        y: top,
-        width: Math.max(0, right - left),
-        height: Math.max(0, bottom - top),
-      };
-    });
-
-    const first = region[0]!;
-    if (first.width <= 0 || first.height <= 0) continue;
-
-    items.push({
-      kind: "mask",
-      rect: dstRect,
-      srcRect,
-      region,
-      // What the scan said, which is the first and last time the thing was
-      // actually seen, already widened by half a sample either side — see
-      // `Track::lead` in `prequel-sensitive`. Taken from the slice rather than
-      // from the keys so a cover the user has dragged or retimed keeps the
-      // span they gave it.
-      span: { start: mask.source.start, end: mask.source.end },
-      mode: mask.mode,
-      strength: mask.strength,
-      // Against the patch as it sits on the picture at rest. A zoom magnifies
-      // the blur along with the pixels it is destroying, which is what keeps a
-      // cover looking the same at every magnification.
-      reach: maskReach(
-        {
-          x: 0,
-          y: 0,
-          width: first.width * dstRect.width,
-          height: first.height * dstRect.height,
-        },
-        mask.mode,
-        mask.strength,
-      ),
-      ...(motion.length > 0 ? { motion: [...motion] } : {}),
-    });
-  }
-
-  return items;
 }
 
 function cursorItems(

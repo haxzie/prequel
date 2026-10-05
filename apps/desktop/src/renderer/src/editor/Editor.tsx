@@ -90,7 +90,6 @@ import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
 import { textOnClip, type PlacedText } from "../../../shared/layout";
 import { useCleanMic } from "./useCleanMic";
-import { useRedaction } from "./useRedaction";
 import { useEditorPlayback } from "./useEditorPlayback";
 import type { MediaKey } from "./segments";
 import { useExport } from "./useExport";
@@ -394,12 +393,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // cleaned one beside it. Swapped here rather than in three places, because
   // the preview, the waveforms and the export all read the same `media` list
   // — see `useCleanMic`.
-  // Reads the recording for things worth covering, once, on a take that has
-  // never been read. `state.project.redaction` is what decides, and it is
-  // persisted — so a recording whose covers were all turned off is not read
-  // again on the next open.
-  const redaction = useRedaction(session, state.project.redaction, dispatch);
-
   const clean = useCleanMic(session, state.project.micDenoise);
   const heard = clean.session;
   const media = useEditorPlayback(heard, slices);
@@ -1568,7 +1561,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // this is the only call that reaches the preview's — see the note
               // on `buildSlices`'s own flag for what must never be handed one.
               masks={masks}
-              covers={state.project.masks}
               onPickMark={pickMark}
               onDrawMark={(kind, points) => {
                 dispatch({ type: "addAnnotation", kind, points });
@@ -1710,17 +1702,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               hasCursor={session.cursor !== null}
               hasSounds={hasSounds}
               hasSpeech={hasSpeech}
-              // Absent on a screenshot, which has no reader — its covers are
-              // dragged on with the mask tool instead.
-              redaction={still ? undefined : redaction}
-              // The same mapping the timeline's own seek uses: a cover's times
-              // are source times, and the playhead runs on project time.
-              onSeek={(source) => {
-                const at = toProjectTime(placed, source);
-                if (at === null) return;
-                media.onInteract();
-                media.playback.seek(at);
-              }}
               denoise={{ working: clean.working, error: clean.error }}
               onAudition={media.audition}
               onPlaySample={playSample}

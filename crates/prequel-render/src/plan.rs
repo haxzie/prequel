@@ -73,69 +73,6 @@ pub enum Paint {
     },
 }
 
-/// Where a cover is on the picture at one moment, in its uv.
-///
-/// Mirrors `MaskKey` in `apps/desktop/src/shared/layout.ts`. Deliberately not a
-/// `RectKey`: that one is output pixels and carries a radius, a quad and a
-/// focus a cover has none of.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct MaskKey {
-    pub at: i64,
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-/// Where a cover is at `at`, holding at either end.
-///
-/// Holds rather than extrapolating: a cover whose track has run out stays where
-/// it was last seen, which is the direction that keeps covering.
-pub fn mask_region_at(keys: &[MaskKey], at: i64) -> Option<MaskKey> {
-    let first = keys.first()?;
-    if at <= first.at {
-        return Some(*first);
-    }
-    let last = keys.last()?;
-    if at >= last.at {
-        return Some(*last);
-    }
-
-    let after = keys.iter().position(|key| key.at >= at)?;
-    let a = keys[after.saturating_sub(1)];
-    let b = keys[after];
-    let span = (b.at - a.at) as f64;
-    let t = if span > 0.0 {
-        (at - a.at) as f64 / span
-    } else {
-        0.0
-    };
-    let mix = |from: f64, to: f64| from + (to - from) * t;
-
-    Some(MaskKey {
-        at,
-        x: mix(a.x, b.x),
-        y: mix(a.y, b.y),
-        width: mix(a.width, b.width),
-        height: mix(a.height, b.height),
-    })
-}
-
-/// What a mask does to the pixels it covers.
-///
-/// `#[serde(other)]` for the reason `FilterKind` carries one: a `project.json`
-/// from a newer build may name a third way of hiding something, and a patch
-/// drawn the gentler of the two ways we do have is a far better answer than an
-/// export that refuses to run. It must never fall back to *not drawing* — a
-/// mask that quietly stops covering is the pixels it was hiding, shipped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MaskMode {
-    Pixelate,
-    #[serde(other)]
-    Blur,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlanItem {
@@ -222,47 +159,6 @@ pub enum PlanItem {
     ///
     /// It replaces pixels rather than laying ink over them, which is why it is
     /// an item at all: ink can be lifted off again and an average cannot.
-    Mask {
-        /// The picture's destination rectangle, in output pixels.
-        rect: Rect,
-        /// The picture's source crop, normalised. What the patch's uv is read
-        /// against.
-        #[serde(rename = "srcRect")]
-        src_rect: Rect,
-        /// The patch, as fractions of the picture's own surface.
-        ///
-        /// A track, because the thing being covered moves: an address scrolls
-        /// and a face walks. Its own movement only — where the *picture* is at
-        /// that moment is `motion`'s business, and keeping the two apart is
-        /// what stops them being multiplied into one approximate answer.
-        region: Vec<MaskKey>,
-        /// The source-time range the cover is on screen for, or `None` to cover
-        /// for as long as the picture is drawn.
-        ///
-        /// `None` is a screenshot's mask, which is on the one frame there is.
-        /// A recording's is bounded, and it has to be: `mask_region_at` holds
-        /// the first key before the track and the last after it, so a cover
-        /// without a span is drawn over the whole clip — parked where the thing
-        /// was first seen until it appears, and where it was last seen for ever
-        /// after. Defaulted, so a plan written before this still parses, and
-        /// parses as unbounded, which is what it drew.
-        #[serde(default)]
-        span: Option<Span>,
-        mode: MaskMode,
-        /// 0 to 1, as the control reads. Carried for the artefact rather than
-        /// used here; `reach` is what this side samples by.
-        #[serde(default)]
-        strength: f64,
-        /// `strength` in output pixels, against the picture at rest. A zoom
-        /// magnifies it along with the pixels it is destroying.
-        #[serde(default)]
-        reach: f64,
-        /// Where the picture is over time. The screen image's own track,
-        /// verbatim — not a copy with the cover's movement folded in.
-        #[serde(default)]
-        motion: Vec<RectKey>,
-    },
-
     /// A glass lens lying on the finished frame, magnifying what is under it.
     ///
     /// The one item that draws no source of its own: it reads what has already

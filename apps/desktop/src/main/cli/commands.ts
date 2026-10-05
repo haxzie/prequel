@@ -52,28 +52,9 @@ import { log, logPath } from "../log.js";
 import { permissionStates } from "../permissions.js";
 import type { Preferences } from "../preferences.js";
 import { listProjects } from "../projects.js";
-import { getRecorder, type ScanUpdate } from "../recorder.js";
+import { getRecorder } from "../recorder.js";
 import { systemLocale } from "../transcribe/apple.js";
 
-/**
- * One finding, as `prequel-sensitive` serialises it.
- *
- * Declared here rather than shared with the renderer: nothing else reads this
- * yet, and the HTTP-style contract between the addon and the app is the JSON,
- * not a type. It carries no plaintext — `preview` is already masked and
- * `bucket` is a truncated hash — which is the whole point of the shape.
- */
-interface ScanFinding {
-  category: string;
-  label: string;
-  preview: string;
-  bucket: number;
-  confidence: number;
-  covered: boolean;
-  repaired: boolean;
-  uncertain: boolean;
-  keys: { at: number }[];
-}
 import { renderRecording, RenderFailed, RenderNeedsEditor } from "../render.js";
 import { startShare } from "../share.js";
 import { transcriptForShare } from "../../renderer/src/editor/shareTranscript.js";
@@ -785,126 +766,6 @@ export function cliHandlers(context: CliContext): Record<string, Handler> {
         clicks: manifest.clicks?.length ?? 0,
         transcript: existsSync(join(dir, TRANSCRIPT_FILE_NAME)),
         project: join(dir, PROJECT_FILE_NAME),
-      };
-    },
-
-    /**
-     * Reads a recording for sensitive text.
-     *
-     * The screen track only, and every segment of it in full. The camera is a
-     * face rather than a dashboard, and a scan keyed to the project's trims
-     * would have to run again every time somebody dragged a handle.
-     *
-     * Nothing is written and nothing is covered: this answers with what was
-     * found so the rules can be judged against real recordings before a mask
-     * is ever drawn over one.
-     */
-    async scan(params, report) {
-      const dir = recordingDir(params);
-      const manifest = readManifest(dir);
-      const recorder = await getRecorder();
-
-      if (isStill(manifest)) {
-        throw new CliError(
-          "unsupported",
-          "this is a screenshot, not a recording — there is nothing to read over time",
-        );
-      }
-
-      const segments = findTrack(manifest, "screen")?.segments ?? [];
-      if (segments.length === 0) {
-        throw new CliError("not_found", "this recording has no screen track to read");
-      }
-
-      const langs = text(params, "langs")
-        ?.split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean) ?? [systemLocale()];
-
-      report({ stage: "preparing", message: `reading ${segments.length} file(s)` });
-
-      const update = await new Promise<ScanUpdate>((done, failed) => {
-        let settled = false;
-
-        recorder.startScan(
-          {
-            segments: segments.map((segment) => ({
-              path: join(dir, segment.file_name),
-              name: segment.file_name,
-              // The file is zero-based; this is where its zero sits on the
-              // session clock. Applied once, in the Rust loop.
-              start: segment.start,
-              end: segment.end,
-            })),
-            intervalMs: count(params, "interval"),
-            langs,
-            // Faces are a second Vision request over every frame, so they are
-            // asked for rather than assumed.
-            faces: flag(params, "faces"),
-            text: !flag(params, "no-text"),
-            // A fresh salt per scan, because nothing is persisted yet. Once an
-            // artefact is written this has to come from it instead, or a second
-            // scan buckets the same text differently and every dismissal is
-            // orphaned.
-            salt: String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
-          },
-          (error, answer) => {
-            if (settled) return;
-            if (error) {
-              settled = true;
-              failed(error);
-              return;
-            }
-            if (answer.stage === "scanning") {
-              // `CliProgress` counts rather than fractions, and the scan
-              // reports a fraction — so hundredths, which is finer than
-              // anything a terminal redraws.
-              report({
-                stage: "scanning",
-                done: Math.round((answer.progress ?? 0) * 100),
-                total: 100,
-              });
-              return;
-            }
-            if (answer.stage === "preparing") return;
-
-            settled = true;
-            done(answer);
-          },
-        );
-      });
-
-      if (update.stage === "failed") {
-        throw new CliError("failed", update.message ?? "the scan failed");
-      }
-      if (update.stage === "cancelled") {
-        throw new CliError("failed", "the scan was cancelled");
-      }
-
-      const found: ScanFinding[] = JSON.parse(update.findings ?? "[]");
-      const everything = flag(params, "all");
-
-      return {
-        findings: found
-          // `covered` is decided in Rust, where the threshold lives. Comparing
-          // a confidence against a copy of that number here would be a second
-          // threshold to drift from the first.
-          .filter((finding) => everything || finding.covered)
-          .map((finding) => ({
-            category: finding.category,
-            label: finding.label,
-            // Already masked, and the only form the text is ever reported in.
-            preview: finding.preview,
-            confidence: Math.round(finding.confidence * 100) / 100,
-            covered: finding.covered,
-            uncertain: finding.uncertain,
-            startMs: millis(finding.keys[0]?.at ?? 0),
-            endMs: millis(finding.keys[finding.keys.length - 1]?.at ?? 0),
-            samples: finding.keys.length,
-          })),
-        sampled: update.sampled ?? 0,
-        read: update.read ?? 0,
-        covered: JSON.parse(update.covered ?? "[]"),
       };
     },
 

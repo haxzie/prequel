@@ -42,9 +42,6 @@ import {
   type SettingsSection,
   type SliceSettings,
   type TextStyle,
-  type MaskSlice,
-  type RedactGroup,
-  type RedactionState,
   type ZoomSlice,
   WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
@@ -173,7 +170,6 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
-import type { Redaction } from "./useRedaction";
 import {
   TEXT_TABS,
   TextStylePanel,
@@ -203,13 +199,6 @@ export interface InspectorProps {
    * no pointer layer, nothing to caption — so there is nothing else to say.
    */
   still: boolean;
-  /**
-   * The reading of this recording, or absent on a screenshot — which has no
-   * reader and covers things with the mask tool instead.
-   */
-  redaction?: Redaction;
-  /** Moves the playhead, so a row in the Privacy list can be checked in situ. */
-  onSeek: (at: number) => void;
   /**
    * Whether the recording noted any presses or clicks, so there are sounds to
    * offer. False for a take made with the Keyboard switch off and no clicks,
@@ -865,7 +854,6 @@ function InspectorPanels(props: InspectorProps) {
     // Unconditional on a recording even when nothing was found: a panel that
     // appeared only when there was something to show is a panel nobody knows
     // exists, and "nothing was found" is the most reassuring thing it can say.
-    ...(props.still ? [] : [{ id: "privacy" as const, label: "Privacy", Icon: MaskToolIcon }]),
     // Last. A logo is a thing added to the video, so it reads as the end of the
     // list rather than as another property of the picture.
     { id: "watermark", label: "Logo", Icon: WatermarkIcon },
@@ -907,7 +895,6 @@ function InspectorPanels(props: InspectorProps) {
     // Owns no `SliceSettings` section, like `presets`: covers are a list on the
     // project rather than settings on a clip, so Reset and apply-to-all have
     // nothing here to act on.
-    privacy: null,
   };
 
   // A category can disappear — open a recording with no camera while Camera is
@@ -1183,16 +1170,6 @@ function InspectorPanels(props: InspectorProps) {
 
                 {active === "perspective" && (
                   <ScreenAnglePanel settings={settings} field={field} set={set} />
-                )}
-
-                {active === "privacy" && props.redaction && (
-                  <PrivacyPanel
-                    masks={state.project.masks}
-                    redaction={state.project.redaction}
-                    scan={props.redaction}
-                    dispatch={dispatch}
-                    onSeek={props.onSeek}
-                  />
                 )}
 
                 {active === "filters" && (
@@ -1516,7 +1493,6 @@ export type CategoryId =
   | "cursor"
   | "captions"
   | "filters"
-  | "privacy"
   | "watermark";
 
 /**
@@ -3386,207 +3362,6 @@ function CaptionsPanel({
  * A bar rather than a spinner because a long take is minutes of work, and a
  * spinner over minutes is indistinguishable from a hang.
  */
-/**
- * What has been covered, and the one control that matters: showing it again.
- *
- * The panel is shaped by one fact — **a finding arrives already covered.** So
- * this is not a list of things to approve, it is a list of things now hidden,
- * one of which may be hiding the work. Every false positive is a grey box over
- * something somebody wanted on screen, and the only way they find it is by
- * scrubbing. So the switch on each row is the primary control, sitting on the
- * row rather than behind a selection, and pressing the row seeks to the moment
- * so the check happens in the film.
- *
- * It shows no crops and no text. The project stores a pre-masked preview and a
- * truncated hash and never the thing found — a file beside an unredacted
- * recording may not carry the card number — and a thumbnail would be the
- * plaintext as pixels. Which turns out to be the better design: twenty tiny
- * crops are unreadable anyway, and a row of three dots and a timestamp forces
- * the verification to happen where the answer actually is.
- */
-function PrivacyPanel({
-  masks,
-  redaction,
-  scan,
-  dispatch,
-  onSeek,
-}: {
-  masks: readonly MaskSlice[];
-  redaction: RedactionState;
-  scan: Redaction;
-  dispatch: Dispatch<EditorAction>;
-  onSeek: (at: number) => void;
-}) {
-  const running = scan.stage === "preparing" || scan.stage === "scanning";
-  const covered = masks.filter((mask) => mask.visible).length;
-  const nothing = scan.stage === null && masks.length === 0 && redaction.scanned;
-
-  // Short enough to leave room for the switch. The full sentence was wider than
-  // the panel and pushed the first switch off the right-hand edge of it.
-  const groups: { id: RedactGroup; label: string; hint: string }[] = [
-    {
-      id: "contact",
-      label: "Emails and addresses",
-      hint: "Email addresses, phone numbers and links.",
-    },
-    { id: "financial", label: "Cards and ID numbers", hint: "Card numbers, IBANs and ID numbers." },
-    { id: "credential", label: "Keys and secrets", hint: "API keys and other credentials." },
-    { id: "people", label: "Faces", hint: "A second pass over the recording, so it takes longer." },
-  ];
-
-  const toggle = (group: RedactGroup, on: boolean) => {
-    const next = on
-      ? [...redaction.groups, group]
-      : redaction.groups.filter((entry) => entry !== group);
-    dispatch({ type: "setRedaction", patch: { groups: next } });
-  };
-
-  return (
-    <>
-      <Section title="Look for">
-        {groups.map((group) => (
-          <ToggleField
-            key={group.id}
-            icon={<MaskToolIcon />}
-            label={group.label}
-            title={group.hint}
-            value={redaction.groups.includes(group.id)}
-            disabled={running}
-            onChange={(on) => toggle(group.id, on)}
-          />
-        ))}
-
-        {/* The verb, under the things it acts on, and the width of them.
-            Reading order: choose what to look for, then look.
-
-            The bar is *inside* the button rather than above it. A separate
-            progress block is a second thing appearing and disappearing where
-            the button already has to change what it says — and a bar nowhere
-            near the control that started it is a bar nobody connects to it. */}
-        <button
-          type="button"
-          disabled={redaction.groups.length === 0 && !running}
-          className={cn(
-            "relative mt-1 w-full overflow-hidden rounded-lg px-3 py-2 text-[12px]",
-            "bg-white/10 text-editor-fg hover:bg-white/15",
-            "disabled:pointer-events-none disabled:opacity-40",
-          )}
-          onClick={() => {
-            if (running) scan.cancel();
-            else scan.rescan();
-          }}
-        >
-          {/* The fill, behind the words. An indeterminate stage gets a third of
-              the width rather than none: the readers are being built and the
-              file opened, and an empty bar over that reads as nothing
-              happening. */}
-          {running && (
-            <span
-              aria-hidden
-              className="absolute inset-y-0 left-0 bg-editor-accent/30 transition-[width] duration-200"
-              style={{ width: `${String(Math.round((scan.progress ?? 0.33) * 100))}%` }}
-            />
-          )}
-          <span className="relative">
-            {running
-              ? scan.stage === "preparing"
-                ? "Getting ready…"
-                : `Reading the recording… ${String(Math.round((scan.progress ?? 0) * 100))}%`
-              : redaction.scanned
-                ? "Check again"
-                : "Check this recording"}
-          </span>
-        </button>
-
-        {/* Underneath, small, and only when there is something to say. A line
-            that is always there is a line nobody reads. */}
-        {!running && (nothing || scan.stage === "failed" || covered > 0) && (
-          <span className="px-0.5 text-[11px] text-editor-muted">
-            {scan.stage === "failed"
-              ? "The check did not finish. Nothing has been covered."
-              : nothing
-                ? "Nothing sensitive found."
-                : `${String(covered)} thing${covered === 1 ? "" : "s"} covered — play the recording and check nothing you wanted on screen is hidden.`}
-          </span>
-        )}
-      </Section>
-
-      <Section title="Cover with">
-        <Field icon={<MaskToolIcon />} label="Style">
-          <Segmented
-            value={redaction.mode}
-            options={[
-              { value: "blur", label: "Blur", icon: <BlurIcon /> },
-              { value: "pixelate", label: "Pixelate", icon: <MaskToolIcon /> },
-            ]}
-            onChange={(mode) => dispatch({ type: "setRedaction", patch: { mode } })}
-          />
-        </Field>
-
-        <Slider
-          icon={<StrengthIcon />}
-          label="Strength"
-          value={redaction.strength}
-          min={0}
-          max={1}
-          step={0.01}
-          format={percent}
-          onChange={(strength) => dispatch({ type: "setRedaction", patch: { strength } })}
-        />
-      </Section>
-
-      {masks.length > 0 && (
-        <Section title="Covered">
-          {masks.map((mask) => (
-            <div key={mask.id} className="flex items-center gap-2 py-0.5">
-              <button
-                type="button"
-                title="Go to this moment"
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left",
-                  "hover:bg-white/5",
-                )}
-                onClick={() => onSeek(mask.source.start)}
-              >
-                <span className="min-w-0 flex-1 truncate text-[11px] text-editor-fg">
-                  {mask.preview}
-                </span>
-                <span className="flex-none text-[10px] text-editor-muted">{mask.label}</span>
-              </button>
-
-              {/* The whole point of the panel. A finding arrives covered, so
-                  this is how somebody gets their own work back — one press,
-                  on the row, rather than behind a selection. */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={mask.visible}
-                aria-label={mask.visible ? `Show ${mask.label}` : `Cover ${mask.label}`}
-                title={mask.visible ? "Show this" : "Keep this covered"}
-                className={cn(
-                  "flex-none rounded-full px-2 py-0.5 text-[10px]",
-                  mask.visible
-                    ? "bg-selected text-white"
-                    : "bg-white/10 text-editor-muted hover:bg-white/15",
-                )}
-                onClick={() =>
-                  dispatch({
-                    type: "setMaskVisible",
-                    maskId: mask.id,
-                    visible: !mask.visible,
-                  })
-                }
-              >
-                {mask.visible ? "Hidden" : "Shown"}
-              </button>
-            </div>
-          ))}
-        </Section>
-      )}
-    </>
-  );
-}
-
 function Transcription({ captions }: { captions: CaptionsState }) {
   const running = captions.stage === "preparing" || captions.stage === "transcribing";
 

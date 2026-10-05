@@ -575,7 +575,11 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
 }
 
 /// Opens a reader for the file a slice names for one kind, if it names one.
-fn open_ref(dir: &Path, reference: Option<&SegmentRef>, slice: &SliceRender) -> Option<VideoReader> {
+fn open_ref(
+    dir: &Path,
+    reference: Option<&SegmentRef>,
+    slice: &SliceRender,
+) -> Option<VideoReader> {
     let reference = reference?;
     open_reader(&dir.join(&reference.file), slice, reference.offset)
 }

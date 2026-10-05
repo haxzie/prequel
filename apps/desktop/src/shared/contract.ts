@@ -22,7 +22,7 @@ import type {
   TypingSample,
 } from "./manifest.js";
 import type { BlobTrack, CursorTrack, RenderPlan } from "./layout.js";
-import type { MaskSlice, Project, RedactGroup, SliceSettings } from "./project.js";
+import type { Project, SliceSettings } from "./project.js";
 import type { Transcript } from "./transcript.js";
 
 export type { RecordingResult };
@@ -852,11 +852,6 @@ export const IPC_CHANNELS = {
    * reach into it, and Settings has no window of its own any more.
    */
   workspaceSection: "workspace:section",
-  /** Renderer → main: read this recording for things worth covering. */
-  redactStart: "redact:start",
-  redactCancel: "redact:cancel",
-  /** Main → renderer broadcast. Completion is a terminal stage on it. */
-  redactProgress: "redact:progress",
   /**
    * Asks where the export should be written, with a save dialog.
    *
@@ -2020,44 +2015,6 @@ export interface ProjectSummary {
  * and the sound plan, none of which a still needs, and a page of the grid is a
  * dozen of these.
  */
-/**
- * How the reading of a recording is going.
- *
- * The same shape as `TranscribeProgress` in the one way that matters:
- * completion is a terminal stage on this channel rather than a resolved
- * promise, so there is one channel and no race between "finished" arriving by
- * two routes.
- *
- * `progress` is honest rather than invented — null draws an indeterminate bar,
- * which is what `preparing` has to show.
- */
-export interface RedactProgress {
-  dir: string;
-  stage: "preparing" | "scanning" | "done" | "failed" | "cancelled";
-  progress: number | null;
-  error: { code: string; message: string } | null;
-  /**
-   * What to cover, present only on `done`.
-   *
-   * Handed to the renderer rather than written here. The project is the
-   * renderer's — editor state lives there — and only the renderer knows which
-   * covers the user has already turned off, which is what a rescan must not
-   * undo.
-   */
-  masks?: readonly MaskSlice[];
-  /** What a fresh cover should do, echoed back from what was asked. */
-  mode?: "blur" | "pixelate";
-  strength?: number;
-  /**
-   * Which groups this reading looked for, echoed back from what was asked.
-   *
-   * What makes the merge safe to do by replacement: a reading asked only for
-   * faces has nothing to say about the card number found last time, so only
-   * the groups named here are replaced by it.
-   */
-  groups?: readonly RedactGroup[];
-}
-
 export interface ProjectComposition {
   /**
    * Output pixels. Zero when the frame is automatic, which means "the size of
@@ -2067,17 +2024,6 @@ export interface ProjectComposition {
   frame: { width: number; height: number; auto: boolean };
   /** Resolved for the clip the still is taken from, defaults and all. */
   settings: SliceSettings;
-  /**
-   * The recording's covers, in source time.
-   *
-   * **Required rather than optional, and that is the point of it.** This spec is
-   * what the library's thumbnail is composed from, and `share.ts` uploads that
-   * thumbnail to a public URL when a recording is shared — so a spec built
-   * without them publishes an unredacted still of a frame somebody took the
-   * trouble to redact. Optional, it would be forgotten once and nothing in the
-   * types would say so.
-   */
-  masks: readonly MaskSlice[];
   /** The screen track, seeked to seconds into its own file. */
   screen: { url: string; at: number } | null;
   /**

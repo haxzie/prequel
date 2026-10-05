@@ -58,17 +58,6 @@ export function composition(
       auto: project.frame.presetId === AUTO_PRESET_ID,
     },
     settings,
-    /**
-     * The covers, which the poster has to carry.
-     *
-     * **Required, not optional, and that is the whole of this field.** The
-     * library's thumbnail is composed through `buildRenderPlan` like everything
-     * else — and `share.ts` uploads it to a public URL when a recording is
-     * shared. A spec without them would put an unredacted still of the frame on
-     * the internet, and nothing about the types would have objected. So it is a
-     * field somebody has to fill in rather than one they can forget.
-     */
-    masks: project.masks,
     screen: screen && { url: url(screen.segment.file_name), at: screen.at },
     stillScreen: isStill(manifest),
     camera: camera && {

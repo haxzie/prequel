@@ -17,9 +17,8 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    LoupeKey, MaskMode, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at,
-    caption_at, crop_to_frame, cursor_at, loupe_at, mask_region_at, moved_blob, overlay_at,
-    rect_at,
+    LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at, caption_at,
+    crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at, rect_at,
 };
 use crate::{Error, Result};
 
@@ -117,15 +116,6 @@ struct Uniforms {
     grade_a: [f32; 4],
     grade_b: [f32; 4],
     grade_c: [f32; 4],
-    /// The patch a mask covers, in the picture's own uv. Only a mask sets it.
-    ///
-    /// A `float4` with the other `float4`s rather than two more scalars in the
-    /// tail, which is where the room was: every one of them sits at a multiple
-    /// of sixteen, so adding one here moves everything below it by exactly that
-    /// and the test below says so in one place. Appending past the `u32`s would
-    /// put the tail at an offset Rust and MSL disagree about, which compiles,
-    /// runs, and renders the wrong colour.
-    mask_region: [f32; 4],
     /// One texel of the sampled image, so a blur is measured in its own pixels.
     texel: [f32; 2],
     shape: [f32; 2],
@@ -201,8 +191,6 @@ const MODE_LOUPE: u32 = 5;
 /// Two modes rather than one with a flag, mirroring `webgl.ts`: the branch is
 /// the cheapest thing a shader can switch on, and a mask is either an average
 /// of a disc or an average of a block — not one treatment with a parameter.
-const MODE_MASK_BLUR: u32 = 6;
-const MODE_MASK_PIXELATE: u32 = 7;
 
 /// How far around the glass the lens's own render reaches, in radii.
 ///
@@ -779,7 +767,6 @@ impl Compositor {
             src: [0.0, 0.0, 1.0, 1.0],
             // No patch. Only a mask sets one, and a zero-width region covers
             // nothing — which is what every other draw wants.
-            mask_region: [0.0; 4],
             focus: [0.0, 0.0, 1.0, 0.0],
             // Off. Only the pointer ever turns it on.
             smear: [0.0; 4],
@@ -1077,87 +1064,6 @@ impl Compositor {
                         ..base
                     },
                     None,
-                ))
-            }
-
-            PlanItem::Mask {
-                rect,
-                src_rect,
-                region,
-                span,
-                mode,
-                reach,
-                motion,
-                strength: _,
-            } => {
-                // Before the thing appeared or after it went. Outside its own
-                // span a cover has nothing to cover: the keys hold at either
-                // end, so without this it is drawn for the whole clip, parked
-                // over whatever the recording moved on to.
-                if let Some(span) = span
-                    && (at < span.start as u64 || at > span.end as u64)
-                {
-                    return Ok(None);
-                }
-
-                // Gone from the frame, or not yet arrived. Skipped rather than
-                // drawn at nothing, which would still cost a full-quad pass.
-                let Some(patch) = mask_region_at(region, at as i64) else {
-                    return Ok(None);
-                };
-                // Nothing left of it once it was clamped into the recording.
-                if patch.width <= 0.0 || patch.height <= 0.0 {
-                    return Ok(None);
-                }
-
-                // The recording's own frame. A cover samples *that* rather than
-                // a copy of the composition, which is what makes it hide what
-                // the recording held — and what lets it be drawn with no pass
-                // split and nothing copied out of the target.
-                let Some(buffer) = screen else {
-                    return Ok(None);
-                };
-                alive.push(self.texture_for(buffer, None)?);
-
-                // The picture's own geometry at this moment, so the cover is
-                // drawn over exactly the quad the picture occupies — leaned
-                // corners included.
-                let now = rect_at(motion, at as i64, *rect, 0.0);
-
-                Some((
-                    Uniforms {
-                        rect: rect_of(&now.rect),
-                        quad: corners_of(&now.quad, 0.0),
-                        // Normalised, like every other arm that samples a
-                        // source. Handed over in pixels the shader's
-                        // `u_src.xy + v_uv * u_src.zw` runs thousands of texels
-                        // outside the texture, the sampler clamps to the edge,
-                        // and a cover comes out a flat smear of whatever is in
-                        // the last row. `masks_the_exported_pixels.rs` passed
-                        // through all of that: it asserted the patch no longer
-                        // held the text, and a smear satisfies that too.
-                        src: normalised(src_rect, buffer.width(), buffer.height()),
-                        mask_region: [
-                            patch.x as f32,
-                            patch.y as f32,
-                            patch.width as f32,
-                            patch.height as f32,
-                        ],
-                        // Square-cornered and un-feathered: the patch's own
-                        // edge is what the shader feathers, and the quad here
-                        // is the whole picture.
-                        shape: [0.0, 2.0],
-                        mode: match mode {
-                            MaskMode::Pixelate => MODE_MASK_PIXELATE,
-                            MaskMode::Blur => MODE_MASK_BLUR,
-                        },
-                        // The blur's radius or a block's pitch, in output
-                        // pixels against the picture at rest. `weight` already
-                        // means "a width in pixels" for a stroke and a shadow.
-                        weight: *reach as f32,
-                        ..base
-                    },
-                    alive.last().map(|held| held.texture.as_ref()),
                 ))
             }
 
@@ -1949,32 +1855,30 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, grade_a), 272);
         assert_eq!(offset_of!(Uniforms, grade_b), 288);
         assert_eq!(offset_of!(Uniforms, grade_c), 304);
-        // The mask's patch, which moved everything below it by sixteen.
-        assert_eq!(offset_of!(Uniforms, mask_region), 320);
-        assert_eq!(offset_of!(Uniforms, texel), 336);
-        assert_eq!(offset_of!(Uniforms, shape), 344);
-        assert_eq!(offset_of!(Uniforms, frame), 352);
-        assert_eq!(offset_of!(Uniforms, color_a), 368);
-        assert_eq!(offset_of!(Uniforms, color_b), 384);
-        assert_eq!(offset_of!(Uniforms, gradient), 400);
-        assert_eq!(offset_of!(Uniforms, mode), 408);
-        assert_eq!(offset_of!(Uniforms, weight), 412);
-        assert_eq!(offset_of!(Uniforms, mirror), 416);
+        assert_eq!(offset_of!(Uniforms, texel), 320);
+        assert_eq!(offset_of!(Uniforms, shape), 328);
+        assert_eq!(offset_of!(Uniforms, frame), 336);
+        assert_eq!(offset_of!(Uniforms, color_a), 352);
+        assert_eq!(offset_of!(Uniforms, color_b), 368);
+        assert_eq!(offset_of!(Uniforms, gradient), 384);
+        assert_eq!(offset_of!(Uniforms, mode), 392);
+        assert_eq!(offset_of!(Uniforms, weight), 396);
+        assert_eq!(offset_of!(Uniforms, mirror), 400);
         // The tail. These are plain scalars on 4-byte boundaries; the explicit
         // layout remains in lockstep with the Metal declaration.
-        assert_eq!(offset_of!(Uniforms, vignette), 420);
-        assert_eq!(offset_of!(Uniforms, soften), 424);
-        assert_eq!(offset_of!(Uniforms, adapt), 428);
-
-        // MSL rounds the block to the next 16, so both sides are 432 and the
-        // tail is written out here because Rust would not add it.
-        assert_eq!(offset_of!(Uniforms, alpha), 432);
+        assert_eq!(offset_of!(Uniforms, vignette), 404);
+        assert_eq!(offset_of!(Uniforms, soften), 408);
+        assert_eq!(offset_of!(Uniforms, adapt), 412);
+        assert_eq!(offset_of!(Uniforms, alpha), 416);
         // `matte` follows `alpha` without changing the field order.
-        assert_eq!(offset_of!(Uniforms, matte), 436);
-        // The outline's two scalars took the padding the block already had, so
-        // the block is the size it was plus the array and nothing else moved.
+        assert_eq!(offset_of!(Uniforms, matte), 420);
+        // The camera's glass rim, in the first of the two slots the tail
+        // already carried.
+        assert_eq!(offset_of!(Uniforms, rim), 424);
+
+        // MSL rounds the block to the next 16, so both sides are 432.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 448);
+        assert_eq!(size_of::<Uniforms>(), 432);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in

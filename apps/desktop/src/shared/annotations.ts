@@ -427,12 +427,9 @@ function number(value: unknown, fallback: number, min: number, max: number): num
  * the same compositor as its preview — see `stillPng.ts`. There is still one
  * rasteriser.
  *
- * It used to be why the editor offered no mask on a recording, `shaders.metal`
- * having no mode for one. It has had both — blurred and blocked up — since
- * `masks_the_exported_pixels.rs` went in, so what is left here is the
- * *screenshot's* mask: one rectangle, drawn where it was dragged. A recording's
- * is a track that follows what it covers, which no hand drags and this file
- * does not emit.
+ * It is also why the editor offers no mask on a recording: `shaders.metal` has
+ * no mode for one, so a mask on a video would be in the preview and absent from
+ * the export — the pixels it was drawn to hide, shipped.
  */
 export function maskRegions(
   frame: Size,
