@@ -1,0 +1,43 @@
+You choose a single window to record, so that nothing else on screen gets in. With Cap, there is an open report that says it can record the space the window occupies instead.
+
+## The report
+
+Issue 1754 was opened on 22 April 2026, on Cap 0.4.84 and macOS Tahoe 26.4.1. It says that when you select a specific window to record, Cap captures the screen region the window occupies and not the window's own content. Switching tabs, moving other windows over the top, or any other activity in that area is then included in the recording. The reporter writes that recording a window should bind to that window's content only.
+
+![GitHub issue 1754 on CapSoftware/Cap, Window capture recording screen region instead of window content, open](/blog/quotes/cap-1754-window-capture.webp)
+
+[Read issue 1754 on GitHub](https://github.com/CapSoftware/Cap/issues/1754)
+
+An automated comment on the issue describes the cause as Cap using display capture with crop bounds. Later users added to it:
+
+- On 23 August 2026 a user wrote that it still reproduced with the newly bundled command-line tool: recording a target window recorded the display rectangle the window occupies.
+- On 3 September a user wrote that they had moved the target window about 120 pixels to the left at the start of a workshop, and that the whole session was trashed and had to be completely re-recorded, after a nearly hour-long take.
+
+The issue is open.
+
+## Why it matters
+
+A window recording is chosen to keep a clean frame. If it records a rectangle of the display, three things go wrong:
+
+- Anything that overlaps that rectangle, such as a notification or another window, ends up in the video.
+- If you move or resize the window, the recording keeps the old region.
+
+Two Windows 11 reports sit beside it. Issue 2151, open since 27 August 2026, says pulling another window on top appears in the video, and so does switching between virtual desktops. Issue 2026, open since 23 July, describes a thin line visible just outside the recorded window in the editor and the export, even with shadow at 0 and border set to none. All of these are visible only after the take.
+
+## Check before you record
+
+Record 15 seconds and, while it runs, drag another window across the target and move the target a little. Play it back. It takes less than a minute and it is the only way to be sure on your own setup.
+
+Problems with the other parts of a Cap recording are in [Cap crashed mid-recording](/articles/cap-crash-lost-recording), [Cap's memory use](/articles/cap-cpu-memory-recording), [Cap recorded no microphone audio](/articles/cap-no-microphone-audio) and [Cap export problems](/articles/cap-export-problems). For the wider choice, see [the best Cap alternatives for Mac](/blog/cap-alternatives) and [the complete guide to screen recording on Mac](/blog/screen-recording-on-mac).
+
+## Window mode in Prequel
+
+The first group of buttons on the dock chooses what to record: **Entire screen**, **Window** or **Area**. **Window** records one window, wherever it moves. Choosing it dims the screen and highlights the window under your pointer with its app icon and name. Click to choose it, or press **Start recording** on the highlighted one. Press **Esc** to cancel. See [sources](/docs/sources).
+
+The pointer is recorded as its own layer, so you can restyle, resize, smooth or hide it afterwards in the editor.
+
+![The Prequel editor showing a recorded window with the Layout panel open](/articles/prequel/editor-layout.webp)
+
+Try Window mode and move the window while you record.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

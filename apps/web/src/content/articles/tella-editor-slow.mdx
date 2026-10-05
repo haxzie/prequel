@@ -1,0 +1,47 @@
+A laggy editor is the complaint that fills Tella's help centre, not only its reviews. It comes with a setting built to fix it, and a requirement that explains it.
+
+## What Tella says the editor is
+
+Tella's documentation says the editor "draws your video with your computer's graphics processor through WebGPU". That means two things you control and one you do not: your browser, your graphics hardware, and the video it is fed from Tella's servers.
+
+It lists the requirements plainly. Hardware (graphics) acceleration must be on in your browser. The editor "does not run in virtual machines or remote desktop sessions". Safari needs a much newer version for the editor than for recording.
+
+## Low-res mode
+
+Tella ships a setting to make the editor faster: "Low-res mode makes the editor faster by playing lower-resolution copies of your video while you edit. It is on by default."
+
+It also says that if you hear pops while editing on Windows but not on the video's share page, low-res mode is the fix.
+
+## What users say
+
+A user on r/ProductivityApps wrote in December 2025 that they had used Tella since January and Loom for about two years before, and that they were experiencing a significant problem with lag between sound and image in both the web and desktop apps. They suspected their MacBook Pro.
+
+![A thread on r/ProductivityApps titled Tella / Loom : screen recording app alternative ?, about lag between sound and image](/blog/quotes/tella-lag-sound-image.webp)
+
+[Read it on r/ProductivityApps](https://www.reddit.com/r/ProductivityApps/comments/1pc87av/tella_loom_screen_recording_app_alternative/)
+
+In the r/opensource thread where someone asks for a Tella-style tool, the same user replied that they were looking for an alternative to Tella and Loom, and that they found them "tooooo buggy on my 2021 Macbook pro".
+
+[Read the thread on r/opensource](https://www.reddit.com/r/opensource/comments/1oqza7t/any_opensource_web_alternative_to_tellacom_tried/)
+
+That is one person and one machine. It fits Tella's own account of what the editor depends on.
+
+## How to find out if it is your Mac
+
+1. **Use the latest Chrome** and confirm hardware acceleration is on in its settings.
+2. **Leave Low-res mode on** while you cut, and turn it off only to check a final look.
+3. **Close other tabs** that use your graphics hardware.
+4. **Try a different browser** to separate a browser problem from a Mac one.
+5. **Avoid remote desktops and virtual machines.** Tella says the editor does not run in them.
+
+If it will not load at all, [Tella editor won't load](/articles/tella-editor-wont-load) lists the four error messages. The upload side of the wait is in [why Tella makes you wait before you can edit](/articles/tella-cloud-editing), and the slowness of the export itself is in [Tella export stuck](/articles/tella-export-stuck). Recording problems from the same product are in [Tella stopped recording](/articles/tella-recording-storage-limits).
+
+## An editor that is part of the app
+
+Prequel's editor opens inside the Mac app, on the recording you just made. There are no browser settings to check and no copy of the video to stream. Zooms, layout, camera and audio are all panels in the same window, and exporting runs on the Mac's video hardware: see [editor overview](/docs/editor-overview) and [export](/docs/export).
+
+![The Prequel timeline with zoom blocks and the recording clip](/articles/prequel/zoom-timeline.webp)
+
+Open a recording in Prequel and cut it without a browser.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

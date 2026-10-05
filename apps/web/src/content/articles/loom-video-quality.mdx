@@ -1,0 +1,42 @@
+A recording that plays back softer than the screen it came from is one of the most common complaints about screen recorders. For Loom, one user wrote down exactly what they saw.
+
+## What one user documented
+
+A poster on r/techsupport used Loom for work, on an M1 MacBook Air with a Logitech C920s webcam and the desktop app, and listed the bugs they kept hitting. Loom support had classified them as ongoing.
+
+![A thread on r/techsupport titled Ongoing bugs using Loom software for video recording](/blog/quotes/loom-ongoing-bugs.webp)
+
+[Read it on r/techsupport](https://www.reddit.com/r/techsupport/comments/w2w43f/ongoing_bugs_using_loom_software_for_video/)
+
+Four of their five items are about picture quality or setup:
+
+- Video quality goes fuzzy after using the pause feature.
+- With the **window** recording mode and screen plus camera, the camera has to be added manually after the recording starts.
+- Video quality lags throughout with the Logitech webcam, but not with the MacBook's built-in camera. The issue started on 15 July 2022.
+- The video quality does not always match the preset of 1080p.
+
+The post is from 2022 and the app has changed since, so treat it as a report of a pattern and check each one on your own copy. What is useful is how specific it is.
+
+## How to check which problem you have
+
+Soft text everywhere, evenly, is a capture-size problem: the recording was made at fewer pixels than your display has. Soft only after a pause, or only with one camera, is a recorder bug or a device one. [Why your screen recording looks blurry](/articles/why-your-screen-recording-looks-blurry) walks through the four causes in order, and [how to make a screen recording look high quality](/articles/make-screen-recordings-look-high-quality) covers the settings.
+
+Try these in order:
+
+1. Record 20 seconds with no pause and compare it with a paused one.
+2. Switch to the built-in camera and record again.
+3. Check the file's dimensions against your display's pixel size. A 1440 by 900 display should give a 2880 by 1800 recording.
+
+If the quality problem turns out to come with a stalled upload, [Loom stuck in processing](/articles/loom-stuck-in-processing) is the next stop. If the recording never arrived, read [Loom crashed and lost your recording](/articles/loom-lost-recording-recovery).
+
+## Record at the screen's own size
+
+Prequel records at the display's full pixel size, up to 4K, with the compositing in Metal and the encoding in hardware. The pointer is recorded as its own layer, not drawn into the frames, so you can resize or smooth it afterwards.
+
+You can see the result in the editor before you export, and export at Full or scaled to 1080p, 720p or 480p. The [export page](/docs/export) lists the dialog, and the [resolution](/glossary/resolution) entry explains what each size is for.
+
+![A Prequel recording in the editor with a loupe magnifying the screen, text sharp at the edges](/articles/prequel/zoom-loupe.webp)
+
+Record the same demo in Prequel and compare the two files.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

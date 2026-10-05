@@ -1,0 +1,43 @@
+A fanless laptop doing sustained video work gets warm. How warm, and whether the app is the reason, is what a thread on r/mac with 376 upvotes was trying to work out.
+
+## What the poster measured
+
+The poster had a MacBook Air M3 with 16 GB of memory. They noticed it hit 101°C while rendering a 3-minute 1080p screen recording in Screen Studio. A few other things were running: two Chrome tabs, Activity Monitor, a terminal and an idle editor, plus background utilities. The room was about 25°C.
+
+Their sensor readings showed the CPU efficiency cores at around 96 to 101°C, with an average CPU temperature of 97°C. They attached a screenshot of the readings and asked whether that was normal for an M3 Air under load.
+
+![A thread on r/mac asking whether 101 degrees is normal for a MacBook Air M3 rendering a 3-minute 1080p video in Screen Studio, 376 upvotes](/blog/quotes/screen-studio-101c.webp)
+
+[Read it on r/mac](https://www.reddit.com/r/mac/comments/1ft2g9n/macbook_air_m3_reached_101c_while_rendering_a/)
+
+It is one machine and one clip from September 2024, so it does not tell you what your Mac will do with the current version. It does show the shape of the complaint: a short recording, a long and hot export.
+
+## Why exports run hot
+
+An export has to compose and encode every frame. A 3-minute clip is 5,400 frames at 30 frames a second and 10,800 at 60 (see [frame rate](/glossary/frame-rate)), each with the screen, the zoom, the background and the cursor drawn onto it, then compressed.
+
+A MacBook Air has no fan. It sheds heat through its body, so under sustained load it climbs until the system slows itself to stay inside a safe range. That is the system protecting itself. It does mean a long export on an Air is a different job from the same export on a Pro.
+
+## What to change
+
+1. **Put it on a hard, flat surface.** A bed or a lap blocks the one path heat has out.
+2. **Plug it in** and keep the lid open.
+3. **Close other apps** that are working in the background.
+4. **Draft at a lower resolution.** A 1080p copy at 30 fps for review is a fraction of the work of a final 4K one, so you only pay the heat cost once.
+5. **Export in sections** if you can, and let it cool between them.
+
+If the heat comes with a very long wait, [why Screen Studio exports take so long](/articles/screen-studio-export-slow) covers the time side. [Cap's CPU and memory use](/articles/cap-cpu-memory-recording) is the same complaint about the recording step, and [Screen Studio zooms too much](/articles/screen-studio-zoom-too-much) is the page for the effect that makes each frame more work.
+
+For other options, see [the best Screen Studio alternatives for Mac](/blog/screen-studio-alternatives).
+
+## What Prequel does
+
+Prequel encodes with VideoToolbox, the Mac's hardware video encoder, and composes each frame with Metal. A hardware encoder does its work on dedicated silicon and leaves the processor cores free for everything else.
+
+I cannot promise your Mac stays cool, because that depends on the clip, the size and the room. The test is to export one of your own recordings during the trial with a temperature app open.
+
+![The Prequel timeline with zoom blocks, ready to export](/articles/prequel/zoom-timeline.webp)
+
+Export one recording and watch the temperature yourself.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

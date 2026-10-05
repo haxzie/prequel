@@ -19,7 +19,11 @@ export default async function Image({ params }: { params: Promise<{ slug: string
   const article = findArticle(slug);
 
   return new ImageResponse(
-    await ogCard({ kicker: "Article", title: article?.title ?? "Prequel" }),
+    await ogCard({
+      kicker: "Article",
+      title: article?.title ?? "Prequel",
+      reference: article?.reference,
+    }),
     size,
   );
 }

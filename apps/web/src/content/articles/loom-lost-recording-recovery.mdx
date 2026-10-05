@@ -1,0 +1,51 @@
+You recorded ten minutes, pressed stop, and Loom either crashed or never produced a video. What you can get back depends on which Loom you used, and Loom's help pages are blunt about it.
+
+Everything below is from those pages, last updated between April and September 2026.
+
+## What Loom says about how often this happens
+
+"In the event that Loom crashes during recording or your video is stuck in processing, we are very sorry! This currently happens to less than 0.1% of all videos." That is Loom's own figure.
+
+Users describe the same thing from the other side. One person on r/techsupport wrote up the problems they kept hitting with the desktop app on a MacBook Air, and said Loom support had classed them as ongoing bugs with no fix.
+
+![A thread on r/techsupport titled Ongoing bugs using Loom software for video recording](/blog/quotes/loom-ongoing-bugs.webp)
+
+[Read it on r/techsupport](https://www.reddit.com/r/techsupport/comments/w2w43f/ongoing_bugs_using_loom_software_for_video/)
+
+## What can be recovered
+
+- **Desktop app, Mac or Windows:** possibly. The app stores video parts on your computer while it records.
+- **Chrome extension:** Loom says "we do not have a recovery method for these videos at the moment."
+- **Mobile apps:** the same.
+
+## Recover a desktop recording, in order
+
+Loom's steps, in the order it gives them:
+
+1. **Wait.** Give it at least 30 minutes and do not close the tab. A failed preview is filtered out of your dashboard after 24 hours.
+2. **Restart the app.** Fully quit Loom from the menu bar, relaunch it and wait a few minutes. Its auto-recovery tries to upload any parts it still has.
+3. **Try the recovery page.** Go to `loom.com/recover-videos` and paste the video ID, which is the end of the link: `loom.com/share/<video_id>`. It only works for videos you own that were recorded with the desktop app.
+4. **Look on disk.** In Finder, choose **Go**, then **Go to Folder**, and paste `~/Movies/Loom/Temporary/`. Open the folder whose name matches the video ID.
+5. **Send it to Loom.** Zip the whole folder, upload the zip to cloud storage that anyone with the link can view, and send the video ID and the zip link to Support at `loom.com/contact`.
+
+If that folder is empty, Loom says Support cannot rebuild the recording from files on your computer. Do not delete the video from your library while Support looks at it.
+
+## Lowering the risk
+
+Loom recommends at least 5 Mbps of upload speed and an up-to-date app, and suggests restarting the device if a recording fails. It also says a dropout in your connection during recording or processing can stop a video from uploading.
+
+The deeper fix is a recorder that does not depend on the connection at all. Two related pages cover the other half of this problem: [Loom stuck in processing](/articles/loom-stuck-in-processing) and [why a Loom recording is not the quality you set](/articles/loom-video-quality).
+
+The same failure exists elsewhere. [Cap crashed mid-recording](/articles/cap-crash-lost-recording) is the open-source version of it, and [Tella's browser storage limits](/articles/tella-recording-storage-limits) is the cloud-first one. If the reason you cannot get into Loom to try any of this is the account, [Loom login since the Atlassian move](/articles/loom-login-atlassian) has the fix.
+
+## Record to your disk first
+
+Prequel keeps each take as a folder under `~/Movies/Prequel` on your Mac, and the folder holds ordinary files: `screen.mp4`, `camera.mp4`, `mic.m4a` and `system.m4a`, with a `session.json` that says when each started. [Where files live](/docs/where-files-live) lists every one.
+
+Nothing in recording or export needs the internet. A link is something you ask for afterwards, from the finished export.
+
+![The Prequel editor with the Audio panel open, showing separate microphone and system audio tracks](/articles/prequel/editor-audio.webp)
+
+Record your next long take in Prequel and keep the files.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

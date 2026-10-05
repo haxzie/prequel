@@ -1,0 +1,45 @@
+A Loom video that says it is processing is waiting on an upload. Whether that finishes depends on your connection, the length of the recording and which Loom you used. This is what Loom's own help pages say to do, in order.
+
+## How long processing should take
+
+Loom says processing time depends on four things: the duration of the video, the quality you recorded in, your upload speed, and how many videos are processing at once.
+
+On a strong, stable connection a video under 10 minutes at 720p should take no more than a few minutes. Loom recommends at least 5 Mbps of upload speed. A dropout during recording or during processing can stop the upload completing.
+
+## When to stop waiting
+
+Loom's instruction is to wait at least 30 minutes and not close the tab until you have played the video you made. After 30 minutes, what you do depends on the recorder.
+
+- **Desktop app:** quit it and reopen it, give it a few minutes, and refresh the video link. Then try `loom.com/recover-videos` and paste the video ID from the link. That page only works for videos you own that were recorded with the desktop app, either screen only or screen with camera.
+- **Chrome extension:** "Unfortunately we do not have a recovery method for these videos at the moment."
+- **Mobile apps:** the same.
+
+If the recovery page cannot find all the parts, Loom asks you to send what is missing to Support. The Mac folder to look in is `~/Movies/Loom/Temporary/`, and the full steps are in [Loom crashed and lost your recording](/articles/loom-lost-recording-recovery).
+
+## The upload error
+
+If you see "We experienced an error while uploading your video", Loom says there was likely an interruption to your connection. Restart the device and check the app is up to date. A failed preview that never processes is filtered out of your dashboard after 24 hours.
+
+Loom puts the failure rate for crashes and stuck videos at less than 0.1% of all videos. For one person that is still the whole recording.
+
+![A thread on r/techsupport about ongoing bugs in the Loom desktop app](/blog/quotes/loom-ongoing-bugs.webp)
+
+[Read it on r/techsupport](https://www.reddit.com/r/techsupport/comments/w2w43f/ongoing_bugs_using_loom_software_for_video/)
+
+## The pattern behind it
+
+Processing happens on Loom's servers after an upload. Any recorder that works this way has the same weak point: the video is not yours to use until a server says so. Tella works the same way, and [Tella export stuck](/articles/tella-export-stuck) is the same page for that tool.
+
+Two Loom problems often travel with this one. [Why your Loom recording is not the quality you set](/articles/loom-video-quality) covers the recording once it plays, and [how to download a Loom video as an MP4](/articles/download-loom-video-mp4) covers getting a file out once it does.
+
+## Export on your own Mac
+
+Prequel renders an export on the Mac's video hardware. The button fills as it goes, you can keep editing while it runs, and closing the dialog does not stop it. When it is done the file is on your disk: drag it into Slack or Mail, reveal it in Finder, or copy it. See [export](/docs/export).
+
+A link, if you want one, is made afterwards by **Share video**, from the finished file.
+
+![The Prequel timeline with a recorded clip and zoom blocks beneath it](/articles/prequel/zoom-timeline.webp)
+
+Make your next video without waiting for a server.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

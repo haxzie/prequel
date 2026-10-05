@@ -8,9 +8,11 @@
  *    "body":"optional excerpt, kept short","score":"212","comments":"87",
  *    "url":"https://www.reddit.com/r/macapps/comments/..."}
  *
- * `kind` is reddit | hn | x | g2 and only changes the badge and the labels on
- * the meta line. `where` is the subreddit, the @handle, "Hacker News" or
- * "G2". `score` and `comments` are strings so "1.2k" survives.
+ * `kind` is reddit | hn | x | g2 | github and only changes the badge and the
+ * labels on the meta line. `where` is the subreddit, the @handle, "Hacker News",
+ * "G2" or the `owner/repo` an issue lives in. `score` and `comments` are
+ * strings so "1.2k" survives. A github card also takes `state` ("Open" or
+ * "Closed"), which is what makes an issue open for two years worth drawing.
  *
  * Why a drawing and not a screenshot. Reddit serves headless Chrome a "prove
  * your humanity" page and redirects a plain fetch of old.reddit.com to login,
@@ -55,6 +57,7 @@ const MARKS = {
   reddit: `<svg viewBox="0 0 20 20" width="22" height="22"><circle cx="10" cy="10" r="10" fill="#ff4500"/><path fill="#fff" d="M16.67 10a1.46 1.46 0 0 0-2.47-1 7.12 7.12 0 0 0-3.85-1.23l.65-3.08 2.13.45a1 1 0 1 0 1-.93 1 1 0 0 0-.96.68l-2.38-.5a.16.16 0 0 0-.19.12l-.73 3.44a7.14 7.14 0 0 0-3.89 1.23 1.46 1.46 0 1 0-1.61 2.39 2.87 2.87 0 0 0 0 .44c0 2.24 2.61 4.06 5.83 4.06s5.83-1.82 5.83-4.06a2.87 2.87 0 0 0 0-.44 1.46 1.46 0 0 0 .64-1.57zM8 11a1 1 0 1 1 1 1 1 1 0 0 1-1-1zm5.48 2.68a3.39 3.39 0 0 1-2.48.85 3.39 3.39 0 0 1-2.48-.85.2.2 0 0 1 .28-.28 3 3 0 0 0 2.2.73 3 3 0 0 0 2.2-.73.2.2 0 0 1 .28.28zM13 12a1 1 0 1 1 1-1 1 1 0 0 1-1 1z"/></svg>`,
   hn: `<svg viewBox="0 0 20 20" width="22" height="22"><rect width="20" height="20" rx="3" fill="#ff6600"/><path fill="#fff" d="M9.1 11.4 5.6 4.5h1.9l2.5 5.2 2.5-5.2h1.9l-3.5 6.9v4.1H9.1z"/></svg>`,
   x: `<svg viewBox="0 0 20 20" width="22" height="22"><rect width="20" height="20" rx="3" fill="#111"/><path fill="#fff" d="M4.5 4h3.1l2.7 3.8L13.6 4h1.9l-4.3 5 4.6 7h-3.1l-3-4.2L6 16H4.1l4.7-5.4z"/></svg>`,
+  github: `<svg viewBox="0 0 16 16" width="22" height="22"><path fill="#1f2328" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`,
   g2: `<svg viewBox="0 0 20 20" width="22" height="22"><circle cx="10" cy="10" r="10" fill="#ff492c"/><text x="10" y="14" text-anchor="middle" font-family="-apple-system, Helvetica, Arial" font-weight="700" font-size="10" fill="#fff">G2</text></svg>`,
 };
 const BADGE = {
@@ -62,8 +65,9 @@ const BADGE = {
   hn: { label: "Hacker News" },
   x: { label: "X" },
   g2: { label: "G2" },
+  github: { label: "GitHub" },
 }[p.kind];
-if (!BADGE) throw new Error(`kind must be reddit | hn | x | g2, not ${p.kind}`);
+if (!BADGE) throw new Error(`kind must be reddit | hn | x | g2 | github, not ${p.kind}`);
 
 // Reddit and HN count upvotes and comments; X counts likes and replies; a
 // G2 review has a star rating and no thread. The label has to match the
@@ -73,6 +77,7 @@ const META = {
   hn: [p.score && `${esc(p.score)} points`, p.comments && `${esc(p.comments)} comments`],
   x: [p.score && `${esc(p.score)} likes`, p.comments && `${esc(p.comments)} replies`],
   g2: [p.score && `${esc(p.score)} / 5`],
+  github: [p.state && esc(p.state), p.comments && `${esc(p.comments)} comments`],
 }[p.kind].filter(Boolean);
 
 // Long bodies make a tall card that crowds the post; the point is the

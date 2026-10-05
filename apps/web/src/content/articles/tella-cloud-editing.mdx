@@ -1,0 +1,44 @@
+Tella calls its Mac app a recorder, and the editor is somewhere else. That split is why people wait. This page sticks to what Tella's own help centre says, because the order of events is the whole story.
+
+## The order of events
+
+From Tella's documentation:
+
+1. The Mac or Windows app records, and "temporarily saves the video file to your Mac's local storage before uploading it to the cloud."
+2. The video is uploaded to your workspace.
+3. The editor is a web page. It "draws your video with your computer's graphics processor through WebGPU", which is why it needs a newer browser than recording does.
+4. Editing is desktop-only everywhere. Mobile devices can view videos and record in quick mode, but "editing remains desktop-only".
+
+None of that is a bug. It is how the product is built, and its consequences are things you can plan around.
+
+## What it asks of you
+
+Tella states a minimum upload speed: "The minimum upload speed for reliable use of Tella is between 2.5 and 5 Mbps." It also has a help page titled "Why is my video taking so long to upload?", which tells you how common the question is.
+
+Because the recording sits on local disk until it uploads, Tella also tells you not to delete anything in its folder while a video is uploading: those files are the only copies. The disk limits that follow from this are in [Tella stopped recording](/articles/tella-recording-storage-limits).
+
+## Two sign-ins for one product
+
+The app records and the website edits, and each has its own login. Tella says that if a recording you just made on the Mac app will not open for editing, the app and your browser are usually signed in to different Tella accounts. The related problems of workspaces and missing recordings are in [can't find your Tella recording](/articles/tella-cant-find-recording).
+
+## When the editor is the slow part
+
+Once you are in the editor, speed depends on your graphics hardware and browser, not only your connection. [Why Tella's editor feels slow](/articles/tella-editor-slow) covers Low-res mode, and [Tella editor won't load](/articles/tella-editor-wont-load) covers the four errors it shows when WebGPU is not available.
+
+If an export is what you are waiting for, [Tella export stuck](/articles/tella-export-stuck) is next. And [Loom stuck in processing](/articles/loom-stuck-in-processing) is the same wait in another cloud-first tool.
+
+For a wider comparison, see [the best Loom alternatives for Mac](/blog/loom-alternatives-mac) and the [Tella page](/alternatives/tella).
+
+## Edit on your Mac
+
+Prequel's editor opens by itself when you stop recording, on the take you just made. There is nothing to import and nothing to upload before you can cut. The edit lives in a `project.json` beside the recording in `~/Movies/Prequel`, and the video tracks are never rewritten, so deleting the edit puts a recording back as it was captured. See [where files live](/docs/where-files-live) and the [editor overview](/docs/editor-overview).
+
+Waiting also adds to what a video really costs to make: [how long it takes to make a product demo video](/articles/how-long-does-it-take-to-make-a-demo-video) breaks the time down.
+
+Sharing is a separate, optional step: **Share video** uploads the exported file and gives you a link.
+
+![The Prequel editor, open on a recording with the Layout panel showing](/articles/prequel/editor-layout.webp)
+
+Record something short and see how soon you can start cutting.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

@@ -1,0 +1,53 @@
+A crash that eats a recording is the worst thing a recorder can do. Cap's was reported for months, and the maintainer says it is fixed. Here is what happened to the people it hit, and what to do if it happens to you.
+
+## The error
+
+In January 2026 a user reported that Cap crashed one to 15 minutes into a recording with: "Task mux-video failed: Error queueing video frame: send_video_frame/WriterFailed/The operation could not be completed." Their setup was an external display, instant mode, a webcam and a USB microphone. They said it happened reliably.
+
+![GitHub issue 1535 on CapSoftware/Cap, Crash when recording: Task mux-video failed, closed with 15 comments](/blog/quotes/cap-1535-writerfailed.webp)
+
+[Read issue 1535 on GitHub](https://github.com/CapSoftware/Cap/issues/1535)
+
+## What caused it for different people
+
+The thread collected several setups, and they differ.
+
+- One user narrowed it down to a combination of display scaling and the audio input device, on a MacBook Air M2 with an external monitor, a custom scaled resolution and instant mode on.
+- Another hit the same error the moment they started a camera-only recording in studio mode, with the FaceTime camera and microphone and no unusual display scaling. A third confirmed that other modes worked.
+- Others wrote that it kept happening after a while, and one called it "arguably the most annoying bug ever" and said they lost several hours to it.
+
+In April 2026 the maintainer replied that it was frustrating, that all resources were on it, and offered $20 for logs and $200 for a fix.
+
+## What the maintainer says now
+
+On 2 August 2026 he wrote: "We fixed the instant mode muxer along with mic recovery handling, which addressed this WriterFailed crash (a7b2f146c). This should be in the latest release, please reopen if it still crashes for you." The next day he wrote that his agent had been a little hasty closing the stale issue, but that it was solved months ago.
+
+So if you are on a current version, this specific crash should be gone. If you are on an older one, update first.
+
+## If a recording was lost
+
+1. **Keep the folder.** Do not delete the `.cap` recording. In one Windows report, issue 2019, a silent crash left the folder without `project-config.json` and with only orphaned video segments. That is the state to keep and attach to a report.
+2. **Find the logs.** On a Mac they are in `~/Library/Logs/so.cap.desktop`, which is where the maintainers ask you to look.
+3. **Report it with details.** Give the Cap version, the macOS version, your display setup and the mode you used. The maintainers close issues with no version or logs, as one was in August.
+4. **Check the other open crash.** Issue 2019 (a silent crash on Windows 11, open since July 2026) and issue 2055 (a recording stopping in the middle, open since July 2026) are still open.
+
+## Lowering the risk, on any recorder
+
+- Record a 15-second test with your real setup and play it back before a long session.
+- Check the file a few minutes in, not at the end.
+- Update the recorder and macOS.
+- Avoid changing display scaling or audio devices mid-session.
+
+The same family of failure is in [Loom crashed and lost your recording](/articles/loom-lost-recording-recovery), and the memory side of it is in [Cap's CPU and memory use](/articles/cap-cpu-memory-recording). If the recording survived but had no sound, read [Cap recorded no microphone audio](/articles/cap-no-microphone-audio), and if it cannot export, [Cap export problems](/articles/cap-export-problems).
+
+[The best Cap alternatives for Mac](/blog/cap-alternatives) compares the options, and [Cap's paid tiers](/articles/how-to-cancel-cap) are covered separately.
+
+## Where Prequel keeps a take
+
+Prequel keeps each take as a folder under `~/Movies/Prequel` on your Mac. It holds ordinary files: `screen.mp4`, `camera.mp4`, `mic.m4a` and `system.m4a`, with a `session.json` that says when each track started. The folder is self-contained, so you can copy it to another Mac with Prequel installed and it opens the same. See [where files live](/docs/where-files-live).
+
+![The Prequel timeline with a recorded clip and zoom blocks under it](/articles/prequel/zoom-timeline.webp)
+
+Record a short test in Prequel and open the take folder in Finder.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

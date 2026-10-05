@@ -1,0 +1,52 @@
+Cap is an open-source recorder, which means its problems are public and numbered. The one about memory has been open for two years.
+
+## The oldest open issue
+
+In October 2024 Cap's own maintainer filed issue 109, "Reduce CPU / memory usage whilst recording", and attached a $350 bounty to it. Its text says some users are reporting memory creeping to 5 GB or more in longer recordings, from about two minutes.
+
+![GitHub issue 109 on CapSoftware/Cap, Reduce CPU / memory usage whilst recording, open with 11 comments](/blog/quotes/cap-109-cpu-memory.webp)
+
+[Read issue 109 on GitHub](https://github.com/CapSoftware/Cap/issues/109)
+
+In the thread he said he had reproduced it on an iMac with 8 GB of memory: recording with a webcam and microphone, about two minutes in, memory started to rise until it passed 8 GB and the app crashed. Others had reported it on M1 and M2 Macs across macOS 14 and 15. A user on a MacBook Pro M4 with 16 GB wrote in May 2025 that Cap could take all of their RAM and then crash. A contributor submitted a pull request for the bounty in May 2026.
+
+As of 5 October 2026 the issue is open.
+
+## The related reports that were closed
+
+Three other issues describe the same family of problem. All three were closed in August 2026 by the maintainer, who said each was believed resolved and asked for a re-test on the latest version.
+
+- **Issue 586, "Laggy system while recording".** A user recording a 4K screen with a 1080p webcam saw the CPU at 100% with the GPU unused. A developer replied in 2025 that Cap encodes display video through VTEncoder in AVFoundation because it should be hardware accelerated, and that 4K might need different configuration. The maintainer closed it saying hardware encoder usage had been substantially reworked.
+- **Issue 988, "Using all available CPU" on an M4 Max.** Closed with the same note about recording performance on macOS being reworked.
+- **Issue 1673, "Cap heats up a lot".** The reporter said a laptop with camera and microphone on was noticeably warm within a few minutes, even in recordings of three to ten minutes. It was closed because there was no version or log to work from, with an invitation to re-file.
+
+So the honest summary is that the CPU and heat reports were handled by a rework, and the memory one has not been closed. A thread on r/opensource shows how it reads from outside: someone looking for a Tella-style recorder says they tried Cap and found it pretty unstable.
+
+![A thread on r/opensource asking for an open-source alternative to Tella after trying Cap, which the poster found unstable](/blog/quotes/cap-unstable-opensource-thread.webp)
+
+[Read it on r/opensource](https://www.reddit.com/r/opensource/comments/1oqza7t/any_opensource_web_alternative_to_tellacom_tried/)
+
+## Check your own recording
+
+Do not rely on a thread, which may be a year old. Take two minutes.
+
+1. Open **Activity Monitor** and the **Memory** tab.
+2. Start a recording with the camera and microphone on, as you would normally.
+3. Watch the recorder and any helper processes for five minutes.
+4. If memory climbs steadily and never levels off, stop and update the app. If it still climbs, file an issue with your version, macOS version and logs. The maintainers ask for those every time.
+
+If a long recording crashed and you lost it, [Cap crashed mid-recording](/articles/cap-crash-lost-recording) is the next page. For heat on the editing side, [Screen Studio's overheating](/articles/screen-studio-overheating) is the same problem in a different app. And if you are weighing the paid tiers, [how to cancel Cap](/articles/how-to-cancel-cap) lists what each costs.
+
+Other Cap problems that people report are in [Cap export problems](/articles/cap-export-problems), [Cap recorded no microphone audio](/articles/cap-no-microphone-audio) and [Cap records the screen region, not the window](/articles/cap-window-capture-region). For the wider field, see [the best Cap alternatives for Mac](/blog/cap-alternatives) and [open-source screen recorders for Mac](/blog/open-source-screen-recorders-mac).
+
+## What Prequel does while it records
+
+Prequel captures with ScreenCaptureKit and encodes with VideoToolbox, the Mac's hardware video encoder. The microphone's icon in the dock fills with the live input level while it is on, so you can see it working before you start. See [camera and microphone](/docs/camera-and-microphone).
+
+I will not say it uses less memory than Cap, because I have not measured your recording. The test above works on any recorder, so run it on Prequel during the trial.
+
+![The Prequel editor with the Audio panel open, showing microphone and system audio](/articles/prequel/editor-audio.webp)
+
+Run the same five-minute test on Prequel.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

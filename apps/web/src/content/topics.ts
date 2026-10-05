@@ -5,10 +5,12 @@
  * group over both kinds of page, and two vocabularies would put "Audio" and
  * "Audio and camera" side by side as though they meant different things.
  *
- * Six and not more. There are fourteen pages behind them; a topic with one
- * page in it is a filter that shows the reader an almost empty grid, which
- * reads as a broken page rather than a small one. Add a topic when there are
- * three or more pages to file under it.
+ * A topic with one page in it is a filter that shows the reader an almost
+ * empty grid, which reads as a broken page rather than a small one. Add a topic
+ * when there are three or more pages to file under it. `fixes` and `pricing`
+ * were added together with the first batch of articles written from what
+ * people post about other recorders: a symptom, or a bill, each with its own
+ * page, and far more than three of either.
  *
  * The key is what goes in the URL (`?topic=audio`), so it is short, lowercase
  * and never changes once shipped; the label is what the sidebar shows.
@@ -20,6 +22,8 @@ export const TOPICS = {
   captions: "Captions",
   export: "Export and formats",
   sharing: "Sharing",
+  fixes: "Fixes",
+  pricing: "Pricing and cancelling",
 } as const;
 
 export type Topic = keyof typeof TOPICS;

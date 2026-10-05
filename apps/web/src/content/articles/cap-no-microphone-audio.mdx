@@ -1,0 +1,48 @@
+You watched the level meter move while you talked, and then the recording had no sound. That is the report on Cap's issue 1740, and it has an unusually clear pattern.
+
+## The report
+
+A user wrote in April 2026 that while recording microphone audio, the app showed the microphone as active and receiving sound, but in the studio afterwards there was no waveform and no audio. It happened with more than one microphone.
+
+![GitHub issue 1740 on CapSoftware/Cap, No microphone audio in studio after recording, closed with 19 comments](/blog/quotes/cap-1740-no-microphone.webp)
+
+[Read issue 1740 on GitHub](https://github.com/CapSoftware/Cap/issues/1740)
+
+## What the 19 comments found
+
+- **The file was missing.** One user looked inside the package and found no audio file in `segment-0/`, and none mentioned in the recording metadata.
+- **It depended on the mode.** The same user found audio worked when recording a window, but not when recording only the camera, an area or a display. Another said it worked in studio mode capturing a screen and failed without one. Their logs showed `has_audio=false`.
+- **It could fail on the second take.** A user wrote that it seemed to work for the first recording but the second had no audio input, and that they had to toggle the microphone off and on in the interface to make it record again, even when it said it was on.
+- **You only find out afterwards.** "This is super annoying, because you only find out after a long recording session."
+- **One user gave up.** They wrote "Yeah I switched to OBS".
+
+## What the maintainer says
+
+A user confirmed on 25 June 2026 that version 0.5.1 appeared to have solved the lost audio problem, and added that system audio does not record in camera-only mode but does in the screen capture modes. On 30 June the maintainer closed the issue: "There should be no audio issues in any of the latest versions."
+
+If you are on an older version, update. If you are on a current one and still see it, the useful thing is a report with logs.
+
+## Check before a long take
+
+The lesson is the same on any recorder, because the failure is silent.
+
+1. Record 10 seconds in the mode you will use.
+2. Play it back with sound on.
+3. Look for the audio waveform in the editor.
+4. If you use more than one mode, test each, and test a second recording in the same session.
+
+The cost is under a minute. The alternative is learning at the end of an hour.
+
+Related problems from the same tool are in [Cap crashed mid-recording](/articles/cap-crash-lost-recording), [Cap's memory use](/articles/cap-cpu-memory-recording) and [Cap export problems](/articles/cap-export-problems), and the other tools' sound problems are in [why screen recording audio drifts out of sync](/articles/screen-recording-audio-out-of-sync). For the wider choice, see [the best Cap alternatives for Mac](/blog/cap-alternatives), and for a how-to on the Mac's own sound, [record your Mac screen with internal audio](/blog/record-mac-screen-with-internal-audio).
+
+## How Prequel shows you
+
+The microphone's icon in the dock fills with the live input level while it is on, so you see it hearing you before you press record. After the take, the editor's **Audio** panel lists the microphone and the Mac's own sound as separate sources, each with an **Include** switch and a **Volume**. If neither was recorded, the panel says there is nothing to mix.
+
+The takes are plain files too: `mic.m4a` and `system.m4a` sit in the take folder under `~/Movies/Prequel`, so you can check one exists without opening the app. See [audio](/docs/audio) and [camera and microphone](/docs/camera-and-microphone).
+
+![The Prequel Audio panel with Include switches, volume sliders and noise reduction for the microphone and system audio](/articles/prequel/audio-panel.webp)
+
+Test your microphone in Prequel before the take that matters.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

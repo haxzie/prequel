@@ -1,0 +1,50 @@
+Three open issues on Cap's tracker describe exports that go wrong in three different ways. Each is public, numbered and dated, so you can check whether it is still open.
+
+## Flickering in the exported file
+
+Issue 1557, opened in January 2026, reports that the exported video "flashes or flickers constantly, making it impossible to watch", and that both the preview in the app and the exported file are laggy.
+
+![GitHub issue 1557 on CapSoftware/Cap, Rendered video has flickering artifacts and severe playback lagging, open with 11 comments](/blog/quotes/cap-1557-flicker.webp)
+
+[Read issue 1557 on GitHub](https://github.com/CapSoftware/Cap/issues/1557)
+
+Other users joined it. One, on a MacBook Air M4 with macOS Tahoe 26.2, wrote that everything looks fine while editing but the problem appears in the exported file. Another wrote: "Flickering. Not sure why or how this started happening all of a sudden. Completely unusable, wasted a whole recording." One suggested a workaround: downgrade to version 0.4.0 and re-export.
+
+## Stuck at the last frame
+
+Issue 1940, opened in June 2026, is from a user on a Mac mini M4 Pro with 24 GB and macOS 26.2. They reported that Cap 0.5.1 could not export any video, recording one and exporting at 720p, and that it got stuck when finishing, at the last frame. They attached logs. The maintainer replied that he would look into them. It is open.
+
+## A panic before it starts
+
+Issue 2163, opened on 29 August 2026, is titled "[macOS 26.3] Export panics on NULL +[NSSavePanel savePanel] before rendering". The report says that on version 0.5.9 the editor freezes, so exporting from the interface is impossible. Open.
+
+## At a glance
+
+| Issue | What happens                                      | Opened          | State on 5 October 2026 |
+| ----- | ------------------------------------------------- | --------------- | ----------------------- |
+| 1557  | Exported video flickers and lags                  | 27 January 2026 | Open                    |
+| 1940  | Export stuck at the last frame, 0.5.1, macOS 26.2 | 20 June 2026    | Open                    |
+| 2163  | Panic before rendering, 0.5.9, macOS 26.3         | 29 August 2026  | Open                    |
+
+These are different failures on different versions, not one bug. They do share one lesson, which is that an export problem is the one you meet last, after all of the work is done.
+
+## What to do
+
+1. **Export a 10-second section first** on any new version or macOS release.
+2. **Keep the project.** Do not delete the recording until you have a file you have watched.
+3. **Try the older version** if a flicker started after an update, as one user suggested.
+4. **Report with logs.** Give the version, the macOS version and the log from the desktop app.
+
+The same wait comes up in [Screen Studio export slowness](/articles/screen-studio-export-slow) and [Tella export stuck](/articles/tella-export-stuck). Other Cap problems are in [Cap crashed mid-recording](/articles/cap-crash-lost-recording), [Cap's memory use](/articles/cap-cpu-memory-recording), [Cap recorded no microphone audio](/articles/cap-no-microphone-audio) and [Cap records the screen region, not the window](/articles/cap-window-capture-region).
+
+See [the best Cap alternatives for Mac](/blog/cap-alternatives) and [Screen Studio vs Cap](/blog/screen-studio-vs-cap) for the comparison, and [how to cancel Cap](/articles/how-to-cancel-cap) for its paid tiers.
+
+## How Prequel exports
+
+**Export** in the editor opens a dialog with the video format (MP4 with H.264, HEVC or GIF), the frame rate and the video quality, with the resulting size shown beside it. Rendering runs on the Mac's video hardware, the button fills as it goes, you can keep editing while it runs, and closing the dialog does not stop it. When it is done the video plays in the dialog, ready to drag into Slack or Mail. See [export](/docs/export).
+
+![The Prequel editor with the Layout panel open and a recording ready to export](/articles/prequel/editor-layout.webp)
+
+Export a short recording in Prequel and watch the file before you commit to it.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

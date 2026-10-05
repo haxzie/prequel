@@ -1,0 +1,58 @@
+Voice that runs behind the mouth, or a cursor that wanders off the click it was meant to follow, is one of the commonest screen recording faults. It has two different causes and one test that tells them apart.
+
+## Two problems that look the same
+
+- **A fixed delay.** The sound is the same distance from the picture throughout. Something in the signal path is slow: a Bluetooth headset, a USB interface, a camera with its own processing.
+- **Drift.** The gap starts at nothing and grows. Two devices are running at slightly different speeds, and the longer the recording, the further they separate.
+
+The second is the one that gets worse in long takes, and the one that cannot be fixed by offsetting a track.
+
+## Clap test
+
+1. Record 20 seconds with the camera and the microphone you will really use.
+2. Clap once at the start and once at the end.
+3. Look at both claps, the sound against the picture.
+
+If the gap is the same at both, you have a delay. If it is wider at the end, you have drift. Do it once with the headset you actually wear, because Bluetooth is a common culprit.
+
+## What the tools document
+
+**Tella.** Its help centre says: "Can I resync audio in the Tella editor? No. Tella does not have a way to nudge or realign audio against video inside the editor. If a recording came out of sync, the reliable fix is to correct it at the source and re-record." It explains that the microphone and camera deliver to the computer at slightly different rates, and offers a per-microphone delay in the Mac app. See [Tella audio out of sync](/articles/tella-audio-out-of-sync).
+
+A user wrote on r/ProductivityApps that they had lag between sound and image in both Tella's web and desktop apps.
+
+![A thread on r/ProductivityApps about lag between sound and image in Tella and Loom](/blog/quotes/tella-lag-sound-image.webp)
+
+[Read it on r/ProductivityApps](https://www.reddit.com/r/ProductivityApps/comments/1pc87av/tella_loom_screen_recording_app_alternative/)
+
+**Cap.** An open issue, 2144, reports that when recording more than about five minutes, the cursor gradually becomes out of sync with the video. A contributor wrote that cursor events and screen frames are stamped on the same clock at capture, and that the frame's own timestamp is then thrown away.
+
+![GitHub issue 2144 on CapSoftware/Cap, Cursor gradually becomes out of sync with video during longer recordings, open](/blog/quotes/cap-2144-cursor-drift.webp)
+
+[Read issue 2144 on GitHub](https://github.com/CapSoftware/Cap/issues/2144)
+
+**Screen Charm.** Its public changelog lists, in January 2026, "Improved webcam and microphone sync while recording" and "Fixed system audio sync", and in June 2026, "Fixed a lip-sync issue between the webcam overlay and the microphone audio."
+
+Sync is a hard problem that every recorder has worked on, and these are the public records of that work.
+
+## What to change
+
+1. **Use a wired microphone** or the Mac's own for a first test.
+2. **Record the camera and the microphone on the same device** where you can. An external webcam and a separate microphone are two clocks.
+3. **Keep recordings short** if you can split the topic, because drift grows with length.
+4. **Test the mode you will use.** Sync can differ between screen, window and camera-only recording.
+5. **Re-record a bad take** if the tool cannot offset it, which is often quicker than repairing it.
+
+The same hardware also causes a related problem in [Cap recorded no microphone audio](/articles/cap-no-microphone-audio), and a related limit in [Tella is not recording computer audio](/articles/tella-system-audio-not-recording). For Mac audio routing, see [how to record your Mac screen with internal audio](/blog/record-mac-screen-with-internal-audio), and for a checklist, [before you press record](/articles/before-you-press-record).
+
+## How Prequel keeps tracks apart
+
+Prequel records the camera, the microphone and the Mac's system audio as separate files in the take folder: `camera.mp4`, `mic.m4a` and `system.m4a`. A `session.json` records when each started, and the editor places them in time from that. The timeline shows the waveform, so a clap is easy to find.
+
+![The Prequel editor with the Audio panel open and a waveform on the timeline](/articles/prequel/editor-audio.webp)
+
+The **Audio** panel gives each source an **Include** switch and a **Volume**, with noise reduction on the microphone. See [audio](/docs/audio), [where files live](/docs/where-files-live) and the [frame rate](/glossary/frame-rate) entry, which explains why video timing matters.
+
+Run the clap test in Prequel with your real headset.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

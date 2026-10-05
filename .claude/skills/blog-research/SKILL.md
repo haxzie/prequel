@@ -109,8 +109,13 @@ G2 (the two- and three-star reviews, where the specific complaints are) and
 X. For an alternatives post, record enough of each to draw a card: title
 verbatim, subreddit or handle, author, age, score, comment count, first
 paragraph. `[[alternatives-posts]]` renders these.
-`firecrawl_scrape` refuses reddit.com outright, so a thread's title, snippet
-and URL are all that comes back, and that is enough for a citation. Queries
+`firecrawl_scrape` refuses reddit.com outright, so a search result's title,
+snippet and URL are enough for a citation. To read a thread's actual text, scrape
+the Redlib mirror instead: swap the host for `safereddit.com` and keep the path.
+That worked every time on 2026-10-05, and it is the only way to confirm who wrote
+a quote, because a card is evidence only if the words on it are the post's and
+not a commenter's. Search results mislabel comments as posts often enough that
+reading the thread is not optional for anything you will quote. Queries
 that work: `"<tool> pricing" reddit`, `"<tool> alternatives"`, `"<tool>
 watermark"`, `"<tool> slow"`, `record system audio mac reddit`.
 
@@ -137,9 +142,11 @@ number the writer cannot link is a number the writer cannot use.
 ## What a source has to pass
 
 - Live, and loading the content the brief says it does. `firecrawl_scrape` it;
-  a 200 that serves "Access is temporarily restricted" is not a source. G2,
-  Capterra and Trustpilot all answer this way to a headless fetch and are not
-  usable here.
+  a 200 that serves "Access is temporarily restricted" is not a source.
+  Capterra and its sister sites answer this way to a headless fetch. G2 and
+  Trustpilot returned full page bodies on 2026-10-05, so try them. Trustpilot is
+  where the dated, specific bug reports are, and it is read for evidence only:
+  it is not a citation host, so a post never links it.
 - Vendor page over review site. Detail page over summary. They disagree more
   often than you would expect.
 - Dated. Prices, stats and macOS behaviour all carry the date checked.

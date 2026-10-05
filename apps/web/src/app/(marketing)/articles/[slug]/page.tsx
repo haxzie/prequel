@@ -53,6 +53,9 @@ export default async function ArticlePage({ params }: PageProps<"/articles/[slug
   if (!article) notFound();
 
   const { default: Body } = await import(`@/content/articles/${slug}.mdx`);
+  const related = (article.related ?? [])
+    .map((related) => findArticle(related))
+    .filter((related) => related !== undefined);
 
   return (
     <Container className="py-20">
@@ -105,6 +108,32 @@ export default async function ArticlePage({ params }: PageProps<"/articles/[slug
             ))}
           </dl>
         </section>
+
+        {/* Under the FAQ, where a reader who has what they came for looks for
+            what else is on offer. Resolved from the registry rather than
+            written out, so a title edited in `articles.ts` is edited here
+            too; a slug that no longer exists is skipped rather than rendered
+            as a dead link, and `scripts/check-articles.sh` is what says so. */}
+        {related.length > 0 && (
+          <section className="mt-16">
+            <h2 className="text-2xl font-medium tracking-tight text-fg">Keep reading</h2>
+            <ul className="mt-6 flex flex-col gap-px overflow-hidden rounded-2xl border border-line bg-line">
+              {related.map((item) => (
+                <li key={item.slug} className="bg-bg">
+                  <Link
+                    href={`/articles/${item.slug}`}
+                    className="block px-6 py-5 transition-colors hover:bg-elevated"
+                  >
+                    <span className="text-[0.9375rem] font-medium text-fg">{item.title}</span>
+                    <span className="mt-1 block text-sm leading-relaxed text-muted">
+                      {item.excerpt}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Three blocks, matching the posts. The FAQ data comes off
             `article.faq`, the same array the markup above renders. */}

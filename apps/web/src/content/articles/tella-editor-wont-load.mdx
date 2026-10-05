@@ -1,0 +1,47 @@
+Tella's editor refuses to start in four specific ways, and each one is named in its help centre. They all trace to one requirement.
+
+## The requirement
+
+Tella says the editor "draws your video with your computer's graphics processor through WebGPU, so it needs a newer browser than recording and watching do." Everything below follows from that sentence.
+
+## The four messages
+
+| Message                               | What Tella's help centre says                                                                                                 |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Hardware acceleration isn't available | Graphics acceleration must be on in your browser, and the editor does not run in virtual machines or remote desktop sessions. |
+| Update your browser to use the editor | The browser is too old. Safari needs version 26 or later for the editor, against 16.4 for recording.                          |
+| Your video preview stopped working    | Tella has a page titled Fix Your video preview stopped working in the editor.                                                 |
+| We couldn't load your video preview   | Tella has a page for this too.                                                                                                |
+
+Tella has a dedicated help page for each. For the last two, the same checks below are the place to start.
+
+## What to change
+
+1. **Turn hardware acceleration on** in your browser's settings and restart it.
+2. **Update the browser.** For Safari, check you are on version 26 or later.
+3. **Leave the virtual machine.** Tella says the editor does not run in them or in remote desktop sessions.
+4. **Try Chrome** if you are on another browser, to rule the browser out.
+5. **Check for extensions.** Tella names a client-side exception that is usually caused by one.
+
+## Other named errors
+
+- **Something went wrong.** Covers a recording that cannot start, stop or finish.
+- **Failed to start camera: Access is denied.** Usually a Windows privacy setting.
+
+Linux is a different case. Tella's help centre says people have used Tella on Linux and Ubuntu in the past, but there were issues with accessing the screen, camera and microphone.
+
+## Why this is a Tella-shaped problem
+
+An editor in a browser tab inherits everything about the browser. [Why Tella's editor feels slow](/articles/tella-editor-slow) covers the same dependency from the speed side, and [why Tella makes you wait before you can edit](/articles/tella-cloud-editing) covers the order of events. If your recording is missing as well as the editor, [can't find your Tella recording](/articles/tella-cant-find-recording) is next, and [Tella stopped recording](/articles/tella-recording-storage-limits) covers the disk side.
+
+For a wider comparison, see the [Tella page](/alternatives/tella) and [the best Loom alternatives for Mac](/blog/loom-alternatives-mac).
+
+## An editor with no browser settings
+
+Prequel's editor is part of the Mac app, so there is no browser to update and no graphics setting to turn on. It opens by itself when you stop recording. It needs an Apple Silicon Mac on macOS 14 or later, and the Screen Recording permission: see [install](/docs/install) and [permissions](/docs/permissions).
+
+![The Prequel editor with a recording open and the Layout panel showing](/articles/prequel/layout-panel.webp)
+
+Open the editor without touching a browser setting.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

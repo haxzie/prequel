@@ -1,0 +1,47 @@
+If Loom sends you in circles when you try to sign in, you have run into the move to Atlassian. It is common enough to have its own thread, and there is a fix that a user reported working.
+
+## What the move changed
+
+Loom says you are now in Atlassian if you signed up after February 2026, or if your older account has been integrated. Your account settings page says "Your Profile is linked to Atlassian" when that is true.
+
+The practical effect is that signing in goes through Atlassian's single sign-on, and settings, users and billing for the workspace moved to Atlassian Administration. A poster on r/atlassian put it this way.
+
+![A thread on r/atlassian titled Soo... loom isn't the same since the takeover?, about login redirects and support asking for a workspace URL](/blog/quotes/loom-login-takeover.webp)
+
+[Read it on r/atlassian](https://www.reddit.com/r/atlassian/comments/1qxjjb7/soo_loom_isnt_the_same_since_the_takeover/)
+
+They described being redirected all over the place, a support centre that mixes Atlassian and Loom articles, and a contact form that asks for a workspace URL they could not find because they could not log in.
+
+## The fix that worked for one person
+
+A commenter in that thread described the cause as stale session data left over from single sign-on across several domains, and gave steps. The poster who got stuck replied that it helped them out of the loop. The steps, in the commenter's words condensed:
+
+1. Open `atlassian.com` or `id.atlassian.com`.
+2. Open your browser's developer tools and go to the **Application** tab (in Chrome).
+3. Under **Storage**, expand **Local storage**, select each domain and clear it. Do the same for **Session storage**.
+4. Expand **Cookies** and clear them for each domain.
+5. Close the browser, reopen it and try Loom again.
+
+The commenter warned that this may sign you out of other sites that use cookies, and said they had not found a way around it. It is one person's workaround and not an official fix. Try it, and do not count on it.
+
+## Finding the workspace URL
+
+Loom's contact form asks for a workspace URL, and the poster could not give one because they could not sign in. I could not find Loom's own guidance on where to read it from. A teammate who can still sign in can read it from their address bar and send it to you.
+
+## If you also need to cancel
+
+Cancellation moved too, and it is where the login problem turns into a billing one. Only Atlassian billing admins and organisation admins can cancel an Atlassian-managed Loom subscription, so someone has to be able to get in. The steps are in [how to cancel Loom](/articles/how-to-cancel-loom).
+
+If the reason you are logging in is an invoice, [why your Loom bill went up](/articles/loom-bill-went-up) explains what to change. If it is a lost recording, [Loom crashed and lost your recording](/articles/loom-lost-recording-recovery) lists what can be recovered. And if the recordings themselves are the problem, [why a Loom recording is not the quality you set](/articles/loom-video-quality) is next.
+
+For the alternatives, see [the best Loom alternatives for Mac](/blog/loom-alternatives-mac).
+
+## A recorder with one sign-in at most
+
+Prequel does not need an account to record, edit or export. Signing in is for sharing and for the licence, and it opens your browser with no separate signup: see [share links](/docs/share-links). A recording is a folder in `~/Movies/Prequel` whether or not you are signed in.
+
+![The Prequel Layout panel open in the editor](/articles/prequel/layout-panel.webp)
+
+Record with nothing between you and the file.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

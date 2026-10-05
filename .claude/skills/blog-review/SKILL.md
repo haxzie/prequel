@@ -120,6 +120,28 @@ not "Learn how to".
 
 **8. Read one section aloud.** Any sentence that runs out of breath is two.
 
+## Articles
+
+An article is a post that lives at `/articles` and is listed on `/content`. It
+shares every voice rule above and not the blog's shape: no definitional
+question, no pillar. Check one with its own script, or all of them:
+
+```bash
+.claude/skills/blog-review/scripts/check-article.sh <slug>
+.claude/skills/blog-review/scripts/check-article.sh --all
+```
+
+What it adds to the blog's checks: a link to `/download` in the body, because
+every article asks the reader to use Prequel; `related` slugs that exist and
+list each other back; a reference card with a PNG beside it, which the social
+card needs; and two claims that are false and that competing sites make
+constantly, that Prequel records an iPhone and that it imports another
+recorder's project file. `--all` also holds only articles dated from 2026-10-05
+to the per-article rules, since the first seven predate them.
+
+An American spelling inside a verbatim quote trips the spelling check. Confirm
+it sits in quotation marks, or paraphrase it in British spelling.
+
 ## What is not checked here
 
 Rankings, traffic and Search Console are `[[seo]]`. Site copy outside the

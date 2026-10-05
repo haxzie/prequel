@@ -1,0 +1,41 @@
+If your voice does not match your mouth in a Tella video, the first thing to know is what Tella says about fixing it afterwards.
+
+## What Tella says
+
+From Tella's help centre, under "Audio and video are out of sync": "Can I resync audio in the Tella editor? No. Tella does not have a way to nudge or realign audio against video inside the editor. If a recording came out of sync, the reliable fix is to correct it at the source and re-record."
+
+Its explanation is that the microphone and camera deliver to the computer at slightly different rates. The one remedy it documents is a per-microphone delay setting in the Mac app, set before you record. The browser recorder and the Chrome extension do not have it, and its pages point browser users to separate audio routing software. It also has a page for XLR microphones.
+
+## What a user reported
+
+A user on r/ProductivityApps wrote in December 2025 that they had used Tella for most of a year and Loom for about two years before, and had a significant problem with lag between sound and image in both the web and desktop apps. They had contacted support several times without a fix.
+
+![A thread on r/ProductivityApps titled Tella / Loom : screen recording app alternative ?, about lag between sound and image](/blog/quotes/tella-lag-sound-image.webp)
+
+[Read it on r/ProductivityApps](https://www.reddit.com/r/ProductivityApps/comments/1pc87av/tella_loom_screen_recording_app_alternative/)
+
+They also wrote that they suspected it was related to their older MacBook Pro, which matters: sync problems can come from the hardware as much as the app. [Why your screen recording's audio drifts out of sync](/articles/screen-recording-audio-out-of-sync) covers the causes across tools.
+
+## Test it in 30 seconds
+
+1. Record 20 seconds on camera with the microphone you will use.
+2. Clap once at the start and once at the end.
+3. Open the take and look at both claps in the waveform and on screen.
+
+If the sound is the same distance from the picture at both claps, it is a fixed delay. If the gap is wider at the end, the two devices are running at different speeds, which is drift. A fixed delay can be offset in some tools. Drift needs the cause removed, such as a Bluetooth headset or a USB interface.
+
+A related limit sits behind this one: Tella says nothing you got wrong while recording can be added to the same clip afterwards. [What Tella's editor can't do after you record](/articles/tella-editor-limits) lists it.
+
+If the sound is missing altogether, [Tella is not recording computer audio](/articles/tella-system-audio-not-recording) is the page. For iPhone demos, [your iPhone demo records as a black rectangle](/articles/tella-iphone-black-rectangle).
+
+## Tracks that stay separate
+
+Prequel records the camera, the microphone and the Mac's sound as separate files in the take folder: `camera.mp4`, `mic.m4a` and `system.m4a`. A `session.json` beside them records when each track started, so the editor places them in time from that. See [where files live](/docs/where-files-live).
+
+In the editor the **Audio** panel gives each source an **Include** switch and a **Volume**, with noise reduction for the microphone. The timeline shows the waveform, which is where the clap test is easiest to read: see [audio](/docs/audio) and [timeline and cuts](/docs/timeline-and-cuts).
+
+![The Prequel editor with the Audio panel open and a waveform on the timeline](/articles/prequel/editor-audio.webp)
+
+Run the clap test in Prequel before your next long take.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).

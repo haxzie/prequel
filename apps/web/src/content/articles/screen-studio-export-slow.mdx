@@ -1,0 +1,43 @@
+If a Screen Studio export is taking longer than the recording itself, you are describing something other users describe too. This page is what they say, what decides export time in any Mac recorder, and what you can change today.
+
+## What users report
+
+A user on r/screenrecorders, making tutorial videos about accounting and AI, wrote in February 2026 that Screen Studio was so slow that for every 10 minutes of recording they spent about half an hour exporting, and that they could not stand the slowness or the occasional bugs.
+
+[Read the thread on r/screenrecorders](https://www.reddit.com/r/screenrecorders/comments/1p55qvu/looking_for_a_free_video_recording_software_whats/)
+
+That is one commenter and a thread about something else, so it is a report and not a benchmark. Export time matters because it is the part of a recorder you only meet at the end, after the work is done. The same pattern shows up for heat: [Why Screen Studio makes your MacBook run hot](/articles/screen-studio-overheating).
+
+## What decides export time
+
+Four things set how much work an export is, and a fifth decides how fast the Mac does it.
+
+- **Length.** Twice the minutes, roughly twice the frames to render.
+- **Size.** A 4K frame has four times the pixels of a 1080p one.
+- **Frame rate.** 60 frames a second is twice the work of 30.
+- **Effects.** Zoom, blur, motion and a framed background are drawn on every frame. A heavily edited clip costs more than a plain one.
+
+The fifth is where the encoding happens. A Mac has a dedicated hardware video encoder, and an export that uses it finishes faster and leaves the processor cores free, which software encoding does not.
+
+## What to change
+
+1. **Export a review copy first.** A 1080p, 30 fps draft shows you what the final will look like in a fraction of the time. Do the full-size export once, at the end.
+2. **Keep the Mac plugged in** and the lid open, so it does not throttle.
+3. **Close other apps.** A browser with many tabs competes for the same memory.
+4. **Split a long recording** into sections if the recorder lets you export a range.
+
+If the slow export is also hot, that is a separate problem and [the page on heat](/articles/screen-studio-overheating) covers it. If the slowness is the reason you are looking at other tools, [the best Screen Studio alternatives for Mac](/blog/screen-studio-alternatives) compares them, and [Screen Studio 4: what's new, and what it still costs](/blog/screen-studio-4) covers what changed in the app itself.
+
+The same wall exists elsewhere. [Cap's export problems](/articles/cap-export-problems) are about exports that fail, and [Tella's export stuck](/articles/tella-export-stuck) is about ones that never finish.
+
+## How Prequel exports
+
+Prequel composes each frame with Metal and encodes with VideoToolbox, the Mac's hardware video encoder. The button fills as the export runs, you can keep editing while it renders, and closing the dialog does not stop it. See [export](/docs/export).
+
+I am not going to put a number on it. Export time depends on the clip, the size and your Mac, and a figure from one machine is a figure nobody else gets. The honest test is to export one of your own recordings during the trial and time it.
+
+![The Prequel editor with the Layout panel open and a screen recording on the timeline](/articles/prequel/editor-layout.webp)
+
+Export a recording you already made and see how long it takes on your Mac.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $29 once. [See what it costs](/pricing).
