@@ -32,6 +32,15 @@ import {
   watermarkRect,
 } from "../../../shared/layout";
 import {
+  cornerAt,
+  handleAt,
+  keepsAspect,
+  type Corner,
+  type Handle,
+  type Point,
+  pulled,
+} from "./handles";
+import {
   captionLook,
   type LayoutSettings,
   type WatermarkSettings,
@@ -1010,12 +1019,12 @@ export function Preview({
       const held = marks.find((mark) => mark.id === selectedMarkId);
       if (held) {
         const box = markBox(held);
-        const corner = cornerAt(box, point, near);
-        if (corner) {
+        const handle = handleAt(box, point, near, true);
+        if (handle) {
           return {
             kind: "sizeMark",
             markId: held.id,
-            corner,
+            handle,
             box,
             from: point,
             points: held.points,
@@ -1033,12 +1042,16 @@ export function Preview({
     const onScreen = textsUnder();
     const held = onScreen.find((entry) => entry.text.id === selectedTextId);
     if (held) {
+      // Corners only. A text's box is its lines: the height is the line count
+      // times the size, so there is no second axis to pull — an edge handle on
+      // one would have to behave like a corner, which is a control that lies
+      // about what it does.
       const corner = cornerAt(held.box, point, near);
       if (corner) {
         return {
           kind: "sizeText",
           textId: held.text.id,
-          corner,
+          handle: corner,
           box: held.box,
           from: point,
           sizes: held.text.fields.map((field) => field.style.size),
@@ -1075,8 +1088,8 @@ export function Preview({
     // it is usually the *other* picture's edge the pointer was heading for.
     if (selected) {
       const box = boxes[selected];
-      const corner = box ? cornerAt(box, point, near) : null;
-      if (box && corner) return { kind: "resize", target: selected, corner, box, from: point };
+      const handle = box ? handleAt(box, point, near, true) : null;
+      if (box && handle) return { kind: "resize", target: selected, handle, box, from: point };
     }
 
     // Then bodies, top down. The logo is drawn over both pictures, and the
@@ -1209,8 +1222,8 @@ export function Preview({
    *
    * A move is snapped like a picture's; a corner pull scales every field's
    * size by how much bigger the box got, from the sizes held at the grab.
-   * Aspect is always kept — a text's box is its lines, and stretching one
-   * axis of it means nothing.
+   * Aspect is always kept, whatever Shift says — a text's box is its lines,
+   * and stretching one axis of it means nothing.
    */
   const textDragFor = (
     grip: Extract<Grip, { kind: "moveText" | "sizeText" }>,
@@ -1218,7 +1231,7 @@ export function Preview({
   ): Parameters<typeof onDragText>[1] => {
     if (grip.kind === "sizeText") {
       caught.current = { x: null, y: null };
-      const box = pulled(grip.box, grip.corner, point, true);
+      const box = pulled(grip.box, grip.handle, point, true);
       const ratio = grip.box.width > 0 ? box.width / grip.box.width : 1;
       return { kind: "size", sizes: grip.sizes.map((size) => size * ratio) };
     }
@@ -1264,7 +1277,7 @@ export function Preview({
   const patchFor = (
     grip: Extract<Grip, { kind: "move" | "resize" | "pan" }>,
     point: Point,
-    aspect: boolean,
+    shift: boolean,
   ): { section: "layout" | "watermark"; patch: Record<string, unknown> } => {
     const unit = Math.min(frame.width, frame.height);
     const { layout } = settings;
@@ -1310,7 +1323,11 @@ export function Preview({
     // picture would grow as you tried to place it.
     const dragged =
       grip.kind === "resize"
-        ? { box: pulled(grip.box, grip.corner, point, aspect), hitX: null, hitY: null }
+        ? {
+            box: pulled(grip.box, grip.handle, point, keepsAspect(grip.handle, shift)),
+            hitX: null,
+            hitY: null,
+          }
         : pullToGuides(
             {
               ...grip.box,
@@ -1585,7 +1602,7 @@ export function Preview({
             onPick?.(found.target);
 
             // Alt turns a drag on a picture into a pan of what it is showing. The
-            // corners keep resizing either way — there is nothing else a corner
+            // handles keep resizing either way — there is nothing else a handle
             // could sensibly mean.
             grab.current =
               event.altKey && found.kind === "move" && found.target !== "watermark"
@@ -1647,7 +1664,7 @@ export function Preview({
               event.currentTarget.style.cursor = !found
                 ? ""
                 : found.kind === "resize" || found.kind === "sizeText" || found.kind === "sizeMark"
-                  ? CORNER_CURSOR[found.corner]
+                  ? HANDLE_CURSOR[found.handle]
                   : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
                     ? "move"
                     : "grab";
@@ -1718,7 +1735,7 @@ export function Preview({
         <div
           ref={outline}
           aria-hidden
-          className="pointer-events-none absolute top-0 left-0 border border-selected"
+          className="group/ring pointer-events-none absolute top-0 left-0 border border-selected"
           // Hidden inline rather than with `hidden`, because the loop below
           // shows it by writing `display` — and an inline property cleared
           // against a class that also sets `display: none` never comes back.
@@ -1731,9 +1748,28 @@ export function Preview({
               key={corner}
               className={cn(
                 // Centred on the corner rather than tucked inside it, so the
-                // handle marks the point the drag actually pivots about.
+                // handle marks the point the drag actually pivots about. The
+                // half pixel that costs is in `HANDLE_AT`.
                 "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
                 HANDLE_AT[corner],
+              )}
+            />
+          ))}
+          {/* The four side handles, drawn the same as the corners because they
+              do the same job — the difference is in which axes move, and the
+              cursor says that before the drag starts.
+
+              Hidden on a text, which has no second axis to pull. `ring` sets
+              the attribute each frame, from the same answer that decides what
+              the box is around, so what is drawn and what can be grabbed
+              cannot disagree. */}
+          {EDGES.map((edge) => (
+            <span
+              key={edge}
+              className={cn(
+                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                "group-data-[handles=corners]/ring:hidden",
+                HANDLE_AT[edge],
               )}
             />
           ))}
@@ -1847,6 +1883,11 @@ function ring(
   const { x, y, width, height } = box;
 
   element.style.display = "block";
+  // Which handles the ring should show, read by the side ones' own class. A
+  // text is sized by its lines and has no second axis, so it gets corners and
+  // nothing else — see the text branch of `find`, which refuses to hand back
+  // an edge for one.
+  element.dataset["handles"] = text ? "corners" : "all";
   // Transform rather than `left`/`top`: this runs every frame, and through a
   // drag it runs on every frame that also lays the canvas out.
   element.style.transform = `translate(${x * scale}px, ${y * scale}px)`;
@@ -1857,20 +1898,35 @@ function ring(
 /** Clockwise from the top left, which is the order the handles read in. */
 const CORNERS = ["nw", "ne", "se", "sw"] as const;
 
-const HANDLE_AT: Record<Corner, string> = {
-  nw: "-top-1 -left-1",
-  ne: "-top-1 -right-1",
-  se: "-right-1 -bottom-1",
-  sw: "-bottom-1 -left-1",
+/** The same way round, starting from the top. */
+const EDGES = ["n", "e", "s", "w"] as const;
+
+/**
+ * Where each handle sits on the ring.
+ *
+ * Four and a half pixels out, not four. An absolutely positioned child is
+ * placed against its container's *padding* box, and the ring has a 1px border
+ * — so an 8px handle at -4px centres half a pixel inside the stroke rather
+ * than on it. Every offset is pulled the same way, which is what makes the
+ * eight of them read as tucked into the box instead of sitting on its edge.
+ * Half the handle, plus half the stroke.
+ *
+ * The midpoints need no such correction: `left-1/2` is half the padding box,
+ * which with the border on both sides is the border box's middle exactly. The
+ * margin there is half the handle and nothing else — by margin rather than a
+ * transform, because the ring itself is moved with `transform` every frame and
+ * a second one on a child is a separate property that reads as the same thing.
+ */
+const HANDLE_AT: Record<Handle, string> = {
+  nw: "-top-[4.5px] -left-[4.5px]",
+  ne: "-top-[4.5px] -right-[4.5px]",
+  se: "-right-[4.5px] -bottom-[4.5px]",
+  sw: "-bottom-[4.5px] -left-[4.5px]",
+  n: "-top-[4.5px] left-1/2 -ml-1",
+  s: "-bottom-[4.5px] left-1/2 -ml-1",
+  w: "-left-[4.5px] top-1/2 -mt-1",
+  e: "-right-[4.5px] top-1/2 -mt-1",
 };
-
-/** A point in the output frame, in its own pixels. */
-interface Point {
-  x: number;
-  y: number;
-}
-
-type Corner = "nw" | "ne" | "sw" | "se";
 
 /**
  * A drag in progress.
@@ -1882,7 +1938,7 @@ type Corner = "nw" | "ne" | "sw" | "se";
  */
 type Grip =
   | { kind: "move"; target: Grabbable; box: Rect; from: Point }
-  | { kind: "resize"; target: Grabbable; corner: Corner; box: Rect; from: Point }
+  | { kind: "resize"; target: Grabbable; handle: Handle; box: Rect; from: Point }
   // Panning is the two video sources only: it slides a crop window over
   // footage, and a watermark has no crop — the whole file is the picture.
   | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number }
@@ -1892,7 +1948,8 @@ type Grip =
   | {
       kind: "sizeText";
       textId: string;
-      corner: Corner;
+      /** Only ever a corner — see the note on the text branch of `find`. */
+      handle: Corner;
       box: Rect;
       from: Point;
       /** Every field's size at the grab, which the ratio is applied to. */
@@ -1904,7 +1961,7 @@ type Grip =
   | {
       kind: "sizeMark";
       markId: string;
-      corner: Corner;
+      handle: Handle;
       box: Rect;
       from: Point;
       /** The shape at the grab, so a resize is measured from where it started
@@ -1980,11 +2037,15 @@ const SNAP = 7;
  */
 const GUIDE_INSET = 0.05;
 
-const CORNER_CURSOR: Record<Corner, string> = {
+const HANDLE_CURSOR: Record<Handle, string> = {
   nw: "nwse-resize",
   se: "nwse-resize",
   ne: "nesw-resize",
   sw: "nesw-resize",
+  n: "ns-resize",
+  s: "ns-resize",
+  e: "ew-resize",
+  w: "ew-resize",
 };
 
 /** Stands in for a cue that is not on screen, so nothing can be inside it. */
@@ -2000,29 +2061,6 @@ function inside(rect: Rect, point: Point): boolean {
 }
 
 /**
- * Which corner the pointer is on, if any.
- *
- * The tolerance reaches inwards as well as outwards, so a corner is grabbable
- * on a picture that runs to the edge of the frame and has no outside to speak
- * of. It also has to stay smaller than the picture: on a bubble a few
- * tolerances across, four handles would cover the whole thing and it could
- * never be dragged.
- */
-function cornerAt(rect: Rect, point: Point, near: number): Corner | null {
-  const reach = Math.min(near, rect.width / 3, rect.height / 3);
-  const west = Math.abs(point.x - rect.x) <= reach;
-  const east = Math.abs(point.x - (rect.x + rect.width)) <= reach;
-  const north = Math.abs(point.y - rect.y) <= reach;
-  const south = Math.abs(point.y - (rect.y + rect.height)) <= reach;
-
-  if (north && west) return "nw";
-  if (north && east) return "ne";
-  if (south && west) return "sw";
-  if (south && east) return "se";
-  return null;
-}
-
-/**
  * A rectangle with one corner pulled to the pointer.
  *
  * The opposite corner is the anchor and does not move, which is what makes a
@@ -2030,6 +2068,7 @@ function cornerAt(rect: Rect, point: Point, near: number): Corner | null {
  * pixel across at worst: a box collapsed to nothing has no corners left to grab
  * and could never be recovered.
  */
+
 /**
  * A mark's points after a corner has been pulled.
  *
@@ -2045,10 +2084,10 @@ function cornerAt(rect: Rect, point: Point, near: number): Corner | null {
 function pulledPoints(
   grip: Extract<Grip, { kind: "sizeMark" }>,
   point: Point,
-  keepAspect: boolean,
+  shift: boolean,
   frame: Size,
 ): MarkPoint[] {
-  const box = pulled(grip.box, grip.corner, point, keepAspect);
+  const box = pulled(grip.box, grip.handle, point, keepsAspect(grip.handle, shift));
 
   return grip.points.map((at) => {
     const was = { x: at.x * frame.width, y: at.y * frame.height };
@@ -2059,31 +2098,6 @@ function pulledPoints(
 
     return { x: x / Math.max(frame.width, 1), y: y / Math.max(frame.height, 1) };
   });
-}
-
-function pulled(rect: Rect, corner: Corner, point: Point, keepAspect: boolean): Rect {
-  const anchor = {
-    x: corner === "nw" || corner === "sw" ? rect.x + rect.width : rect.x,
-    y: corner === "nw" || corner === "ne" ? rect.y + rect.height : rect.y,
-  };
-
-  let width = Math.max(1, Math.abs(point.x - anchor.x));
-  let height = Math.max(1, Math.abs(point.y - anchor.y));
-
-  if (keepAspect) {
-    // The larger of the two, so the picture follows the pointer outwards rather
-    // than being held back by whichever edge moved less.
-    const scale = Math.max(width / rect.width, height / rect.height);
-    width = rect.width * scale;
-    height = rect.height * scale;
-  }
-
-  return {
-    x: corner === "nw" || corner === "sw" ? anchor.x - width : anchor.x,
-    y: corner === "nw" || corner === "ne" ? anchor.y - height : anchor.y,
-    width,
-    height,
-  };
 }
 
 /**
