@@ -176,6 +176,7 @@
   --color-zoom-ring: var(--zoom-ring);
   --color-indicator-deep: var(--indicator-deep);
   --color-play: var(--play);
+  --color-export: var(--export);
   --color-selected: var(--selected);
   --color-toggle: var(--toggle);
 
@@ -1785,7 +1786,11 @@
   --editor-scrim: rgba(22, 23, 26, 0.82);
   --editor-veil: rgba(22, 23, 26, 0.93);
   --editor-panel: #1c1e22;
-  --editor-line: #2a2d33;
+  /* A hairline, and deliberately only just one. It was `#2a2d33`, a clear step
+     off the panel, and at that distance every bordered thing in the editor drew
+     its own box — a rail of eight sections read as eight boxes rather than as
+     eight groups of settings. */
+  --editor-line: #23262b;
   --editor-fg: #eceef1;
   --editor-muted: #8b9198;
 
@@ -1804,9 +1809,12 @@
   --zoom-edge: #f0d06f;
   --zoom-ring: #ffe9a8;
 
-  /* The playhead, and the transport's one coloured button. */
+  /* The playhead, the transport's one coloured button, and Export — which is
+     the only thing on the title bar that is a decision rather than a label,
+     and so the only thing up there with a surface. */
   --indicator-deep: #1668c9;
   --play: #30a46c;
+  --export: #30a46c;
 
   /* The rail's mark, and the slider grip under the pointer. */
   --selected: #4296fc;
