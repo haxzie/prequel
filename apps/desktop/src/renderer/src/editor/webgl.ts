@@ -1057,6 +1057,21 @@ vec2 rimOutward(vec2 p, vec2 screen, vec2 extent) {
   return steep > 1e-4 ? slope / steep : vec2(0.0);
 }
 
+// How much of the radius the glass rolls over at the bottom of the Depth
+// control.
+//
+// Not the lens's LOUPE_EDGE_FLAT, which is 0.08 — a loupe that is flat almost
+// to its rim, where the squeeze and the glint collapse into the last pixel.
+// That is a fine *lens* and an invisible *edge*: measured against a bubble, a
+// depth of 0.08 draws a rim no brighter than no rim at all, and the whole lower
+// half of the control did nothing. Which reads as the feature being broken, and
+// was reported as exactly that.
+//
+// So the control's travel is the range that can be seen. The bottom is the
+// thinnest glass that still reads as glass, and the switch for having none is
+// the Edge control rather than the last millimetre of this one.
+const float RIM_EDGE_FLAT = 0.2;
+
 /**
  * The surface of the glass where a pixel sits. t runs from 0 at the inner edge
  * of the band to 1 at the outline itself.
@@ -1396,7 +1411,7 @@ void main() {
         // that roll, 0 where the glass is still flat and 1 on the outline, which
         // is exactly what lensNormal measures with smoothstep(1 - edge, 1, r).
         vec2 glass = rimRadius(p, v_screen, halfSize);
-        float edge = mix(LOUPE_EDGE_FLAT, LOUPE_EDGE_FULL, clamp(u_rim, 0.0, 1.0));
+        float edge = mix(RIM_EDGE_FLAT, LOUPE_EDGE_FULL, clamp(u_rim, 0.0, 1.0));
         float band = edge * glass.y;
         float rim = u_rim > 0.0 ? clamp((glass.x - (1.0 - edge)) / max(edge, 1e-4), 0.0, 1.0) : 0.0;
         vec2 outward = rim > 0.0 ? rimOutward(p, v_screen, halfSize) : vec2(0.0);

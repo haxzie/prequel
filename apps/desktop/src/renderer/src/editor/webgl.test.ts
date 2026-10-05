@@ -497,6 +497,7 @@ describe("the camera's glass rim", () => {
     // The stretch and the spread are not among them: the rim is ground from the
     // lens's own, which the loupe's test already pins on both sides.
     for (const declaration of [
+      "RIM_EDGE_FLAT = 0.2",
       "RIM_SHEEN = 0.22",
       "RIM_SPREAD = 0.04",
       "RIM_GLINT = 0.7",

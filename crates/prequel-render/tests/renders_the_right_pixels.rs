@@ -2662,6 +2662,10 @@ fn a_travelling_lens_smears_what_is_inside_it() {
 /// assertions below can say where the glass is without re-deriving a
 /// superellipse to do it.
 fn bubble_with_rim(rim: f64) -> RenderPlan {
+    bubble_with_glass(rim, 0.0)
+}
+
+fn bubble_with_glass(rim: f64, fringe: f64) -> RenderPlan {
     let full = Rect {
         x: 0.0,
         y: 0.0,
@@ -2706,9 +2710,7 @@ fn bubble_with_rim(rim: f64) -> RenderPlan {
                 grade: None,
                 motion: Vec::new(),
                 rim,
-                // The glass bends the picture here; whether it also colours it
-                // is its own test to write.
-                fringe: 0.0,
+                fringe,
             },
         ],
         filter: None,
@@ -2809,6 +2811,62 @@ fn catches_the_light_on_the_camera_s_glass_rim() {
     // of light on the wallpaper around the camera.
     near(frame.at(20, 20), (255, 0, 0), "the frame beside the bubble");
     near(frame.at(160, 120), (0, 255, 0), "the middle of the bubble");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn every_depth_above_none_draws_glass() {
+    // The control's travel has to be travel. It was mapped onto the lens's own
+    // curvature, whose flat end is a loupe that is nearly flat to its rim —
+    // right for a magnifier, and on a bubble a rim no brighter than no rim at
+    // all. The whole lower half of the slider did nothing, which reads as the
+    // feature being broken and was reported as exactly that.
+    //
+    // Pixels rather than the mapping, because the mapping was not wrong in
+    // itself: it is what the eye gets out of it at each end that matters.
+    let dir = scratch("prequel-depth-travel");
+    record(
+        &dir,
+        "camera.mp4",
+        400,
+        200,
+        &solid_wide(400, 200, [0, 255, 0]),
+    );
+
+    // How white the whitest point of the band is — the glass catching the key
+    // light, on a camera that is pure green and has none of its own.
+    let brightest = |rim: f64, name: &str| {
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(bubble_with_rim(rim))]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+        let frame = first_frame(&output);
+        let mut most = 0u8;
+        for y in 70..170 {
+            for x in 110..210 {
+                let away = f64::hypot(f64::from(x) - 160.0, f64::from(y) - 120.0);
+                if (30.0..=46.0).contains(&away) {
+                    let (r, _, b) = frame.at(x, y);
+                    most = most.max(r.min(b));
+                }
+            }
+        }
+        most
+    };
+
+    let none = brightest(0.0, "none");
+
+    for (at, name) in [(0.05, "lowest"), (0.25, "low"), (1.0, "full")] {
+        let lit = brightest(at, name);
+        assert!(
+            u32::from(lit) > u32::from(none) + 50,
+            "at a depth of {at} the glass should be plainly there: {lit} against {none} with none"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
