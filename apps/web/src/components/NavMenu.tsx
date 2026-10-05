@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { NAV } from "@/lib/site";
 
@@ -12,23 +12,17 @@ import { AppleIcon, CloseIcon, MenuIcon } from "./icons";
 /**
  * The header's row, folded into one button on a phone.
  *
- * Below `sm` there is not room for the sections, the repository and the
- * download at once — they used to be dropped one by one until only the wordmark
- * and "Sign in" were left, which is a header that has quietly stopped being
- * navigation. Everything that goes is in here instead.
- *
- * `stars` arrives as a node rather than being rendered here: `GitHubStars` is
- * an async server component that fetches the count on the server, and importing
- * it into a client file would pull the fetch, the token and an hour's cache
- * into the browser. Passed as a prop it stays server-rendered and this
- * component only decides where it sits.
+ * Below `sm` there is not room for the sections and the download at once —
+ * they used to be dropped one by one until only the wordmark and "Sign in"
+ * were left, which is a header that has quietly stopped being navigation.
+ * Everything that goes is in here instead.
  *
  * Not the dashboard's `Popover`, which is the same dismissal logic under a
  * `role="menu"`. That role promises menu items, and these are page links — a
  * screen reader announces "menu" and then reads links that are not menuitems.
  * A disclosure button and a plain panel is what this actually is.
  */
-export function NavMenu({ stars }: { stars: ReactNode }) {
+export function NavMenu() {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
@@ -103,12 +97,7 @@ export function NavMenu({ stars }: { stars: ReactNode }) {
 
             <div className="my-2 border-t border-line" />
 
-            {/* The repository before the download, as in the row: the download
-                is what the page is asking for and belongs where the eye
-                finishes. */}
-            <div className="[&>a]:w-full">{stars}</div>
-
-            <ButtonLink href="/download" size="sm" className="mt-2 w-full">
+            <ButtonLink href="/download" size="sm" className="w-full">
               <AppleIcon className="-mt-0.5 size-4" />
               Download
             </ButtonLink>

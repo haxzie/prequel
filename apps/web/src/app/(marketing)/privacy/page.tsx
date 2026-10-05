@@ -110,13 +110,12 @@ const SECTIONS: LegalSection[] = [
       "Each of these is given the least it needs to do its part, and none of them is given a recording you have not shared.",
     ],
     list: [
-      "Cloudflare: the API, the database, and the files behind shared links.",
+      "Cloudflare: the API, the database, the files behind shared links, and the download itself.",
       "Vercel: hosting for this site.",
       "Google: sign-in, if that is how you sign in.",
       "Dodo Payments: checkout, cards and invoices.",
       "Amazon SES: sign-in links and transactional email.",
       "PostHog: product analytics.",
-      "GitHub and Cloudflare: the download itself, mirrored from the release.",
     ],
   },
   {

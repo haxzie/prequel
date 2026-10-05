@@ -3,7 +3,6 @@ import Link from "next/link";
 import { NAV } from "@/lib/site";
 
 import { ButtonLink } from "./Button";
-import { GitHubStars } from "./GitHubStars";
 import { AppleIcon } from "./icons";
 import { NavMenu } from "./NavMenu";
 import { Container } from "./Section";
@@ -43,9 +42,9 @@ export function Nav() {
           </Link>
 
           {/* Gone below `lg`, where the row cannot hold it. Six labels, a
-              wordmark, a sign-in link, the star count and the download button
-              need about a thousand pixels between them; below that they wrap,
-              which reads as a broken header rather than a full one. Six is
+              wordmark, a sign-in link and the download button need about a
+              thousand pixels between them; below that they wrap, which reads
+              as a broken header rather than a full one. Six is
               therefore a cap: `/about` and then `/changelog` each left the row
               to make room, and the next addition takes a slot rather than
               adding one. The same links are in the menu at the other end of
@@ -84,22 +83,14 @@ export function Nav() {
             Sign in
           </Link>
 
-          {/* Both out of the row on the narrowest screens, and into the menu
-              beside them rather than dropped: a header that keeps only a
-              wordmark and a sign-in link has stopped being navigation.
+          {/* Out of the row on the narrowest screens, and into the menu beside
+              it rather than dropped: a header that keeps only a wordmark and a
+              sign-in link has stopped being navigation.
 
               The `hidden` sits on a wrapper because the button already carries
               `inline-flex`. Two unprefixed display utilities on one element is
               decided by Tailwind's emit order, not by the order they are
-              written in, and `inline-flex` is the one that wins.
-
-              The repository sits before the button rather than after it. The
-              download is what the page is asking for and belongs at the end of
-              the row, where the eye finishes. */}
-          <span className="hidden lg:block">
-            <GitHubStars />
-          </span>
-
+              written in, and `inline-flex` is the one that wins. */}
           <span className="ml-1.5 hidden lg:block">
             <ButtonLink href="/download" size="sm">
               <AppleIcon className="-mt-0.5 size-4" />
@@ -107,9 +98,7 @@ export function Nav() {
             </ButtonLink>
           </span>
 
-          {/* Rendered here and passed down, so the count is still fetched on
-              the server — the note in `NavMenu` has the reason. */}
-          <NavMenu stars={<GitHubStars />} />
+          <NavMenu />
         </div>
       </Container>
     </header>

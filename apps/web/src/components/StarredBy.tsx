@@ -3,18 +3,14 @@ import Image from "next/image";
 /**
  * Four faces and a tally, on the download button's own line.
  *
- * The four are real people who starred the repository, and their pictures are
- * copies under `public/` rather than `avatars.githubusercontent.com` links.
- * Hotlinking would put a request to GitHub in front of every visitor, which is
- * the property `GitHubStars` goes out of its way to keep — it fetches on the
- * server so that no visitor's browser ever touches GitHub — and one row of
- * decoration is not the thing to give it up for.
+ * The four are real people, and their pictures are copies under `public/`
+ * rather than links to whichever host they came from. Hotlinking would put a
+ * request to a third party in front of every visitor, and one row of
+ * decoration is not the thing to give that up for.
  *
  * The last disc is the count rather than a fourth face, which is the shape this
  * pattern has everywhere it appears: faces, then how many more there are. It is
- * a hard-coded figure and not the repository's — `stars()` in `lib/github.ts`
- * is the live number, already fetched and cached for the nav, and swapping
- * `MORE` for it is a one-line change.
+ * a hard-coded figure, so it is a one-line change when it moves.
  *
  * Hovering says who they are. CSS only — `group-hover` on a span that is always
  * in the markup — because a tooltip that needs a client component, an effect

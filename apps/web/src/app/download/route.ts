@@ -1,12 +1,11 @@
 import { after, NextResponse, userAgent, type NextRequest } from "next/server";
 
-import { githubHeaders, RELEASES_API, RELEASES_PAGE } from "@/lib/github";
 import { capture, identify } from "@/lib/posthog-server";
 
 /**
  * `prequel.sh/download` → the current `.dmg`.
  *
- * A redirect rather than a link straight to GitHub, because the download URL
+ * A redirect rather than a link straight at the file, because the download URL
  * carries a version and every place that links to it would otherwise have to be
  * edited on every release — the site, the docs, whatever someone pasted into a
  * thread last month. This URL never changes.
@@ -24,10 +23,9 @@ import { capture, identify } from "@/lib/posthog-server";
  * published, and names the version *and* the URL of the file for that exact
  * version — both halves of the answer, from the job that uploaded it.
  *
- * First because it is ours. Reading it costs nobody a GitHub request, so it can
- * be revalidated in seconds rather than minutes, and the bytes then come off
- * Cloudflare rather than GitHub's release CDN, which on a 100 MB image is the
- * difference between a few seconds and a few minutes.
+ * The only source. There is no second one to fall back to, so a manifest this
+ * route cannot read is a button that gives an error rather than a button that
+ * quietly sends somebody somewhere else.
  */
 const MIRROR_URL = "https://assets.prequel.sh/desktop";
 
@@ -41,39 +39,27 @@ const MIRROR_URL = "https://assets.prequel.sh/desktop";
  */
 const MIRROR_REVALIDATE = 60;
 
-/**
- * How long a resolved download is reused for, on the GitHub fallback.
- *
- * Unauthenticated GitHub allows 60 requests an hour *per IP* — and the IP here
- * is the serverless region's, shared by every visitor. Without caching, one
- * good day on Hacker News exhausts the budget and the button starts sending
- * people to the releases page instead. Ten minutes is well inside the limit and
- * well under how often a release actually happens.
- *
- * Only reached when the mirror is unreachable or has nothing for this release,
- * so the ten minutes is now a fallback's staleness rather than the site's.
- */
-const REVALIDATE = 600;
-
-/** A tag that is not a real release, even when GitHub does not mark it one. */
-const PRERELEASE_TAG = /-(?:beta|alpha|rc|canary|next|dev|nightly)\b/i;
-
-interface Release {
-  tag_name: string;
-  draft: boolean;
-  prerelease: boolean;
-  assets: { name: string; browser_download_url: string }[];
-}
-
 export async function GET(request: NextRequest): Promise<Response> {
-  const build = (await fromMirror()) ?? (await fromGitHub());
-  const url = build?.url ?? RELEASES_PAGE;
+  const build = await fromMirror();
 
-  track(request, url, build?.version ?? null);
+  track(request, build);
+
+  // 503 rather than a redirect to somewhere a visitor could hunt for the file
+  // themselves. The mirror is the only source, so an unreadable manifest is
+  // this route having no answer, and saying so is what puts it in the logs and
+  // in the `resolved` figure on the event instead of hiding it behind a
+  // page that looks like it worked.
+  if (!build) {
+    console.error("download: the mirror had no build");
+    return new NextResponse("No build available. Write to support@prequel.sh.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
   // 302, not 301. A permanent redirect is cached by the browser for as long as
   // it likes, which would pin someone to whichever version they first clicked.
-  return NextResponse.redirect(url, 302);
+  return NextResponse.redirect(build.url, 302);
 }
 
 /**
@@ -91,7 +77,7 @@ export async function GET(request: NextRequest): Promise<Response> {
  * PostHog to answer before their download starts would be a worse site in
  * exchange for a chart.
  */
-function track(request: NextRequest, url: string, version: string | null): void {
+function track(request: NextRequest, build: Build | null): void {
   // Crawlers, uptime checks and every chat app that unfurls a link all hit this
   // URL, and none of them installed anything. Counted as downloads they would
   // not just inflate the number — they would move it whenever somebody shared
@@ -106,14 +92,10 @@ function track(request: NextRequest, url: string, version: string | null): void 
       distinctId: identify(request),
       properties: {
         // Which build people are actually installing, and whether they got one
-        // at all: `RELEASES_PAGE` means neither source had anything with a
-        // `.dmg` attached, and a rise in that is a broken button.
-        version,
-        // Which of the two answered. A fall in this is the mirror failing
-        // quietly, which costs every visitor a slow download and is otherwise
-        // invisible — the button still works.
-        source: url.startsWith(MIRROR_URL) ? "mirror" : "github",
-        resolved: url !== RELEASES_PAGE,
+        // at all: null means the mirror had nothing to send them, and a rise in
+        // that is a broken button.
+        version: build?.version ?? null,
+        resolved: build !== null,
         // Where the click came from, so the funnel can tell the nav button from
         // the pricing page from a link in someone else's thread.
         referrer: request.headers.get("referer") ?? "$direct",
@@ -125,13 +107,7 @@ function track(request: NextRequest, url: string, version: string | null): void 
 /** What to send somebody to, and which version it is. */
 interface Build {
   url: string;
-  /**
-   * Null only on the GitHub path, for an asset URL this cannot read a tag out
-   * of. The download still works — it is the property on the event that is
-   * missing, and a redirect withheld because a regex did not match would be a
-   * broken button in exchange for a tidier chart.
-   */
-  version: string | null;
+  version: string;
 }
 
 /** The mirror's manifest, or null if it is not there or not readable. */
@@ -150,66 +126,9 @@ async function fromMirror(): Promise<Build | null> {
 
     return { url: body.url, version: body.version };
   } catch {
-    // Not fatal, and not logged: the fallback below is the answer, and a mirror
-    // that is briefly unreachable is not something anybody needs telling about.
+    // Not logged here. The caller logs the one line that matters — that there
+    // is no build to send anybody — and a second line for every way of getting
+    // there only makes that one harder to find.
     return null;
   }
-}
-
-/** The tag out of a release asset URL, or null when it is not one. */
-function versionOf(url: string): string | null {
-  return /\/download\/([^/]+)\//.exec(url)?.[1] ?? null;
-}
-
-/** The newest stable release carrying a `.dmg`, from GitHub. */
-async function fromGitHub(): Promise<Build | null> {
-  const url = await current();
-  return url ? { url, version: versionOf(url) } : null;
-}
-
-/** The newest stable release carrying a `.dmg`, or null. */
-async function current(): Promise<string | null> {
-  let releases: Release[];
-
-  try {
-    const response = await fetch(RELEASES_API, {
-      headers: githubHeaders(),
-      next: { revalidate: REVALIDATE },
-    });
-
-    if (!response.ok) {
-      console.error(`download: GitHub answered ${response.status}`);
-      return null;
-    }
-
-    releases = (await response.json()) as Release[];
-  } catch (error) {
-    // Never fatal. The caller falls back to the releases page, which is a worse
-    // experience than a direct download and a much better one than an error.
-    console.error("download: GitHub unreachable", error);
-    return null;
-  }
-
-  if (!Array.isArray(releases)) return null;
-
-  // GitHub returns these newest first, so the first match in each pass is the
-  // most recent one.
-  const usable = releases.filter((release) => !release.draft);
-
-  const stable = usable.find(
-    (release) => !release.prerelease && !PRERELEASE_TAG.test(release.tag_name) && dmg(release),
-  );
-  if (stable) return dmg(stable);
-
-  // Nothing stable has a build attached — a release cut before its artefacts
-  // finished uploading, or a run of prereleases. Sending people to the newest
-  // thing they can actually install beats sending them nowhere.
-  const anything = usable.find(dmg);
-  return anything ? dmg(anything) : null;
-}
-
-/** The release's `.dmg` download URL, if it has one. */
-function dmg(release: Release): string | null {
-  const asset = release.assets.find((candidate) => candidate.name.toLowerCase().endsWith(".dmg"));
-  return asset?.browser_download_url ?? null;
 }
