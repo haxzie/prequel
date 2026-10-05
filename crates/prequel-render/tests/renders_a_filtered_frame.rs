@@ -198,6 +198,7 @@ fn plan(filter: Option<PlanFilter>) -> RenderPlan {
             motion: Vec::new(),
             grade: None,
             rim: 0.0,
+            fringe: 0.0,
         }],
         filter,
     }

@@ -167,9 +167,11 @@ struct Uniforms {
     /// Metal block, in the first of the two slots the tail already carried, so
     /// nothing above it moves.
     rim: f32,
-    /// Padding to the next 16, which is where MSL ends this block. Rust aligns
-    /// `[f32; 4]` to 4 bytes and will not add it itself.
-    _tail: f32,
+    /// How much colour the glass rim splits out, 0 to 1 — the Fringing control.
+    ///
+    /// Follows `rim` in the Metal block, in the last of the padding the tail
+    /// carried, so the block is the size it was.
+    fringe: f32,
 }
 
 /// The video frames one output frame is drawn from.
@@ -188,9 +190,6 @@ const MODE_IMAGE: u32 = 2;
 const MODE_SHADOW: u32 = 3;
 const MODE_STROKE: u32 = 4;
 const MODE_LOUPE: u32 = 5;
-/// Two modes rather than one with a flag, mirroring `webgl.ts`: the branch is
-/// the cheapest thing a shader can switch on, and a mask is either an average
-/// of a disc or an average of a block — not one treatment with a parameter.
 
 /// How far around the glass the lens's own render reaches, in radii.
 ///
@@ -795,7 +794,7 @@ impl Compositor {
             harmonics: [[0.0; 4]; 2],
             // A plain edge unless a camera item asks for glass.
             rim: 0.0,
-            _tail: 0.0,
+            fringe: 0.0,
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -930,6 +929,7 @@ impl Compositor {
                 blobs,
                 grade,
                 rim,
+                fringe,
             } => {
                 let buffer = match source {
                     PlanSource::Screen => screen,
@@ -1039,6 +1039,7 @@ impl Compositor {
                         // is no one radius to measure it against until the
                         // shader knows which way the pixel lies.
                         rim: *rim as f32,
+                        fringe: *fringe as f32,
                         ..base
                     },
                     Some(alive.last().unwrap().texture.as_ref()),
@@ -1875,6 +1876,7 @@ mod tests {
         // The camera's glass rim, in the first of the two slots the tail
         // already carried.
         assert_eq!(offset_of!(Uniforms, rim), 424);
+        assert_eq!(offset_of!(Uniforms, fringe), 428);
 
         // MSL rounds the block to the next 16, so both sides are 432.
         assert_eq!(align_of::<Uniforms>(), 4);

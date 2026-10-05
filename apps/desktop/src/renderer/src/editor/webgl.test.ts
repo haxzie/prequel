@@ -422,6 +422,7 @@ const rim = (source: string) =>
     .replaceAll(/\brim_lit\b/g, "rimLit")
     .replaceAll(/\blens_bend\b/g, "lensBend")
     .replaceAll(/\bhue_colour\b/g, "hueColour")
+    .replaceAll(/\bmax_of\b/g, "maxOf")
     .replaceAll(", u)", ")");
 
 /**
@@ -500,6 +501,7 @@ describe("the camera's glass rim", () => {
       "RIM_SPREAD = 0.04",
       "RIM_GLINT = 0.7",
       "RIM_SPECTRUM = 0.12",
+      "RIM_TINT = 0.75",
       "RIM_FRINGE = 0.05",
       "RIM_FRINGE_FROM = 0.5",
     ]) {

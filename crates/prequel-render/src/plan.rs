@@ -140,6 +140,11 @@ pub enum PlanItem {
         /// and parses as a plain edge, which is what it drew.
         #[serde(default)]
         rim: f64,
+        /// How much colour that glass splits out, 0 to 1 — the Fringing
+        /// control. Defaulted, so a plan written before it existed parses as
+        /// none, which is a rim that bends the picture without colouring it.
+        #[serde(default)]
+        fringe: f64,
     },
     Stroke {
         rect: Rect,

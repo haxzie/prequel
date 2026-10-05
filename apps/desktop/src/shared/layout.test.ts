@@ -973,6 +973,18 @@ describe("the camera", () => {
       expect(small.rim).toBe(large.rim);
     });
 
+    it("carries how much colour the glass splits out", () => {
+      // Its own number beside the depth: one says how much glass there is and
+      // the other what it does to the light. Folded together, there would be no
+      // glass without a spectrum and no spectrum without deeper glass.
+      expect(rimmed({ cameraEdgeFringe: 0.4 }).fringe).toBeCloseTo(0.4, 6);
+      // And none at all is a rim that bends the picture without colouring it,
+      // which is still a rim.
+      const plain = rimmed({ cameraEdgeFringe: 0 });
+      expect(plain.rim).toBeGreaterThan(0);
+      expect(plain.fringe).toBe(0);
+    });
+
     it("carries nothing at all without one", () => {
       // Absent rather than zero, so a plan from a project that predates the rim
       // serialises exactly as it did — and so both rasterisers skip the band on

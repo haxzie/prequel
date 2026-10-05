@@ -376,6 +376,15 @@ export interface LayoutSettings {
    */
   cameraEdgeDepth: number;
   /**
+   * How much colour the glass splits out at its edge, 0 to 1.
+   *
+   * Dispersion: the three channels are refracted by different amounts, so a
+   * high-contrast edge under the rim comes apart into colour. At 0 the glass
+   * still bends the picture and catches the light — it simply does it without
+   * a spectrum, which is what plain glass looks like.
+   */
+  cameraEdgeFringe: number;
+  /**
    * A border round the bubble, as a fraction of the frame's shorter edge.
    *
    * Its own setting rather than the screen's, which is the only reason it can
@@ -1546,6 +1555,10 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // magnification here — so the same setting reaches further into the picture
   // and lands on the person rather than on the edge.
   cameraEdgeDepth: 0.25,
+  // Enough to read as glass rather than as a soft edge, which is what the
+  // numbers behind it were tuned to. The control is there for a look that wants
+  // more of it, and for one that wants none.
+  cameraEdgeFringe: 1,
   // Off, unlike the screen's border.
   //
   // The screen's earns its default by lifting a flat screenshot off a dark

@@ -240,6 +240,7 @@ fn honours_the_crop_rather_than_stretching_the_source() {
             blobs: Vec::new(),
             grade: None,
             rim: 0.0,
+            fringe: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -303,6 +304,7 @@ fn mirroring_flips_the_crop_rather_than_moving_it() {
             blobs: Vec::new(),
             grade: None,
             rim: 0.0,
+            fringe: 0.0,
         }],
         filter: None,
     };
@@ -382,6 +384,7 @@ fn draws_an_image_background() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -625,6 +628,7 @@ fn swaps_the_pointer_image_partway_through() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -720,6 +724,7 @@ fn keeps_a_static_pointer_shadow_inside_its_silhouette() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -852,6 +857,7 @@ fn lays_the_pointer_on_a_tilted_picture() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -964,6 +970,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Cursor {
@@ -1193,6 +1200,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: vec![key(0, left), key((S / 2) as i64, right)],
             },
         ],
@@ -1283,6 +1291,7 @@ fn a_zoom_past_every_edge_rounds_nothing() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -1372,6 +1381,7 @@ fn draws_a_border_of_one_width_all_the_way_round() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Stroke {
@@ -1452,6 +1462,7 @@ fn camera_over_red(matte: bool) -> RenderPlan {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
         ],
@@ -1587,6 +1598,7 @@ fn a_mirrored_picture_pushed_off_the_edge_keeps_the_right_half_on_screen() {
             blobs: Vec::new(),
             grade: None,
             rim: 0.0,
+            fringe: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1761,6 +1773,7 @@ fn screen_filling(size: u32) -> RenderPlan {
             blobs: Vec::new(),
             grade: None,
             rim: 0.0,
+            fringe: 0.0,
             motion: Vec::new(),
         }],
         filter: None,
@@ -1903,6 +1916,7 @@ fn outlined(mirror: bool) -> RenderPlan {
                 motion: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
             },
         ],
         filter: None,
@@ -2073,6 +2087,7 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
                 blobs: Vec::new(),
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
                 motion: Vec::new(),
             },
             PlanItem::Loupe {
@@ -2181,6 +2196,7 @@ fn the_glass_splits_colour_at_its_edge() {
                     blobs: Vec::new(),
                     grade: None,
                     rim: 0.0,
+                    fringe: 0.0,
                     motion: Vec::new(),
                 },
                 PlanItem::Loupe {
@@ -2311,6 +2327,7 @@ fn magnifying_a_picture_keeps_its_edges() {
         blobs: Vec::new(),
         grade: None,
         rim: 0.0,
+        fringe: 0.0,
         motion: Vec::new(),
     };
 
@@ -2469,6 +2486,7 @@ fn a_camera_look_leaves_the_screen_alone() {
                 // room, and the look is not for it.
                 grade: None,
                 rim: 0.0,
+                fringe: 0.0,
             },
             PlanItem::Image {
                 source: PlanSource::Camera,
@@ -2505,6 +2523,7 @@ fn a_camera_look_leaves_the_screen_alone() {
                     highlight_amount: 0.0,
                 }),
                 rim: 0.0,
+                fringe: 0.0,
             },
         ],
         filter: None,
@@ -2603,6 +2622,7 @@ fn a_travelling_lens_smears_what_is_inside_it() {
                     motion: Vec::new(),
                     grade: None,
                     rim: 0.0,
+                    fringe: 0.0,
                 },
                 PlanItem::Loupe {
                     keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
@@ -2686,6 +2706,9 @@ fn bubble_with_rim(rim: f64) -> RenderPlan {
                 grade: None,
                 motion: Vec::new(),
                 rim,
+                // The glass bends the picture here; whether it also colours it
+                // is its own test to write.
+                fringe: 0.0,
             },
         ],
         filter: None,

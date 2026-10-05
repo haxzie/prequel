@@ -410,6 +410,15 @@ export type PlanItem =
        * the note on the rim in `shaders.metal`.
        */
       rim?: number;
+      /**
+       * How much colour that glass splits out, 0 to 1 — the Fringing control.
+       *
+       * Beside `rim` rather than folded into it: one says how much glass there
+       * is and the other what it does to the light, and a single number for
+       * both would mean no glass without a spectrum and no spectrum without
+       * deeper glass.
+       */
+      fringe?: number;
     }
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
@@ -1586,6 +1595,7 @@ export function buildRenderPlan(
     // and both rasterisers measure the surface against whichever of the two
     // shapes they are drawing.
     const rim = cutout || layout.cameraEdge !== "glass" ? 0 : layout.cameraEdgeDepth;
+    const fringe = rim > 0 ? layout.cameraEdgeFringe : 0;
 
     // Arriving from wherever the previous slice had it — or from nothing, when
     // that arrangement had no camera at all. Growing out of the middle of where
@@ -1664,7 +1674,7 @@ export function buildRenderPlan(
       ...moving,
       ...(cutout ? { matte: true } : {}),
       ...(grade ? { grade } : {}),
-      ...(rim > 0 ? { rim } : {}),
+      ...(rim > 0 ? { rim, fringe } : {}),
       ...(outline
         ? {
             blobs: placedBlobs(
@@ -1743,6 +1753,7 @@ export function buildRenderPlan(
     // so its own edge setting says nothing about the bubble on its way out.
     const rim =
       wasCutout || enter.from.layout.cameraEdge !== "glass" ? 0 : enter.from.layout.cameraEdgeDepth;
+    const fringe = rim > 0 ? enter.from.layout.cameraEdgeFringe : 0;
 
     // Nothing to shrink under a zoom here: this camera is on its way out, and
     // where it is going is nowhere.
@@ -1789,7 +1800,7 @@ export function buildRenderPlan(
         mirror: enter.from.layout.cameraMirror,
         motion,
         ...(wasCutout ? { matte: true } : {}),
-        ...(rim > 0 ? { rim } : {}),
+        ...(rim > 0 ? { rim, fringe } : {}),
         // The look the camera was wearing on the far side of the cut, not the
         // one it is wearing now. This is the outgoing bubble: it belongs to the
         // clip that is ending, and grading it with the incoming clip's look

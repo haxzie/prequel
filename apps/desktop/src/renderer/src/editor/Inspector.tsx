@@ -2131,6 +2131,25 @@ function CameraPanel({
             onChange={(value) => set("layout", "cameraEdgeDepth", value)}
           />
         )}
+
+        {/* Beside Depth rather than folded into it: one says how much glass
+            there is and the other what it does to the light. At nothing the
+            edge still bends the picture and catches the key light — it does it
+            without a spectrum, which is what plain glass looks like. */}
+        {layout.cameraEdge === "glass" && (
+          <Slider
+            icon={<AberrationIcon />}
+            label="Fringing"
+            {...field("layout", "cameraEdgeFringe")}
+            value={layout.cameraEdgeFringe}
+            min={0}
+            max={1}
+            step={0.01}
+            disabled={off || cutout}
+            format={percent}
+            onChange={(value) => set("layout", "cameraEdgeFringe", value)}
+          />
+        )}
       </Section>
 
       <Section title="Position">

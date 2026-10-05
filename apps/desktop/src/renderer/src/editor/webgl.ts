@@ -381,6 +381,8 @@ uniform vec4 u_motion;
 // How deep the glass on this picture's edge is, 0 to 1 — the lens's own
 // curvature. Zero on every draw but a camera asked for one.
 uniform float u_rim;
+// How much colour that glass splits out, 0 to 1 — the Fringing control.
+uniform float u_fringe;
 
 in vec2 v_local;
 in vec2 v_uv;
@@ -973,6 +975,20 @@ const float RIM_GLINT = 0.7;
 // on zero through hueColour, so it shifts the rim's hue without lifting it.
 const float RIM_SPECTRUM = 0.12;
 
+// How much of its own colour the glass takes from the picture it is bending.
+//
+// Three quarters. What a rim reflects is the room it is in, and a flat grey
+// one reads as glass photographed somewhere else: real glass over something
+// green has a green edge. The lens can mix the frame beside it in and this
+// cannot — a camera is drawn straight into the composition and has no copy of
+// its surroundings — but it has the picture under the rim, which is the half
+// of the surroundings nearest to it.
+//
+// Hue and saturation only; the brightness stays the studio gradient's. Two
+// brightnesses multiplied together is a rim that disappears over a dark
+// picture, which is exactly where an edge is most needed.
+const float RIM_TINT = 0.75;
+
 /**
  * Distance to whichever outline this draw has, in output pixels.
  *
@@ -1069,7 +1085,8 @@ vec3 rimNormal(vec2 outward, float t) {
  * its own rim divides the dispersion straight back out. The same note on
  * lensReach has the long version.
  */
-vec2 rimUv(vec2 uv, vec2 outward, float t, float radius, float band, float ior, vec2 scale) {
+vec2 rimUv(vec2 uv, vec2 outward, float t, float radius, float band, float ior, float split,
+           float colour, vec2 scale) {
   float bend = lensBend(rimNormal(outward, t), ior);
   float edge = lensBend(rimNormal(outward, 1.0), LOUPE_IOR);
   // Against the whole radius, not the band, which is what the lens does with its
@@ -1082,8 +1099,13 @@ vec2 rimUv(vec2 uv, vec2 outward, float t, float radius, float band, float ior, 
   // -1, 0 and 1 for the three taps, so the middle one is never moved by this.
   // Off the band rather than the radius: the fringe belongs to the rolled lip,
   // and spread over the whole glass it would be a mis-converged picture.
-  float apart = (ior - LOUPE_IOR) / RIM_SPREAD;
-  float fringe = band * RIM_FRINGE * apart * smoothstep(RIM_FRINGE_FROM, 1.0, t);
+  //
+  // Against the split the taps were actually taken at rather than the constant,
+  // because the control scales that: dividing by a number the channels were not
+  // separated by would leave the fringe at full strength however far apart they
+  // were asked for.
+  float apart = split > 0.0 ? (ior - LOUPE_IOR) / split : 0.0;
+  float fringe = band * RIM_FRINGE * colour * apart * smoothstep(RIM_FRINGE_FROM, 1.0, t);
   return uv - outward * (walk + fringe) * scale;
 }
 
@@ -1097,16 +1119,21 @@ vec2 rimUv(vec2 uv, vec2 outward, float t, float radius, float band, float ior, 
  * what is around it to read. The room alone is also what keeps a bubble on a
  * dark background from coming out as a hole cut in it.
  */
-vec3 rimLit(vec3 rgb, vec3 normal) {
+vec3 rimLit(vec3 rgb, vec3 normal, float colour) {
   float fresnel = 0.04 + 0.96 * pow(1.0 - normal.z, 5.0);
   vec3 room = mix(vec3(0.04), vec3(0.92), smoothstep(-0.5, 0.75, -normal.y));
+  // Carrying the colour of whatever the glass is over. peak takes the
+  // brightness out of it and leaves the hue, so the gradient above still says
+  // how light the rim is and the picture says what colour it is.
+  float peak = max(maxOf(rgb), 1e-3);
+  room *= mix(vec3(1.0), rgb / peak, RIM_TINT);
   vec3 lit = mix(rgb, room, fresnel * RIM_SHEEN);
   // The spectrum, turning with the surface. The angle is where this part of the
   // rim faces, so the colour runs round the edge the way it does round the lip
   // of a glass rather than sitting on one side of it — and it rides on the
   // Fresnel term, so it is on the rim alone and nowhere near the face.
   float turns = atan(normal.y, normal.x) / 6.2831853;
-  lit += hueColour(turns) * fresnel * RIM_SPECTRUM;
+  lit += hueColour(turns) * fresnel * RIM_SPECTRUM * colour;
   // One light, and a broad sheen under the tight term: the first is the
   // reflection of the source itself and the second is the glass being lit at
   // all, and without the second the first reads as a sticker.
@@ -1379,14 +1406,19 @@ void main() {
           // the other way through the file.
           vec2 scale = u_src.zw / max(u_rect.zw, vec2(1.0));
           if (u_mirror != 0) scale.x = -scale.x;
+          // How far apart the three taps are asked for, which is the Fringing
+          // control: at nothing all three are crown glass and the edge bends
+          // the picture without colouring it.
+          float colour = clamp(u_fringe, 0.0, 1.0);
+          float split = RIM_SPREAD * colour;
           // Three taps rather than one blurred one: a fringe is each channel
           // landing somewhere slightly different, not all of them being soft.
           // The middle one carries the alpha, and is where the matte and
           // everything below read the picture from — a mask taken at the unbent
           // uv would cut the person out of where they no longer are.
-          vec2 red = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR - RIM_SPREAD, scale);
-          vec2 green = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR, scale);
-          vec2 blue = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR + RIM_SPREAD, scale);
+          vec2 red = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR - split, split, colour, scale);
+          vec2 green = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR, split, colour, scale);
+          vec2 blue = rimUv(uv, outward, rim, glass.y, band, LOUPE_IOR + split, split, colour, scale);
           vec4 middle = sampleFocused(green);
           sampled = vec4(sampleFocused(red).r, middle.g, sampleFocused(blue).b, middle.a);
           uv = green;
@@ -1412,7 +1444,8 @@ void main() {
         // face does not also grade the glint off the edge in front of it.
         // Premultiplied for the reason the grade is.
         if (rim > 0.0 && sampled.a > 0.0) {
-          sampled = vec4(rimLit(sampled.rgb / sampled.a, rimNormal(outward, rim)) * sampled.a,
+          sampled = vec4(rimLit(sampled.rgb / sampled.a, rimNormal(outward, rim), clamp(u_fringe, 0.0, 1.0)) *
+                           sampled.a,
                          sampled.a);
         }
       }
@@ -1485,6 +1518,7 @@ interface Program {
   loupe: WebGLUniformLocation | null;
   glass: WebGLUniformLocation | null;
   rim: WebGLUniformLocation | null;
+  fringe: WebGLUniformLocation | null;
   view: WebGLUniformLocation | null;
   motion: WebGLUniformLocation | null;
   gradeA: WebGLUniformLocation | null;
@@ -1998,6 +2032,7 @@ export class WebGlCompositor {
           ...(item.grade ? { grade: item.grade } : {}),
           // And its glass edge, absent on the screen for the same reason.
           ...(item.rim !== undefined ? { rim: item.rim } : {}),
+          ...(item.fringe !== undefined ? { fringe: item.fringe } : {}),
           // Resolved here rather than held in the plan, exactly as the pointer's
           // position is: the plan is built once per clip and this changes every
           // frame. Then carried by whatever the rectangle is doing, so a zoom
@@ -2819,6 +2854,8 @@ interface Draw {
    * radius it is a fraction of is different in every direction.
    */
   rim?: number;
+  /** How much colour that glass splits out, 0 to 1. */
+  fringe?: number;
 }
 
 /** The outline this frame, moved by whatever the picture's rectangle is doing. */
@@ -2940,6 +2977,7 @@ function set(gl: WebGL2RenderingContext, p: Program, draw: Draw): void {
   // uniform holds its value until it is changed, and a band left over from the
   // camera would put a glass edge on whatever was drawn next.
   gl.uniform1f(p.rim, draw.rim ?? 0);
+  gl.uniform1f(p.fringe, draw.fringe ?? 0);
 }
 
 function drawQuad(gl: WebGL2RenderingContext): void {
@@ -3129,6 +3167,7 @@ function compile(gl: WebGL2RenderingContext): Program | null {
     loupe: at("u_loupe"),
     glass: at("u_glass"),
     rim: at("u_rim"),
+    fringe: at("u_fringe"),
     view: at("u_view"),
     motion: at("u_motion"),
     gradeA: at("u_gradeA"),

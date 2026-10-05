@@ -124,9 +124,10 @@ struct Uniforms {
     // the two padding slots the tail already carried, so no field above it
     // moves.
     float rim;
-    // Padding to the next 16, which is where MSL ends this block. Rust will not
-    // add it itself, so both sides write it out.
-    float _tail;
+    // How much colour the rim splits out, 0 to 1 — the Fringing control. In the
+    // last of the padding the tail carried, so the block is the size it was.
+    float fringe;
+    // Padding to the next 16, which is where MSL ends this block.
 };
 
 
@@ -446,6 +447,9 @@ static float3 hue_colour(float turns) {
     return float3(cos(a), cos(a - 2.0943951), cos(a + 2.0943951)) * 0.3333333;
 }
 
+static float max_of(float3 v) { return max(v.r, max(v.g, v.b)); }
+static float min_of(float3 v) { return min(v.r, min(v.g, v.b)); }
+
 // ── The camera's glass rim ──────────────────────────────────────────────────
 //
 // The lens, lying on the camera instead of on the frame, with nothing magnified.
@@ -548,6 +552,20 @@ constant float RIM_GLINT = 0.7;
 // on zero through `hue_colour`, so it shifts the rim's hue without lifting it.
 constant float RIM_SPECTRUM = 0.12;
 
+/// How much of its own colour the glass takes from the picture it is bending.
+///
+/// Three quarters. What a rim reflects is the room it is in, and a flat grey
+/// one reads as glass photographed somewhere else: real glass over something
+/// green has a green edge. The lens can mix the frame beside it in and this
+/// cannot — a camera is drawn straight into the composition and has no copy of
+/// its surroundings — but it has the picture under the rim, which is the half
+/// of the surroundings nearest to it.
+///
+/// Hue and saturation only; the brightness stays the studio gradient's. Two
+/// brightnesses multiplied together is a rim that disappears over a dark
+/// picture, which is exactly where an edge is most needed.
+constant float RIM_TINT = 0.75;
+
 // Distance to whichever outline this draw has, in output pixels.
 //
 // The camera's free-form outline, when it has one, otherwise the rounded
@@ -643,7 +661,7 @@ static float3 rim_normal(float2 outward, float t) {
 //
 // Verbatim as `rimUv` in `webgl.ts`.
 static float2 rim_uv(float2 uv, float2 outward, float t, float radius, float band, float ior,
-                     float2 scale) {
+                     float split, float colour, float2 scale) {
     float bend = lens_bend(rim_normal(outward, t), ior);
     float edge = lens_bend(rim_normal(outward, 1.0), LOUPE_IOR);
     // Against the whole radius, not the band, which is what the lens does with
@@ -657,8 +675,13 @@ static float2 rim_uv(float2 uv, float2 outward, float t, float radius, float ban
     // -1, 0 and 1 for the three taps, so the middle one is never moved by this.
     // Off the band rather than the radius: the fringe belongs to the rolled lip,
     // and spread over the whole glass it would be a mis-converged picture.
-    float apart = (ior - LOUPE_IOR) / RIM_SPREAD;
-    float fringe = band * RIM_FRINGE * apart * smoothstep(RIM_FRINGE_FROM, 1.0, t);
+    //
+    // Against the split the taps were actually taken at rather than the
+    // constant, because the control scales that: dividing by a number the
+    // channels were not separated by would leave the fringe at full strength
+    // however far apart they were asked for.
+    float apart = split > 0.0 ? (ior - LOUPE_IOR) / split : 0.0;
+    float fringe = band * RIM_FRINGE * colour * apart * smoothstep(RIM_FRINGE_FROM, 1.0, t);
     return uv - outward * (walk + fringe) * scale;
 }
 
@@ -672,16 +695,21 @@ static float2 rim_uv(float2 uv, float2 outward, float t, float radius, float ban
 // dark background from coming out as a hole cut in it.
 //
 // Verbatim as `rimLit` in `webgl.ts`.
-static float3 rim_lit(float3 rgb, float3 normal) {
+static float3 rim_lit(float3 rgb, float3 normal, float colour) {
     float fresnel = 0.04 + 0.96 * pow(1.0 - normal.z, 5.0);
     float3 room = mix(float3(0.04), float3(0.92), smoothstep(-0.5, 0.75, -normal.y));
+    // Carrying the colour of whatever the glass is over. `peak` takes the
+    // brightness out of it and leaves the hue, so the gradient above still says
+    // how light the rim is and the picture says what colour it is.
+    float peak = max(max_of(rgb), 1e-3);
+    room *= mix(float3(1.0), rgb / peak, RIM_TINT);
     float3 lit = mix(rgb, room, fresnel * RIM_SHEEN);
     // The spectrum, turning with the surface. The angle is where this part of
     // the rim faces, so the colour runs round the edge the way it does round the
     // lip of a glass rather than sitting on one side of it — and it rides on the
     // Fresnel term, so it is on the rim alone and nowhere near the face.
     float turns = atan2(normal.y, normal.x) / 6.2831853;
-    lit += hue_colour(turns) * fresnel * RIM_SPECTRUM;
+    lit += hue_colour(turns) * fresnel * RIM_SPECTRUM * colour;
     // One light, and a broad sheen under the tight term: the first is the
     // reflection of the source itself and the second is the glass being lit at
     // all, and without the second the first reads as a sticker.
@@ -718,9 +746,6 @@ static float3 chosen(texture2d<float> backdrop, sampler smp, constant Uniforms &
 // faces in the sample recordings rather than taken from a paper: what matters
 // is where a webcam puts skin, not where skin is.
 constant float2 SKIN = float2(0.19, 0.08);
-
-static float max_of(float3 v) { return max(v.r, max(v.g, v.b)); }
-static float min_of(float3 v) { return min(v.r, min(v.g, v.b)); }
 
 // The camera's colour look.
 //
@@ -1233,15 +1258,20 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
                     if (u.mirror != 0) {
                         scale.x = -scale.x;
                     }
+                    // How far apart the three taps are asked for, which is the
+                    // Fringing control: at nothing all three are crown glass
+                    // and the edge bends the picture without colouring it.
+                    float colour = clamp(u.fringe, 0.0, 1.0);
+                    float split = RIM_SPREAD * colour;
                     // Three taps rather than one blurred one: a fringe is each
                     // channel landing somewhere slightly different, not all of
                     // them being soft. The middle one carries the alpha, and is
                     // where the matte and everything below read the picture
                     // from — a mask taken at the unbent uv would cut the person
                     // out of where they no longer are.
-                    float2 red = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR - RIM_SPREAD, scale);
-                    float2 green = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR, scale);
-                    float2 blue = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR + RIM_SPREAD, scale);
+                    float2 red = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR - split, split, colour, scale);
+                    float2 green = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR, split, colour, scale);
+                    float2 blue = rim_uv(uv, outward, rim, glass.y, band, LOUPE_IOR + split, split, colour, scale);
                     float4 middle = sample_focused(image, smp, u, green, in.screen);
                     sampled = float4(sample_focused(image, smp, u, red, in.screen).r,
                                      middle.g,
@@ -1276,7 +1306,8 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
                 // front of it. Premultiplied for the reason the grade is.
                 if (rim > 0.0 && sampled.a > 0.0) {
                     sampled = float4(
-                        rim_lit(sampled.rgb / sampled.a, rim_normal(outward, rim)) * sampled.a,
+                        rim_lit(sampled.rgb / sampled.a, rim_normal(outward, rim), clamp(u.fringe, 0.0, 1.0))
+                            * sampled.a,
                         sampled.a);
                 }
             }
