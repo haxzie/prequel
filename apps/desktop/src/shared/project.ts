@@ -492,6 +492,28 @@ export interface LayoutSettings {
    * whatever this says.
    */
   cursorHideWhileTyping: boolean;
+  /**
+   * The mark drawn where the recording was clicked. See `CLICK_EFFECTS`.
+   *
+   * `"none"` draws nothing, which is what every project saved before this
+   * existed drew. A string rather than the union for the reason `cursorStyle`
+   * is one: a project written by a build with marks this one does not have
+   * still loads — `clickEffect()` falls back rather than throwing.
+   *
+   * Independent of `cursorVisible`, and of whether the pointer was kept out
+   * of the frames at all: a press is recorded either way, and the mark goes
+   * on the picture, not on the pointer.
+   */
+  clickEffect: string;
+  /** The mark's colour, as hex. Multiplied into whatever alpha the mark has. */
+  clickColor: string;
+  /**
+   * How far the mark reaches, as a fraction of the frame's shorter edge.
+   *
+   * The widest the mark gets, not where it starts: a ripple grows to this
+   * and a press closes down from it.
+   */
+  clickSize: number;
 }
 
 export type Background =
@@ -1628,6 +1650,16 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   cursorAutoHide: false,
   cursorHideAfter: 2,
   cursorHideWhileTyping: true,
+  // No mark. A choice like a filter is, and like a filter a new project starts
+  // without one; and no `before*` guard is needed, because nothing is what
+  // every project saved before this existed drew.
+  clickEffect: "none",
+  // White reads on a light page and a dark one. A brand colour is one picker
+  // away.
+  clickColor: "#ffffff",
+  // About twice the pointer. Big enough to be seen on a phone, small enough
+  // not to cover the thing that was clicked.
+  clickSize: 0.08,
 };
 
 /** The wallpaper file main copies into a recording. */

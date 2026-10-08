@@ -17,8 +17,8 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at, caption_at,
-    crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at, rect_at,
+    ClickEffect, LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at,
+    caption_at, click_phase, crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at, rect_at,
 };
 use crate::{Error, Result};
 
@@ -178,12 +178,18 @@ struct Uniforms {
     /// The first field past the 16 bytes the tail filled, so it opens a fresh
     /// row and nothing above it moves.
     glow: f32,
-    /// Padding to the end of that row.
+    /// The click mark's phase, 0 to 1 across its span. Zero on every other
+    /// draw, which never reaches the branch that reads it.
     ///
-    /// MSL rounds the block up to a multiple of 16 and Rust does not: without
-    /// this the two disagree about the block's size, which compiles, runs, and
-    /// hands the shader whatever was after the buffer.
-    _tail: [f32; 3],
+    /// These three fill the row `glow` opened, which was padding written by
+    /// hand until a mark needed it: MSL rounds the block up to a multiple of
+    /// 16 and Rust does not, and the row is now full on both sides, so the
+    /// block is the 448 it was and nothing above moves.
+    click_phase: f32,
+    /// Which arm draws it — `ClickEffect::index`. Read only under `MODE_CLICK`.
+    click_style: u32,
+    /// 0 to 1, so a scattered mark differs press to press.
+    click_seed: f32,
 }
 
 /// The video frames one output frame is drawn from.
@@ -202,6 +208,10 @@ const MODE_IMAGE: u32 = 2;
 const MODE_SHADOW: u32 = 3;
 const MODE_STROKE: u32 = 4;
 const MODE_LOUPE: u32 = 5;
+/// A click mark. 8 rather than 6: the preview's own modes 6 and 7 are its
+/// screenshot masks, which have no arm in `shaders.metal`, and the two mode
+/// tables are kept numbered alike so a branch is never read differently.
+const MODE_CLICK: u32 = 8;
 
 /// How far around the glass the lens's own render reaches, in radii.
 ///
@@ -808,7 +818,10 @@ impl Compositor {
             rim: 0.0,
             fringe: 0.0,
             glow: 0.0,
-            _tail: [0.0; 3],
+            // No mark unless a click item says otherwise.
+            click_phase: 0.0,
+            click_style: 0,
+            click_seed: 0.0,
             shape: [0.0, 2.0],
             frame,
             _align: [0.0; 2],
@@ -1261,6 +1274,53 @@ impl Compositor {
                         ..base
                     },
                     Some(held.texture.as_ref()),
+                ))
+            }
+
+            PlanItem::Click {
+                effect,
+                color,
+                size,
+                span,
+                keys,
+                seed,
+            } => {
+                // Off screen, or a mark this build has never heard of. Both
+                // draw nothing rather than something wrong — the preview does
+                // the same, by finding nothing in its catalogue.
+                let Some(phase) = click_phase(*span, at as i64) else {
+                    return Ok(None);
+                };
+                if *effect == ClickEffect::Unknown {
+                    return Ok(None);
+                }
+                let Some(point) = cursor_at(keys, at as i64) else {
+                    return Ok(None);
+                };
+
+                // Sized by where it sits on the picture, as the pointer is, so
+                // a mark on a tilted frame grows towards the near edge with
+                // everything on it. Centred on the point: a mark has no tip.
+                // Mirrors the same lines in `webgl.ts`.
+                let size = size * point.scale;
+
+                Some((
+                    Uniforms {
+                        quad: corners_of(point.quad.as_ref().map_or(&[][..], |q| &q[..]), 0.0),
+                        rect: [
+                            (point.x - size * 0.5) as f32,
+                            (point.y - size * 0.5) as f32,
+                            size as f32,
+                            size as f32,
+                        ],
+                        color_a: rgba(color),
+                        click_phase: phase as f32,
+                        click_style: effect.index(),
+                        click_seed: *seed as f32,
+                        mode: MODE_CLICK,
+                        ..base
+                    },
+                    None,
                 ))
             }
 
@@ -1898,8 +1958,13 @@ mod tests {
         // The lens's thrown light, which opens the row after the one the tail
         // filled exactly.
         assert_eq!(offset_of!(Uniforms, glow), 432);
+        // The click mark fills the rest of that row, where the hand-written
+        // padding was.
+        assert_eq!(offset_of!(Uniforms, click_phase), 436);
+        assert_eq!(offset_of!(Uniforms, click_style), 440);
+        assert_eq!(offset_of!(Uniforms, click_seed), 444);
 
-        // MSL rounds the block to the next 16, so both sides are 448.
+        // The last row is full, so both sides are 448 with no padding at all.
         assert_eq!(align_of::<Uniforms>(), 4);
         assert_eq!(size_of::<Uniforms>(), 448);
     }

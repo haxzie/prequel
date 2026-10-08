@@ -1582,6 +1582,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               }}
               images={images}
               cursor={session.cursor}
+              clicks={session.clicks}
               blobs={session.blobs}
               zooms={state.project.zooms}
               cues={captions.byLook}
@@ -1700,6 +1701,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               present={present}
               still={still}
               hasCursor={session.cursor !== null}
+              hasClicks={session.clicks.length > 0}
               hasSounds={hasSounds}
               hasSpeech={hasSpeech}
               denoise={{ working: clean.working, error: clean.error }}

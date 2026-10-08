@@ -14,6 +14,7 @@ import type {
 } from "@prequel/recorder";
 
 import type {
+  ClickSample,
   CursorSample,
   KeySpan,
   Manifest,
@@ -1803,6 +1804,16 @@ export interface EditorSession {
    * which is that it has no layer to offer.
    */
   cursor: CursorLayer | null;
+  /**
+   * Every press the recording saw, with where it landed.
+   *
+   * Beside `cursor` rather than on it, because the two are not the same
+   * layer: the pointer is offered only when it was kept out of the frames,
+   * and a press is recorded either way. A click mark goes on the picture, so
+   * a recording with the pointer baked in still gets one. Empty when nothing
+   * was pressed, or the recording predates the tap.
+   */
+  clicks: ClickSample[];
   /**
    * The camera's fitted outline, or null when the recording has none.
    *

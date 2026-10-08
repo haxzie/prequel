@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type Dispatch } from "react";
 import type { Annotation, AnnotationKind } from "../../../shared/annotations";
 import { MASK_STRENGTH } from "../../../shared/annotations";
 import { captionStyle } from "../../../shared/captions";
+import { clickEffect, clickEffectId } from "../../../shared/click-effects";
 import { cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
 import {
@@ -53,6 +54,7 @@ import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
 import { useTooltip } from "../components/Tooltip";
 import { cn } from "../lib/cn";
+import { ClickEffectPicker } from "./controls/ClickEffectPicker";
 import { CursorPicker } from "./controls/CursorPicker";
 import { EasingPad } from "./controls/EasingPad";
 import { FontPicker } from "./controls/FontPicker";
@@ -190,6 +192,12 @@ export interface InspectorProps {
   present: Set<TrackKind>;
   /** Whether the pointer is a layer here, or already part of the picture. */
   hasCursor: boolean;
+  /**
+   * Whether the recording saw any presses. Opens the Cursor panel on its own:
+   * a click mark goes on the picture, so a recording with the pointer baked
+   * into its frames can still wear one.
+   */
+  hasClicks: boolean;
   /**
    * Whether this is a screenshot rather than a recording.
    *
@@ -836,7 +844,9 @@ function InspectorPanels(props: InspectorProps) {
     ...(props.present.has("microphone") || props.present.has("system_audio") || props.hasSounds
       ? [{ id: "audio" as const, label: "Audio", Icon: AudioIcon }]
       : []),
-    ...(props.hasCursor ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }] : []),
+    ...(props.hasCursor || props.hasClicks
+      ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }]
+      : []),
     // Only where there is a voice to caption. A recording with no microphone
     // and no imported clip has nothing to transcribe, and offering the panel
     // anyway would be a section whose every control is dead.
@@ -1228,6 +1238,8 @@ function InspectorPanels(props: InspectorProps) {
                     field={field}
                     set={set}
                     cursorUrl={props.fileUrl}
+                    hasCursor={props.hasCursor}
+                    hasClicks={props.hasClicks}
                   />
                 )}
 
@@ -3013,199 +3025,269 @@ function CursorPanel({
   field,
   set,
   cursorUrl,
+  hasCursor,
+  hasClicks,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   set: Setter;
   cursorUrl: (file: string) => string;
+  /**
+   * Whether the pointer is a layer here. False leaves only the click marks:
+   * a recording with the pointer baked into its frames still has its presses,
+   * and every other control in here would be dead.
+   */
+  hasCursor: boolean;
+  /** Whether there is a press for a mark to land on. */
+  hasClicks: boolean;
 }) {
   const { layout } = settings;
   const off = !layout.cursorVisible;
+  const noMark = layout.clickEffect === "none";
+
+  // Under the pointer's own group when there is one, on its own when there is
+  // not. One value in two places rather than two copies of the controls.
+  const marks = hasClicks && (
+    <Section title="Click">
+      <Field icon={<MouseIcon />} label="Mark" {...field("layout", "clickEffect")}>
+        <ClickEffectPicker
+          // Resolved rather than passed straight through, for the reason the
+          // pointer style is: a project naming a mark this build no longer
+          // ships shows none chosen rather than a selection off the grid.
+          value={clickEffectId(layout.clickEffect)}
+          // Choosing a mark writes its own colour with it, the way a filter
+          // writes its defaults — and only when it is a different mark, so
+          // a tap on the tile already on does not undo a colour dialled in.
+          onChange={(value) => {
+            if (value === layout.clickEffect) return;
+            set("layout", "clickEffect", value);
+            const spec = clickEffect(value);
+            if (spec) set("layout", "clickColor", spec.color);
+          }}
+        />
+      </Field>
+
+      <ColorField
+        icon={<DropletIcon />}
+        label="Colour"
+        overridden={field("layout", "clickColor").overridden}
+        disabled={noMark}
+        value={layout.clickColor}
+        onChange={(value) => set("layout", "clickColor", value)}
+      />
+
+      <Slider
+        icon={<SizeIcon />}
+        label="Size"
+        {...field("layout", "clickSize")}
+        value={layout.clickSize}
+        min={0.03}
+        max={0.25}
+        step={0.005}
+        disabled={noMark}
+        format={percent}
+        onChange={(value) => set("layout", "clickSize", value)}
+      />
+    </Section>
+  );
 
   return (
     <>
-      <Section>
-        <ToggleField
-          icon={<EyeIcon />}
-          label="Pointer"
-          {...field("layout", "cursorVisible")}
-          value={layout.cursorVisible}
-          onChange={(value) => set("layout", "cursorVisible", value)}
-        />
-
-        <Field icon={<CursorIcon />} label="Style" {...field("layout", "cursorStyle")}>
-          <CursorPicker
-            // Resolved rather than passed straight through, so a project naming a
-            // style this build no longer ships shows the one actually being drawn
-            // instead of no selection at all.
-            value={cursorStyle(layout.cursorStyle).id}
-            imageUrl={cursorUrl}
-            disabled={off}
-            onChange={(value) => set("layout", "cursorStyle", value)}
-          />
-        </Field>
-
-        {/* Only under a style that wears one. The name is kept when the style
-            changes — see `cursorName` — so this comes back filled in. */}
-        {cursorTag(layout.cursorStyle) !== null && (
-          <Field icon={<PersonIcon />} label="Name on the tag" {...field("layout", "cursorName")}>
-            <input
-              value={layout.cursorName}
-              placeholder="Who is pointing"
-              maxLength={MAX_NAME}
-              disabled={off}
-              spellCheck={false}
-              className={cn(
-                "w-full rounded-full bg-white/5 px-3 text-xs outline-none",
-                CONTROL_H,
-                "placeholder:text-editor-muted focus:bg-white/10 disabled:opacity-40",
-              )}
-              onChange={(event) => set("layout", "cursorName", event.target.value)}
-              // Return leaves the field; the value is already saved on every
-              // keystroke. The editor's shortcuts already stand down for an
-              // `INPUT`, so nothing typed here is read as a command.
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-              }}
+      {/* Click marks with no pointer layer: a baked-in pointer still has its
+          presses, and every other section in here would be dead. */}
+      {!hasCursor && marks}
+      {hasCursor && (
+        <>
+          <Section>
+            <ToggleField
+              icon={<EyeIcon />}
+              label="Pointer"
+              {...field("layout", "cursorVisible")}
+              value={layout.cursorVisible}
+              onChange={(value) => set("layout", "cursorVisible", value)}
             />
-          </Field>
-        )}
 
-        <Slider
-          icon={<SizeIcon />}
-          label="Size"
-          {...field("layout", "cursorSize")}
-          value={layout.cursorSize}
-          min={0.015}
-          max={0.12}
-          step={0.001}
-          disabled={off}
-          // Shown against the default rather than as a fraction: 0.035 of the
-          // shorter edge means nothing to anyone.
-          format={(value) => `${(value / 0.035).toFixed(1)}×`}
-          onChange={(value) => set("layout", "cursorSize", value)}
-        />
-      </Section>
+            <Field icon={<CursorIcon />} label="Style" {...field("layout", "cursorStyle")}>
+              <CursorPicker
+                // Resolved rather than passed straight through, so a project naming a
+                // style this build no longer ships shows the one actually being drawn
+                // instead of no selection at all.
+                value={cursorStyle(layout.cursorStyle).id}
+                imageUrl={cursorUrl}
+                disabled={off}
+                onChange={(value) => set("layout", "cursorStyle", value)}
+              />
+            </Field>
 
-      <Section title="Motion">
-        <Slider
-          icon={<SmoothingIcon />}
-          label="Smoothing"
-          {...field("layout", "cursorSmoothing")}
-          value={layout.cursorSmoothing}
-          min={0}
-          max={1}
-          step={0.05}
-          disabled={off}
-          // A share of the smoothing rather than the lag in milliseconds it
-          // buys: what anyone is judging is the path on screen, and nobody
-          // picks a pointer by how far behind their hand it runs.
-          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
-          onChange={(value) => set("layout", "cursorSmoothing", value)}
-        />
+            {/* Only under a style that wears one. The name is kept when the style
+            changes — see `cursorName` — so this comes back filled in. */}
+            {cursorTag(layout.cursorStyle) !== null && (
+              <Field
+                icon={<PersonIcon />}
+                label="Name on the tag"
+                {...field("layout", "cursorName")}
+              >
+                <input
+                  value={layout.cursorName}
+                  placeholder="Who is pointing"
+                  maxLength={MAX_NAME}
+                  disabled={off}
+                  spellCheck={false}
+                  className={cn(
+                    "w-full rounded-full bg-white/5 px-3 text-xs outline-none",
+                    CONTROL_H,
+                    "placeholder:text-editor-muted focus:bg-white/10 disabled:opacity-40",
+                  )}
+                  onChange={(event) => set("layout", "cursorName", event.target.value)}
+                  // Return leaves the field; the value is already saved on every
+                  // keystroke. The editor's shortcuts already stand down for an
+                  // `INPUT`, so nothing typed here is read as a command.
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+              </Field>
+            )}
 
-        <Slider
-          icon={<BlurIcon />}
-          label="Motion blur"
-          {...field("layout", "cursorMotionBlur")}
-          value={layout.cursorMotionBlur}
-          min={0}
-          max={1}
-          step={0.05}
-          disabled={off}
-          // A share of a full shutter, shown the way Smoothing above is: the
-          // streak's length comes from how fast the pointer is actually going,
-          // and a figure in pixels would be a number nobody can picture.
-          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
-          onChange={(value) => set("layout", "cursorMotionBlur", value)}
-        />
+            <Slider
+              icon={<SizeIcon />}
+              label="Size"
+              {...field("layout", "cursorSize")}
+              value={layout.cursorSize}
+              min={0.015}
+              max={0.12}
+              step={0.001}
+              disabled={off}
+              // Shown against the default rather than as a fraction: 0.035 of the
+              // shorter edge means nothing to anyone.
+              format={(value) => `${(value / 0.035).toFixed(1)}×`}
+              onChange={(value) => set("layout", "cursorSize", value)}
+            />
+          </Section>
 
-        <Slider
-          icon={<LeanIcon />}
-          label="Lean"
-          {...field("layout", "cursorTilt")}
-          value={layout.cursorTilt}
-          min={0}
-          max={1}
-          step={0.05}
-          disabled={off}
-          // A share of the small maximum angle rather than the angle itself,
-          // shown the way Smoothing and Motion blur above are.
-          format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
-          onChange={(value) => set("layout", "cursorTilt", value)}
-        />
-      </Section>
+          {marks}
 
-      <Section title="Shadow">
-        <Slider
-          icon={<ShadowIcon />}
-          label="Opacity"
-          {...field("layout", "cursorShadowOpacity")}
-          value={layout.cursorShadowOpacity}
-          min={0}
-          max={1}
-          format={percent}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorShadowOpacity", value)}
-        />
+          <Section title="Motion">
+            <Slider
+              icon={<SmoothingIcon />}
+              label="Smoothing"
+              {...field("layout", "cursorSmoothing")}
+              value={layout.cursorSmoothing}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={off}
+              // A share of the smoothing rather than the lag in milliseconds it
+              // buys: what anyone is judging is the path on screen, and nobody
+              // picks a pointer by how far behind their hand it runs.
+              format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+              onChange={(value) => set("layout", "cursorSmoothing", value)}
+            />
 
-        <Slider
-          icon={<BlurIcon />}
-          label="Blur"
-          {...field("layout", "cursorShadowBlur")}
-          value={layout.cursorShadowBlur}
-          min={0}
-          max={0.05}
-          format={percent}
-          disabled={off || layout.cursorShadowOpacity === 0}
-          onChange={(value) => set("layout", "cursorShadowBlur", value)}
-        />
+            <Slider
+              icon={<BlurIcon />}
+              label="Motion blur"
+              {...field("layout", "cursorMotionBlur")}
+              value={layout.cursorMotionBlur}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={off}
+              // A share of a full shutter, shown the way Smoothing above is: the
+              // streak's length comes from how fast the pointer is actually going,
+              // and a figure in pixels would be a number nobody can picture.
+              format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+              onChange={(value) => set("layout", "cursorMotionBlur", value)}
+            />
 
-        <Slider
-          icon={<ShadowOffsetIcon />}
-          label="Offset"
-          {...field("layout", "cursorShadowY")}
-          value={layout.cursorShadowY}
-          min={0}
-          max={0.03}
-          format={percent}
-          disabled={off || layout.cursorShadowOpacity === 0}
-          onChange={(value) => set("layout", "cursorShadowY", value)}
-        />
-      </Section>
+            <Slider
+              icon={<LeanIcon />}
+              label="Lean"
+              {...field("layout", "cursorTilt")}
+              value={layout.cursorTilt}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={off}
+              // A share of the small maximum angle rather than the angle itself,
+              // shown the way Smoothing and Motion blur above are.
+              format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}
+              onChange={(value) => set("layout", "cursorTilt", value)}
+            />
+          </Section>
 
-      <Section title="Hiding">
-        <ToggleField
-          icon={<TypingIcon />}
-          label="Hide while typing"
-          {...field("layout", "cursorHideWhileTyping")}
-          value={layout.cursorHideWhileTyping}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorHideWhileTyping", value)}
-        />
+          <Section title="Shadow">
+            <Slider
+              icon={<ShadowIcon />}
+              label="Opacity"
+              {...field("layout", "cursorShadowOpacity")}
+              value={layout.cursorShadowOpacity}
+              min={0}
+              max={1}
+              format={percent}
+              disabled={off}
+              onChange={(value) => set("layout", "cursorShadowOpacity", value)}
+            />
 
-        <ToggleField
-          icon={<EyeOffIcon />}
-          label="Hide when still"
-          {...field("layout", "cursorAutoHide")}
-          value={layout.cursorAutoHide}
-          disabled={off}
-          onChange={(value) => set("layout", "cursorAutoHide", value)}
-        />
+            <Slider
+              icon={<BlurIcon />}
+              label="Blur"
+              {...field("layout", "cursorShadowBlur")}
+              value={layout.cursorShadowBlur}
+              min={0}
+              max={0.05}
+              format={percent}
+              disabled={off || layout.cursorShadowOpacity === 0}
+              onChange={(value) => set("layout", "cursorShadowBlur", value)}
+            />
 
-        <Slider
-          icon={<ClockIcon />}
-          label="After"
-          {...field("layout", "cursorHideAfter")}
-          value={layout.cursorHideAfter}
-          min={0.5}
-          max={10}
-          step={0.5}
-          disabled={off || !layout.cursorAutoHide}
-          format={(value) => `${value}s`}
-          onChange={(value) => set("layout", "cursorHideAfter", value)}
-        />
-      </Section>
+            <Slider
+              icon={<ShadowOffsetIcon />}
+              label="Offset"
+              {...field("layout", "cursorShadowY")}
+              value={layout.cursorShadowY}
+              min={0}
+              max={0.03}
+              format={percent}
+              disabled={off || layout.cursorShadowOpacity === 0}
+              onChange={(value) => set("layout", "cursorShadowY", value)}
+            />
+          </Section>
+
+          <Section title="Hiding">
+            <ToggleField
+              icon={<TypingIcon />}
+              label="Hide while typing"
+              {...field("layout", "cursorHideWhileTyping")}
+              value={layout.cursorHideWhileTyping}
+              disabled={off}
+              onChange={(value) => set("layout", "cursorHideWhileTyping", value)}
+            />
+
+            <ToggleField
+              icon={<EyeOffIcon />}
+              label="Hide when still"
+              {...field("layout", "cursorAutoHide")}
+              value={layout.cursorAutoHide}
+              disabled={off}
+              onChange={(value) => set("layout", "cursorAutoHide", value)}
+            />
+
+            <Slider
+              icon={<ClockIcon />}
+              label="After"
+              {...field("layout", "cursorHideAfter")}
+              value={layout.cursorHideAfter}
+              min={0.5}
+              max={10}
+              step={0.5}
+              disabled={off || !layout.cursorAutoHide}
+              format={(value) => `${value}s`}
+              onChange={(value) => set("layout", "cursorHideAfter", value)}
+            />
+          </Section>
+        </>
+      )}
     </>
   );
 }

@@ -82,6 +82,9 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     manifest,
     media,
     cursor: cursorLayer(dir, manifest),
+    // Every press, whether or not the pointer is a layer: a click mark goes on
+    // the picture, so a recording with the pointer baked in still gets one.
+    clicks: manifest.clicks ?? [],
     blobs: blobTrack(manifest),
     // Unrepaired. Whether its background's picture is actually beside the
     // recording is `readSessionDetails`'s answer, and the editor's own

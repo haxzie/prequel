@@ -220,6 +220,31 @@ pub enum PlanItem {
         shadow: Option<CursorShadow>,
         points: Vec<CursorPoint>,
     },
+    /// A mark where the recording was clicked, for the moment after.
+    ///
+    /// Its own variant rather than a `Cursor`: nothing is sampled, the quad is
+    /// the mark's own reach, and it is drawn whether or not the pointer is.
+    /// One item per press, so every item stays one quad. Mirrors
+    /// `kind: "click"` in `layout.ts`; every field is one word, so nothing
+    /// needs a rename.
+    Click {
+        /// Which mark, by name. A name this build lacks parses as `Unknown`
+        /// and draws nothing, rather than failing the whole plan.
+        effect: ClickEffect,
+        /// Hex, alpha allowed, like a stroke's.
+        color: String,
+        /// The quad's side in output pixels at rest.
+        size: f64,
+        /// When it is on screen, half-open like a caption's.
+        span: Span,
+        /// Where the click sits on the picture over its life — the same
+        /// shape the pointer's points have, so `cursor_at` places it.
+        keys: Vec<CursorPoint>,
+        /// 0 to 1 from the press's own time, so two scattered marks differ.
+        /// Defaulted: the seed only scatters, it never places.
+        #[serde(default)]
+        seed: f64,
+    },
     /// One unit of a text overlay: a crop out of a field's bitmap, drawn
     /// where its keys say at each moment.
     ///
@@ -282,6 +307,57 @@ pub enum PlanItem {
         #[serde(default)]
         tint: Option<Tint>,
     },
+}
+
+/// The marks a click can leave. Mirrors `CLICK_EFFECTS` in
+/// `apps/desktop/src/shared/click-effects.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClickEffect {
+    Ripple,
+    Sonar,
+    Orb,
+    Pressure,
+    Burst,
+    Confetti,
+    Target,
+    Heart,
+    PixelRing,
+    Ink,
+    Halo,
+    Tap,
+    /// Anything this build has never heard of. Drawn as no mark at all.
+    #[serde(other)]
+    Unknown,
+}
+
+impl ClickEffect {
+    /// Which arm of `click_mark` in `shaders.metal` draws this.
+    ///
+    /// Hand-kept in lockstep with `CLICK_EFFECTS` in `shared/click-effects.ts`
+    /// and the arms of the switch on both sides, and pinned by
+    /// `the_click_effects_match_the_shader` below. Nothing can compile across
+    /// that boundary, so the guard is a test naming the numbers — the same
+    /// discipline `FilterKind::index` uses.
+    pub fn index(self) -> u32 {
+        match self {
+            ClickEffect::Ripple => 0,
+            ClickEffect::Sonar => 1,
+            ClickEffect::Orb => 2,
+            ClickEffect::Pressure => 3,
+            ClickEffect::Burst => 4,
+            ClickEffect::Confetti => 5,
+            ClickEffect::Target => 6,
+            ClickEffect::Heart => 7,
+            ClickEffect::PixelRing => 8,
+            ClickEffect::Ink => 9,
+            ClickEffect::Halo => 10,
+            ClickEffect::Tap => 11,
+            // An arm no switch has, so the shader draws nothing. The
+            // compositor skips the draw before this is ever read.
+            ClickEffect::Unknown => u32::MAX,
+        }
+    }
 }
 
 /// A cursor shadow is part of the cursor item rather than a rectangle shadow:
@@ -887,6 +963,18 @@ pub struct OverlayKey {
     pub opacity: f64,
     /// How far out of focus, in bitmap pixels. 0 is sharp.
     pub blur: f64,
+}
+
+/// How far through its life a click mark is at a moment, 0 to 1, or `None`
+/// when it is not on screen.
+///
+/// Mirrors `clickPhase` in `apps/desktop/src/shared/layout.ts`: half-open at
+/// the end, like a caption, and never dividing by a span of no length.
+pub fn click_phase(span: Span, at: i64) -> Option<f64> {
+    if at < span.start || at >= span.end {
+        return None;
+    }
+    Some((at - span.start) as f64 / (span.end - span.start).max(1) as f64)
 }
 
 /// Where an overlay unit is at a moment, or `None` when it is off screen.
@@ -2268,6 +2356,90 @@ mod tests {
             }
             other => panic!("parsed as {other:?}"),
         }
+    }
+
+    #[test]
+    fn reads_a_click_item_the_editor_wrote() {
+        let json = r##"{
+            "kind": "click",
+            "effect": "pixel-ring",
+            "color": "#ffffff",
+            "size": 120.0,
+            "span": { "start": 1000, "end": 451000000 },
+            "keys": [{ "at": 1000, "x": 10.0, "y": 20.0, "visible": true }],
+            "seed": 0.25
+        }"##;
+
+        let item: PlanItem = serde_json::from_str(json).unwrap();
+        match item {
+            PlanItem::Click {
+                effect,
+                size,
+                span,
+                keys,
+                seed,
+                ..
+            } => {
+                assert_eq!(effect, ClickEffect::PixelRing);
+                assert_eq!(size, 120.0);
+                assert_eq!(span.start, 1000);
+                assert_eq!(keys.len(), 1);
+                assert_eq!(seed, 0.25);
+            }
+            other => panic!("parsed as {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reads_a_mark_this_build_has_never_heard_of_as_unknown() {
+        // A newer editor can name a mark this build lacks. The whole plan
+        // failing to parse over it would be an export that draws nothing at
+        // all; a mark that draws nothing is the right answer.
+        let json = r##"{
+            "kind": "click", "effect": "glitter", "color": "#ffffff", "size": 10.0,
+            "span": { "start": 0, "end": 10 }, "keys": []
+        }"##;
+        let item: PlanItem = serde_json::from_str(json).unwrap();
+        match item {
+            PlanItem::Click { effect, seed, .. } => {
+                assert_eq!(effect, ClickEffect::Unknown);
+                assert_eq!(seed, 0.0);
+            }
+            other => panic!("parsed as {other:?}"),
+        }
+    }
+
+    /// The table `CLICK_EFFECTS` in `apps/desktop/src/shared/click-effects.ts`
+    /// mirrors, and the arms of `click_mark` in both shaders. Written out on
+    /// both sides because nothing compiles across the boundary.
+    #[test]
+    fn the_click_effects_match_the_shader() {
+        assert_eq!(ClickEffect::Ripple.index(), 0);
+        assert_eq!(ClickEffect::Sonar.index(), 1);
+        assert_eq!(ClickEffect::Orb.index(), 2);
+        assert_eq!(ClickEffect::Pressure.index(), 3);
+        assert_eq!(ClickEffect::Burst.index(), 4);
+        assert_eq!(ClickEffect::Confetti.index(), 5);
+        assert_eq!(ClickEffect::Target.index(), 6);
+        assert_eq!(ClickEffect::Heart.index(), 7);
+        assert_eq!(ClickEffect::PixelRing.index(), 8);
+        assert_eq!(ClickEffect::Ink.index(), 9);
+        assert_eq!(ClickEffect::Halo.index(), 10);
+        assert_eq!(ClickEffect::Tap.index(), 11);
+    }
+
+    #[test]
+    fn a_click_phase_is_half_open_like_a_caption() {
+        let span = Span {
+            start: 100,
+            end: 300,
+        };
+        assert_eq!(click_phase(span, 99), None);
+        assert_eq!(click_phase(span, 100), Some(0.0));
+        assert_eq!(click_phase(span, 200), Some(0.5));
+        assert_eq!(click_phase(span, 300), None);
+        // A span of no length never divides by zero.
+        assert_eq!(click_phase(Span { start: 5, end: 5 }, 5), None);
     }
 
     #[test]

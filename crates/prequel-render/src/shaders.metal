@@ -96,7 +96,8 @@ struct Uniforms {
     // Gradient direction, already resolved from an angle.
     float2 gradient;
 
-    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke, 5 loupe,
+    // 0 fill, 1 gradient, 2 image, 3 shadow, 4 stroke, 5 loupe, 8 click mark.
+    // 6 and 7 are the preview's screenshot masks and have no arm here.
     uint mode;
     // Stroke width, or shadow blur radius, in pixels.
     float weight;
@@ -132,7 +133,12 @@ struct Uniforms {
     // row and nothing above it moves; `compositor.rs` pads out the rest of that
     // row by hand, because Rust will not.
     float glow;
-    // Padding to the next 16, which is where MSL ends this block.
+    // The click mark: its phase 0..1, which arm, and its seed. These fill the
+    // row `glow` opened, so the block is the 448 it was and nothing above
+    // moves — and the padding `compositor.rs` wrote by hand is now these.
+    float click_phase;
+    uint click_style;
+    float click_seed;
 };
 
 
@@ -1075,6 +1081,304 @@ static float3 lens_tap(texture2d<float> backdrop, sampler smp, constant Uniforms
   return behind(backdrop, smp, u, centre + offset * reach * radius + smear * ((1.0 - reach) * along));
 }
 
+// ---------------------------------------------------------------------------
+// Click marks.
+//
+// A mark is shading alone: nothing is sampled, and the quad is the mark's own
+// reach. Every function below is pure arithmetic on the quad's uv, the phase
+// 0..1 across the mark's life, and the colour the plan chose, so the whole
+// section can be compared textually with its twin — webgl.test.ts does,
+// function by function. No uniform is read in here for that reason.
+//
+// Each arm is fully transparent at the end of its phase, so a mark never
+// leaves a step on the frame it is taken off.
+//
+// Verbatim as the same section in webgl.ts.
+// ---------------------------------------------------------------------------
+
+constant float CLICK_TAU = 6.2831853;
+
+// A press is a snap and a release: fast out, settling slowly.
+static float click_ease_out(float t) {
+    return 1.0 - (1.0 - t) * (1.0 - t);
+}
+
+// The same, overshooting a little past 1 before settling, for a pop.
+static float click_back(float t) {
+    float c = 1.70158;
+    float s = t - 1.0;
+    return s * s * ((c + 1.0) * s + c) + 1.0;
+}
+
+// x wrapped into 0..y, the way GLSL's mod does it. Written out because the two
+// languages disagree about a negative x, and an angle is often negative.
+static float click_wrap(float x, float y) {
+    return x - y * floor(x / y);
+}
+
+// A feathered ring: 1 on the ring, 0 a pixel either side of its edges.
+static float click_ring(float2 p, float radius, float width, float px) {
+    float d = abs(length(p) - radius) - width * 0.5;
+    return 1.0 - smoothstep(-px, px, d);
+}
+
+// A feathered disc.
+static float click_disc(float2 p, float radius, float px) {
+    return 1.0 - smoothstep(-px, px, length(p) - radius);
+}
+
+// Enough randomness to scatter a dozen bits. Not a hash anyone should trust
+// for anything else.
+static float click_hash(float n) {
+    return fract(sin(n * 127.1 + 311.7) * 43758.5453);
+}
+
+// A true distance to a heart with its point at the origin and its lobes up
+// to y = 1, so the edge can be feathered in pixels like every other shape.
+// Mirrors the usual two-case construction: the lobes are two circles, the
+// point is the nearest of two straight edges.
+static float click_heart(float2 p) {
+    p.x = abs(p.x);
+    if (p.y + p.x > 1.0) {
+        float2 lobe = p - float2(0.25, 0.75);
+        return sqrt(dot(lobe, lobe)) - 0.35355339;
+    }
+    float2 tip = p - float2(0.0, 1.0);
+    float2 edge = p - 0.5 * max(p.x + p.y, 0.0);
+    return sqrt(min(dot(tip, tip), dot(edge, edge))) * sign(p.x - p.y);
+}
+
+// 0: one ring spreading out and fading.
+static float4 click_ripple(float2 p, float t, float px, float4 colour) {
+    float e = click_ease_out(t);
+    float radius = 0.15 + 0.8 * e;
+    float width = 0.14 * (1.0 - 0.6 * e);
+    float a = click_ring(p, radius, width, px) * (1.0 - t);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 1: three rings, a fifth of the phase apart, each thinner and fainter.
+static float4 click_sonar(float2 p, float t, float px, float4 colour) {
+    float a = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float local = (t - float(i) * 0.2) / 0.6;
+        if (local > 0.0 && local < 1.0) {
+            float e = click_ease_out(local);
+            float fade = (1.0 - local) * (1.0 - float(i) * 0.25);
+            a = max(a, click_ring(p, 0.1 + 0.85 * e, 0.1 * (1.0 - 0.5 * e), px) * fade);
+        }
+    }
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 2: a soft dot that blooms and goes.
+static float4 click_orb(float2 p, float t, float px, float4 colour) {
+    float e = click_ease_out(t);
+    float radius = 0.3 + 0.3 * e;
+    float r = length(p);
+    float core = click_disc(p, radius, px);
+    float reach = max(r - radius, 0.0) / 0.3;
+    float glow = exp(-reach * reach) * 0.6;
+    float a = (core * 0.85 + glow * (1.0 - core)) * (1.0 - t);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 3: a ring closing onto the click, brightest halfway down.
+static float4 click_pressure(float2 p, float t, float px, float4 colour) {
+    float e = click_ease_out(t);
+    float radius = 0.95 - 0.6 * e;
+    float width = 0.06 + 0.1 * e;
+    float a = click_ring(p, radius, width, px) * sin(t * CLICK_TAU * 0.5);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 4: eight dashes flying out from the click, turned by the seed so two
+// bursts side by side do not line up.
+static float4 click_burst(float2 p, float t, float px, float seed, float4 colour) {
+    float e = click_ease_out(t);
+    float r = length(p);
+    float angle = atan2(p.y, p.x);
+    float sector = CLICK_TAU / 8.0;
+    float off = click_wrap(angle - seed * CLICK_TAU + sector * 0.5, sector) - sector * 0.5;
+    float across = abs(sin(off)) * r;
+    float inner = 0.2 + 0.7 * e;
+    float outer = inner + 0.3 * (1.0 - e) + 0.06;
+    float mid = (inner + outer) * 0.5;
+    float reach = (outer - inner) * 0.5;
+    float along = 1.0 - smoothstep(-px, px, abs(r - mid) - reach);
+    float beside = 1.0 - smoothstep(-px, px, across - 0.035);
+    float a = along * beside * (1.0 - t);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 5: a dozen bits thrown up and falling, each a little off the chosen colour.
+static float4 click_confetti(float2 p, float t, float px, float seed, float4 colour) {
+    float e = click_ease_out(t);
+    float a = 0.0;
+    float3 rgb = colour.rgb;
+    for (int i = 0; i < 12; i++) {
+        float n = float(i) + seed * 12.0;
+        float h1 = click_hash(n);
+        float h2 = click_hash(n + 0.37);
+        float h3 = click_hash(n + 0.71);
+        float angle = h1 * CLICK_TAU;
+        float speed = 0.45 + 0.4 * h2;
+        float2 dir = float2(cos(angle), sin(angle) - 0.7);
+        float2 pos = dir * speed * e + float2(0.0, 0.9 * t * t);
+        float spin = (h3 - 0.5) * 12.0 * t + h1 * CLICK_TAU;
+        float2 q = p - pos;
+        float2 turned = float2(q.x * cos(spin) - q.y * sin(spin), q.x * sin(spin) + q.y * cos(spin));
+        float box = max(abs(turned.x), abs(turned.y) * 1.6) - 0.055;
+        float bit = (1.0 - smoothstep(-px, px, box)) * (1.0 - t * t);
+        if (bit > a) {
+            a = bit;
+            rgb = clamp(colour.rgb + hue_colour(h2 + seed) * 0.7, 0.0, 1.0);
+        }
+    }
+    return float4(rgb, colour.a * a);
+}
+
+// 6: a crosshair that snaps in, holds, and fades.
+static float4 click_target(float2 p, float t, float px, float4 colour) {
+    float s = click_back(min(t * 2.5, 1.0));
+    float scale = 1.6 - 0.6 * s;
+    float r = length(p);
+    float ring = click_ring(p, 0.55 * scale, 0.07, px);
+    float axis = min(abs(p.x), abs(p.y));
+    float onAxis = 1.0 - smoothstep(-px, px, axis - 0.03);
+    float span = 1.0 - smoothstep(-px, px, abs(r - 0.62 * scale) - 0.2 * scale);
+    float tick = onAxis * span;
+    float centre = click_disc(p, 0.08, px);
+    float fade = 1.0 - smoothstep(0.6, 1.0, t);
+    float a = max(max(ring, tick), centre) * fade;
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 7: a like. A disc bursts into a thinning ring, the heart pops in behind it
+// with a bounce, and a ring of paired dots flies out and fades — the shape of
+// the animation everyone has seen under a tweet.
+static float4 click_heart_mark(float2 p, float t, float px, float seed, float4 colour) {
+    float a = 0.0;
+    float3 rgb = colour.rgb;
+
+    // The burst, over the first third: a filled disc that hollows out into a
+    // ring, grows, thins and goes.
+    float burst = clamp(t / 0.35, 0.0, 1.0);
+    if (burst < 1.0) {
+        float e = click_ease_out(burst);
+        float radius = 0.2 + 0.5 * e;
+        float hollow = click_disc(p, radius * smoothstep(0.0, 0.6, burst), px);
+        a = max(a, (click_disc(p, radius, px) - hollow) * (1.0 - burst * burst));
+    }
+
+    // The heart, popping in from a tenth of the way through, past its size and
+    // back, then easing out at the very end. Measured in a frame with the point
+    // down and the lobes up, which is y flipped from the quad's.
+    float pop = click_back(clamp((t - 0.1) / 0.3, 0.0, 1.0));
+    float scale = 0.5 * pop;
+    float fade = 1.0 - smoothstep(0.8, 1.0, t);
+    if (scale > 0.001) {
+        float2 q = float2(p.x, 0.5 - p.y) / scale;
+        float d = click_heart(q) * scale;
+        a = max(a, (1.0 - smoothstep(-px, px, d)) * fade);
+    }
+
+    // Seven pairs of dots thrown out from the burst, each pair one hue apart,
+    // from a third of the way through to the end.
+    float fly = clamp((t - 0.3) / 0.6, 0.0, 1.0);
+    if (fly > 0.0 && fly < 1.0) {
+        float e = click_ease_out(fly);
+        for (int i = 0; i < 7; i++) {
+            float angle = (float(i) / 7.0 + seed * 0.3) * CLICK_TAU;
+            float2 dir = float2(cos(angle), sin(angle));
+            float2 side = float2(-dir.y, dir.x);
+            float2 pos = dir * (0.45 + 0.5 * e);
+            float size = 0.06 * (1.0 - e);
+            float big = click_disc(p - pos - side * 0.06, size, px);
+            float small = click_disc(p - pos + side * 0.07 - dir * 0.05, size * 0.6, px);
+            float dots = max(big, small) * (1.0 - fly * fly);
+            if (dots > a) {
+                a = dots;
+                rgb = clamp(colour.rgb + hue_colour(float(i) / 7.0 + 0.5) * 0.5, 0.0, 1.0);
+            }
+        }
+    }
+
+    return float4(rgb, colour.a * a);
+}
+
+// 8: a ring on a coarse grid, stepping outwards a cell at a time.
+static float4 click_pixel_ring(float2 p, float t, float px, float4 colour) {
+    float cell = 1.0 / 6.0;
+    float2 g = (floor(p / cell) + 0.5) * cell;
+    float e = floor(t * 6.0) / 6.0;
+    float radius = 0.2 + 0.7 * e;
+    float d = abs(length(g) - radius);
+    float on = d < cell * 0.75 ? 1.0 : 0.0;
+    float a = on * (1.0 - e);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 9: a splat that spreads and dries, with three drops thrown clear of it.
+static float4 click_ink(float2 p, float t, float px, float seed, float4 colour) {
+    float e = click_ease_out(t);
+    float angle = atan2(p.y, p.x);
+    float wobble = 1.0 + 0.18 * sin(angle * 3.0 + seed * CLICK_TAU)
+        + 0.1 * sin(angle * 5.0 - seed * 9.0)
+        + 0.07 * sin(angle * 7.0 + seed * 4.0);
+    float radius = (0.15 + 0.5 * e) * wobble;
+    float a = click_disc(p, radius, px);
+    for (int i = 0; i < 3; i++) {
+        float n = float(i) * 1.3 + seed * 7.0;
+        float at = click_hash(n) * CLICK_TAU;
+        float2 pos = float2(cos(at), sin(at)) * (0.45 + 0.45 * e);
+        a = max(a, click_disc(p - pos, 0.08 * (1.0 - 0.5 * e), px));
+    }
+    a *= (1.0 - smoothstep(0.3, 1.0, t)) * 0.9;
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 10: a soft ring of light that breathes once.
+static float4 click_halo(float2 p, float t, float px, float4 colour) {
+    float breath = sin(t * CLICK_TAU * 0.5);
+    float r = length(p);
+    float radius = 0.45 + 0.2 * t;
+    float spread = 0.08 + 0.1 * t;
+    float band = exp(-((r - radius) * (r - radius)) / spread);
+    float a = band * breath * 0.8;
+    return float4(colour.rgb, colour.a * a);
+}
+
+// 11: a fingertip on glass: a translucent disc with a hairline rim.
+static float4 click_tap(float2 p, float t, float px, float4 colour) {
+    float s = 0.5 - 0.15 * click_ease_out(t);
+    float disc = click_disc(p, s, px) * 0.35;
+    float rim = click_ring(p, s, 0.04, px) * 0.9;
+    float a = max(disc, rim) * (1.0 - t);
+    return float4(colour.rgb, colour.a * a);
+}
+
+// The mark this quad draws, unpremultiplied. style is the arm — the same
+// numbers CLICK_EFFECTS in shared/click-effects.ts and ClickEffect::index
+// in plan.rs carry — and anything else draws nothing, which is what a mark
+// this build has never heard of should do.
+static float4 click_mark(float2 uv, float t, int style, float seed, float px, float4 colour) {
+    float2 p = uv * 2.0 - 1.0;
+    if (style == 0) return click_ripple(p, t, px, colour);
+    if (style == 1) return click_sonar(p, t, px, colour);
+    if (style == 2) return click_orb(p, t, px, colour);
+    if (style == 3) return click_pressure(p, t, px, colour);
+    if (style == 4) return click_burst(p, t, px, seed, colour);
+    if (style == 5) return click_confetti(p, t, px, seed, colour);
+    if (style == 6) return click_target(p, t, px, colour);
+    if (style == 7) return click_heart_mark(p, t, px, seed, colour);
+    if (style == 8) return click_pixel_ring(p, t, px, colour);
+    if (style == 9) return click_ink(p, t, px, seed, colour);
+    if (style == 10) return click_halo(p, t, px, colour);
+    if (style == 11) return click_tap(p, t, px, colour);
+    return float4(0.0);
+}
+
 fragment float4 composite_fragment(Vertex in [[stage_in]],
                                    constant Uniforms &u [[buffer(0)]],
                                    texture2d<float> image [[texture(0)]],
@@ -1213,6 +1517,17 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         float shown = cover * u.loupe.w;
         return float4(lit * shown + thrown * glow * (1.0 - shown),
                       shown + (1.0 - shown) * shade);
+    }
+
+    // A click mark, which is shading alone: nothing is sampled and the quad is
+    // the mark's own reach, so none of the geometry below applies to it.
+    //
+    // Verbatim from the `u_mode == 8` branch in `webgl.ts`.
+    if (u.mode == 8) {
+        float px = 2.0 / max(u.rect.z, 1.0);
+        float4 mark = click_mark(in.uv, u.click_phase, int(u.click_style), u.click_seed, px,
+                                 u.colorA);
+        return premultiplied(mark.rgb, mark.a);
     }
 
     float2 half_size = u.rect.zw * 0.5;

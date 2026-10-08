@@ -177,6 +177,10 @@ export function buildSlices(
           // drawn with the shape that was there.
           session.blobs,
           still ? { at: STILL_AT, masks: maskRegions(frame, project.annotations) } : undefined,
+          // Every press, for the click marks. Whole list rather than this
+          // clip's slice of it: a press outside the clip is skipped by its
+          // span, and filtering here would be a second answer to that.
+          session.clicks,
         ),
       ),
       speed: slice.speed,

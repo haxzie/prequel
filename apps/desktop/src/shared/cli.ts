@@ -11,6 +11,7 @@
  * reason: the CLI is its own bundle and must not pull the main process in to
  * learn a command name.
  */
+import { CLICK_EFFECT_IDS, NO_CLICK_EFFECT } from "./click-effects.js";
 import { CURSOR_STYLES } from "./contract.js";
 import { READY as READY_FILTERS } from "./filters.js";
 import { MIC_DENOISE, type CameraShape, type LayoutPreset } from "./project.js";
@@ -449,6 +450,12 @@ export const COMMANDS: readonly CliCommandSpec[] = [
     local: true,
   },
   {
+    path: ["click-effects", "list"],
+    summary: "Click marks, for `defaults.layout.clickEffect`",
+    returns: "{ effects: [{ id, name, hint }] }",
+    local: true,
+  },
+  {
     path: ["layouts", "list"],
     summary: "Arrangements of the screen and the camera, for `defaults.layout.preset`",
     returns: "{ layouts: [{ id, summary }] }",
@@ -728,6 +735,24 @@ export const PROJECT_SCHEMA: readonly ProjectFieldNote[] = [
     type: "string",
     values: CURSOR_STYLES.map((style) => style.id),
     summary: "Which pointer is drawn. `cursors list` has the names",
+  },
+  {
+    path: "defaults.layout.clickEffect",
+    type: "string",
+    values: [NO_CLICK_EFFECT, ...CLICK_EFFECT_IDS],
+    summary: "The mark drawn where the recording was clicked. `click-effects list` has the names",
+  },
+  {
+    path: "defaults.layout.clickColor",
+    type: "string",
+    units: "hex, #rrggbb or #rrggbbaa",
+    summary: "The click mark's colour",
+  },
+  {
+    path: "defaults.layout.clickSize",
+    type: "number",
+    units: "a fraction of the frame's shorter edge",
+    summary: "How far the click mark reaches. 0.08 is about twice the pointer",
   },
   {
     path: "defaults.layout.*X / *Y / *Width / *Height / padding",

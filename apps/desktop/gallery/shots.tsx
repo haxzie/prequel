@@ -420,6 +420,34 @@ export const SHOTS: readonly Shot[] = [
   },
   inspector("inspector-audio", "Audio"),
   inspector("inspector-cursor", "Cursor"),
+  // A click mark mid-flight: Sonar chosen and the playhead parked a few
+  // frames after a press, with the rings on the picture. The whole frame,
+  // because the point is the mark on the picture and the panel together.
+  //
+  // It earns its place the way `filter-applied` does: the pixel test proves
+  // the *exporter* draws every mark, and the shader-mirror test proves the two
+  // arms are the same arithmetic. Neither compiles the GLSL, and a preview
+  // whose shader will not compile draws nothing at all.
+  //
+  // The fraction is a press in the gallery's recording — 25.26s of 61.1s —
+  // plus about a sixth of a second, inside Sonar's 700ms.
+  {
+    id: "click-effect",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Cursor"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label^="Sonar"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "seek", fraction: 0.4162 },
+      // Past the write, the plan rebuild and a draw or two.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
   // A named pointer: the blue tag chosen and a name typed, with the tag
   // drawn beside the pointer in the preview. The whole frame, since the
   // point of the shot is the preview and the panel together.

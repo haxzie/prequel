@@ -122,6 +122,7 @@ export async function loadSession(
     manifest,
     media,
     cursor: cursorLayer(manifest),
+    clicks: manifest.clicks ?? [],
     blobs: blobTrack(manifest),
     project: await withBackground(name, project),
     transcript,

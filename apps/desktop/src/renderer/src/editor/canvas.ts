@@ -15,7 +15,7 @@
  * **Nothing draws through this any more.** `Preview.tsx` builds a
  * `WebGlCompositor`, and the only thing imported from here elsewhere is the
  * `Images` type. It is kept because it is the readable statement of what a plan
- * means, and it is behind: there is no lens branch and no mask branch in it.
+ * means, and it is behind: there is no lens branch, no mask branch and no click-mark branch in it.
  *
  * That matters for one of them. A mask is the one item whose absence is a leak
  * rather than a missing effect, so a half-correct branch here would be a

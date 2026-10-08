@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { CLICK_EFFECTS, CLICK_EFFECT_IDS } from "../../../shared/click-effects";
 import { FILTER_SHADER_SOURCE } from "./filters";
 import { SHADER_SOURCE } from "./webgl";
 
@@ -513,6 +514,82 @@ describe("the camera's glass rim", () => {
     ]) {
       expect(rim(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);
       expect(rim(METAL), `${declaration} in the MSL`).toContain(declaration);
+    }
+  });
+});
+
+/**
+ * The spellings. The click section reads no uniform at all — that is the point
+ * of it — so this is only the two languages' names for the same functions.
+ */
+const click = (source: string) =>
+  arithmetic(source)
+    .replaceAll(
+      /\bclick_([a-z_]+)\b/g,
+      (_, rest: string) =>
+        "click" + rest.replaceAll(/(?:^|_)([a-z])/g, (_, c: string) => c.toUpperCase()),
+    )
+    .replaceAll(/\bhue_colour\b/g, "hueColour");
+
+/**
+ * The click marks both rasterisers draw.
+ *
+ * Shading alone, from the quad's own uv and a phase, so the plan carries
+ * nothing but where and when — and each side draws the whole mark for itself.
+ * A ring a few pixels wider in one, or a burst turned by a different seed, is
+ * a preview and an export that disagree on every click, noticed only by
+ * exporting and stepping through.
+ */
+describe("the click marks both rasterisers draw", () => {
+  const PAIRS: [string, string][] = [
+    ["float clickEaseOut(", "static float click_ease_out("],
+    ["float clickBack(", "static float click_back("],
+    ["float clickWrap(", "static float click_wrap("],
+    ["float clickRing(", "static float click_ring("],
+    ["float clickDisc(", "static float click_disc("],
+    ["float clickHash(", "static float click_hash("],
+    ["float clickHeart(", "static float click_heart("],
+    ["vec4 clickRipple(", "static float4 click_ripple("],
+    ["vec4 clickSonar(", "static float4 click_sonar("],
+    ["vec4 clickOrb(", "static float4 click_orb("],
+    ["vec4 clickPressure(", "static float4 click_pressure("],
+    ["vec4 clickBurst(", "static float4 click_burst("],
+    ["vec4 clickConfetti(", "static float4 click_confetti("],
+    ["vec4 clickTarget(", "static float4 click_target("],
+    ["vec4 clickHeartMark(", "static float4 click_heart_mark("],
+    ["vec4 clickPixelRing(", "static float4 click_pixel_ring("],
+    ["vec4 clickInk(", "static float4 click_ink("],
+    ["vec4 clickHalo(", "static float4 click_halo("],
+    ["vec4 clickTap(", "static float4 click_tap("],
+    ["vec4 clickMark(", "static float4 click_mark("],
+  ];
+
+  it.each(PAIRS)("draws %s the same way on each side", (glslName, mslName) => {
+    const glsl = body(SHADER_SOURCE().fragment, glslName);
+    const msl = body(METAL, mslName);
+
+    expect(glsl, `${glslName} in the GLSL`).not.toBeNull();
+    expect(msl, `${mslName} in the MSL`).not.toBeNull();
+    expect(click(glsl!)).toBe(click(msl!));
+  });
+
+  it("turns by the same circle on each side", () => {
+    for (const source of [SHADER_SOURCE().fragment, METAL]) {
+      expect(click(source)).toContain("CLICK_TAU = 6.2831853");
+    }
+  });
+
+  it("gives every mark in the catalogue an arm on each side", () => {
+    // The catalogue's numbers, switched on by name in both dispatchers. A mark
+    // added to the table without an arm would be chosen in the picker and draw
+    // nothing — in both rasterisers, so nothing would ever disagree, and
+    // nobody would find out which number was missing.
+    const glsl = body(SHADER_SOURCE().fragment, "vec4 clickMark(");
+    const msl = body(METAL, "static float4 click_mark(");
+    for (const id of CLICK_EFFECT_IDS) {
+      const arm = `style == ${CLICK_EFFECTS[id].index}`;
+      expect(glsl, `${id} in the GLSL`).toContain(arm);
+      expect(msl, `${id} in the MSL`).toContain(arm);
     }
   });
 });

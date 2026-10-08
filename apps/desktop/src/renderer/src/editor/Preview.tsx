@@ -12,6 +12,7 @@ import {
 import type { Annotation, AnnotationKind, Point as MarkPoint } from "../../../shared/annotations";
 import { annotationBox, annotationHit, annotationPoint } from "../../../shared/annotations";
 import { cursorImages, type CursorLayer } from "../../../shared/contract";
+import type { ClickSample } from "../../../shared/manifest";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
   type BlobTrack,
@@ -116,6 +117,7 @@ export function Preview({
   shot,
   images,
   cursor,
+  clicks,
   blobs,
   zooms,
   cues,
@@ -202,6 +204,11 @@ export function Preview({
   overlay?: (drawing: { kind: AnnotationKind; points: MarkPoint[] } | null) => ReactNode;
   /** The pointer track, or null when this recording has none to draw. */
   cursor: CursorLayer | null;
+  /**
+   * Every press, for the click marks. Beside `cursor` rather than on it: a
+   * press is recorded whether or not the pointer was kept out of the frames.
+   */
+  clicks: readonly ClickSample[];
   /**
    * The camera's fitted outline, or null when this recording has none.
    *
@@ -490,6 +497,7 @@ export function Preview({
     fitted,
     selected,
     cursor,
+    clicks,
     blobs,
     zooms,
     cues,
@@ -510,6 +518,7 @@ export function Preview({
     fitted,
     selected,
     cursor,
+    clicks,
     blobs,
     zooms,
     cues,
@@ -568,6 +577,7 @@ export function Preview({
         fitted: box,
         selected: ringed,
         cursor: pointer,
+        clicks: presses,
         blobs: blobTrack,
         zooms: shots,
         cues: drawn,
@@ -646,6 +656,7 @@ export function Preview({
         sizes.camera?.height,
         current,
         pointer,
+        presses,
         shots,
         arriving,
         shown,
@@ -690,6 +701,7 @@ export function Preview({
               // carries the masks and it is what lets the picture be dragged
               // past the frame's edge.
               frozen ? { at: STILL_AT, masks: hidden } : undefined,
+              presses,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };

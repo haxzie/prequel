@@ -25,6 +25,7 @@
  * the renderer draws them, and the reducer applies them.
  */
 import { captionStyle } from "./captions.js";
+import { clickEffectId } from "./click-effects.js";
 import { cursorStyle } from "./contract.js";
 import { filterId } from "./filters.js";
 import { layoutBoxes } from "./layout.js";
@@ -161,6 +162,8 @@ export function sanitiseScenePreset(value: unknown): ScenePreset | null {
     // what this stops is the unknown id being written into a slice's overrides,
     // where it would sit unreadable and outlive the preset it came from.
     cursorStyle: cursorStyle(String(stored.layout?.cursorStyle ?? DEFAULT_LAYOUT.cursorStyle)).id,
+    // Normalised for the same reason: a mark this build lacks becomes none.
+    clickEffect: clickEffectId(String(stored.layout?.clickEffect ?? DEFAULT_LAYOUT.clickEffect)),
   };
 
   const captions: PresetCaptions = {

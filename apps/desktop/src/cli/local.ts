@@ -20,6 +20,7 @@ import {
   PROJECT_SCHEMA,
   commandName,
 } from "../shared/cli.js";
+import { CLICK_EFFECTS, CLICK_EFFECT_IDS } from "../shared/click-effects.js";
 import { FILTERS, READY, type FilterId } from "../shared/filters.js";
 import { AUTO_PRESET_ID, FRAME_PRESETS } from "../shared/presets.js";
 import { CLICK_SOUNDS, KEY_SOUNDS } from "../shared/project.js";
@@ -47,6 +48,16 @@ function filters(): unknown {
         defaults: spec.defaults,
       };
     }),
+  };
+}
+
+function clickEffects(): unknown {
+  return {
+    effects: CLICK_EFFECT_IDS.map((id) => ({
+      id,
+      name: CLICK_EFFECTS[id].label,
+      hint: CLICK_EFFECTS[id].hint,
+    })),
   };
 }
 
@@ -137,6 +148,8 @@ export function answerLocally(name: string, version: string): unknown | null {
       return { version, protocol: CLI_PROTOCOL };
     case "filters.list":
       return filters();
+    case "click-effects.list":
+      return clickEffects();
     case "cursors.list":
       return cursors();
     case "layouts.list":

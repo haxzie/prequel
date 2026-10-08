@@ -17,6 +17,7 @@
  */
 import { resolveGrade, type CameraGrade } from "./camera-looks.js";
 import { captionStyle } from "./captions.js";
+import { clickEffect } from "./click-effects.js";
 import type { CursorShape } from "./contract.js";
 import {
   FILTER_SCALE_MAX,
@@ -480,6 +481,49 @@ export type PlanItem =
       /** Optional shadow drawn from the pointer image's alpha. */
       shadow?: { opacity: number; blur: number; dy: number };
       points: CursorPoint[];
+    }
+  | {
+      /**
+       * A mark drawn where the recording was clicked, for the moment after.
+       *
+       * Its own kind rather than a `cursor` item: nothing is sampled, the quad
+       * is the mark's own reach, and it is drawn whether or not the pointer is
+       * — a recording with the pointer baked into its frames still has its
+       * presses. One item per press, so every plan item stays one quad; a
+       * double-click is two overlapping items, which is also how it should
+       * look.
+       */
+      kind: "click";
+      /**
+       * Which mark, by id from `CLICK_EFFECTS`.
+       *
+       * A name rather than the arm's number, for the reason a filter carries
+       * its id: a renumbered arm would parse as some *other* mark, and a name
+       * this build lacks draws nothing. Each rasteriser maps it to the number
+       * its shader switches on.
+       */
+      effect: string;
+      /** Hex, alpha allowed, like a stroke's. */
+      color: string;
+      /**
+       * The quad's side in output pixels at rest — the widest the mark
+       * reaches. Resolved here, like every other length in a plan.
+       */
+      size: number;
+      /** When it is on screen, half-open like a caption's. */
+      span: { start: number; end: number };
+      /**
+       * Where the click sits on the picture over its life.
+       *
+       * The same shape a pointer's points have, so `cursorAt` and `cursor_at`
+       * place it with arithmetic that already exists on both sides, tilt
+       * included. The picture moves under a click rather than the click under
+       * the picture: a zoom that starts on a press carries the mark with the
+       * button it was on. `smearX`/`smearY` are always 0.
+       */
+      keys: CursorPoint[];
+      /** 0 to 1 from the press's own time, so two scattered marks differ. */
+      seed: number;
     }
   | {
       /**
@@ -1128,6 +1172,15 @@ export function buildRenderPlan(
     at: number;
     masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
   },
+  /**
+   * Every press the recording saw, with where it landed.
+   *
+   * Beside `cursor` rather than inside it, because the two are not the same
+   * layer: the pointer is drawn only when it was kept out of the frames, and
+   * a press is recorded either way. A recording with the pointer baked in
+   * still gets its marks.
+   */
+  clicks?: readonly ClickEvent[] | null,
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -1393,6 +1446,25 @@ export function buildRenderPlan(
       mirror: false,
       ...moving,
     });
+
+    // Marks before the pointer, so the pointer sits on top of its own mark.
+    // Not gated on `cursorVisible`: a hidden pointer with marks is a look, and
+    // a baked-in pointer has no `cursor` at all.
+    if (clicks?.length) {
+      items.push(
+        ...clickItems(
+          clicks,
+          layout.clickEffect,
+          layout.clickColor,
+          layout.clickSize,
+          sources.screen,
+          srcRect,
+          dstRect,
+          unit,
+          motion,
+        ),
+      );
+    }
 
     // After the screen and before the border, so the pointer sits on the
     // picture but not over the frame's own edge.
@@ -4674,39 +4746,8 @@ function cursorItems(
    * and the pointer would be projected onto a picture from another moment. Two
    * binary searches at plan time is much the cheaper mistake.
    */
-  const planeAt = (at: number): Plane => {
-    const point = cursorFraction(path, at);
-    const px = point.x * source.width;
-    const py = point.y * source.height;
-
-    // Through the picture's rectangle *at this moment*, not the un-zoomed
-    // one. Mapping the pointer with a still rectangle while the picture
-    // moves under it is what put it somewhere the thing it was pointing at
-    // was not — and the further a zoom went, the further out it was.
-    const rect = rectAt(motion, at, dstRect, 0);
-    const u = (px - srcRect.x) / srcRect.width;
-    const v = (py - srcRect.y) / srcRect.height;
-    const flat = { x: rect.x + u * rect.width, y: rect.y + v * rect.height };
-
-    // On the tilted plane when there is one, so the pointer leans with the
-    // picture instead of floating flat above it — and, when a tilt is steep,
-    // instead of being placed clean off the frame.
-    const placed = rect.quad ? onPlane(rect.quad, u, v) : { ...flat, scale: 1 };
-
-    return {
-      rect,
-      quad: rect.quad,
-      u,
-      v,
-      flat,
-      placed,
-      visible:
-        px >= srcRect.x &&
-        px <= srcRect.x + srcRect.width &&
-        py >= srcRect.y &&
-        py <= srcRect.y + srcRect.height,
-    };
-  };
+  const planeAt = (at: number): Plane =>
+    onPicture(cursorFraction(path, at), at, source, srcRect, dstRect, motion);
 
   const points: ShapedPoint[] = [...times]
     .sort((a, b) => a - b)
@@ -4809,6 +4850,151 @@ function cursorItems(
   }
 
   return items;
+}
+
+/**
+ * Where a fraction of the recording sits on the picture at a moment, and on
+ * what.
+ *
+ * Through the picture's rectangle *at this moment*, not the un-zoomed one.
+ * Mapping a point with a still rectangle while the picture moves under it is
+ * what put the pointer somewhere the thing it was pointing at was not — and
+ * the further a zoom went, the further out it was.
+ *
+ * On the tilted plane when there is one, so the thing placed leans with the
+ * picture instead of floating flat above it — and, when a tilt is steep,
+ * instead of being placed clean off the frame.
+ *
+ * Shared by the pointer and the click marks, so "where on the picture" exists
+ * once: a mark placed by arithmetic of its own could sit a pixel off the
+ * pointer that made it, and the eye reads that as the click having missed.
+ */
+function onPicture(
+  fraction: Point,
+  at: number,
+  source: Size,
+  srcRect: Rect,
+  dstRect: Rect,
+  motion: readonly RectKey[],
+): Plane {
+  const px = fraction.x * source.width;
+  const py = fraction.y * source.height;
+
+  const rect = rectAt(motion, at, dstRect, 0);
+  const u = (px - srcRect.x) / srcRect.width;
+  const v = (py - srcRect.y) / srcRect.height;
+  const flat = { x: rect.x + u * rect.width, y: rect.y + v * rect.height };
+
+  const placed = rect.quad ? onPlane(rect.quad, u, v) : { ...flat, scale: 1 };
+
+  return {
+    rect,
+    quad: rect.quad,
+    u,
+    v,
+    flat,
+    placed,
+    visible:
+      px >= srcRect.x &&
+      px <= srcRect.x + srcRect.width &&
+      py >= srcRect.y &&
+      py <= srcRect.y + srcRect.height,
+  };
+}
+
+/** A press, where it landed as a fraction of the recording, at a source time. */
+export interface ClickEvent {
+  at: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * The prime the seed is taken modulo.
+ *
+ * A press's time in nanoseconds is a big number with its interesting digits at
+ * the bottom; modulo a prime and divided back out it lands anywhere in 0..1,
+ * and two presses a frame apart land somewhere else. Not a hash: nothing here
+ * needs to be unpredictable, only different from its neighbour and the same in
+ * both rasterisers — which it is, because it is computed once, here.
+ */
+const SEED_PRIME = 997;
+
+/**
+ * One mark per press, laid on the picture for the mark's own duration.
+ *
+ * Sampled where the picture moves, exactly as the pointer is: a mark has only
+ * its two ends as natural keys, and interpolating its position straight across
+ * a zoom would slide it off the button while the picture was itself moving.
+ * Each motion key inside the span adds a point, so the two stay in step.
+ *
+ * A press outside the slice's reach is skipped rather than clamped: the
+ * rasterisers draw nothing outside the span anyway, and an item with nothing
+ * to draw is one more quad per frame to ask.
+ *
+ * Drawn *under* the pointer by the caller, so the pointer stays on top of its
+ * own mark — a ripple over the arrow reads as the arrow being behind glass.
+ */
+function clickItems(
+  clicks: readonly ClickEvent[],
+  effectId: string,
+  color: string,
+  sizeFraction: number,
+  source: Size,
+  srcRect: Rect,
+  dstRect: Rect,
+  unit: number,
+  motion: readonly RectKey[],
+): PlanItem[] {
+  const spec = clickEffect(effectId);
+  if (!spec || clicks.length === 0) return [];
+
+  const size = Math.max(1, sizeFraction * unit);
+  const centre = { x: 0.5, y: 0.5 };
+
+  return clicks.map((click): PlanItem => {
+    const start = click.at;
+    const end = start + spec.duration;
+
+    const times = new Set([start, end]);
+    for (const key of motion) {
+      if (key.at > start && key.at < end) times.add(key.at);
+    }
+
+    const keys = [...times]
+      .sort((a, b) => a - b)
+      .map((at) => {
+        const plane = onPicture(click, at, source, srcRect, dstRect, motion);
+        // Never leaned and never smeared: a mark is a stamp on the spot, and
+        // it is the picture that moves, not the mark.
+        return onSprite(
+          {
+            at,
+            x: plane.placed.x,
+            y: plane.placed.y,
+            scale: plane.placed.scale,
+            visible: plane.visible,
+            smearX: 0,
+            smearY: 0,
+            rotation: 0,
+          },
+          plane,
+          centre,
+          size,
+          0,
+        );
+      });
+
+    return {
+      kind: "click",
+      effect: effectId,
+      color,
+      size,
+      span: { start, end },
+      keys,
+      seed: (start % SEED_PRIME) / SEED_PRIME,
+    };
+  });
 }
 
 /** A name tag's bitmap, and how it sits against the pointer. */
@@ -5652,6 +5838,19 @@ export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null 
     smearX: lerp(a.smearX, b.smearX, t),
     smearY: lerp(a.smearY, b.smearY, t),
   };
+}
+
+/**
+ * How far through its life a click mark is at a moment, 0 to 1, or null if it
+ * is not on screen.
+ *
+ * Half-open at the end, like a caption: a mark is fully transparent at 1
+ * anyway, but a frame drawn exactly there is a quad asked for nothing.
+ * `click_phase` in `crates/prequel-render/src/plan.rs` mirrors it.
+ */
+export function clickPhase(span: { start: number; end: number }, at: number): number | null {
+  if (at < span.start || at >= span.end) return null;
+  return (at - span.start) / Math.max(1, span.end - span.start);
 }
 
 /**

@@ -15,7 +15,7 @@ use std::process::Command;
 use cidre::{arc, cv};
 use prequel_encode::{VideoWriter, VideoWriterConfig};
 use prequel_render::{
-    AudioMix, BlobKey, CancelFlag, CursorPoint, CursorShadow, ExportRequest, LoupeKey,
+    AudioMix, BlobKey, CancelFlag, ClickEffect, CursorPoint, CursorShadow, ExportRequest, LoupeKey,
     OutputFormat, OverlayKey, Paint, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan,
     SegmentRef, Shape, Size, SliceMedia, SliceRender, Span, export,
 };
@@ -531,7 +531,11 @@ fn rounds_the_logo_only_as_far_as_it_is_asked_to() {
     let frame = first_frame(&output);
 
     // The middle is the logo, whatever the corners do.
-    near(frame.at(160, 120), (255, 255, 255), "the middle of the logo");
+    near(
+        frame.at(160, 120),
+        (255, 255, 255),
+        "the middle of the logo",
+    );
 
     // Four pixels in from the top-left corner of the box. Inside a square
     // mark, outside a circle of this radius — so this is the pixel that says
@@ -1092,6 +1096,136 @@ fn smears_the_pointer_along_the_way_it_is_going() {
         lit(frame.at(middle.0, middle.1)) > along,
         "the pointer should stay brighter than its own streak"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Every mark in the catalogue, by the arm it switches to.
+///
+/// Written out rather than derived, so a mark added to `ClickEffect` without
+/// an arm in `shaders.metal` — or an arm without a mark — is a line missing
+/// here, which is the kind of mistake that is read.
+const EVERY_CLICK: [ClickEffect; 12] = [
+    ClickEffect::Ripple,
+    ClickEffect::Sonar,
+    ClickEffect::Orb,
+    ClickEffect::Pressure,
+    ClickEffect::Burst,
+    ClickEffect::Confetti,
+    ClickEffect::Target,
+    ClickEffect::Heart,
+    ClickEffect::PixelRing,
+    ClickEffect::Ink,
+    ClickEffect::Halo,
+    ClickEffect::Tap,
+];
+
+#[test]
+fn every_click_mark_in_the_catalogue_lands_on_the_click_and_then_goes() {
+    // The cheapest guard on every arm in the file, and it catches the failure
+    // that costs most to find by eye: an arm never reached draws nothing,
+    // which in the editor is indistinguishable from "this one is subtle". It
+    // also proves `shaders.metal` compiles with the section in it — the
+    // preview's copy is compiled by the GPU driver at runtime and this is the
+    // only compiler the Metal copy ever meets before a user does.
+    let dir = scratch("prequel-pixels-click-marks");
+    record(&dir, "screen.mp4", 200, 200, &solid(200, [0, 0, 0]));
+
+    let key = |at: i64| CursorPoint {
+        at,
+        x: (OUT_W / 2) as f64,
+        y: (OUT_H / 2) as f64,
+        scale: 1.0,
+        visible: true,
+        smear_x: 0.0,
+        smear_y: 0.0,
+        quad: None,
+    };
+    let lit = |pixel: (u8, u8, u8)| pixel.0 as u16 + pixel.1 as u16 + pixel.2 as u16;
+    // The brightest pixel in a box around the click, rather than one
+    // coordinate per mark: a ring at mid-phase is dark at its centre, a target
+    // is lit on its arms, confetti is scattered.
+    let brightest = |frame: &Frame| {
+        (OUT_H / 2 - 60..OUT_H / 2 + 60)
+            .flat_map(|y| (OUT_W / 2 - 60..OUT_W / 2 + 60).map(move |x| (x, y)))
+            .map(|(x, y)| lit(frame.at(x, y)))
+            .max()
+            .unwrap()
+    };
+
+    for effect in EVERY_CLICK {
+        // 0 to 400 ms, so frame 2 (200 ms at FPS 10) is mid-phase and frame 8
+        // is well after the mark has ended.
+        let end = (S * 2 / 5) as i64;
+        let plan = RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 200.0,
+                        height: 200.0,
+                    },
+                    dst_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: OUT_W as f64,
+                        height: OUT_H as f64,
+                    },
+                    shape: Shape {
+                        radius: 0.0,
+                        exponent: 2.0,
+                    },
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    grade: None,
+                    rim: 0.0,
+                    fringe: 0.0,
+                    motion: Vec::new(),
+                },
+                PlanItem::Click {
+                    effect,
+                    color: "#ffffff".to_owned(),
+                    size: 120.0,
+                    span: Span { start: 0, end },
+                    keys: vec![key(0), key(end)],
+                    seed: 0.37,
+                },
+            ],
+            filter: None,
+        };
+
+        let output = dir.join(format!("{}.mp4", effect.index()));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+
+        let mid = frame_at(&output, 2);
+        assert!(
+            brightest(&mid) > 90,
+            "{effect:?} drew nothing near the click at mid-phase"
+        );
+        // Nothing outside its own quad: the far corner is the black screen.
+        assert!(
+            lit(mid.at(8, 8)) < 30,
+            "{effect:?} reached the far corner of the frame"
+        );
+
+        let after = frame_at(&output, 8);
+        assert!(
+            brightest(&after) < 30,
+            "{effect:?} left something behind after it ended"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
