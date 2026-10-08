@@ -38,6 +38,7 @@ import type { CaptureFlow } from "./capture-flow.js";
 import { chooseVideo, importVideo } from "./import-video.js";
 import type { Teleprompter } from "./teleprompter/index.js";
 import { saveProject } from "./editor-project.js";
+import { audioPeaks } from "./peaks.js";
 import { cleanMic } from "./voice.js";
 import { isBindable } from "../shared/accelerator.js";
 import { loginItemState, setOpensAtLogin } from "./login-item.js";
@@ -282,6 +283,10 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
     IPC_CHANNELS.editorCleanMic,
     (_event, dir: string, file: string, level: "light" | "strong") =>
       attempt(() => cleanMic(dir, file, level)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.editorPeaks, (_event, dir: string, file: string) =>
+    attempt(() => audioPeaks(dir, file)),
   );
 
   ipcMain.handle(IPC_CHANNELS.editorSaveProject, (_event, dir: string, project: Project) =>

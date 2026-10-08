@@ -12,19 +12,12 @@ import {
   BUCKETS_PER_SECOND,
   bucketCount,
   mergePeaks,
-  peaksFrom,
+  normalised,
   placeOnSession,
   wavePath,
 } from "./waveform";
 
 const S = 1_000_000_000;
-
-/** `frames` samples at a constant amplitude. */
-function tone(frames: number, amplitude: number): Float32Array {
-  return Float32Array.from({ length: frames }, (_, index) =>
-    index % 2 === 0 ? amplitude : -amplitude,
-  );
-}
 
 describe("bucketCount", () => {
   it("counts one bucket per slice of a second", () => {
@@ -36,40 +29,32 @@ describe("bucketCount", () => {
   });
 });
 
-describe("peaksFrom", () => {
-  it("takes the loudest sample in each bucket", () => {
-    // Peak, not average: a single loud sample has to survive, because that is
-    // exactly what makes a consonant visible.
-    const samples = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0]);
-    const peaks = peaksFrom(samples, 2);
-
-    expect(peaks[0]).toBe(1);
-    expect(peaks[1]).toBe(0);
-  });
-
-  it("normalises against the loudest, so a quiet take still shows", () => {
-    const quiet = peaksFrom(tone(100, 0.05), 4);
-    expect(Math.max(...quiet)).toBeCloseTo(1);
-  });
-
-  it("treats negative swings as loud as positive ones", () => {
-    expect(peaksFrom(new Float32Array([-1, 0]), 1)[0]).toBe(1);
+describe("normalised", () => {
+  it("scales against the loudest, so a quiet take still shows", () => {
+    const quiet = normalised(new Float32Array([0.05, 0.01, 0.025]), 3);
+    expect(quiet[0]).toBeCloseTo(1);
+    expect(quiet[1]).toBeCloseTo(0.2);
+    expect(quiet[2]).toBeCloseTo(0.5);
   });
 
   it("leaves silence silent rather than amplifying nothing", () => {
-    const peaks = peaksFrom(new Float32Array(64), 8);
+    const peaks = normalised(new Float32Array(8), 8);
     expect([...peaks].every((value) => value === 0)).toBe(true);
   });
 
-  it("survives being asked for more buckets than there are samples", () => {
-    const peaks = peaksFrom(new Float32Array([1, 0, 1]), 16);
-    expect(peaks).toHaveLength(16);
-    expect([...peaks].every((value) => Number.isFinite(value))).toBe(true);
+  it("sizes the result to the manifest, not to the file", () => {
+    // AAC pads the end of a file by a frame; the manifest's duration is what
+    // the rest of the timeline places the track by.
+    expect(normalised(new Float32Array([1, 1, 1]), 2)).toHaveLength(2);
+    const padded = normalised(new Float32Array([1]), 4);
+    expect(padded).toHaveLength(4);
+    expect(padded[0]).toBe(1);
+    expect(padded[3]).toBe(0);
   });
 
   it("has nothing to say about an empty track", () => {
-    expect(peaksFrom(new Float32Array(), 8)).toHaveLength(8);
-    expect(peaksFrom(tone(10, 1), 0)).toHaveLength(0);
+    expect(normalised(new Float32Array(), 8)).toHaveLength(8);
+    expect(normalised(new Float32Array([1]), 0)).toHaveLength(0);
   });
 });
 

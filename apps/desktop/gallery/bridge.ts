@@ -282,6 +282,10 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
           code: "DENOISE_FAILED",
           message: "the gallery cannot clean audio",
         }),
+      // No addon, no decoder. An empty shape, which is what the editor draws
+      // for a recording that had no audio — a gallery shot shows the clip
+      // without a wave rather than a spinner that never resolves.
+      peaks: () => ok(new Float32Array(0)),
       wallpaper: () => ok(null),
       pickImage: () => ok(null),
       pickWatermark: () => ok(null),

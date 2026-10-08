@@ -1314,7 +1314,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   };
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
-  const peaks = useWaveforms(heard.media, heard.manifest.duration);
+  const peaks = useWaveforms(heard.dir, heard.media, heard.manifest.duration);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
   //

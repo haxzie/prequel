@@ -749,6 +749,7 @@ export const IPC_CHANNELS = {
    * on a reopen, and only the first one costs anything.
    */
   editorCleanMic: "editor:cleanMic",
+  editorPeaks: "editor:peaks",
   editorWallpaper: "editor:wallpaper",
   editorPickImage: "editor:pickImage",
   editorPickWatermark: "editor:pickWatermark",

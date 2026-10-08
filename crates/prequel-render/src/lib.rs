@@ -21,6 +21,7 @@
 //! what WebAudio does in the preview — see [`mixer`].
 
 pub mod mixer;
+pub mod peaks;
 pub mod plan;
 pub mod sound;
 pub mod timeline;

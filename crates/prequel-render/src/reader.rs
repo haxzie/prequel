@@ -160,6 +160,20 @@ pub struct AudioReader {
 impl AudioReader {
     /// Opens `path`, restricted to `[start, end)` on the file's own timeline.
     pub fn open(path: &Path, start: u64, end: u64, sample_rate: f64) -> Result<Self> {
+        Self::open_range(path, Some((start, end)), sample_rate)
+    }
+
+    /// Opens `path` from its first sample to its last.
+    ///
+    /// Separate from passing a huge range to [`open`](Self::open): the range
+    /// goes to AVFoundation as a `CMTime` in nanoseconds, and `u64::MAX`
+    /// overflows the `i64` it is built from into a negative duration, which
+    /// the reader accepts and then reads nothing from.
+    pub fn open_whole(path: &Path, sample_rate: f64) -> Result<Self> {
+        Self::open_range(path, None, sample_rate)
+    }
+
+    fn open_range(path: &Path, range: Option<(u64, u64)>, sample_rate: f64) -> Result<Self> {
         let asset = url_asset(path)?;
         let track = first_track(&asset, av::MediaType::audio(), path)?;
 
@@ -168,15 +182,17 @@ impl AudioReader {
             reason: format!("{e:?}"),
         })?;
 
-        reader
-            .set_time_range(cm::TimeRange {
-                start: time(start),
-                duration: time(end.saturating_sub(start)),
-            })
-            .map_err(|e| Error::Read {
-                path: path.display().to_string(),
-                reason: format!("could not restrict the reader to the slice: {e:?}"),
-            })?;
+        if let Some((start, end)) = range {
+            reader
+                .set_time_range(cm::TimeRange {
+                    start: time(start),
+                    duration: time(end.saturating_sub(start)),
+                })
+                .map_err(|e| Error::Read {
+                    path: path.display().to_string(),
+                    reason: format!("could not restrict the reader to the slice: {e:?}"),
+                })?;
+        }
 
         let settings = pcm_settings(sample_rate);
         let output = av::AssetReaderTrackOutput::with_track(&track, Some(settings.as_ref()))

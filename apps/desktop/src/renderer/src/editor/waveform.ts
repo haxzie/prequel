@@ -13,7 +13,14 @@ import type { MediaTime } from "../../../shared/manifest";
 
 const NS_PER_SECOND = 1_000_000_000;
 
-/** Peaks per second of recording. 50ms resolution. */
+/**
+ * Peaks per second of recording. 50ms resolution.
+ *
+ * Has to agree with `BUCKETS_PER_SECOND` in `crates/prequel-render/src/peaks.rs`,
+ * which is where the peaks are made: an index here is turned back into a time
+ * on the session clock, and a different count there draws every clip's sound
+ * at the wrong speed.
+ */
 export const BUCKETS_PER_SECOND = 20;
 
 /** How many buckets a span of media time occupies. */
@@ -22,38 +29,32 @@ export function bucketCount(duration: MediaTime): number {
 }
 
 /**
- * The loudest sample in each bucket, as a 0-1 fraction of the loudest overall.
+ * A track's raw peaks, as 0-1 fractions of its loudest, cut or padded to the
+ * length the manifest says the track has.
  *
- * Peak rather than RMS: a filled waveform is read for where the sound *is*, and
- * RMS flattens exactly the transients — a consonant, a click — that make speech
- * legible at a glance.
+ * Normalised, so a quietly-recorded take still shows a shape rather than a
+ * flat line. Silence stays silent: there is nothing to scale it against. Per
+ * track rather than after the merge, so a quiet microphone is not flattened
+ * by loud system audio beside it.
  *
- * Normalised, so a quietly-recorded take still shows a shape rather than a flat
- * line. Silence stays silent: there is nothing to scale it against.
+ * Sized to `buckets` rather than to what came back: AAC pads the end of a
+ * file with a frame or so, and the manifest's duration is what every other
+ * part of the timeline places this track by.
  */
-export function peaksFrom(samples: Float32Array, buckets: number): Float32Array {
+export function normalised(peaks: Float32Array, buckets: number): Float32Array {
   const out = new Float32Array(Math.max(0, buckets));
-  if (out.length === 0 || samples.length === 0) return out;
+  if (out.length === 0 || peaks.length === 0) return out;
 
-  const per = samples.length / out.length;
   let loudest = 0;
-
-  for (let bucket = 0; bucket < out.length; bucket += 1) {
-    const start = Math.floor(bucket * per);
-    const end = Math.min(samples.length, Math.max(start + 1, Math.floor((bucket + 1) * per)));
-
-    let peak = 0;
-    for (let index = start; index < end; index += 1) {
-      const value = Math.abs(samples[index]!);
-      if (value > peak) peak = value;
-    }
-
-    out[bucket] = peak;
-    if (peak > loudest) loudest = peak;
+  for (let bucket = 0; bucket < peaks.length; bucket += 1) {
+    const value = Math.abs(peaks[bucket]!);
+    if (value > loudest) loudest = value;
   }
+  if (loudest === 0) return out;
 
-  if (loudest > 0) {
-    for (let bucket = 0; bucket < out.length; bucket += 1) out[bucket]! /= loudest;
+  const run = Math.min(out.length, peaks.length);
+  for (let bucket = 0; bucket < run; bucket += 1) {
+    out[bucket] = Math.abs(peaks[bucket]!) / loudest;
   }
 
   return out;

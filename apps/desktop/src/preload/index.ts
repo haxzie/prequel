@@ -365,6 +365,17 @@ const api = {
     ): Promise<IpcResult<CleanTrack>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorCleanMic, dir, file, level),
 
+    /**
+     * The waveform's peaks for one audio file of the recording: the loudest
+     * sample in each 50 ms, raw 0–1, twenty a second.
+     *
+     * Cheap to ask twice, the way `cleanMic` is: main keeps the answer in a
+     * file beside the track and reads that back on every open after the
+     * first.
+     */
+    peaks: (dir: string, file: string): Promise<IpcResult<Float32Array>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorPeaks, dir, file),
+
     /** Copies the current desktop picture into the recording. */
     wallpaper: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorWallpaper, dir),

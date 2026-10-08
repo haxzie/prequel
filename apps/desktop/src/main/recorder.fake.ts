@@ -467,6 +467,10 @@ export function createFakeRecorder(): Recorder {
     enhanceVoice: () =>
       Promise.reject(new Error("DENOISE_FAILED: the fake recorder cannot clean audio")),
 
+    // No decoder behind the fake. A flat line is what a recording without
+    // audio draws, and is what a test that opens the editor should see.
+    audioPeaks: () => Promise.resolve(new Float32Array(0)),
+
     // No microphone behind the fake. Reported as no model rather than as a
     // silent success, so the island says auto-scroll is what it will do.
     startListening: (_options, onUpdate) => {

@@ -17,6 +17,7 @@ use prequel_capture as capture;
 mod export;
 mod listen;
 mod logging;
+mod peaks;
 mod probe;
 mod screen;
 mod sound;
@@ -27,6 +28,7 @@ mod voice;
 pub use export::{ExportOptions, ExportProgress, ExportSlice, cancel_export, start_export};
 pub use listen::{ListenOptions, ListenUpdate, start_listening, stop_listening};
 pub use logging::set_log_file;
+pub use peaks::audio_peaks;
 pub use probe::{
     CaptureWallpaper, MediaProbe, ProbeMedia, ProbeSession, TrackProbe, capture_wallpaper,
     probe_media, probe_session,

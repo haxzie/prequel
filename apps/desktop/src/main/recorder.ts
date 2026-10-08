@@ -371,6 +371,16 @@ export interface Recorder {
   enhanceVoice(input: string, output: string, level: "Light" | "Strong"): Promise<number>;
 
   /**
+   * The loudest sample in each 50 ms of an audio file, raw 0–1 amplitude.
+   *
+   * Streamed through AVFoundation at a low rate, so the memory it holds does
+   * not grow with the length of the take. This is the whole reason the editor
+   * does not decode the file itself: `decodeAudioData` holds the entire file
+   * as PCM, and an hour of it was enough to kill the renderer on open.
+   */
+  audioPeaks(path: string): Promise<Float32Array>;
+
+  /**
    * Starts listening to the microphone and reporting what is heard, live.
    *
    * For the teleprompter. The same on-device engines as `startTranscribe`,
