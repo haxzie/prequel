@@ -84,6 +84,7 @@ only by trimming transparent margin and resizing to a 256px square:
 | `descript`      | `static-cdn.descript.com/web/icons/favicon.svg`                  |
 | `cap`           | `cap.so/apple-touch-icon.png`                                    |
 | `tella`         | `tella.tv/apple-touch-icon.png`                                  |
+| `screen-charm`  | `screencharm.com/icons/logo.png`                                 |
 | `camtasia`      | Mac App Store artwork, TechSmith Camtasia 2024                   |
 | `screenflow`    | Mac App Store artwork, ScreenFlow 10                             |
 | `focusee`       | Mac App Store artwork, FocuSee (iMobie)                          |

@@ -41,7 +41,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "Which Mac screen recorder has automatic zoom?",
     answer:
-      "Prequel, Screen Studio and Tella place zooms on their own. Prequel also zooms on the field you are typing into, and adds a perspective tilt on the push-in with focus falling away from the subject, which none of the others on the grid do. Every generated zoom is editable afterwards.",
+      "Prequel, Screen Studio, Screen Charm and Tella place zooms on their own. Prequel also zooms on the field you are typing into, and adds a perspective tilt on the push-in with focus falling away from the subject, which none of the others on the grid do. Every generated zoom is editable afterwards.",
   },
   {
     question: "What is the best Screen Studio alternative?",
@@ -51,7 +51,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "Which screen recorder does not upload my recordings?",
     answer:
-      "Prequel records, edits, transcribes and exports on your Mac. Nothing leaves it unless you press Share. Loom, Descript and Tella upload the recording to work on it; Screen Studio records locally but uploads for a share link. On the grid, the only two that transcribe captions on the machine are Prequel and Screen Studio.",
+      "Prequel records, edits, transcribes and exports on your Mac. Nothing leaves it unless you press Share. Loom, Descript and Tella upload the recording to work on it; Screen Studio and Screen Charm record locally but upload for a share link. On the grid, the only two that transcribe captions on the machine are Prequel and Screen Studio.",
   },
   {
     question: "Which screen recorder exports 4K at 120 fps?",
@@ -66,7 +66,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "Which is the smallest screen recorder to download?",
     answer:
-      "Prequel is 104 MB, with the recorder and the whole editor in it. Screen Studio is 366 MB, Camtasia 435 MB, Descript 255 MB and Loom 228 MB. ScreenFlow is 89 MB. Tella's 25 MB app is only the recorder, and its editor is a web page.",
+      "Prequel is 104 MB, with the recorder and the whole editor in it. Screen Studio is 366 MB, Camtasia 435 MB, Descript 255 MB, Screen Charm 237 MB and Loom 228 MB. ScreenFlow is 89 MB. Tella's 25 MB app is only the recorder, and its editor is a web page.",
   },
   {
     question: "Is there a free screen recorder with automatic zoom for Mac?",
@@ -76,7 +76,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "Which screen recorder is cheapest?",
     answer:
-      "Prequel is $9 a month or $29 once, for everything. Screen Studio is $29 a month or $9 a month billed yearly; Loom Business is $18 a seat; Tella is $13 a seat; Descript's paid plans start at $16; Camtasia is an annual subscription and ScreenFlow is $199.99 once. Prices as checked on the dates under the grid.",
+      "Prequel is $9 a month or $29 once, for everything. Screen Studio is $29 a month or $9 a month billed yearly; Loom Business is $18 a seat; Tella is $13 a seat; Descript's paid plans start at $16; Camtasia is an annual subscription; Screen Charm is $99 once and ScreenFlow is $199.99 once. Prices as checked on the dates under the grid.",
   },
 ];
 

@@ -73,6 +73,48 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "screen-charm-vs-screen-studio",
+    title: "Screen Charm vs Screen Studio: which Mac screen recorder should you buy?",
+    excerpt:
+      "Screen Charm sells the automatic-zoom recording once for $99 and Screen Studio rents it by the month. We put the two head to head on what each does, what people say about each, and a feature table with Prequel in the third column.",
+    date: "2026-10-08",
+    tag: "Comparison",
+    readingMinutes: 13,
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "Is Screen Charm a good Screen Studio alternative?",
+        answer:
+          "For a Mac demo, yes, if one payment matters more than the extras. Screen Charm zooms on every click with motion blur, smooths the cursor, puts the window on a background or in a MacBook frame, and costs $99 once for three Macs. What it does not do is zoom on what you type, record an iPhone, reframe to vertical without cropping, or export above 4K 60. Prequel does the same automatic pass with a perspective tilt and focus falloff, exports at 4K 120, and is $29 once or $9 a month.",
+      },
+      {
+        question: "How much does Screen Charm cost compared to Screen Studio?",
+        answer:
+          "Screen Charm is $99 once, covering up to three Macs, with updates included and a 14-day refund. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier and no lifetime licence since October 2025. Prequel is $29 once or $9 a month. Read off each vendor's own page on 3 and 8 October 2026.",
+      },
+      {
+        question: "Can you try Screen Charm or Screen Studio before paying?",
+        answer:
+          "Not the export. Screen Charm is free to download, record and edit with, and the finished video stays in the app until the $99 licence is bought; there is a 14-day refund after purchase. Screen Studio has no free tier, so a recording cannot be exported until a month is paid. Prequel's seven-day trial includes export, with no watermark.",
+      },
+      {
+        question: "Does Screen Charm zoom on typing like Screen Studio?",
+        answer:
+          "No. Screen Charm places its zooms from clicks only, which its maker describes as clicks converted into timed zoom segments. Screen Studio and Prequel both zoom on the field you are typing into as well as on clicks, and Prequel adds a perspective tilt on the push-in with focus falling away from the subject.",
+      },
+      {
+        question: "Does Screen Charm record an iPhone?",
+        answer:
+          "No. Screen Charm captures a display, a window or an area of a Mac. Screen Studio records an iPhone or iPad over a USB cable and draws the matching device frame round it, and it is the only one of the three that does. Prequel does not record a device either.",
+      },
+      {
+        question: "Is Screen Charm a native Mac app?",
+        answer:
+          "It is an Electron app. Screen Charm started as a Chrome extension and was rewritten for Electron at the start of 2025, which its maker describes in his Show HN post; the download is 237 MB. It needs an Apple Silicon Mac on macOS 14 or later. Prequel runs on the same Macs, with a 104 MB download and recording, rendering and export on the Mac's own media engine.",
+      },
+    ],
+  },
+  {
     slug: "decision-models-for-browser-agents",
     title: "How to build a fast browser agent with Jev and OpenAI's Decisions API",
     excerpt:
@@ -203,10 +245,10 @@ const ENTRIES: Post[] = [
   },
   {
     slug: "screen-charm-alternatives",
-    title: "The best Screen Charm alternatives for Mac",
+    title: "The best Screen Charm alternatives for Mac in 2026",
     excerpt:
-      "Screen Charm is free to record with and charges $79 to let the file out. We tried the six tools people move to, with the prices checked and the complaints linked, and here is where each one fits.",
-    date: "2026-09-28",
+      "Screen Charm is free to record with and charges $99 to let the file out. We tried the six tools people move to, with the prices checked and the complaints linked, and here is where each one fits.",
+    date: "2026-10-08",
     tag: "Comparison",
     readingMinutes: 13,
     pillar: "screen-recording-on-mac",
@@ -214,17 +256,17 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best Screen Charm alternative?",
         answer:
-          "Prequel, if what sent you looking was the export sitting behind the $79 licence. It does the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps. It is $29 once or $9 a month, and the seven-day trial is the whole app with export included, so a video you make in that week is yours either way.",
+          "Prequel, if what sent you looking was the export sitting behind the $99 licence. It does the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps. It is $29 once or $9 a month, and the seven-day trial is the whole app with export included, so a video you make in that week is yours either way.",
       },
       {
         question: "How much does Screen Charm cost?",
         answer:
-          "$79, once, with no subscription and no renewal. That covers up to three Macs and comes with a 14-day money-back guarantee. There is one tier and no free plan: the app is free to download and record with, and exporting the finished video needs the $79 purchase. Checked on 28 September 2026.",
+          "$99, once, with no subscription and no renewal. That covers up to three Macs and comes with a 14-day money-back guarantee. There is one tier and no free plan: the app is free to download and record with, and exporting the finished video needs the $99 purchase. It was $79 until the autumn of 2026. Checked on 8 October 2026.",
       },
       {
         question: "Can you export from Screen Charm for free?",
         answer:
-          "No. Screen Charm's own FAQ says the app is free to download and use for recording, and that exporting the finished video requires the one-time $79 purchase. There is no time limit on that free period, so you can record and edit for as long as you like, and the file stays inside the app until you pay. Prequel's seven-day trial includes export, with no watermark.",
+          "No. Screen Charm's own FAQ says the app is free to download and use for recording, and that exporting the finished video requires the one-time $99 purchase. There is no time limit on that free period, so you can record and edit for as long as you like, and the file stays inside the app until you pay. Prequel's seven-day trial includes export, with no watermark.",
       },
       {
         question: "Does Screen Charm work on an Intel Mac?",
@@ -239,12 +281,12 @@ const ENTRIES: Post[] = [
       {
         question: "Is Screen Charm still worth buying?",
         answer:
-          "If you want one payment, no renewal, and a recorder that puts a zoom on every click with motion blur, a MacBook frame and blur regions, then yes, $79 buys that and the maker ships often. Where it stops is the cheaper end of the same category and anything needing more than one person: there is no team side, no zoom on what you type, and the export is locked until you have paid.",
+          "If you want one payment, no renewal, and a recorder that puts a zoom on every click with motion blur, a MacBook frame and blur regions, then yes, $99 buys that and the maker ships often. Where it stops is the cheaper end of the same category and anything needing more than one person: there is no team side, no zoom on what you type, and the export is locked until you have paid.",
       },
       {
         question: "What is the cheapest Screen Charm alternative?",
         answer:
-          "Free ones exist: OBS Studio is free and open source under GPL-2.0, QuickTime Player is built into macOS, and Cap is free for personal use. None of them edits the recording for you. The cheapest tool that does the automatic pass is Prequel at $29 once, or $9 a month, which is under half of Screen Charm's $79 and under Screen Studio's $29 a month.",
+          "Free ones exist: OBS Studio is free and open source under GPL-2.0, QuickTime Player is built into macOS, and Cap is free for personal use. None of them edits the recording for you. The cheapest tool that does the automatic pass is Prequel at $29 once, or $9 a month, which is under a third of Screen Charm's $99 and under Screen Studio's $29 a month.",
       },
     ],
   },

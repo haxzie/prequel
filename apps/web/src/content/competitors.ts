@@ -837,6 +837,125 @@ export const competitors: Competitor[] = [
       },
     ],
   },
+  {
+    slug: "screen-charm",
+    name: "Screen Charm",
+    tagline: "Screen recorder for Mac. Cinematic by default.",
+    accent: "#604ef3",
+    logoAllowed: true,
+    monogram: "SC",
+    priceSummary: "$99 once, up to three Macs",
+    plans: [{ name: "Lifetime", price: "$99", cadence: "one-off, up to three Macs" }],
+    // Their own shape, and the one the alternatives post is built on: the
+    // recorder and the editor cost nothing, the export is what the licence
+    // unlocks. Not a trial — there is no clock on it and no file at the end.
+    freeTier: "Free to download and record with; export needs the licence",
+    features: {
+      autoZoom: true,
+      // "Every click gets its moment" is the claim, and the Show HN describes
+      // clicks converted to zoom segments. Nothing on typing anywhere.
+      typingZoom: false,
+      smoothCursor: true,
+      camera: true,
+      backgrounds: true,
+      layouts: "A floating bubble, or pinned to an edge",
+      // Their July 2026 roundup describes "background replacement" on the
+      // webcam overlay — a swap inside the bubble, like Loom's, not a cutout.
+      cameraCutout: "Background replacement inside the overlay",
+      tiltFocus: false,
+      // Captions landed in 1.11.4 on 8 September 2026. Neither the feature
+      // page nor the changelog says whether the audio leaves the Mac, so the
+      // cell says that rather than guessing either way.
+      localCaptions: "Generated in the app; where is not stated",
+      timeline: "Trim, split, mute and speed, per clip",
+      separateTracks: "Not stated",
+      // Their own Screen Studio comparison: "Yes (no driver needed)".
+      systemAudio: true,
+      // The split vertical layout crops the screen to follow the cursor, which
+      // is the opposite of reframing without a crop.
+      verticalReframe: "A split layout; the screen crops to follow the cursor",
+      loupe: false,
+      looks: false,
+      noiseReduction: true,
+      importVideo: false,
+      localOnly: "Records locally; shareable links upload",
+      // 1.9.5 raised the upload cap to 2 GB.
+      shareLinks: "Yes, 2 GB per upload",
+      workspace: false,
+      iosCapture: false,
+      // "30 / 60 FPS export" on their comparison page; 4K on the pricing card.
+      maxExport: "4K, 60 fps",
+      // `Content-Length` of the 1.11.4 Apple Silicon `.dmg`: 236,673,429 bytes.
+      downloadSize: "237 MB",
+      platforms: "macOS 14+, Apple Silicon",
+      licence: "$99 once, up to three Macs",
+    },
+    strength:
+      "One payment for three Macs, a MacBook frame round the recording, a built-in music library, and a maker who has shipped a release most fortnights since July 2025.",
+    verifiedOn: "2026-10-08",
+    sources: [
+      { label: "Screen Charm", url: "https://screencharm.com/" },
+      { label: "Screen Charm changelog", url: "https://screencharm.com/changelog" },
+      {
+        label: "Screen Charm vs Screen Studio, by Screen Charm",
+        url: "https://screencharm.com/vs/screen-studio",
+      },
+      {
+        label: "Screen Charm's Screen Studio alternatives post",
+        url: "https://screencharm.com/blog/screen-studio-alternative",
+      },
+      {
+        label: "Screen Charm 1.11.4 installer",
+        url: "https://download.screencharm.com/Screen%20Charm-1.11.4-arm64.dmg",
+      },
+      {
+        label: "Screen Charm on Product Hunt",
+        url: "https://www.producthunt.com/products/screen-charm",
+      },
+      {
+        label: "Show HN: Mac screen recorder that adds zoom animations from click data",
+        url: "https://news.ycombinator.com/item?id=48461381",
+      },
+    ],
+    heading: "Looking for a Screen Charm alternative?",
+    lede: "Screen Charm is free to record with and $99 to export from, paid once. Prequel is $29 once for the same kind of licence, or $9 a month, and the seven-day trial has the export in it. The difference is on screen: zooms on what you type as well as where you click, a perspective tilt, focus falling away from the subject, and 4K at 120 fps against their 4K 60.",
+    title: "Screen Charm alternative for Mac",
+    description:
+      "A Screen Charm alternative for macOS at $29 once or $9 a month, with the export in the trial: automatic zooms on clicks and typing, a perspective tilt and a framed camera, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
+    navLabel: "vs Screen Charm",
+    faq: [
+      {
+        question: "What is the best Screen Charm alternative?",
+        answer:
+          "Prequel, if what sent you looking was finishing a video and finding the export behind the $99. It makes the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps where Screen Charm stops at 60. It is $29 once or $9 a month, and the seven-day trial is the whole app with the export in it, so the files you make in that week are yours either way.",
+      },
+      {
+        question: "How much does Screen Charm cost?",
+        answer:
+          "$99, once, with no subscription. The licence covers up to three Macs, includes future updates, and comes with a 14-day money-back guarantee. There is one tier and no free plan: the app is free to download and record with, and exporting the finished video needs the purchase. It was $79 until the autumn of 2026. Checked on 8 October 2026.",
+      },
+      {
+        question: "Can you export from Screen Charm without paying?",
+        answer:
+          "No. Recording and editing are free and there is no time limit on them, but the finished video stays inside the app until the $99 licence is bought. Prequel's seven-day trial includes export, with no watermark, on every size and frame rate the paid app has.",
+      },
+      {
+        question: "Is Screen Charm better for anything?",
+        answer:
+          "A MacBook device frame round the recording, a built-in library of background music, and a licence that covers three Macs. If the laptop-frame look is the point, that is Screen Charm's. Prequel frames the recording with padding, a radius, a border and a shadow over a background instead, and leaves the music to you.",
+      },
+      {
+        question: "Does Screen Charm work on an Intel Mac?",
+        answer:
+          "No. Screen Charm needs an Apple Silicon Mac on macOS Sonoma 14.0 or later, and so does Prequel. On an Intel Mac, OBS Studio runs on macOS 12 and later on both chips, and QuickTime Player is already installed.",
+      },
+      {
+        question: "Can I open my Screen Charm recordings in Prequel?",
+        answer:
+          "Not the project files, which are Screen Charm's own format. A video you have already exported is an ordinary MP4 and can be brought into a Prequel project with Add Clip, then cut and framed alongside anything else; its zooms are burned in, so those cannot be re-timed. For a two-minute demo, re-recording the take is usually quicker than working round a finished file.",
+      },
+    ],
+  },
 ];
 
 export function findCompetitor(slug: string): Competitor | undefined {

@@ -185,7 +185,7 @@ scale figure). The check script flags anything else.
 
 Link internally to `/alternatives/<slug>` at the end of any section where that
 page exists. Today that is `screen-studio`, `loom`, `camtasia`, `screenflow`,
-`descript` and `tella`. Close with `/pricing`.
+`descript`, `tella` and `screen-charm`. Close with `/pricing`.
 
 ## Screenshots
 
