@@ -4,7 +4,7 @@
  * The sentence is still written out in `page.tsx`; these are only how three of
  * its words are drawn. Each one quotes a piece of the app rather than being
  * decoration for its own sake — a title card, a clip on the timeline, the
- * platform mark — so the headline shows what the product is before the picture
+ * Finder face — so the headline shows what the product is before the picture
  * below it starts playing.
  *
  * Everything is sized in `em`. The heading runs from 2rem to 6rem across the
@@ -25,8 +25,6 @@
  * into the box as well and each chip would stand a third of a line taller than
  * the word inside it.
  */
-import { AppleIcon } from "@/components/icons";
-
 /**
  * The title card.
  *
@@ -110,17 +108,32 @@ function Grip({ edge }: { edge: "start" | "end" }) {
 }
 
 /**
- * The platform, with the mark for it.
+ * The platform, with the Finder face beside it.
  *
- * The mark sits beside the word and never in place of it, which is the line
- * Apple's guidelines draw — the note on `AppleIcon` has the rest. Optically
- * centred by hand: a solid mark reads smaller than the letters beside it and
- * the leaf puts its centre below the geometric one.
+ * The face rather than the Apple mark: Apple's guidelines keep their logo
+ * beside a word and never decorated, and a tilted Apple logo is exactly what
+ * they rule out. The Finder icon is the Mac itself to anyone who has used one,
+ * and it takes the same tilt the chips do without quoting a rule.
+ *
+ * Tilted the other way from the clip before it, for the reason the two boxes
+ * are: three things leaning the same way read as a crooked page. Four degrees,
+ * more than either box, because a square this small can lean further before
+ * a corner reaches the line above.
+ *
+ * A plain `<img>` and not `next/image`: it is 320px square and sized in `em`
+ * against the heading, and the optimiser would hand back a `srcset` sized for
+ * a layout width this element does not have.
  */
 export function HeroPlatform({ children }: { children: string }) {
   return (
-    <span data-hero-chip className="inline-flex items-baseline gap-[0.16em] whitespace-nowrap">
-      <AppleIcon className="size-[0.82em] translate-y-[0.06em]" />
+    <span data-hero-chip className="inline-flex items-baseline gap-[0.18em] whitespace-nowrap">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/finder.png"
+        alt=""
+        aria-hidden="true"
+        className="size-[0.88em] translate-y-[0.1em] rotate-[4deg] select-none"
+      />
       {children}
     </span>
   );
