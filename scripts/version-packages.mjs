@@ -43,6 +43,18 @@ const REGISTRY = join(root, "apps/web/src/content/changelog.ts");
  */
 const HIGHLIGHT = /<!--\s*highlight:\s*(.+?)\s*-->/i;
 
+/**
+ * The most a highlight may run to, in characters.
+ *
+ * It sits in a pill on the home page beside the version, and the pill is one
+ * line. Every headline written for one so far has been under fifty; the one
+ * that was not was a fallback — a full changelog sentence of a hundred and
+ * twenty characters that wrapped the pill onto a second line above the mark.
+ * The site deliberately wraps rather than truncates there, because a badge
+ * ending in an ellipsis says less than no badge, so the bound has to be here.
+ */
+const HIGHLIGHT_MAX = 60;
+
 /** Every pending changeset, as `{ bump, line, highlight }`. */
 function pending() {
   if (!existsSync(CHANGESETS)) return [];
@@ -94,7 +106,20 @@ function highlightOf(entries) {
 
   const order = { major: 0, minor: 1, patch: 2 };
   const first = [...entries].sort((a, b) => order[a.bump] - order[b.bump])[0];
-  return (first?.line ?? "A new version").replace(/\.$/, "");
+  const fallback = (first?.line ?? "A new version").replace(/\.$/, "");
+
+  // Refused rather than cut short. Trimming a sentence at a word boundary
+  // produces a fragment that trails off, and the person who wrote the
+  // changeset is the one who knows what the release is called.
+  if (fallback.length > HIGHLIGHT_MAX) {
+    throw new Error(
+      `${first.name}'s sentence is ${String(fallback.length)} characters, too long for the ` +
+        `home page pill. Add \`<!-- highlight: … -->\` (under ${String(HIGHLIGHT_MAX)} ` +
+        `characters) to one of the pending changesets.`,
+    );
+  }
+
+  return fallback;
 }
 
 /** The `.mdx` the site renders, and the GitHub release reads back. */

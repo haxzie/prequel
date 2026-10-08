@@ -72,9 +72,11 @@ Record, render and edit from a terminal with the new `prequel` command.
 <!-- highlight: Record from the command line -->
 ```
 
-A fragment, no full stop — it sits in a pill on the home page. Without one, the
-most significant changeset's sentence is used, which is usually right; write the
-comment when it is not.
+A fragment, no full stop, under sixty characters — it sits in a pill on the
+home page, and the pill is one line. Without one, the most significant
+changeset's sentence is used, which is usually right; write the comment when it
+is not, and always when that sentence runs past sixty characters, because the
+generator refuses to build a pill that wraps.
 
 ## Nothing to add is a normal answer
 
