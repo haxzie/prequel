@@ -457,6 +457,13 @@
   */
   --animate-demo-screen: demo-screen 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
   --animate-demo-tilt: demo-tilt 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  /*
+    The ring on the chip, breathing. A halo behind it swells and fades on a
+    slow sine, the way a status light on a sleeping Mac does — which is the
+    reference, and why it is this slow: four seconds a breath, and never
+    fully out, so the ring always reads as lit.
+  */
+  --animate-ring-breathe: ring-breathe 4s ease-in-out infinite;
   --animate-demo-cursor: demo-cursor 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   --animate-demo-click: demo-click 16s cubic-bezier(0.65, 0, 0.35, 1) infinite;
   --animate-demo-ripple: demo-ripple 16s cubic-bezier(0.33, 1, 0.68, 1) infinite;
@@ -617,6 +624,18 @@
     already carried a long way off it, which is what used to drag the picture's
     edge into shot and force the tilts to stay timid.
   */
+  @keyframes ring-breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(0.92);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+  }
+
   @keyframes demo-tilt {
     0%,
     4.5% {
@@ -1625,6 +1644,15 @@
 @media (prefers-reduced-motion: reduce) {
   [data-hero-enter] {
     animation: none;
+  }
+}
+
+/* The chip's halo holds at its mid-breath rather than going out: a ring with
+   no light behind it reads as unlit, which is the opposite of the point. */
+@media (prefers-reduced-motion: reduce) {
+  [data-ring-halo] {
+    animation: none;
+    opacity: 0.8;
   }
 }
 

@@ -83,7 +83,7 @@ export function HeroClip({ children }: { children: string }) {
   return (
     <span
       data-hero-chip
-      className="relative inline-flex rotate-[1.5deg] items-baseline rounded-[0.2em] border border-lilac bg-lilac px-[0.58em] pt-[0.07em] pb-[0.13em] leading-[1] whitespace-nowrap text-white"
+      className="relative inline-flex rotate-[1.5deg] items-baseline rounded-[0.32em] border border-lilac bg-lilac px-[0.58em] pt-[0.07em] pb-[0.13em] leading-[1] whitespace-nowrap text-white"
     >
       <Grip edge="start" />
       {children}
@@ -99,7 +99,7 @@ function Grip({ edge }: { edge: "start" | "end" }) {
     <span
       aria-hidden="true"
       className={`absolute inset-y-0 grid w-[0.34em] place-items-center bg-white/25 ${
-        edge === "start" ? "left-0 rounded-l-[0.2em]" : "right-0 rounded-r-[0.2em]"
+        edge === "start" ? "left-0 rounded-l-[0.3em]" : "right-0 rounded-r-[0.3em]"
       }`}
     >
       <span className="h-1/2 w-[0.06em] rounded-full bg-white" />

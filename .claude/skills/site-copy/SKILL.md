@@ -92,8 +92,8 @@ Full reasoning is in `COPY.md`. The ones that get broken:
 ## Claims that may not be made
 
 **Prequel does not cut, trim or remove silences.** The automatic first pass is
-exactly the five things in `ALREADY_DONE` in `LandingBody.tsx`: zooms placed,
-camera framed, background applied, audio balanced, cursor cleaned up. Cutting is
+exactly five things, listed in `COPY.md`: zooms placed, camera framed,
+background applied, audio balanced, cursor cleaned up. Cutting is
 a manual pass on the timeline. Never write "dead air". This is the overclaim
 that produces refunds, and it has been rejected by name before.
 

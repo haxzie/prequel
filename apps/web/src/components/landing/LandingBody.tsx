@@ -1,11 +1,3 @@
-import {
-  // Aliased because a bare `Image` in a Next file reads as `next/image`.
-  Image as ImageIcon,
-  MousePointer2,
-  SlidersHorizontal,
-  Webcam,
-  ZoomIn,
-} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ButtonLink } from "@/components/Button";
@@ -18,6 +10,7 @@ import {
   TimelineIllustration,
   ZoomIllustration,
 } from "@/components/editor-illustrations";
+import { BuiltForMac } from "@/components/landing/BuiltForMac";
 import { CaptionsDemo } from "@/components/landing/CaptionsDemo";
 import { LayoutDemo } from "@/components/landing/LayoutDemo";
 import { TeleprompterDemo } from "@/components/landing/TeleprompterDemo";
@@ -27,23 +20,6 @@ import { Container, SectionHeading } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import type { FaqEntry } from "@/lib/faq";
 import { TRIAL_DAYS } from "@/lib/pricing";
-
-/** What is already done by the time the editor opens on a take. */
-const ALREADY_DONE = [
-  { icon: ZoomIn, done: "Zooms placed", note: "On every click and every burst of typing" },
-  { icon: Webcam, done: "Camera framed", note: "Shaped, sized and set in a corner" },
-  { icon: ImageIcon, done: "Background applied", note: "Padding, radius, border and shadow" },
-  {
-    icon: SlidersHorizontal,
-    done: "Audio balanced",
-    note: "Microphone and system on separate gains",
-  },
-  {
-    icon: MousePointer2,
-    done: "Cursor cleaned up",
-    note: "Smoothed, resized, hidden when it idles",
-  },
-];
 
 /**
  * The whole product in three steps, in the order they happen.
@@ -224,31 +200,11 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           rolling. */}
       <TeleprompterDemo />
 
-      <section className="py-24">
-        <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">
-          <SectionHeading
-            eyebrow="Instant edit"
-            title="Start with the edit already done"
-            lede="Prequel records where you click and type, then opens the editor with zooms already placed, a framed camera and a polished background. Spend less time building the first cut and more time fine-tuning."
-            cta="Download for Mac"
-          />
-
-          <div className="rounded-2xl border border-line bg-surface p-2">
-            <ul className="flex flex-col gap-px overflow-hidden rounded-xl">
-              {ALREADY_DONE.map(({ icon: Icon, done, note }) => (
-                <li
-                  key={done}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-elevated px-4 py-3.5"
-                >
-                  <Icon className="size-4 shrink-0 text-fg" strokeWidth={1.75} aria-hidden />
-                  <span className="text-sm text-fg">{done}</span>
-                  <span className="ml-auto text-xs text-muted">{note}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Container>
-      </section>
+      {/* After the four demos, the one section about the machine rather than
+          the take. It sits here because the demos have just shown four things
+          happening to a recording, and "all of that runs on the Mac's own
+          hardware" is the sentence those four earn. */}
+      <BuiltForMac />
 
       <section className="bg-surface/40 py-24">
         <Container>

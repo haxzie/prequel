@@ -107,11 +107,11 @@ export function ZoomDemo() {
             by the person reading it, which is not true of any sentence about
             videos people want to watch.
 
-            It also has to avoid the sentence the "Instant edit" section opens
-            with a screen further down. Both are about the same automatic zooms,
-            and said in the same words within a screen of each other they read
-            as the page repeating itself: this one is the mechanism, that one is
-            the time it saves.
+            It also has to avoid the sentence the "Everything you would have
+            done by hand" section opens with further down. Both are about the
+            same automatic zooms, and said in the same words within a screen of
+            each other they read as the page repeating itself: this one is the
+            mechanism, that one is the time it saves.
           */}
           <SectionHeading
             eyebrow="Zoom and pan"
