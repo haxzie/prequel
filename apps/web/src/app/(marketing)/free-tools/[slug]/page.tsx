@@ -112,7 +112,10 @@ export default async function FreeToolPage({ params }: PageProps<"/free-tools/[s
             features: tool.features.map((feature) => feature.title),
           }),
           howToJsonLd({
-            name: `How to ${tool.heading.toLowerCase()}`,
+            // Only the first letter is lowered. The headings name formats, and
+            // `toLowerCase()` on the whole string turned "MP4 to MP3" into "mp4
+            // to mp3" in the structured data for every converter.
+            name: `How to ${tool.heading.charAt(0).toLowerCase()}${tool.heading.slice(1)}`,
             description: tool.lede,
             path: `/free-tools/${tool.slug}`,
             steps: tool.steps,

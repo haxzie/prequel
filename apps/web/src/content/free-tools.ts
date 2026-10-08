@@ -53,7 +53,15 @@ export type FreeTool = {
   navLabel: string;
   /** Small caps line above the heading, and the kicker on the share card. */
   eyebrow: string;
-  /** The `<h1>`. Under about 60 characters, which is what the card can draw. */
+  /**
+   * The `<h1>`. Under about 60 characters, which is what the card can draw.
+   *
+   * It says what the page is searched for, in those words: "Convert MOV to
+   * MP4 online for free", not "Make a MOV play everywhere". The clever line
+   * read well and ranked for nothing, because the phrase people type was on
+   * the page nowhere a crawler weights. Kept imperative, since the `HowTo`
+   * name is built from it as "How to …".
+   */
   heading: string;
   /**
    * The name the structured data gives the tool.
@@ -101,7 +109,7 @@ export const freeTools: FreeTool[] = [
     icon: Monitor,
     navLabel: "Screen recorder",
     eyebrow: "Free browser tool",
-    heading: "Record your screen in the browser",
+    heading: "Record your screen online for free",
     name: "Free online screen recorder",
     lede: "Share a screen, a window or a tab, put your camera in the corner, then download the file. It runs in this tab and nothing is uploaded.",
     description:
@@ -206,7 +214,7 @@ export const freeTools: FreeTool[] = [
     icon: Webcam,
     navLabel: "Webcam recorder",
     eyebrow: "Free browser tool",
-    heading: "Record yourself in the browser",
+    heading: "Record your webcam online for free",
     name: "Free online webcam recorder",
     lede: "Turn on your camera, pick the frame you are posting to, then record and download the file. Your face never leaves the tab.",
     description:
@@ -294,7 +302,7 @@ export const freeTools: FreeTool[] = [
     icon: Mic,
     navLabel: "Voice recorder",
     eyebrow: "Free browser tool",
-    heading: "Record your voice in the browser",
+    heading: "Record your voice online for free",
     name: "Free online voice recorder",
     lede: "Turn on your microphone, watch the level move, then record and download the audio. No account and no upload.",
     description:
@@ -382,7 +390,7 @@ export const freeTools: FreeTool[] = [
     icon: Crop,
     navLabel: "Screenshot editor",
     eyebrow: "Free browser tool",
-    heading: "Make a screenshot worth looking at",
+    heading: "Edit a screenshot online for free",
     name: "Free online screenshot editor",
     lede: "Paste or drop a screenshot, mark it up, put a background behind it, then copy or download it. It opens in this tab and stays there.",
     description:
@@ -482,7 +490,7 @@ export const freeTools: FreeTool[] = [
     icon: AudioLines,
     navLabel: "Video to MP3",
     eyebrow: "Free browser tool",
-    heading: "Pull the sound out of a video",
+    heading: "Convert a video to MP3 online for free",
     name: "Free video to MP3 converter",
     lede: "Drop a video in and get an MP3 back. It converts in this tab, on your own machine, so there is no upload and no queue.",
     description:
@@ -574,7 +582,7 @@ export const freeTools: FreeTool[] = [
     icon: AudioLines,
     navLabel: "MP4 to MP3",
     eyebrow: "Free browser tool",
-    heading: "Turn an MP4 into an MP3",
+    heading: "Convert MP4 to MP3 online for free",
     name: "Free MP4 to MP3 converter",
     lede: "Drop an MP4 in and keep only the sound. It converts in this tab, on your own machine, with no upload and no queue.",
     description:
@@ -662,7 +670,7 @@ export const freeTools: FreeTool[] = [
     icon: FileVideo,
     navLabel: "MOV to MP4",
     eyebrow: "Free browser tool",
-    heading: "Make a MOV play everywhere",
+    heading: "Convert MOV to MP4 online for free",
     name: "Free MOV to MP4 converter",
     lede: "Drop a QuickTime MOV in and get an MP4 back, usually in about a second. It converts in this tab, on your own machine.",
     description:
@@ -750,7 +758,7 @@ export const freeTools: FreeTool[] = [
     icon: AudioLines,
     navLabel: "MOV to MP3",
     eyebrow: "Free browser tool",
-    heading: "Get the audio out of a QuickTime file",
+    heading: "Convert MOV to MP3 online for free",
     name: "Free MOV to MP3 converter",
     lede: "Drop a MOV in and keep only the sound. The conversion happens in this tab, so the recording stays on your machine.",
     description:
@@ -838,7 +846,7 @@ export const freeTools: FreeTool[] = [
     icon: FileVideo,
     navLabel: "AVI to MP4",
     eyebrow: "Free browser tool",
-    heading: "Bring an AVI up to date",
+    heading: "Convert AVI to MP4 online for free",
     name: "Free AVI to MP4 converter",
     lede: "Drop an AVI in and get an MP4 that plays on a phone, in a browser and in every editor. It converts in this tab.",
     description:
@@ -926,7 +934,7 @@ export const freeTools: FreeTool[] = [
     icon: FileVideo,
     navLabel: "WebM to MP4",
     eyebrow: "Free browser tool",
-    heading: "Turn a WebM into something everything plays",
+    heading: "Convert WebM to MP4 online for free",
     name: "Free WebM to MP4 converter",
     lede: "Drop a WebM in and get an H.264 MP4 back. It converts in this tab, so the file stays on your machine.",
     description:
@@ -1014,7 +1022,7 @@ export const freeTools: FreeTool[] = [
     icon: FileVideo,
     navLabel: "MP4 to WebM",
     eyebrow: "Free browser tool",
-    heading: "Make an MP4 ready for the web",
+    heading: "Convert MP4 to WebM online for free",
     name: "Free MP4 to WebM converter",
     lede: "Drop an MP4 in and get a WebM back, converted in this tab. Useful when a site, a wiki or a web app will only take WebM.",
     description:
@@ -1101,7 +1109,7 @@ export const freeTools: FreeTool[] = [
     icon: FileVideo,
     navLabel: "MKV to MP4",
     eyebrow: "Free browser tool",
-    heading: "Get an MKV out of VLC and into everything else",
+    heading: "Convert MKV to MP4 online for free",
     name: "Free MKV to MP4 converter",
     lede: "Drop an MKV in and get an MP4 back, usually in a second. It converts in this tab, on your own machine.",
     description:
