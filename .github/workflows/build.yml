@@ -7,6 +7,22 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # A macOS runner bills at ten times the rate and this job spends about ten
+    # minutes of one, so a push that cannot change the app must not start it.
+    # Three web-only pushes in an afternoon packaged, signed and notarised the
+    # Mac app three times for nothing, and uploaded 650 MB of disk images with
+    # it.
+    #
+    # The filter is "run unless *every* changed file matches", so a branch that
+    # touches the site and a crate still builds. It cannot affect a release
+    # either: `release.yml` reaches this through `workflow_call`, which carries
+    # no path filters at all.
+    paths-ignore:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "packages/db/**"
+      - ".changeset/**"
+      - "**/*.md"
   workflow_dispatch:
   # Called by `release.yml` once a version pull request has merged and the tag
   # has been pushed.
@@ -222,19 +238,19 @@ jobs:
         id: name
         run: echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Kept for every run, tagged or not, so a build of main can be downloaded
-      # and opened without cutting a release for it.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: prequel-${{ steps.name.outputs.version }}-${{ github.sha }}
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
-            apps/desktop/release/*.blockmap
-          if-no-files-found: error
-          # A disk image compresses no further, and these are ~100 MB each.
-          compression-level: 0
-          retention-days: 14
+      # What `if-no-files-found: error` used to assert from inside the upload.
+      # The upload is now allowed to fail, so the check that the package
+      # actually produced something has to stand on its own: a build with no
+      # disk image in it is a broken build whether or not anybody wanted a copy.
+      - name: Check the disk image exists
+        run: |
+          shopt -s nullglob
+          images=(apps/desktop/release/*.dmg)
+          if [ ${#images[@]} -eq 0 ]; then
+            echo "::error::packaging produced no .dmg in apps/desktop/release."
+            exit 1
+          fi
+          ls -lh "${images[@]}"
 
       # `gh` rather than a third-party action: it is already on the runner and
       # authenticated by the token, so this is one less thing to trust.
@@ -283,6 +299,34 @@ jobs:
             --title "Prequel $TAG" \
             --notes-file "$notes" \
             --verify-tag
+
+      # Last, and allowed to fail.
+      #
+      # It used to sit before the publish step above, which made Actions
+      # *storage* a dependency of shipping: when the artifact quota filled up,
+      # this step failed, the job failed, and the publish step never ran — so a
+      # merged release pull request would have left a tag pushed with no release
+      # attached to it and nothing on the mirror, after ten minutes of signing
+      # and notarising. Nothing about a copy of the build for a maintainer is
+      # worth that, so it goes after the release and `continue-on-error` keeps
+      # the job green when the store is full.
+      #
+      # The disk image only. The `.zip` is the updater's payload and belongs in
+      # the release rather than in a debug copy, and the `.blockmap` files are
+      # dead weight everywhere: differential download is turned off in
+      # `main/update.ts` — see the note on the publish step — so nothing reads
+      # them. Three days rather than fourteen: a build of main is wanted on the
+      # day it lands. Together that takes a week of pushes from several
+      # gigabytes to a few hundred megabytes.
+      - name: Keep a copy of the build
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: prequel-${{ steps.name.outputs.version }}-${{ github.sha }}
+          path: apps/desktop/release/*.dmg
+          # A disk image compresses no further, and these are ~100 MB each.
+          compression-level: 0
+          retention-days: 3
 
   # The CDN copy, and the manifest the site reads to find it.
   #
