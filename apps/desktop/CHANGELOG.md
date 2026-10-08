@@ -1,5 +1,12 @@
 # @prequel/desktop
 
+## 0.1.1
+
+### Patch Changes
+
+- 2ffd193: The loupe now spills a little light onto the frame beside it, tinted by what is under the glass, with a Light slider to set it.
+- ce72bb5: Opening a long recording no longer crashes the editor, and its waveform appears faster on every open after the first.
+
 ## 0.1.0
 
 ### Minor Changes
