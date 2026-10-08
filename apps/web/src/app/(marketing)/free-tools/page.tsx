@@ -6,7 +6,7 @@ import { DownloadCta } from "@/components/DownloadButton";
 import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { Container, SectionHeading } from "@/components/Section";
-import { freeTools } from "@/content/free-tools";
+import { freeTools, type FreeTool } from "@/content/free-tools";
 import type { FaqEntry } from "@/lib/faq";
 import { itemListJsonLd, pageMetadata } from "@/lib/seo";
 
@@ -52,9 +52,39 @@ const INDEX_FAQ: FaqEntry[] = [
       "Because they answer the quick jobs, and because the limits of a browser are the clearest explanation of what a native recorder is for. Prequel records on your Mac at full resolution, places the zooms and exports at up to 4K.",
   },
   {
+    question: "Why do the converters download 32 MB the first time?",
+    answer:
+      "Because the converter is ffmpeg itself, compiled to WebAssembly and sent to you rather than run on a server. It is cached for the rest of your visit, so only the first conversion waits for it, and it is the reason your file is never uploaded.",
+  },
+  {
     question: "Can I use the recordings commercially?",
     answer:
       "Yes. They are your recordings, there is no watermark on them and Prequel keeps no copy. Use them anywhere you like.",
+  },
+];
+
+/**
+ * The three bands, in the order they are read.
+ *
+ * This page owns the order and the words; the registry owns only which band a
+ * tool is in, through its `surface`. One fewer thing for a new entry to get
+ * wrong, and no way to publish a tool that lands in no band.
+ */
+const GROUPS: { kind: FreeTool["surface"]["kind"]; label: string; lede: string }[] = [
+  {
+    kind: "recorder",
+    label: "Record",
+    lede: "Your screen, your camera or your voice, captured in the tab and downloaded as a file.",
+  },
+  {
+    kind: "editor",
+    label: "Edit",
+    lede: "Mark up a screenshot and put it on a background, without an account or an extension.",
+  },
+  {
+    kind: "converter",
+    label: "Convert",
+    lede: "ffmpeg runs inside your browser, so a file is converted on your own machine rather than uploaded to a queue.",
   },
 ];
 
@@ -73,51 +103,60 @@ export default function FreeTools() {
             level={1}
             eyebrow="Free tools"
             title="Free tools that run in your browser"
-            lede="Small tools that run in a tab. Record your screen, your camera or your voice, or mark up a screenshot. Nothing is uploaded and nothing asks you to sign up."
+            lede="Record, mark up and convert, all inside a tab. Your files are read and written on your own machine, so nothing is uploaded and nothing asks you to sign up."
             align="centre"
           />
         </Container>
       </section>
 
-      <section className="pb-8">
-        <Container>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {freeTools.map((tool) => (
-              /* The href is a literal rather than a field on the registry
+      {/* Grouped by what the tool is, the way `/usecases` bands its sixteen.
+          Twelve cards in one grid is a wall, and the three groups are the three
+          reasons somebody is on this page. The order is the order they are
+          wanted in: recording first, because that is what Prequel is. */}
+      {GROUPS.map((group) => (
+        <section key={group.kind} className="pb-8">
+          <Container>
+            <SectionHeading title={group.label} lede={group.lede} />
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {freeTools
+                .filter((tool) => tool.surface.kind === group.kind)
+                .map((tool) => (
+                  /* The href is a literal rather than a field on the registry
                  entry. `Route` resolves its generic to `string`, and `string`
                  does not extend the generated `/free-tools/${SafeSlug<…>}`, so
                  a stored field typed `Route` is rejected for every one of
                  these. `Link` infers it from the template instead. */
-              <Link
-                key={tool.slug}
-                href={`/free-tools/${tool.slug}`}
-                className="group flex flex-col rounded-2xl border border-line bg-surface p-7 transition-colors hover:border-muted/40 hover:bg-elevated"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 bg-current/10 text-brand-from">
-                    <tool.icon className="size-[1.05rem]" strokeWidth={1.75} aria-hidden />
-                  </span>
-                  <p className="font-mono text-[11px] tracking-wider text-muted uppercase">
-                    {tool.eyebrow}
-                  </p>
-                </div>
-                <h2 className="mt-4 text-[0.9375rem] font-medium text-fg">{tool.name}</h2>
-                <p className="mt-2.5 text-sm leading-relaxed text-muted">{tool.summary}</p>
-                <span className="mt-5 text-sm font-medium text-fg group-hover:underline">
-                  Open the tool
-                </span>
-              </Link>
-            ))}
-          </div>
-        </Container>
-      </section>
+                  <Link
+                    key={tool.slug}
+                    href={`/free-tools/${tool.slug}`}
+                    className="group flex flex-col rounded-2xl border border-line bg-surface p-7 transition-colors hover:border-muted/40 hover:bg-elevated"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 bg-current/10 text-brand-from">
+                        <tool.icon className="size-[1.05rem]" strokeWidth={1.75} aria-hidden />
+                      </span>
+                      <p className="font-mono text-[11px] tracking-wider text-muted uppercase">
+                        {tool.eyebrow}
+                      </p>
+                    </div>
+                    <h2 className="mt-4 text-[0.9375rem] font-medium text-fg">{tool.name}</h2>
+                    <p className="mt-2.5 text-sm leading-relaxed text-muted">{tool.summary}</p>
+                    <span className="mt-5 text-sm font-medium text-fg group-hover:underline">
+                      Open the tool
+                    </span>
+                  </Link>
+                ))}
+            </div>
+          </Container>
+        </section>
+      ))}
 
       <section className="pt-12">
         <Container>
           <SectionHeading
             eyebrow="How they work"
             title="Your browser does the recording"
-            lede="Each tool uses capture and encoding that is already in the browser. The frames are composited in a canvas on your machine and encoded there, so there is no upload step and no account."
+            lede="Each tool uses capture, encoding and drawing your browser already has, plus ffmpeg compiled to WebAssembly for the converters. Everything runs on your own machine, so there is no upload step and no account."
           />
           <div className="mt-10 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">
             {[
@@ -131,7 +170,7 @@ export default function FreeTools() {
               },
               {
                 title: "Download something you can post",
-                body: "MP4 where your browser writes it, WebM where it does not, PNG from the editor, and no watermark on any of it.",
+                body: "MP4 or WebM from the recorders, PNG from the editor, MP3 or MP4 from the converters, and no watermark on any of it.",
               },
             ].map((card) => (
               <div key={card.title} className="bg-bg p-7">

@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3000",
-    "build": "next build",
+    "dev": "node scripts/copy-ffmpeg.mjs && next dev --port 3000",
+    "build": "node scripts/copy-ffmpeg.mjs && next build",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules *.tsbuildinfo"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@mdx-js/loader": "^3.1.1",
     "@mdx-js/react": "^3.1.1",
     "@next/mdx": "^16.3.0",

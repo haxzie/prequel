@@ -1,0 +1,31 @@
+## Only convert if something is asking for it
+
+Every browser has played H.264 in an MP4 for years, so WebM is not a
+compatibility upgrade. It is what you produce when a particular place insists on
+a royalty-free codec: Wikipedia and Wikimedia Commons, some open-source project
+sites, and the occasional web app that validates uploads by codec.
+
+If nothing is asking, keep the MP4.
+
+## VP8, and why not VP9
+
+The video is encoded as VP8 at 1 Mbit with Vorbis audio. VP9 would make a
+smaller file and takes roughly four times as long to encode, which in a tab, on
+one thread, is the difference between waiting and closing it. Every browser that
+decodes VP9 also decodes VP8.
+
+This is the slowest conversion on the site. A clip of a minute or two is the
+right size for it; anything longer belongs in ffmpeg or Handbrake on your
+machine.
+
+## The file will not necessarily shrink
+
+At this bitrate a WebM usually lands close to the MP4 it came from, sometimes
+larger. Size is not the reason to do this. Compatibility with one specific
+destination is.
+
+## It runs in this tab
+
+ffmpeg compiled to WebAssembly does the encoding on your own processor. The MP4
+is never uploaded, which matters when it is an unreleased product video on its
+way to a public wiki.

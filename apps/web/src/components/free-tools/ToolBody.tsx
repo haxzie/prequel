@@ -4,8 +4,7 @@ import type { ReactNode } from "react";
 import { ButtonLink } from "@/components/Button";
 import { DownloadCta } from "@/components/DownloadButton";
 import { Container, SectionHeading } from "@/components/Section";
-import type { FreeTool } from "@/content/free-tools";
-import { freeTools } from "@/content/free-tools";
+import { freeTools, type FreeTool } from "@/content/free-tools";
 
 /**
  * Everything under the tool itself, shared by all three tool pages.
@@ -16,16 +15,40 @@ import { freeTools } from "@/content/free-tools";
  * the lesson from the use-case set is that a shared array across pages built to
  * rank for different phrases is duplicate content with extra steps.
  */
+const VERB = {
+  recorder: "Recording",
+  editor: "Editing",
+  converter: "Converting",
+} as const;
+
 export function ToolBody({ tool }: { tool: FreeTool }): ReactNode {
-  const others = freeTools.filter((other) => other.slug !== tool.slug);
+  /**
+   * Four related tools, its own kind first.
+   *
+   * It listed every other tool, which was fine at three and is eleven cards of
+   * tail on a page now. Same kind first because that is what the reader is
+   * after: somebody converting a MOV wants the other converters, and the link
+   * from a converter to the screen recorder is the one the band at the top of
+   * the page already makes.
+   */
+  const others = [...freeTools]
+    .filter((other) => other.slug !== tool.slug)
+    .sort((a, b) => {
+      const kin = (entry: FreeTool) => (entry.surface.kind === tool.surface.kind ? 0 : 1);
+      return kin(a) - kin(b);
+    })
+    .slice(0, 4);
 
   return (
     <>
       <section id="how-to" className="scroll-mt-16 pt-20 pb-8">
         <Container>
+          {/* The verb comes off the surface. It said "Recording" for every
+              tool, which was true of the three it was written for and wrong the
+              day the screenshot editor landed. */}
           <SectionHeading
             eyebrow="How it works"
-            title={`Recording in ${tool.steps.length} steps`}
+            title={`${VERB[tool.surface.kind]} in ${tool.steps.length} steps`}
             align="centre"
           />
           {/* An `ol`, because these are a sequence: read in another order they

@@ -32,32 +32,39 @@ const CAMERA = `${ASSETS}/camera-take.mp4`;
 const BACKDROP = `${ASSETS}/editor-backdrop.jpg`;
 
 /**
- * The pitch, per tool.
+ * The pitch. One, for every tool.
  *
- * The title names what just happened, so the dialog reads as a confirmation
- * rather than an advert that fired on a click. The body is the one thing the
- * browser could not do, in the language of the page it is on: a recorder's
- * visitor is told about zooms and resolution, and the editor's is told why a
- * still is not a demo.
+ * It was three, written for the page the visitor came from. They came out
+ * because of what a modal actually gets read: the title, and then either the
+ * button or the close. A line tuned to the tool is a line nobody reaches, and
+ * three of them is three places for the product's one claim to drift.
+ *
+ * The claim is the positioning rather than a ranking. "The Mac screen recorder
+ * that edits for you" is a statement about what Prequel is for, and the body
+ * under it is the evidence: five things that are done by the time the editor
+ * opens. A superlative would say less and would be the one line on the site
+ * that somebody could ask us to prove.
  */
-const PITCH = {
-  recorder: {
-    title: "Your recording is saving",
-    body: "Prequel records on your Mac at its full resolution, then opens an editor with the zooms already placed, your camera framed and a background applied. Export one MP4 at up to 4K.",
-  },
-  editor: {
-    title: "Your image is saving",
-    body: "A screenshot shows what something looked like. A recording shows how it works. Prequel records your Mac's screen, places a zoom on every click and exports at up to 4K.",
-  },
-} as const;
+const TITLE = "The Mac screen recorder that edits for you";
+
+const BODY =
+  "Record, and the editor opens with the zooms already placed, your camera framed and a background behind it. Export one MP4 at up to 4K, rendered on your own Mac.";
+
+/**
+ * What just happened, in the small line above the title.
+ *
+ * The dialog opens on a click that saved a file, so something has to say so or
+ * it reads as an advert that fired at random. It is an eyebrow rather than the
+ * heading because the heading is the only line most people read, and "Your file
+ * is saving" is not worth spending it on.
+ */
+const EYEBROW = "Your file is saving";
 
 export function DownloadDialog({
   open,
-  surface,
   onClose,
 }: {
   open: boolean;
-  surface: keyof typeof PITCH;
   onClose: () => void;
 }): ReactNode {
   const dialog = useRef<HTMLDialogElement | null>(null);
@@ -79,8 +86,6 @@ export function DownloadDialog({
     }
     if (!open && element.open) element.close();
   }, [open]);
-
-  const pitch = PITCH[surface];
 
   return (
     <dialog
@@ -155,9 +160,12 @@ export function DownloadDialog({
       </div>
 
       <div className="px-7 py-7 text-center">
-        <h2 className="text-xl font-medium tracking-tight text-balance">{pitch.title}</h2>
+        <p className="mb-3 font-mono text-xs tracking-[0.18em] text-muted uppercase">{EYEBROW}</p>
+        <h2 className="text-2xl font-medium tracking-tight text-balance sm:text-[1.75rem]">
+          {TITLE}
+        </h2>
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-pretty text-muted">
-          {pitch.body}
+          {BODY}
         </p>
 
         <DownloadCta className="mt-6" />

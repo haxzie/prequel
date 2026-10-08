@@ -81,8 +81,10 @@ export function Footer() {
               cases are: a set of pages that only the index links to is a set
               that gets crawled once. Three entries, so it shares the contact
               column's width rather than taking one of its own. */}
-          <nav className="flex flex-col gap-3 text-sm">
-            <Link href="/free-tools" className="font-medium text-fg hover:text-muted">
+          {/* Two columns, as the use cases are. Twelve links in one run is a
+              column twice the height of everything beside it. */}
+          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
+            <Link href="/free-tools" className="col-span-2 font-medium text-fg hover:text-muted">
               Free tools
             </Link>
             {freeTools.map((tool) => (

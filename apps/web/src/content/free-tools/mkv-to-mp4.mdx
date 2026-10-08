@@ -1,0 +1,31 @@
+## This is a remux, not a conversion
+
+An MKV from OBS is almost always H.264 video and AAC audio, which is exactly
+what an MP4 holds. So the streams are copied from the Matroska container into an
+MP4 one, byte for byte. It takes about a second, nothing is re-encoded and
+nothing is lost. It is the same operation OBS's own "Remux Recordings" performs.
+
+Where the MKV holds something an MP4 cannot carry, the page re-encodes to H.264
+instead and takes considerably longer.
+
+## Why OBS records MKV at all
+
+Because an MP4 is written with its index at the end. If the recording is
+interrupted, by a crash, a full disk or a power cut, that index is never written
+and the file is often unreadable. Matroska survives it. OBS's advice is to
+record to MKV and remux afterwards, which is the step most people skip until
+their editor refuses the file.
+
+## What gets dropped
+
+The first video track and the first audio track are kept. Matroska can carry
+several audio languages and a stack of subtitle streams; an MP4 is not usually
+expected to, and they do not survive the remux.
+
+## It stays on your machine
+
+ffmpeg runs in this tab, so a gameplay recording, a captured call or an internal
+demo is converted on your own processor and never uploaded.
+
+Gameplay files are often far larger than this page's 300 MB ceiling, which is
+the tab's memory rather than a policy. Those are better remuxed in OBS itself.

@@ -4,12 +4,20 @@ import { notFound } from "next/navigation";
 import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
+import { Converter } from "@/components/free-tools/convert/Converter";
 import { ShotEditor } from "@/components/free-tools/shot/ShotEditor";
 import { Studio } from "@/components/free-tools/Studio";
 import { ToolBody } from "@/components/free-tools/ToolBody";
 import { ToolHero } from "@/components/free-tools/ToolHero";
-import { findFreeTool, freeTools } from "@/content/free-tools";
+import { findFreeTool, freeTools, type FreeTool } from "@/content/free-tools";
 import { breadcrumbJsonLd, howToJsonLd, pageMetadata, webApplicationJsonLd } from "@/lib/seo";
+
+/** The pills under the heading, by what the page is. */
+const FACTS: Record<FreeTool["surface"]["kind"], string[]> = {
+  recorder: ["No sign up", "Nothing uploaded", "No watermark", "Up to 30 minutes a take"],
+  editor: ["No sign up", "Nothing uploaded", "No watermark", "Pastes straight in"],
+  converter: ["No sign up", "Nothing uploaded", "No queue", "Up to 300 MB a file"],
+};
 
 export function generateStaticParams() {
   return freeTools.map((tool) => ({ slug: tool.slug }));
@@ -57,15 +65,11 @@ export default async function FreeToolPage({ params }: PageProps<"/free-tools/[s
         eyebrow={tool.eyebrow}
         title={tool.heading}
         lede={tool.lede}
-        // The last one differs by surface: a take has a ceiling and an image
-        // does not, and a pill that answers a question this page does not raise
-        // is three words of noise at the top of it.
-        facts={[
-          "No sign up",
-          "Nothing uploaded",
-          "No watermark",
-          tool.surface === "editor" ? "Pastes straight in" : "Up to 30 minutes a take",
-        ]}
+        // Per surface. These answer the question the page raises and no other:
+        // a take has a ceiling, an image is pasted, and the thing everybody
+        // wants to know about an online converter is whether their file is
+        // going to sit in somebody's queue.
+        facts={FACTS[tool.surface.kind]}
       />
 
       <section className="pb-12">
@@ -75,7 +79,13 @@ export default async function FreeToolPage({ params }: PageProps<"/free-tools/[s
               the only JavaScript a visitor downloads is the tool itself. Which
               tool comes off the registry, so a page is still a registry entry
               and a file of prose. */}
-          {tool.surface === "editor" ? <ShotEditor /> : <Studio mode={tool.mode} />}
+          {tool.surface.kind === "editor" ? (
+            <ShotEditor />
+          ) : tool.surface.kind === "converter" ? (
+            <Converter from={tool.surface.from} to={tool.surface.to} />
+          ) : (
+            <Studio mode={tool.surface.mode} />
+          )}
         </Container>
       </section>
 

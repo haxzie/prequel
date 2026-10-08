@@ -1,0 +1,31 @@
+## A screen recording is mostly picture
+
+A one hour Mac screen recording is often several hundred megabytes, and almost
+all of that is the screen. The audio inside it is about 25 MB. If what you need
+is the conversation, the meeting, the lecture or the voiceover, the MP3 is the
+file worth keeping and sending.
+
+## How it works here
+
+This page is ffmpeg compiled to WebAssembly. The QuickTime container is opened
+in the tab, the audio track is decoded out of it, and an MP3 is written at
+192 kbps at the recording's own sample rate, which for a Mac recording is
+48 kHz.
+
+Nothing is uploaded. The MOV is read from your disk and the MP3 is written back
+to it, and no server is involved at any point. For a recording of a customer
+call or an internal tool, that is not a detail.
+
+## When there is no audio at all
+
+QuickTime's screen recorder captures the microphone and nothing else unless you
+have routed system audio into it. A recording made with the microphone off has
+no audio track, so there is nothing to extract and the page says so rather than
+handing back an empty file.
+
+## Transcribing it afterwards
+
+An MP3 is what most transcription services want, and this is the quickest way to
+make one. If the recording is still on your Mac, Prequel transcribes it there,
+with the model running locally, and writes the captions onto the video rather
+than into a separate document.

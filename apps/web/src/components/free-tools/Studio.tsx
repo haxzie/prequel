@@ -325,7 +325,7 @@ export function Studio({ mode }: { mode: ToolMode }) {
         </Panel>
       </div>
 
-      <DownloadDialog open={pitching} surface="recorder" onClose={() => setPitching(false)} />
+      <DownloadDialog open={pitching} onClose={() => setPitching(false)} />
     </>
   );
 }

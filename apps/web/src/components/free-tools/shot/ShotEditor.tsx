@@ -676,7 +676,7 @@ export function ShotEditor() {
         />
       </div>
 
-      <DownloadDialog open={pitching} surface="editor" onClose={() => setPitching(false)} />
+      <DownloadDialog open={pitching} onClose={() => setPitching(false)} />
     </>
   );
 }

@@ -21,25 +21,32 @@
  *  in this file do not, which is the usual split.
  */
 
-import { Crop, Mic, Monitor, Webcam, type LucideIcon } from "lucide-react";
+import { AudioLines, Crop, FileVideo, Mic, Monitor, Webcam, type LucideIcon } from "lucide-react";
 
 import type { FaqEntry } from "@/lib/faq";
+import type { FormatId } from "@/lib/free-tools/formats";
 import type { ToolMode } from "@/lib/free-tools/mode";
+
+/**
+ * Which thing a page renders, and what that thing needs to know.
+ *
+ * A union rather than a string and a pile of optional fields. The recorders need
+ * a mode, the converters need a pair of formats and the editor needs neither,
+ * and the shape that admits that is the one where a converter cannot be written
+ * without its formats. It replaced `surface: "recorder" | "editor"` beside a
+ * required `mode`, which left the editor carrying a capture mode it ignored and
+ * would have left every converter carrying one too.
+ */
+export type ToolSurface =
+  | { kind: "recorder"; mode: ToolMode }
+  | { kind: "editor" }
+  | { kind: "converter"; from: FormatId; to: FormatId };
 
 export type FreeTool = {
   /** The MDX filename in `src/content/free-tools`, and the URL segment. */
   slug: string;
-  /**
-   * Which thing the page renders.
-   *
-   * `recorder` is the studio, parameterised by `mode`; `editor` is the
-   * screenshot editor, which opens a file rather than a device. A field rather
-   * than a fourth `mode`, because the two share a stage and a dock and nothing
-   * else: one records a stream and the other marks up a bitmap.
-   */
-  surface: "recorder" | "editor";
-  /** Which sources the studio opens. Ignored by the editor. */
-  mode: ToolMode;
+  /** What the page renders, and what it needs. */
+  surface: ToolSurface;
   /** The mark on this tool's card, on the index and in the footer. */
   icon: LucideIcon;
   /** The footer's label. Two words at most. */
@@ -90,8 +97,7 @@ export type FreeTool = {
 export const freeTools: FreeTool[] = [
   {
     slug: "screen-recorder",
-    surface: "recorder",
-    mode: "screen",
+    surface: { kind: "recorder", mode: "screen" },
     icon: Monitor,
     navLabel: "Screen recorder",
     eyebrow: "Free browser tool",
@@ -196,8 +202,7 @@ export const freeTools: FreeTool[] = [
   },
   {
     slug: "webcam-recorder",
-    surface: "recorder",
-    mode: "camera",
+    surface: { kind: "recorder", mode: "camera" },
     icon: Webcam,
     navLabel: "Webcam recorder",
     eyebrow: "Free browser tool",
@@ -285,8 +290,7 @@ export const freeTools: FreeTool[] = [
   },
   {
     slug: "voice-recorder",
-    surface: "recorder",
-    mode: "audio",
+    surface: { kind: "recorder", mode: "audio" },
     icon: Mic,
     navLabel: "Voice recorder",
     eyebrow: "Free browser tool",
@@ -374,11 +378,7 @@ export const freeTools: FreeTool[] = [
   },
   {
     slug: "screenshot-editor",
-    surface: "editor",
-    // Unused by this tool. The field is required rather than optional so that a
-    // tool cannot be added without an answer, which is what keeps the three
-    // recorders honest about which devices they open.
-    mode: "screen",
+    surface: { kind: "editor" },
     icon: Crop,
     navLabel: "Screenshot editor",
     eyebrow: "Free browser tool",
@@ -473,6 +473,713 @@ export const freeTools: FreeTool[] = [
         question: "What does Prequel do beyond this?",
         answer:
           "Prequel records your Mac's screen as video, places the zooms on every click, frames your camera and exports at up to 4K. This page is for the times a still is enough.",
+      },
+    ],
+  },
+  {
+    slug: "video-to-mp3",
+    surface: { kind: "converter", from: "any", to: "mp3" },
+    icon: AudioLines,
+    navLabel: "Video to MP3",
+    eyebrow: "Free browser tool",
+    heading: "Pull the sound out of a video",
+    name: "Free video to MP3 converter",
+    lede: "Drop a video in and get an MP3 back. It converts in this tab, on your own machine, so there is no upload and no queue.",
+    description:
+      "Free video to MP3 converter. Pull the audio out of any video in your browser and download an MP3. No upload, no sign up, no queue, no watermark.",
+    summary: "Any video in, an MP3 out, converted in the tab rather than on a server.",
+    steps: [
+      {
+        name: "Drop a video in",
+        text: "MP4, MOV, WebM, AVI, MKV: anything ffmpeg reads, up to 300 MB. Drag it onto the panel or open a file.",
+      },
+      {
+        name: "Convert",
+        text: "The encoder downloads once, then the audio track is decoded and written as a 192 kbps MP3 on your machine.",
+      },
+      {
+        name: "Download",
+        text: "The MP3 is ready the moment the run finishes, named after the video it came from.",
+      },
+    ],
+    features: [
+      {
+        title: "Keep the video on your own machine",
+        body: "Every other online converter uploads your file, converts it on a server and emails you a link. This one runs ffmpeg compiled to WebAssembly inside the tab, so the video never leaves your computer.",
+      },
+      {
+        title: "Skip the queue entirely",
+        body: "There is no server to be busy, no daily limit and no waiting list. The only thing between you and the file is your own processor.",
+      },
+      {
+        title: "Get audio worth listening to",
+        body: "192 kbps, which is past the point where speech or a lecture gains anything from more, and small enough to email. The sample rate is whatever the video had.",
+      },
+      {
+        title: "Convert anything your video came from",
+        body: "A screen recording, a Zoom export, a phone video, a DSLR clip. The audio track is taken out as it is found, whatever container it arrived in.",
+      },
+      {
+        title: "Start without an account",
+        body: "No sign up, no email for the link, no watermark and nothing installed. Close the tab and both files are gone.",
+      },
+    ],
+    faqHeading: "Quality, size and where the file goes",
+    faq: [
+      {
+        question: "Is my video uploaded to convert it?",
+        answer:
+          "No. The converter is ffmpeg compiled to WebAssembly, running in this tab on your own processor. Your video is read out of your file system by the page and never sent anywhere, which is also why there is no queue and no link to wait for.",
+      },
+      {
+        question: "What quality is the MP3?",
+        answer:
+          "192 kbps, at whatever sample rate the video's audio was recorded at. That is comfortably past the point where speech, a lecture or a screen recording gains anything from a higher bitrate, and about a megabyte a minute.",
+      },
+      {
+        question: "Why does it take a moment to start the first time?",
+        answer:
+          "The encoder is a 32 MB WebAssembly build of ffmpeg, and it downloads the first time you convert something. After that it is cached for the rest of your visit, so a second file starts immediately.",
+      },
+      {
+        question: "How big a video can I convert?",
+        answer:
+          "About 300 MB. The converter runs inside the tab's memory, which is where that ceiling comes from: the video, the MP3 and the encoder all have to fit in it at once. A long recording is better split first.",
+      },
+      {
+        question: "Which video formats does it take?",
+        answer:
+          "MP4, MOV, WebM, AVI, MKV, M4V, FLV and most things a camera or a screen recorder writes. If your player opens it, this almost certainly reads it.",
+      },
+      {
+        question: "Does converting to MP3 lose quality?",
+        answer:
+          "Some, because MP3 is lossy and the audio in your video already was. At 192 kbps the loss is not audible on speech, which is what most people are extracting. For a master, convert to WAV instead and keep the original.",
+      },
+      {
+        question: "Can I convert a YouTube video?",
+        answer:
+          "Only one you have already downloaded and have the right to use. This page converts a file on your computer; it cannot fetch anything from the web, and downloading other people's videos is between you and their terms.",
+      },
+      {
+        question: "What if I want the video as well as the audio?",
+        answer:
+          "Keep the original: nothing here changes it. If you are recording something to publish, Prequel records your Mac's screen with the microphone and the system audio on separate tracks, so the two are already apart when you start editing.",
+      },
+    ],
+  },
+  {
+    slug: "mp4-to-mp3",
+    surface: { kind: "converter", from: "mp4", to: "mp3" },
+    icon: AudioLines,
+    navLabel: "MP4 to MP3",
+    eyebrow: "Free browser tool",
+    heading: "Turn an MP4 into an MP3",
+    name: "Free MP4 to MP3 converter",
+    lede: "Drop an MP4 in and keep only the sound. It converts in this tab, on your own machine, with no upload and no queue.",
+    description:
+      "Free MP4 to MP3 converter. Keep the audio from an MP4 and drop the video, in your browser. No upload, no sign up, no queue, no watermark.",
+    summary: "An MP4 in, the audio out as an MP3, converted in the tab.",
+    steps: [
+      {
+        name: "Drop the MP4 in",
+        text: "Drag it onto the panel or open a file. Up to 300 MB, which is a couple of hours of a screen recording.",
+      },
+      {
+        name: "Convert",
+        text: "The AAC audio inside the MP4 is decoded and written out as a 192 kbps MP3, on your own processor.",
+      },
+      {
+        name: "Download",
+        text: "The MP3 keeps the MP4's name, so a folder of converted files still tells you which is which.",
+      },
+    ],
+    features: [
+      {
+        title: "Lose the picture, keep the sound",
+        body: "An MP4 is usually H.264 video next to AAC audio. The video track is dropped and the audio is re-encoded, which is why a 400 MB screen recording becomes a 20 MB MP3.",
+      },
+      {
+        title: "Convert without handing over the file",
+        body: "The conversion is ffmpeg compiled to WebAssembly, running in this tab. No server sees the MP4, which matters when it is a client call or an internal demo.",
+      },
+      {
+        title: "Get a file anything will play",
+        body: "MP3 at 192 kbps opens in every player, every car, every podcast app and every editor, which is the only reason to convert an MP4 that already plays everywhere.",
+      },
+      {
+        title: "Convert as many as you like",
+        body: "No daily cap, no sign up, no email for a link. The encoder loads once and every file after it starts immediately.",
+      },
+    ],
+    faqHeading: "Sound, size and privacy",
+    faq: [
+      {
+        question: "Does this upload my MP4 anywhere?",
+        answer:
+          "No. The page runs ffmpeg inside your browser, so the MP4 is read from your disk, converted on your own processor and written back to your downloads folder. Nothing is sent to a server at any point.",
+      },
+      {
+        question: "How much smaller is the MP3?",
+        answer:
+          "Usually ten to twenty times. An MP4 spends almost all of its bytes on the picture, so a 400 MB recording of a one hour call lands around 20 to 25 MB as audio at 192 kbps.",
+      },
+      {
+        question: "Will the audio sound worse?",
+        answer:
+          "Slightly, and not audibly on speech. The AAC inside your MP4 is decoded and re-encoded as MP3 at 192 kbps, which is a second lossy pass; for a call, a lecture or a screen recording it is inaudible. For music you are mastering, keep the original.",
+      },
+      {
+        question: "Can I keep the original quality instead?",
+        answer:
+          "Convert to WAV if you need the decoded audio with nothing thrown away, or keep the MP4 itself. The file on your disk is untouched by this page either way.",
+      },
+      {
+        question: "What if my MP4 has no sound?",
+        answer:
+          "The run stops and the page says so. A screen recording made without a microphone or system audio has no audio track at all, so there is nothing to extract.",
+      },
+      {
+        question: "How long does it take?",
+        answer:
+          "About as long as it takes to read the file, plus a one-off 32 MB download of the encoder on your first conversion. An hour of audio is a minute or two on a current laptop.",
+      },
+      {
+        question: "Does it work on a phone?",
+        answer:
+          "Yes, on a modern iPhone or Android browser, with a smaller file. A phone has less memory to spare for the encoder, so stay well under the 300 MB ceiling there.",
+      },
+      {
+        question: "Can Prequel record the audio separately in the first place?",
+        answer:
+          "Yes. Prequel records your microphone and your Mac's system audio as separate tracks with separate gains, so you never have to pull one back out of a finished video.",
+      },
+    ],
+  },
+  {
+    slug: "mov-to-mp4",
+    surface: { kind: "converter", from: "mov", to: "mp4" },
+    icon: FileVideo,
+    navLabel: "MOV to MP4",
+    eyebrow: "Free browser tool",
+    heading: "Make a MOV play everywhere",
+    name: "Free MOV to MP4 converter",
+    lede: "Drop a QuickTime MOV in and get an MP4 back, usually in about a second. It converts in this tab, on your own machine.",
+    description:
+      "Free MOV to MP4 converter. Turn a QuickTime file into an MP4 in your browser, often without re-encoding. No upload, no sign up, no watermark.",
+    summary: "QuickTime in, MP4 out, rewrapped rather than re-encoded wherever it can be.",
+    steps: [
+      {
+        name: "Drop the MOV in",
+        text: "A Mac screen recording, an iPhone video, a QuickTime export. Up to 300 MB.",
+      },
+      {
+        name: "Convert",
+        text: "The streams are copied into an MP4 container when they can be, which takes a second and loses nothing. Anything else is re-encoded as H.264.",
+      },
+      {
+        name: "Download",
+        text: "The MP4 plays on Windows, Android, every browser and every editor, which the MOV often would not.",
+      },
+    ],
+    features: [
+      {
+        title: "Finish in a second, not a minute",
+        body: "A Mac screen recording is already H.264 and AAC inside a QuickTime wrapper, which is the inside of an MP4. The streams are copied across rather than decoded and re-encoded, so nothing is lost and nothing is re-compressed.",
+      },
+      {
+        title: "Keep the quality you recorded",
+        body: "A rewrap is byte for byte the same video and the same audio. Where the codecs do not fit in MP4, the fallback is H.264 at CRF 23, which is the quality setting people use for delivery.",
+      },
+      {
+        title: "Send it to somebody on Windows",
+        body: "MOV is QuickTime's container and Windows has not shipped QuickTime since 2016. MP4 is the one video file you can send anybody without a conversation about players.",
+      },
+      {
+        title: "Convert without an upload",
+        body: "ffmpeg runs in this tab, so a recording of an internal system or a client call is converted on your own machine and never leaves it.",
+      },
+    ],
+    faqHeading: "Speed, quality and players",
+    faq: [
+      {
+        question: "Why was that so fast?",
+        answer:
+          "Because most MOV files do not need converting, only rewrapping. QuickTime and MP4 can hold the same H.264 video and AAC audio, so the streams are copied into the new container untouched. That is a file copy rather than an encode, and it is lossless.",
+      },
+      {
+        question: "Does converting MOV to MP4 lose quality?",
+        answer:
+          "Not when it rewraps, which is most of the time: the picture and the sound are the same bytes in a different box. When the MOV holds something MP4 cannot carry, such as ProRes from a camera or a professional editor, it is re-encoded to H.264 and the page takes a little longer.",
+      },
+      {
+        question: "Why is my MOV so large?",
+        answer:
+          "Screen recordings and camera files are often recorded at a high bitrate to stay editable, and a ProRes export is enormous by design. Rewrapping keeps the size the same; re-encoding to H.264 is what makes it smaller, and that happens automatically when the streams will not fit.",
+      },
+      {
+        question: "Will the MP4 play on Windows?",
+        answer:
+          "Yes. H.264 in an MP4 plays in Windows Media Player, on Android, in every browser and in every editor. That is usually the reason somebody is on this page.",
+      },
+      {
+        question: "Is my video uploaded?",
+        answer:
+          "No. The conversion runs inside this tab using ffmpeg compiled to WebAssembly. Your MOV is never sent anywhere, which is not true of most converters at the top of this search.",
+      },
+      {
+        question: "Can I convert an iPhone video?",
+        answer:
+          "Yes. An iPhone writes H.264 or HEVC in a MOV. H.264 rewraps instantly; HEVC is re-encoded to H.264, which takes longer and makes the file play in more places.",
+      },
+      {
+        question: "What is the size limit?",
+        answer:
+          "About 300 MB, because the file, the output and the encoder share the tab's memory. A rewrap of a larger file would work in principle, but the ceiling is set where a re-encode stops being safe.",
+      },
+      {
+        question: "Can I skip this step next time?",
+        answer:
+          "Yes. Prequel records your Mac's screen straight to MP4 with H.264 or HEVC, so what you export is already the file you were going to convert it to.",
+      },
+    ],
+  },
+  {
+    slug: "mov-to-mp3",
+    surface: { kind: "converter", from: "mov", to: "mp3" },
+    icon: AudioLines,
+    navLabel: "MOV to MP3",
+    eyebrow: "Free browser tool",
+    heading: "Get the audio out of a QuickTime file",
+    name: "Free MOV to MP3 converter",
+    lede: "Drop a MOV in and keep only the sound. The conversion happens in this tab, so the recording stays on your machine.",
+    description:
+      "Free MOV to MP3 converter. Pull the audio out of a QuickTime recording in your browser and download an MP3. No upload and no sign up.",
+    summary: "A QuickTime recording in, its audio out as an MP3.",
+    steps: [
+      {
+        name: "Drop the MOV in",
+        text: "A Mac screen recording, an iPhone video or a QuickTime export, up to 300 MB.",
+      },
+      {
+        name: "Convert",
+        text: "The audio track is decoded out of the QuickTime container and written as a 192 kbps MP3.",
+      },
+      {
+        name: "Download",
+        text: "The MP3 arrives named after the recording it came from, ready to send or transcribe.",
+      },
+    ],
+    features: [
+      {
+        title: "Turn a recorded call into something sendable",
+        body: "A one hour QuickTime screen recording is often several hundred megabytes. Its audio is about 25 MB, which attaches to an email and uploads to a transcription service in seconds.",
+      },
+      {
+        title: "Keep the recording to yourself",
+        body: "The file is decoded in this tab by ffmpeg compiled to WebAssembly. A recording of an internal call or a customer's screen is never handed to a server.",
+      },
+      {
+        title: "Work with what QuickTime recorded",
+        body: "Mac screen recordings carry AAC audio inside a MOV. It is decoded and re-encoded at 192 kbps, which is past the point speech gains anything from more.",
+      },
+      {
+        title: "Nothing to install",
+        body: "No sign up, no app, no extension. The encoder downloads once per visit and the conversion runs on your own processor.",
+      },
+    ],
+    faqHeading: "QuickTime, quality and privacy",
+    faq: [
+      {
+        question: "Is a MOV recording uploaded to convert it?",
+        answer:
+          "No. ffmpeg runs in this tab, so the QuickTime file is read from your disk and converted on your own machine. That is the difference between this page and most of the converters above it in search results.",
+      },
+      {
+        question: "Which MOV files does it handle?",
+        answer:
+          "Anything with an audio track: a Mac screen recording, an iPhone video, a QuickTime export from an editor. Even a ProRes master works, because only the audio is being decoded.",
+      },
+      {
+        question: "What bitrate is the MP3?",
+        answer:
+          "192 kbps at the recording's own sample rate, which for a Mac screen recording is 48 kHz. That is about a megabyte a minute and comfortably transparent for speech.",
+      },
+      {
+        question: "Can I transcribe the result?",
+        answer:
+          "Yes, and an MP3 is what most transcription services want. If the recording is on your Mac, Prequel transcribes it locally and writes captions onto the video instead.",
+      },
+      {
+        question: "Why is there no sound in my MOV?",
+        answer:
+          "A Mac screen recording made without the microphone or system audio enabled has no audio track at all, so there is nothing to extract. QuickTime's own recorder captures the microphone only unless you add something to route system audio.",
+      },
+      {
+        question: "Does it work with a two hour recording?",
+        answer:
+          "Up to about 300 MB, which is the tab's memory rather than a policy. A long screen recording is usually larger than that, so split it first or extract the audio on your machine.",
+      },
+      {
+        question: "Is the original changed?",
+        answer:
+          "No. Nothing here writes to the file you dropped in. You end up with the MOV you had and an MP3 beside it.",
+      },
+      {
+        question: "Can I record the audio separately next time?",
+        answer:
+          "Yes. Prequel records your microphone and your Mac's system audio on separate tracks with separate gains, so the audio is already its own thing when the take finishes.",
+      },
+    ],
+  },
+  {
+    slug: "avi-to-mp4",
+    surface: { kind: "converter", from: "avi", to: "mp4" },
+    icon: FileVideo,
+    navLabel: "AVI to MP4",
+    eyebrow: "Free browser tool",
+    heading: "Bring an AVI up to date",
+    name: "Free AVI to MP4 converter",
+    lede: "Drop an AVI in and get an MP4 that plays on a phone, in a browser and in every editor. It converts in this tab.",
+    description:
+      "Free AVI to MP4 converter. Convert an old AVI to H.264 MP4 in your browser, with no upload and no sign up. Plays on phones and in browsers.",
+    summary: "Old AVI in, H.264 MP4 out, converted on your own machine.",
+    steps: [
+      {
+        name: "Drop the AVI in",
+        text: "A dash cam clip, an old camcorder file, a DivX download, a capture from screen recording software from the DVD era.",
+      },
+      {
+        name: "Convert",
+        text: "The video is re-encoded to H.264 and the audio to AAC, because an AVI almost never holds either already.",
+      },
+      {
+        name: "Download",
+        text: "The MP4 is usually smaller than the AVI it came from, and it plays everywhere the AVI did not.",
+      },
+    ],
+    features: [
+      {
+        title: "Play it on a phone at last",
+        body: "AVI is a container from 1992, usually holding DivX or Xvid. No phone plays it and no browser plays it. H.264 in an MP4 plays on everything made this century.",
+      },
+      {
+        title: "Usually come out smaller",
+        body: "DivX and Xvid are two codec generations behind H.264, so re-encoding at CRF 23 typically lands at half the size with no visible difference.",
+      },
+      {
+        title: "Edit it afterwards",
+        body: "Premiere, Resolve, Final Cut and every browser editor take H.264 MP4 without arguing. Most of them will not import an AVI at all.",
+      },
+      {
+        title: "Convert it without sending it anywhere",
+        body: "Old AVI files are usually personal footage. This page converts yours in the tab, on your own processor, and uploads nothing.",
+      },
+    ],
+    faqHeading: "Codecs, size and how long it takes",
+    faq: [
+      {
+        question: "Why does an AVI take longer to convert than a MOV?",
+        answer:
+          "Because it has to be re-encoded rather than rewrapped. An AVI holds DivX or Xvid, which an MP4 cannot carry, so every frame is decoded and encoded again as H.264. A MOV usually already holds H.264 and is just put in a new box.",
+      },
+      {
+        question: "Will the MP4 look worse than the AVI?",
+        answer:
+          "Barely, and often better per megabyte. It is re-encoded at CRF 23, a delivery-quality setting, and H.264 is two generations ahead of the codec your AVI is in. A second encode always costs something; at this setting it is hard to see.",
+      },
+      {
+        question: "Why is the MP4 smaller?",
+        answer:
+          "H.264 compresses far better than DivX or Xvid at the same quality, so the same picture needs fewer bits. Halving the size is normal.",
+      },
+      {
+        question: "How long will it take?",
+        answer:
+          "Roughly the length of the clip on a current laptop, sometimes longer, because the encoder is WebAssembly on a single thread. A three minute dash cam clip is a few minutes; an hour-long file is better converted on your machine.",
+      },
+      {
+        question: "Is my file uploaded?",
+        answer:
+          "No. ffmpeg runs in this tab and the AVI never leaves your computer. There is no queue and no link waiting in an inbox.",
+      },
+      {
+        question: "What size can I convert?",
+        answer:
+          "Up to about 300 MB. The AVI, the MP4 and the encoder share the tab's memory, and that is where a long transcode starts failing part way through.",
+      },
+      {
+        question: "My AVI will not open. What now?",
+        answer:
+          "A few AVI files hold codecs this build does not carry, usually something proprietary from a camera. VLC will play almost anything and can export an MP4, and the file stays on your machine either way.",
+      },
+      {
+        question: "Does the audio survive?",
+        answer:
+          "Yes. Whatever the AVI holds, usually MP3 or AC-3, is re-encoded to AAC at 160 kbps inside the MP4.",
+      },
+    ],
+  },
+  {
+    slug: "webm-to-mp4",
+    surface: { kind: "converter", from: "webm", to: "mp4" },
+    icon: FileVideo,
+    navLabel: "WebM to MP4",
+    eyebrow: "Free browser tool",
+    heading: "Turn a WebM into something everything plays",
+    name: "Free WebM to MP4 converter",
+    lede: "Drop a WebM in and get an H.264 MP4 back. It converts in this tab, so the file stays on your machine.",
+    description:
+      "Free WebM to MP4 converter. Convert VP8 or VP9 WebM video to H.264 MP4 in your browser. No upload, no sign up, no watermark.",
+    summary: "WebM in, H.264 MP4 out, for the players and editors that refuse WebM.",
+    steps: [
+      {
+        name: "Drop the WebM in",
+        text: "A browser recording, a download from a web app, an export from an online editor. Up to 300 MB.",
+      },
+      {
+        name: "Convert",
+        text: "VP8 or VP9 video is re-encoded to H.264 and Opus or Vorbis audio to AAC, because MP4 holds neither of the originals.",
+      },
+      {
+        name: "Download",
+        text: "The MP4 imports into Premiere, Final Cut and Resolve, and plays on a phone, which a WebM often will not.",
+      },
+    ],
+    features: [
+      {
+        title: "Get a file your editor will import",
+        body: "Premiere and Final Cut do not take WebM. H.264 in an MP4 is the format every editor on every platform opens without a plugin.",
+      },
+      {
+        title: "Play it on hardware that will not",
+        body: "WebM depends on VP8 or VP9, which older iPhones, smart TVs and set-top boxes do not decode. H.264 has been in silicon everywhere for fifteen years.",
+      },
+      {
+        title: "Keep it off a server",
+        body: "A WebM is usually something you just recorded in a browser. It is converted here in the same browser, by ffmpeg compiled to WebAssembly, and uploaded nowhere.",
+      },
+      {
+        title: "Start playing before it finishes downloading",
+        body: "The MP4 is written with its index at the front, so a file posted to a site or sent in a chat starts playing immediately rather than after the whole download.",
+      },
+    ],
+    faqHeading: "Codecs, speed and quality",
+    faq: [
+      {
+        question: "Why does WebM need converting at all?",
+        answer:
+          "Because of what is inside it. WebM holds VP8 or VP9 video and Opus audio, which browsers decode and most editors, phones and televisions do not. MP4 holds H.264 and AAC, which everything decodes.",
+      },
+      {
+        question: "Does the conversion lose quality?",
+        answer:
+          "A little, as any second encode does. It re-encodes at CRF 23, a delivery-quality setting, so the result is visually very close to the WebM at a similar or smaller size.",
+      },
+      {
+        question: "Why is it slower than converting a MOV?",
+        answer:
+          "A MOV usually holds H.264 already and is simply rewrapped. Nothing in a WebM can go into an MP4 untouched, so every frame is decoded and encoded again, on one thread in WebAssembly.",
+      },
+      {
+        question: "Is the file uploaded?",
+        answer:
+          "No. It is converted in this tab on your own processor, which is why there is no queue and no link to wait for.",
+      },
+      {
+        question: "Can it convert a browser screen recording?",
+        answer:
+          "Yes, and that is the common case. Browser recorders write WebM in Chrome and Firefox, which is exactly what will not import into an editor afterwards.",
+      },
+      {
+        question: "How large a file can it take?",
+        answer:
+          "About 300 MB. The input, the output and the encoder share the tab's memory, so the ceiling is set where a long transcode stops being reliable.",
+      },
+      {
+        question: "What happens to the audio?",
+        answer:
+          "Opus or Vorbis is decoded and re-encoded as AAC at 160 kbps, which is what an MP4 can carry and what every player expects.",
+      },
+      {
+        question: "How do I avoid the conversion next time?",
+        answer:
+          "Record somewhere that writes MP4 to begin with. Prequel records your Mac's screen straight to H.264 or HEVC in an MP4, at up to 4K, with no conversion step afterwards.",
+      },
+    ],
+  },
+  {
+    slug: "mp4-to-webm",
+    surface: { kind: "converter", from: "mp4", to: "webm" },
+    icon: FileVideo,
+    navLabel: "MP4 to WebM",
+    eyebrow: "Free browser tool",
+    heading: "Make an MP4 ready for the web",
+    name: "Free MP4 to WebM converter",
+    lede: "Drop an MP4 in and get a WebM back, converted in this tab. Useful when a site, a wiki or a web app will only take WebM.",
+    description:
+      "Free MP4 to WebM converter. Convert H.264 MP4 to VP8 WebM in your browser, with no upload and no sign up. For sites that only accept WebM.",
+    summary: "MP4 in, WebM out, for the places that insist on a royalty-free codec.",
+    steps: [
+      {
+        name: "Drop the MP4 in",
+        text: "Anything up to 300 MB. A short clip is the right shape for this one.",
+      },
+      {
+        name: "Convert",
+        text: "The video is encoded as VP8 and the audio as Vorbis, which is the pair every browser has decoded for a decade.",
+      },
+      {
+        name: "Download",
+        text: "The WebM is ready to upload wherever the MP4 was refused.",
+      },
+    ],
+    features: [
+      {
+        title: "Satisfy a site that refuses MP4",
+        body: "Wikipedia, some forums and a number of open-source projects accept only royalty-free formats. WebM is what they mean, and this produces one without an account.",
+      },
+      {
+        title: "Convert a clip while you wait",
+        body: "VP8 at 1 Mbit is the setting here, chosen so a short clip finishes in about its own length rather than in four times it. VP9 would be smaller and far slower in a browser.",
+      },
+      {
+        title: "Keep the video off a server",
+        body: "The whole encode runs in this tab, so an unreleased product video is converted on your own machine rather than uploaded to somebody's queue.",
+      },
+      {
+        title: "Nothing to sign up for",
+        body: "No account, no email, no watermark and no cap on how many files you convert.",
+      },
+    ],
+    faqHeading: "Speed, quality and when to use WebM",
+    faq: [
+      {
+        question: "Why is this conversion slower than the others?",
+        answer:
+          "Because every frame has to be encoded with VP8, and video encoding is the slowest thing a browser can be asked to do. It runs single-threaded in WebAssembly, so expect roughly the length of the clip, and keep to short ones.",
+      },
+      {
+        question: "Why VP8 rather than VP9?",
+        answer:
+          "VP9 makes smaller files and takes around four times as long to encode. In a tab, on one thread, that is the difference between waiting and giving up. VP8 plays in every browser that plays VP9.",
+      },
+      {
+        question: "Should I be converting to WebM at all?",
+        answer:
+          "Only if something is asking for it. Every browser has played H.264 MP4 for years, so WebM is for places with a royalty-free policy, such as Wikipedia, or for a specific web app that insists.",
+      },
+      {
+        question: "Does the file get smaller?",
+        answer:
+          "Not necessarily. At the bitrate used here a WebM is usually close to the MP4 it came from, and sometimes larger. Size is not the reason to convert; compatibility with a particular site is.",
+      },
+      {
+        question: "Is my video uploaded?",
+        answer: "No. ffmpeg runs inside this tab and the MP4 never leaves your computer.",
+      },
+      {
+        question: "What is the size limit?",
+        answer:
+          "About 300 MB, and in practice you want far less for this conversion: it is the slowest of the set, so a clip of a minute or two is the right size.",
+      },
+      {
+        question: "What happens to the audio?",
+        answer:
+          "AAC is decoded and re-encoded as Vorbis, which is the audio codec WebM carries and every browser decodes.",
+      },
+      {
+        question: "Is there a version of this that does not need converting?",
+        answer:
+          "The browser recorder on this site writes WebM directly in Chrome and Firefox, so a recording made there needs no conversion at all.",
+      },
+    ],
+  },
+  {
+    slug: "mkv-to-mp4",
+    surface: { kind: "converter", from: "mkv", to: "mp4" },
+    icon: FileVideo,
+    navLabel: "MKV to MP4",
+    eyebrow: "Free browser tool",
+    heading: "Get an MKV out of VLC and into everything else",
+    name: "Free MKV to MP4 converter",
+    lede: "Drop an MKV in and get an MP4 back, usually in a second. It converts in this tab, on your own machine.",
+    description:
+      "Free MKV to MP4 converter. Turn a Matroska file into an MP4 in your browser, often without re-encoding. No upload and no sign up.",
+    summary: "Matroska in, MP4 out, rewrapped in a second where the codecs allow.",
+    steps: [
+      {
+        name: "Drop the MKV in",
+        text: "A recording from OBS, a download, an export that came out as Matroska. Up to 300 MB.",
+      },
+      {
+        name: "Convert",
+        text: "When the video and audio are already H.264 and AAC, they are copied into an MP4 container untouched. Anything else is re-encoded.",
+      },
+      {
+        name: "Download",
+        text: "The MP4 opens in every editor and plays on every phone, which is what the MKV would not do.",
+      },
+    ],
+    features: [
+      {
+        title: "Finish almost immediately",
+        body: "An MKV from OBS is usually H.264 and AAC already, which is exactly what an MP4 holds. The streams are copied into the new container rather than re-encoded, so it takes about a second and loses nothing.",
+      },
+      {
+        title: "Stop depending on VLC",
+        body: "Matroska plays in VLC and in very little else. MP4 plays in QuickTime, in Windows, on every phone, in every browser and in every editor.",
+      },
+      {
+        title: "Recover a recording that will not import",
+        body: "OBS writes MKV because an interrupted recording survives it. Rewrapping to MP4 is the step that was always meant to follow, and it is the same lossless copy OBS does itself.",
+      },
+      {
+        title: "Convert without an upload",
+        body: "Everything happens in this tab. A recording of a game, a call or an internal demo is never sent to a server.",
+      },
+    ],
+    faqHeading: "Speed, tracks and compatibility",
+    faq: [
+      {
+        question: "Why was that nearly instant?",
+        answer:
+          "Because an MKV usually needs rewrapping rather than converting. Matroska and MP4 can both hold H.264 and AAC, so the streams are copied into the new container untouched. It is a file copy, and it is lossless.",
+      },
+      {
+        question: "Does it lose quality?",
+        answer:
+          "Not when it rewraps, which is the common case. When the MKV holds something MP4 cannot carry, the video is re-encoded to H.264 at CRF 23 and the page takes longer.",
+      },
+      {
+        question: "What happens to subtitles and extra audio tracks?",
+        answer:
+          "They are dropped. Matroska can carry several audio tracks and subtitle streams; this conversion keeps the first video and the first audio track, which is what an MP4 is normally expected to hold.",
+      },
+      {
+        question: "Why does OBS record MKV instead of MP4?",
+        answer:
+          "Because an MP4 that loses power mid-recording is often unreadable, while an MKV survives it. OBS recommends recording to MKV and remuxing afterwards, which is exactly what this page does.",
+      },
+      {
+        question: "Is my recording uploaded?",
+        answer:
+          "No. ffmpeg runs in this tab, so the MKV is converted on your own processor and never sent anywhere.",
+      },
+      {
+        question: "What size can it handle?",
+        answer:
+          "About 300 MB. Game and gameplay recordings are often much larger, and those are better remuxed on your machine with ffmpeg or with OBS's own remux tool.",
+      },
+      {
+        question: "Will the MP4 play on a TV or a console?",
+        answer:
+          "Where the MKV did not, usually yes. H.264 in an MP4 is the most widely decoded combination there is.",
+      },
+      {
+        question: "Is there a recorder that writes MP4 to start with?",
+        answer:
+          "Prequel records your Mac's screen straight to MP4, at up to 4K and 120 fps, with the zooms already placed and the camera framed when the editor opens.",
       },
     ],
   },

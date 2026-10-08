@@ -1,0 +1,34 @@
+## What is actually inside an MP4
+
+An MP4 is a box with two things in it: a video track, almost always H.264, and
+an audio track, almost always AAC. Converting one to MP3 means throwing the
+first away and re-encoding the second. That is why a 400 MB recording of an hour
+long call comes back at around 25 MB, and why it takes seconds rather than
+minutes: nothing has to touch the picture.
+
+## It runs here, not on a server
+
+This page is ffmpeg compiled to WebAssembly. Your MP4 is read off your disk by
+the browser, decoded in the tab and written back to your downloads folder. No
+upload, no queue, no link in an email, and no server that has a copy of your
+file for a fortnight.
+
+The cost is a 32 MB download of the encoder, once per visit. After that every
+file starts immediately.
+
+## 192 kbps
+
+The MP3 is written at 192 kbps at whatever sample rate the MP4 carried. For a
+call, a lecture, a podcast or a screen recording that is past the point where
+more bitrate changes anything audible, and it keeps an hour under 30 MB.
+
+It is a second lossy pass, because the AAC in the MP4 was already compressed.
+On speech that is inaudible. On music you intend to master, keep the original
+and work from it.
+
+## If you keep doing this
+
+Pulling audio back out of a finished video is a repair. Prequel records your
+Mac's screen with the microphone and the system audio as separate tracks with
+separate gains, so the sound is already its own file before you start editing,
+and a notification over your voice is a slider rather than a re-record.

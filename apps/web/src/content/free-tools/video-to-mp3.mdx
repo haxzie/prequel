@@ -1,0 +1,40 @@
+## ffmpeg, in your browser
+
+This page is ffmpeg compiled to WebAssembly. The same program that every video
+tool on your machine uses underneath runs here instead, inside the tab, on your
+own processor. Your video is read from your disk by the page, decoded, and the
+audio written out as an MP3.
+
+That is the whole difference between this and the converters that rank above it.
+They upload your file, put it in a queue on a server you know nothing about,
+convert it there and give you a link that expires. Nothing is uploaded here,
+because there is no code in the page that could upload it.
+
+## What it costs
+
+The encoder is a 32 MB download, once per visit. That is the honest trade: a
+server-side converter sends a kilobyte of HTML and does the work somewhere else,
+and this one sends the converter to you. After the first run it is cached, so a
+second file starts immediately.
+
+Conversion then runs at the speed of your own machine on one thread, which for
+pulling an audio track out is roughly real time or better. A twenty minute
+recording takes a minute or two.
+
+## 192 kbps, and why
+
+The MP3 is written at 192 kbps at the video's own sample rate. For speech, a
+lecture, a podcast or a screen recording that is past the point where more
+bitrate changes anything you can hear, and it keeps a half hour recording under
+30 MB, which still attaches to an email.
+
+Nothing about the original is touched. The video on your disk is the video you
+started with.
+
+## If you are recording to publish
+
+Extracting audio afterwards is a repair job. Prequel records your Mac's screen
+with the microphone and the system audio on separate tracks and separate gains,
+so a notification landing over your voice is a slider rather than a reason to
+start again, and the audio is already apart from the picture when you open the
+editor.

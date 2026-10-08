@@ -1,0 +1,33 @@
+## Most MOV files do not need converting
+
+They need rewrapping. QuickTime's container and MP4 can both hold H.264 video
+and AAC audio, which is what a Mac screen recording and most iPhone videos
+already are. So the streams are copied from one box into the other, byte for
+byte, and the whole thing takes about a second with nothing lost and nothing
+re-compressed.
+
+When that is not possible, the page re-encodes instead. A ProRes master from an
+editor, or HEVC from a recent iPhone, cannot go into an MP4 as it stands, so
+every frame is decoded and encoded again as H.264 at CRF 23. That takes real
+time and makes the file considerably smaller.
+
+Both paths are tried in that order, automatically. You see which one ran on the
+panel when it finishes.
+
+## Why anybody needs this
+
+Windows stopped shipping QuickTime in 2016, Android never had it, and plenty of
+web apps reject .mov on sight. MP4 is the one video file you can send to anyone
+without a conversation about which player they have.
+
+## Nothing is uploaded
+
+The conversion is ffmpeg compiled to WebAssembly, running in this tab on your
+own processor. Your recording does not leave your machine, which matters when it
+is an internal system, a customer's screen or an unreleased product.
+
+## Recording to MP4 in the first place
+
+QuickTime's own screen recorder writes MOV, which is why this page exists.
+Prequel records your Mac's screen straight to MP4, H.264 or HEVC, at up to 4K
+and 120 fps, and opens an editor on the take with the zooms already placed.

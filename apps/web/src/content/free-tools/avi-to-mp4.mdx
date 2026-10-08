@@ -1,0 +1,30 @@
+## Why an AVI has to be re-encoded
+
+An AVI is a container from 1992, and what is usually inside it is DivX or Xvid.
+An MP4 cannot hold either. So unlike a MOV, which is normally rewrapped in a
+second, an AVI is decoded frame by frame and encoded again as H.264 with its
+audio re-encoded to AAC.
+
+That takes about as long as the clip itself on a current laptop, because the
+encoder is WebAssembly running on one thread. A three minute dash cam clip is a
+few minutes. An hour of footage is better converted on your machine with ffmpeg
+or Handbrake.
+
+## The file usually gets smaller
+
+H.264 is two codec generations ahead of what your AVI is carrying, so the same
+picture needs roughly half the bits at the same quality. CRF 23 is the setting
+used here, which is the one people use for delivery rather than for archiving.
+
+## Where AVI files come from
+
+Dash cams, old camcorders, security recorders, capture software from the DVD
+era, and downloads from the 2000s. They play in VLC and almost nowhere else: no
+phone decodes DivX, no browser plays an AVI, and most editors will not import
+one.
+
+## It stays on your machine
+
+Old AVI files are usually personal footage, and most converters that rank for
+this phrase upload yours to a server. This page runs ffmpeg in the tab, so the
+file is converted on your own processor and never sent anywhere.

@@ -1,0 +1,35 @@
+## WebM is a browser format
+
+It holds VP8 or VP9 video and Opus audio, all of which browsers decode and most
+other things do not. Premiere and Final Cut will not import a WebM. Older
+iPhones, smart TVs and set-top boxes will not play one. That is the whole reason
+this page exists.
+
+An MP4 holds H.264 and AAC, which has been decoded in hardware on every device
+made this century.
+
+## It is a real re-encode
+
+Nothing inside a WebM can be lifted into an MP4 untouched, so every frame is
+decoded and encoded again as H.264 at CRF 23, with the audio re-encoded to AAC
+at 160 kbps. That takes about the length of the clip on a current laptop,
+because the encoder is WebAssembly on a single thread.
+
+The MP4 is written with its index at the front, so a file you post or send
+starts playing before it has finished downloading.
+
+## Where your WebM came from
+
+Almost always a browser. Chrome and Firefox record to WebM, so anything captured
+by a web-based recorder, a meeting tool or a screen recorder extension arrives
+in this format, and then will not import into the editor you wanted to use.
+
+## Nothing leaves the tab
+
+The conversion runs in the same browser that made the file. ffmpeg compiled to
+WebAssembly reads it, converts it and writes the MP4 back, with no upload and no
+queue.
+
+If you are on a Mac and tired of the round trip, Prequel records the screen
+straight to MP4 at up to 4K, with the zooms already placed when the editor
+opens.
