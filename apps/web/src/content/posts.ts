@@ -73,6 +73,49 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "mac-screen-recorder-no-subscription",
+    title: "The best Mac screen recorders with no subscription in 2026",
+    excerpt:
+      "Screen Studio and Camtasia both stopped selling a licence you can own. We found every Mac screen recorder that still charges once, checked the prices, and ranked them.",
+    date: "2026-10-08",
+    tag: "Comparison",
+    readingMinutes: 9,
+    releases: ["0.0.34", "0.0.12"],
+    faq: [
+      {
+        question: "Which Mac screen recorders have no subscription?",
+        answer:
+          "Prequel ($29 once), Cap ($58 once, or free for personal use), CleanShot X ($35 once with a year of updates), CursorClip ($70 once), Screen Charm ($99 once), ScreenFlow ($199 once) and FocuSee ($199.99 once for version 2) all sell a one-time licence. OBS Studio and QuickTime Player are free. Prices checked on 8 October 2026.",
+      },
+      {
+        question: "What is the cheapest one-time purchase screen recorder for Mac?",
+        answer:
+          "Prequel, at $29 once. That is the whole app: 4K export at up to 120 fps, no watermark on any export, no limit on the length of a take, and a seven-day trial that exports finished files. The next cheapest one-off licences are CleanShot X at $35 and Cap at $58.",
+      },
+      {
+        question: "Does Screen Studio still have a lifetime licence?",
+        answer:
+          "No. Screen Studio withdrew its lifetime licence in 2025 and now sells a subscription only, at $29 a month or $9 a month billed yearly. If you want the same automatic zooms with a price you pay once, Prequel is $29 for a lifetime licence and also exports at 4K 120 fps against Screen Studio's 4K 60.",
+      },
+      {
+        question: "Can I buy Camtasia once?",
+        answer:
+          "Not any more. TechSmith stopped selling perpetual Camtasia licences in early 2025, so Camtasia is subscription only and billed annually. The free version exports with a watermark. ScreenFlow is the closest timeline editor still sold as a one-off, at $199, and Prequel is $29 once if you want the editing done automatically.",
+      },
+      {
+        question: "Does a lifetime licence include updates?",
+        answer:
+          "It depends on the tool, and it is the thing to check before paying. CleanShot X's $35 licence includes one year of updates and then charges $19 a year for more. FocuSee's $199.99 lifetime licence covers version 2 only, and version 3 is a paid upgrade. Screen Charm's $99 and CursorClip's $70 include future updates. Prequel's $29 lifetime licence is for the app, with no version in the name.",
+      },
+      {
+        question: "Is there a free Mac screen recorder with no subscription and no watermark?",
+        answer:
+          "Yes. OBS Studio is free and open source with no watermark and no time limit, and QuickTime Player is already on every Mac. Cap is free for personal use with no time limit on local recordings. None of the three edits the video for you; Prequel's seven-day trial does, and it exports without a watermark while you decide.",
+      },
+    ],
+    pillar: "screen-recording-on-mac",
+  },
+  {
     slug: "screen-charm-vs-screen-studio",
     title: "Screen Charm vs Screen Studio: which Mac screen recorder should you buy?",
     excerpt:
