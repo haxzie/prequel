@@ -12,6 +12,13 @@ import { DownloadCta } from "./DownloadButton";
 export function Footer() {
   return (
     <footer className="mt-32 border-t border-line">
+      {/* Two rows. The top one is the brand beside the links a visitor
+          actually comes to a footer for — the site pages and the address.
+          The three long lists are an SEO path to pages the header does not
+          link, so they sit beneath: placed beside the brand, their five
+          columns need about a thousand pixels against the six hundred and
+          fifty that half of a 72rem container has, and the `fr` columns
+          were crushed to one word per line and overlapped. */}
       <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
         <div>
           <Link href="/" className="flex items-center gap-2.5" aria-label="Prequel home">
@@ -22,78 +29,12 @@ export function Footer() {
           <DownloadCta className="mt-6 max-w-md" bare />
         </div>
 
-        {/* Three groups rather than a flex row: the middle one carries sixteen
-            links, and a wrapping flex row that right-aligns its second line
-            reads as a mistake. `auto_1fr_auto` lets the use cases take the slack
-            and keeps the two short columns at their content width. */}
-        <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_1.4fr_1fr_auto_auto] sm:gap-x-10">
+        <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_auto] sm:justify-end sm:gap-x-24">
           <nav className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Site</span>
             {FOOTER_NAV.map((item) => (
               <Link key={item.href} href={item.href} className="text-muted hover:text-fg">
                 {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          {/* Every use-case page links to every other one through this column,
-              which is what makes the set crawlable without a `/create` index.
-              That is why it carries all of them rather than a curated few.
-
-              The href is built here rather than stored on the registry entry:
-              `Route` resolves its generic to `string`, and `string` does not
-              extend the generated `/create/${SafeSlug<…>}`, so a field typed
-              `Route` would reject every one of these. `Link` infers it from the
-              literal instead — the same thing `blog/page.tsx` does. */}
-          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
-            <Link href="/usecases" className="col-span-2 font-medium text-fg hover:text-muted">
-              Use cases
-            </Link>
-            {useCases.map((useCase) => (
-              <Link
-                key={useCase.slug}
-                href={`/create/${useCase.slug}`}
-                className="text-muted hover:text-fg"
-              >
-                {useCase.navLabel}
-              </Link>
-            ))}
-          </nav>
-
-          {/* `/compare` indexes these now, so this column is no longer the only
-              path to them. It stays for the same reason the use cases do: a
-              link from every page is what keeps eleven-deep pages crawled, and
-              one index page linked from the header is not that. */}
-          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm sm:grid-cols-1">
-            <span className="col-span-2 font-medium text-fg sm:col-span-1">Alternatives</span>
-            {competitors.map((competitor) => (
-              <Link
-                key={competitor.slug}
-                href={`/alternatives/${competitor.slug}`}
-                className="text-muted hover:text-fg"
-              >
-                {competitor.navLabel}
-              </Link>
-            ))}
-          </nav>
-
-          {/* The browser tools, linked from every page for the reason the use
-              cases are: a set of pages that only the index links to is a set
-              that gets crawled once. Three entries, so it shares the contact
-              column's width rather than taking one of its own. */}
-          {/* Two columns, as the use cases are. Twelve links in one run is a
-              column twice the height of everything beside it. */}
-          <nav className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
-            <Link href="/free-tools" className="col-span-2 font-medium text-fg hover:text-muted">
-              Free tools
-            </Link>
-            {freeTools.map((tool) => (
-              <Link
-                key={tool.slug}
-                href={`/free-tools/${tool.slug}`}
-                className="text-muted hover:text-fg"
-              >
-                {tool.navLabel}
               </Link>
             ))}
           </nav>
@@ -111,6 +52,81 @@ export function Footer() {
             </a>
           </div>
         </div>
+      </Container>
+
+      {/* Every column is `auto` at `lg`, sized to its content, with the
+          spare width shared between them by `justify-between`. Two of the
+          columns are two-column grids, so an `fr` track for them would be
+          `minmax(auto, 1fr)` and wrap "Screen with webcam" to three lines
+          as soon as the others leaned on it. Below `lg` the three run over
+          the container, so they wrap and the two-column grids keep their
+          shape. Those inner grids are `auto` tracks too: with `1fr` they
+          stretch to fill a wrapped column and the pairs drift apart.
+          `content-start` is there because the outer grid stretches each
+          column to the tallest, and a stretched grid shares that height among
+          its rows — the free tools came out with half again the use cases'
+          spacing. */}
+      <Container className="grid grid-cols-1 gap-x-8 gap-y-10 border-t border-line py-12 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto] lg:justify-between">
+        {/* Every use-case page links to every other one through this column,
+            which is what makes the set crawlable without a `/create` index.
+            That is why it carries all of them rather than a curated few.
+
+            The href is built here rather than stored on the registry entry:
+            `Route` resolves its generic to `string`, and `string` does not
+            extend the generated `/create/${SafeSlug<…>}`, so a field typed
+            `Route` would reject every one of these. `Link` infers it from the
+            literal instead — the same thing `blog/page.tsx` does. */}
+        <nav className="grid grid-cols-[auto_auto] content-start justify-start gap-x-8 gap-y-3 text-sm">
+          <Link href="/usecases" className="col-span-2 font-medium text-fg hover:text-muted">
+            Use cases
+          </Link>
+          {useCases.map((useCase) => (
+            <Link
+              key={useCase.slug}
+              href={`/create/${useCase.slug}`}
+              className="text-muted hover:text-fg"
+            >
+              {useCase.navLabel}
+            </Link>
+          ))}
+        </nav>
+
+        {/* `/compare` indexes these now, so this column is no longer the only
+            path to them. It stays for the same reason the use cases do: a
+            link from every page is what keeps eleven-deep pages crawled, and
+            one index page linked from the header is not that. */}
+        <nav className="flex flex-col gap-3 text-sm">
+          <span className="font-medium text-fg">Alternatives</span>
+          {competitors.map((competitor) => (
+            <Link
+              key={competitor.slug}
+              href={`/alternatives/${competitor.slug}`}
+              className="text-muted hover:text-fg"
+            >
+              {competitor.navLabel}
+            </Link>
+          ))}
+        </nav>
+
+        {/* The browser tools, linked from every page for the reason the use
+            cases are: a set of pages that only the index links to is a set
+            that gets crawled once. Two columns, as the use cases are: twelve
+            links in one run is a column twice the height of everything
+            beside it. */}
+        <nav className="grid grid-cols-[auto_auto] content-start justify-start gap-x-8 gap-y-3 text-sm">
+          <Link href="/free-tools" className="col-span-2 font-medium text-fg hover:text-muted">
+            Free tools
+          </Link>
+          {freeTools.map((tool) => (
+            <Link
+              key={tool.slug}
+              href={`/free-tools/${tool.slug}`}
+              className="text-muted hover:text-fg"
+            >
+              {tool.navLabel}
+            </Link>
+          ))}
+        </nav>
       </Container>
 
       <Container className="flex flex-col items-start gap-4 border-t border-line py-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:gap-6">
