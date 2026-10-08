@@ -174,6 +174,19 @@
   --color-zoom-fill: var(--zoom-fill);
   --color-zoom-edge: var(--zoom-edge);
   --color-zoom-ring: var(--zoom-ring);
+  /* The dock's palette. Same arrangement as the editor's above: declared here
+     so the utilities exist, given values only inside `dock-theme`. */
+  --color-dock-bg: var(--dock-bg);
+  --color-dock-line: var(--dock-line);
+  --color-dock-group: var(--dock-group);
+  --color-dock-fg: var(--dock-fg);
+  --color-dock-muted: var(--dock-muted);
+  --color-dock-hover: var(--dock-hover);
+  --color-dock-selected: var(--dock-selected);
+  --color-dock-record: var(--dock-record);
+  --color-dot-on: var(--dot-on);
+  --color-dot-off: var(--dot-off);
+
   --color-indicator-deep: var(--indicator-deep);
   --color-play: var(--play);
   --color-export: var(--export);
@@ -1819,6 +1832,39 @@
   /* The rail's mark, and the slider grip under the pointer. */
   --selected: #4296fc;
   --toggle: #30a46c;
+}
+
+/*
+  The recording dock, verbatim from the app.
+
+  Copied and not imported, under the same rule as `editor-theme` above: the site
+  shares no code with `apps/desktop`. The values are the app's own — the fill of
+  the pill, the 10px radius, the red on the record button — because the free
+  screen recorder on this site is the app's dock doing the app's job, and a
+  marketing approximation of it would be the one place a visitor could compare
+  the two and find them different.
+
+  A utility rather than a `data-theme`: the dock is dark and the page it floats
+  on is paper, which is what the app looks like over a desktop.
+*/
+@utility dock-theme {
+  /* Not quite opaque. In the app this sits over the desktop with a vibrancy
+     material behind it; here there is a canvas behind it, and the four percent
+     is what keeps the pill reading as something resting on the recording
+     rather than a hole cut in it. */
+  --dock-bg: rgba(32, 32, 33, 0.96);
+  --dock-line: rgba(255, 255, 255, 0.1);
+  --dock-group: rgba(255, 255, 255, 0.05);
+  --dock-fg: #eceef1;
+  --dock-muted: #9f9fa0;
+  --dock-hover: rgba(255, 255, 255, 0.12);
+  --dock-selected: #4296fc;
+  /* The one red in the product, and it is only ever this button. */
+  --dock-record: #e5484d;
+  /* The status dot beside a device: the system's green for live, a grey that
+     has to read as "present and switched off" rather than as broken. */
+  --dot-on: #34c759;
+  --dot-off: #747475;
 }
 
 /* The board the panels sit on. Verbatim from the app. */

@@ -157,6 +157,89 @@ export function itemListJsonLd(items: { name: string; path: `/${string}` }[]) {
   };
 }
 
+/**
+ * A free tool, as the thing it is: an application that runs in the browser.
+ *
+ * `WebApplication` and not `SoftwareApplication`, which is what the desktop app
+ * would be. The distinction is the one a search engine acts on: a
+ * `WebApplication` with `browserRequirements` is a page somebody can use now,
+ * and these pages are only worth ranking if that is what they are read as.
+ *
+ * `offers` at zero is required rather than decorative. A free application with
+ * no price stated is treated as a page that has not said, and "free" is the
+ * whole claim of the set.
+ */
+export function webApplicationJsonLd({
+  name,
+  description,
+  path,
+  features,
+}: {
+  name: string;
+  description: string;
+  path: `/${string}`;
+  features: string[];
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name,
+    description,
+    url: absoluteUrl(path),
+    applicationCategory: "MultimediaApplication",
+    // Any desktop browser, which is what the requirement below actually says.
+    // Naming three operating systems would be a claim about the platform when
+    // the only thing that matters is the engine.
+    operatingSystem: "Any",
+    browserRequirements:
+      "Requires a browser with MediaRecorder and screen capture: Chrome, Edge, Firefox or Safari 17.",
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    isAccessibleForFree: true,
+    featureList: features,
+    publisher: { "@type": "Organization", name: SITE.name, url: SITE_URL },
+  };
+}
+
+/**
+ * The steps on the page, as the steps a crawler reads.
+ *
+ * Off the same array the page renders, which is the rule `faqPageJsonLd`
+ * follows for the same reason: a step list that differs between the markup and
+ * the structured data is the mismatch that gets the whole block ignored.
+ *
+ * Each step carries a `url` pointing at the list's own anchor. Google asks for
+ * one per step and has nothing finer to point at here, so all of them name the
+ * section rather than inventing an id per step that the page does not have.
+ */
+export function howToJsonLd({
+  name,
+  description,
+  path,
+  steps,
+}: {
+  name: string;
+  description: string;
+  path: `/${string}`;
+  steps: { name: string; text: string }[];
+}) {
+  const url = absoluteUrl(path);
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    name,
+    description,
+    totalTime: "PT2M",
+    step: steps.map((step, i) => ({
+      "@type": "HowToStep",
+      position: i + 1,
+      name: step.name,
+      text: step.text,
+      url: `${url}#how-to`,
+    })),
+  };
+}
+
 export function faqPageJsonLd(entries: FaqEntry[]) {
   return {
     "@context": "https://schema.org",

@@ -6,6 +6,7 @@ import { articles } from "@/content/articles";
 import { latestDate } from "@/content/changelog";
 import { competitors } from "@/content/competitors";
 import { DOCS } from "@/content/docs";
+import { freeTools } from "@/content/free-tools";
 import { terms } from "@/content/glossary";
 import { posts } from "@/content/posts";
 import { useCases } from "@/content/use-cases";
@@ -25,6 +26,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}/docs`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/content`, changeFrequency: "weekly", priority: 0.8 },
+    // The browser tools. High priority because they are the pages a stranger
+    // can use without downloading anything, and `monthly` because the copy
+    // changes when the tools do and not otherwise.
+    { url: `${base}/free-tools`, changeFrequency: "monthly", priority: 0.8 },
     // The date of the newest release, which is the only thing on the page that
     // ever moves. It has a real one, so it can say so.
     {
@@ -46,6 +51,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // below because they have a real one.
     ...useCases.map((useCase) => ({
       url: `${base}/create/${useCase.slug}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    })),
+    // No `lastModified`, as for the use cases above: the registry holds no
+    // date, and `new Date()` would claim all three changed on every deploy.
+    ...freeTools.map((tool) => ({
+      url: `${base}/free-tools/${tool.slug}`,
       changeFrequency: "monthly" as const,
       priority: 0.7,
     })),

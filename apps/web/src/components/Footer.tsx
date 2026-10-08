@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { competitors } from "@/content/competitors";
+import { freeTools } from "@/content/free-tools";
 import { useCases } from "@/content/use-cases";
 import { CONTACT_EMAIL, FOOTER_NAV, SITE } from "@/lib/site";
 
@@ -25,7 +26,7 @@ export function Footer() {
             links, and a wrapping flex row that right-aligns its second line
             reads as a mistake. `auto_1fr_auto` lets the use cases take the slack
             and keeps the two short columns at their content width. */}
-        <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_1.5fr_1fr_auto] sm:gap-x-12">
+        <div className="grid gap-x-10 gap-y-10 sm:grid-cols-[auto_1.4fr_1fr_auto_auto] sm:gap-x-10">
           <nav className="flex flex-col gap-3 text-sm">
             <span className="font-medium text-fg">Site</span>
             {FOOTER_NAV.map((item) => (
@@ -72,6 +73,25 @@ export function Footer() {
                 className="text-muted hover:text-fg"
               >
                 {competitor.navLabel}
+              </Link>
+            ))}
+          </nav>
+
+          {/* The browser tools, linked from every page for the reason the use
+              cases are: a set of pages that only the index links to is a set
+              that gets crawled once. Three entries, so it shares the contact
+              column's width rather than taking one of its own. */}
+          <nav className="flex flex-col gap-3 text-sm">
+            <Link href="/free-tools" className="font-medium text-fg hover:text-muted">
+              Free tools
+            </Link>
+            {freeTools.map((tool) => (
+              <Link
+                key={tool.slug}
+                href={`/free-tools/${tool.slug}`}
+                className="text-muted hover:text-fg"
+              >
+                {tool.navLabel}
               </Link>
             ))}
           </nav>

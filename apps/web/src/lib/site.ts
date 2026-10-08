@@ -64,6 +64,11 @@ export const FOOTER_NAV: { href: Route; label: string }[] = [
   // the header is full, and somebody reading a definition of bitrate has
   // already found the site.
   { href: "/content", label: "Content" },
+  // The browser tools. Footer only as well, and for a sharper version of the
+  // same reason: a header slot for a free tool would sell it over the app on
+  // every page of the site, and these pages exist to be arrived at from a
+  // search rather than from the nav.
+  { href: "/free-tools", label: "Free tools" },
   // Directly, though it lives under the docs: "what changed" is the question a
   // returning visitor has, and two clicks to it through Docs is one too many.
   { href: "/docs/changelog", label: "Changelog" },

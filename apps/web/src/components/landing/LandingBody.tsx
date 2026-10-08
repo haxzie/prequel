@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   // Aliased because a bare `Image` in a Next file reads as `next/image`.
   Image as ImageIcon,
   MousePointer2,
@@ -10,7 +9,7 @@ import {
 import type { ReactNode } from "react";
 
 import { ButtonLink } from "@/components/Button";
-import { JsonLd } from "@/components/JsonLd";
+import { Faq } from "@/components/Faq";
 import {
   BackgroundIllustration,
   CameraIllustration,
@@ -24,10 +23,9 @@ import { LayoutDemo } from "@/components/landing/LayoutDemo";
 import { TeleprompterDemo } from "@/components/landing/TeleprompterDemo";
 import { ZoomDemo } from "@/components/landing/ZoomDemo";
 import { CaptureStep, PlayerStep, TimelineStep } from "@/components/landing/step-visuals";
-import { Container, Eyebrow, SectionHeading } from "@/components/Section";
+import { Container, SectionHeading } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
 import type { FaqEntry } from "@/lib/faq";
-import { faqPageJsonLd } from "@/lib/seo";
 import { TRIAL_DAYS } from "@/lib/pricing";
 
 /** What is already done by the time the editor opens on a take. */
@@ -319,56 +317,8 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
       </section>
 
       <CallToAction />
-      <Faq entries={faq} />
+      <Faq heading="Zooms, exports and the rest" entries={faq} />
     </>
-  );
-}
-
-function Faq({ entries }: { entries: FaqEntry[] }): ReactNode {
-  return (
-    <section id="faq" className="scroll-mt-16 pt-24">
-      <Container className="grid gap-10 lg:grid-cols-[1fr_1.6fr]">
-        <div>
-          <Eyebrow>FAQ</Eyebrow>
-          <h2 className="text-2xl font-medium tracking-tight text-balance text-fg">
-            Zooms, exports and the rest
-          </h2>
-        </div>
-
-        {/*
-          Every answer is rendered in full, always. An accordion would hide most
-          of this behind a click; `<details>` would at least keep it in the DOM,
-          but plain markup removes the question entirely — for crawlers and for
-          anyone who wants to skim or search the page with ⌘F.
-        */}
-        <div className="flex flex-col gap-px overflow-hidden rounded-2xl border border-line bg-line">
-          {entries.map((item, i) => (
-            <details
-              key={item.question}
-              // The first one open, so the section does not read as a wall of
-              // closed rows with nothing to show for itself.
-              open={i === 0}
-              className="faq-item group bg-bg"
-            >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-6 py-5 text-[0.9375rem] font-medium text-fg [&::-webkit-details-marker]:hidden">
-                {item.question}
-                <ChevronDown
-                  className="mt-0.5 size-4 shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
-                  aria-hidden
-                />
-              </summary>
-              <p className="px-6 pb-5 text-sm leading-relaxed text-muted">{item.answer}</p>
-            </details>
-          ))}
-        </div>
-      </Container>
-
-      {/* FAQPage structured data, off the same array as the markup above so the
-          two cannot drift apart. Google restricted FAQ rich results to a
-          narrow set of sites in 2023, so treat this as machine-readable
-          context rather than a ticket to a rich snippet. */}
-      <JsonLd data={faqPageJsonLd(entries)} />
-    </section>
   );
 }
 
