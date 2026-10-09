@@ -1,14 +1,11 @@
-import type { ReactNode } from "react";
-
 import type { WorkspaceSection } from "../../../shared/contract";
 import { cn } from "../lib/cn";
 import { Exports } from "../exports/Exports";
 import { Projects } from "../projects/Projects";
-import { ExternalIcon, GeneralIcon } from "../settings/icons";
+import { ExternalIcon } from "../settings/icons";
 import { SettingsPane } from "../settings/Settings";
 import { AccountMenu } from "./AccountMenu";
 import { ExportsIcon, RecordingsIcon, ScreenshotsIcon, SettingsIcon } from "./icons";
-import { PaneHeader } from "./PaneHeader";
 
 /**
  * Everything the app window shows when no recording is open.
@@ -144,29 +141,12 @@ export function Library({
           // of settings, and this pane is a grid that should fill the window.
           <Exports />
         ) : (
-          <Pane icon={<GeneralIcon />} title="Settings">
-            <SettingsPane />
-          </Pane>
+          // Not wrapped in `Pane`, for the reason `Exports` is not: this pane
+          // carries a sidebar of its own and lays out the full width, capping
+          // the measure around its own content rather than around both columns.
+          <SettingsPane />
         )}
       </main>
     </div>
-  );
-}
-
-/**
- * A settings pane, at a width it can be read at.
- *
- * `Section` was drawn for the editor's 24rem rail. Given a whole window it
- * stretches a segmented control to arm's length, so the measure is capped here
- * rather than in each pane.
- */
-function Pane({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return (
-    <>
-      <PaneHeader icon={icon} title={title} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-md">{children}</div>
-      </div>
-    </>
   );
 }
