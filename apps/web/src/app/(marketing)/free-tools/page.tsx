@@ -63,30 +63,57 @@ const INDEX_FAQ: FaqEntry[] = [
   },
 ];
 
+type ToolKind = FreeTool["surface"]["kind"];
+
 /**
- * The three bands, in the order they are read.
+ * The bands, in the order they are read.
  *
  * This page owns the order and the words; the registry owns only which band a
- * tool is in, through its `surface`. One fewer thing for a new entry to get
- * wrong, and no way to publish a tool that lands in no band.
+ * tool is in, through its `surface`.
+ *
+ * A `Record` rather than an array of `{ kind, … }`, because the array could be
+ * missing a kind and still typecheck — which is exactly what happened when the
+ * downloader was added. It went out linked from the footer and the sitemap and
+ * with no card on this page at all, since the one thing that renders a card is
+ * a band to put it in. A missing kind is now a build error.
  */
-const GROUPS: { kind: FreeTool["surface"]["kind"]; label: string; lede: string }[] = [
-  {
-    kind: "recorder",
+const BANDS: Record<ToolKind, { label: string; lede: string }> = {
+  recorder: {
     label: "Record",
     lede: "Your screen, your camera or your voice, captured in the tab and downloaded as a file.",
   },
-  {
-    kind: "editor",
+  editor: {
     label: "Edit",
     lede: "Mark up a screenshot and put it on a background, without an account or an extension.",
   },
-  {
-    kind: "converter",
+  converter: {
     label: "Convert",
     lede: "ffmpeg runs inside your browser, so a file is converted on your own machine rather than uploaded to a queue.",
   },
-];
+  downloader: {
+    label: "Download",
+    lede: "Paste a link to a post and save its video, fetched by your browser from where it already sits.",
+  },
+};
+
+/** The order the bands are shown in, which is the order they are wanted in. */
+const ORDER = [
+  "recorder",
+  "editor",
+  "converter",
+  "downloader",
+] as const satisfies readonly ToolKind[];
+
+/**
+ * `never` when every kind is in `ORDER` above.
+ *
+ * `BANDS` makes a kind carry words; this makes it get shown. Without it a kind
+ * left out of `ORDER` renders nothing and says nothing, which is the same
+ * silent gap one line up — a tool that exists everywhere except the page
+ * listing the tools.
+ */
+type Unbanded = Exclude<ToolKind, (typeof ORDER)[number]>;
+const _everyKindIsShown: Unbanded extends never ? true : false = true;
 
 export default function FreeTools() {
   return (
@@ -110,16 +137,16 @@ export default function FreeTools() {
       </section>
 
       {/* Grouped by what the tool is, the way `/usecases` bands its sixteen.
-          Twelve cards in one grid is a wall, and the three groups are the three
+          Thirteen cards in one grid is a wall, and the four groups are the four
           reasons somebody is on this page. The order is the order they are
           wanted in: recording first, because that is what Prequel is. */}
-      {GROUPS.map((group) => (
-        <section key={group.kind} className="pb-8">
+      {ORDER.map((kind) => (
+        <section key={kind} className="pb-8">
           <Container>
-            <SectionHeading title={group.label} lede={group.lede} />
+            <SectionHeading title={BANDS[kind].label} lede={BANDS[kind].lede} />
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {freeTools
-                .filter((tool) => tool.surface.kind === group.kind)
+                .filter((tool) => tool.surface.kind === kind)
                 .map((tool) => (
                   /* The href is a literal rather than a field on the registry
                  entry. `Route` resolves its generic to `string`, and `string`
