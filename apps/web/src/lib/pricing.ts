@@ -22,14 +22,15 @@
  *  the quotas are written in decimal on both sides precisely so "5 GB" is the
  *  same string in the copy and in the dashboard.
  *
- *  **The price is stated, not sold.** No struck-out regular price, because
- *  there is not one to strike out; no countdown; no "introductory" label on the
- *  cards, which only ever asked the reader to hurry. And no promise that a
- *  licence bought today keeps this rate for life — that is a commitment to
- *  honour indefinitely on every licence sold at this price, and it is not
- *  something a page is allowed to invent on the way to a better conversion
- *  rate. The FAQ answers honestly if somebody asks whether it will rise. When
- *  it does, changing it here is the whole change.
+ *  **The price is stated, not sold — with one exception, the launch sale.**
+ *  The lifetime licence lists at $36 and is $29 for the launch, and the card
+ *  strikes the list price because for once there is a real one to strike. That
+ *  is the only dressing: no countdown, and no promise that a licence bought
+ *  today keeps this rate for life — that is a commitment to honour indefinitely
+ *  on every licence sold at this price, and it is not something a page is
+ *  allowed to invent on the way to a better conversion rate. The FAQ answers
+ *  honestly if somebody asks whether it will rise. When the sale ends, clearing
+ *  `PRICE_LIFETIME_WAS` and setting `PRICE_LIFETIME` back is the whole change.
  *
  *  **Write the month, and never annualise it.** `$9 a month` is what is
  *  charged. `$108 a year` is a number nobody is billed, and inventing a cadence
@@ -50,6 +51,18 @@
 
 export const PRICE_MONTHLY = "$9";
 export const PRICE_LIFETIME = "$29";
+/**
+ * The lifetime list price, struck through beside the sale price for the launch.
+ * Set to `undefined` when the sale ends and the strike disappears everywhere it
+ * is drawn; nothing else reads it.
+ */
+export const PRICE_LIFETIME_WAS: string | undefined = "$36";
+/**
+ * The saving, written out rather than computed: the prices are strings with a
+ * currency sign in them, and parsing them back to numbers to subtract is a
+ * long way round for one figure that changes with the sale and nothing else.
+ */
+export const SALE_LABEL = "Launch day sale · 20% off";
 export const TRIAL_DAYS = 7;
 
 /**
@@ -73,15 +86,19 @@ export const RETENTION_LIFETIME = "3 months";
 export type Plan = {
   name: string;
   price: string;
+  /** The list price to strike beside `price` during a sale, or nothing. */
+  was?: string;
   cadence: string;
   /** Under the price. Says how it is billed, not what it includes. */
   billing: string;
   /**
    * The pill above the card, on the one we point at.
    *
-   * Copy rather than a boolean, because "Recommended" is a claim and it belongs
-   * in the file that carries the other claims. Not "Most popular" — that is a
-   * fact about sales we do not have, where this is an opinion we do.
+   * Copy rather than a boolean, because the words are a claim and belong in
+   * the file that carries the other claims. During the sale it names the sale,
+   * which is the stronger reason to start there; otherwise "Recommended", an
+   * opinion we hold. Never "Most popular" — that is a fact about sales we do
+   * not have.
    */
   badge?: string;
   summary: string;
@@ -113,6 +130,7 @@ const EVERYTHING = [
 export const LIFETIME_PLAN: Plan = {
   name: "Lifetime",
   price: PRICE_LIFETIME,
+  was: PRICE_LIFETIME_WAS,
   cadence: "once",
   billing: `One payment · ${TRIAL_DAYS} days free`,
   summary: `Buy it once. Best if you record now and then.`,
@@ -121,7 +139,7 @@ export const LIFETIME_PLAN: Plan = {
     `${STORAGE_LIFETIME} of shared recordings, kept for ${RETENTION_LIFETIME}`,
   ],
   featured: true,
-  badge: "Recommended",
+  badge: PRICE_LIFETIME_WAS ? SALE_LABEL : "Recommended",
 };
 
 export const PRO_PLAN: Plan = {
@@ -184,7 +202,7 @@ export const FAQ: { question: string; answer: string }[] = [
   },
   {
     question: "Will the price go up?",
-    answer: `It might. ${PRICE_MONTHLY} a month and ${PRICE_LIFETIME} once are what Prequel costs today, and we would rather say that plainly than dress it up with a countdown — there is no struck-out "regular" price to compare it against, and no claim that signing up today locks the rate in forever. If it rises, it rises, and the page will say the new number.`,
+    answer: `The lifetime licence lists at ${PRICE_LIFETIME_WAS} and is ${PRICE_LIFETIME} for the launch, and Pro is ${PRICE_MONTHLY} a month. Those are what Prequel costs today, and we would rather say that plainly than dress it up with a countdown — the sale ends when it ends, and there is no claim that signing up today locks the rate in forever. If it rises, it rises, and the page will say the new number.`,
   },
   {
     question: "Is the lifetime licence really for life?",

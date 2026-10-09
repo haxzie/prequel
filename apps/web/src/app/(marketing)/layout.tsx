@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Footer } from "@/components/Footer";
 import { JsonLd } from "@/components/JsonLd";
 import { Nav } from "@/components/Nav";
+import { SaleBanner } from "@/components/SaleBanner";
 import { organizationJsonLd, websiteJsonLd } from "@/lib/seo";
 
 /**
@@ -26,6 +27,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <JsonLd data={[organizationJsonLd(), websiteJsonLd()]} />
+      <SaleBanner />
       <Nav />
       <main>{children}</main>
       <Footer />

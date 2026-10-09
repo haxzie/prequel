@@ -65,6 +65,21 @@ export function MenuIcon({ className = "" }: { className?: string }) {
  * chevron dead centre puts three round caps within a pixel of each other and the
  * join thickens into a blob.
  */
+/**
+ * A four-point sparkle: the sale mark on the pricing card and the separator in
+ * the launch banner. Filled rather than stroked, unlike the rest of this file:
+ * at twelve pixels a stroked star is four hairlines meeting in a dot, and a
+ * filled one still reads as a star. Drawn rather than the "★" glyph because the
+ * glyph's size and baseline differ by font and Geist sets it low and small.
+ */
+export function SparkIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`fill-current ${className}`} aria-hidden="true">
+      <path d="M12 0c.6 6.4 5.6 11.4 12 12-6.4.6-11.4 5.6-12 12-.6-6.4-5.6-11.4-12-12C6.4 11.4 11.4 6.4 12 0z" />
+    </svg>
+  );
+}
+
 export function ArrowRightIcon({ className = "" }: { className?: string }) {
   return (
     <svg

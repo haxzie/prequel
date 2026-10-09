@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { ButtonLink } from "@/components/Button";
 import { JsonLd } from "@/components/JsonLd";
+import { SparkIcon } from "@/components/icons";
 import { Container, SectionHeading } from "@/components/Section";
 import { FAQ, INCLUDED, PLANS } from "@/lib/pricing";
 import { faqPageJsonLd, pageMetadata } from "@/lib/seo";
@@ -54,10 +55,11 @@ export default function Pricing() {
                 {/* On one card only. A badge on both would be furniture: it is
                     there to say where to start, and it cannot say that twice. The
                     words come from `lib/pricing.ts` with the rest of the claims —
-                    "Recommended" is an opinion we hold, where "most popular" would
-                    be a fact about sales we do not have. */}
+                    the sale while it runs, "Recommended" otherwise. The sparkle
+                    is the sale's mark and goes with it. */}
                 {plan.badge ? (
-                  <span className="brand-gradient absolute -top-3 left-7 rounded-full px-3 py-1 text-[11px] font-medium text-white">
+                  <span className="brand-gradient absolute -top-3 left-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-white">
+                    {plan.was ? <SparkIcon className="size-3" /> : null}
                     {plan.badge}
                   </span>
                 ) : null}
@@ -66,7 +68,32 @@ export default function Pricing() {
                 <p className="mt-1.5 text-sm text-muted">{plan.summary}</p>
 
                 <p className="mt-6 flex items-baseline gap-2">
-                  <span className="text-4xl font-medium tracking-tight text-fg">{plan.price}</span>
+                  {/* The list price first and struck, so the eye reads "was
+                      this, now this" left to right and lands on the live
+                      number. Smaller than the price beside it: at the same size
+                      the strike reads as a correction to a typo rather than as
+                      a sale. Screen readers do not reliably announce `<s>`, so
+                      "was" is spoken from a hidden span. */}
+                  {plan.was ? (
+                    <s className="text-xl font-medium tracking-tight text-muted">
+                      <span className="sr-only">was </span>
+                      {plan.was}
+                    </s>
+                  ) : null}
+                  {/* The live price takes the brand gradient during a sale and
+                      the plain ink otherwise. `bg-clip-text` with a transparent
+                      fill is what paints a gradient through type; the span
+                      needs `inline-block` or the clip box is the line box and
+                      the descender-less digits get the bottom of it cut off. */}
+                  <span
+                    className={`text-4xl font-semibold tracking-tight ${
+                      plan.was
+                        ? "brand-gradient inline-block bg-clip-text text-transparent"
+                        : "text-fg"
+                    }`}
+                  >
+                    {plan.price}
+                  </span>
                   <span className="text-xs text-muted">{plan.cadence}</span>
                 </p>
                 {/* Per plan, because the two are not billed the same way. The

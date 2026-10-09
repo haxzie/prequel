@@ -1557,6 +1557,21 @@
       color: var(--muted);
     }
   }
+
+  /* The sale strip above the nav. The track holds two copies of the same run
+     of text side by side and slides exactly one copy's width, so the frame the
+     loop restarts on is pixel-identical to the one before it. Any other distance
+     and the restart shows as a stutter. Transform only, for the compositor. */
+  --animate-marquee: marquee 40s linear infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
 
 /*
@@ -1979,5 +1994,14 @@
   textarea {
     font: inherit;
     color-scheme: inherit;
+  }
+}
+
+/* The sale strip holds still. It is the one piece of chrome that moves on its
+   own, and the words are the same in every repeat, so a stopped track loses
+   nothing. */
+@media (prefers-reduced-motion: reduce) {
+  [data-marquee] {
+    animation: none;
   }
 }
