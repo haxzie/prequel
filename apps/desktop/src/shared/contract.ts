@@ -166,6 +166,10 @@ export interface RecordingPreferences {
    * rebind to the chord already in use compares equal instead of looking like
    * a conflict. Main is the only thing that registers it; every surface that
    * *draws* it reads this and formats it, rather than carrying its own copy.
+   *
+   * The default is ⇧⌘5, which macOS gives to its own screenshot toolbar. Prequel
+   * switches that off to hold it and switches it back on when the shortcut moves
+   * or the app quits — `main/system-hotkeys.ts` is where that happens and why.
    */
   toggleShortcut: string;
   /** Seconds counted down before capture starts. Zero begins immediately. */
@@ -251,7 +255,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   systemAudio: true,
   captureKeys: true,
   cameraPosition: null,
-  toggleShortcut: "Shift+Cmd+R",
+  toggleShortcut: "Shift+Cmd+5",
   countdown: 3,
   saveDirectory: null,
   afterRecording: "editor",
@@ -415,6 +419,16 @@ export const TELEPROMPTER_SHORTCUTS = {
   pause: "Ctrl+Alt+Space",
   top: "Ctrl+Alt+0",
 } as const;
+
+/**
+ * Pause and resume. The one global chord that is not rebindable.
+ *
+ * Here for the reason the prompter's keys are: the welcome flow draws it. It
+ * was spelled out there as three caps in the order they were typed, which put
+ * ⌘⇧P beside a ⇧⌘5 built from `formatAccelerator` — the same chord written two
+ * ways on one screen. Drawn from here, both go through the ordering macOS uses.
+ */
+export const PAUSE_SHORTCUT = "Shift+Cmd+P";
 
 export interface MediaDevice {
   deviceId: string;

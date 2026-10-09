@@ -9,15 +9,17 @@
  * `register` returning `false` is the only signal macOS gives us that something
  * else already owns a combination. There is no way to ask *who*, so nothing
  * here pretends to know.
+ *
+ * It is not a signal the *system* owns one: a symbolic hotkey like ⇧⌘5 registers
+ * perfectly and is then swallowed by the WindowServer on its way past. Those are
+ * `system-hotkeys.ts`'s business, and `bind` goes through it first.
  */
 import { globalShortcut } from "electron";
 
 import { isBindable, normaliseAccelerator } from "../shared/accelerator.js";
-import { TELEPROMPTER_SHORTCUTS } from "../shared/contract.js";
+import { PAUSE_SHORTCUT, TELEPROMPTER_SHORTCUTS } from "../shared/contract.js";
 import { log } from "./log.js";
-
-/** Pause stays a constant: only the start/stop toggle is rebindable. */
-export const PAUSE_SHORTCUT = "Shift+Cmd+P";
+import { claimSystemHotkey, restoreSystemHotkey } from "./system-hotkeys.js";
 
 type Handlers = {
   onToggle: () => void;
@@ -104,6 +106,11 @@ export function unbindTeleprompterKeys(): void {
 
 export function teardownShortcuts(): void {
   globalShortcut.unregisterAll();
+  // An app that is not running has no business holding ⇧⌘5. Giving it back on
+  // quit is also what keeps "Prequel was deleted and the screenshot toolbar
+  // never came back" from being the lasting state — only a crash can leave it
+  // held, and the next launch repairs that.
+  restoreSystemHotkey();
   handlers = null;
   toggle = null;
 }
@@ -114,9 +121,20 @@ export function boundToggle(): string | null {
 }
 
 function bind(accelerator: string): boolean {
+  // macOS first. A handful of chords — ⇧⌘5 among them, which is the default —
+  // are dispatched by the WindowServer before any application's hotkey table is
+  // read, so registering one while it is still switched on succeeds and then
+  // never fires. Claiming it is what makes the registration mean anything, and
+  // this call also hands back whatever was claimed for the previous chord.
+  claimSystemHotkey(accelerator);
+
   // Reading `handlers` at fire time rather than capturing it means a rebind
   // does not leave a closure pointing at a flow from a previous registration.
   const ok = globalShortcut.register(accelerator, () => handlers?.onToggle());
   if (ok) toggle = accelerator;
+  // Nothing bound means nothing held. Leaving the system's shortcut switched
+  // off after a registration that failed takes ⇧⌘5 off the user and gives them
+  // nothing for it.
+  else restoreSystemHotkey();
   return ok;
 }

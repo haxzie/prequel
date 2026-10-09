@@ -1,9 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { formatAccelerator } from "../../../shared/accelerator";
 import type { AppInfo } from "../../../shared/contract";
+import { DEFAULT_PREFERENCES, PAUSE_SHORTCUT } from "../../../shared/contract";
 import { assetUrl } from "../../../shared/media-url";
+import { systemHotkeyFor } from "../../../shared/system-hotkeys";
 import { cn } from "../lib/cn";
-import { CheckIcon, CommandIcon, ShiftIcon } from "../editor/icons";
+import { CheckIcon, CommandIcon, ControlIcon, OptionIcon, ShiftIcon } from "../editor/icons";
 import { Avatar } from "../components/Avatar";
 import { PERMISSIONS, PermissionList } from "../components/PermissionList";
 import { Wash } from "../components/Wash";
@@ -36,7 +39,7 @@ const STEPS = 4;
 /** The steps, by name, so `startAt` cannot drift from the order below. */
 const STEP = { intro: 0, permissions: 1, signIn: 2, ready: 3 } as const;
 
-export function Welcome({ startAt = "intro" }: { startAt?: "intro" | "permissions" } = {}) {
+export function Welcome({ startAt = "intro" }: { startAt?: keyof typeof STEP } = {}) {
   // A returning user with a permission missing lands on the step that is the
   // reason the window opened. The dots still go back, so nothing is unreachable
   // — see `Dots`, which allows every step at or before the current one.
@@ -257,6 +260,16 @@ function SignInStep() {
 function ReadyStep({ permissions }: { permissions: Permissions }) {
   const missing = PERMISSIONS.filter((permission) => !permissions.granted(permission.id));
 
+  // The default chord is one macOS keeps for itself, and Prequel switches the
+  // system's off to answer it. Said here for the reason `LoginItemToggle` below
+  // is offered rather than applied quietly: this is somebody's Mac-wide setting
+  // being changed on their behalf, and the place to hear about it is the first
+  // screen, not a thread months later asking where the screenshot toolbar went.
+  //
+  // Derived rather than written out, so a default that moves to a chord macOS
+  // does not want takes the sentence with it.
+  const taken = systemHotkeyFor(DEFAULT_PREFERENCES.toggleShortcut);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 py-6">
       <h1 className="text-3xl font-semibold tracking-tight">
@@ -276,27 +289,25 @@ function ReadyStep({ permissions }: { permissions: Permissions }) {
           it. This is the one fact worth carrying out of the flow — a menu-bar
           app has no window to go back to — so it gets the size a heading would.
 
-          Three keys rather than one chip reading "⇧⌘R": a chord is pressed one
-          key at a time, and drawn as separate caps it says so. */}
-      <Shortcut
-        keys={[
-          { icon: <CommandIcon />, label: "Command" },
-          { icon: <ShiftIcon />, label: "Shift" },
-          { letter: "R", label: "R" },
-        ]}
-      />
+          Several keys rather than one chip reading "⇧⌘5": a chord is pressed one
+          key at a time, and drawn as separate caps it says so.
+
+          Read off `DEFAULT_PREFERENCES` rather than spelled out here. This flow
+          only ever runs before anyone has rebound anything, so the default is
+          the right source — and it was spelled out here, as ⇧⌘R, right up until
+          the default moved and left the first thing a new user is told wrong. */}
+      <Shortcut keys={capsFor(DEFAULT_PREFERENCES.toggleShortcut)} />
 
       <ul className="flex max-w-md flex-col gap-2 text-sm text-editor-muted">
         <li>Starts and stops a recording from anywhere, even with another app in front.</li>
+        {taken ? (
+          <li>
+            macOS gives it to {taken.owner}. Prequel uses it instead — pick another shortcut in
+            Settings and macOS has it back.
+          </li>
+        ) : null}
         <li>
-          <Chord
-            keys={[
-              { icon: <CommandIcon />, label: "Command" },
-              { icon: <ShiftIcon />, label: "Shift" },
-              { letter: "P", label: "P" },
-            ]}
-          />{" "}
-          pauses and resumes without stopping the take.
+          <Chord keys={capsFor(PAUSE_SHORTCUT)} /> pauses and resumes without stopping the take.
         </li>
         <li>Stop, and the editor opens on what you just recorded.</li>
       </ul>
@@ -366,7 +377,32 @@ function LoginItemToggle() {
  * interface for an app with no window. The gradient is the same one the wash at
  * the top uses, so the two read as one surface rather than two decorations.
  */
-function Shortcut({ keys }: { keys: { icon?: ReactNode; letter?: string; label: string }[] }) {
+type Cap = { icon?: ReactNode; letter?: string; label: string };
+
+/**
+ * A chord as caps this flow can draw.
+ *
+ * `Keycaps` does the same job in the settings window and is not reused: these
+ * caps are drawn at heading size against a gradient, and that component's
+ * dimensions are baked into its classes. What is shared is the part that must
+ * not diverge — `formatAccelerator` deciding which keys a chord is and in what
+ * order — rather than the look.
+ */
+function capsFor(accelerator: string): Cap[] {
+  const icons: Record<string, ReactNode> = {
+    Command: <CommandIcon />,
+    Shift: <ShiftIcon />,
+    Alt: <OptionIcon />,
+    Control: <ControlIcon />,
+  };
+  return formatAccelerator(accelerator).map((key) =>
+    icons[key.id]
+      ? { icon: icons[key.id], label: key.label }
+      : { letter: key.glyph, label: key.label },
+  );
+}
+
+function Shortcut({ keys }: { keys: Cap[] }) {
   return (
     <div className="flex items-center gap-2">
       {keys.map((key) => (
@@ -402,7 +438,7 @@ function Shortcut({ keys }: { keys: { icon?: ReactNode; letter?: string; label: 
  * `align-middle` because a cap is taller than the line it sits on, and an
  * inline-block left on the text baseline drags the whole line down with it.
  */
-function Chord({ keys }: { keys: { icon?: ReactNode; letter?: string; label: string }[] }) {
+function Chord({ keys }: { keys: Cap[] }) {
   return (
     <span className="inline-flex items-center gap-1 align-middle">
       {keys.map((key) => (
