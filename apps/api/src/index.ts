@@ -24,6 +24,7 @@ import transcribe from "./routes/transcribe.ts";
 import updates from "./routes/updates.ts";
 import videos from "./routes/videos.ts";
 import waitlist from "./routes/waitlist.ts";
+import xVideo from "./routes/x-video.ts";
 import dodoWebhook from "./routes/webhooks/dodo.ts";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -100,7 +101,13 @@ app.route("/v1/webhooks/dodo", dodoWebhook);
 app.route("/v1/updates", updates);
 app.route("/v1/waitlist", waitlist);
 
-/** What `/v/<slug>` on the site reads. Public, and the only unauthenticated read. */
+/**
+ * What the X video tool on the site reads. Unauthenticated, because the page is,
+ * and metadata only — the video files it names are fetched from X by the browser.
+ */
+app.route("/v1/x-video", xVideo);
+
+/** What `/v/<slug>` on the site reads. Public, and the only unauthenticated read of our own data. */
 app.route("/p", publicRoutes);
 
 app.get("/health", (c) => c.json({ ok: true }));

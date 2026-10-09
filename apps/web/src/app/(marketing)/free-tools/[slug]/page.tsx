@@ -5,6 +5,7 @@ import { Faq } from "@/components/Faq";
 import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
 import { Converter } from "@/components/free-tools/convert/Converter";
+import { Downloader } from "@/components/free-tools/download/Downloader";
 import { ShotEditor } from "@/components/free-tools/shot/ShotEditor";
 import { Studio } from "@/components/free-tools/Studio";
 import { ToolBody } from "@/components/free-tools/ToolBody";
@@ -17,6 +18,9 @@ const FACTS: Record<FreeTool["surface"]["kind"], string[]> = {
   recorder: ["No sign up", "Nothing uploaded", "No watermark", "Up to 30 minutes a take"],
   editor: ["No sign up", "Nothing uploaded", "No watermark", "Pastes straight in"],
   converter: ["No sign up", "Nothing uploaded", "No queue", "Up to 300 MB a file"],
+  // "Nothing uploaded" would be a lie here, and the page is searched for under
+  // two names, so the pill names neither of them.
+  downloader: ["No sign up", "Direct download", "No watermark", "Up to 1080p"],
 };
 
 export function generateStaticParams() {
@@ -83,6 +87,8 @@ export default async function FreeToolPage({ params }: PageProps<"/free-tools/[s
             <ShotEditor />
           ) : tool.surface.kind === "converter" ? (
             <Converter from={tool.surface.from} to={tool.surface.to} />
+          ) : tool.surface.kind === "downloader" ? (
+            <Downloader />
           ) : (
             <Studio mode={tool.surface.mode} />
           )}

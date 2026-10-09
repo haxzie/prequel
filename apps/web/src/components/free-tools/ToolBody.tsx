@@ -19,6 +19,7 @@ const VERB = {
   recorder: "Recording",
   editor: "Editing",
   converter: "Converting",
+  downloader: "Downloading",
 } as const;
 
 export function ToolBody({ tool }: { tool: FreeTool }): ReactNode {
