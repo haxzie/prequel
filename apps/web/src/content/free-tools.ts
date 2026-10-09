@@ -21,7 +21,16 @@
  *  in this file do not, which is the usual split.
  */
 
-import { AudioLines, Crop, FileVideo, Mic, Monitor, Webcam, type LucideIcon } from "lucide-react";
+import {
+  AudioLines,
+  Crop,
+  Download,
+  FileVideo,
+  Mic,
+  Monitor,
+  Webcam,
+  type LucideIcon,
+} from "lucide-react";
 
 import type { FaqEntry } from "@/lib/faq";
 import type { FormatId } from "@/lib/free-tools/formats";
@@ -40,7 +49,14 @@ import type { ToolMode } from "@/lib/free-tools/mode";
 export type ToolSurface =
   | { kind: "recorder"; mode: ToolMode }
   | { kind: "editor" }
-  | { kind: "converter"; from: FormatId; to: FormatId };
+  | { kind: "converter"; from: FormatId; to: FormatId }
+  /**
+   * A tool that fetches a video rather than making one. `source` is carried even
+   * though there is one of them, because the thing that varies between any
+   * second one is the service — and a bare `{ kind: "downloader" }` would put
+   * that choice in the component instead, where the registry cannot see it.
+   */
+  | { kind: "downloader"; source: "x" };
 
 export type FreeTool = {
   /** The MDX filename in `src/content/free-tools`, and the URL segment. */
@@ -103,6 +119,102 @@ export type FreeTool = {
  * the page it is on.
  */
 export const freeTools: FreeTool[] = [
+  {
+    slug: "twitter-video-downloader",
+    surface: { kind: "downloader", source: "x" },
+    icon: Download,
+    navLabel: "Video downloader",
+    eyebrow: "Free browser tool",
+    heading: "Download Twitter and X videos online for free",
+    name: "Free Twitter and X video downloader",
+    lede: "Paste a link to a post and save its video as an MP4, at the size you pick. Old twitter.com links work as well as new ones.",
+    description:
+      "Twitter and X video downloader. Save a post's video as an MP4 in your browser, up to 1080p, with no sign up and no watermark.",
+    summary: "A post link in, the MP4 out, at whatever size the video was stored in.",
+    steps: [
+      {
+        name: "Copy the link to the post",
+        text: "Use Copy link on the post. An x.com address and an older twitter.com one both work, and the tracking parameters on the end are ignored.",
+      },
+      {
+        name: "Paste it in and find the video",
+        text: "The post is looked up and every size its video was stored at is listed, biggest first.",
+      },
+      {
+        name: "Pick a size",
+        text: "The file downloads to your machine, named after the account and the post so it is findable later.",
+      },
+    ],
+    features: [
+      {
+        title: "Save at the size you want",
+        body: "A post's video is stored several times over at different sizes. All of them are offered, so a clip for a slide need not be the full 1080p file.",
+      },
+      {
+        title: "The video does not pass through us",
+        body: "We read the post and hand your browser the addresses the video already sits at. It travels from their servers to yours and is never copied onto ours.",
+      },
+      {
+        title: "Old links are not broken links",
+        body: "The rename changed the address bar, not the posts. twitter.com, mobile.twitter.com and x.com all point at the same thing and all three are accepted.",
+      },
+      {
+        title: "Nothing is re-encoded",
+        body: "What you get is the file being served, byte for byte. There is no quality setting to get wrong, no watermark and no wait while something re-compresses.",
+      },
+      {
+        title: "Looping clips too",
+        body: "What a post shows as a GIF is stored as a silent video, and that is the file you get rather than a conversion of it.",
+      },
+      {
+        title: "Nothing to sign up for",
+        body: "No account, no email and nothing kept once the page is closed.",
+      },
+    ],
+    faqHeading: "Old links, private posts and file sizes",
+    faq: [
+      {
+        question: "Do twitter.com links still work now the site is called X?",
+        answer:
+          "Yes. The rename changed the address, not the posts. A link from an old bookmark, a Slack thread or a document written years ago resolves here exactly as a fresh one does.",
+      },
+      {
+        question: "Which posts can it not download?",
+        answer:
+          "Anything that is not public. A protected account's posts, a deleted post, one from a suspended account and an age-restricted post all come back as unreachable, because this reads a post the same way any website embedding it does.",
+      },
+      {
+        question: "Why is the biggest size sometimes 720p and not 1080p?",
+        answer:
+          "Because that is as large as the video was ever stored. What gets listed is what is actually being served for that post, which depends on the original upload rather than on this page.",
+      },
+      {
+        question: "Does the video go through your server?",
+        answer:
+          "No. We look up the post and send your browser the file addresses on their own video host, and your browser downloads from there. The only thing that reaches us is the link you paste.",
+      },
+      {
+        question: "Is a watermark added?",
+        answer:
+          "No. The file is passed through untouched, so nothing is added to it and nothing is lost from it.",
+      },
+      {
+        question: "Can I download someone else's video and post it myself?",
+        answer:
+          "That is between you and the person who made it. Saving a video to watch, to quote or to keep is ordinary use; reposting someone's work as your own is not, whatever tool produced the file.",
+      },
+      {
+        question: "Why did a very long video open in a tab instead of saving?",
+        answer:
+          "Files above about 600 MB are too large to assemble inside a browser tab, so the video opens instead. Right-click it and choose Save Video As, which does the same thing without the memory.",
+      },
+      {
+        question: "Is there a version of this for my own recordings?",
+        answer:
+          "Prequel records your Mac's screen straight to MP4, at up to 4K and 120 fps, and opens an editor on the take with the zooms already placed.",
+      },
+    ],
+  },
   {
     slug: "screen-recorder",
     surface: { kind: "recorder", mode: "screen" },
