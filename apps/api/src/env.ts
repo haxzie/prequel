@@ -20,12 +20,14 @@ export interface Env {
   API_URL: string;
 
   /**
-   * The repository the desktop app updates from, as `owner/name`.
+   * Where the desktop app's updates are mirrored, with no trailing slash.
    *
-   * A var rather than a constant so a fork can point the update feed at its own
-   * releases without editing the code that builds the redirect.
+   * `release-mirror.yml` writes the channel file, the zip, the disk image and
+   * the notes under this prefix, and `/v1/updates` redirects the updater at it.
+   * A var rather than a constant so a fork can point the feed at its own bucket
+   * without editing the code that builds the redirect.
    */
-  GITHUB_REPO: string;
+  MIRROR_URL: string;
 
   WAITLIST_ENDPOINT: string;
   WAITLIST_FIELD: string;
@@ -125,15 +127,6 @@ export interface Env {
    */
   ANTHROPIC_API_KEY?: string;
   MOONSHOT_API_KEY?: string;
-
-  /**
-   * Optional, and only for the release-notes lookup.
-   *
-   * Public data either way — this raises GitHub's 60-per-hour limit for an
-   * unauthenticated address, which a Worker shares with everything else on
-   * Cloudflare. The download path never calls the API and needs no token.
-   */
-  GITHUB_TOKEN?: string;
 }
 
 /**

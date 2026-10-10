@@ -124,27 +124,34 @@ it and in `auth.json` on the user's Mac, and nowhere else.
 is the one route group that is neither authenticated nor backed by a binding.
 
 ```
-app → API   GET /v1/updates/darwin-arm64/latest-mac.yml   → 302 github.com/…/releases/latest/download/…
+app → API   GET /v1/updates/darwin-arm64/latest-mac.yml   → 302 assets.prequel.sh/desktop/latest-mac.yml
 app → API   GET /v1/updates/darwin-arm64/Prequel-0.0.3-arm64-mac.zip
-                                                          → 302 github.com/…/releases/download/v0.0.3/…
+                                                          → 302 assets.prequel.sh/desktop/0.0.3/…
 app → API   GET /v1/updates/notes?version=0.0.3           → { notes, publishedAt }
 ```
 
+The files are on the R2 mirror rather than on the GitHub release, and that is not
+a performance choice. The repository is private, so a release asset answers 404 to
+anybody without a token — and the updater sends none. Pointed at GitHub, every
+installed copy checked, got a 404 for the channel file, and said it could not
+check for updates. `release-mirror.yml` copies the whole payload to
+`assets.prequel.sh/desktop` as each release is published; the GitHub release
+stays the source of truth the mirror is built from, and nothing on a user's path
+reaches it.
+
 The redirect route makes **no** subrequest: it reads the version out of the
-filename and hands back a `github.com` URL, which resolves the tag itself. That
-is deliberate on both counts. `api.github.com` allows 60 requests an hour per
-address and a Worker shares one with everything else on Cloudflare, so calling it
-on the download path would put an invisible limit on every user's update; and the
-updater routinely asks for assets belonging to the version it is _replacing_,
-which "resolve the latest release" cannot answer.
+filename and builds the URL. The updater routinely asks for assets belonging to
+the version it is _replacing_, which "resolve the latest release" cannot answer,
+so every versioned name resolves under its own version's prefix. Only
+`latest-mac.yml` moves, and the mirror writes it after the files it names.
 
-`/notes` is the only route here that calls the API, once per check, purely for
-the changelog the update window shows. `GITHUB_TOKEN` is optional and only raises
-the rate limit. Every failure on that route is `{ notes: null }` with a 200 —
-whether an update exists is settled by the channel file, and a second opinion
-here could only disagree with it.
+`/notes` reads `<version>/notes.json` off the same mirror, once per check, purely
+for the changelog the update window shows. Every failure there is
+`{ notes: null }` with a 200 — whether an update exists is settled by the channel
+file, and a second opinion here could only disagree with it. Nothing in this
+Worker holds a GitHub token.
 
-Pointing this at a fork is `GITHUB_REPO` in `wrangler.jsonc`.
+Pointing this at a fork is `MIRROR_URL` in `wrangler.jsonc`.
 
 ## Analytics
 

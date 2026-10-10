@@ -1,11 +1,12 @@
 /**
  * The desktop app's update feed.
  *
- * `electron-updater` is pointed here rather than straight at GitHub, for two
- * reasons that are not the obvious one. Users behind a shared address never
- * spend GitHub's per-IP rate limit on an update check; and a release that turns
- * out to be bad can be withheld from this Worker in seconds, which is the only
- * lever there is once a build is in the wild.
+ * `electron-updater` is pointed here rather than at where the files live, and
+ * that indirection is the only reason the app survived the repository going
+ * private: a release that turns out to be bad can be withheld from this Worker
+ * in seconds, and where the bytes come from can be changed under every copy
+ * already installed. See `lib/releases.ts` — the files are on
+ * `assets.prequel.sh` now, not GitHub.
  *
  * Nothing here is authenticated. An app that cannot check for updates until
  * somebody signs in is an app that mostly cannot check for updates.
@@ -14,7 +15,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import type { Env } from "../env.ts";
-import { assetRedirect, releaseForVersion } from "../lib/releases.ts";
+import { assetRedirect, notesForVersion } from "../lib/releases.ts";
 
 const updates = new Hono<{ Bindings: Env }>();
 
@@ -33,9 +34,9 @@ const updates = new Hono<{ Bindings: Env }>();
 const PLATFORMS = new Set(["darwin-arm64"]);
 
 /**
- * Every file electron-updater asks for, redirected to GitHub.
+ * Every file electron-updater asks for, redirected to the mirror.
  *
- * A 302 rather than the bytes. The zip is ~120 MB and GitHub's CDN is already
+ * A 302 rather than the bytes. The zip is ~120 MB and Cloudflare is already
  * serving it; proxying would spend a Worker's whole duration budget to arrive at
  * the same file, more slowly.
  *
@@ -45,7 +46,7 @@ const PLATFORMS = new Set(["darwin-arm64"]);
 updates.get("/:platform/:file", (c) => {
   if (!PLATFORMS.has(c.req.param("platform"))) return c.notFound();
 
-  const url = assetRedirect(c.env.GITHUB_REPO, c.req.param("file"));
+  const url = assetRedirect(c.env.MIRROR_URL, c.req.param("file"));
 
   // A name that is not a plain filename. Answered as a miss rather than a 400:
   // the only thing that ever reaches this route is the updater following a
@@ -69,17 +70,13 @@ updates.get("/notes", async (c) => {
   const parsed = Notes.safeParse(c.req.query());
   if (!parsed.success) return c.json({ message: "That request isn't valid." }, 400);
 
-  const release = await releaseForVersion(
-    c.env.GITHUB_REPO,
-    parsed.data.version,
-    c.env.GITHUB_TOKEN,
-  );
+  const release = await notesForVersion(c.env.MIRROR_URL, parsed.data.version);
 
   // 200 with nothing in it, never an error. The caller has an update to offer
   // either way, and a failure here must not read to it as a broken check.
   return c.json({
-    notes: release?.body ?? null,
-    publishedAt: release?.published_at ?? null,
+    notes: release?.notes ?? null,
+    publishedAt: release?.publishedAt ?? null,
   });
 });
 

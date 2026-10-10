@@ -49,9 +49,10 @@
   "vars": {
     "APP_URL": "http://localhost:3000",
     "API_URL": "http://localhost:8787",
-    // Where the desktop app's update feed points. The download path redirects
-    // to this repository's releases; the notes lookup reads its API.
-    "GITHUB_REPO": "haxzie/prequel",
+    // Where the desktop app's update feed points — the R2 mirror, not GitHub.
+    // The repository is private, and a private release asset answers 404 to the
+    // updater, which sends no token. See `lib/releases.ts`.
+    "MIRROR_URL": "https://assets.prequel.sh/desktop",
     // Not a secret. This is the public response endpoint of the "Prequel - Early
     // access form" Google Form, readable by anyone who opens the form.
     "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
@@ -102,7 +103,7 @@
       "vars": {
         "APP_URL": "https://prequel.sh",
         "API_URL": "https://api.prequel.sh",
-        "GITHUB_REPO": "haxzie/prequel",
+        "MIRROR_URL": "https://assets.prequel.sh/desktop",
         "WAITLIST_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLScKvJ0dQ6nq4AItzm6jKWne4Bo3BHQV0Sdvjj098YPLwHUZ_A/formResponse",
         "WAITLIST_FIELD": "entry.348125812",
         // Same region as above, and for the same reason: the domain is verified

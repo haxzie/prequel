@@ -1,13 +1,21 @@
 name: Mirror release to R2
 
-# A second copy of the disk image on assets.prequel.sh, and a latest.json that
-# says where it is.
+# Everything a download or an update needs, on assets.prequel.sh.
 #
-# The GitHub release stays the source of truth and is untouched: `latest-mac.yml`
-# lives there, `/v1/updates` in the Worker points the updater at it, and every
-# installed copy checks there. What this adds is a *download* that arrives at
-# line speed — Cloudflare against GitHub's release CDN is the difference between
-# a few seconds and a few minutes on a 100 MB image.
+# The disk image the site hands out, the zip and `latest-mac.yml` the updater
+# reads, the notes the update window shows, and a `latest.json` that says where
+# the image is.
+#
+# The GitHub release stays the source of truth and is untouched — this is built
+# from it — but nothing on a user's path reaches it any more, and that is not a
+# performance choice. The repository is private, so a release asset answers 404
+# to anybody without a token and `electron-updater` sends none: pointed at
+# GitHub, every installed copy checked, got a 404 for the channel file, and said
+# it could not check for updates. `/v1/updates` in the Worker redirects here
+# instead — see `apps/api/src/lib/releases.ts`.
+#
+# The download is also simply faster. Cloudflare against GitHub's release CDN is
+# the difference between a few seconds and a few minutes on a 100 MB image.
 #
 # It also takes the site off GitHub's API for the one answer it needs most.
 # `/download` had to cache the releases list for ten minutes, because
@@ -87,27 +95,45 @@ jobs:
           esac
           version="${TAG#v}"
 
-          # The disk image only. The zip and `latest-mac.yml` exist for the
-          # updater, which reads them from GitHub and should go on doing so.
+          # The whole payload, not just the image: the updater reads the zip
+          # and `latest-mac.yml` through this mirror too, because it cannot read
+          # them from a private release.
           mkdir -p dist
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern '*.dmg' --dir dist
-          count=$(ls dist/*.dmg 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$count" != "1" ]; then
-            echo "::error::expected exactly one .dmg in $TAG, found $count."
+            --pattern '*.dmg' --pattern '*-mac.zip' --pattern 'latest-mac.yml' \
+            --dir dist
+          for pattern in '*.dmg' '*-mac.zip'; do
+            count=$(ls dist/$pattern 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$count" != "1" ]; then
+              echo "::error::expected exactly one $pattern in $TAG, found $count."
+              exit 1
+            fi
+          done
+          # Without the channel file an installed copy has nothing to check, so
+          # a release missing it is a release nobody receives.
+          if [ ! -f dist/latest-mac.yml ]; then
+            echo "::error::$TAG has no latest-mac.yml. Nothing would ever update."
             exit 1
           fi
           file=$(basename "$(ls dist/*.dmg)")
+          zip=$(basename "$(ls dist/*-mac.zip)")
 
           # Read from the release rather than from the event payload, so a
           # manual re-run carries the timestamp the automatic one would have.
-          published_at=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --json publishedAt --jq .publishedAt)
+          # The body is the notes the update window shows — written here as a
+          # file beside the build, because the Worker that serves it holds no
+          # GitHub token and a private repository's releases need one.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body,publishedAt \
+            --jq '{publishedAt: .publishedAt, notes: .body}' > release.json
+          jq --arg version "$version" '{version: $version} + .' release.json > notes.json
+          published_at=$(jq -r .publishedAt notes.json)
+          cat notes.json
 
           {
             echo "tag=$TAG"
             echo "version=$version"
             echo "file=$file"
+            echo "zip=$zip"
             echo "size=$(stat -c%s "dist/$file")"
             echo "sha256=$(sha256sum "dist/$file" | cut -d' ' -f1)"
             echo "published_at=$published_at"
@@ -133,24 +159,47 @@ jobs:
             exit 1
           fi
 
-      - name: Upload the disk image
+      # Everything under a version prefix, and before either pointer below:
+      # `latest-mac.yml` names the zip, and a channel file that arrives first
+      # names a file that is not there yet — which is an update check that finds
+      # a version and then fails to download it.
+      - name: Upload the build
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           VERSION: ${{ steps.release.outputs.version }}
           FILE: ${{ steps.release.outputs.file }}
+          ZIP: ${{ steps.release.outputs.zip }}
         run: |
           set -eu
-          # Version-pinned key, so the object never changes and can be cached
-          # for as long as anyone cares to keep it.
+          endpoint="https://$ACCOUNT_ID.r2.cloudflarestorage.com"
+          # Version-pinned keys, so these objects never change and can be cached
+          # for as long as anyone cares to keep them.
+          immutable="public, max-age=31536000, immutable"
+
           aws s3 cp "dist/$FILE" "s3://$BUCKET/$PREFIX/$VERSION/$FILE" \
-            --endpoint-url "https://$ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --endpoint-url "$endpoint" \
             --content-type application/x-apple-diskimage \
-            --cache-control "public, max-age=31536000, immutable" \
+            --cache-control "$immutable" \
             --only-show-errors
 
-      - name: Update latest.json
+          # The updater's payload. Squirrel downloads the zip, not the image.
+          aws s3 cp "dist/$ZIP" "s3://$BUCKET/$PREFIX/$VERSION/$ZIP" \
+            --endpoint-url "$endpoint" \
+            --content-type application/zip \
+            --cache-control "$immutable" \
+            --only-show-errors
+
+          # Read by `/v1/updates/notes` once per check. A version whose notes
+          # are missing is a modal with no changelog in it, not a failed check.
+          aws s3 cp notes.json "s3://$BUCKET/$PREFIX/$VERSION/notes.json" \
+            --endpoint-url "$endpoint" \
+            --content-type application/json \
+            --cache-control "$immutable" \
+            --only-show-errors
+
+      - name: Update the pointers
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -183,13 +232,31 @@ jobs:
             }' > latest.json
           cat latest.json
 
-          # Short TTL: this is the one object that changes, and a release nobody
-          # can see for an hour is a release that did not happen. The site's own
-          # revalidate matches this number rather than guessing at one.
+          # Short TTL: these are the two objects that change, and a release
+          # nobody can see for an hour is a release that did not happen. The
+          # site's own revalidate matches this number rather than guessing at
+          # one, and the updater checks at most twice an hour anyway.
+          moving="public, max-age=60"
+          endpoint="https://$ACCOUNT_ID.r2.cloudflarestorage.com"
+
           aws s3 cp latest.json "s3://$BUCKET/$PREFIX/latest.json" \
-            --endpoint-url "https://$ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --endpoint-url "$endpoint" \
             --content-type application/json \
-            --cache-control "public, max-age=60" \
+            --cache-control "$moving" \
+            --only-show-errors
+
+          # The updater's half of the same answer, and the last thing written:
+          # this is the object every installed copy reads, so until it moves the
+          # release is not being offered to anybody.
+          #
+          # `text/yaml` rather than the `binary/octet-stream` R2 would infer.
+          # electron-updater parses the body whatever the type says, but a type
+          # that makes a browser download the file turns looking at the feed by
+          # hand into a puzzle.
+          aws s3 cp dist/latest-mac.yml "s3://$BUCKET/$PREFIX/latest-mac.yml" \
+            --endpoint-url "$endpoint" \
+            --content-type text/yaml \
+            --cache-control "$moving" \
             --only-show-errors
 
       # Through the public domain rather than the bucket, because that is the
@@ -200,8 +267,19 @@ jobs:
         env:
           VERSION: ${{ steps.release.outputs.version }}
           FILE: ${{ steps.release.outputs.file }}
+          ZIP: ${{ steps.release.outputs.zip }}
         run: |
           set -eu
           curl -fsSL "$PUBLIC_URL/$PREFIX/latest.json" | tee /dev/stderr | grep -q "\"version\": \"$VERSION\""
-          code=$(curl -sIL -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$PREFIX/$VERSION/$FILE")
-          [ "$code" = "200" ] || { echo "::error::$PUBLIC_URL/$PREFIX/$VERSION/$FILE returned $code"; exit 1; }
+
+          # The channel file by content, not by status. A 200 serving the
+          # previous version's yaml is exactly the failure that leaves every
+          # installed copy on the build before this one, and it looks like a
+          # working mirror from the outside.
+          curl -fsSL "$PUBLIC_URL/$PREFIX/latest-mac.yml" | tee /dev/stderr |
+            grep -q "^version: $VERSION$"
+
+          for path in "$VERSION/$FILE" "$VERSION/$ZIP" "$VERSION/notes.json"; do
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' "$PUBLIC_URL/$PREFIX/$path")
+            [ "$code" = "200" ] || { echo "::error::$PUBLIC_URL/$PREFIX/$path returned $code"; exit 1; }
+          done

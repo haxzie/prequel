@@ -255,9 +255,13 @@ jobs:
       # `gh` rather than a third-party action: it is already on the runner and
       # authenticated by the token, so this is one less thing to trust.
       #
-      # `latest-mac.yml` is what makes the release an update: `/v1/updates` in
-      # the Worker redirects the app's updater at it, and without it in the
-      # release every installed copy checks, gets a 404, and stays where it is.
+      # `latest-mac.yml` and the `.zip` are what make the release an update.
+      # Nothing reads them here — the repository is private, so a release asset
+      # answers 404 to an updater that sends no token, and `/v1/updates`
+      # redirects at the R2 mirror instead. They are published because
+      # `release-mirror.yml` builds that mirror from this release, and it fails
+      # outright on a release with no channel file in it: a release missing
+      # either is a release nobody receives.
       #
       # No `.blockmap` on purpose. Differential download is turned off in
       # `main/update.ts` — GitHub's asset host answers 501 to the multi-range
