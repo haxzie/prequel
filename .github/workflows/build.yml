@@ -290,7 +290,12 @@ jobs:
           notes=$(mktemp)
           changelog="apps/web/src/content/changelog/${version}.mdx"
           if [ -f "$changelog" ]; then
-            grep -v '^export ' "$changelog" | sed '/./,$!d' >> "$notes"
+            # From the first line of Markdown to the end, rather than dropping
+            # the lines that start with `export`. A long `highlight` is wrapped
+            # by Prettier onto a line of its own, which starts with a quote —
+            # so that version shipped a release whose notes opened with a stray
+            # quoted sentence and a semicolon, and the update window showed it.
+            sed -n '/^[-#]/,$p' "$changelog" >> "$notes"
             echo >> "$notes"
           fi
           if [ -n "$previous" ]; then
