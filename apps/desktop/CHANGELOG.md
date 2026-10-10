@@ -1,5 +1,18 @@
 # @prequel/desktop
 
+## 0.2.0
+
+### Minor Changes
+
+- 9e015e5: Mark every click with a ripple, sonar, burst, confetti, heart or one of seven more, in any colour and size.
+
+  <!-- highlight: Click effects -->
+
+### Patch Changes
+
+- d289b36: A recording is kept when the microphone or the camera captured nothing, instead of being lost at the stop.
+- 351d052: The Mac's own sound is recorded every time, and the editor is where you drop it from a take or set its volume.
+
 ## 0.1.1
 
 ### Patch Changes
