@@ -493,7 +493,30 @@ impl CameraRecorder {
             });
         };
 
-        let summary = writer.finish()?;
+        // Zero frames again, one step later: the writer opened for a frame the
+        // encoder then dropped. Same answer as having no writer at all — the
+        // camera is an extra track, and a recording keeps its screen whatever
+        // the camera managed.
+        let summary = match writer.finish() {
+            Err(prequel_encode::Error::NoSamples) => {
+                tracing::warn!("the camera encoder took no frames; the take has no camera track");
+                if matte.is_some() {
+                    let _ = std::fs::remove_file(inner.path.with_file_name(CAMERA_MATTE_FILE));
+                }
+                return Ok(CameraSummary {
+                    frames: 0,
+                    duration: 0,
+                    start: 0,
+                    width: 0,
+                    height: 0,
+                    timing: inner.timeline.stats(),
+                    dropped_encoder: 0,
+                    dropped_late: inner.dropped_late,
+                    matte: None,
+                });
+            }
+            other => other?,
+        };
         let _ = &self.sink;
         drop(self.queue);
 

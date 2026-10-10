@@ -414,7 +414,13 @@ export const RecorderErrorCode = {
   DisplayAsleep: "DISPLAY_ASLEEP",
   WindowNotFound: "WINDOW_NOT_FOUND",
   ScreenCaptureKit: "SCREEN_CAPTURE_KIT",
-  /** The stream started and then delivered nothing. See `watchFirstFrames`. */
+  /**
+   * The stream started and then delivered nothing.
+   *
+   * Noticed twice: while the recording runs, by `watchFirstFrames`, and again
+   * at the stop, where the native side has an empty screen track and says so
+   * under this code rather than as the encoder failure it used to be.
+   */
   NoScreenFrames: "NO_SCREEN_FRAMES",
   Encode: "ENCODE",
   AlreadyRecording: "ALREADY_RECORDING",

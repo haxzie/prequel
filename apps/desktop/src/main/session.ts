@@ -16,7 +16,7 @@ import type { SessionState, SessionStatus, StartOptions, Target } from "../share
 import type { Recorder, RecordingResult, StartRecordingRequest } from "./recorder.js";
 import { log } from "./log.js";
 import { reportError } from "./errors.js";
-import { describeRecorderError, getRecorder } from "./recorder.js";
+import { RecorderErrorCode, describeRecorderError, getRecorder } from "./recorder.js";
 import { clearCapturing, markCapturing } from "./recover.js";
 
 export type { SessionState, SessionStatus, StartOptions };
@@ -242,7 +242,13 @@ export class RecordingSession {
       // that explains a recording with no preview was also the one failure that
       // reached no log and no report.
       console.error("[session] could not stop cleanly:", cause);
-      reportError("capture.stop", cause);
+      // Every cause but one. A stop with no frames in it is the stop that
+      // `abandonEmptyRecording` just asked for, and that path has already said
+      // so — reporting it again filed a second, higher-priority issue, blaming
+      // the encoder for a permission that had been revoked.
+      if (this.error.code !== RecorderErrorCode.NoScreenFrames) {
+        reportError("capture.stop", cause);
+      }
       return null;
     } finally {
       this.status = "idle";

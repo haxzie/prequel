@@ -240,6 +240,17 @@ impl AudioWriter {
     }
 
     pub fn finish(mut self) -> Result<AudioWriterSummary> {
+        // Same as the video writer: an input that took no buffer cannot be
+        // finished, and `AVAssetWriter` says so as -11800 over -12142 rather
+        // than as "this track is empty". Reachable even though the writer is
+        // only built for a buffer that has arrived — the first `append` returns
+        // `Ok(false)` when the encoder is not ready, and a realtime track drops
+        // it.
+        if self.samples == 0 {
+            self.writer.cancel_writing();
+            return Err(Error::NoSamples);
+        }
+
         self.input.mark_as_finished();
 
         if let Some(last) = self.last_pts {

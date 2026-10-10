@@ -37,6 +37,17 @@ pub enum Error {
     #[error("encoder is not accepting samples yet")]
     NotReady,
 
+    /// `finish` was reached with nothing appended.
+    ///
+    /// Caught here rather than left to `AVAssetWriter`, which answers
+    /// `finishWriting` on an empty file with -11800 "The operation could not be
+    /// completed" over an underlying -12142 — a pair that names neither the
+    /// track nor the cause, and reads as a broken encoder rather than one that
+    /// was never given a frame. Pinned by
+    /// `tests/an_empty_track_says_it_is_empty.rs`.
+    #[error("nothing was written: the track received no samples")]
+    NoSamples,
+
     #[error("the frame carried no image buffer")]
     NoImageBuffer,
 

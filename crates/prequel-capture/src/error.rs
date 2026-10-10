@@ -26,6 +26,16 @@ pub enum Error {
     #[error("encoder: {0}")]
     Encode(String),
 
+    /// The stream was up and delivered no frame at all.
+    ///
+    /// Its own variant because it is not an encoder fault and must not read as
+    /// one: the usual cause is Screen Recording having been revoked, which the
+    /// shell already catches while the recording runs and explains to the user.
+    /// Left as the encoder's -11800 it arrived as a second, high-priority
+    /// report of a failure that was already diagnosed.
+    #[error("the capture delivered no frames, so there is no screen track")]
+    NoFrames,
+
     #[error("could not prepare {path}: {reason}")]
     Output { path: String, reason: String },
 

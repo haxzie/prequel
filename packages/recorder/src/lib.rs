@@ -410,6 +410,7 @@ fn to_napi_error(err: capture::Error) -> Error {
         capture::Error::Output { .. } => "OUTPUT",
         capture::Error::WindowNotFound(_) => "WINDOW_NOT_FOUND",
         capture::Error::ScreenCaptureKit(_) => "SCREEN_CAPTURE_KIT",
+        capture::Error::NoFrames => "NO_SCREEN_FRAMES",
         capture::Error::Encode(_) => "ENCODE",
     };
     Error::new(Status::GenericFailure, format!("{code}: {err}"))

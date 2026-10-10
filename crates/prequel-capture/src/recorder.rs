@@ -683,8 +683,19 @@ impl ScreenRecorder {
         // the tracks on disk are now closed and readable.
         stopped?;
 
-        let summary = screen?
-            .ok_or_else(|| Error::ScreenCaptureKit("recorder already stopped".to_owned()))?;
+        let summary = match screen {
+            Ok(Some(summary)) => summary,
+            Ok(None) => {
+                return Err(Error::ScreenCaptureKit("recorder already stopped".to_owned()));
+            }
+            // Not an encoder fault, and reported as its own thing so it does not
+            // read as one. A stream that was up and sent nothing is almost
+            // always Screen Recording having been revoked mid-session, which the
+            // shell notices while the recording runs and explains; this is the
+            // same event arriving a second time, at the stop.
+            Err(prequel_encode::Error::NoSamples) => return Err(Error::NoFrames),
+            Err(e) => return Err(e.into()),
+        };
         let system_audio = system_audio?;
         let microphone = microphone?;
         drop(self.queue);
@@ -886,7 +897,15 @@ fn finish_audio(track: Option<AudioTrack>) -> Result<Option<AudioWriterSummary>>
         // The track was requested but never produced a buffer — an empty file
         // would be worse than none at all.
         None => Ok(None),
-        Some(writer) => Ok(Some(writer.finish()?)),
+        // The same outcome one step later: the writer opened for a buffer the
+        // encoder then refused, so the file holds no samples. An empty track is
+        // an absent track, not a failed recording — failing here would throw
+        // away the screen and camera that did record, for a microphone that
+        // recorded nothing.
+        Some(writer) => match writer.finish() {
+            Err(prequel_encode::Error::NoSamples) => Ok(None),
+            other => Ok(Some(other?)),
+        },
     }
 }
 

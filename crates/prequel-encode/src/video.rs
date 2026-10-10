@@ -399,6 +399,18 @@ impl VideoWriter {
     }
 
     fn finish_inner(mut self, end: Option<MediaTime>) -> Result<VideoWriterSummary> {
+        // No frame ever reached the encoder, so there is no file to close.
+        // Cancelled rather than finished: `finishWriting` on an empty writer
+        // fails with -11800 over -12142 and leaves a container holding no
+        // samples, which probes as a video track that will not decode — and the
+        // error that comes back blames the encoder for a recording it was never
+        // handed. Audio cannot be ahead of this: `append_audio` refuses to run
+        // before the session opens, which only the first frame does.
+        if self.frames == 0 {
+            self.writer.cancel_writing();
+            return Err(Error::NoSamples);
+        }
+
         self.input.mark_as_finished();
         // Every input has to be closed, not just the picture: `finishWriting`
         // waits on one that was left open.
