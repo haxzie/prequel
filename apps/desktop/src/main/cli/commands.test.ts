@@ -309,8 +309,8 @@ describe("a switch that may be absent", () => {
     // How `applySources` reads it. The absent case used to answer `false` and
     // be stored, which silenced every recording the command did not mention.
     expect(switched(params(["record", "display"]), "systemAudio") ?? true).toBe(true);
-    expect(switched(params(["record", "display", "--no-system-audio"]), "systemAudio") ?? true).toBe(
-      false,
-    );
+    expect(
+      switched(params(["record", "display", "--no-system-audio"]), "systemAudio") ?? true,
+    ).toBe(false);
   });
 });
