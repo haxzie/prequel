@@ -167,14 +167,26 @@ export interface CaptureFlowOptions {
 /**
  * What a single take may override, without it becoming a setting.
  *
- * Capture *sources* are not here on purpose: a camera, a microphone and system
- * audio are written to `RecordingPreferences` by whoever asks for them, so the
- * panel on screen agrees with what is being recorded and there is one answer to
- * "is the camera on". A frame rate is not shown anywhere and is nobody's
- * remembered choice, so it travels with the take instead.
+ * The camera and the microphone are not here on purpose: they are written to
+ * `RecordingPreferences` by whoever asks for them, so the panel on screen agrees
+ * with what is being recorded and there is one answer to "is the camera on". A
+ * frame rate is not shown anywhere and is nobody's remembered choice, so it
+ * travels with the take instead.
  */
 export interface CaptureOptions {
   fps?: number;
+  /**
+   * Record the Mac's own audio. On unless this says otherwise.
+   *
+   * A take override rather than a setting, which is the opposite of the camera
+   * above, because there is nothing on the panel for it to disagree with. There
+   * used to be a setting, and it gated *capture*: switched off there was no
+   * `system.m4a`, so the editor's own System audio section — the one that mutes
+   * a take and sets its volume — had no track to show and never appeared. One
+   * recording made without it could not be given it back, and the switch that
+   * did that was the only one most people ever found.
+   */
+  systemAudio?: boolean;
   /**
    * Keep the recorder's own windows off the screen for this take.
    *
@@ -862,7 +874,9 @@ export class CaptureFlow {
       cropped: selection.crop !== null,
       camera: preferences.cameraId !== null,
       microphone: preferences.micId !== null,
-      system_audio: preferences.systemAudio,
+      // Only ever false from the command line now, which is the one thing
+      // about it worth counting.
+      system_audio: options?.systemAudio ?? true,
       capture_keys: preferences.captureKeys,
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
@@ -883,7 +897,9 @@ export class CaptureFlow {
           // app's.
           ...(options?.fps === undefined ? {} : { fps: options.fps }),
           captureKeys: preferences.captureKeys,
-          systemAudio: preferences.systemAudio,
+          // Always, unless this take asked otherwise. Whether it ends up in the
+          // export is the editor's business — see `CaptureOptions.systemAudio`.
+          systemAudio: options?.systemAudio ?? true,
           microphone: preferences.micId !== null,
           // The bubble is only a preview; this is what writes `camera.mp4`.
           camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,

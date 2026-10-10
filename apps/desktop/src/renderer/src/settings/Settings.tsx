@@ -201,15 +201,6 @@ function Recording({ preferences, set }: PaneProps) {
         </Field>
       </Section>
 
-      <Section title="Audio">
-        <Field label="Record system audio" inline>
-          <Toggle
-            value={preferences.systemAudio}
-            onChange={(systemAudio) => set({ systemAudio })}
-          />
-        </Field>
-      </Section>
-
       <Section title="Keyboard">
         <Field label="Note when keys are pressed" inline>
           <Toggle

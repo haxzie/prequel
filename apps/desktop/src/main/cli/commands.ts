@@ -121,6 +121,19 @@ function flag(params: Record<string, unknown>, key: string): boolean {
   return params[key] === true;
 }
 
+/**
+ * A switch that may be absent, which is not the same as off.
+ *
+ * `flag` cannot tell `--no-thing` from a flag nobody typed, and for anything the
+ * app records by default that difference is the whole setting. System audio is
+ * recorded unless a take says otherwise, so reading an absent flag as `false`
+ * silenced every recording the command did not mention.
+ */
+export function switched(params: Record<string, unknown>, key: string): boolean | undefined {
+  const value = params[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function required(params: Record<string, unknown>, key: string): string {
   const value = text(params, key);
   if (!value) throw new CliError("usage", `${key} is required`);
@@ -220,7 +233,11 @@ async function applySources(
   }
 
   const microphone = flag(params, "microphone");
-  const systemAudio = flag(params, "systemAudio");
+  // Recorded unless this run says not to. `--no-system-audio` is the way to
+  // leave it out, which the parser already understands for every declared flag,
+  // and it travels with the take rather than being stored: there is no panel
+  // control for it to contradict, and a stored "off" was unrecoverable.
+  const systemAudio = switched(params, "systemAudio") ?? true;
 
   // The default input's real name, because the panel resolves a device by
   // label when the id does not match — which it never does across processes,
@@ -239,7 +256,6 @@ async function applySources(
     cameraLabel,
     micId: microphone ? (input?.id ?? "default") : null,
     micLabel: microphone ? (input?.name ?? "System default input") : null,
-    systemAudio,
   });
 
   return { camera: cameraLabel, microphone, systemAudio };
@@ -322,7 +338,13 @@ async function start(
   // stops it.
   const quiet = params["panel"] !== true;
 
-  await context.flow.recordTarget(selection, { quiet, ...(fps === undefined ? {} : { fps }) });
+  await context.flow.recordTarget(selection, {
+    quiet,
+    ...(fps === undefined ? {} : { fps }),
+    // Only when asked for. The flow records the Mac's audio otherwise, so
+    // passing `true` here would be a second statement of the same default.
+    ...(sources.systemAudio ? {} : { systemAudio: false }),
+  });
 
   const state = context.session.snapshot();
   if (state.status === "idle") {

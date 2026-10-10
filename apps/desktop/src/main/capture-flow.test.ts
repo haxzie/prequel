@@ -983,6 +983,28 @@ describe("recording a target chosen from outside the app", () => {
     expect(requests[1]?.fps).toBe(30);
   });
 
+  it("records the Mac's audio unless a take says not to", async () => {
+    // There is no setting for this any more, and that is the point. The one
+    // that existed gated capture: with it off no `system.m4a` was written, so
+    // the editor's System audio section had no track to show and never
+    // appeared — a take recorded without it could not be given it back, and
+    // that switch was the only one most people ever found. Muting belongs to
+    // the editor, which does it per take and reversibly.
+    const { flow } = makeFlow();
+    await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
+    expect(requests[0]?.systemAudio).toBe(true);
+    await flow.stop({ open: false });
+
+    // `prequel record --no-system-audio`, which travels with the take rather
+    // than being remembered.
+    const second = makeFlow();
+    await second.flow.recordTarget(
+      { mode: "window", target: WINDOW, crop: null, label: "" },
+      { systemAudio: false },
+    );
+    expect(requests[1]?.systemAudio).toBe(false);
+  });
+
   it("tells the panel what is being captured", async () => {
     // The panel may well be on screen while an agent records. Left unset it
     // would describe the last thing a person picked.

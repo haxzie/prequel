@@ -1286,7 +1286,7 @@ const ENTRIES: Article[] = [
       {
         question: "How is sound recorded in the iPhone demo?",
         answer:
-          "Prequel records the microphone you choose on its dock and, when Record system audio is on in Settings, the Mac's own sound as a separate track. Check a 10-second test with sound before the real take.",
+          "Prequel records the microphone you choose on its dock, and the Mac's own sound as a separate track. Check a 10-second test with sound before the real take.",
       },
     ],
   },
@@ -1322,7 +1322,7 @@ const ENTRIES: Article[] = [
       {
         question: "How does Prequel record system audio?",
         answer:
-          "Prequel records the Mac's sound as its own track when Record system audio is on in Settings, which it is by default, with no virtual audio driver. You can include or drop it and set its volume separately from your voice. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel records the Mac's sound as its own track every time, with no virtual audio driver. In the editor you can include or drop it and set its volume separately from your voice. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },

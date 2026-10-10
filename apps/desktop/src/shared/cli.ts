@@ -266,7 +266,11 @@ export const COMMANDS: readonly CliCommandSpec[] = [
         summary: "Record a camera track too, by name. No value takes the first camera",
       },
       { name: "microphone", value: "none", summary: "Record the system's default input" },
-      { name: "system-audio", value: "none", summary: "Record what the Mac is playing" },
+      {
+        name: "system-audio",
+        value: "none",
+        summary: "Record what the Mac is playing. On already — `--no-system-audio` leaves it out",
+      },
       { name: "fps", value: "number", summary: "Capture frame rate. Default: 60" },
       {
         name: "countdown",

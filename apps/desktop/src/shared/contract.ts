@@ -140,7 +140,6 @@ export interface RecordingPreferences {
   micId: string | null;
   /** Label of the chosen microphone. Durable where the id is not — see above. */
   micLabel: string | null;
-  systemAudio: boolean;
   /**
    * Note the moment and the class of each key press, for typing sounds.
    *
@@ -249,7 +248,6 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   cameraLabel: null,
   micId: null,
   micLabel: null,
-  systemAudio: true,
   captureKeys: true,
   cameraPosition: null,
   toggleShortcut: "Shift+Cmd+R",

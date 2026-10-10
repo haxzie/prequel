@@ -109,8 +109,9 @@ vi.mock("./shim.js", () => ({
   },
 }));
 
-const { cliHandlers, differences } = await import("./commands.js");
+const { cliHandlers, differences, switched } = await import("./commands.js");
 const { COMMANDS, commandName } = await import("../../shared/cli.js");
+const { parse } = await import("../../cli/args.js");
 
 /** Enough of a context to build the map. */
 function handlers(session: { isBusy?: () => boolean; snapshot?: () => unknown } = {}) {
@@ -285,5 +286,31 @@ describe("upgrade", () => {
       percent: 100,
       message: null,
     };
+  });
+});
+
+/** The params `parse` produced, or nothing if the line did not parse. */
+function params(argv: string[]): Record<string, unknown> {
+  const parsed = parse(argv);
+  if (parsed.kind !== "command") throw new Error(`${argv.join(" ")} did not parse`);
+  return parsed.params;
+}
+
+describe("a switch that may be absent", () => {
+  it("tells a flag nobody typed from one switched off", () => {
+    // The three states the parser can produce for one declared switch. The
+    // middle one used to read as the last, which is the whole bug.
+    expect(switched(params(["record", "display", "--system-audio"]), "systemAudio")).toBe(true);
+    expect(switched(params(["record", "display"]), "systemAudio")).toBeUndefined();
+    expect(switched(params(["record", "display", "--no-system-audio"]), "systemAudio")).toBe(false);
+  });
+
+  it("records the Mac's audio when the flag is absent", () => {
+    // How `applySources` reads it. The absent case used to answer `false` and
+    // be stored, which silenced every recording the command did not mention.
+    expect(switched(params(["record", "display"]), "systemAudio") ?? true).toBe(true);
+    expect(switched(params(["record", "display", "--no-system-audio"]), "systemAudio") ?? true).toBe(
+      false,
+    );
   });
 });

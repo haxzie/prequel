@@ -48,7 +48,7 @@ prequel record window 4221     # or: record display [id], record area 0,0,1280,8
 prequel record stop --render   # keeps the take and renders the first cut
 ```
 
-Nothing is recorded that was not asked for: no camera, no microphone and no system audio unless you pass `--camera`, `--microphone` or `--system-audio`. Those flags become the panel's own settings, so what the app shows is what is being captured.
+No camera and no microphone unless you pass `--camera` or `--microphone`, and those flags become the panel's own settings, so what the app shows is what is being captured. The Mac's own sound is always recorded; `--no-system-audio` leaves it out of a single take, and the editor can drop it from any recording afterwards.
 
 The app is started if it is not running, and stays in the menu bar rather than opening a panel over the screen you are about to record.
 
