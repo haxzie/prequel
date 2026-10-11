@@ -1,5 +1,20 @@
 # @prequel/desktop
 
+## 0.3.0
+
+### Minor Changes
+
+- 38f22fb: Put a cutting mat, graph paper or a contour map behind a recording: seven patterns in eight colours, drawn to fit any frame.
+
+### Patch Changes
+
+- 05bb126: Record the Mac's own sound losslessly, so music keeps its quality. Switch it on in Settings under Audio.
+- 0fad0a5: Press ⇧⌘5 to start and stop a recording — the shortcut macOS gives to screenshots is Prequel's now.
+
+  <!-- highlight: ⇧⌘5 starts a recording -->
+
+- de5d47b: Settings has a sidebar of its own, splitting recording, shortcuts, permissions and general onto separate screens.
+
 ## 0.2.0
 
 ### Minor Changes
