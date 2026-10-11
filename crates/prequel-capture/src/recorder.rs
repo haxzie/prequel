@@ -14,8 +14,8 @@ use std::time::Duration;
 use cidre::sc::stream::Output as _;
 use cidre::{arc, cm, cv, define_obj_type, dispatch, ns, objc, sc};
 use prequel_encode::{
-    AudioWriter, AudioWriterConfig, AudioWriterSummary, VideoCodec, VideoWriter, VideoWriterConfig,
-    host_nanos, host_now,
+    AudioCodec, AudioWriter, AudioWriterConfig, AudioWriterSummary, VideoCodec, VideoWriter,
+    VideoWriterConfig, host_nanos, host_now,
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
@@ -57,6 +57,17 @@ pub struct RecordOptions {
     /// entirely, which is currently broken on macOS 15+ (tracks come back
     /// `ended` despite the permission dialog succeeding, electron#47490).
     pub capture_system_audio: bool,
+    /// Write the system audio track as FLAC rather than AAC.
+    ///
+    /// The track is read back and re-encoded once more by the exporter, so AAC
+    /// here means the Mac's own sound is compressed twice before anyone hears
+    /// it — audible on music in a way it is not on speech. Lossless costs
+    /// roughly five times the disk and removes the first of the two.
+    ///
+    /// Only the system track, deliberately. The microphone is a different
+    /// decision with a different answer, because its cleaned-up copy adds a
+    /// third generation of its own.
+    pub lossless_system_audio: bool,
     /// Capture the microphone on the same stream (macOS 15+).
     pub capture_microphone: bool,
     /// `CGWindowID`s to keep out of the recording — the control pill, the
@@ -83,6 +94,7 @@ impl RecordOptions {
             show_cursor: true,
             crop: None,
             capture_system_audio: false,
+            lossless_system_audio: false,
             capture_microphone: false,
             excluded_windows: Vec::new(),
             capture_keys: true,
@@ -163,15 +175,19 @@ struct AudioTrack {
     /// Deferred until the first buffer arrives, because the sample rate and
     /// channel count come from the stream rather than from configuration.
     path: PathBuf,
+    /// Settled before the first buffer, unlike the rate and the channels: it
+    /// is a choice, not something the stream reports.
+    codec: AudioCodec,
     samples: u64,
 }
 
 impl AudioTrack {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: PathBuf, codec: AudioCodec) -> Self {
         Self {
             writer: None,
             timeline: TrackTimeline::new(),
             path,
+            codec,
             samples: 0,
         }
     }
@@ -188,10 +204,12 @@ impl AudioTrack {
 
         if self.writer.is_none() {
             let (sample_rate, channels) = audio_format(sample).unwrap_or((48_000.0, 2));
-            self.writer = Some(AudioWriter::create(
-                &self.path,
-                &AudioWriterConfig::new(sample_rate, channels),
-            )?);
+            let config = AudioWriterConfig::new(sample_rate, channels);
+            let config = match self.codec {
+                AudioCodec::Flac => config.lossless(),
+                AudioCodec::Aac => config,
+            };
+            self.writer = Some(AudioWriter::create(&self.path, &config)?);
         }
 
         if let Some(writer) = self.writer.as_mut() {
@@ -496,12 +514,19 @@ impl ScreenRecorder {
 
         let state = Arc::new(Mutex::new(Inner {
             writer: Some(writer),
-            system_audio: options
-                .capture_system_audio
-                .then(|| AudioTrack::new(options.output.join(SYSTEM_AUDIO_FILE))),
+            system_audio: options.capture_system_audio.then(|| {
+                AudioTrack::new(
+                    options.output.join(SYSTEM_AUDIO_FILE),
+                    if options.lossless_system_audio {
+                        AudioCodec::Flac
+                    } else {
+                        AudioCodec::Aac
+                    },
+                )
+            }),
             microphone: options
                 .capture_microphone
-                .then(|| AudioTrack::new(options.output.join(MICROPHONE_FILE))),
+                .then(|| AudioTrack::new(options.output.join(MICROPHONE_FILE), AudioCodec::Aac)),
             clock: clock.clone(),
             video: TrackTimeline::new(),
             failure: None,
@@ -686,7 +711,9 @@ impl ScreenRecorder {
         let summary = match screen {
             Ok(Some(summary)) => summary,
             Ok(None) => {
-                return Err(Error::ScreenCaptureKit("recorder already stopped".to_owned()));
+                return Err(Error::ScreenCaptureKit(
+                    "recorder already stopped".to_owned(),
+                ));
             }
             // Not an encoder fault, and reported as its own thing so it does not
             // read as one. A stream that was up and sent nothing is almost

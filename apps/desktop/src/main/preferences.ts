@@ -108,6 +108,7 @@ function sanitise(value: Partial<RecordingPreferences>): RecordingPreferences {
     micId: typeof value.micId === "string" ? value.micId : null,
     micLabel: typeof value.micLabel === "string" ? value.micLabel : null,
     captureKeys: value.captureKeys ?? DEFAULT_PREFERENCES.captureKeys,
+    losslessSystemAudio: value.losslessSystemAudio ?? DEFAULT_PREFERENCES.losslessSystemAudio,
     cameraPosition: point(value.cameraPosition),
     // Normalised on the way in as well as the way out: a hand-edited
     // "Command+Shift+R" binds the same keys as the stored "Shift+Cmd+R", and

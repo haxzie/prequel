@@ -162,6 +162,22 @@ describe("Preferences", () => {
     expect(new Preferences(file).get().captureKeys).toBe(false);
   });
 
+  it("leaves lossless system audio off until it is asked for", () => {
+    // Unlike the keyboard switch above, absent means off: lossless costs about
+    // five times the disk for that track, and an update that silently started
+    // spending it would be charging every screen recording for something only
+    // music needs. Pinned so flipping the default is a deliberate act that
+    // breaks a test rather than a one-character edit nobody reviews.
+    const file = freshFile();
+    writeFileSync(file, JSON.stringify({ countdown: 3 }));
+
+    expect(new Preferences(file).get().losslessSystemAudio).toBe(false);
+
+    const prefs = new Preferences(file);
+    prefs.update({ losslessSystemAudio: true });
+    expect(new Preferences(file).get().losslessSystemAudio).toBe(true);
+  });
+
   it("keeps every new key across a write, rather than dropping it", () => {
     // `sanitise` is exhaustive by hand, so a key added to the type without a
     // line there saves fine and is gone on the next write. This is that check.

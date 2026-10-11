@@ -86,6 +86,8 @@ export interface StartRecordingRequest {
   /** Sub-region of the target to capture, in points relative to its origin. */
   crop?: { x: number; y: number; width: number; height: number };
   systemAudio?: boolean;
+  /** Write the system track as FLAC rather than AAC. Defaults to false in the addon. */
+  losslessSystemAudio?: boolean;
   microphone?: boolean;
   /**
    * Camera to record as a fourth track, by `uniqueID` or exact

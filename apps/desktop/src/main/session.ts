@@ -139,6 +139,7 @@ export class RecordingSession {
       showCursor: false,
       captureKeys: options.captureKeys ?? true,
       systemAudio: options.systemAudio ?? false,
+      losslessSystemAudio: options.losslessSystemAudio ?? false,
       microphone: options.microphone ?? false,
       camera: options.camera ?? undefined,
       startedAt: new Date().toISOString(),

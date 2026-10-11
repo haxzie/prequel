@@ -877,6 +877,7 @@ export class CaptureFlow {
       // Only ever false from the command line now, which is the one thing
       // about it worth counting.
       system_audio: options?.systemAudio ?? true,
+      lossless_system_audio: preferences.losslessSystemAudio,
       capture_keys: preferences.captureKeys,
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
@@ -900,6 +901,7 @@ export class CaptureFlow {
           // Always, unless this take asked otherwise. Whether it ends up in the
           // export is the editor's business — see `CaptureOptions.systemAudio`.
           systemAudio: options?.systemAudio ?? true,
+          losslessSystemAudio: preferences.losslessSystemAudio,
           microphone: preferences.micId !== null,
           // The bubble is only a preview; this is what writes `camera.mp4`.
           camera: preferences.cameraId ? await this.nativeCameraId(preferences.cameraLabel) : null,

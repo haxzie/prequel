@@ -663,6 +663,11 @@ pub struct RecordRequest {
     /// Omit to capture the whole target.
     pub crop: Option<Bounds>,
     pub system_audio: Option<bool>,
+    /// Write the system audio track as FLAC instead of AAC. Defaults to false.
+    ///
+    /// Lossless costs about five times the disk and saves the Mac's own sound
+    /// from being compressed twice — once here and once by the export.
+    pub lossless_system_audio: Option<bool>,
     pub microphone: Option<bool>,
     /// Camera to record as a fourth track, as a `uniqueID` or the exact
     /// `localizedName` — which is what `MediaDeviceInfo.label` reports, and the
@@ -799,6 +804,7 @@ impl Task for StartRecording {
             height: c.height,
         });
         options.capture_system_audio = request.system_audio.unwrap_or(false);
+        options.lossless_system_audio = request.lossless_system_audio.unwrap_or(false);
         options.capture_microphone = request.microphone.unwrap_or(false);
         options.excluded_windows = request.excluded_window_ids.clone().unwrap_or_default();
         options.capture_keys = request.capture_keys.unwrap_or(true);

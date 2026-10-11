@@ -295,6 +295,19 @@ function Recording({ preferences, set }: PaneProps) {
         </Field>
       </Section>
 
+      <Section title="Audio">
+        <Field label="Record system audio losslessly" inline>
+          <Toggle
+            value={preferences.losslessSystemAudio}
+            onChange={(losslessSystemAudio) => set({ losslessSystemAudio })}
+          />
+        </Field>
+        <p className="text-[11px] leading-relaxed text-editor-muted">
+          Keeps what the Mac is playing exactly as it sounded. Worth it for music, less so for
+          voices and app sounds. That track takes about five times the space; off compresses it.
+        </p>
+      </Section>
+
       <Section title="Keyboard">
         <Field label="Note when keys are pressed" inline>
           <Toggle

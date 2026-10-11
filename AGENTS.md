@@ -157,6 +157,14 @@ asar — an icon inside the archive loads empty. Empty tray image + `LSUIElement
 
 **`AVAssetWriter` refuses an existing file** (-11823). Remove before writing.
 
+**Chromium has no ALAC decoder.** The lossless system-audio track is FLAC in an
+`.m4a` for that reason alone — the editor previews `mic` and `system` in
+`<audio>` elements, so an ALAC track loads with
+`DEMUXER_ERROR_NO_SUPPORTED_STREAMS` and the preview goes silent while the
+export stays correct. `AVAssetWriter` writes FLAC into the same container, at 24
+bits, and leaves the bit rate key out: it accepts one and nothing in the file
+reflects it.
+
 **`CVMetalTextureCache`** hands back a wrapper that must outlive the
 `MTLTexture`, and the texture is a _view_ onto the pixel buffer, not a copy.
 Keep both alive or it samples nothing. Buffers it wraps must be created

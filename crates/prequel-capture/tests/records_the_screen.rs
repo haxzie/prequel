@@ -439,3 +439,65 @@ fn a_display_recording_has_no_corner_radius() {
 
     let _ = std::fs::remove_dir_all(&path);
 }
+
+#[test]
+fn lossless_system_audio_is_flac_and_keeps_up_live() {
+    // The two things that could sink lossless capture, and neither shows up
+    // offline. The format has to survive ScreenCaptureKit's own settings —
+    // `AVAssetWriterInput` takes a FLAC dictionary and could still refuse the
+    // first buffer, which capture only reports at the stop. And the encoder
+    // has to keep pace on the delivery queue it shares with video: audio that
+    // drops there is a hole in the track, and video that waits behind it is
+    // lost frames.
+    if cannot_capture() {
+        return;
+    }
+
+    let display = list_targets()
+        .expect("list targets")
+        .into_iter()
+        .find(|t| t.kind == TargetKind::Display)
+        .expect("a display");
+
+    let path = session_dir("lossless");
+
+    let mut options = RecordOptions::new(display, &path);
+    options.fps = FPS;
+    options.capture_system_audio = true;
+    options.lossless_system_audio = true;
+
+    let recorder = ScreenRecorder::start(&options, SharedClock::new()).expect("start lossless");
+    std::thread::sleep(Duration::from_secs(2));
+    let summary = recorder.stop().expect("stop");
+
+    let dropped = summary
+        .system_audio
+        .map_or(0, |track| track.dropped_not_ready);
+
+    let audio = path.join(SYSTEM_AUDIO_FILE);
+    let probed = probe_audio(&audio, "stream=codec_name,channels,sample_rate");
+    println!(
+        "lossless track: {probed} · buffers {} · dropped {} · video frames {}",
+        summary.system_audio_samples(),
+        dropped,
+        summary.frames
+    );
+
+    assert!(
+        probed.contains("codec_name=flac"),
+        "asked for lossless and got: {probed}"
+    );
+    assert!(
+        summary.system_audio_samples() > 0,
+        "no lossless buffers were written; the FLAC settings were refused"
+    );
+    // The point of recording it live. A buffer dropped here is silence in the
+    // finished track, and a realtime writer drops rather than waits by design.
+    assert_eq!(dropped, 0, "the FLAC encoder fell behind the capture queue");
+    assert!(
+        summary.frames > 0,
+        "video should still work alongside lossless audio"
+    );
+
+    let _ = std::fs::remove_dir_all(&path);
+}

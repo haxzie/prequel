@@ -15,6 +15,27 @@ const MIN_SAMPLE_RATE: f64 = 8_000.0;
 
 const DEFAULT_BIT_RATE: i32 = 128_000;
 
+/// What an audio track is encoded as.
+///
+/// Same shape as [`crate::VideoCodec`], and the same reason: the container is
+/// `.m4a` either way, and only the codec inside it changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AudioCodec {
+    /// AAC-LC. What every take was until lossless system audio existed.
+    #[default]
+    Aac,
+    /// FLAC, in the same `.m4a`.
+    ///
+    /// **Not ALAC**, which is the obvious choice and cannot be used here.
+    /// Chromium ships no ALAC decoder, so a track written that way loads with
+    /// `DEMUXER_ERROR_NO_SUPPORTED_STREAMS` — and the editor previews `mic`
+    /// and `system` through `<audio>` elements. The export would be right and
+    /// the preview silent, which is the preview/export split the geometry and
+    /// sound rules exist to prevent. FLAC in MP4 is the one lossless format
+    /// `AVAssetWriter` writes and Chromium reads.
+    Flac,
+}
+
 /// The bit rates AAC-LC will take, smallest first.
 ///
 /// Not a range: the encoder accepts this set and rejects everything between,
@@ -39,6 +60,9 @@ const READY_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_milli
 pub struct AudioWriterConfig {
     pub sample_rate: f64,
     pub channels: i32,
+    pub codec: AudioCodec,
+    /// Ignored when `codec` is [`AudioCodec::Flac`]: a lossless codec has no
+    /// rate to ask for, and the key is left out of the settings entirely.
     pub bit_rate: i32,
     /// Whether buffers arrive at capture rate.
     ///
@@ -63,9 +87,21 @@ impl AudioWriterConfig {
         Self {
             sample_rate,
             channels,
+            codec: AudioCodec::Aac,
             bit_rate: bit_rate_for(sample_rate, channels),
             realtime: true,
         }
+    }
+
+    /// Switches to FLAC, so the track survives being read back and mixed
+    /// without a generation of loss.
+    ///
+    /// The sample rate stays clamped to 48 kHz even though FLAC takes more:
+    /// the exporter mixes at 48 kHz, so anything above it is resampled back
+    /// down on the way through and costs disk for samples nothing keeps.
+    pub fn lossless(mut self) -> Self {
+        self.codec = AudioCodec::Flac;
+        self
     }
 
     /// Switches to offline mode: no buffer is dropped, appends wait instead.
@@ -427,6 +463,30 @@ fn bit_rate_for(sample_rate: f64, channels: i32) -> i32 {
 pub(crate) fn audio_settings(
     config: &AudioWriterConfig,
 ) -> arc::R<ns::Dictionary<ns::String, ns::Id>> {
+    // Three keys for FLAC against four for AAC. The bit rate is left out
+    // because FLAC has no rate to ask for — `AVAssetWriterInput` takes the key
+    // without complaining and nothing in the file reflects it, so carrying it
+    // would put a number in the settings that reads as controlling the size
+    // and does not. Bit depth is left out for the opposite reason: asked
+    // nothing, AVFoundation writes 24-bit, which quantises the `f32` buffers
+    // once on the way in and never again. Not bit-identical to a float, then
+    // — 3.6 million times closer to it than AAC at this rate, measured in
+    // `lossless_audio_survives_the_round_trip`.
+    if config.codec == AudioCodec::Flac {
+        return ns::Dictionary::with_keys_values(
+            &[
+                av::audio::settings::all_formats_keys::id(),
+                av::audio::settings::all_formats_keys::sample_rate(),
+                av::audio::settings::all_formats_keys::number_of_channels(),
+            ],
+            &[
+                ns::Number::with_u32(cat::AudioFormat::FLAC.0).as_ref(),
+                ns::Number::with_f64(config.sample_rate).as_ref(),
+                ns::Number::with_i32(config.channels).as_ref(),
+            ],
+        );
+    }
+
     ns::Dictionary::with_keys_values(
         &[
             av::audio::settings::all_formats_keys::id(),

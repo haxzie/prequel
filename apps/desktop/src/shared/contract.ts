@@ -151,6 +151,23 @@ export interface RecordingPreferences {
    */
   captureKeys: boolean;
   /**
+   * Record what the Mac is playing losslessly.
+   *
+   * Off by default. The system track is read back and re-encoded by the export,
+   * so AAC here compresses the Mac's own sound twice before anyone hears it —
+   * inaudible on speech and app sounds, audible on music. FLAC costs roughly
+   * five times the disk for that track and spends it once.
+   *
+   * Off rather than on because most recordings are a voice over an app, where
+   * the second compression cannot be heard and the disk can: defaulting it on
+   * would charge every screen recording for a problem only music has.
+   *
+   * A flat leaf like everything else here, and the microphone deliberately has
+   * no partner setting: its cleaned-up copy is a third generation and a
+   * separate question.
+   */
+  losslessSystemAudio: boolean;
+  /**
    * Where the user last put the camera bubble, as the *centre* of the circle
    * in screen points.
    *
@@ -253,6 +270,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   micId: null,
   micLabel: null,
   captureKeys: true,
+  losslessSystemAudio: false,
   cameraPosition: null,
   toggleShortcut: "Shift+Cmd+5",
   countdown: 3,
@@ -1368,6 +1386,8 @@ export interface StartOptions {
   crop?: Region | null;
   fps?: number;
   systemAudio?: boolean;
+  /** Write the system track as FLAC. See `RecordingPreferences`. */
+  losslessSystemAudio?: boolean;
   microphone?: boolean;
   /** Camera to record as its own track, by `localizedName`. */
   camera?: string | null;
