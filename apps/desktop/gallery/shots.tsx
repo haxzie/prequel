@@ -394,6 +394,28 @@ export const SHOTS: readonly Shot[] = [
   inspector("inspector-presets", "Presets"),
   inspector("inspector-layout", "Layout"),
   inspector("inspector-background", "Background"),
+  // The drawn backgrounds. Its own shot rather than a step on the one above,
+  // because they are a tab inside the Background panel: the panel has to be
+  // opened first and then the tab pressed, which `inspector` cannot express —
+  // it clicks the panel last.
+  {
+    id: "inspector-background-pattern",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      { kind: "wait", selector: "[data-panel='timeline']" },
+      { kind: "seek", fraction: 0.35 },
+      { kind: "click", selector: 'button[aria-label="Background"]' },
+      { kind: "settle", ms: 300 },
+      {
+        kind: "click",
+        selector: "[data-panel='inspector'] [role='tablist'] button:nth-of-type(2)",
+      },
+      { kind: "settle", ms: 500 },
+    ],
+    clip: "[data-panel='inspector']",
+  },
   inspector("inspector-recording", "Recording"),
   inspector("inspector-camera", "Camera"),
   // The camera's colour looks, and the list open on them. Its own shot because

@@ -30,6 +30,7 @@ import {
   outputFrame,
   SOUND_OFF,
   STILL_AT,
+  type Background,
   type Project,
   type TextSlice,
   type ZoomSlice,
@@ -63,6 +64,13 @@ import { previewReady } from "./ready";
 import { matteKey, mediaKey } from "./segments";
 import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
+import { useWallpapers } from "./useWallpapers";
+import { ensureWallpaper } from "./wallpaper";
+import {
+  wallpaperFile,
+  type WallpaperCatalogue,
+  type WallpaperSpec,
+} from "../../../shared/wallpapers";
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
@@ -669,6 +677,41 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const backgrounds = useBackgrounds();
   /** The background being downloaded, so its swatch can say so. */
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
+
+  const wallpapers = useWallpapers();
+  /** The pattern being drawn, so its swatch can say so. */
+  const [pendingPattern, setPendingPattern] = useState<WallpaperSpec | null>(null);
+
+  /**
+   * Draws a pattern at the frame's size and puts it behind the recording.
+   *
+   * Drawn first, applied second, for the reason `onPickPreset` downloads
+   * first: a background that names a file which is not there yet is a
+   * composition that goes dark for as long as it takes, and the picture
+   * already on screen is a better thing to look at than nothing.
+   */
+  const pickPattern = useCallback(
+    async (spec: WallpaperSpec) => {
+      setPendingPattern(spec);
+      const file = await ensureWallpaper(session.dir, spec, state.project.frame, wallpapers);
+      setPendingPattern((current) => (current === spec ? null : current));
+
+      if (!file) {
+        console.warn(`[editor] could not draw the ${spec.style} pattern`);
+        return;
+      }
+
+      dispatch({
+        type: "setSetting",
+        section: "background",
+        key: "background",
+        value: { kind: "image", source: "pattern", path: file, pattern: spec },
+      });
+    },
+    [session.dir, state.project.frame, wallpapers, dispatch],
+  );
+
+  usePatternRedraw(session.dir, state.project, wallpapers, dispatch);
 
   const scenePresets = useScenePresets();
   const { setMine: setSavedPresets } = scenePresets;
@@ -1711,6 +1754,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               editing={editing}
               backgrounds={backgrounds}
               pendingBackground={pendingBackground}
+              wallpapers={wallpapers}
+              pendingPattern={pendingPattern}
+              onPickPattern={pickPattern}
               frame={state.project.frame}
               cameraSource={cameraSource}
               cameraMatte={cameraMatte}
@@ -2139,6 +2185,77 @@ function useAutoFrame(
 
     dispatch({ type: "setFrame", frame: { width, height, presetId: AUTO_PRESET_ID } });
   }, [frame, recorded, dispatch]);
+}
+
+/**
+ * Draws a pattern background again whenever it no longer matches the frame.
+ *
+ * The reason patterns exist. Every other background is a fixed number of
+ * pixels scaled to cover the frame, so switching a recording from 16:9 to 9:16
+ * stretches it; a pattern is a recipe, and the file it draws into is named
+ * after the recipe, the catalogue version and the size — so "the frame
+ * changed" and "this file is not the one we want" are the same statement, and
+ * this is what acts on it.
+ *
+ * It runs on open as well as on a change, which is what picks up a palette the
+ * API has since recoloured and a recording copied from a machine that never
+ * drew the file at all.
+ *
+ * Nothing stops drawing if it fails: the project keeps naming the old file,
+ * which is still there and still a mat, and the compositor scales it the way
+ * it scales every other picture. A wrong-sized grid is a worse background; a
+ * missing one is a black frame.
+ */
+function usePatternRedraw(
+  dir: string,
+  project: Project,
+  catalogue: WallpaperCatalogue,
+  dispatch: Dispatch<EditorAction>,
+) {
+  const frame = project.frame;
+
+  const stale = useMemo(() => {
+    const wanted: { was: string; spec: WallpaperSpec }[] = [];
+
+    const check = (background: Background | undefined) => {
+      if (background?.kind !== "image" || background.source !== "pattern") return;
+      if (wallpaperFile(background.pattern, frame, catalogue.version) === background.path) return;
+      wanted.push({ was: background.path, spec: background.pattern });
+    };
+
+    check(project.defaults.background.background);
+    for (const track of project.tracks) {
+      for (const slice of track.slices) check(slice.overrides.background?.background);
+    }
+
+    return wanted;
+  }, [project, frame, catalogue.version]);
+
+  // What the effect below actually turns on. `stale` is a new array on every
+  // edit — a dragged slider rebuilds the project — and re-running a 4K
+  // rasterise on each one would make the window stutter for as long as a
+  // redraw was outstanding.
+  const key = stale.map((entry) => `${entry.was}`).join("|");
+
+  useEffect(() => {
+    if (stale.length === 0 || frame.width < 2 || frame.height < 2) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      for (const entry of stale) {
+        const file = await ensureWallpaper(dir, entry.spec, frame, catalogue);
+        if (cancelled || !file) continue;
+        dispatch({ type: "patternRedrawn", was: entry.was, path: file });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `stale` is read inside and deliberately not listed — see `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, dir, frame.width, frame.height, catalogue, dispatch]);
 }
 
 /**

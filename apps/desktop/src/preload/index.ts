@@ -44,6 +44,7 @@ import type {
 import { IPC_CHANNELS } from "../shared/contract.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
 import type { Project } from "../shared/project.js";
+import type { WallpaperCatalogue } from "../shared/wallpapers.js";
 
 /**
  * Listens on a channel main broadcasts on, and hands back the way to stop.
@@ -495,6 +496,27 @@ const api = {
       /** Puts the full picture inside the recording, so it can be drawn. */
       ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
         ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
+    },
+
+    wallpapers: {
+      /**
+       * The hosted styles and palettes, or null when there is neither a cache
+       * nor a network — the picker then offers the ones the app was built with,
+       * which draw just as well.
+       */
+      catalogue: (): Promise<IpcResult<WallpaperCatalogue | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.wallpapersCatalogue),
+
+      /**
+       * Puts a drawn background inside the recording.
+       *
+       * The one call here that sends pixels the other way. Main cannot
+       * rasterise and a window cannot write a file, so the drawing crosses as
+       * PNG bytes — a few hundred kilobytes, once, when a pattern is chosen or
+       * the frame changes size.
+       */
+      write: (dir: string, file: string, bytes: ArrayBuffer): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.wallpapersWrite, dir, file, bytes),
     },
 
     fonts: {

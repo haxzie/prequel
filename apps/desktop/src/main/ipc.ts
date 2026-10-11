@@ -67,6 +67,7 @@ import { listProjects, renameProject, savePoster } from "./projects.js";
 import { readComposition } from "./project-composition.js";
 import { RECORDINGS_DIR, recordingPath, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
+import { wallpapers, writeWallpaper } from "./wallpapers.js";
 import { catalogue as fontsCatalogue, ensureFont } from "./fonts.js";
 import {
   applyImage as applyPresetImage,
@@ -321,6 +322,14 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
 
   ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, dir: string, file: string) =>
     attempt(() => ensureBackground(dir, file)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.wallpapersCatalogue, () => attempt(() => wallpapers()));
+
+  ipcMain.handle(
+    IPC_CHANNELS.wallpapersWrite,
+    (_event, dir: string, file: string, bytes: ArrayBuffer) =>
+      attempt(() => writeWallpaper(dir, file, bytes)),
   );
 
   ipcMain.handle(IPC_CHANNELS.fontsCatalogue, () => attempt(() => fontsCatalogue()));

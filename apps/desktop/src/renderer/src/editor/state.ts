@@ -24,6 +24,7 @@ import {
   MIN_SPEED,
   resolveSettings,
   setOverride,
+  type Background,
   type LayoutPreset,
   type Project,
   type SettingsSection,
@@ -213,6 +214,21 @@ export type EditorAction =
    * perfectly present.
    */
   | { type: "backgroundMissing" }
+  /**
+   * Points every use of one drawn background at the file it has just been
+   * re-drawn into — see `usePatternRedraw` in `Editor.tsx`.
+   *
+   * Its own action rather than a `setSetting` because it is not a setting
+   * anybody changed: the frame changed size, so the picture behind it was
+   * drawn again at that size, and the path has to follow. `setSetting` writes
+   * wherever the selection points, which is the wrong place — a pattern on a
+   * clip nobody has selected still needs its path moving — so this matches on
+   * the old path instead and changes it everywhere it appears.
+   *
+   * It does bump the revision: the project on disk has to name the file that
+   * is actually there, or reopening the recording would look for the old size.
+   */
+  | { type: "patternRedrawn"; was: string; path: string }
   | {
       type: "setSetting";
       section: SettingsSection;
@@ -613,6 +629,50 @@ function apply(
           },
         },
       };
+    }
+
+    case "patternRedrawn": {
+      const move = (background: Background): Background =>
+        background.kind === "image" &&
+        background.source === "pattern" &&
+        background.path === action.was
+          ? { ...background, path: action.path }
+          : background;
+
+      return edit(state, (project) => {
+        // The slices first, then the defaults over the top. `withSlices` hands
+        // back a whole project, so spreading it *after* a changed `defaults`
+        // would quietly put the old background back.
+        const next = withSlices(
+          project,
+          slicesOf(project).map((slice) => {
+            const background = slice.overrides.background?.background;
+            if (!background) return slice;
+
+            const moved = move(background);
+            if (moved === background) return slice;
+
+            return {
+              ...slice,
+              overrides: {
+                ...slice.overrides,
+                background: { ...slice.overrides.background, background: moved },
+              },
+            };
+          }),
+        );
+
+        return {
+          ...next,
+          defaults: {
+            ...next.defaults,
+            background: {
+              ...next.defaults.background,
+              background: move(next.defaults.background.background),
+            },
+          },
+        };
+      });
     }
 
     case "select":

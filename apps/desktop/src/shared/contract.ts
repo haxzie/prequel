@@ -800,6 +800,16 @@ export const IPC_CHANNELS = {
   backgroundsCatalogue: "backgrounds:catalogue",
   backgroundsThumbnail: "backgrounds:thumbnail",
   backgroundsEnsure: "backgrounds:ensure",
+  /**
+   * The drawn backgrounds: the hosted list of styles and palettes, and the
+   * file one of them has been rasterised into.
+   *
+   * The bytes travel renderer → main, which is the other way round from every
+   * other picture here. A drawing needs a rasteriser and main has none; a file
+   * needs a filesystem and a window has none.
+   */
+  wallpapersCatalogue: "wallpapers:catalogue",
+  wallpapersWrite: "wallpapers:write",
   fontsCatalogue: "fonts:catalogue",
   fontsEnsure: "fonts:ensure",
   /**

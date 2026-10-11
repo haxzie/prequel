@@ -17,6 +17,7 @@ import type { MediaTime, SourceInfo } from "./manifest.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
 import { textMotion, type TextMotionId } from "./text-motion.js";
 import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
+import type { WallpaperSpec } from "./wallpapers.js";
 
 export const PROJECT_VERSION = 1;
 
@@ -521,7 +522,18 @@ export type Background =
   | { kind: "gradient"; from: string; to: string; angle: number }
   /** `path` is relative to the session directory — the image is copied in, so a
       recording stays self-contained and exports the same video tomorrow. */
-  | { kind: "image"; source: "wallpaper" | "file" | "preset"; path: string };
+  | { kind: "image"; source: "wallpaper" | "file" | "preset"; path: string }
+  /**
+   * A background that was drawn rather than downloaded — see `wallpapers.ts`.
+   *
+   * Still an image, and deliberately: the file beside the recording is what the
+   * preview samples and what the exporter rasterises, so a drawn background
+   * goes through the pipeline as the same thing a JPEG does and neither
+   * rasteriser learns a fourth kind of paint. `pattern` rides along so the
+   * editor can draw the file again at a new size when the frame changes, which
+   * a path alone could not say.
+   */
+  | { kind: "image"; source: "pattern"; path: string; pattern: WallpaperSpec };
 
 export interface BackgroundSettings {
   /** The one setting that is not a flat leaf: a discriminated union only makes

@@ -173,3 +173,69 @@ Two traps worth knowing:
 Still shipped in the bundle: all of them, via the sync script. Trimming that to
 a small offline floor is what actually reclaims the forty megabytes — but keep
 _some_, or a first run with no network is an empty picker.
+
+## Drawn backgrounds
+
+The Pattern tab is not pictures at all. A cutting mat, graph paper, a dot grid,
+a blueprint, an isometric grid, hatching and a contour map — seven styles in
+eight palettes, each a recipe rather than a file, drawn at the size of the
+frame it is for.
+
+| Path                                            | What it is                                      |
+| ----------------------------------------------- | ----------------------------------------------- |
+| `apps/desktop/src/shared/wallpapers.ts`         | The one drawing. Emits SVG. No DOM, no Node.    |
+| `apps/api/src/routes/wallpapers.ts`             | `/v1/wallpapers` — the styles and the colours.  |
+| `apps/desktop/src/main/wallpapers.ts`           | Caches that list; writes the PNG into the take. |
+| `apps/desktop/src/renderer/.../wallpaper.ts`    | Rasterises the SVG. Only the renderer can.      |
+| `apps/desktop/src/renderer/.../PatternSwatches` | The picker. Every swatch is the real drawing.   |
+
+Four things worth knowing before changing any of it:
+
+- **The colours are the API's.** A palette is five hex strings served over
+  HTTP, and the drawing may contain no other colour — `wallpapers.test.ts`
+  asserts exactly that. One hard-coded hex is the line that stays grey when
+  everything else goes green. Edit a palette in the route **and bump
+  `version`**: the file beside the recording is named after the recipe, the
+  version and the size, so without the bump the old picture still matches and
+  the new colour never arrives.
+- **It goes through the pipeline as an image.** The file in the session
+  directory is what the preview samples and what the exporter rasterises, so
+  neither rasteriser learned a fourth kind of paint and the two cannot
+  disagree. `Background` carries `source: "pattern"` and the recipe alongside
+  the path.
+- **The frame is what re-draws it.** `usePatternRedraw` in `Editor.tsx`
+  compares the stored path to the one the current frame wants and draws again
+  when they differ — which is what makes a mat survive 16:9 → 9:16 where a
+  JPEG only stretches. If it fails, the old file is still there and is scaled:
+  a wrong-sized grid rather than a black frame.
+- **No gradients, and that is deliberate.** Flat fills and hairlines have
+  nothing to band, so a drawing needs none of the grain every JPEG here
+  carries. Measured, if it ever comes up again: a grain-free ramp comes out of
+  x264 at CRF 23 with seven distinct levels and flat runs 144 pixels wide,
+  against twenty and runs of five with grain. Any new style that ramps has to
+  carry its own dither, and cannot then be a PNG — grain is exactly what
+  lossless compression cannot pack, and a 4K one came out at ten megabytes.
+- **Draw a field with marching squares, not with an SVG filter.** `terrain`
+  traces contour lines out of hashed value noise in JavaScript. Two earlier
+  styles used `feTurbulence` instead, and they had to go: the filter's lattice
+  is in user units, so a field big enough to read as a background means
+  zooming a thousand-fold into one cell, and Chromium's eight-bit
+  interpolation of four gradients is blocky rectangles and staircase contours
+  — in the file, not in the preview. Raising the frequency fixes the
+  artefacts and loses the look.
+- **Sampling density and feature size are separate numbers.** In `terrain`,
+  `samples()` decides how smooth a contour is and `RELIEF` decides how big the
+  hills are. Tie them together and a swatch stops being a miniature of the
+  frame; `wallpapers.test.ts` pins that by checking a 320-wide tile and a
+  1920-wide frame start their first contour at the same point on the
+  landscape. `samples()` is scaled to the frame and clamped at both ends — the
+  count that looks smooth in a swatch leaves twenty-pixel facets at 4K, and
+  the count that is right for 4K is most of a second every time the picker
+  draws a tile.
+- **A filter primitive with no `in` takes the one before it.** Appending the
+  grain to the chain made the grain its own input and the frame came out as
+  pure speckle, which is why the colour map is tagged `result="field"` and the
+  composite names it. The base frequency is also written at six decimals, not
+  the two every length uses: it is about one over the shorter edge, and
+  rounded to two it is zero — a turbulence of frequency zero is a flat
+  rectangle.

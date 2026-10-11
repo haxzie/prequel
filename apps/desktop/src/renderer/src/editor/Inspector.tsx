@@ -47,6 +47,7 @@ import {
   WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
 import { LOUPE_HASTE } from "../../../shared/layout";
+import type { WallpaperCatalogue, WallpaperSpec } from "../../../shared/wallpapers";
 import type { Backgrounds } from "./useBackgrounds";
 import { CameraLookPicker } from "./controls/CameraLookPicker";
 import { CameraMap } from "./controls/CameraMap";
@@ -160,6 +161,7 @@ import {
   useTravelling,
 } from "./controls/inputs";
 import { GradientSwatches, ImageSwatches, SolidSwatches } from "./controls/Swatches";
+import { PatternPalettes, PatternSwatches } from "./controls/PatternSwatches";
 import { DEFAULT_GRADIENT_ANGLE } from "../../../shared/presets";
 import { ScenePresetCard } from "./controls/ScenePresetCard";
 import { PushedProvider, usePushedView } from "./controls/PushedView";
@@ -243,6 +245,10 @@ export interface InspectorProps {
   backgrounds: Backgrounds;
   /** The background being downloaded, so its swatch can say so. */
   pendingBackground: string | null;
+  /** The styles and palettes the pattern picker offers. */
+  wallpapers: WallpaperCatalogue;
+  /** The pattern being drawn, so its swatch can say so. */
+  pendingPattern: WallpaperSpec | null;
   /** Output size, so the camera map can take the frame's own proportions. */
   frame: Size;
   /** The faces a text can be set in, and how to load one. */
@@ -289,6 +295,8 @@ export interface InspectorProps {
   /** Opens the file picker for a logo, and copies it into the recording. */
   onPickWatermark: () => void;
   onPickPreset: (file: string) => void;
+  /** Draws a pattern at the frame's size and puts it behind the recording. */
+  onPickPattern: (spec: WallpaperSpec) => void;
   /**
    * A file inside the recording, as something the renderer can load.
    *
@@ -1141,8 +1149,11 @@ function InspectorPanels(props: InspectorProps) {
                     onPickWallpaper={props.onPickWallpaper}
                     onPickImage={props.onPickImage}
                     onPickPreset={props.onPickPreset}
+                    onPickPattern={props.onPickPattern}
                     backgrounds={props.backgrounds}
+                    wallpapers={props.wallpapers}
                     pendingBackground={props.pendingBackground}
+                    pendingPattern={props.pendingPattern}
                     wallpaperUrl={props.fileUrl(WALLPAPER_FILE_NAME)}
                   />
                 )}
@@ -3505,6 +3516,21 @@ function Transcription({ captions }: { captions: CaptionsState }) {
   );
 }
 
+/**
+ * Which grid the panel is showing.
+ *
+ * Not `Background["kind"]`, which is what it used to be: a pattern *is* an
+ * image — the same file behind the recording, the same blur slider — and the
+ * tab is the one place that has to tell the two apart, because the question
+ * "what am I choosing from" has a different answer for each.
+ */
+type PaintTab = "image" | "pattern" | "solid" | "gradient";
+
+function paintTab(paint: Background): PaintTab {
+  if (paint.kind === "image" && paint.source === "pattern") return "pattern";
+  return paint.kind;
+}
+
 function BackgroundPanel({
   settings,
   field,
@@ -3512,8 +3538,11 @@ function BackgroundPanel({
   onPickWallpaper,
   onPickImage,
   onPickPreset,
+  onPickPattern,
   backgrounds,
+  wallpapers,
   pendingBackground,
+  pendingPattern,
   wallpaperUrl,
 }: {
   settings: SliceSettings;
@@ -3522,8 +3551,11 @@ function BackgroundPanel({
   onPickWallpaper: () => void;
   onPickImage: () => void;
   onPickPreset: (file: string) => void;
+  onPickPattern: (spec: WallpaperSpec) => void;
   backgrounds: Backgrounds;
+  wallpapers: WallpaperCatalogue;
   pendingBackground: string | null;
+  pendingPattern: WallpaperSpec | null;
   wallpaperUrl: string;
 }) {
   const { background } = settings;
@@ -3540,12 +3572,13 @@ function BackgroundPanel({
    * undo. The tabs now only change what the grid holds; pressing a swatch is
    * the single thing that changes the frame.
    */
-  const [style, setStyle] = useState<Background["kind"]>(paint.kind);
+  const applied = paintTab(paint);
+  const [style, setStyle] = useState<PaintTab>(applied);
 
   // Follows the project when the background changes from somewhere else — a
   // different clip selected, a section reset, an undo — so the panel is never
   // showing one style while the frame draws another.
-  useEffect(() => setStyle(paint.kind), [paint.kind]);
+  useEffect(() => setStyle(applied), [applied]);
 
   return (
     /**
@@ -3586,6 +3619,7 @@ function BackgroundPanel({
           value={style}
           options={[
             { value: "image", label: "Image" },
+            { value: "pattern", label: "Pattern" },
             { value: "solid", label: "Solid" },
             { value: "gradient", label: "Gradient" },
           ]}
@@ -3636,6 +3670,15 @@ function BackgroundPanel({
           </>
         )}
 
+        {style === "pattern" && (
+          <PatternSwatches
+            value={paint.kind === "image" && paint.source === "pattern" ? paint.pattern : null}
+            catalogue={wallpapers}
+            pending={pendingPattern}
+            onChange={onPickPattern}
+          />
+        )}
+
         {style === "image" && (
           // No label: the tab above already says Image, and what follows is
           // pictures.
@@ -3674,6 +3717,22 @@ function BackgroundPanel({
           A rule above it rather than a surface behind it. The list is clipped
           by the scroller, so nothing ever reaches this row; the line is there
           to say the row is not the last thing in the list. */}
+      {/* The same row, and a different control in it. A pattern is drawn at the
+          frame's size, so blurring one throws away the only thing that makes
+          it worth drawing — and the question it leaves room for is the one
+          worth having on screen the whole time the grid is being chosen.
+          Pressing a colour repaints the tiles above as well as the frame. */}
+      {style === "pattern" && (
+        <div className="flex-none border-t border-editor-line px-4 py-3">
+          <PatternPalettes
+            value={paint.kind === "image" && paint.source === "pattern" ? paint.pattern : null}
+            catalogue={wallpapers}
+            pending={pendingPattern}
+            onChange={onPickPattern}
+          />
+        </div>
+      )}
+
       {style === "image" && (
         <div className="flex-none border-t border-editor-line px-4 py-3">
           <Slider
@@ -3684,7 +3743,11 @@ function BackgroundPanel({
             min={0}
             max={0.08}
             format={percent}
-            disabled={paint.kind !== "image"}
+            // A drawn background is never blurred — see `toPaint` — so with
+            // one applied this is greyed rather than left to move and change
+            // no pixels. Greyed rather than hidden, like every other dependent
+            // control in this inspector.
+            disabled={paint.kind !== "image" || paint.source === "pattern"}
             onChange={(value) => set("background", "backgroundBlur", value)}
           />
         </div>

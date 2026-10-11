@@ -359,6 +359,16 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         },
       },
 
+      wallpapers: {
+        // Null, which is what the app sees with no network — and for drawn
+        // backgrounds that is the whole catalogue rather than a degraded one,
+        // so the picker here holds exactly what a shipped build draws.
+        catalogue: () => ok(null),
+        // Nothing is written. The gallery's recording is read-only, and the
+        // shot being taken is of the picker.
+        write: () => ok(true),
+      },
+
       scenePresets: {
         list: async () => ({
           ok: true as const,

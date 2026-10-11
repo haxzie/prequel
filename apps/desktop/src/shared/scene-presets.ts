@@ -262,6 +262,22 @@ function presetBackground(stored: Background | undefined): Background {
       };
     case "image":
       if (stored.source === "wallpaper") return { kind: "image", source: "wallpaper", path: "" };
+      // A drawn background travels as its recipe and no file at all — it is
+      // the one background a look can carry everywhere, because there is
+      // nothing to copy and nothing to fetch. The path is left empty and
+      // `usePatternRedraw` draws it at whatever frame the look lands in, which
+      // is also the one thing a preset could not promise about a photograph.
+      if (stored.source === "pattern") {
+        const spec = stored.pattern;
+        return typeof spec?.style === "string" && typeof spec.palette === "string"
+          ? {
+              kind: "image",
+              source: "pattern",
+              path: "",
+              pattern: { style: spec.style, palette: spec.palette },
+            }
+          : DEFAULT_BACKGROUND.background;
+      }
       if (stored.source === "file") {
         return { kind: "image", source: "file", path: PRESET_BACKGROUND_FILE };
       }

@@ -481,6 +481,47 @@ describe("the background", () => {
       rect: { x: 0, y: 0, width: 1920, height: 1080 },
     });
   });
+
+  it("blurs a picture by the setting", () => {
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        background: {
+          ...DEFAULT_SETTINGS.background,
+          background: { kind: "image", source: "preset", path: "monterey.jpg" },
+          backgroundBlur: 0.04,
+        },
+      }),
+    );
+
+    // A fraction of the shorter edge, resolved to output pixels here.
+    expect(plan.items[0]).toMatchObject({ paint: { kind: "image", blur: 0.04 * 1080 } });
+  });
+
+  it("never blurs a drawn background, whatever the slider says", () => {
+    // The blur belongs to the section rather than to the picture, so a value
+    // left behind by a photograph used to follow a pattern chosen after it —
+    // and the Pattern tab has no slider to turn it back down with.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        background: {
+          ...DEFAULT_SETTINGS.background,
+          background: {
+            kind: "image",
+            source: "pattern",
+            path: "pattern-cutting-mat-olive-v1-1920x1080.png",
+            pattern: { style: "cutting-mat", palette: "olive" },
+          },
+          backgroundBlur: 0.04,
+        },
+      }),
+    );
+
+    expect(plan.items[0]).toMatchObject({ paint: { kind: "image", blur: 0 } });
+  });
 });
 
 describe("fitting the screen", () => {

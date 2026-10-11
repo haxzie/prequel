@@ -7165,7 +7165,17 @@ function toPaint(background: Background, blur: number): Paint {
         angle: background.angle,
       };
     case "image":
-      return { kind: "image", path: background.path, blur };
+      // A drawn background is never blurred, whatever the slider says. The
+      // blur is a setting on the section, not on the picture, so a value left
+      // behind by a photograph followed a pattern that was chosen afterwards —
+      // and the Pattern tab has no slider to turn it back down with. Softening
+      // one is also throwing away the one thing it is for: it is drawn at the
+      // frame's own size so its hairlines land on whole pixels.
+      return {
+        kind: "image",
+        path: background.path,
+        blur: background.source === "pattern" ? 0 : blur,
+      };
   }
 }
 
