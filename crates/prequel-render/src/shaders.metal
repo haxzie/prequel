@@ -1723,3 +1723,72 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
 
     return premultiplied(u.colorA.rgb, u.colorA.a * coverage);
 }
+
+// The composed frame, turned into what the CPU encoder reads.
+//
+// On the GPU and not with vImage, which is the whole point: libx264 is around
+// 1ms a frame at 1080p and a CPU colour conversion is 1.5ms, so doing it here
+// is the difference between the encoder being free and it being the wall. It
+// also rides on the command buffer the frame was drawn with, so it costs no
+// second round trip to the GPU.
+//
+// Rec. 709, video range — matching the `vui` the shim tags the stream with. Get
+// the two out of step and the export is a colour shift that only shows up
+// against the preview.
+constant float3 BT709_LUMA = float3(0.2126, 0.7152, 0.0722);
+constant float LUMA_SCALE = 219.0 / 255.0;
+constant float LUMA_OFFSET = 16.0 / 255.0;
+constant float CHROMA_SCALE = 224.0 / 255.0;
+constant float CHROMA_OFFSET = 128.0 / 255.0;
+
+static inline float luma_of(float3 rgb) {
+    return dot(rgb, BT709_LUMA) * LUMA_SCALE + LUMA_OFFSET;
+}
+
+kernel void composite_to_nv12(texture2d<float, access::read> source [[texture(0)]],
+                              texture2d<float, access::write> luma [[texture(1)]],
+                              texture2d<float, access::write> chroma [[texture(2)]],
+                              uint2 id [[thread_position_in_grid]]) {
+    // One thread per chroma sample, which is one 2×2 block of the picture: the
+    // four luma samples and the one colour sample they share are then written
+    // by the same thread, and the block is read once rather than four times.
+    if (id.x >= chroma.get_width() || id.y >= chroma.get_height()) {
+        return;
+    }
+
+    uint2 base = id * 2;
+    uint width = luma.get_width();
+    uint height = luma.get_height();
+
+    // Clamped rather than skipped: an odd frame size leaves the last column or
+    // row with no partner, and reading past the edge returns black — a dark
+    // seam down one side of every exported frame.
+    uint2 right = uint2(min(base.x + 1, width - 1), base.y);
+    uint2 below = uint2(base.x, min(base.y + 1, height - 1));
+    uint2 both = uint2(right.x, below.y);
+
+    float3 a = source.read(base).rgb;
+    float3 b = source.read(right).rgb;
+    float3 c = source.read(below).rgb;
+    float3 d = source.read(both).rgb;
+
+    luma.write(float4(luma_of(a), 0.0, 0.0, 1.0), base);
+    if (right.x != base.x) {
+        luma.write(float4(luma_of(b), 0.0, 0.0, 1.0), right);
+    }
+    if (below.y != base.y) {
+        luma.write(float4(luma_of(c), 0.0, 0.0, 1.0), below);
+        if (right.x != base.x) {
+            luma.write(float4(luma_of(d), 0.0, 0.0, 1.0), both);
+        }
+    }
+
+    // Averaged over the block before converting, not converted four times and
+    // averaged: 4:2:0 is one colour sample for the four, and taking it from a
+    // single corner leaves a hard edge crawling along every colour boundary.
+    float3 mean = (a + b + c + d) * 0.25;
+    float y = dot(mean, BT709_LUMA);
+    float cb = (mean.b - y) / 1.8556 * CHROMA_SCALE + CHROMA_OFFSET;
+    float cr = (mean.r - y) / 1.5748 * CHROMA_SCALE + CHROMA_OFFSET;
+    chroma.write(float4(cb, cr, 0.0, 1.0), id);
+}

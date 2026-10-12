@@ -10,10 +10,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use cidre::cv;
-use prequel_encode::{AudioWriterConfig, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig};
+use prequel_encode::{
+    AudioWriterConfig, Encoding, GifWriter, VideoCodec, VideoWriter, VideoWriterConfig,
+};
 use prequel_session::MediaTime;
 
-use crate::compositor::Compositor;
+use crate::compositor::{Compositor, Output};
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::reader::{AudioReader, VideoReader};
 use crate::sound::{SoundPlan, SoundTrack};
@@ -40,27 +42,33 @@ const PROGRESS_EVERY: u64 = 6;
 
 /// Where an export's wall clock actually goes.
 ///
-/// The loop below runs decode, composite and encode strictly one after another,
-/// on three independent engines, and the obvious question is what that costs.
-/// Measured, on an M-series Mac, exporting a real 31-second session to 1080p60
-/// H.264 with a five-item plan: **decode 4%, render 5%, encode 85-90%**.
+/// Measured on an M4 Pro, 1080p60, a background and the recording inset on it,
+/// over content modelled on a screen recording: **1.4ms a frame — decode 7%,
+/// render 80%, encode 11%**. A 35-second clip takes about three seconds.
+/// Reproduce it with `measures_the_export_loop`.
 ///
-/// So: nothing. The export is encode-bound, and not by a little. `ffmpeg` given
-/// the same 1800 frames through the same `h264_videotoolbox` takes 7.66s where
-/// the whole export — decode, composite, mix and encode — takes 7.68s. There is
-/// no headroom in this crate to find, because VideoToolbox is the wall.
+/// The render is the wall, and that is a recent thing. It used to be the
+/// encoder, by a long way, and two notes in this file said so for as long as
+/// the export went through VideoToolbox: it costs a flat
+/// `0.35ms + 1.8ms per megapixel` whatever it is asked, nothing in its
+/// settings moves it, several sessions at once do not raise the total, and
+/// `ffmpeg` through the same encoder lands on the same figure. All true, and
+/// all beside the point — the media engine is not the fastest encoder on the
+/// machine. libx264 at `veryfast` is five times quicker on screen content and
+/// writes a fifth of the bytes, so H.264 is encoded on the CPU now. See
+/// `prequel_encode::Encoding` and `measures_the_encoder_ceiling`.
 ///
-/// Overlapping render and encode was tried and measured at **0.8%**, which is
-/// what the numbers above predict: committing the frame without waiting can
-/// only recover the time the GPU was idle, and that was 2-3%. It cost retained
-/// source buffers, a double-buffered caption backdrop and a lifetime rule on
-/// every frame in flight, so it was taken back out.
+/// Read the encode share knowing what it is: libx264 runs on its own thread,
+/// one frame behind, so what is counted here is only the loop *waiting* for
+/// it, and at 1080p it almost never does. Encoding in line instead costs 1.8ms
+/// a frame against 1.4ms. `CpuPipeline` has the reasoning and the depth.
 ///
-/// Kept rather than deleted now the question is answered, because the answer
-/// moves: it is a property of the machine, the resolution and the codec, and
-/// the next person to ask should read a number rather than re-derive one. The
-/// thing to check first is whether encode is still the wall — if it is, the
-/// only lever left is what is asked of the encoder, not how this loop is shaped.
+/// Decode is hardware and stays small. Render is the GPU composite, waited on
+/// synchronously, which is the next thing to attack if this has to go faster —
+/// `compositor.rs` says what that would cost. It is the wall at 4K too, where a
+/// frame costs 3.8ms of which the composite is around two thirds. HEVC has no
+/// CPU encoder here and still goes to the media engine, so it keeps the old
+/// numbers.
 ///
 /// Summed rather than sampled: the per-frame cost is tens of microseconds and a
 /// timer around each stage would be a large fraction of what it measures if it
@@ -114,6 +122,17 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
+    /// Which encoder writes this format.
+    ///
+    /// H.264 on the CPU, everything else as it was: HEVC has no CPU encoder
+    /// here, and a GIF is not encoded by either.
+    fn encoding(self) -> Encoding {
+        match self {
+            Self::Mp4 => Encoding::Cpu,
+            _ => Encoding::Media,
+        }
+    }
+
     fn codec(self) -> VideoCodec {
         match self {
             Self::Mp4Hevc => VideoCodec::Hevc,
@@ -225,7 +244,17 @@ fn run(
         frames_total: total,
     });
 
-    let mut compositor = Compositor::new(request.width, request.height)?;
+    // The pixel format follows the encoder: libx264 reads 4:2:0, and converting
+    // on the CPU would cost more than the encode. The conversion rides on the
+    // command buffer the frame was composed with — see `composite_to_nv12`.
+    let mut compositor = Compositor::new(
+        request.width,
+        request.height,
+        match request.format.encoding() {
+            Encoding::Cpu => Output::Nv12,
+            Encoding::Media => Output::Bgra,
+        },
+    )?;
 
     // Loaded once, before the loop: a background re-decoded and re-uploaded per
     // frame would dominate the export, and every slice tends to name the same
@@ -457,7 +486,17 @@ impl Sink {
                         // player can draw nothing until it has the index — see
                         // `for_streaming`.
                         .for_streaming()
+                        .at_fps(request.fps)
                         .offline();
+                    // H.264 is encoded on the CPU, which is four times quicker
+                    // and writes a fifth of the bytes on screen content —
+                    // `StageTimes` has the measurement. HEVC has no CPU
+                    // encoder here and stays on the media engine.
+                    let config = if format.encoding() == Encoding::Cpu {
+                        config.on_cpu()
+                    } else {
+                        config
+                    };
                     if has_audio {
                         // Offline here too: a busy encoder must not silently drop
                         // a buffer and leave a hole in the sound.

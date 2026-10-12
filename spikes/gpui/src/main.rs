@@ -29,7 +29,7 @@ use gpui::{
     App, Application, Bounds, Context, MouseButton, MouseDownEvent, MouseMoveEvent, Window,
     WindowBounds, WindowOptions, div, prelude::*, px, relative, rgb, size, surface,
 };
-use prequel_render::compositor::Compositor;
+use prequel_render::compositor::{Compositor, Output};
 use prequel_render::plan::RectKey;
 use prequel_render::reader::VideoReader;
 use prequel_render::{
@@ -228,7 +228,7 @@ impl Preview {
         let reader = VideoReader::open(&source.file, 0, source.duration)
             .expect("could not open the screen track");
         let compositor =
-            Compositor::new(source.width, source.height).expect("could not start Metal");
+            Compositor::new(source.width, source.height, Output::Bgra).expect("could not start Metal");
         let yuv = Yuv::new(source.width, source.height).expect("could not build the YUV pass");
         let plan = build_plan(&source);
 
@@ -470,7 +470,7 @@ fn build_plan(source: &Source) -> RenderPlan {
 /// cannot, and it can run without a window in the way.
 fn check_pixels(source: Source) -> Result<()> {
     let mut reader = VideoReader::open(&source.file, 0, source.duration)?;
-    let mut compositor = Compositor::new(source.width, source.height)?;
+    let mut compositor = Compositor::new(source.width, source.height, Output::Bgra)?;
     let mut yuv = Yuv::new(source.width, source.height)?;
     let plan = build_plan(&source);
 

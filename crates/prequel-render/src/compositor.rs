@@ -240,6 +240,21 @@ struct Held {
     _buffer: Option<arc::R<cv::PixelBuf>>,
 }
 
+/// What `render` hands back.
+///
+/// A capture and the editor's preview want BGRA — one is going to VideoToolbox
+/// and the other to a canvas. An export encoded on the CPU wants NV12, because
+/// libx264 reads 4:2:0 and converting on the CPU costs more than the encode
+/// does. See `prequel_encode::Encoding`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Output {
+    #[default]
+    Bgra,
+    /// Bi-planar 4:2:0, video range, Rec. 709 — `prequel_encode`'s
+    /// `CPU_PIXEL_FORMAT`.
+    Nv12,
+}
+
 pub struct Compositor {
     device: arc::R<mtl::Device>,
     queue: arc::R<mtl::CmdQueue>,
@@ -279,6 +294,15 @@ pub struct Compositor {
     /// first filtered frame and reused: an export is one size throughout, and
     /// a recording with no filter never pays for it at all.
     scene: Option<arc::R<mtl::Texture>>,
+    /// Which pixel format the output buffers are in.
+    output: Output,
+    /// Turns the composed frame into 4:2:0 for the CPU encoder. `None` for a
+    /// BGRA compositor, which never needs it.
+    convert: Option<arc::R<mtl::ComputePipelineState>>,
+    /// Where the frame is composed when the output buffer cannot be rendered
+    /// into — which is every NV12 frame, because the items blend with each
+    /// other and blending in 4:2:0 is not a thing.
+    composed: Option<arc::R<mtl::Texture>>,
 }
 
 /// How many caption and text bitmaps to keep decoded at once.
@@ -299,7 +323,7 @@ pub struct Compositor {
 const BITMAP_CACHE: usize = 12;
 
 impl Compositor {
-    pub fn new(width: u32, height: u32) -> Result<Self> {
+    pub fn new(width: u32, height: u32, output: Output) -> Result<Self> {
         let device =
             mtl::Device::sys_default().ok_or_else(|| Error::Metal("no Metal device".to_owned()))?;
 
@@ -348,7 +372,21 @@ impl Compositor {
         let textures = cv::MetalTextureCache::create(None, &device, None)
             .map_err(|e| Error::Metal(format!("{e:?}")))?;
 
-        let pool = output_pool(width, height)?;
+        let pool = output_pool(width, height, output)?;
+
+        let convert = match output {
+            Output::Bgra => None,
+            Output::Nv12 => {
+                let function = library
+                    .new_fn(&ns::String::with_str("composite_to_nv12"))
+                    .ok_or_else(|| Error::Metal("composite_to_nv12 missing".to_owned()))?;
+                Some(
+                    device
+                        .new_compute_ps_with_fn(&function)
+                        .map_err(|e| Error::Metal(format!("{e:?}")))?,
+                )
+            }
+        };
 
         // Built eagerly and kept optional, rather than lazily on the first
         // filtered frame: a shader that will not compile should say so once, at
@@ -379,6 +417,9 @@ impl Compositor {
             glass: None,
             filter_pipeline,
             scene: None,
+            output,
+            convert,
+            composed: None,
         })
     }
 
@@ -484,7 +525,24 @@ impl Compositor {
 
         // Held until after the command buffer completes: the texture is only
         // valid while its wrapper is alive, and this one is being drawn into.
-        let target = self.texture_for(&output, None)?;
+        //
+        // Only for BGRA. A 4:2:0 buffer is not something the items can be drawn
+        // into — they blend with each other, and there is no blending in a
+        // subsampled chroma plane — so an NV12 frame is composed in a texture
+        // of its own and converted into the buffer at the end.
+        let target = match self.output {
+            Output::Bgra => Some(self.texture_for(&output, None)?),
+            Output::Nv12 => None,
+        };
+        let composed = match self.output {
+            Output::Bgra => None,
+            Output::Nv12 => Some(self.composed_texture(plan.frame)?),
+        };
+        let into_frame: &mtl::Texture = match (&target, &composed) {
+            (Some(held), _) => &held.texture,
+            (_, Some(texture)) => texture,
+            _ => unreachable!("one of the two is always there"),
+        };
         // Wrapped once for the frame rather than per item, and held for the
         // same reason as `target`.
         let matte = matte
@@ -510,7 +568,7 @@ impl Compositor {
             Some(_) => Some(self.scene_texture(plan.frame)?),
             None => None,
         };
-        let items_into: &mtl::Texture = scene.as_deref().unwrap_or(&target.texture);
+        let items_into: &mtl::Texture = scene.as_deref().unwrap_or(into_frame);
 
         let descriptor = mtl::RenderPassDesc::new();
         let attachments = descriptor.color_attaches();
@@ -699,7 +757,7 @@ impl Compositor {
             let descriptor = mtl::RenderPassDesc::new();
             let attachments = descriptor.color_attaches();
             let mut attachment = attachments.get(0);
-            attachment.set_texture(Some(&target.texture));
+            attachment.set_texture(Some(into_frame));
             // Clear rather than Load: this pass covers every pixel of the
             // output buffer, and the buffer came from a pool, so whatever it
             // holds is the last frame that used it.
@@ -736,29 +794,72 @@ impl Compositor {
             unsafe { pass.end_encoding() };
         }
 
+        // The last thing on the command buffer, after the items and after a
+        // look: whatever is in `composed` by now is the frame, and this turns
+        // it into the two planes the CPU encoder reads.
+        if let Some(convert) = &self.convert {
+            let composed = composed
+                .as_deref()
+                .ok_or_else(|| Error::Metal("no composed texture to convert".to_owned()))?;
+            let luma = self.plane_texture(&output, 0, mtl::PixelFormat::R8UNorm)?;
+            let chroma = self.plane_texture(&output, 1, mtl::PixelFormat::Rg8UNorm)?;
+
+            let mut pass = cmd
+                .new_compute_cmd_enc()
+                .ok_or_else(|| Error::Metal("could not create a compute encoder".to_owned()))?;
+            pass.set_compute_ps(convert);
+            pass.set_texture_at(Some(composed), 0);
+            pass.set_texture_at(Some(&luma.texture), 1);
+            pass.set_texture_at(Some(&chroma.texture), 2);
+
+            // One thread per chroma sample. Dispatched with the non-uniform
+            // form so an odd frame size does not need a padded grid and a
+            // bounds check that silently skips the last column.
+            let grid = mtl::Size {
+                width: chroma.texture.width(),
+                height: chroma.texture.height(),
+                depth: 1,
+            };
+            let group = mtl::Size {
+                width: 16,
+                height: 16,
+                depth: 1,
+            };
+            pass.dispatch_threads(grid, group);
+            unsafe { pass.end_encoding() };
+
+            alive.push(luma);
+            alive.push(chroma);
+        }
+
         cmd.commit();
         // Waited on rather than pipelined, which is what makes holding the
         // textures until here sufficient.
         //
-        // Pipelining this was tried, on the strength of an earlier note saying
-        // it was worth roughly 1.5×. It is not. Committing without waiting and
-        // encoding the previous frame while this one runs measured **0.8%** on
-        // a real 31-second session at 1080p60 — because the GPU was only idle
-        // 2-3% of the export to begin with. `StageTimes` in `export.rs` has the
-        // full split and the ffmpeg comparison that pins it: the export is
-        // encode-bound at the hardware's own ceiling.
+        // This is now the slowest part of an export: 1.1ms a frame at 1080p,
+        // against 0.8ms to encode one and 0.1ms to decode one. Two earlier
+        // notes here measured pipelining at 1.5× and then at 0.8%, both back
+        // when VideoToolbox was the wall and the GPU's idle time was all there
+        // was to win. It is not the wall any more — `StageTimes` in
+        // `export.rs` has the split — so the next person to want a quicker
+        // export should start here.
         //
-        // What it cost was the interesting part, and the reason not to try
-        // again without a number first: every source pixel buffer has to be
-        // retained rather than borrowed, because the texture is a view onto the
-        // reader's memory and the reader moves on; the caption backdrop has to
-        // be double-buffered, or the frame being built blits into the one the
-        // frame still running is sampling; and a cancelled export has to wait
-        // before dropping what it had in hand. Three lifetime rules, for 0.8%.
+        // Two ways in, in rough order of how much they buy. The shader is one
+        // branchy uber-pass and Metal sizes registers for its worst path, so a
+        // plain `Fill` pays the loupe's register budget; specialising the
+        // pipeline per mode with function constants is the usual fix. And this
+        // wait could overlap the next frame's composite, which costs what the
+        // earlier note found: every source pixel buffer retained rather than
+        // borrowed, because the texture is a view onto the reader's memory and
+        // the reader moves on; the caption backdrop double-buffered, or the
+        // frame being built blits into the one the frame still running is
+        // sampling; and a cancelled export waiting before dropping what it had
+        // in hand.
         cmd.wait_until_completed();
         drop(alive);
         drop(matte);
         drop(target);
+        drop(composed);
 
         Ok(output)
     }
@@ -1684,6 +1785,69 @@ impl Compositor {
             .ok_or_else(|| Error::Metal("no scene texture".to_owned()))
     }
 
+    /// Where an NV12 frame is composed before it is converted.
+    ///
+    /// Not the scene texture, which a filtered frame is already using as the
+    /// place the items go before the look reads them. With a look on, the items
+    /// land in `scene`, the look lands here, and the conversion reads this.
+    fn composed_texture(&mut self, frame: Size) -> Result<arc::R<mtl::Texture>> {
+        let width = (frame.width.round() as usize).max(1);
+        let height = (frame.height.round() as usize).max(1);
+
+        let stale = self
+            .composed
+            .as_ref()
+            .is_none_or(|texture| texture.width() != width || texture.height() != height);
+        if stale {
+            let mut desc =
+                mtl::TextureDesc::new_2d(mtl::PixelFormat::Bgra8UNorm, width, height, false);
+            // Rendered into by the items, read by the conversion kernel, and
+            // blitted from by `grab_backdrop` when a caption measures itself.
+            desc.set_usage(mtl::TextureUsage::RENDER_TARGET | mtl::TextureUsage::SHADER_READ);
+            self.composed = Some(
+                self.device
+                    .new_texture(&desc)
+                    .ok_or_else(|| Error::Metal("could not make a composed texture".to_owned()))?,
+            );
+        }
+
+        self.composed
+            .as_ref()
+            .map(|texture| texture.retained())
+            .ok_or_else(|| Error::Metal("no composed texture".to_owned()))
+    }
+
+    /// Wraps one plane of a bi-planar buffer as a writable Metal texture.
+    fn plane_texture(
+        &self,
+        buffer: &cv::PixelBuf,
+        plane: usize,
+        format: mtl::PixelFormat,
+    ) -> Result<Held> {
+        let wrapper = self
+            .textures
+            .texture(
+                buffer,
+                None,
+                format,
+                buffer.plane_width(plane),
+                buffer.plane_height(plane),
+                plane,
+            )
+            .map_err(|e| Error::Metal(format!("could not wrap plane {plane}: {e:?}")))?;
+
+        let texture = wrapper
+            .texture()
+            .map(|texture| texture.retained())
+            .ok_or_else(|| Error::Metal("texture cache returned nothing".to_owned()))?;
+
+        Ok(Held {
+            texture,
+            _wrapper: wrapper,
+            _buffer: None,
+        })
+    }
+
     /// Wraps a pixel buffer as a Metal texture, without copying it.
     fn texture_for(
         &self,
@@ -1774,7 +1938,11 @@ fn filter_time(at: MediaTime, animated: bool) -> f32 {
 }
 
 /// Pooled output buffers, rather than one allocation per frame.
-fn output_pool(width: u32, height: u32) -> Result<arc::R<cv::PixelBufPool>> {
+fn output_pool(width: u32, height: u32, output: Output) -> Result<arc::R<cv::PixelBufPool>> {
+    let format = match output {
+        Output::Bgra => cv::PixelFormat::_32_BGRA,
+        Output::Nv12 => cv::PixelFormat::_420V,
+    };
     let attrs = cf::DictionaryOf::with_keys_values(
         &[
             cv::pixel_buffer::keys::width(),
@@ -1785,7 +1953,7 @@ fn output_pool(width: u32, height: u32) -> Result<arc::R<cv::PixelBufPool>> {
         &[
             ns::Number::with_u32(width).as_ref(),
             ns::Number::with_u32(height).as_ref(),
-            ns::Number::with_u32(cv::PixelFormat::_32_BGRA.0).as_ref(),
+            ns::Number::with_u32(format.0).as_ref(),
             ns::Number::with_bool(true).as_ref(),
         ],
     );

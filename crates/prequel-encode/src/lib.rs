@@ -14,12 +14,15 @@ mod gif;
 mod probe;
 mod time;
 mod video;
+mod x264;
 
 pub use audio::{AudioCodec, AudioWriter, AudioWriterConfig, AudioWriterSummary};
 pub use gif::GifWriter;
 pub use probe::{MediaProbe, TrackProbe, probe_file, probe_media};
 pub use time::{host_nanos, host_now};
 pub use video::{VideoCodec, VideoWriter, VideoWriterConfig, VideoWriterSummary};
+pub use video::{CPU_PIXEL_FORMAT, Encoding};
+pub use x264::{DEFAULT_CRF, Nv12, PRESET, Preset, X264};
 
 pub type Result<T> = std::result::Result<T, Error>;
 

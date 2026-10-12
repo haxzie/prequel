@@ -50,8 +50,18 @@ pnpm dev:desktop  # the recorder
 ```
 
 You need the Rust toolchain (`rustup`, stable — the workspace is edition 2024
-and needs 1.88+), Xcode Command Line Tools, Node 22+ and pnpm 11. `ffmpeg` and
-`ffprobe` are needed only by the media tests.
+and needs 1.88+), Xcode 26 or newer, Node 22+ and pnpm 11, and libx264:
+
+```sh
+brew install x264
+```
+
+`prequel-encode` links libx264 statically and the build stops with this line if
+it is missing. It is what exports H.264 — several times faster than
+VideoToolbox on screen content, at a fraction of the file size. It is also
+GPL-2.0-or-later, which is worth knowing before redistributing a build.
+
+`ffmpeg` and `ffprobe` are needed only by the media tests.
 
 Then grant Screen Recording — see below. There is no way to run the app
 without it: a stub recorder switched on by an environment variable is one a

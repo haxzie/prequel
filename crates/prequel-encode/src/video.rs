@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use cidre::{arc, av, cm, cv, ns};
+use cidre::{arc, av, cf, cm, cv, ns};
 use prequel_session::MediaTime;
 
 use crate::audio::{AudioWriterConfig, audio_settings, pcm_sample_buf, retime};
+use crate::x264::{self, DEFAULT_CRF, Moved, Nv12, PRESET, X264};
 use crate::{Error, Result};
 
 /// Timescale for presentation timestamps. Nanoseconds, matching
@@ -47,6 +48,15 @@ pub struct VideoWriterConfig {
     /// from a file, so the writer waits for the encoder instead of dropping
     /// them, and every frame reaches the output.
     pub realtime: bool,
+    /// Frames a second the file is written at.
+    ///
+    /// Read by the CPU encoder's rate control and by nothing else: timestamps
+    /// come from the caller either way, and VideoToolbox is never told. So the
+    /// default is right for anything that encodes on the media engine, and only
+    /// an export has to set it.
+    pub fps: u32,
+    /// Which encoder puts the picture in the file.
+    pub encoding: Encoding,
     /// An audio track in the same file, when the output has sound.
     ///
     /// It has to be declared here rather than added once the picture is done:
@@ -64,6 +74,8 @@ impl VideoWriterConfig {
             codec: VideoCodec::default(),
             streaming: false,
             realtime: true,
+            fps: 60,
+            encoding: Encoding::default(),
             audio: None,
         }
     }
@@ -76,6 +88,21 @@ impl VideoWriterConfig {
 
     pub fn with_codec(mut self, codec: VideoCodec) -> Self {
         self.codec = codec;
+        self
+    }
+
+    pub fn at_fps(mut self, fps: u32) -> Self {
+        self.fps = fps;
+        self
+    }
+
+    /// Encodes on the CPU rather than the media engine.
+    ///
+    /// For an export and nothing else — see [`Encoding`]. Frames must then
+    /// arrive as I420 rather than BGRA, which is what the compositor's
+    /// conversion pass exists to produce.
+    pub fn on_cpu(mut self) -> Self {
+        self.encoding = Encoding::Cpu;
         self
     }
 
@@ -108,6 +135,29 @@ impl VideoWriterConfig {
     }
 }
 
+/// Which encoder a file is written with.
+///
+/// Not a preference — the two have opposite strengths and the choice follows
+/// the deadline, not the quality. A capture has one: ScreenCaptureKit is
+/// handing over frames in real time, the picture is already on the GPU, and the
+/// CPU is wanted for the app that is being recorded. The media engine is the
+/// only right answer there.
+///
+/// An export has no deadline and the measurement reverses. On an M4 Pro at
+/// 1080p, 300 frames of screen content: the media engine takes 4.03ms a frame
+/// and writes 2.81MB, libx264 at `veryfast` takes 1.0ms and writes 0.56MB.
+/// Four times quicker and five times smaller, because screen content is flat
+/// regions and hard edges — where a CPU encoder's decisions win and the
+/// hardware's rate control spends bits on stillness. `x264.rs` has the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Encoding {
+    /// VideoToolbox, on the media engine.
+    #[default]
+    Media,
+    /// libx264, on the CPU. H.264 only.
+    Cpu,
+}
+
 /// Writes CoreVideo pixel buffers to an MP4 with hardware encoding.
 ///
 /// Frames are appended through an `AVAssetWriterInputPixelBufferAdaptor` with
@@ -119,7 +169,7 @@ impl VideoWriterConfig {
 #[derive(Debug)]
 pub struct VideoWriter {
     writer: arc::R<av::AssetWriter>,
-    adaptor: arc::R<av::asset::WriterInputPixelBufAdaptor>,
+    picture: Picture,
     input: arc::R<av::asset::WriterInput>,
     /// The audio input, when this file carries sound.
     audio: Option<AudioInput>,
@@ -130,6 +180,34 @@ pub struct VideoWriter {
     last_pts: Option<MediaTime>,
     dropped_not_ready: u64,
 }
+
+/// How frames reach the file.
+///
+/// The hardware path hands a pixel buffer to an adaptor and VideoToolbox does
+/// the rest. The CPU path encodes here and appends the bitstream itself, so the
+/// writer's input is a passthrough one — it muxes and does not encode.
+enum Picture {
+    Media(arc::R<av::asset::WriterInputPixelBufAdaptor>),
+    Cpu(CpuPipeline),
+}
+
+impl std::fmt::Debug for Picture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Media(_) => f.write_str("Media"),
+            Self::Cpu { .. } => f.write_str("Cpu"),
+        }
+    }
+}
+
+/// What the CPU encoder is handed. Bi-planar 4:2:0, video range, which is what
+/// `vui.b_fullrange = 0` in the shim promises the decoder.
+///
+/// Bi-planar rather than the three-plane `y420`, and the reason is on the GPU
+/// side: `CVMetalTextureCache` will wrap each plane of this as a texture for
+/// the conversion kernel to write, and does not list a three-plane buffer at
+/// all.
+pub const CPU_PIXEL_FORMAT: cv::PixelFormat = cv::PixelFormat::_420V;
 
 impl VideoWriter {
     pub fn create(path: &Path, config: &VideoWriterConfig) -> Result<Self> {
@@ -165,19 +243,76 @@ impl VideoWriter {
         // end and nothing anywhere says why.
         writer.set_should_optimize_for_network_use(config.streaming);
 
-        let settings = video_settings(width, height, config.codec);
-        let mut input = av::asset::WriterInput::with_media_type_and_output_settings(
-            av::MediaType::video(),
-            Some(settings.as_ref()),
-        )
-        .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+        // The CPU encoder is H.264 only, and silently writing HEVC on the
+        // media engine instead would be a file that is three times slower to
+        // produce than the caller asked for with nothing saying so.
+        if config.encoding == Encoding::Cpu && config.codec != VideoCodec::H264 {
+            return Err(Error::Configuration(format!(
+                "the CPU encoder writes H.264 only, not {:?}",
+                config.codec
+            )));
+        }
+
+        let (mut input, picture) = match config.encoding {
+            Encoding::Media => {
+                let settings = video_settings(width, height, config.codec);
+                let input = av::asset::WriterInput::with_media_type_and_output_settings(
+                    av::MediaType::video(),
+                    Some(settings.as_ref()),
+                )
+                .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+
+                let adaptor =
+                    av::asset::WriterInputPixelBufAdaptor::with_input_writer(&input, None)
+                        .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+
+                (input, Picture::Media(adaptor))
+            }
+            Encoding::Cpu => {
+                let fps = config.fps.max(1);
+                let mut encoder = X264::open(width, height, fps, 1, PRESET, DEFAULT_CRF, x264::threads())?;
+
+                // Read before the first frame and not after: the parameter sets
+                // describe the stream, the muxer needs them before it will take
+                // a sample, and libx264 invalidates the pointers on the first
+                // `encode` call.
+                let (sps, pps) = encoder.parameter_sets()?;
+                let format = cm::VideoFormatDesc::with_h264_param_sets(
+                    &[sps.as_ptr(), pps.as_ptr()],
+                    &[sps.len(), pps.len()],
+                    // Four, matching `b_annexb = 0`: the length in front of
+                    // each NAL is what `avcC` records and what the decoder
+                    // reads to walk the sample. Three here and every frame
+                    // after the first is garbage.
+                    4,
+                )
+                .map_err(|e| {
+                    Error::Configuration(format!("could not describe the H.264 stream: {e:?}"))
+                })?;
+
+                // No output settings: a passthrough input muxes what it is
+                // given rather than encoding it again.
+                let input =
+                    av::asset::WriterInput::with_media_type_output_settings_source_format_hint(
+                        av::MediaType::video(),
+                        None,
+                        Some(&format),
+                    )
+                    .map_err(|e| Error::Configuration(format!("{e:?}")))?;
+
+                let pipeline = CpuPipeline::spawn(
+                    encoder,
+                    format,
+                    1_000_000_000 / fps as MediaTime,
+                );
+
+                (input, Picture::Cpu(pipeline))
+            }
+        };
 
         // Tells the encoder whether frames arrive at capture rate rather than
         // as fast as the disk allows.
         input.set_expects_media_data_in_real_time(config.realtime);
-
-        let adaptor = av::asset::WriterInputPixelBufAdaptor::with_input_writer(&input, None)
-            .map_err(|e| Error::Configuration(format!("{e:?}")))?;
 
         writer
             .add_input(&input)
@@ -214,7 +349,7 @@ impl VideoWriter {
 
         Ok(Self {
             writer,
-            adaptor,
+            picture,
             input,
             audio,
             realtime: config.realtime,
@@ -340,25 +475,47 @@ impl VideoWriter {
             self.first_pts = Some(pts);
         }
 
-        if !self.wait_until_ready() {
-            // A writer that has already failed never reports itself ready again,
-            // so every later append looks like a busy encoder. Reporting "the
-            // encoder was slow" for what is actually a rejected sample buffer
-            // sends the reader looking in entirely the wrong place.
-            if self.writer.status() == av::AssetWriterStatus::Failed {
-                return Err(Error::Write(describe_writer_error(&self.writer)));
+        // Asked of the muxer only where something is about to be given to it.
+        // The CPU path hands this frame to libx264 and appends whatever came
+        // back from the *previous* one, so its readiness check belongs with
+        // that append — see `append_encoded`. Checking here instead reported a
+        // momentarily busy muxer as a dropped frame, which the export loop is
+        // right to treat as a failure.
+        match &mut self.picture {
+            Picture::Media(_) => {
+                if !self.ready()? {
+                    self.dropped_not_ready += 1;
+                    return Ok(false);
+                }
+                let Picture::Media(adaptor) = &mut self.picture else {
+                    unreachable!("matched a moment ago")
+                };
+                let appended = adaptor
+                    .append_pixel_buf_with_pts(image, time)
+                    .map_err(|e| Error::Write(format!("{e:?}")))?;
+
+                if !appended {
+                    return Err(Error::Write(describe_writer_error(&self.writer)));
+                }
             }
-            self.dropped_not_ready += 1;
-            return Ok(false);
+            Picture::Cpu(pipeline) => {
+                // Handed over rather than encoded here: the frame is finished —
+                // the GPU wait in the compositor is what makes that true — so
+                // the encoder can work through it while the next frame is being
+                // composed. That overlap is the point, and it is most of the
+                // gain: measured at 1080p, a frame costs 1.3ms with the encoder
+                // alongside and 1.8ms with it in line.
+                pipeline.submit(image.retained(), pts)?;
+            }
         }
 
-        let appended = self
-            .adaptor
-            .append_pixel_buf_with_pts(image, time)
-            .map_err(|e| Error::Write(format!("{e:?}")))?;
-
-        if !appended {
-            return Err(Error::Write(describe_writer_error(&self.writer)));
+        // Outside the match, so a sample finished by the worker is appended on
+        // this thread and in order. `AVAssetWriter` is fed from one thread
+        // throughout; only libx264 runs on the other.
+        if let Picture::Cpu(pipeline) = &mut self.picture
+            && let Some(ready) = pipeline.take_if_deep()?
+        {
+            self.append_encoded(&ready)?;
         }
 
         self.frames += 1;
@@ -366,13 +523,64 @@ impl VideoWriter {
         Ok(true)
     }
 
-    /// Waits for the encoder to accept more data.
+    /// Pushes out whatever the CPU encoder is still holding.
     ///
-    /// In realtime mode this is a single non-blocking check — a saturated
-    /// encoder means drop the frame and move on. Offline, it spins with a short
-    /// sleep until the encoder drains, so no frame is lost.
-    fn wait_until_ready(&self) -> bool {
-        wait_until_ready(&self.input, self.realtime)
+    /// libx264 runs several frames behind on purpose — that lookahead is where
+    /// most of its speed comes from — and the worker thread holds one or two
+    /// more. Without this the export is short by exactly that many frames at
+    /// the end, which reads as a video that stops early rather than as a
+    /// missing flush. For anything shorter than the lookahead it is every
+    /// frame: see `pq_x264_flush`.
+    fn drain(&mut self) -> Result<()> {
+        let Picture::Cpu(pipeline) = &mut self.picture else {
+            return Ok(());
+        };
+
+        for ready in pipeline.finish()? {
+            self.append_encoded(&ready)?;
+        }
+        Ok(())
+    }
+
+    /// Whether the muxer will take another sample.
+    ///
+    /// In realtime mode the underlying check is a single non-blocking one — a
+    /// saturated encoder means drop the frame and move on. Offline it spins
+    /// with a short sleep until the encoder drains, so no frame is lost.
+    ///
+    /// A writer that has already failed never reports itself ready again, so
+    /// every later append looks like a busy encoder. Reporting "the encoder was
+    /// slow" for what is actually a rejected sample buffer sends the reader
+    /// looking in entirely the wrong place.
+    fn ready(&self) -> Result<bool> {
+        if wait_until_ready(&self.input, self.realtime) {
+            return Ok(true);
+        }
+        if self.writer.status() == av::AssetWriterStatus::Failed {
+            return Err(Error::Write(describe_writer_error(&self.writer)));
+        }
+        Ok(false)
+    }
+
+    /// Appends one already-encoded sample, waiting for the muxer if it is busy.
+    ///
+    /// Never drops it. The frame has been encoded and there is no second copy:
+    /// an encoded sample the muxer would not take is an error, where a *source*
+    /// frame a live encoder will not take is a frame skipped on purpose.
+    fn append_encoded(&mut self, sample: &cm::SampleBuf) -> Result<()> {
+        if !self.ready()? {
+            return Err(Error::Write(
+                "the muxer would not take an encoded frame".to_owned(),
+            ));
+        }
+        let appended = self
+            .input
+            .append_sample_buf(sample)
+            .map_err(|e| Error::Write(format!("{e:?}")))?;
+        if !appended {
+            return Err(Error::Write(describe_writer_error(&self.writer)));
+        }
+        Ok(())
     }
 
     /// Convenience for appending straight from a capture sample buffer.
@@ -410,6 +618,8 @@ impl VideoWriter {
             self.writer.cancel_writing();
             return Err(Error::NoSamples);
         }
+
+        self.drain()?;
 
         self.input.mark_as_finished();
         // Every input has to be closed, not just the picture: `finishWriting`
@@ -524,6 +734,303 @@ fn describe_writer_error(writer: &av::AssetWriter) -> String {
         .error()
         .map(|e| format!("{e:?}"))
         .unwrap_or_else(|| format!("status {:?}, no error attached", writer.status()))
+}
+
+/// A locked NV12 buffer, unlocked again when it goes out of scope.
+///
+/// `CVPixelBufferLockBaseAddress` has to be paired, and an early return between
+/// the lock and the unlock leaves the buffer locked for good — the pool then
+/// hands out nothing and the next frame waits on a buffer that is never coming
+/// back, with no error anywhere to say so.
+struct Planes {
+    /// Retained to get a mutable handle: locking counts as a mutation as far as
+    /// cidre is concerned, and the retain is on the same buffer rather than a
+    /// copy of the pixels. Same reason `GifWriter::append` does it.
+    buffer: arc::R<cv::PixelBuf>,
+}
+
+impl Planes {
+    fn lock(image: &cv::PixelBuf) -> Result<Self> {
+        if image.pixel_format() != CPU_PIXEL_FORMAT {
+            return Err(Error::Configuration(format!(
+                "the CPU encoder takes bi-planar 4:2:0 ('420v'), not {:?}",
+                image.pixel_format()
+            )));
+        }
+
+        let mut buffer = image.retained();
+        // Read-only, so the lock does not dirty the IOSurface the GPU has just
+        // written and have its pages copied back.
+        unsafe { buffer.lock_base_addr(cv::pixel_buffer::LockFlags::READ_ONLY) }
+            .result()
+            .map_err(|e| Error::Write(format!("could not lock the frame to encode it: {e:?}")))?;
+
+        Ok(Self { buffer })
+    }
+
+    fn frame(&self) -> Nv12<'_> {
+        let plane = |index: usize| -> &[u8] {
+            let stride = self.buffer.plane_bytes_per_row(index);
+            let rows = self.buffer.plane_height(index);
+            unsafe {
+                std::slice::from_raw_parts(self.buffer.plane_base_address(index), stride * rows)
+            }
+        };
+
+        Nv12 {
+            y: plane(0),
+            y_stride: self.buffer.plane_bytes_per_row(0),
+            uv: plane(1),
+            uv_stride: self.buffer.plane_bytes_per_row(1),
+        }
+    }
+}
+
+impl Drop for Planes {
+    fn drop(&mut self) {
+        let _ = unsafe {
+            self.buffer
+                .unlock_lock_base_addr(cv::pixel_buffer::LockFlags::READ_ONLY)
+        };
+    }
+}
+
+/// Wraps one encoded access unit as a sample the muxer will take.
+///
+/// The payload is copied rather than referenced: libx264 owns it and the next
+/// `encode` call overwrites it, while `AVAssetWriter` keeps the sample for as
+/// long as it likes. Pointing a `CMBlockBuffer` at the encoder's memory writes
+/// whichever frame happened to be encoded next.
+fn sample_buf(
+    sample: &crate::x264::Sample<'_>,
+    format: &cm::VideoFormatDesc,
+    frame_duration: MediaTime,
+) -> Result<arc::R<cm::SampleBuf>> {
+    let mut block = cm::BlockBuf::with_mem_block(sample.payload.len())
+        .map_err(|e| Error::Write(format!("could not allocate a sample block: {e:?}")))?;
+    block
+        .as_mut_slice()
+        .map_err(|e| Error::Write(format!("could not fill a sample block: {e:?}")))?
+        .copy_from_slice(sample.payload);
+
+    let timing = cm::SampleTimingInfo {
+        duration: cm::Time::new(frame_duration as i64, TIMESCALE),
+        pts: cm::Time::new(sample.pts, TIMESCALE),
+        dts: cm::Time::new(sample.dts, TIMESCALE),
+    };
+    let size = sample.payload.len();
+
+    let buffer = unsafe {
+        let mut out = None;
+        cm::SampleBuf::create_in(
+            None,
+            Some(&block),
+            true,
+            None,
+            std::ptr::null(),
+            Some(format),
+            1,
+            1,
+            &timing,
+            1,
+            &size,
+            &mut out,
+        )
+        .map_err(|e| Error::Write(format!("could not build a sample buffer: {e:?}")))?;
+        out.expect("a successful create fills the out parameter")
+    };
+
+    // Not every frame may be started from, and a file whose samples all claim
+    // they may seeks to a P-frame and shows a smear until the next keyframe.
+    if !sample.keyframe {
+        let mut buffer = buffer;
+        if let Some(attachments) = buffer.attaches_mut(true)
+            && !attachments.is_empty()
+        {
+            attachments[0].insert(
+                cm::sample_buffer::attach_keys::not_sync(),
+                // Through the Plist newtype, which is what a CoreFoundation
+                // attachment dictionary holds.
+                unsafe {
+                    std::mem::transmute::<&cf::Boolean, &cf::Plist>(cf::Boolean::value_true())
+                },
+            );
+        }
+        return Ok(buffer);
+    }
+
+    Ok(buffer)
+}
+
+/// libx264 on a thread of its own, one frame behind the compositor.
+///
+/// The depth is one frame and deliberately not more. The point is to overlap
+/// the encode with the next frame's composite, which one frame achieves in
+/// full: at 1080p the composite is around 1.8ms and the encode 0.6ms, so the
+/// encoder is idle either way and a deeper queue would only hold more pixel
+/// buffers. Each 1080p NV12 frame is 3MB and a 4K one 12MB, so a queue sized
+/// for comfort is tens of megabytes of wired IOSurface memory bought for
+/// nothing.
+///
+/// Bounded, so backpressure works in the other direction too: if the encoder
+/// ever is the slower of the two, `submit` blocks and the loop runs at the
+/// encoder's rate rather than queueing the whole export in memory first.
+const DEPTH: usize = 1;
+
+struct CpuPipeline {
+    frames: std::sync::mpsc::SyncSender<Moved<Job>>,
+    encoded: std::sync::mpsc::Receiver<Moved<Result<Vec<arc::R<cm::SampleBuf>>>>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    /// Frames handed over and not yet collected.
+    in_flight: usize,
+}
+
+enum Job {
+    Frame(arc::R<cv::PixelBuf>, MediaTime),
+    /// Drain the lookahead and stop.
+    Finish,
+}
+
+impl CpuPipeline {
+    fn spawn(
+        mut encoder: X264,
+        format: arc::R<cm::VideoFormatDesc>,
+        frame_duration: MediaTime,
+    ) -> Self {
+        let (frames, jobs) = std::sync::mpsc::sync_channel::<Moved<Job>>(1);
+        let (results, encoded) = std::sync::mpsc::sync_channel(2);
+
+        let moved_format = Moved(format);
+        let worker = std::thread::Builder::new()
+            .name("prequel-x264".to_owned())
+            .spawn(move || {
+                let Moved(format) = moved_format;
+                while let Ok(Moved(job)) = jobs.recv() {
+                    // `Finish` is the last job there will ever be, and this
+                    // thread has to *stop* on it rather than wait for another:
+                    // the main thread joins straight after collecting the
+                    // flush, and a worker back in `recv` is an export that
+                    // finishes encoding and then hangs for good.
+                    let last = matches!(job, Job::Finish);
+                    let outcome = match job {
+                        Job::Frame(buffer, pts) => {
+                            encode_one(&mut encoder, &buffer, pts, &format, frame_duration)
+                        }
+                        Job::Finish => flush_all(&mut encoder, &format, frame_duration),
+                    };
+                    let failed = outcome.is_err();
+                    // Sent before stopping even on the last job, so the error
+                    // or the final samples reach the main thread.
+                    if results.send(Moved(outcome)).is_err() || last || failed {
+                        break;
+                    }
+                }
+            })
+            .expect("a thread for the encoder");
+
+        Self {
+            frames,
+            encoded,
+            worker: Some(worker),
+            in_flight: 0,
+        }
+    }
+
+    fn submit(&mut self, buffer: arc::R<cv::PixelBuf>, pts: MediaTime) -> Result<()> {
+        self.frames
+            .send(Moved(Job::Frame(buffer, pts)))
+            .map_err(|_| Error::Write("the encoder thread stopped".to_owned()))?;
+        self.in_flight += 1;
+        Ok(())
+    }
+
+    /// Collects the oldest result once more than one frame is outstanding, so
+    /// the encode of the last frame overlaps the composite of this one.
+    fn take_if_deep(&mut self) -> Result<Option<arc::R<cm::SampleBuf>>> {
+        if self.in_flight <= DEPTH {
+            return Ok(None);
+        }
+        let samples = self.receive()?;
+        // One frame in, at most one sample out — libx264 reorders nothing here,
+        // because the shim turns B-frames off.
+        Ok(samples.into_iter().next())
+    }
+
+    /// Everything still outstanding, in order, and then the lookahead.
+    fn finish(&mut self) -> Result<Vec<arc::R<cm::SampleBuf>>> {
+        let mut out = Vec::new();
+        while self.in_flight > 0 {
+            out.extend(self.receive()?);
+        }
+
+        self.frames
+            .send(Moved(Job::Finish))
+            .map_err(|_| Error::Write("the encoder thread stopped".to_owned()))?;
+        self.in_flight += 1;
+        out.extend(self.receive()?);
+
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+        Ok(out)
+    }
+
+    fn receive(&mut self) -> Result<Vec<arc::R<cm::SampleBuf>>> {
+        let Moved(result) = self
+            .encoded
+            .recv()
+            .map_err(|_| Error::Write("the encoder thread stopped".to_owned()))?;
+        self.in_flight -= 1;
+        result
+    }
+}
+
+impl Drop for CpuPipeline {
+    fn drop(&mut self) {
+        // Dropping the sender is what ends the worker's loop. Joining after
+        // that rather than before: joining first would wait on a thread still
+        // blocked on `recv`, which is a cancelled export hanging rather than
+        // stopping.
+        if let Some(worker) = self.worker.take() {
+            let (dead, _) = std::sync::mpsc::sync_channel(1);
+            let _ = std::mem::replace(&mut self.frames, dead);
+            // Drained first. The worker cannot see a dropped sender while it is
+            // blocked handing back a result, and the queue only has to be two
+            // deep for that to be possible — a cancelled export would then
+            // join a thread that is waiting on this one.
+            while self.encoded.try_recv().is_ok() {}
+            let _ = worker.join();
+        }
+    }
+}
+
+fn encode_one(
+    encoder: &mut X264,
+    buffer: &cv::PixelBuf,
+    pts: MediaTime,
+    format: &cm::VideoFormatDesc,
+    frame_duration: MediaTime,
+) -> Result<Vec<arc::R<cm::SampleBuf>>> {
+    let planes = Planes::lock(buffer)?;
+    match encoder.encode(planes.frame(), pts as i64)? {
+        // `None` is the encoder still filling its lookahead, which the first
+        // frames of every export do. The frame is not lost — `finish` drains
+        // what is held.
+        None => Ok(Vec::new()),
+        Some(sample) => Ok(vec![sample_buf(&sample, format, frame_duration)?]),
+    }
+}
+
+fn flush_all(
+    encoder: &mut X264,
+    format: &cm::VideoFormatDesc,
+    frame_duration: MediaTime,
+) -> Result<Vec<arc::R<cm::SampleBuf>>> {
+    let mut out = Vec::new();
+    while let Some(sample) = encoder.flush()? {
+        out.push(sample_buf(&sample, format, frame_duration)?);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

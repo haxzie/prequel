@@ -98,6 +98,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # libx264 is linked into `prequel-encode`, statically, and the build
+      # script fails with the install line if it is not there — see
+      # `crates/prequel-encode/build.rs`. Not on the macOS image by default.
+      - name: Install x264
+        run: brew install x264
+
       # The Electron binary is ~100 MB and identical between runs, so it is worth
       # not fetching twice. Keyed on the version in the lockfile: a bump has to
       # miss the cache or the build would package the previous Electron.

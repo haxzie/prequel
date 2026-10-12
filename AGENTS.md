@@ -21,6 +21,16 @@ PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace
 PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace --all-targets
 ```
 
+**Building needs libx264.** `brew install x264`. `prequel-encode` links it
+statically — `crates/prequel-encode/build.rs` looks under Homebrew's two
+prefixes and MacPorts, honours `X264_PREFIX`, and panics with the install line
+rather than letting the link fail with `ld: library not found`. Static, so
+nothing has to be bundled or signed, and a notarised build has no dependency on
+a Homebrew prefix existing. It is what exports H.264: five times quicker than
+VideoToolbox on screen content and a fifth of the file size, which
+`measures_the_encoder_ceiling` prints. Note the licence — libx264 is
+GPL-2.0-or-later, and this tree is FSL-1.1-ALv2.
+
 **Building needs Xcode 26 or newer**, whatever macOS you are on.
 `crates/prequel-speech` compiles `SpeechAnalyzer`, which does not exist in an
 older SDK, so the file will not compile against one — the _app_ still runs on
@@ -42,6 +52,14 @@ themselves for that reason. A bare `cargo` typed into a non-interactive shell
 still needs the prefix.
 
 Media tests shell out to `ffmpeg`/`ffprobe`.
+
+Two benchmarks are `#[ignore]`d rather than deleted, because the question they
+answer moves with the machine and the next person should read a number rather
+than derive one: `measures_the_encoder_ceiling` (what each encoder manages per
+frame) and `measures_the_export_loop` (what the whole loop costs). Both want
+`--test-threads=1` — two of either in parallel contend for the one media engine
+and come out several times slower, which reads as a regression in whichever one
+you were looking at.
 
 There is no stub recorder behind an environment variable. A test that needs a
 stand-in imports `recorder.fake.ts` and hands it to `setRecorder`; running the

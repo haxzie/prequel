@@ -14,6 +14,7 @@ use std::time::Duration;
 use cidre::sc::stream::Output as _;
 use cidre::{arc, cm, cv, define_obj_type, dispatch, ns, objc, sc};
 use prequel_encode::{
+    Encoding,
     AudioCodec, AudioWriter, AudioWriterConfig, AudioWriterSummary, VideoCodec, VideoWriter,
     VideoWriterConfig, host_nanos, host_now,
 };
@@ -508,6 +509,15 @@ impl ScreenRecorder {
                 // app cannot afford to be slow.
                 streaming: false,
                 realtime: true,
+                // Capture rate, for a capture: what the writer records as the
+                // nominal frame rate. Timestamps still come from the session
+                // clock, not from this.
+                fps: options.fps,
+                // The media engine, and not a preference. ScreenCaptureKit is
+                // handing over frames in real time with the picture already on
+                // the GPU, and the CPU belongs to whatever is being recorded —
+                // see `prequel_encode::Encoding`.
+                encoding: Encoding::Media,
                 audio: None,
             },
         )?;

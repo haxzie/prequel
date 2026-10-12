@@ -27,3 +27,9 @@ tracing = { workspace = true }
 # `color_quant` feature. No Apple framework writes GIF, so this is the one
 # format the app encodes in software.
 gif = "0.13"
+
+[build-dependencies]
+# Compiles `x264/shim.c`. `cc` rather than `bindgen`: the shim exists precisely
+# so no Rust type has to mirror `x264_param_t`, and bindgen would bring a
+# libclang dependency back for a header this never reads from Rust.
+cc = "1"

@@ -73,6 +73,12 @@ jobs:
       - name: Install ffmpeg
         run: brew install ffmpeg
 
+      # libx264 is linked into `prequel-encode`, statically, and the build
+      # script fails with the install line if it is not there — see
+      # `crates/prequel-encode/build.rs`. Not on the macOS image by default.
+      - name: Install x264
+        run: brew install x264
+
       # Seeds `.env` from `.env.example` through the root `prepare` script, which
       # is what makes the env schema resolve without any secrets in CI.
       - run: pnpm install --frozen-lockfile

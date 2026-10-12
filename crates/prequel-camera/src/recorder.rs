@@ -162,22 +162,14 @@ impl Inner {
     /// Opens the file once the first frame has revealed its dimensions.
     /// Returns whether the writer is ready.
     fn open_writer(&mut self, image: &cv::PixelBuf) -> bool {
-        let config = VideoWriterConfig {
-            width: image.width() as u32,
-            height: image.height() as u32,
-            codec: self.codec,
-            // No audio track here. Capture deliberately writes each
-            // source to its own file so the mix can be changed after the
-            // fact; only the export muxes them together.
-            // Live capture: never block AVFoundation's delegate queue.
-            // Read back from the disk it was written to, never streamed, so
-            // the rewrite `for_streaming` costs at `finish` would buy this
-            // nothing — and stopping a capture is the one moment the app
-            // cannot afford to be slow.
-            streaming: false,
-            realtime: true,
-            audio: None,
-        };
+        // Defaults elsewhere: realtime, the media engine, no audio track and
+        // not laid out for streaming. Capture writes each source to its own
+        // file so the mix can be changed after the fact — only the export muxes
+        // them together — it must never block AVFoundation's delegate queue,
+        // and it is read back from the disk it was written to, so the rewrite
+        // `for_streaming` costs at `finish` would buy this nothing.
+        let config = VideoWriterConfig::new(image.width() as u32, image.height() as u32)
+            .with_codec(self.codec);
 
         match VideoWriter::create(&self.path, &config) {
             Ok(writer) => {

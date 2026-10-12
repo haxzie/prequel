@@ -255,20 +255,13 @@ impl Sink {
 
         let mut writer = VideoWriter::create(
             path,
-            &VideoWriterConfig {
-                width,
-                height,
-                codec: VideoCodec::H264,
-                // Live, like the camera: a saturated encoder drops the mask
-                // rather than stalling the segmenter behind it.
-                // Read back from the disk it was written to, never streamed,
-                // so the rewrite `for_streaming` costs at `finish` would buy
-                // this nothing — and stopping a capture is the one moment the
-                // app cannot afford to be slow.
-                streaming: false,
-                realtime: true,
-                audio: None,
-            },
+            // Defaults elsewhere: realtime, the media engine, no audio track
+            // and not laid out for streaming. Live, like the camera — a
+            // saturated encoder drops the mask rather than stalling the
+            // segmenter behind it — and read back from the disk it was written
+            // to, so the rewrite `for_streaming` costs at `finish` would buy
+            // this nothing.
+            &VideoWriterConfig::new(width, height).with_codec(VideoCodec::H264),
         )?;
         // The matte's zero must be the camera's zero, not its own first
         // mask's, or the two files disagree by however long the segmenter
