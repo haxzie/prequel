@@ -183,6 +183,29 @@ export stays correct. `AVAssetWriter` writes FLAC into the same container, at 24
 bits, and leaves the bit rate key out: it accepts one and nothing in the file
 reflects it.
 
+**ScreenCaptureKit hands back YUV, not BGRA.** `SCScreenshotManager` returns a
+biplanar `420v` buffer unless the config asks otherwise, so `bytes_per_row` is
+the *luma plane's* stride — 1536 on a 1512-wide frame — and `plane_count` is 2.
+Read it as four bytes a pixel and each row swallows four, so the picture arrives
+tiled four times across and squashed to a quarter. Nothing fails: whatever
+consumes it returns honest results for a frame that was never on screen. Ask for
+the format (`set_pixel_format`) and check the stride against the width rather
+than trusting either. Pinned by `a_luma_plane_read_as_packed_pixels_is_refused`.
+Prefer `420f` over `420v` if the values are thresholded — video range is 16–235,
+which is a seventh less contrast than the numbers were tuned against.
+
+**Chromium persists page zoom per origin, and every window here is one
+origin.** All of them `loadFile` the same `index.html`, so a stray ctrl-scroll
+over any surface rescales every surface, survives the quit, and returns on the
+next launch — written into `per_host_zoom_levels` in the profile's
+`Preferences` with nothing on screen to say so. The picker's overlays draw in
+CSS pixels that are meant to *be* screen points, so a level of −0.5 (a factor of
+`1.2^-0.5` = 0.913) drew every window highlight, screen outline and found shape
+nine per cent small, anchored at the top left. It reads as a coordinate-space
+bug in every direction at once, and a fresh `BrowserWindow` on a `data:` URL
+will not reproduce it — different origin, no persisted zoom. `createPanel` and
+`createWindow` both pin it through `lockZoom`.
+
 **`CVMetalTextureCache`** hands back a wrapper that must outlive the
 `MTLTexture`, and the texture is a _view_ onto the pixel buffer, not a copy.
 Keep both alive or it samples nothing. Buffers it wraps must be created

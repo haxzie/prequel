@@ -16,7 +16,7 @@ import {
   type DockMenuPick,
   type DockView,
 } from "../../shared/contract.js";
-import { createPanel, loadRoute } from "./base.js";
+import { createPanel, loadRoute, pinZoom } from "./base.js";
 import { watchCursor } from "./cursor.js";
 import { DockMenuPopup } from "./dock-menu.js";
 
@@ -140,6 +140,10 @@ export class DockWindow {
 
   show(): void {
     const window = this.prepare();
+    // The panel outlives every picker and every take, so a zoom that landed on
+    // it stays until the app restarts. Cleared here, which is the moment it is
+    // about to be looked at — and ahead of everything the panel starts.
+    pinZoom();
     // Only positioned on the way in. Re-running this on an already-visible
     // panel would yank it back to the centre of the screen after the user had
     // dragged it somewhere, and would fight the resize animation.

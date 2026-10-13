@@ -148,6 +148,13 @@
      appears the instant a tile is ticked, and anything longer puts the button
      somebody is reaching for in motion under the pointer. */
   --animate-selection-in: selection-in 150ms ease-out;
+  /* Each rectangle the area picker found, drawn once as it is found.
+     `--shape-delay` staggers them so the sweep reads as the screen being
+     looked over rather than as every box appearing at once, and `both` holds
+     the first frame through that delay — without it every outline is on screen
+     at full strength until its turn comes, which is the whole set at once and
+     exactly what the stagger is for. */
+  --animate-shape-found: shape-found 620ms ease-out var(--shape-delay, 0ms) both;
 
   @keyframes view-in {
     from {
@@ -183,6 +190,28 @@
   /* Up from a few pixels below, fading. `transform` only — this floats over a
      scrolling grid, and animating anything that lays out would reflow every
      tile under it on every frame. */
+  /* Up from nothing, held for a moment, then gone, leaving the screen as it
+     was. The outlines are an answer to "is it working", not furniture: forty
+     boxes left on screen is a diagram of the interface rather than a picker,
+     and the one that matters is drawn under the pointer anyway. Scaled from
+     just inside its final size so it reads as settling onto the rectangle. */
+  @keyframes shape-found {
+    0% {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    70% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
   @keyframes selection-in {
     from {
       opacity: 0;

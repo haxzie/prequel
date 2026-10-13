@@ -10,6 +10,7 @@ import { BrowserWindow, screen, type Display, type WebContents } from "electron"
 import type {
   CaptureMode,
   PickerWindow,
+  Region,
   ScreenMode,
   SelectionResult,
   SelectionSetup,
@@ -46,6 +47,14 @@ export class SelectionOverlay {
    */
   private targets: Target[] = [];
   private icons: Map<number, string> = new Map();
+  /**
+   * The snap targets found on each display, by `Display.id`.
+   *
+   * Per display rather than one list, because each overlay draws in its own
+   * local coordinates and a rectangle found on the laptop screen means
+   * something else entirely on the monitor beside it.
+   */
+  private shapes: Map<number, Region[]> = new Map();
 
   get isOpen(): boolean {
     return this.panes.length > 0;
@@ -73,6 +82,8 @@ export class SelectionOverlay {
     this.capture = capture;
     this.targets = targets;
     this.icons = icons;
+    // Whatever was found last time was found on the screen as it looked then.
+    this.shapes.clear();
 
     return new Promise((resolve) => {
       this.pending = resolve;
@@ -100,14 +111,41 @@ export class SelectionOverlay {
   update(targets: Target[], icons: Map<number, string> = new Map()): void {
     this.targets = targets;
     this.icons = icons;
+    this.push();
+  }
 
+  /**
+   * Hands one display's overlay the shapes found on it.
+   *
+   * Arrives after the overlay is already up, which is the point: the scan takes
+   * a screenshot and walks it, and an overlay that waited for that would be a
+   * picker that takes a beat to appear every single time — including for
+   * everyone who was going to drag a region by hand anyway.
+   */
+  setShapes(displayId: number, shapes: Region[]): void {
+    this.shapes.set(displayId, shapes);
+    this.push();
+  }
+
+  private push(): void {
     for (const { window, display } of this.panes) {
       if (window.isDestroyed()) continue;
       window.webContents.send(
         IPC_CHANNELS.selectionSetup,
-        describe(display, this.mode, this.capture, targets, icons),
+        describe(
+          display,
+          this.mode,
+          this.capture,
+          this.targets,
+          this.icons,
+          this.shapesFor(display),
+        ),
       );
     }
+  }
+
+  private shapesFor(display: Display): Region[] {
+    return this.shapes.get(display.id) ?? [];
   }
 
   /**
@@ -126,7 +164,16 @@ export class SelectionOverlay {
     const pane = this.panes.find(
       ({ window }) => !window.isDestroyed() && window.webContents === contents,
     );
-    return pane ? describe(pane.display, this.mode, this.capture, this.targets, this.icons) : null;
+    return pane
+      ? describe(
+          pane.display,
+          this.mode,
+          this.capture,
+          this.targets,
+          this.icons,
+          this.shapesFor(pane.display),
+        )
+      : null;
   }
 
   choose(result: SelectionResult): void {
@@ -175,9 +222,20 @@ export class SelectionOverlay {
     window.setFullScreenable(false);
 
     void loadRoute(window, "/selection").then(() => {
+      // Checked here as well as pinned in `createPanel`, because this is the
+      // one window where zoom is not a cosmetic setting: it draws in CSS
+      // pixels that are meant to *be* this display's points, so anything but
+      // 100% silently rescales every highlight it ever draws. Free to ask, and
+      // it runs before the overlay is shown.
+      const zoom = window.webContents.getZoomFactor();
+      if (Math.abs(zoom - 1) > 0.001) {
+        console.warn(`[picker] overlay zoom was ${String(zoom)}; pinning it back to 1`);
+        window.webContents.setZoomLevel(0);
+      }
+
       window.webContents.send(
         IPC_CHANNELS.selectionSetup,
-        describe(display, mode, capture, targets, icons),
+        describe(display, mode, capture, targets, icons, []),
       );
       window.showInactive();
       // The overlay owns the keyboard while it is up, so Escape works without
@@ -202,6 +260,7 @@ function describe(
   capture: CaptureMode,
   targets: Target[],
   icons: Map<number, string>,
+  shapes: Region[],
 ) {
   const { bounds } = display;
 
@@ -231,6 +290,7 @@ function describe(
     scaleFactor: display.scaleFactor,
     screenTarget: screenTargetFor(display),
     windows,
+    shapes,
   };
 }
 

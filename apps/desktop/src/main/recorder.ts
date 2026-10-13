@@ -23,7 +23,7 @@ import type {
   TranscribeUpdate,
 } from "@prequel/recorder";
 
-import type { PermissionStatus, Target, TargetKind } from "../shared/contract.js";
+import type { PermissionStatus, Region, Target, TargetKind } from "../shared/contract.js";
 
 export type {
   DisplaySafeArea,
@@ -301,6 +301,17 @@ export interface Recorder {
    * dynamic or video wallpaper has no still image to name.
    */
   captureWallpaper(displayId: number, path: string): Promise<void>;
+
+  /**
+   * The rectangles drawn on a display, for the area picker to snap to.
+   *
+   * One screenshot and a walk over it, so it runs on a worker thread. Points
+   * relative to the display's own origin, which is what an overlay draws in.
+   *
+   * `excludedWindowIds` keeps windows out of the shot — pass the picker's own
+   * overlays, or the only rectangle found is a sheet of dimming.
+   */
+  findShapes(displayId: number, excludedWindowIds: number[]): Promise<Region[]>;
 
   /**
    * Writes one frame of a display, a window or a region to a PNG.

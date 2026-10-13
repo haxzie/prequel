@@ -20,6 +20,7 @@ mod logging;
 mod peaks;
 mod probe;
 mod screen;
+mod shapes;
 mod sound;
 mod still;
 mod transcribe;

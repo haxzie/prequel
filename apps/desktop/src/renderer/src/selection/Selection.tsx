@@ -12,6 +12,7 @@ import type {
 import { AreaIcon, ScreenIcon } from "../dock/icons";
 import { follow } from "../lib/live";
 import { anchorOf, HANDLE_CURSOR, HANDLES, moved, resized, type Handle } from "./resize";
+import { sameRegion, smallestAt } from "./shapes";
 
 /** Ignore a drag this small — it is a click that wobbled, not a region. */
 const MIN_AREA_EDGE = 8;
@@ -37,6 +38,49 @@ const OVERLAY = "fixed inset-0 cursor-default bg-[rgba(6,7,9,0.4)]";
 
 /** The one state the crosshair belongs to: an area waiting to be dragged out. */
 const OVERLAY_DRAWING = "fixed inset-0 cursor-crosshair bg-[rgba(6,7,9,0.4)]";
+
+/** How long one outline's appearance lasts, and the gap between them. */
+const SHAPE_SWEEP_MS = 620;
+const SHAPE_STAGGER_MS = 22;
+
+/**
+ * How far into the set the stagger keeps growing.
+ *
+ * Everything past this appears with the last one. Without a cap the sweep takes
+ * as long as the screen is busy, which is backwards — a screen with more on it
+ * is one the user is waiting on more impatiently.
+ */
+const SHAPE_STAGGER_CAP = 18;
+
+/**
+ * One rectangle the app found, during the sweep that says so.
+ *
+ * An outline and nothing else: a fill over forty overlapping rectangles stacks
+ * into a wash that says only that something happened, where an outline keeps
+ * each one legible as its own shape. Thin, because this is a report and not a
+ * selection — what the user is about to get is drawn at twice the weight.
+ */
+const SHAPE_FOUND =
+  "pointer-events-none absolute rounded-[5px] border border-selected/70 " +
+  "animate-shape-found [box-shadow:0_0_12px_rgba(0,0,0,0.25)]";
+
+/**
+ * The shape under the pointer, which a click would take.
+ *
+ * The same dimming punch-out the drawn region gets, because it is the same
+ * promise — this is what you would get — and reading it any other way would
+ * make a clicked shape and a dragged region look like two different things to
+ * choose between.
+ */
+const SHAPE_HOVER =
+  "pointer-events-none absolute rounded-md border-2 border-selected bg-selected/10 " +
+  "shadow-[0_0_0_9999px_rgba(6,7,9,0.26)]";
+
+/** Its size, in the corner rather than the middle: a shape can be small, and a
+    label centred in a 40pt box covers the box. */
+const SHAPE_SIZE =
+  "absolute -top-[26px] left-0 max-w-full truncate rounded-md bg-selected " +
+  "px-2 py-[3px] text-[11px] font-semibold text-white";
 
 /**
  * The outline of what will be recorded.
@@ -105,6 +149,31 @@ export function Selection() {
       follow(() => window.prequel.selection.setup(), window.prequel.selection.onSetup, setSetup),
     [],
   );
+
+  /**
+   * The overlay's whole contract, checked rather than assumed.
+   *
+   * Everything here is drawn by writing a point straight into a CSS pixel — a
+   * window's outline, the whole-screen highlight, every shape found on the
+   * display. That only works while the two are the same unit, and when they
+   * stopped being the same unit nothing failed: the overlay just drew every
+   * rectangle nine per cent small for as long as the cause went unnoticed.
+   *
+   * Broad on purpose. A page zoom is what did it once and is pinned in
+   * `createPanel` now, but this catches any reason the viewport and the display
+   * disagree — and says so in the log the next person will actually read.
+   */
+  useEffect(() => {
+    if (!setup) return;
+    const { innerWidth: w, innerHeight: h } = window;
+    if (w === setup.width && h === setup.height) return;
+
+    console.error(
+      `[picker] overlay is ${String(w)}×${String(h)} CSS pixels on a ` +
+        `${String(setup.width)}×${String(setup.height)} point display ` +
+        `(×${(setup.width / w).toFixed(3)}). Every highlight will be drawn at the wrong size.`,
+    );
+  }, [setup]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -339,7 +408,7 @@ function ScreenSelection({
   );
 }
 
-/** Drag out a rectangle, then record just that part of the screen. */
+/** Drag out a rectangle, or click one the app already found. */
 function AreaSelection({
   setup,
   onStart,
@@ -349,6 +418,18 @@ function AreaSelection({
 }) {
   const [origin, setOrigin] = useState<Point | null>(null);
   const [current, setCurrent] = useState<Point | null>(null);
+  /**
+   * The shape under the pointer, and only that, in state.
+   *
+   * The same reasoning as the window picker's `hovered`: holding the pointer
+   * instead would re-render this overlay on every `mousemove`, 120 times a
+   * second, to move a highlight that is in the same place for as long as the
+   * pointer is over one shape. What the user sees changes when they cross from
+   * one to the next, so that is what the state says.
+   */
+  const [hoveredShape, setHoveredShape] = useState<Region | null>(null);
+  /** The settled region, once it can be moved and resized away from the drag. */
+  const [adjusted, setAdjusted] = useState<Region | null>(null);
   /** The drag is over and the region is waiting to be confirmed. */
   const [settled, setSettled] = useState(false);
   const originRef = useRef<Point | null>(null);
@@ -357,6 +438,17 @@ function AreaSelection({
   const frame = useRef(0);
   /** The bubble at the pointer, moved by hand rather than by a render. */
   const cursorHint = useRef<HTMLDivElement>(null);
+  /**
+   * Where the pointer was last seen, so a fresh set of shapes can be judged
+   * against it without waiting for the pointer to move.
+   *
+   * The screen is rescanned while the picker is up, because the screen moves —
+   * and the hover is otherwise only recomputed on a `mousemove`. Hold the mouse
+   * still over a view that scrolls and the highlight would stay on the
+   * rectangle that content used to occupy, which looks exactly like the picker
+   * being wrong about where things are.
+   */
+  const pointer = useRef<Point | null>(null);
 
   // Nothing to flush once the component is gone, and a `setState` after unmount
   // is a warning in the console of an overlay nobody can open again.
@@ -393,16 +485,29 @@ function AreaSelection({
     [setup.screenTarget, onStart],
   );
 
-  const commit = useCallback(() => {
+  /**
+   * `shape` is whatever is under the pointer where it was released, which is
+   * what a click means. Taken from the release rather than from the hover
+   * state: the overlay opens under a pointer that may never move, and
+   * `mousemove` has nothing to say about where it already was — so a click
+   * straight onto a shape would have chosen nothing.
+   */
+  const commit = useCallback((shape: Region | null) => {
     const dragged = regionOf(originRef.current, currentRef.current);
     originRef.current = null;
 
     if (!dragged || dragged.width < MIN_AREA_EDGE || dragged.height < MIN_AREA_EDGE) {
-      // Too small to be intentional; let the user try again rather than
-      // recording a few stray pixels.
+      // A press that went nowhere, which is a click — and over a shape the app
+      // found, a click means that shape. This is the whole interaction: drag
+      // for a region of your own, click for one that is already there, and no
+      // mode to be in or switch between.
+      setAdjusted(shape);
       setOrigin(null);
       setCurrent(null);
-      setSettled(false);
+      // Settled on it, so the card and the grips come up and it can be nudged
+      // before it becomes a take — exactly as a dragged region can. A click
+      // that landed on nothing settles nothing.
+      setSettled(shape !== null);
       return;
     }
 
@@ -420,10 +525,45 @@ function AreaSelection({
    */
   const grip = useRef<{ handle: Handle; from: Point; rect: Region } | null>(null);
 
-  /** The settled region, once it can be moved and resized away from the drag. */
-  const [adjusted, setAdjusted] = useState<Region | null>(null);
-
   const region = adjusted ?? drawn;
+
+  /**
+   * Nothing is being drawn, adjusted or confirmed.
+   *
+   * Which is the only state the shapes belong in. Once there is a region on
+   * screen it is the answer, and outlines offering others would be the picker
+   * arguing with itself.
+   */
+  const idle = !settled && !origin;
+
+  /**
+   * Whether the sweep has already played.
+   *
+   * Once only, for the life of this overlay. It answers "the app has looked at
+   * your screen", which is a thing that happened once — replaying it on every
+   * stray click would turn a one-off report into a flicker.
+   */
+  const [swept, setSwept] = useState(false);
+  useEffect(() => {
+    if (setup.shapes.length === 0) return;
+    const timer = setTimeout(
+      () => setSwept(true),
+      SHAPE_SWEEP_MS + SHAPE_STAGGER_MS * Math.min(setup.shapes.length, SHAPE_STAGGER_CAP),
+    );
+    return () => clearTimeout(timer);
+  }, [setup.shapes]);
+
+  const shapeAt = (x: number, y: number) => smallestAt(setup.shapes, x, y);
+
+  // Re-judged whenever the shapes change, from wherever the pointer already is.
+  // Only while idle: once a region is drawn or settled it is the answer, and a
+  // rescan must not move what the user has already chosen.
+  useEffect(() => {
+    if (!idle) return;
+    const at = pointer.current;
+    const next = at ? smallestAt(setup.shapes, at.x, at.y) : null;
+    setHoveredShape((previous) => (sameRegion(previous, next) ? previous : next));
+  }, [setup.shapes, idle]);
 
   const onGrip = useCallback(
     (handle: Handle) => (event: ReactMouseEvent) => {
@@ -465,6 +605,15 @@ function AreaSelection({
       }}
       onMouseMove={(event) => {
         followPointer(event.clientX, event.clientY);
+        pointer.current = { x: event.clientX, y: event.clientY };
+
+        // Only while there is nothing else going on. Once a drag is under way
+        // the region being drawn is the answer, and a shape lighting up under
+        // it would be offering a second one.
+        if (!settled && !originRef.current && !grip.current) {
+          const next = shapeAt(event.clientX, event.clientY);
+          setHoveredShape((previous) => (sameRegion(previous, next) ? previous : next));
+        }
 
         const held = grip.current;
         if (held) {
@@ -497,14 +646,32 @@ function AreaSelection({
           setCurrent(currentRef.current);
         });
       }}
-      onMouseUp={() => {
+      onMouseUp={(event) => {
         if (grip.current) {
           grip.current = null;
           return;
         }
-        if (!settled) commit();
+        if (!settled) commit(shapeAt(event.clientX, event.clientY));
       }}
     >
+      {/* Under everything else, so the rectangle being drawn and the card on it
+          are never behind a shape outline. */}
+      {idle && !swept && <ShapesFound shapes={setup.shapes} />}
+
+      {idle && hoveredShape && (
+        <div
+          className={SHAPE_HOVER}
+          style={{
+            left: hoveredShape.x,
+            top: hoveredShape.y,
+            width: hoveredShape.width,
+            height: hoveredShape.height,
+          }}
+        >
+          <span className={SHAPE_SIZE}>{pixelSize(hoveredShape, setup.scaleFactor)}</span>
+        </div>
+      )}
+
       {region && (
         <div
           className={settled ? HIGHLIGHT_SETTLED : HIGHLIGHT}
@@ -548,8 +715,55 @@ function AreaSelection({
       {/* Only before the drag. Once the rectangle exists it carries its own
           size badge at the pointer end, and two labels chasing one crosshair
           is one too many. */}
-      {!settled && !origin && <CursorHint ref={cursorHint} />}
+      {idle && <CursorHint ref={cursorHint} shapes={setup.shapes.length > 0} />}
     </div>
+  );
+}
+
+/**
+ * Every rectangle the app found, drawn once, as it finds them.
+ *
+ * The answer to "is this thing working". The shapes arrive a moment after the
+ * overlay does — they take a screenshot and a walk over it — so without this
+ * the only sign anything happened is that the pointer now sometimes lights
+ * something up, which is a feature nobody discovers. One sweep over the screen
+ * says what was found and where, and then gets out of the way.
+ *
+ * Staggered from the top left, which is the order they are read in, rather than
+ * from the pointer: the pointer is wherever the user left it and a wave
+ * spreading from it reads as a reaction to them rather than as a scan. Capped
+ * because the delay is cumulative — past a couple of dozen the last outline
+ * would arrive long after anybody stopped watching.
+ *
+ * Whether it has run is the caller's to remember, not this component's: it is
+ * unmounted the moment a drag starts, and a press that went nowhere brings it
+ * straight back — so a flag held in here would replay the whole sweep every
+ * time somebody clicked on an empty part of the screen.
+ */
+function ShapesFound({ shapes }: { shapes: Region[] }) {
+  // Sorted into reading order for the stagger only. `shapes` itself has to stay
+  // largest first — that is what makes the smallest shape under the pointer the
+  // last match — so this sorts a copy.
+  const order = [...shapes].sort((a, b) => a.y + a.x - (b.y + b.x));
+
+  return (
+    <>
+      {order.map((shape, index) => (
+        <span
+          key={`${String(shape.x)},${String(shape.y)},${String(shape.width)},${String(shape.height)}`}
+          className={SHAPE_FOUND}
+          style={
+            {
+              left: shape.x,
+              top: shape.y,
+              width: shape.width,
+              height: shape.height,
+              "--shape-delay": `${String(Math.min(index, SHAPE_STAGGER_CAP) * SHAPE_STAGGER_MS)}ms`,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </>
   );
 }
 
@@ -750,10 +964,13 @@ const CURSOR_HINT =
     the rectangle the drag draws down and right from it. */
 const CURSOR_HINT_OFFSET = { x: 14, y: 14 };
 
-function CursorHint({ ref }: { ref: Ref<HTMLDivElement> }) {
+function CursorHint({ ref, shapes }: { ref: Ref<HTMLDivElement>; shapes: boolean }) {
   return (
     <div className={CURSOR_HINT} ref={ref}>
-      Drag to select an area
+      {/* Only once there is something to click. On a screen where nothing was
+          found — or before the scan has answered — offering a click that does
+          nothing is worse than the instruction that has always been here. */}
+      {shapes ? "Click a shape, or drag an area" : "Drag to select an area"}
     </div>
   );
 }

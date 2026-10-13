@@ -64,12 +64,63 @@ export function createPanel(options: BrowserWindowConstructorOptions = {}): Brow
     skipTransformProcessType: true,
   });
 
+  lockZoom(window);
+
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
   });
 
   return window;
+}
+
+/**
+ * Pins the window at 100% zoom, and keeps it there.
+ *
+ * Chromium persists a page zoom *per origin*, and every window in this app
+ * loads the same `file://` URL — so a stray ctrl-scroll over any one of them
+ * rescales all of them, survives the quit, and comes back on the next launch.
+ * It is written into `Preferences` under `per_host_zoom_levels` and there is
+ * nothing on screen to say it happened.
+ *
+ * On the picker that is not cosmetic. Its overlays draw in CSS pixels that are
+ * meant to *be* screen points — a window's highlight, the whole-screen
+ * outline, every found shape — so a zoom of 0.91 drew all of them nine per
+ * cent small, anchored at the top left, against a screen that had not moved.
+ * It reads as the geometry being wrong everywhere, which is where two days of
+ * measuring coordinate spaces goes.
+ *
+ * Reset on every load rather than once, because the persisted level is applied
+ * per navigation; and again whenever it changes, because the gesture that set
+ * it the first time is still available. `setVisualZoomLevelLimits` turns off
+ * the pinch, which is the other way in.
+ */
+function lockZoom(window: BrowserWindow): void {
+  const contents = window.webContents;
+  void contents.setVisualZoomLevelLimits(1, 1);
+  contents.on("did-finish-load", () => contents.setZoomLevel(0));
+  contents.on("zoom-changed", () => contents.setZoomLevel(0));
+  contents.setZoomLevel(0);
+}
+
+/**
+ * Puts every window Prequel has open back to 100% zoom.
+ *
+ * `lockZoom` covers a window as it is built and after every load, which is the
+ * zoom Chromium restores from the profile. This covers the other half: a
+ * gesture landing on a window that is *already* open and stays open. The dock
+ * is built once and lives for the whole session, so a pinch on it would
+ * otherwise hold until the app was restarted.
+ *
+ * Called before the two things that measure the screen — opening a picker, and
+ * starting a take — because those are where a wrong zoom stops being cosmetic
+ * and starts deciding which pixels get recorded.
+ */
+export function pinZoom(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    window.webContents.setZoomLevel(0);
+  }
 }
 
 /**
@@ -110,6 +161,9 @@ export function createWindow(options: BrowserWindowConstructorOptions = {}): Bro
       ...options.webPreferences,
     },
   });
+
+  // The same origin as every panel, so the same persisted zoom reaches it.
+  lockZoom(window);
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);

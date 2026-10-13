@@ -11,6 +11,7 @@ mod error;
 mod permission;
 mod recorder;
 mod screen;
+mod shapes;
 mod still;
 mod targets;
 mod typing;
@@ -28,6 +29,7 @@ pub use recorder::{
     ScreenRecorder,
 };
 pub use screen::{SafeArea, display_safe_area};
+pub use shapes::find_shapes;
 pub use still::{StillOptions, StillSize, capture_still};
 pub use targets::{
     Bounds, Target, TargetKind, find_target, is_display_asleep, list_targets, main_display_asleep,

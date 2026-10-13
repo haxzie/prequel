@@ -38,7 +38,7 @@ import { deleteRecording, newTakePath } from "./session.js";
 import { takeScreenshot } from "./screenshot.js";
 import { mergeTake } from "./session-merge.js";
 import type { RecordingSession } from "./session.js";
-import { windowId } from "./windows/base.js";
+import { pinZoom, windowId } from "./windows/base.js";
 import type { CameraWindow } from "./windows/camera.js";
 import type { DockWindow } from "./windows/dock.js";
 import { screenTargetFor, SelectionOverlay } from "./windows/selection.js";
@@ -52,6 +52,22 @@ import { screenTargetFor, SelectionOverlay } from "./windows/selection.js";
  * enough to run while the overlay is up, and slow enough not to churn.
  */
 const WINDOW_REFRESH_MS = 700;
+
+/**
+ * How often the area picker looks at the screen again.
+ *
+ * For the same reason the window list refreshes, and it took longer to see:
+ * the shapes are a photograph of the screen taken when the picker opened, and
+ * a screen does not hold still. A chat view appending a line, a page finishing
+ * its layout, a video playing, anything animating — and every rectangle still
+ * describes where that content *was*. The geometry is perfect and it is in the
+ * wrong place, which reads as a coordinate bug and is not one.
+ *
+ * Slower than the window list because a scan costs ~150 ms against that one's
+ * ~20 ms: fast enough to keep up with a scrolling view, slow enough to leave
+ * the machine alone while somebody decides what to record.
+ */
+const SHAPE_REFRESH_MS = 900;
 
 /**
  * Finds the AVFoundation camera behind a label the panel picked up from
@@ -244,6 +260,16 @@ export class CaptureFlow {
   private cameraError: string | null = null;
   private activeMode: ScreenMode | null = null;
   private refreshing = false;
+  /** Whether a shape scan is in flight. See `findShapes`. */
+  private scanning = false;
+  /**
+   * What the last scan found, so a rescan that changed nothing says nothing.
+   *
+   * The picker rescans about once a second for as long as it is open, and a
+   * line a second describing an unchanged screen would bury everything else in
+   * the log.
+   */
+  private lastShapes = "";
   /**
    * Which selection is the current one.
    *
@@ -649,21 +675,33 @@ export class CaptureFlow {
 
     // The overlay covers the panel, so drop the stale selection first —
     // otherwise cancelling leaves the panel claiming a target from the old mode.
+    // Before anything is measured. The picker draws in CSS pixels that are
+    // meant to be screen points, and a take crops the region it drew — so this
+    // is the last moment a zoom left on one of our own windows is still
+    // harmless.
+    pinZoom();
+
     const run = ++this.selectionRun;
+    this.lastShapes = "";
     this.pending = null;
     this.activeMode = mode;
     this.selecting = true;
     this.emit();
 
     let start = false;
-    // Only the window picker describes things that move underneath it; a
-    // display's geometry and a dragged region do not change while it is up.
+    // Both pickers describe something that moves underneath them: the window
+    // picker a stack that reorders, the area picker a screen that redraws.
+    // Only the display's own geometry is fixed while an overlay is up.
     const refresh =
-      mode === "window" ? setInterval(() => void this.refreshTargets(), WINDOW_REFRESH_MS) : null;
+      mode === "window"
+        ? setInterval(() => void this.refreshTargets(), WINDOW_REFRESH_MS)
+        : mode === "area"
+          ? setInterval(() => void this.findShapes(run), SHAPE_REFRESH_MS)
+          : null;
 
     try {
       const targets = this.pickable(await (await getRecorder()).listTargets());
-      const result = await this.deps.selection.open(
+      const opened = this.deps.selection.open(
         mode,
         // What the confirm button does, which the overlay needs for its own
         // copy, its countdown and its hint — see `SelectionSetup.capture`.
@@ -671,6 +709,14 @@ export class CaptureFlow {
         targets,
         mode === "window" ? await windowIcons(targets) : undefined,
       );
+
+      // After the overlay is up, never before it. The scan screenshots every
+      // display and walks it, and awaiting that first would put a visible pause
+      // between pressing the button and the picker appearing — for everyone,
+      // including everyone who was going to drag a region by hand.
+      if (mode === "area") void this.findShapes(run);
+
+      const result = await opened;
       // Every outcome of the overlay, named. A cancel and a confirm look the
       // same from outside — the overlay disappears either way — and only one of
       // them goes on to record.
@@ -765,6 +811,92 @@ export class CaptureFlow {
   }
 
   /**
+   * Finds the rectangles on every display and hands them to its overlay.
+   *
+   * Per display and in parallel: on a two-monitor desk the second screen's
+   * scan must not wait on the first, or the shapes arrive on one overlay a
+   * beat after the other for no reason the user can see.
+   *
+   * A failure is logged and otherwise ignored. There is nothing to recover —
+   * an overlay with no shapes is the picker as it has always been, a region
+   * you drag out yourself.
+   */
+  private async findShapes(run: number): Promise<void> {
+    // Skipped while one is still in flight. A scan costs more than its
+    // interval leaves spare on a busy machine, and queueing them up would make
+    // the picker describe the screen further and further behind — the same
+    // reasoning as `refreshTargets`.
+    if (this.scanning) return;
+    this.scanning = true;
+
+    try {
+      await this.scanShapes(run);
+    } finally {
+      this.scanning = false;
+    }
+  }
+
+  private async scanShapes(run: number): Promise<void> {
+    const recorder = await getRecorder();
+    // The overlays are on screen by now and have to be kept out of the shot; a
+    // sheet of dimming over the whole display has exactly one rectangle on it.
+    //
+    // And so does the rest of Prequel's own furniture. The panel is right there
+    // over the screen being scanned, and its rounded cards are exactly what the
+    // scan is looking for — so without this the first thing offered to record
+    // is the app doing the recording, which is the one thing that cannot be in
+    // the shot. Read rather than prepared: `prepare` would build the camera
+    // bubble and the island just to leave them out of a screenshot.
+    const excluded = this.excludedIds([
+      this.deps.dock.browserWindow(),
+      this.deps.camera.browserWindow(),
+      this.deps.workspace?.browserWindow() ?? null,
+    ]);
+
+    await Promise.all(
+      screen.getAllDisplays().map(async (display) => {
+        try {
+          const shapes = await recorder.findShapes(display.id, excluded);
+
+          // What was found, and the two rulers it was measured with. A shape
+          // that lands beside the thing it names is either a bad rectangle or a
+          // good one in the wrong units, and those have different fixes — this
+          // is the line that tells them apart without guessing from a
+          // screenshot. Only when the answer changed: the picker rescans about
+          // once a second, and a screen nobody is touching would otherwise
+          // write the same line until it is the only thing in the log.
+          const summary = shapes
+            .slice(0, 4)
+            .map(
+              (s) =>
+                `${String(Math.round(s.x))},${String(Math.round(s.y))} ` +
+                `${String(Math.round(s.width))}×${String(Math.round(s.height))}`,
+            );
+          const signature = `${String(display.id)}:${String(shapes.length)}:${summary.join("|")}`;
+          if (signature !== this.lastShapes) {
+            this.lastShapes = signature;
+            log("info", "shapes found", {
+              display: display.id,
+              bounds: `${String(display.bounds.width)}×${String(display.bounds.height)}`,
+              scale: display.scaleFactor,
+              count: shapes.length,
+              first: summary,
+            });
+          }
+
+          // The picker can close, or be replaced by a newer one, while a scan
+          // is in flight — and shapes found on the screen as it looked then
+          // would be drawn over the screen as it looks now.
+          if (run !== this.selectionRun || !this.deps.selection.isOpen) return;
+          this.deps.selection.setShapes(display.id, shapes);
+        } catch (cause) {
+          console.warn("[picker] could not find shapes:", cause);
+        }
+      }),
+    );
+  }
+
+  /**
    * Pushes a fresh window list to an open picker.
    *
    * Skipped while a previous refresh is still in flight: listing is fast but
@@ -823,6 +955,10 @@ export class CaptureFlow {
 
   /** Starts recording whatever the panel is set up to capture. */
   async record(options?: CaptureOptions): Promise<DockState> {
+    // Reachable without a picker — the command line and the shortcut both land
+    // here — so this does not inherit `chooseMode`'s.
+    pinZoom();
+
     // Every way out of this method that is not a recording says so. A record
     // button that silently does nothing is indistinguishable from a broken
     // one, and the difference is only visible in here.
@@ -975,6 +1111,8 @@ export class CaptureFlow {
    * panel is on screen over the very display being shot.
    */
   async shoot(): Promise<DockState> {
+    pinZoom();
+
     // Nothing chosen yet — fall back to the display the cursor is on rather
     // than making the user go and pick before they can press the button.
     const selection =

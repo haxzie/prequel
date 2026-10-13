@@ -75,8 +75,14 @@ vi.mock("./permissions.js", () => ({ relaunchApp: () => undefined }));
 const shown: string[] = [];
 const opened: string[] = [];
 
+/** How many times the zoom was pinned back to 100%. */
+const pinned = { count: 0 };
+
 vi.mock("./windows/base.js", () => ({
   windowId: (window: { id: number }) => window.id,
+  pinZoom: () => {
+    pinned.count += 1;
+  },
 }));
 
 function fakeWindow(id: number) {
@@ -129,6 +135,8 @@ function makeFlow(
     restored: null as { x: number; y: number } | null,
     moved: null as ((p: { x: number; y: number }) => void) | null,
     prepare: () => fakeWindow(CAMERA_WINDOW_ID),
+    // Likewise: the bubble as it is, never opened to be excluded.
+    browserWindow: () => fakeWindow(CAMERA_WINDOW_ID),
     restore(position: { x: number; y: number } | null) {
       this.restored = position;
     },
@@ -169,6 +177,9 @@ function makeFlow(
     teleprompter,
     dock: {
       prepare: () => fakeWindow(DOCK_WINDOW_ID),
+      // The panel as it already is, which is what the shape scan reads: it
+      // must not build one just to leave it out of a screenshot.
+      browserWindow: () => fakeWindow(DOCK_WINDOW_ID),
       openMenu: () => Promise.resolve(null),
       setContentWidth: () => undefined,
       // The drop-ups are native menus popped over the panel, not windows, so
@@ -559,6 +570,32 @@ describe("matchCamera", () => {
 
   it("finds nothing when there are no cameras", () => {
     expect(matchCamera("FaceTime HD Camera (05ac:8514)", [])).toBeUndefined();
+  });
+});
+
+describe("the zoom is pinned before anything is measured", () => {
+  it("pins it before a picker opens", async () => {
+    // The picker draws in CSS pixels that are meant to *be* screen points, so a
+    // zoom left on one of our own windows decides which pixels get recorded.
+    // Chromium persists that zoom in the profile, which is how one stray pinch
+    // outlived four reinstalls.
+    const { flow } = makeFlow({ mode: "area" }, null);
+    pinned.count = 0;
+
+    await flow.chooseMode("area");
+
+    expect(pinned.count).toBeGreaterThan(0);
+  });
+
+  it("pins it for a take that never went through a picker", async () => {
+    // The command line and the shortcut both reach `record` directly, so it
+    // cannot inherit the picker's.
+    const { flow } = makeFlow({ mode: "area" }, null);
+    pinned.count = 0;
+
+    await flow.record();
+
+    expect(pinned.count).toBeGreaterThan(0);
   });
 });
 

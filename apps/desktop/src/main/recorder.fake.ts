@@ -396,6 +396,12 @@ export function createFakeRecorder(): Recorder {
 
     recordingState: () => state,
 
+    // No screen to look at, so nothing rectangular on it. An empty list is a
+    // real answer rather than a failure — it is what the picker gets for a
+    // screen with nothing on it — so the area overlay behaves as it always did
+    // and the region is dragged out by hand.
+    findShapes: async () => [],
+
     // There is no desktop to screenshot without a real display and grant, and
     // an invented image would make the wallpaper option look like it worked.
     captureWallpaper: async () => {

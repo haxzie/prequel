@@ -1442,6 +1442,16 @@ export interface SelectionSetup {
   scaleFactor: number;
   screenTarget: Target;
   windows: PickerWindow[];
+  /**
+   * The rectangles found on this display, for the area picker to snap to.
+   *
+   * Empty until they have been looked for — the overlay opens immediately and
+   * the scan takes a screenshot, so the first setup an overlay is given never
+   * has them and a second one arrives with them filled in. An empty list is
+   * also the honest answer for a screen with nothing rectangular on it, and
+   * the picker treats the two the same: drag a region by hand.
+   */
+  shapes: Region[];
 }
 
 /** What the user picked in a selection overlay. */

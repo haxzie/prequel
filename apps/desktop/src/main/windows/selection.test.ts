@@ -29,8 +29,18 @@ vi.mock("electron", () => ({
 /** Every overlay `createPanel` was asked for, in the order it was asked. */
 const panels: FakeWindow[] = [];
 
+/** What `getZoomFactor` answers, so a test can put an overlay at the wrong one. */
+let zoomFactor = 1;
+
 interface FakeWindow {
-  webContents: { on: () => void; send: (channel: string, payload: unknown) => void };
+  webContents: {
+    on: () => void;
+    send: (channel: string, payload: unknown) => void;
+    getZoomFactor: () => number;
+    setZoomLevel: (level: number) => void;
+  };
+  /** Every zoom level the overlay was put back to. */
+  zoomReset: number[];
   sent: { channel: string; payload: unknown }[];
   isDestroyed: () => boolean;
   setAlwaysOnTop: () => void;
@@ -46,8 +56,14 @@ function fakeWindow(): FakeWindow {
     webContents: {
       on: () => undefined,
       send: (channel, payload) => window.sent.push({ channel, payload }),
+      // Already pinned by `createPanel`; the overlay checks it anyway, because
+      // this is the window where a zoom that is not 1 draws every highlight at
+      // the wrong size.
+      getZoomFactor: () => zoomFactor,
+      setZoomLevel: (level) => window.zoomReset.push(level),
     },
     isDestroyed: () => false,
+    zoomReset: [],
     setAlwaysOnTop: () => undefined,
     setFullScreenable: () => undefined,
     showInactive: () => undefined,
@@ -84,7 +100,35 @@ let overlay: InstanceType<typeof SelectionOverlay>;
 
 beforeEach(() => {
   panels.length = 0;
+  zoomFactor = 1;
   overlay = new SelectionOverlay();
+});
+
+suite("an overlay whose zoom is not 1", () => {
+  it("is put back before it is shown", async () => {
+    // The bug this exists for: Chromium persists a page zoom per origin, every
+    // window here is the same origin, and this overlay draws in CSS pixels that
+    // are meant to *be* screen points. At 0.913 every highlight it drew — a
+    // window's outline, the whole screen, every shape — came out nine per cent
+    // small against a screen that had not moved.
+    zoomFactor = 1.2 ** -0.5;
+
+    void overlay.open("area", "video", []);
+    // `loadRoute` resolves on a microtask in the fake, and the check runs with
+    // the push that follows it.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(panels[0]?.zoomReset).toEqual([0]);
+  });
+
+  it("is left alone when it is already 1", async () => {
+    void overlay.open("area", "video", []);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(panels[0]?.zoomReset).toEqual([]);
+  });
 });
 
 suite("an overlay that asks what to show", () => {
@@ -137,6 +181,33 @@ suite("an overlay that asks what to show", () => {
     overlay.update([windowTarget(11, 0, "After")]);
 
     expect(overlay.setupFor(panels[0]?.webContents as never)?.capture).toBe("photo");
+  });
+
+  it("gives each display only the shapes found on it", () => {
+    // The one that would fail quietly. Every overlay draws in its own local
+    // coordinates, so a rectangle found on the laptop screen describes
+    // somewhere else entirely on the monitor beside it — and an overlay handed
+    // the wrong display's shapes would highlight empty space, with nothing in
+    // a log to say why.
+    void overlay.open("area", "video", []);
+
+    const shapes = [{ x: 10, y: 20, width: 300, height: 200 }];
+    overlay.setShapes(2, shapes);
+
+    expect(overlay.setupFor(panels[0]?.webContents as never)?.shapes).toEqual([]);
+    expect(overlay.setupFor(panels[1]?.webContents as never)?.shapes).toEqual(shapes);
+  });
+
+  it("forgets the shapes it found when a new picker opens", () => {
+    // They describe the screen as it looked then. Opening a second picker
+    // means the screen has been used since, and drawing the old rectangles
+    // over the new arrangement would be worse than drawing none.
+    void overlay.open("area", "video", []);
+    overlay.setShapes(1, [{ x: 10, y: 20, width: 300, height: 200 }]);
+
+    void overlay.open("area", "video", []);
+
+    expect(overlay.setupFor(panels[2]?.webContents as never)?.shapes).toEqual([]);
   });
 
   it("does not answer web contents that are not one of its overlays", () => {
