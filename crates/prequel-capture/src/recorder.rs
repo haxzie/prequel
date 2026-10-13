@@ -14,9 +14,8 @@ use std::time::Duration;
 use cidre::sc::stream::Output as _;
 use cidre::{arc, cm, cv, define_obj_type, dispatch, ns, objc, sc};
 use prequel_encode::{
-    Encoding,
-    AudioCodec, AudioWriter, AudioWriterConfig, AudioWriterSummary, VideoCodec, VideoWriter,
-    VideoWriterConfig, host_nanos, host_now,
+    AudioCodec, AudioWriter, AudioWriterConfig, AudioWriterSummary, Encoding, VideoCodec,
+    VideoWriter, VideoWriterConfig, host_nanos, host_now,
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
@@ -411,12 +410,18 @@ impl ScreenRecorder {
         let content = crate::targets::current_shareable_content()?;
         let filter = build_filter(&content, options)?;
 
+        // Brought inside the target before anything is computed from it. See
+        // `clamp_crop`.
+        let crop = options
+            .crop
+            .map(|crop| clamp_crop(crop, options.target.bounds));
+
         // The captured rectangle in global points, which is what turns a
         // position on screen into a fraction of the frame. `crop` is relative
         // to the target's own origin, so it has to be added to it rather than
         // used on its own — a cropped recording on a second display is where
         // that difference shows up. Shared by both sampled tracks.
-        let sampled = match options.crop {
+        let sampled = match crop {
             Some(crop) => Region {
                 x: options.target.bounds.x + crop.x,
                 y: options.target.bounds.y + crop.y,
@@ -433,7 +438,7 @@ impl ScreenRecorder {
 
         // Capture at physical resolution: bounds are in points.
         let scale = options.target.scale_factor.max(1.0);
-        let region = options.crop.unwrap_or(options.target.bounds);
+        let region = crop.unwrap_or(options.target.bounds);
         let width = ((region.width * scale).round() as u32) & !1;
         let height = ((region.height * scale).round() as u32) & !1;
 
@@ -455,7 +460,7 @@ impl ScreenRecorder {
         // A deeper queue absorbs scheduling hiccups instead of dropping frames.
         cfg.set_queue_depth(8);
 
-        if let Some(crop) = options.crop {
+        if let Some(crop) = crop {
             // `src_rect` is in points relative to the display's own origin, and
             // it must be paired with the output size above or ScreenCaptureKit
             // scales the crop back up to the full display dimensions.
@@ -1033,6 +1038,27 @@ fn audio_format(sample: &cm::SampleBuf) -> Option<(f64, i32)> {
     Some((asbd.sample_rate, asbd.channels_per_frame as i32))
 }
 
+/// A crop brought back inside the target it is a crop of.
+///
+/// ScreenCaptureKit does not check `src_rect`. A rectangle wider than the
+/// display is accepted and the stream then samples something that is neither
+/// the region asked for nor an error — the file looks fine and shows the wrong
+/// part of the screen, which is only noticed after the recording. The picker
+/// drawing in a unit that was not points is what this caught; whatever the
+/// cause, a region off the side of the display cannot be recorded and a
+/// clipped one at least contains what was aimed at.
+fn clamp_crop(crop: Bounds, target: Bounds) -> Bounds {
+    let x = crop.x.max(0.0).min(target.width);
+    let y = crop.y.max(0.0).min(target.height);
+
+    Bounds {
+        x,
+        y,
+        width: crop.width.max(0.0).min(target.width - x),
+        height: crop.height.max(0.0).min(target.height - y),
+    }
+}
+
 impl From<prequel_encode::Error> for Error {
     fn from(value: prequel_encode::Error) -> Self {
         Error::Encode(value.to_string())
@@ -1053,6 +1079,67 @@ mod tests {
               \"Failed to stop a stream that is already stopped or does not exist\"",
         );
         assert!(already_stopped(&err));
+    }
+
+    fn display(width: f64, height: f64) -> Bounds {
+        Bounds {
+            x: 0.0,
+            y: 0.0,
+            width,
+            height,
+        }
+    }
+
+    /// The recording this fixes: a picker measuring in its own unit handed over
+    /// a 1655-point crop of a 1512-point display, and the capture was neither
+    /// the size nor the place that was drawn.
+    #[test]
+    fn a_crop_wider_than_the_display_is_cut_to_it() {
+        let clamped = clamp_crop(
+            Bounds {
+                x: 1.0,
+                y: 131.0,
+                width: 1655.0,
+                height: 913.0,
+            },
+            display(1512.0, 982.0),
+        );
+
+        assert_eq!(clamped.x, 1.0);
+        assert_eq!(clamped.width, 1511.0);
+        assert_eq!(clamped.height, 851.0);
+    }
+
+    #[test]
+    fn a_crop_inside_the_display_is_left_alone() {
+        let crop = Bounds {
+            x: 100.0,
+            y: 50.0,
+            width: 400.0,
+            height: 300.0,
+        };
+
+        assert_eq!(clamp_crop(crop, display(1512.0, 982.0)), crop);
+    }
+
+    #[test]
+    fn a_crop_off_the_display_entirely_collapses_rather_than_wrapping() {
+        // Zero is caught by `EmptyRegion`, which says so. A negative width
+        // would be handed to ScreenCaptureKit.
+        let clamped = clamp_crop(
+            Bounds {
+                x: 2000.0,
+                y: -40.0,
+                width: 300.0,
+                height: 200.0,
+            },
+            display(1512.0, 982.0),
+        );
+
+        assert_eq!(clamped.x, 1512.0);
+        assert_eq!(clamped.y, 0.0);
+        assert_eq!(clamped.width, 0.0);
+        assert_eq!(clamped.height, 200.0);
     }
 
     #[test]

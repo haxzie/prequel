@@ -13,6 +13,7 @@ import { AreaIcon, ScreenIcon } from "../dock/icons";
 import { follow } from "../lib/live";
 import { anchorOf, HANDLE_CURSOR, HANDLES, moved, resized, type Handle } from "./resize";
 import { sameRegion, smallestAt } from "./shapes";
+import { SAME, spaceOf, toPixels, toPoints, type Space } from "./space";
 
 /** Ignore a drag this small — it is a click that wobbled, not a region. */
 const MIN_AREA_EDGE = 8;
@@ -119,6 +120,7 @@ export function Selection() {
   const [setup, setSetup] = useState<SelectionSetup | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const capture = setup?.capture ?? "video";
+  const space = useOverlaySpace(setup);
 
   /**
    * Confirming, which for a recording means counting down first.
@@ -199,12 +201,55 @@ export function Selection() {
 
   switch (setup.mode) {
     case "area":
-      return <AreaSelection setup={setup} onStart={begin} />;
+      return <AreaSelection setup={setup} space={space} onStart={begin} />;
     case "screen":
-      return <ScreenSelection setup={setup} onStart={begin} />;
+      return <ScreenSelection setup={setup} space={space} onStart={begin} />;
     default:
-      return <WindowSelection setup={setup} onStart={begin} />;
+      return <WindowSelection setup={setup} space={space} onStart={begin} />;
   }
+}
+
+/**
+ * How many display points one CSS pixel of this overlay is worth.
+ *
+ * Measured rather than assumed. The overlay is created at the display's own
+ * bounds, so a viewport that is not the display's size is this renderer
+ * measuring in a unit of its own — and every rectangle it hands back, the crop
+ * included, is in that unit. `space.ts` has the failure it produced.
+ *
+ * Followed through resize because a display that changes mode under a live
+ * overlay changes one of the two sides of the ratio.
+ */
+function useOverlaySpace(setup: SelectionSetup | null): Space {
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+
+  useEffect(() => {
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    // Once on mount as well: the overlay mounts after the window is on screen,
+    // and the size it had at first render may already be stale.
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const space = useMemo(() => (setup ? spaceOf(setup, viewport) : SAME), [setup, viewport]);
+
+  // Said out loud rather than quietly corrected. The conversion keeps the
+  // recording right, but a viewport that is not the size of the display it
+  // covers is a state of the machine worth having in the log next to the
+  // recording it produced — it is the only trace the state leaves.
+  useEffect(() => {
+    if (!setup || (Math.abs(space.x - 1) < 0.001 && Math.abs(space.y - 1) < 0.001)) return;
+    console.warn(
+      `[selection] overlay is ${String(viewport.width)}×${String(viewport.height)} on a ` +
+        `${String(setup.width)}×${String(setup.height)} display; regions converted`,
+    );
+  }, [setup, space, viewport]);
+
+  return space;
 }
 
 /**
@@ -274,18 +319,28 @@ function Countdown({ rect, onDone }: { rect: Rect; onDone: () => void }) {
 /** Hover a window, then record it. */
 function WindowSelection({
   setup,
+  space,
   onStart,
 }: {
   setup: SelectionSetup;
+  space: Space;
   onStart: (pending: Pending) => void;
 }) {
   const [hovered, setHovered] = useState<PickerWindow | null>(null);
+
+  // Main describes each window in display points; everything here — the
+  // pointer, the highlight — is in CSS pixels. Converted once rather than at
+  // each use, so a hit test and the outline it lights up can never disagree.
+  const windows = useMemo(
+    () => setup.windows.map((picked) => ({ ...picked, rect: toPixels(picked.rect, space) })),
+    [setup.windows, space],
+  );
 
   // Windows arrive front-to-back — the capture layer sorts them into the window
   // server's own stacking order — so the first match under the cursor is the
   // one actually visible there.
   const windowAt = (x: number, y: number): PickerWindow | null =>
-    setup.windows.find(
+    windows.find(
       ({ rect }) =>
         x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height,
     ) ?? null;
@@ -351,7 +406,9 @@ function WindowSelection({
             }
             name={hovered.target.appName || hovered.target.title || "Untitled window"}
             detail={hovered.target.appName ? hovered.target.title : undefined}
-            size={pixelSize(hovered.rect, hovered.target.scaleFactor || setup.scaleFactor)}
+            // From the target rather than from the outline: the outline is in
+            // CSS pixels and this is the resolution of the file.
+            size={pixelSize(hovered.target.bounds, hovered.target.scaleFactor || setup.scaleFactor)}
             capture={setup.capture}
             onStart={start}
           />
@@ -370,12 +427,18 @@ function WindowSelection({
  */
 function ScreenSelection({
   setup,
+  space,
   onStart,
 }: {
   setup: SelectionSetup;
+  space: Space;
   onStart: (pending: Pending) => void;
 }) {
-  const whole = { x: 0, y: 0, width: setup.width, height: setup.height };
+  // The display, in the pixels this overlay draws in — which is the viewport,
+  // since the overlay covers exactly this display. Drawn from `setup.width`
+  // directly, it outlined nine tenths of the screen under a card that
+  // correctly said the whole of it.
+  const whole = toPixels({ x: 0, y: 0, width: setup.width, height: setup.height }, space);
 
   const start = () => {
     onStart({
@@ -399,7 +462,7 @@ function ScreenSelection({
           }
           name="Entire screen"
           detail={setup.displayLabel}
-          size={pixelSize(whole, setup.scaleFactor)}
+          size={pixelSize({ width: setup.width, height: setup.height }, setup.scaleFactor)}
           capture={setup.capture}
           onStart={start}
         />
@@ -411,9 +474,11 @@ function ScreenSelection({
 /** Drag out a rectangle, or click one the app already found. */
 function AreaSelection({
   setup,
+  space,
   onStart,
 }: {
   setup: SelectionSetup;
+  space: Space;
   onStart: (pending: Pending) => void;
 }) {
   const [origin, setOrigin] = useState<Point | null>(null);
@@ -456,6 +521,15 @@ function AreaSelection({
 
   const drawn = useMemo(() => regionOf(origin, current), [origin, current]);
 
+  // Main finds the shapes in display points; this overlay draws and hit-tests
+  // in CSS pixels. Converted once, so an outline lands on the thing it names
+  // and a shape that is clicked settles into the same unit a dragged region
+  // does — `start` below converts the two back together.
+  const shapes = useMemo(
+    () => setup.shapes.map((shape) => toPixels(shape, space)),
+    [setup.shapes, space],
+  );
+
   // Written on every move, including the ones the rectangle's own update
   // coalesces away: a bubble that moved at a frame's resolution while the
   // pointer moved at the trackpad's would lag behind the crosshair it is
@@ -469,20 +543,22 @@ function AreaSelection({
 
   const start = useCallback(
     (dragged: Region) => {
+      // ScreenCaptureKit crops in points, relative to the display's own origin,
+      // and this overlay covers exactly that display — so the only thing
+      // between the two is the unit the rectangle was drawn in.
+      const crop = toPoints(dragged, space);
+
       onStart({
         result: {
           target: setup.screenTarget,
-          // The region is local to this overlay, which covers exactly this
-          // display, and ScreenCaptureKit crops relative to the display's own
-          // origin — so these coordinates already line up.
-          crop: dragged,
-          label: `Area ${Math.round(dragged.width)}×${Math.round(dragged.height)}`,
+          crop,
+          label: `Area ${Math.round(crop.width)}×${Math.round(crop.height)}`,
           start: true,
         },
         rect: dragged,
       });
     },
-    [setup.screenTarget, onStart],
+    [setup.screenTarget, space, onStart],
   );
 
   /**
@@ -545,15 +621,15 @@ function AreaSelection({
    */
   const [swept, setSwept] = useState(false);
   useEffect(() => {
-    if (setup.shapes.length === 0) return;
+    if (shapes.length === 0) return;
     const timer = setTimeout(
       () => setSwept(true),
-      SHAPE_SWEEP_MS + SHAPE_STAGGER_MS * Math.min(setup.shapes.length, SHAPE_STAGGER_CAP),
+      SHAPE_SWEEP_MS + SHAPE_STAGGER_MS * Math.min(shapes.length, SHAPE_STAGGER_CAP),
     );
     return () => clearTimeout(timer);
-  }, [setup.shapes]);
+  }, [shapes]);
 
-  const shapeAt = (x: number, y: number) => smallestAt(setup.shapes, x, y);
+  const shapeAt = (x: number, y: number) => smallestAt(shapes, x, y);
 
   // Re-judged whenever the shapes change, from wherever the pointer already is.
   // Only while idle: once a region is drawn or settled it is the answer, and a
@@ -561,9 +637,9 @@ function AreaSelection({
   useEffect(() => {
     if (!idle) return;
     const at = pointer.current;
-    const next = at ? smallestAt(setup.shapes, at.x, at.y) : null;
+    const next = at ? smallestAt(shapes, at.x, at.y) : null;
     setHoveredShape((previous) => (sameRegion(previous, next) ? previous : next));
-  }, [setup.shapes, idle]);
+  }, [shapes, idle]);
 
   const onGrip = useCallback(
     (handle: Handle) => (event: ReactMouseEvent) => {
@@ -656,7 +732,7 @@ function AreaSelection({
     >
       {/* Under everything else, so the rectangle being drawn and the card on it
           are never behind a shape outline. */}
-      {idle && !swept && <ShapesFound shapes={setup.shapes} />}
+      {idle && !swept && <ShapesFound shapes={shapes} />}
 
       {idle && hoveredShape && (
         <div
@@ -668,7 +744,9 @@ function AreaSelection({
             height: hoveredShape.height,
           }}
         >
-          <span className={SHAPE_SIZE}>{pixelSize(hoveredShape, setup.scaleFactor)}</span>
+          <span className={SHAPE_SIZE}>
+            {pixelSize(toPoints(hoveredShape, space), setup.scaleFactor)}
+          </span>
         </div>
       )}
 
@@ -695,7 +773,7 @@ function AreaSelection({
                 </Glyph>
               }
               name="Selected area"
-              size={pixelSize(region, setup.scaleFactor)}
+              size={pixelSize(toPoints(region, space), setup.scaleFactor)}
               capture={setup.capture}
               onStart={() => start(region)}
             />
@@ -706,7 +784,8 @@ function AreaSelection({
                 "px-2 py-[3px] text-[11px] font-semibold text-white"
               }
             >
-              {Math.round(region.width)} × {Math.round(region.height)}
+              {Math.round(toPoints(region, space).width)} ×{" "}
+              {Math.round(toPoints(region, space).height)}
             </span>
           )}
         </div>
@@ -715,7 +794,7 @@ function AreaSelection({
       {/* Only before the drag. Once the rectangle exists it carries its own
           size badge at the pointer end, and two labels chasing one crosshair
           is one too many. */}
-      {idle && <CursorHint ref={cursorHint} shapes={setup.shapes.length > 0} />}
+      {idle && <CursorHint ref={cursorHint} shapes={shapes.length > 0} />}
     </div>
   );
 }
