@@ -1,5 +1,20 @@
 # @prequel/desktop
 
+## 0.5.0
+
+### Minor Changes
+
+- b40c5a4: Press C for the slice tool and click to cut a clip, a zoom or a text where you clicked; V goes back to selecting.
+
+  <!-- highlight: Cut anything on the timeline with C -->
+
+### Patch Changes
+
+- 1ceef75: A zoom in a vertical frame follows the pointer anywhere on the screen, not just the strip the recording was cropped to.
+- 05030cf: The recording bar is a darker pill with rounded controls, and a take is marked by a shimmering grid of red dots.
+- 7a47c1e: A shimmer of light runs over each shape the picker finds when you select an area, then fades.
+- ca62d8f: Undo stays in the transport with nothing to undo yet, greyed out, rather than appearing only once you have made an edit.
+
 ## 0.4.0
 
 ### Minor Changes
