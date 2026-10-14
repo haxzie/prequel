@@ -172,17 +172,14 @@ export function PlaybackControls({
             disabled={!canDelete}
             onClick={onDelete}
           />
-          {/* Hidden until there is a step back, not disabled like the two
-              beside it — those are always the verbs for the current selection,
-              whereas undo is a claim that something happened, and an empty
-              history has nothing to say. Last in the group rather than first
-              because the group is pinned to the left: appearing has to extend
-              it away from the edge, or the cut and delete buttons would move
-              out from under the pointer the first time an edit lands. It pushes
-              the clock along instead, which is read and never aimed at. */}
-          {canUndo && (
-            <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={false} onClick={onUndo} />
-          )}
+          {/* Dead until there is a step back, not absent. It was absent for a
+              while, on the reasoning that undo is a claim something happened
+              and an empty history has nothing to say — but a button that is
+              not there cannot be found, and "where has undo gone" is the
+              question that costs more than a greyed-out glyph ever did. Delete
+              beside it has always been dead rather than absent with nothing
+              selected, and this is the same answer to the same question. */}
+          <Action label="Undo" shortcut="⌘Z" Icon={UndoIcon} disabled={!canUndo} onClick={onUndo} />
         </div>
 
         {/* The clock and what it is counting towards, as one thing.
