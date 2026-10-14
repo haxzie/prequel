@@ -2381,7 +2381,9 @@ export class WebGlCompositor {
         // The same arithmetic the exporter runs — see `cropToFrame`.
         const cut = cropToFrame(
           moment.rect,
-          item.srcRect,
+          // The moment's window where it carries one, which is a shot that
+          // travels by moving the crop rather than the card — see `RectKey.src`.
+          moment.src ?? item.srcRect,
           frame,
           Boolean(moment.quad),
           shape.radius,
@@ -3170,6 +3172,8 @@ function moving(
   rect: Rect;
   shape: Shape;
   quad?: number[];
+  /** The window to sample, for a shot that moves it. See `RectKey.src`. */
+  src?: Rect;
   focus?: RectKey["focus"];
   vignette?: number;
 } {
@@ -3181,6 +3185,7 @@ function moving(
     rect: { x: key.x, y: key.y, width: key.width, height: key.height },
     shape: { radius: key.radius, exponent: item.shape.exponent },
     ...(key.quad ? { quad: key.quad } : {}),
+    ...(key.src ? { src: key.src } : {}),
     ...(key.focus ? { focus: key.focus } : {}),
     ...(key.vignette ? { vignette: key.vignette } : {}),
   };

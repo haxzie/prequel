@@ -240,6 +240,11 @@ export interface CursorPoint {
  * two look completely different — one is a camera pushing in, the other is a
  * still being enlarged.
  *
+ * Which holds wherever the arrangement shows all of the recording, and that is
+ * every arrangement but a cropped one. Where the picture on screen is already a
+ * crop there is nothing outside the frame to push into, and `src` is what the
+ * shot moves instead — the one case this carries a source window at all.
+ *
  * A zoom's keys start and end at the un-zoomed rectangle — a little outside the
  * slice, where its moves happen — which is what makes the gaps between zooms
  * free: interpolating from base to base is base. Two zooms close enough
@@ -254,6 +259,26 @@ export interface RectKey {
   height: number;
   /** Corner radius, which grows with the picture rather than staying put. */
   radius: number;
+  /**
+   * The window on the source this moment shows, in source pixels, replacing the
+   * item's own `srcRect` — for a shot that moves the window instead of the
+   * picture.
+   *
+   * **Absent on all but a cropped arrangement**, which is what keeps the note
+   * above true of nearly every plan: a zoom scales the picture and lets it run
+   * past the frame's edges, and the window never moves. That only works while
+   * there is picture outside the frame to find. Fill in a frame the recording is
+   * not the shape of throws two thirds of the recording away before a zoom
+   * exists — the window is the middle strip and nothing can reach outside it —
+   * so there the card holds still and this moves through the recording instead.
+   * See `shotTrack`.
+   *
+   * Carried per key rather than worked out from the rectangle, because it cannot
+   * be: the rectangle is the same at every one of those keys. Both rasterisers
+   * read it in place of `srcRect` and are otherwise untouched, and a plan from
+   * before it existed has it nowhere and draws what it drew.
+   */
+  src?: Rect;
   /**
    * Depth of field: `x`, `y` is what stays sharp in output pixels, `safe` how
    * far around it, and `strength` the widest blur beyond. All zero when nothing
@@ -1338,6 +1363,10 @@ export function buildRenderPlan(
         ? keyFor(
             {
               rect: dstRect,
+              // A still's pose does not move the window. It is one key for a
+              // picture standing where the arrangement put it, which is the
+              // crop the item already carries.
+              window: null,
               radius: shape.radius,
               rotateX: layout.screenRotateX,
               rotateY: layout.screenRotateY,
@@ -2869,9 +2898,15 @@ function glassTrack(
     const point =
       loupe.target === "region" ? { x: loupe.x, y: loupe.y } : (field ?? cursorAim(cursor, when));
 
+    // And through the window that moment is showing, which under a travelling
+    // crop is not the resting one — see `onPicture`. A lens placed against the
+    // resting crop while a camera zoom moved the window would magnify a patch
+    // beside the pointer rather than the pointer.
+    const taken = picture.src ?? srcRect;
+
     return {
-      x: picture.x + ((point.x * source.width - srcRect.x) / srcRect.width) * picture.width,
-      y: picture.y + ((point.y * source.height - srcRect.y) / srcRect.height) * picture.height,
+      x: picture.x + ((point.x * source.width - taken.x) / taken.width) * picture.width,
+      y: picture.y + ((point.y * source.height - taken.y) / taken.height) * picture.height,
     };
   });
 
@@ -3249,6 +3284,12 @@ function presenceAt(track: { at: number; amount: number }[], at: number): number
  */
 interface Shot {
   rect: Rect;
+  /**
+   * The window on the recording, in source pixels, for a shot that travels by
+   * moving it. Null wherever the picture itself travels, which is every
+   * arrangement that is not cropping — see `shotTrack`.
+   */
+  window: Rect | null;
   radius: number;
   rotateX: number;
   rotateY: number;
@@ -3294,17 +3335,66 @@ function shotTrack(
   // want a rate rather than an exact interval.
   const stepSeconds = ZOOM_SAMPLE_NS / 1_000_000_000;
 
-  // How far the shot may look into the scaled picture before it pulls off the
-  // area the recording filled. Exactly the clamp `rectFor` used to apply to its
-  // own output, rearranged: with `target.x` being `frame.width / 2 - travel.x`,
-  // the two bounds on the rectangle are two bounds on the travel. The range
-  // comes out `base.width * (level - 1)` wide whatever the frame, and collapses
-  // to a point at `level === 1` — an un-zoomed shot has nowhere to pan to.
+  /**
+   * Whether the arrangement is throwing part of the recording away to fill its
+   * box — which decides whether this shot moves the picture or the window.
+   *
+   * **The shot can only travel through pixels that are on the picture.** Fill in
+   * a frame the recording is not the shape of keeps the middle strip and
+   * discards the rest: a 16:9 take in 9:16 is cropped to 607 of its 1920
+   * columns, so a cursor zoom that scaled the card could follow the pointer
+   * across under a third of the screen and then stop dead at the crop's edge
+   * with the pointer gone — `onPicture` stops drawing it outside the window as
+   * well, so the shot both failed to follow and lost what it was following. The
+   * same is true of a dragged box and of `split`, wherever either is cutting.
+   *
+   * So where the arrangement crops, the card holds still and the *window* moves
+   * through the recording. The whole take is reachable, the padding, the border
+   * and the corners stay where they are for the length of the shot, and `level`
+   * tightens the window rather than pushing the card past the frame.
+   */
+  const cropping = srcRect.width < source.width - 0.5 || srcRect.height < source.height - 0.5;
+
+  /**
+   * The rectangle the whole recording would fill, at the scale the crop is drawn
+   * at — and the window that goes with it.
+   *
+   * Everything below is worked out against this pair rather than against the
+   * card, which is what makes one piece of arithmetic serve both cases: the
+   * dead zone and the speed limit are stated in frame pixels, and a recording
+   * drawn at the same scale puts the pointer through the same distances whether
+   * the card is showing all of it or a strip. `plane` is `base` exactly wherever
+   * nothing is cropped, so that case is untouched to the bit.
+   */
+  const plane = cropping ? uncropped(base, srcRect, source) : base;
+  const taken: Rect = cropping
+    ? { x: 0, y: 0, width: source.width, height: source.height }
+    : srcRect;
+
+  /**
+   * How far the shot may look into the scaled picture before it pulls off it.
+   *
+   * Stated as what the *card* may not leave: the recording has to be under every
+   * part of the box it is drawn in, or the picture stops short of an edge and
+   * the background shows through. With `target.x` being
+   * `frame.width / 2 - travel.x`, those two bounds on the rectangle are two
+   * bounds on the travel.
+   *
+   * One formula for both geometries, and it has to be this one. Where the
+   * picture moves, `plane` is the card and this reduces to
+   * `base.width * (level - 1)` — the range the clamp has always had, collapsing
+   * to a point at `level === 1`, because an un-zoomed shot has nowhere to pan
+   * to. Where the *window* moves, the card is a box on a plane several times the
+   * frame across, and the range is as much wider as the plane is: holding the
+   * travel to the card's own width instead left the window stopping 328 source
+   * pixels short of the right of the recording, with the pointer outside it —
+   * the bug this was built to fix, reintroduced one level down.
+   */
   const bounds = {
     minX: frame.width / 2 - base.x,
-    maxX: frame.width / 2 - base.x + base.width * (level - 1),
+    maxX: frame.width / 2 - base.x - base.width + plane.width * level,
     minY: frame.height / 2 - base.y,
-    maxY: frame.height / 2 - base.y + base.height * (level - 1),
+    maxY: frame.height / 2 - base.y - base.height + plane.height * level,
   };
 
   // How much of the capture the shot can show at once, as fractions of it. A
@@ -3326,31 +3416,45 @@ function shotTrack(
       zoom.target === "region" ? { x: zoom.x, y: zoom.y } : (field ?? cursorAim(cursor, when));
 
     return {
-      x: ((point.x * source.width - srcRect.x) / srcRect.width) * base.width * level,
-      y: ((point.y * source.height - srcRect.y) / srcRect.height) * base.height * level,
+      x: ((point.x * source.width - taken.x) / taken.width) * plane.width * level,
+      y: ((point.y * source.height - taken.y) / taken.height) * plane.height * level,
       // A focused field is a place, not a pointer: the follow treats the two
       // differently — see `followPath`.
       field: field !== null,
     };
   });
 
+  /**
+   * The travel, held inside what the shot may look at.
+   *
+   * `reach` wherever the picture travels: it leaves an edge target short of
+   * centre rather than refusing to go, at the cost of a sliver of background
+   * down one side, and that trade is the right one when the alternative is a
+   * shot that will not look at a corner.
+   *
+   * A hard clamp wherever the *window* travels, because there is no such trade
+   * to make. Past the bound the window is off the edge of the recording, and
+   * what a rasteriser samples there is not background — it is the last row of
+   * texels smeared, or nothing at all.
+   */
+  const held = cropping ? clamp : reach;
   // A region is a fixed point: there is nothing to steady and nothing to catch
   // up with, and putting it through the follow would only make the shot slide
   // onto it after arriving.
   const path =
     zoom.target === "region"
       ? aims.map((aim) => ({
-          x: reach(aim.x, bounds.minX, bounds.maxX),
-          y: reach(aim.y, bounds.minY, bounds.maxY),
+          x: held(aim.x, bounds.minX, bounds.maxX),
+          y: held(aim.y, bounds.minY, bounds.maxY),
         }))
       : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds).map((point) => ({
-          x: reach(point.x, bounds.minX, bounds.maxX),
-          y: reach(point.y, bounds.minY, bounds.maxY),
+          x: held(point.x, bounds.minX, bounds.maxX),
+          y: held(point.y, bounds.minY, bounds.maxY),
         }));
 
   const shorter = Math.min(frame.width, frame.height);
-  const width = base.width * level;
-  const height = base.height * level;
+  const width = plane.width * level;
+  const height = plane.height * level;
 
   const rest: Shot[] = [];
   const full: Shot[] = [];
@@ -3363,9 +3467,10 @@ function shotTrack(
     // pixels, and where the picture has to sit to put that point in the middle.
     //
     // Taken as given rather than clamped again. The bounds above decide how far
-    // a shot may look — including how far past the covering range an edge target
-    // is allowed to reach, which is the whole of `EDGE_REACH` — and a second
-    // clamp here would quietly undo that decision.
+    // a shot may look — including whether an edge target may reach past the
+    // covering range at all, which is `EDGE_REACH` where the picture travels and
+    // nothing where the window does — and a second clamp here would quietly undo
+    // that decision.
     const moved: Rect = {
       x: frame.width / 2 - travel.x,
       y: frame.height / 2 - travel.y,
@@ -3389,14 +3494,23 @@ function shotTrack(
     });
 
     full.push({
-      rect: moved,
-      radius: radius * level,
+      // Where the shot has moved to, or — where the window is what moves — the
+      // card it has not moved from, with `moved` read back as the slice of the
+      // recording the card is now showing.
+      rect: cropping ? base : moved,
+      window: cropping ? windowOn(base, moved, source) : null,
+      // The card's own radius while the card is still: nothing is growing, so
+      // scaling the corners would round a rectangle whose size has not changed.
+      radius: cropping ? radius : radius * level,
       rotateX: zoom.rotateX,
       rotateY: zoom.rotateY,
       perspective: zoom.perspective,
       vignette: zoom.vignette,
       focus: zoom.blur
         ? {
+            // Against `moved` in both cases. It is where the subject is in the
+            // frame that decides what stays sharp, and that is the same point
+            // whichever of the two is travelling to put it there.
             ...focused(moved),
             safe: zoom.blurSafe * shorter,
             strength: zoom.blurStrength * shorter,
@@ -3406,6 +3520,10 @@ function shotTrack(
 
     rest.push({
       rect: base,
+      // The crop the arrangement placed, which is what `plane` was built to map
+      // back to — so a shot at rest is the picture the arrangement draws with no
+      // zoom in the project at all.
+      window: cropping ? srcRect : null,
       radius,
       rotateX: 0,
       rotateY: 0,
@@ -3415,7 +3533,10 @@ function shotTrack(
       // as a dolly and is not what anyone asked for by setting an angle.
       perspective: zoom.perspective,
       vignette: 0,
-      focus: zoom.blur ? { ...focused(base), safe: zoom.blurSafe * shorter, strength: 0 } : null,
+      // `plane`, not `base`: at rest the recording is lying at its own scale,
+      // and under a crop that rectangle is the one the whole of it would fill.
+      // The two are the same box wherever nothing is cropped.
+      focus: zoom.blur ? { ...focused(plane), safe: zoom.blurSafe * shorter, strength: 0 } : null,
     });
   }
 
@@ -3469,6 +3590,21 @@ function blend(from: Shot, to: Shot, t: number): Shot {
         }
       : null;
 
+  // Both ends or neither: the window is a property of the arrangement, not of
+  // the zoom, so every shot in one plan either has one or does not. Written as
+  // a pair anyway rather than asserted — a half-blended window would be a crop
+  // sliding on its own while the picture stood still, which is not a mistake
+  // worth being able to make.
+  const window =
+    from.window && to.window
+      ? {
+          x: lerp(from.window.x, to.window.x, t),
+          y: lerp(from.window.y, to.window.y, t),
+          width: lerp(from.window.width, to.window.width, t),
+          height: lerp(from.window.height, to.window.height, t),
+        }
+      : null;
+
   return {
     rect: {
       x: lerp(from.rect.x, to.rect.x, t),
@@ -3476,6 +3612,7 @@ function blend(from: Shot, to: Shot, t: number): Shot {
       width: lerp(from.rect.width, to.rect.width, t),
       height: lerp(from.rect.height, to.rect.height, t),
     },
+    window,
     radius: lerp(from.radius, to.radius, t),
     rotateX: lerp(from.rotateX, to.rotateX, t),
     rotateY: lerp(from.rotateY, to.rotateY, t),
@@ -3527,12 +3664,14 @@ function keyFor(
       at,
       ...shot.rect,
       radius: shot.radius,
+      ...(shot.window ? { src: shot.window } : {}),
       ...(quad ? { quad } : {}),
       ...(shot.focus ? { focus: shot.focus } : {}),
       ...(shot.vignette > 0 ? { vignette: shot.vignette } : {}),
     },
-    // No focus and no vignette on either of these: neither rasteriser reads
-    // them for a stroke or a shadow, and carrying them would put the
+    // No focus, no vignette and no window on either of these: neither rasteriser
+    // reads them for a stroke or a shadow — a ring and a shadow are the picture's
+    // silhouette and sample nothing — and carrying them would put the
     // depth-of-field twice in every plan.
     border: {
       at,
@@ -4881,8 +5020,15 @@ function onPicture(
   const py = fraction.y * source.height;
 
   const rect = rectAt(motion, at, dstRect, 0);
-  const u = (px - srcRect.x) / srcRect.width;
-  const v = (py - srcRect.y) / srcRect.height;
+  // The window this moment is showing, which is the item's own wherever the
+  // picture is what moves. Where the *window* moves, reading `srcRect` here
+  // would place the pointer and every click mark against the resting crop while
+  // the card showed a different slice of the recording — the arrow drifting away
+  // from the thing it is on, further the further the shot has travelled, which
+  // is the bug this whole function exists to have fixed once.
+  const taken = rect.src ?? srcRect;
+  const u = (px - taken.x) / taken.width;
+  const v = (py - taken.y) / taken.height;
   const flat = { x: rect.x + u * rect.width, y: rect.y + v * rect.height };
 
   const placed = rect.quad ? onPlane(rect.quad, u, v) : { ...flat, scale: 1 };
@@ -4894,11 +5040,11 @@ function onPicture(
     v,
     flat,
     placed,
+    // Against the window this moment shows, for the same reason: under a crop
+    // that travels, a pointer outside the resting strip is one the shot has
+    // gone to look at, and hiding it there would hide the subject of the shot.
     visible:
-      px >= srcRect.x &&
-      px <= srcRect.x + srcRect.width &&
-      py >= srcRect.y &&
-      py <= srcRect.y + srcRect.height,
+      px >= taken.x && px <= taken.x + taken.width && py >= taken.y && py <= taken.y + taken.height,
   };
 }
 
@@ -5711,6 +5857,21 @@ export function rectAt(
   // there, so holding the neighbour's would darken a frame that asked not to be.
   const vignette = lerp(a.vignette ?? 0, b.vignette ?? 0, t);
 
+  // Both ends or neither, where `focus` takes whichever it finds. A window is
+  // not an effect that can fade in: it says which pixels to sample, and a
+  // neighbour's window held across a span where the other key has none would
+  // show the wrong part of the recording outright. Every track that carries one
+  // carries it on every key — see `blend`.
+  const src =
+    a.src && b.src
+      ? {
+          x: lerp(a.src.x, b.src.x, t),
+          y: lerp(a.src.y, b.src.y, t),
+          width: lerp(a.src.width, b.src.width, t),
+          height: lerp(a.src.height, b.src.height, t),
+        }
+      : undefined;
+
   return {
     at,
     x: lerp(a.x, b.x, t),
@@ -5718,6 +5879,7 @@ export function rectAt(
     width: lerp(a.width, b.width, t),
     height: lerp(a.height, b.height, t),
     radius: lerp(a.radius, b.radius, t),
+    ...(src ? { src } : {}),
     ...(quad ? { quad } : {}),
     ...(focus ? { focus } : {}),
     ...(vignette > 0 ? { vignette } : {}),
@@ -5750,11 +5912,27 @@ export function pictureMoved(plan: RenderPlan, which: PlanSource, at: number): b
   const now = rectAt(item.motion, at, item.dstRect, 0);
   // A pixel of slack, so a track resting on numbers that went through a lerp
   // does not read as movement.
-  return (
+  if (
     Math.abs(now.x - item.dstRect.x) > 1 ||
     Math.abs(now.y - item.dstRect.y) > 1 ||
     Math.abs(now.width - item.dstRect.width) > 1 ||
     Math.abs(now.height - item.dstRect.height) > 1
+  ) {
+    return true;
+  }
+
+  // The window, where that is what a shot moves: the box stands exactly still
+  // through one of those, so the test above answers no for the whole of a zoom
+  // and the ring and the handles stay up — drawn around a card whose picture is
+  // somewhere else, and draggable in the middle of a move. Source pixels rather
+  // than output, with the same pixel of slack, which is the stricter of the two
+  // on every recording larger than the frame.
+  return (
+    now.src !== undefined &&
+    (Math.abs(now.src.x - item.srcRect.x) > 1 ||
+      Math.abs(now.src.y - item.srcRect.y) > 1 ||
+      Math.abs(now.src.width - item.srcRect.width) > 1 ||
+      Math.abs(now.src.height - item.srcRect.height) > 1)
   );
 }
 
@@ -7197,6 +7375,32 @@ function uncropped(box: Rect, crop: Rect, source: Size): Rect {
     y: box.y - crop.y * scale,
     width: source.width * scale,
     height: source.height * scale,
+  };
+}
+
+/**
+ * `uncropped` read the other way: which slice of the recording a box is showing.
+ *
+ * `plane` is where the whole source is lying, in output pixels, and `box` is a
+ * rectangle somewhere on it — so this is the window `box` would have to sample
+ * to draw what is under it. The exact inverse, which is what lets a shot be
+ * worked out as a picture that moves and then be *drawn* as a card that does
+ * not: see `shotTrack`.
+ *
+ * Nothing clamps it, deliberately. A box outside the plane has no honest answer
+ * and a clamped one would quietly draw the wrong pixels; the bounds in
+ * `shotTrack` are what keep the box on the plane, and they are stated where the
+ * travel is decided rather than patched up here.
+ */
+function windowOn(box: Rect, plane: Rect, source: Size): Rect {
+  const across = plane.width > 0 ? source.width / plane.width : 0;
+  const down = plane.height > 0 ? source.height / plane.height : 0;
+
+  return {
+    x: (box.x - plane.x) * across,
+    y: (box.y - plane.y) * down,
+    width: box.width * across,
+    height: box.height * down,
   };
 }
 

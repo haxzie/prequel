@@ -503,6 +503,18 @@ pub struct RectKey {
     pub height: f64,
     /// Corner radius, which grows with the picture rather than staying put.
     pub radius: f64,
+    /// The window on the source this moment shows, in source pixels, replacing
+    /// the item's own `src_rect` — for a shot that moves the window instead of
+    /// the picture.
+    ///
+    /// Absent on all but a cropped arrangement. A zoom scales the picture and
+    /// lets it run past the frame's edges, which only works while there is
+    /// picture outside the frame to find; Fill in a frame the recording is not
+    /// the shape of has already thrown that away, so there the card holds still
+    /// and this moves through the recording instead. Mirrors `RectKey.src` in
+    /// `apps/desktop/src/shared/layout.ts`, where the arithmetic lives.
+    #[serde(default)]
+    pub src: Option<Rect>,
     /// Depth of field: what stays sharp, how far around it, and how soft it
     /// gets beyond. Absent when nothing is being softened.
     #[serde(default)]
@@ -661,6 +673,7 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
         return Moment {
             rect: fallback,
             radius: fallback_radius,
+            src: None,
             quad: Vec::new(),
             focus: None,
             vignette: 0.0,
@@ -675,6 +688,7 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
             height: key.height,
         },
         radius: key.radius,
+        src: key.src,
         quad: key.quad.clone(),
         focus: key.focus,
         vignette: key.vignette.unwrap_or(0.0),
@@ -735,6 +749,20 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
     // falling back would darken a frame that asked not to be. Mirrors `rectAt`.
     let vignette = lerp(a.vignette.unwrap_or(0.0), b.vignette.unwrap_or(0.0));
 
+    // Both ends or neither, where `focus` takes whichever it finds. A window
+    // says which pixels to sample rather than how hard an effect is working, so
+    // holding a neighbour's across a span whose other key has none would show
+    // the wrong part of the recording outright. Mirrors `rectAt`.
+    let src = match (a.src, b.src) {
+        (Some(from), Some(to)) => Some(Rect {
+            x: lerp(from.x, to.x),
+            y: lerp(from.y, to.y),
+            width: lerp(from.width, to.width),
+            height: lerp(from.height, to.height),
+        }),
+        _ => None,
+    };
+
     Moment {
         rect: Rect {
             x: lerp(a.x, b.x),
@@ -743,6 +771,7 @@ pub fn rect_at(keys: &[RectKey], at: i64, fallback: Rect, fallback_radius: f64) 
             height: lerp(a.height, b.height),
         },
         radius: lerp(a.radius, b.radius),
+        src,
         quad,
         focus,
         vignette,
@@ -847,6 +876,10 @@ pub fn crop_to_frame(
 pub struct Moment {
     pub rect: Rect,
     pub radius: f64,
+    /// The window to sample, where the shot moves it rather than the picture.
+    /// None leaves the item's own `src_rect` standing, which is every plan but
+    /// a cropped arrangement's — see `RectKey::src`.
+    pub src: Option<Rect>,
     /// Empty when nothing is tilted.
     pub quad: Vec<f64>,
     pub focus: Option<Focus>,
@@ -1818,6 +1851,7 @@ mod tests {
             width: 100.0,
             height: 50.0,
             radius: 0.0,
+            src: None,
             focus: None,
             vignette: None,
             quad: Vec::new(),
@@ -2569,6 +2603,7 @@ mod tests {
                 height: 100.0,
                 radius: 10.0,
                 quad: Vec::new(),
+                src: None,
                 focus: None,
                 vignette: None,
             },
@@ -2580,6 +2615,7 @@ mod tests {
                 height: 200.0,
                 radius: 20.0,
                 quad: Vec::new(),
+                src: None,
                 focus: None,
                 vignette: None,
             },
@@ -2591,6 +2627,7 @@ mod tests {
                 height: 100.0,
                 radius: 10.0,
                 quad: Vec::new(),
+                src: None,
                 focus: None,
                 vignette: None,
             },
@@ -2614,6 +2651,46 @@ mod tests {
         assert_eq!(rect.x, -25.0);
         // The corners grow with the picture rather than staying put.
         assert_eq!(radius, 15.0);
+    }
+
+    #[test]
+    fn interpolates_a_moving_window() {
+        // A shot in a cropped arrangement travels by moving the window rather
+        // than the card, so this is the half of the same arithmetic that has to
+        // agree with `rectAt` — a window a frame behind is a preview and an
+        // export looking at different parts of the recording.
+        let window = |x: f64| Rect {
+            x,
+            y: 0.0,
+            width: 200.0,
+            height: 100.0,
+        };
+        let key = |at: i64, src: Option<Rect>| RectKey {
+            at,
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            radius: 0.0,
+            src,
+            focus: None,
+            vignette: None,
+            quad: Vec::new(),
+        };
+
+        let travelling = vec![key(0, Some(window(0.0))), key(100, Some(window(400.0)))];
+        assert_eq!(rect_at(&travelling, 25, BASE, 0.0).src, Some(window(100.0)));
+
+        // Both ends or neither. A window is which pixels to sample, not how
+        // hard an effect is working, so holding a neighbour's across a span
+        // whose other key has none would draw the wrong part of the recording
+        // outright.
+        let half = vec![key(0, Some(window(0.0))), key(100, None)];
+        assert_eq!(rect_at(&half, 50, BASE, 0.0).src, None);
+
+        // And an ordinary zoom carries none at all, which leaves the item's own
+        // crop standing — every plan written before this existed.
+        assert_eq!(rect_at(&motion_track(), 50, BASE, 0.0).src, None);
     }
 
     #[test]

@@ -1104,7 +1104,10 @@ impl Compositor {
                 // corners. The same arithmetic the preview runs.
                 let (cut, crop) = crop_to_frame(
                     now.rect,
-                    *src_rect,
+                    // The moment's window where it carries one, which is a shot
+                    // that travels by moving the crop rather than the card —
+                    // see `RectKey::src`.
+                    now.src.unwrap_or(*src_rect),
                     Size {
                         width: frame[0] as f64,
                         height: frame[1] as f64,

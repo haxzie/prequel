@@ -193,7 +193,7 @@ function drawItem(
 
       // A zoom moves and scales the whole picture over time. Absent on
       // everything that does not move, which is every item but a zoomed screen.
-      const { rect: dst, shape } = moving(item, at);
+      const { rect: dst, shape, src } = moving(item, at);
 
       context.save();
       path(context, dst, shape);
@@ -206,12 +206,14 @@ function drawItem(
         context.scale(-1, 1);
       }
 
+      const taken = src ?? item.srcRect;
+
       context.drawImage(
         source,
-        item.srcRect.x,
-        item.srcRect.y,
-        item.srcRect.width,
-        item.srcRect.height,
+        taken.x,
+        taken.y,
+        taken.width,
+        taken.height,
         dst.x,
         dst.y,
         dst.width,
@@ -299,7 +301,7 @@ function moving(
   // file draws no mask at all: see the note at the top of it.
   item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" }>,
   at: number,
-): { rect: Rect; shape: Shape } {
+): { rect: Rect; shape: Shape; src?: Rect } {
   const rect = "rect" in item ? item.rect : item.dstRect;
   if (!item.motion) return { rect, shape: item.shape };
 
@@ -307,6 +309,9 @@ function moving(
   return {
     rect: { x: key.x, y: key.y, width: key.width, height: key.height },
     shape: { radius: key.radius, exponent: item.shape.exponent },
+    // The window this moment samples, for a shot that travels by moving the
+    // crop rather than the card. See `RectKey.src`.
+    ...(key.src ? { src: key.src } : {}),
   };
 }
 

@@ -267,6 +267,112 @@ fn honours_the_crop_rather_than_stretching_the_source() {
 }
 
 #[test]
+fn a_moving_window_travels_through_the_source() {
+    // The vertical-crop bug: Fill in a frame the recording is not the shape of
+    // keeps the middle strip and throws the rest away, so a shot that travels by
+    // scaling the card can never look outside it. There the card holds still and
+    // the *window* moves instead, carried on `RectKey::src`.
+    //
+    // Ignore that field and the export plays the resting crop for the whole
+    // slice while the preview pans — a disagreement with nothing on screen to
+    // explain it, which is exactly the class of bug the one plan exists to make
+    // impossible. So: a source split blue | red, a window that starts on the
+    // blue half and ends on the red one, and a card that never moves.
+    let dir = scratch("prequel-pixels-moving-window");
+    let source = split_frame(400, 200, [0, 0, 255], [255, 0, 0]);
+    record(&dir, "screen.mp4", 400, 200, &source);
+
+    let card = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+    // Half the source wide, so each end of the travel sits inside one colour.
+    let window = |x: f64| Rect {
+        x,
+        y: 0.0,
+        width: 200.0,
+        height: 200.0,
+    };
+    let key = |at: i64, x: f64| RectKey {
+        at,
+        // The card, at every key. A window that moves is a window that moves:
+        // nothing about the box it is drawn in changes.
+        x: card.x,
+        y: card.y,
+        width: card.width,
+        height: card.height,
+        radius: 0.0,
+        src: Some(window(x)),
+        focus: None,
+        vignette: None,
+        quad: Vec::new(),
+    };
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![PlanItem::Image {
+            source: PlanSource::Screen,
+            // The resting crop, which every key overrides. Left as the left half
+            // deliberately: if the keys are dropped the whole export is blue, so
+            // the test fails on the far frame rather than passing by luck.
+            src_rect: window(0.0),
+            dst_rect: card,
+            shape: Shape {
+                radius: 0.0,
+                exponent: 2.0,
+            },
+            mirror: false,
+            matte: false,
+            blobs: Vec::new(),
+            grade: None,
+            rim: 0.0,
+            fringe: 0.0,
+            motion: vec![key(0, 0.0), key(S as i64, 200.0)],
+        }],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    // The first frame is the blue half, edge to edge: the window is on it and
+    // the card fills the frame.
+    let opening = frame_at(&output, 0);
+    near(opening.at(40, 120), (0, 0, 255), "the opening window");
+    near(
+        opening.at(280, 120),
+        (0, 0, 255),
+        "the opening window, right",
+    );
+
+    // And the last is the red half. Anything blue here is a `src` the
+    // compositor never read.
+    let closing = frame_at(&output, FPS - 1);
+    near(
+        closing.at(40, 120),
+        (255, 0, 0),
+        "the window having travelled",
+    );
+    near(
+        closing.at(280, 120),
+        (255, 0, 0),
+        "the window having travelled, right",
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn mirroring_flips_the_crop_rather_than_moving_it() {
     // Mirroring is applied before the crop is mapped, so it flips *within* the
     // sampled window. Getting the order wrong samples somewhere else entirely.
@@ -1368,6 +1474,7 @@ fn a_motion_track_moves_the_picture_over_the_clip() {
         width: rect.width,
         height: rect.height,
         radius: 0.0,
+        src: None,
         focus: None,
         vignette: None,
         quad: Vec::new(),

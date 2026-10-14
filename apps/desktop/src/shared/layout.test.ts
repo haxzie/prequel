@@ -29,6 +29,7 @@ import {
   shapeAspect,
   SHADOW_SPREAD,
   type CaptionWord,
+  type CursorTrack,
   type PlanItem,
   type Rect,
   type RenderedCue,
@@ -3494,6 +3495,254 @@ describe("zooming", () => {
       expect(key.x - base.x).toBeLessThan(FRAME.width * 0.2);
       expect(key.y - base.y).toBeLessThan(FRAME.height * 0.2);
     }
+  });
+
+  /**
+   * The complaint that produced this: a full-screen take re-cropped to 9:16,
+   * where the shot stopped following the pointer partway across the screen.
+   *
+   * Fill in a frame the recording is not the shape of keeps the middle strip —
+   * 607 of 1920 columns on a 16:9 take in 9:16 — and a shot that travels by
+   * scaling the card can only ever look inside it. The pointer left the strip,
+   * the shot gave up at its edge, and `onPicture` stopped drawing the pointer
+   * as well: the shot both failed to follow and lost its subject. So where the
+   * arrangement crops, the window travels instead. See `shotTrack`.
+   */
+  describe("a shot in an arrangement that crops", () => {
+    const TALL: Size = { width: 1080, height: 1920 };
+    /** 16:9, so Fill in a 9:16 frame throws two thirds of it away. */
+    const WIDE: Size = { width: 1920, height: 1080 };
+
+    /** The pointer crossing the whole screen, slowly enough to be caught up with. */
+    const sweeping = (): CursorTrack => ({
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples: Array.from({ length: 201 }, (_, step) => ({
+        at: (step / 200) * 20 * S,
+        x: 0.05 + (step / 200) * 0.9,
+        y: 0.5,
+      })),
+    });
+
+    /** The pointer parked at one end of the screen and then at the other. */
+    const corners = (): CursorTrack => ({
+      ...sweeping(),
+      samples: Array.from({ length: 201 }, (_, step) => {
+        const at = (step / 200) * 20 * S;
+        return { at, x: at < 10 * S ? 0.02 : 0.98, y: 0.5 };
+      }),
+    });
+
+    const screenOf = (
+      preset: LayoutPreset,
+      zooms: ZoomSlice[],
+      frame: Size = TALL,
+      cursor: CursorTrack = sweeping(),
+    ) => {
+      const item = buildRenderPlan(
+        frame,
+        { screen: WIDE, camera: null },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, preset, cameraVisible: false } }),
+        cursor,
+        zooms,
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+      return { keys: item.motion ?? [], srcRect: item.srcRect, dstRect: item.dstRect };
+    };
+
+    const follow = (over: Partial<ZoomSlice> = {}): ZoomSlice => ({
+      ...DEFAULT_ZOOM,
+      id: "z",
+      target: "cursor",
+      source: { start: 2 * S, end: 20 * S },
+      level: 2,
+      ...over,
+    });
+
+    it("reaches the whole recording, not just the strip it was cropped to", () => {
+      const { keys, srcRect } = screenOf("over-full", [follow()]);
+
+      // Where the middle of the card is looking, in source pixels, at each
+      // sample. The property: it travels outside the resting crop in both
+      // directions — which is the whole of what was impossible before.
+      const looks = keys.map((key) => key.src!.x + key.src!.width / 2);
+
+      expect(Math.min(...looks)).toBeLessThan(srcRect.x);
+      expect(Math.max(...looks)).toBeGreaterThan(srcRect.x + srcRect.width);
+    });
+
+    it("never looks past the edge of the recording", () => {
+      // The other side of the same bound, and the reason the travel is clamped
+      // hard rather than nudged past it by `EDGE_REACH`: outside the recording
+      // there is no background to show, only the last row of texels smeared.
+      const { keys } = screenOf("over-full", [follow({ level: 4 })]);
+
+      for (const key of keys) {
+        expect(key.src!.x).toBeGreaterThanOrEqual(-1e-6);
+        expect(key.src!.y).toBeGreaterThanOrEqual(-1e-6);
+        expect(key.src!.x + key.src!.width).toBeLessThanOrEqual(WIDE.width + 1e-6);
+        expect(key.src!.y + key.src!.height).toBeLessThanOrEqual(WIDE.height + 1e-6);
+      }
+    });
+
+    it("reaches the far edge of the recording", () => {
+      // The bound this travels under is stated as what the *card* may not
+      // leave, and getting that wrong is invisible in the middle of a sweep:
+      // held to the card's own width instead, the window stopped 328 source
+      // pixels short of the right of the recording with the pointer outside it
+      // — the original complaint, one level down.
+      //
+      // The pointer parks at each end in turn, so the shot has time to settle
+      // there — and the window is wider than the margin it parks in, so a shot
+      // that can travel at all ends up flush against both ends of the
+      // recording.
+      const { keys } = screenOf("over-full", [follow({ level: 2 })], TALL, corners());
+
+      expect(Math.min(...keys.map((key) => key.src!.x))).toBeCloseTo(0, 4);
+      expect(Math.max(...keys.map((key) => key.src!.x + key.src!.width))).toBeCloseTo(
+        WIDE.width,
+        4,
+      );
+    });
+
+    it("keeps the pointer inside the shot the whole way across", () => {
+      // `KEEP_IN` is the one guarantee the follow does not negotiate, and it is
+      // stated in frame pixels — so it only holds if the travel is worked out
+      // at the scale the card draws the recording at. The symptom of getting
+      // that wrong is the pointer sliding off the side of a shot that is still
+      // nominally following it.
+      const { keys, srcRect } = screenOf("over-full", [follow({ level: 2 })]);
+      // The sweep is linear in time, so where the pointer was at a key's moment
+      // needs no lookup — which keeps this test about the shot rather than
+      // about the sampling.
+      const at = (when: number) =>
+        (0.05 + 0.9 * Math.min(1, Math.max(0, when / (20 * S)))) * WIDE.width;
+
+      // Only where the shot has arrived. On the way in the window is still
+      // most of the arrangement's own crop, and the guarantee does not apply
+      // to a picture that is still the one the arrangement drew.
+      const tightest = Math.min(...keys.map((key) => key.src!.width));
+      const arrived = keys.filter((key) => key.src!.width < tightest + 0.01);
+      expect(arrived.length).toBeGreaterThan(10);
+
+      for (const key of arrived) {
+        const pointer = at(key.at);
+        // Inside the window, with a little room: `KEEP_IN` catches the pointer
+        // before it reaches the edge rather than letting it skid along it.
+        expect(pointer).toBeGreaterThanOrEqual(key.src!.x - 1);
+        expect(pointer).toBeLessThanOrEqual(key.src!.x + key.src!.width + 1);
+      }
+
+      // And the window never grew past the crop it started from, so the
+      // assertion above is not passing on a window that quietly widened.
+      for (const key of keys) {
+        expect(key.src!.width).toBeLessThanOrEqual(srcRect.width + 1e-6);
+      }
+    });
+
+    it("holds the card exactly still while it travels", () => {
+      // The point of moving the window: the padding, the border and the corners
+      // are where the arrangement put them for the whole shot, where scaling the
+      // card would have carried all three off the frame.
+      const { keys, dstRect } = screenOf("over-full", [follow({ level: 3 })]);
+
+      for (const key of keys) {
+        expect(key.x).toBeCloseTo(dstRect.x, 6);
+        expect(key.y).toBeCloseTo(dstRect.y, 6);
+        expect(key.width).toBeCloseTo(dstRect.width, 6);
+        expect(key.height).toBeCloseTo(dstRect.height, 6);
+      }
+    });
+
+    it("opens and closes on the crop the arrangement placed", () => {
+      // The same rule a zoom's keys have always followed, in the other
+      // geometry: at rest the picture is exactly what the arrangement draws
+      // with no zoom in the project at all, so the first and last keys of the
+      // track are the untouched crop.
+      const { keys, srcRect } = screenOf("over-full", [follow()]);
+
+      for (const key of [keys[0]!, keys[keys.length - 1]!]) {
+        expect(key.src!.x).toBeCloseTo(srcRect.x, 6);
+        expect(key.src!.y).toBeCloseTo(srcRect.y, 6);
+        expect(key.src!.width).toBeCloseTo(srcRect.width, 6);
+        expect(key.src!.height).toBeCloseTo(srcRect.height, 6);
+      }
+    });
+
+    it("tightens the window by the level rather than scaling the card", () => {
+      const { keys, srcRect } = screenOf("over-full", [follow({ level: 3 })]);
+      const tightest = keys.reduce((best, key) => (key.src!.width < best.src!.width ? key : best));
+
+      expect(tightest.src!.width).toBeCloseTo(srcRect.width / 3, 4);
+      expect(tightest.src!.height).toBeCloseTo(srcRect.height / 3, 4);
+    });
+
+    it("draws the pointer where the window has gone", () => {
+      // The other half of the bug. A pointer outside the resting crop is the
+      // subject of the shot that went to look at it, and placing it against
+      // that crop put it off the card — or hid it outright.
+      const plan = buildRenderPlan(
+        TALL,
+        { screen: WIDE, camera: null },
+        settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full", cameraVisible: false },
+        }),
+        sweeping(),
+        [follow({ level: 2 })],
+      );
+
+      const item = plan.items.find((candidate) => candidate.kind === "cursor")!;
+      if (item.kind !== "cursor") throw new Error("wrong item");
+      const screen = plan.items.find(
+        (candidate) => candidate.kind === "image" && candidate.source === "screen",
+      )!;
+      if (screen.kind !== "image") throw new Error("wrong item");
+
+      // Late in the sweep the pointer is far right of the strip the
+      // arrangement cropped to — off the picture entirely, by the old
+      // arithmetic.
+      const late = cursorAt(item.points, 18 * S)!;
+      expect(late).not.toBeNull();
+      expect(late.x).toBeGreaterThan(screen.dstRect.x);
+      expect(late.x).toBeLessThan(screen.dstRect.x + screen.dstRect.width);
+    });
+
+    it("leaves an arrangement that crops nothing moving the picture", () => {
+      // The gate, pinned from the other side. Padded shows all of the
+      // recording, so there is picture outside the frame to push into and the
+      // shot travels the way it always has — no window on any key, and every
+      // existing project renders to the bit.
+      const padded = screenOf("over-padded", [follow({ level: 3 })]);
+      expect(padded.keys.some((key) => key.src !== undefined)).toBe(false);
+
+      // And so does Fill in a frame the recording *is* the shape of, which is
+      // the common case and the one where Fill and Padded draw one picture.
+      const matched = screenOf("over-full", [follow({ level: 3 })], {
+        width: 1920,
+        height: 1080,
+      });
+      expect(matched.keys.some((key) => key.src !== undefined)).toBe(false);
+    });
+
+    it("knows the picture has moved while the card has not", () => {
+      // `pictureMoved` compares the box, and under a travelling window the box
+      // is identical at every key — so the preview would keep its ring and its
+      // handles on a picture that is somewhere else, and let it be dragged
+      // mid-shot.
+      const plan = buildRenderPlan(
+        TALL,
+        { screen: WIDE, camera: null },
+        settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full", cameraVisible: false },
+        }),
+        sweeping(),
+        [follow({ level: 3 })],
+      );
+
+      expect(pictureMoved(plan, "screen", 10 * S)).toBe(true);
+      expect(pictureMoved(plan, "screen", 0)).toBe(false);
+    });
   });
 
   describe("the camera getting out of the way", () => {
