@@ -1871,9 +1871,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           <>
             <PlaybackControls
               media={media}
-              // Both act on the selection, and the two are mutually exclusive —
-              // only one of them is ever the thing being removed.
-              canSplit={state.selectedSliceId !== null}
+              tool={state.timelineTool}
+              // Whichever of the three is selected — they are mutually
+              // exclusive, so there is never a question of which one Delete
+              // means.
               canDelete={
                 state.selectedSliceId !== null ||
                 state.selectedZoomId !== null ||
@@ -1898,7 +1899,6 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               }}
               onAddRecording={() => void addRecording()}
               onImportVideo={() => void importVideo()}
-              onSplit={() => dispatch({ type: "split", at: media.playback.position() })}
               onDelete={() => {
                 if (state.selectedTextId) {
                   dispatch({ type: "deleteText", textId: state.selectedTextId });
@@ -2713,14 +2713,20 @@ function useShortcuts(
         return;
       }
       // Escape, before the chord guard: it has no modifier to be confused with
-      // and it is the way out of two states at once. The tool first and the
+      // and it is the way out of three states at once. The tool first and the
       // selection second, because one press should undo one of them — somebody
       // holding the arrow tool who presses Escape wants the pointer back, not
       // to lose the ring they had before they picked it up.
+      //
+      // The blade is in the same clause as the drawing tools and not a branch
+      // of its own: Escape means "put down whatever is in my hand", and which
+      // hand it was in depends only on which surface is open.
       if (event.key === "Escape") {
-        const { tool, selectedAnnotationId } = latest.current;
+        const { tool, timelineTool, selectedAnnotationId } = latest.current;
         if (tool !== null) dispatch({ type: "pickTool", tool: null });
-        else if (selectedAnnotationId !== null) {
+        else if (timelineTool !== "select") {
+          dispatch({ type: "pickTimelineTool", tool: "select" });
+        } else if (selectedAnnotationId !== null) {
           dispatch({ type: "selectAnnotation", annotationId: null });
         }
         return;
@@ -2770,8 +2776,30 @@ function useShortcuts(
           media.playback.toggle();
           return;
 
-        // Cuts where the playhead is, which is the only place a cut happens
-        // now that there is no blade to aim with.
+        // The two timeline tools, on the keys every editor has used for them:
+        // V for the pointer, C for the blade. The same V the screenshot's
+        // toolbar uses for its pointer, deliberately — the two surfaces are
+        // never open together, and one key for "stop holding the thing" is one
+        // less to remember.
+        //
+        // C puts the blade down again as well as picking it up, which is what
+        // the button does: a key that only ever goes one way leaves Escape or V
+        // as the only exit from a mode a single keystroke entered.
+        case "KeyV":
+          event.preventDefault();
+          dispatch({ type: "pickTimelineTool", tool: "select" });
+          return;
+
+        case "KeyC":
+          event.preventDefault();
+          dispatch({
+            type: "pickTimelineTool",
+            tool: latest.current.timelineTool === "slice" ? "select" : "slice",
+          });
+          return;
+
+        // Cuts where the playhead is, wherever the blade happens to be aimed —
+        // the cut you make while watching, rather than the one you aim at a bar.
         case "KeyS":
           event.preventDefault();
           dispatch({ type: "split", at: media.playback.position() });

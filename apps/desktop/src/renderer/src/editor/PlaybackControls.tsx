@@ -9,15 +9,16 @@ import {
   AddZoomIcon,
   ChevronUpIcon,
   ImportVideoIcon,
-  ScissorsIcon,
   PauseIcon,
   PlayIcon,
+  PointerToolIcon,
+  ScissorsIcon,
   SkipEndIcon,
   SkipStartIcon,
   TrashIcon,
   UndoIcon,
 } from "./icons";
-import type { EditorAction } from "./state";
+import type { EditorAction, TimelineTool } from "./state";
 import type { EditorPlayback } from "./useEditorPlayback";
 
 const BUTTON =
@@ -42,13 +43,24 @@ const TRANSPORT =
   "grid size-8 place-items-center rounded-full transition-colors [&_svg]:size-[15px]";
 
 /**
- * The verbs for the selection and the clock on the left, transport centred,
- * the two things you can add on the right.
+ * The tool in hand, which keeps its fill on hover rather than lighting up.
  *
- * Buttons rather than modes. A tool that changes what a click means has to be
- * held in your head, put back when you are done, and shows its effect only
- * after you have already committed to it — for two actions on an already
- * selected clip, that is a state machine standing in for a verb.
+ * `AnnotateBar`'s own class, verbatim. The two rows are never on screen
+ * together — one belongs to a screenshot and one to a recording — so "which
+ * tool am I holding" has to look the same in both or it reads as two features.
+ */
+const HELD = "bg-selected text-white hover:bg-selected hover:brightness-110";
+
+/**
+ * The tools and the verbs and the clock on the left, transport centred, the
+ * things you can add on the right.
+ *
+ * The verbs are deliberately not modes: Delete acts on what is already
+ * selected, so it never has to be picked up first. The blade beside it is the
+ * one tool here, and it earns that by being the only way to cut a zoom or a
+ * title at all — the playhead acts on the clips and nothing else, so without
+ * something to aim, those rows could be moved, trimmed and deleted but never
+ * divided.
  *
  * No scrub bar: the timeline underneath is the scrubber now, and two of them
  * would be two playheads to keep in step and two places to look for the same
@@ -56,30 +68,29 @@ const TRANSPORT =
  */
 export function PlaybackControls({
   media,
+  tool,
   canAddZoom,
   canAddText,
   canAddClip,
-  canSplit,
   canDelete,
   canUndo,
   onAddZoom,
   onAddText,
   onAddRecording,
   onImportVideo,
-  onSplit,
   onDelete,
   onUndo,
   dispatch,
 }: {
   media: EditorPlayback;
+  /** What a press on the timeline does — see `TimelineTool`. */
+  tool: TimelineTool;
   /** Some gap in the zoom row is big enough to hold one. */
   canAddZoom: boolean;
   /** Some row of texts has room for one. */
   canAddText: boolean;
   /** Nothing else has the recording busy, so another clip can be added. */
   canAddClip: boolean;
-  /** A clip is selected, so there is something to cut. */
-  canSplit: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
   canDelete: boolean;
   /** The timeline has been changed at least once, so there is a step back. */
@@ -88,7 +99,6 @@ export function PlaybackControls({
   onAddText: () => void;
   onAddRecording: () => void;
   onImportVideo: () => void;
-  onSplit: () => void;
   onDelete: () => void;
   onUndo: () => void;
   dispatch: Dispatch<EditorAction>;
@@ -115,17 +125,46 @@ export function PlaybackControls({
       }
     >
       <div className="flex items-center gap-3">
+        {/* What a press on the strip means, in its own group at the far left.
+            Before the verbs rather than among them, because it is not one: the
+            two beside it do something the moment they are pressed, and these
+            two only change what the *next* press on the timeline does.
+
+            A pair rather than one button that toggles. The pointer has to be a
+            thing you can aim at and press — "put the blade down" is the way out
+            of a mode and the commonest thing wanted after a cut, and a single
+            lit-up button says what is held without saying what else there is. */}
         <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <Action
-            label="Split at the playhead"
-            shortcut="S"
-            Icon={ScissorsIcon}
-            // Both act on the selection, so with nothing selected there is
-            // nothing for either to do. Disabled rather than hidden: they are
-            // where they will be when there is.
-            disabled={!canSplit}
-            onClick={onSplit}
+            label="Select"
+            shortcut="V"
+            Icon={PointerToolIcon}
+            held={tool === "select"}
+            disabled={false}
+            onClick={() => dispatch({ type: "pickTimelineTool", tool: "select" })}
           />
+          <Action
+            label="Slice"
+            shortcut="C"
+            Icon={ScissorsIcon}
+            held={tool === "slice"}
+            disabled={false}
+            // Pressing the blade while it is already held puts it down, the way
+            // the drawing tools do: the pointer is the only thing to go back to
+            // and reaching for it is a second press either way.
+            onClick={() =>
+              dispatch({ type: "pickTimelineTool", tool: tool === "slice" ? "select" : "slice" })
+            }
+          />
+        </div>
+
+        {/* Delete, and undo once there is something to undo. No scissors here:
+            the blade in the group before it cuts anywhere on the strip, and two
+            pairs of scissors a centimetre apart doing different things is the
+            row asking which one you meant. S still cuts at the playhead — that
+            is the cut you make while watching, and a key costs nobody a
+            glance. */}
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <Action
             label="Delete"
             shortcut="⌫"
@@ -413,6 +452,7 @@ function Action({
   shortcut,
   Icon,
   text,
+  held,
   disabled,
   onClick,
 }: {
@@ -421,6 +461,8 @@ function Action({
   Icon: () => React.JSX.Element;
   /** Whether the label is written out beside the glyph. */
   text?: boolean;
+  /** A tool rather than a verb, and this one is the tool in hand. */
+  held?: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
@@ -429,6 +471,9 @@ function Action({
       type="button"
       title={`${label} (${shortcut})`}
       aria-label={label}
+      // Only where it means something. A verb is pressed and is done; a tool is
+      // held, and that is a state a screen reader has to be able to read.
+      aria-pressed={held}
       disabled={disabled}
       className={cn(
         "flex h-7 items-center gap-1.5 rounded-md text-[11px] [&_svg]:size-[15px]",
@@ -436,6 +481,7 @@ function Action({
         disabled
           ? "text-editor-muted/40"
           : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
+        held && HELD,
       )}
       onClick={onClick}
     >

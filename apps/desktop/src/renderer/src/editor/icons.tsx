@@ -273,7 +273,7 @@ export function CursorIcon() {
   );
 }
 
-/** Lucide `scissors`. */
+/** Lucide `scissors`: the slice tool, and the cursor it puts on the strip. */
 export function ScissorsIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">

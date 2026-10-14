@@ -30,9 +30,12 @@ import {
 import { fitZoom, openingZoom, ticks } from "./ruler";
 import {
   slicesOf,
+  splitPointAt,
   textCopySpan,
   textSpanAt,
+  textSplitAt,
   zoomSpanAt,
+  zoomSplitAt,
   type EditorAction,
   type EditorState,
 } from "./state";
@@ -190,6 +193,138 @@ const GRAB_ROOM = HANDLE_ROOM + 12;
 const OPENING_ZOOM = GRAB_ROOM / SHORTEST_SHOT;
 
 /**
+ * The blade over one bar: whether a press would cut it, and the cut.
+ *
+ * Every bar on the strip takes one of these, or null while the pointer is the
+ * tool in hand. One prop rather than a boolean beside two callbacks, because it
+ * is also what tells the bar to stop selecting, carrying and trimming: three
+ * things that must all be off together, and a boolean would let them drift
+ * apart one bar at a time.
+ */
+interface Blade {
+  /** Whether a press at this client x would really cut. */
+  legal: (clientX: number) => boolean;
+  cut: (clientX: number) => void;
+}
+
+/**
+ * Marks the bar under the pointer as the one a press would cut, or unmarks it.
+ *
+ * Written straight to the element, as the ghost and the hover line are: a
+ * `pointermove` across a clip fires far more often than a frame, and going
+ * through state would rebuild every clip, tick and thumbnail to change one
+ * outline. The attribute is read by `data-[cut=true]:*` in each bar's own
+ * classes, so what being about to be cut *looks* like stays beside the rest of
+ * that bar's styling.
+ *
+ * Only where a cut would really land, which is the whole reason this is not a
+ * `hover:` class. `legal` is the rule the reducer applies, so a bar never
+ * offers a cut that is then declined — and the stretch where it would be is not
+ * a sliver: the floor is three hundred milliseconds on a zoom or a title, which
+ * at a zoomed-in strip is a quarter of the window.
+ *
+ * `shade` is the bar's `CutShade`, slid to the pointer: the ring says which bar
+ * this press is talking to, and the wash says which part of it is about to
+ * become a second bar.
+ */
+function aim(
+  blade: Blade | null,
+  event: PointerEvent<HTMLElement>,
+  shade: RefObject<HTMLSpanElement | null>,
+) {
+  const lands = blade?.legal(event.clientX) ?? false;
+  event.currentTarget.dataset.cut = lands ? "true" : "false";
+
+  const element = shade.current;
+  if (!element) return;
+  if (!lands) {
+    element.style.opacity = "0";
+    return;
+  }
+
+  // Less `clientLeft`, which is the bar's own left border. `inset-0` on the
+  // wash resolves against the *padding* box and `getBoundingClientRect`
+  // measures the *border* box, so without this the seam sits a border's width
+  // to the right of the cut it is drawing — two pixels on a clip and one on
+  // the other rows. Small enough to look like nothing, and plainly visible the
+  // moment the seam lands on the playhead and the two fail to line up.
+  //
+  // The cut itself was never off: that comes from `timeAt`, which measures
+  // from the scroller. This is only where the mark is drawn.
+  const bar = event.currentTarget;
+
+  // `transform`, not `left`: this runs on every move of the pointer across a
+  // bar, and a layout write next to the layout read above thrashes the frame —
+  // the same rule the editor's own loop follows. The wash is the bar's full
+  // width and slides right, so what shows is the part after the cut; the rest
+  // hangs over the end and is clipped by the bar's `overflow-hidden`.
+  element.style.transform = `translate3d(${String(event.clientX - bar.getBoundingClientRect().left - bar.clientLeft)}px, 0, 0)`;
+  element.style.opacity = "1";
+}
+
+/**
+ * The part of a bar a cut would separate off, washed in the cut colour.
+ *
+ * The second half rather than the first, and rather than a line at the cut: a
+ * line says where, and this says what — the piece that is about to become its
+ * own clip, zoom or title, which is the thing somebody aiming is actually
+ * choosing. Looking right is what every bar on the strip already does; the
+ * first half is the part that stays where it is.
+ *
+ * A wash and a bar down the join. The fill is faint enough that the filmstrip,
+ * the wave and the label all stay readable under it — what is being previewed
+ * is a division, not a deletion — and the join carries the weight instead.
+ *
+ * The join is a bar rather than the hairline border it started as, and it is
+ * centred on the cut rather than drawn down one side of the wash. A hairline
+ * is the same width as the hover line standing on top of it and read as part
+ * of it; this reads as a seam between two pieces, which is what it is. It runs
+ * the full height of the bar, so the division goes all the way through rather
+ * than stopping short of the frame it is dividing.
+ *
+ * In `--cut-deep`, which is the hover line's own red rather than the wash's.
+ * The line standing at the pointer and this seam are the same mark — one drawn
+ * the height of the strip and one the height of the bar — and two reds a shade
+ * apart touching would read as two marks that happen to meet. It is also the
+ * red dark enough to carry white, which the dots need.
+ *
+ * Three dots down it, white and see-through. Six pixels of flat colour is a
+ * block, and the seam wants the weight without the mass — the dots are the
+ * same grammar as a grip, which is the right one: this is the handle of the
+ * cut, the part the eye lands on and the pointer is holding.
+ *
+ * Over the playhead rather than under it: where a cut lands on the head, the
+ * one the press acts on is this, and a head painted across the seam cut a
+ * notch in it and left it looking broken. `z-20` clears the head's `z-10`, and
+ * it is on this element and not the seam inside it because `will-change` makes
+ * this one a stacking context of its own — a z-index nested in it could never
+ * reach past the head.
+ *
+ * All of it is one element, so the single `transform` `aim` writes carries the
+ * wash, the seam and the dots together: positioned from there rather than from
+ * a render, for the reason the zoom ghost and the hover line are.
+ */
+function CutShade({ ref }: { ref: RefObject<HTMLSpanElement | null> }) {
+  return (
+    <span
+      ref={ref}
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-20 bg-cut/20 opacity-0"
+      style={{ willChange: "transform, opacity" }}
+    >
+      {/* Centred on the cut, which is this element's own left edge: half of it
+          lies over the piece that stays and half over the piece that comes
+          away, so the seam belongs to neither. */}
+      <span className="absolute inset-y-0 left-0 flex w-1.5 -translate-x-1/2 flex-col items-center justify-center gap-[3px] rounded-full bg-cut-deep">
+        {[0, 1, 2].map((dot) => (
+          <span key={dot} className="size-[2px] flex-none rounded-full bg-white/70" />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/**
  * The edit, as a strip.
  *
  * One row: screen, camera and both audio tracks were recorded together and are
@@ -237,6 +372,9 @@ export function TimelineStrip({
   const slices = slicesOf(state.project);
   const placed = useMemo(() => place(slices), [slices]);
   const edited = totalDuration(placed);
+
+  /** The blade is in hand, so every bar on the strip cuts instead of moving. */
+  const slicing = state.timelineTool === "slice";
 
   /** The edge being dragged, and how long the edit was when it was picked up. */
   const [trim, setTrim] = useState<{
@@ -708,7 +846,14 @@ export function TimelineStrip({
     <div className="flex flex-none flex-col bg-editor-veil px-4 pb-4" data-panel="timeline">
       <div
         ref={attachScroller}
-        className="no-scrollbar relative overflow-x-auto overflow-y-hidden"
+        // The cursor on the whole scrollport rather than on the bars: the blade
+        // is what the hand is holding over the timeline, and a pointer that
+        // turned back into an arrow between two clips would read as the tool
+        // having been put down.
+        className={cn(
+          "no-scrollbar relative overflow-x-auto overflow-y-hidden",
+          slicing && "cursor-blade",
+        )}
         // Once per hover rather than per move — see `edge`.
         onPointerEnter={(event) => {
           edge.current = event.currentTarget.getBoundingClientRect().left;
@@ -760,6 +905,7 @@ export function TimelineStrip({
                   width={width}
                   duration={duration}
                   spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
+                  slicing={slicing}
                   timeAt={timeAt}
                   onInteract={media.onInteract}
                   dispatch={dispatch}
@@ -801,6 +947,22 @@ export function TimelineStrip({
                       width={((to - from) / Math.max(duration, 1)) * 100}
                       pixels={((to - from) / Math.max(duration, 1)) * contentWidth}
                       selected={text.id === state.selectedTextId}
+                      blade={
+                        slicing
+                          ? {
+                              legal: (clientX) =>
+                                textSplitAt(state.project, text.id, timeAt(clientX)) !== null,
+                              cut: (clientX) => {
+                                media.onInteract();
+                                dispatch({
+                                  type: "splitText",
+                                  textId: text.id,
+                                  at: timeAt(clientX),
+                                });
+                              },
+                            }
+                          : null
+                      }
                       label={text.fields.map((field) => field.text).join(" — ")}
                       start={from}
                       timeAt={timeAt}
@@ -873,6 +1035,17 @@ export function TimelineStrip({
                   cameraSpans={cameraSpans}
                   selected={slice.id === state.selectedSliceId}
                   carried={carrying?.sliceId === slice.id}
+                  blade={
+                    slicing
+                      ? {
+                          legal: (clientX) => splitPointAt(state.project, timeAt(clientX)) !== null,
+                          cut: (clientX) => {
+                            media.onInteract();
+                            dispatch({ type: "split", at: timeAt(clientX) });
+                          },
+                        }
+                      : null
+                  }
                   onDrag={(event) => onClipDrag(slice, event)}
                   onDrop={onClipDrop}
                   onPointerDown={(event) => onClipPointerDown(slice, event)}
@@ -910,7 +1083,13 @@ export function TimelineStrip({
           <div
             className="relative"
             style={{ height: CLIP_H }}
+            // Nothing is drawn or added while the blade is held. A row that
+            // offered to add a zoom where the pointer is, under a cursor that
+            // says it is about to cut one, is the row contradicting itself —
+            // and the press below would lay a zoom down rather than cut the one
+            // being aimed at.
             onPointerMove={(event) => {
+              if (slicing) return;
               const drawing = draw.current;
               if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
                 drawing.drawn = true;
@@ -933,6 +1112,7 @@ export function TimelineStrip({
             // belongs on the zoom being added, and where the gap is too small
             // to hold one the press has to still do something.
             onPointerDown={(event) => {
+              if (slicing) return;
               draw.current = {
                 at: sourceAt(timeAt(event.clientX)),
                 x: event.clientX,
@@ -997,6 +1177,18 @@ export function TimelineStrip({
                   width={((to - from) / Math.max(duration, 1)) * 100}
                   room={((to - from) / NS_PER_SECOND) * pxPerSecond}
                   selected={zoom.id === state.selectedZoomId}
+                  blade={
+                    slicing
+                      ? {
+                          legal: (clientX) =>
+                            zoomSplitAt(state.project, sourceAt(timeAt(clientX))) !== null,
+                          cut: (clientX) => {
+                            media.onInteract();
+                            dispatch({ type: "splitZoom", at: sourceAt(timeAt(clientX)) });
+                          },
+                        }
+                      : null
+                  }
                   target={zoom.target}
                   method={zoom.method}
                   level={zoom.level}
@@ -1424,6 +1616,7 @@ function Clip({
   contentWidth,
   cameraSpans,
   selected,
+  blade,
   onPointerDown,
   onDrag,
   onDrop,
@@ -1443,6 +1636,9 @@ function Clip({
   contentWidth: number;
   cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
   selected: boolean;
+  /** The blade, while it is held: a press cuts the clip instead of taking it
+      up, and the two grips go with the gesture they belonged to. */
+  blade: Blade | null;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   /** The body is being dragged along the row, to put the clip somewhere else. */
   onDrag: (event: PointerEvent<HTMLDivElement>) => void;
@@ -1466,6 +1662,9 @@ function Clip({
    * would rebuild its filmstrip and wave for no visible change.
    */
   const grabbed = useRef<TrimGrab | null>(null);
+
+  /** The wash over the part a cut would separate off — see `CutShade`. */
+  const shade = useRef<HTMLSpanElement>(null);
 
   const grab = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
@@ -1566,7 +1765,23 @@ function Clip({
         // came out cut off down the two edges of the screen and nowhere else.
         // At `-2` it ends flush with the box and is wholly inside it.
         "outline-2 -outline-offset-2",
-        selected ? "outline-slice-ring" : "outline-transparent hover:outline-slice-ring",
+        // With the blade in hand the ring answers a different question, so it
+        // is a branch rather than another class in the list: not "which clip is
+        // the pointer talking to" but "will this press cut here". Red, as the
+        // caption band's is, because the answer is destructive — and dark again
+        // the moment the pointer is somewhere a cut would be declined.
+        //
+        // Hover is deliberately dropped with it: a ring that said "this can be
+        // picked up" under a cursor that says it is about to cut would be the
+        // clip offering a gesture it no longer takes. An attribute selector
+        // outranks the bare class beside it, so which of the two wins is
+        // specificity rather than the order Tailwind emits them — see the note
+        // above about exactly that going wrong.
+        blade
+          ? "outline-transparent data-[cut=true]:outline-cut"
+          : selected
+            ? "outline-slice-ring"
+            : "outline-transparent hover:outline-slice-ring",
         // Lifted, so the row shows which clip the drop line belongs to. The
         // clip stays where it is rather than following the pointer: it is the
         // *order* being chosen, and a clip dragged free of the row would have
@@ -1583,12 +1798,31 @@ function Clip({
         // row height is derived from it.
         borderWidth: CLIP_EDGE,
       }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onDrag}
-      onPointerUp={onDrop}
+      // The blade's three handlers in place of the gesture's, rather than
+      // beside it: a press that both cut the clip and picked it up would
+      // reorder the halves it had just made.
+      onPointerDown={(event) => {
+        if (!blade) {
+          onPointerDown(event);
+          return;
+        }
+        // Stops the strip underneath seeking to the cut as well as making it.
+        // The playhead staying put is what lets several cuts be made in a row
+        // without the preview jumping to each one.
+        event.stopPropagation();
+        blade.cut(event.clientX);
+      }}
+      onPointerMove={(event) => {
+        if (blade) aim(blade, event, shade);
+        else onDrag(event);
+      }}
+      onPointerUp={blade ? undefined : onDrop}
+      // `pointerleave` rather than `pointerout`, which fires on the way into a
+      // child too and would blink the ring off over the clip's own handles.
+      onPointerLeave={blade ? (event) => aim(null, event, shade) : undefined}
       // A drag the system claims mid-gesture gets no `pointerup`, and the row
       // would keep showing a drop line for a clip nobody is holding.
-      onPointerCancel={onDrop}
+      onPointerCancel={blade ? undefined : onDrop}
       onContextMenu={onContextMenu}
     >
       {/* The recording's frames, as the clip's own backdrop.
@@ -1688,25 +1922,37 @@ function Clip({
           every side, so a cap is a trim target rather than the edge itself —
           and one drawn permanently put a heavy block at both ends of every
           clip in the row, saying "this can be dragged" about all of them at
-          once. They stay grabbable while invisible; see `Handle`. */}
-      <>
-        <Handle
-          edge="start"
-          grip="bg-slice-edge-active"
-          selected={selected}
-          onPointerDown={grab("start")}
-          onPointerMove={move("start")}
-          onRelease={release}
-        />
-        <Handle
-          edge="end"
-          grip="bg-slice-edge-active"
-          selected={selected}
-          onPointerDown={grab("end")}
-          onPointerMove={move("end")}
-          onRelease={release}
-        />
-      </>
+          once. They stay grabbable while invisible; see `Handle`.
+
+          Gone with the blade in hand: a grip is twelve pixels of the clip
+          where a press resizes rather than cuts, and
+          the two ends of a clip are exactly where somebody aiming a blade means
+          to land. */}
+      {!blade && (
+        <>
+          <Handle
+            edge="start"
+            grip="bg-slice-edge-active"
+            selected={selected}
+            onPointerDown={grab("start")}
+            onPointerMove={move("start")}
+            onRelease={release}
+          />
+          <Handle
+            edge="end"
+            grip="bg-slice-edge-active"
+            selected={selected}
+            onPointerDown={grab("end")}
+            onPointerMove={move("end")}
+            onRelease={release}
+          />
+        </>
+      )}
+
+      {/* Last, so it washes over the frames, the wave and the label alike
+          rather than sliding under them. Only with the blade in hand: it is
+          one element, but one per clip on a row of fifty is fifty. */}
+      {blade && <CutShade ref={shade} />}
     </div>
   );
 }
@@ -1807,6 +2053,7 @@ function TextRow({
   width,
   duration,
   spanAt,
+  slicing,
   timeAt,
   onInteract,
   dispatch,
@@ -1823,6 +2070,9 @@ function TextRow({
   width: number;
   duration: MediaTime;
   spanAt: (at: MediaTime, to?: MediaTime) => { start: MediaTime; end: MediaTime } | null;
+  /** The blade is in hand, so the row adds nothing — the same reason the zoom
+      row stops offering one. The bars over it do the cutting. */
+  slicing: boolean;
   /** Project time under a client x. A text is measured on the edit's clock,
       so this is the only one it ever asks about — see `TextSlice`. */
   timeAt: (clientX: number) => MediaTime;
@@ -1870,6 +2120,7 @@ function TextRow({
       style={{ height: TEXT_H }}
       data-text-row={track}
       onPointerMove={(event) => {
+        if (slicing) return;
         const drawing = draw.current;
         if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
           drawing.drawn = true;
@@ -1880,6 +2131,7 @@ function TextRow({
         if (!draw.current) showGhost(null);
       }}
       onPointerDown={(event) => {
+        if (slicing) return;
         draw.current = { at: timeAt(event.clientX), x: event.clientX, drawn: false };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -1945,6 +2197,7 @@ function TextBar({
   width,
   pixels,
   selected,
+  blade,
   label,
   start,
   timeAt,
@@ -1966,6 +2219,9 @@ function TextBar({
       words when there is not room for both. */
   pixels: number;
   selected: boolean;
+  /** The blade, while it is held: a press cuts the title in two instead of
+      sliding it, and the grips and the option-drag go with it. */
+  blade: Blade | null;
   label: string;
   start: MediaTime;
   /** Project time under a client x. A text is measured on the edit's clock,
@@ -1996,6 +2252,8 @@ function TextBar({
    * ghost had been.
    */
   const copying = useRef(false);
+  /** The wash over the part a cut would separate off — see `CutShade`. */
+  const shade = useRef<HTMLSpanElement>(null);
   // The words are what tell two bars apart; the glyph only says "text", which
   // the row's colour already does. So on a bar with room for one of the two,
   // it is the words. Below ~10 px a second at a fitted minute a three-second
@@ -2029,8 +2287,14 @@ function TextBar({
         "border-title-edge",
         selected ? "bg-title-fill/45" : "bg-title-fill/25",
         "outline-2 -outline-offset-2",
-        selected ? "outline-title-ring" : "outline-transparent hover:outline-title-ring/40",
-        "cursor-grab active:cursor-grabbing",
+        // The blade's ring in place of the selection's, as a clip's is — see
+        // the note on `Clip`.
+        blade
+          ? "outline-transparent data-[cut=true]:outline-cut"
+          : selected
+            ? "outline-title-ring"
+            : "outline-transparent hover:outline-title-ring/40",
+        !blade && "cursor-grab active:cursor-grabbing",
       )}
       style={{
         top,
@@ -2043,6 +2307,13 @@ function TextBar({
       onPointerDown={(event) => {
         // Stops the strip underneath seeking on a press meant for the bar.
         event.stopPropagation();
+        // The blade instead of the whole gesture, as a clip's press is: no
+        // selection, no grab, and no pointer capture — the press is over as
+        // soon as the cut is made.
+        if (blade) {
+          blade.cut(event.clientX);
+          return;
+        }
         onSelect();
         grab.current = timeAt(event.clientX) - start;
         copying.current = event.altKey;
@@ -2052,6 +2323,10 @@ function TextBar({
         else event.currentTarget.style.cursor = "copy";
       }}
       onPointerMove={(event) => {
+        if (blade) {
+          aim(blade, event, shade);
+          return;
+        }
         if (grab.current === null) return;
         // With option held the bar stays put and the outline of the copy
         // travels instead — where it would land, not where the pointer is.
@@ -2070,6 +2345,7 @@ function TextBar({
         // the pointer came up.
         onMove(timeAt(event.clientX) - grab.current, trackAt(event.clientY));
       }}
+      onPointerLeave={blade ? (event) => aim(null, event, shade) : undefined}
       onPointerUp={(event) => {
         if (grab.current !== null) {
           if (copying.current) {
@@ -2102,20 +2378,28 @@ function TextBar({
         <span className="truncate">{label.replace(/\n+/g, " ")}</span>
       </span>
 
-      <Handle
-        edge="start"
-        grip="bg-title-edge"
-        selected={selected}
-        onPointerDown={grabEdge()}
-        onPointerMove={moveEdge("start")}
-      />
-      <Handle
-        edge="end"
-        grip="bg-title-edge"
-        selected={selected}
-        onPointerDown={grabEdge()}
-        onPointerMove={moveEdge("end")}
-      />
+      {/* Gone with the blade in hand, for the reason a clip's are: the ends of
+          a bar are where a cut is aimed, and a grip there resizes instead. */}
+      {!blade && (
+        <>
+          <Handle
+            edge="start"
+            grip="bg-title-edge"
+            selected={selected}
+            onPointerDown={grabEdge()}
+            onPointerMove={moveEdge("start")}
+          />
+          <Handle
+            edge="end"
+            grip="bg-title-edge"
+            selected={selected}
+            onPointerDown={grabEdge()}
+            onPointerMove={moveEdge("end")}
+          />
+        </>
+      )}
+
+      {blade && <CutShade ref={shade} />}
     </div>
   );
 }
@@ -2149,6 +2433,7 @@ function Zoom({
   width,
   room,
   selected,
+  blade,
   target,
   method,
   level,
@@ -2166,6 +2451,9 @@ function Zoom({
       has room for grips — see `GRAB_ROOM`. */
   room: number;
   selected: boolean;
+  /** The blade, while it is held: a press cuts the zoom in two instead of
+      picking it up, and the grips go with the drag they belonged to. */
+  blade: Blade | null;
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
   target: ZoomSlice["target"];
@@ -2191,6 +2479,8 @@ function Zoom({
 }) {
   /** Distance from the zoom's start to where it was picked up, in source time. */
   const grab = useRef<MediaTime | null>(null);
+  /** The wash over the part a cut would separate off — see `CutShade`. */
+  const shade = useRef<HTMLSpanElement>(null);
 
   const grabEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
@@ -2228,8 +2518,14 @@ function Zoom({
         // Split the same way a clip's is, and for the same reason — see the
         // outline note on `Clip`. This row had the identical bug.
         "outline-2 -outline-offset-2",
-        selected ? "outline-zoom-ring" : "outline-transparent hover:outline-zoom-ring/40",
-        "cursor-grab active:cursor-grabbing",
+        // The blade's ring in place of the selection's, as a clip's is — see
+        // the note on `Clip`.
+        blade
+          ? "outline-transparent data-[cut=true]:outline-cut"
+          : selected
+            ? "outline-zoom-ring"
+            : "outline-transparent hover:outline-zoom-ring/40",
+        !blade && "cursor-grab active:cursor-grabbing",
       )}
       style={{
         left: `${left}%`,
@@ -2240,15 +2536,25 @@ function Zoom({
       onPointerDown={(event) => {
         // Stops the row underneath adding a second zoom on top of this one.
         event.stopPropagation();
+        // The blade instead of the whole gesture, as a clip's press is.
+        if (blade) {
+          blade.cut(event.clientX);
+          return;
+        }
         onSelect();
         grab.current = sourceAt(event.clientX) - start;
         event.currentTarget.setPointerCapture(event.pointerId);
         onBeginEdit();
       }}
       onPointerMove={(event) => {
+        if (blade) {
+          aim(blade, event, shade);
+          return;
+        }
         if (grab.current === null) return;
         onMove(sourceAt(event.clientX) - grab.current);
       }}
+      onPointerLeave={blade ? (event) => aim(null, event, shade) : undefined}
       onPointerUp={() => {
         grab.current = null;
       }}
@@ -2276,8 +2582,11 @@ function Zoom({
           moving it. Dropped rather than shrunk: a three-pixel grip is not
           something anyone can aim at, and the bar stays draggable without
           them. Trimming a zoom this short means zooming the strip in, which is
-          the bargain every other fine edit makes. */}
-      {room >= GRAB_ROOM && (
+          the bargain every other fine edit makes.
+
+          And never with the blade in hand: the ends of the bar are where a cut
+          is aimed, and a grip there would trim instead. */}
+      {!blade && room >= GRAB_ROOM && (
         <>
           <Handle
             edge="start"
@@ -2295,6 +2604,8 @@ function Zoom({
           />
         </>
       )}
+
+      {blade && <CutShade ref={shade} />}
     </div>
   );
 }

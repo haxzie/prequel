@@ -1168,6 +1168,95 @@ describe("duplicating a zoom", () => {
   });
 });
 
+describe("the blade", () => {
+  it("is not what the timeline starts out holding", () => {
+    // An editor opens able to pick things up. A strip that cut on the first
+    // press would destroy an edit before anybody had chosen to.
+    expect(start().timelineTool).toBe("select");
+  });
+
+  it("is not an edit, so it is neither saved nor undoable", () => {
+    const held = run(start(), { type: "pickTimelineTool", tool: "slice" });
+
+    expect(held.timelineTool).toBe("slice");
+    // The revision is what reaches the disk, and which tool is in hand is a
+    // fact about the hand rather than about the recording.
+    expect(held.revision).toBe(start().revision);
+    expect(canUndo(held)).toBe(false);
+  });
+
+  it("leaves the selection alone, unlike a drawing tool", () => {
+    // The transport's Delete and the whole inspector are still reading it while
+    // the cutting goes on.
+    const before = start();
+    const held = run(before, { type: "pickTimelineTool", tool: "slice" });
+
+    expect(held.selectedSliceId).toBe(before.selectedSliceId);
+  });
+});
+
+describe("slicing a zoom", () => {
+  /** One two-second zoom, a second into the recording. */
+  const zoomed = () => run(start(), { type: "addZoom", at: 1 * S });
+
+  it("cuts it in two where the blade landed", () => {
+    const state = run(zoomed(), { type: "splitZoom", at: 2 * S });
+
+    expect(state.project.zooms.map((zoom) => zoom.source)).toEqual([
+      { start: 1 * S, end: 2 * S },
+      { start: 2 * S, end: 3 * S },
+    ]);
+  });
+
+  it("gives both halves the whole look", () => {
+    // The cut says where one move becomes two; it says nothing about how far in
+    // either goes or what it follows.
+    const one = zoomed();
+    const original = one.project.zooms[0]!;
+    const state = run(one, { type: "splitZoom", at: 2 * S });
+
+    for (const half of state.project.zooms) {
+      expect(half.level).toBeCloseTo(original.level);
+      expect(half.target).toBe(original.target);
+      expect(half.method).toBe(original.method);
+      expect(half.speed).toBeCloseTo(original.speed);
+    }
+  });
+
+  it("selects the far half so the next edit lands on it", () => {
+    const state = run(zoomed(), { type: "splitZoom", at: 2 * S });
+    expect(state.selectedZoomId).toBe(state.project.zooms[1]!.id);
+  });
+
+  it("declines a cut on either edge of it", () => {
+    const edges = run(zoomed(), { type: "splitZoom", at: 1 * S }, { type: "splitZoom", at: 3 * S });
+    expect(edges.project.zooms).toHaveLength(1);
+  });
+
+  it("declines a cut that would leave a twitch rather than a zoom", () => {
+    // The same floor a zoom is added and trimmed against: below it the move in
+    // and the move out are the whole of it.
+    const state = run(zoomed(), { type: "splitZoom", at: 1 * S + 100_000_000 });
+    expect(state.project.zooms).toHaveLength(1);
+  });
+
+  it("declines a cut where there is no zoom at all", () => {
+    const state = run(zoomed(), { type: "splitZoom", at: 7 * S });
+    expect(state.project.zooms).toHaveLength(1);
+  });
+
+  it("cuts the zoom the time names when there are several", () => {
+    const pair = run(zoomed(), { type: "addZoom", at: 5 * S });
+    const state = run(pair, { type: "splitZoom", at: 6 * S });
+
+    expect(state.project.zooms.map((zoom) => zoom.source)).toEqual([
+      { start: 1 * S, end: 3 * S },
+      { start: 5 * S, end: 6 * S },
+      { start: 6 * S, end: 7 * S },
+    ]);
+  });
+});
+
 describe("adding a zoom at the playhead", () => {
   const zoomsOf = (state: EditorState) => state.project.zooms;
 

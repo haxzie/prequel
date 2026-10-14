@@ -77,6 +77,21 @@ const MIN_ZOOM_NS = 300_000_000;
 /** Shortest text worth having: the same floor as a zoom, for the same reason. */
 const MIN_TEXT_NS = 300_000_000;
 
+/**
+ * What a press on the timeline does.
+ *
+ * Two, and deliberately no more. `select` is everything the strip has always
+ * done — pick a bar, carry it, scrub inside a clip, drag an edge — and `slice`
+ * replaces all of it with one thing: cut whatever is under the pointer, there.
+ *
+ * A cut at the playhead is still a press of S and a button in the transport,
+ * because that is the cut you make while watching. This is the other one: the
+ * cut you make while looking at the strip, aimed at a bar rather than at the
+ * clock, and on a row the playhead cannot act on at all — a zoom and a title
+ * had no way to be cut in two before this.
+ */
+export type TimelineTool = "select" | "slice";
+
 export interface EditorState {
   project: Project;
   /** Which slice the inspector is editing, or null for the project defaults. */
@@ -108,6 +123,16 @@ export interface EditorState {
    * edit — it bumps no revision and is never saved, like a selection.
    */
   tool: AnnotationKind | null;
+  /**
+   * What a press on the timeline does — the pointer, or the blade.
+   *
+   * Beside `tool` rather than folded into it: that one is the hand on a
+   * screenshot and this one is the hand on the strip, the two surfaces are
+   * never on screen together, and one field would have to answer "is a blade a
+   * kind of arrow" for every reader of either. Not an edit, like `tool`: it
+   * bumps no revision and is never saved.
+   */
+  timelineTool: TimelineTool;
   /**
    * The colour and thickness the next mark gets.
    *
@@ -173,6 +198,22 @@ export type EditorAction =
   | { type: "setOutput"; output: Project["output"] }
   | { type: "setMicDenoise"; level: Project["micDenoise"] }
   | { type: "split"; at: MediaTime }
+  /**
+   * Cuts the zoom at a source time in two, which is the blade on that row.
+   *
+   * In source time, like everything else about a zoom, and by time rather than
+   * by id: there is one zoom row and no two zooms cover the same moment, so the
+   * moment names the zoom.
+   */
+  | { type: "splitZoom"; at: MediaTime }
+  /**
+   * Cuts a text in two at a project time, which is the blade on its row.
+   *
+   * Named by id as well as by time, unlike the zoom: there are up to five rows
+   * of texts and a moment names one on each of them. In project time because
+   * that is the clock a text's length is measured on — see `TextSlice`.
+   */
+  | { type: "splitText"; textId: string; at: MediaTime }
   | { type: "deleteSlice"; sliceId: string }
   /**
    * Takes a stretch of the recording out of the edit, wherever it lies.
@@ -315,6 +356,8 @@ export type EditorAction =
   | { type: "deleteText"; textId: string }
   /** Picks up a drawing tool, or puts it down with null. */
   | { type: "pickTool"; tool: AnnotationKind | null }
+  /** Picks up the pointer or the blade — see `TimelineTool`. */
+  | { type: "pickTimelineTool"; tool: TimelineTool }
   /** What the next mark is drawn in. */
   | { type: "setInk"; ink: Partial<EditorState["ink"]> }
   | { type: "selectAnnotation"; annotationId: string | null }
@@ -410,6 +453,10 @@ export function initialState(
     // Pointer, not a tool. Opening a screenshot is for looking at it first;
     // somebody who wants to draw reaches for the tool that does.
     tool: null,
+    // The same reasoning on the timeline: an editor opens able to pick things
+    // up, and the blade is picked up for the stretch of cutting it is wanted
+    // for and put down again.
+    timelineTool: "select",
     ink: { color: DEFAULT_COLOUR, width: DEFAULT_WIDTH, highlight: HIGHLIGHT_COLOUR },
     // Zero until a recording is opened, which is the honest answer: the
     // placeholder project this starts on describes no media at all. Every trim
@@ -518,6 +565,9 @@ function selectionSurvives(project: Project, sliceId: string | null): boolean {
 function undoStep(action: EditorAction): { coalesce: string | null } | null {
   switch (action.type) {
     case "split":
+    // One press of the blade each, on the other two rows.
+    case "splitZoom":
+    case "splitText":
     case "deleteSlice":
     // One drop, however far it was dragged: the order is only read when the
     // clip is let go, so there is no stream of them to bury the history under.
@@ -724,6 +774,13 @@ function apply(
         ...(action.tool === null ? {} : { selectedAnnotationId: null }),
       };
 
+    // The selection is deliberately left alone, where picking a drawing tool
+    // drops it. A blade adds nothing, so there is no new object for the ring to
+    // belong to — and the transport's Delete and the inspector are both still
+    // reading the selection while the cutting is going on.
+    case "pickTimelineTool":
+      return { ...state, timelineTool: action.tool };
+
     case "setInk":
       return { ...state, ink: { ...state.ink, ...action.ink } };
 
@@ -745,6 +802,12 @@ function apply(
 
     case "split":
       return splitSlices(state, action.at);
+
+    case "splitZoom":
+      return splitZoom(state, action.at);
+
+    case "splitText":
+      return splitText(state, action.textId, action.at);
 
     case "deleteSlice":
       return deleteSlice(state, action.sliceId);
@@ -1855,6 +1918,74 @@ export function splitPointAt(
   return { slice, source };
 }
 
+/**
+ * Where a cut at a source time would fall inside a zoom, or null.
+ *
+ * `splitPointAt` for the zoom row, and shared with the strip for the same
+ * reason: the blade lights a bar up only where the reducer will really cut it.
+ *
+ * Null outside every zoom, on either edge of one, and anywhere that would
+ * leave a zoom too brief to read as having gone somewhere — `MIN_ZOOM_NS`,
+ * which is the floor a zoom is added and trimmed against too.
+ */
+export function zoomSplitAt(
+  project: Project,
+  at: MediaTime,
+): { zoom: ZoomSlice; source: MediaTime } | null {
+  const zoom = project.zooms.find(
+    (candidate) => at > candidate.source.start && at < candidate.source.end,
+  );
+  if (!zoom) return null;
+  if (at - zoom.source.start < MIN_ZOOM_NS) return null;
+  if (zoom.source.end - at < MIN_ZOOM_NS) return null;
+
+  return { zoom, source: at };
+}
+
+/**
+ * The two halves a cut at a project time would leave a text in, or null.
+ *
+ * `splitPointAt` for a text row, and the same bargain with the strip. It hands
+ * back the halves rather than the point because a text is stored on two clocks
+ * at once — pinned to the footage, measured in the finished video — so "where
+ * does the second half begin" is a conversion rather than a subtraction, and
+ * doing it twice is how the bar and the cut come to disagree.
+ *
+ * Null on either edge, on a text whose footage was cut away, and anywhere that
+ * would leave a half below `MIN_TEXT_NS`. Null too where the cut lands on
+ * footage the edit no longer plays: the far half has to be pinned to something.
+ */
+export function textSplitAt(
+  project: Project,
+  textId: string,
+  at: MediaTime,
+): {
+  first: { at: MediaTime; length: MediaTime };
+  second: { at: MediaTime; length: MediaTime };
+} | null {
+  const text = findText(project, textId);
+  if (!text) return null;
+
+  const placed = placedSlices(project);
+  const start = toProjectTime(placed, text.at);
+  if (start === null) return null;
+  const end = start + text.length;
+
+  if (at - start < MIN_TEXT_NS) return null;
+  if (end - at < MIN_TEXT_NS) return null;
+
+  // Pinned to whatever footage the cut landed on, exactly as a text added
+  // there would be — the anchor is the one thing about a text that is on the
+  // recording's clock.
+  const pin = toSourceTime(placed, at);
+  if (pin === null) return null;
+
+  return {
+    first: { at: text.at, length: at - start },
+    second: { at: pin, length: end - at },
+  };
+}
+
 // ── Editing ─────────────────────────────────────────────────────────────────
 
 function edit(state: EditorState, change: (project: Project) => Project): EditorState {
@@ -2229,6 +2360,97 @@ function splitSlices(state: EditorState, at: MediaTime): EditorState {
   // Selecting the new half is what makes "cut, then change this bit" work
   // without a second click.
   return { ...next, selectedSliceId: created };
+}
+
+/**
+ * Cuts a zoom in two where the blade landed.
+ *
+ * Both halves keep the whole look — how far in, what it follows, the ease, the
+ * tilt — so the only thing the cut changes is that there are now two moves
+ * where there was one. That is visible and it is the point: the picture pulls
+ * out at the cut and pushes back in, which is how "look here, then look there"
+ * is built. Somebody who wanted one continuous shot would not have cut it.
+ */
+function splitZoom(state: EditorState, at: MediaTime): EditorState {
+  const point = zoomSplitAt(state.project, at);
+  if (!point) return state;
+
+  const { zoom, source } = point;
+  const created = `${zoom.id}-${String(state.revision + 1)}`;
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      zooms: project.zooms.flatMap((candidate) =>
+        candidate.id === zoom.id
+          ? [
+              { ...candidate, source: { start: candidate.source.start, end: source } },
+              { ...candidate, id: created, source: { start: source, end: candidate.source.end } },
+            ]
+          : [candidate],
+      ),
+    })),
+    // The far half, the way a cut clip hands back its second: "cut, then change
+    // this bit" without a second click.
+    selectedZoomId: created,
+    selectedSliceId: null,
+    selectedTextId: null,
+  };
+}
+
+/**
+ * Cuts a text in two where the blade landed.
+ *
+ * Two titles on the row, each with the whole look and the words. Both keep
+ * their entrance and their exit as well, so the words leave at the cut and
+ * arrive again — the same bargain the zoom's halves make, and for the same
+ * reason: cutting a title in half is how its second half comes to say
+ * something else. `text-motion.ts` holds either animation to half the span it
+ * has, so a short half is still seen rather than being all entrance.
+ */
+function splitText(state: EditorState, textId: string, at: MediaTime): EditorState {
+  const halves = textSplitAt(state.project, textId, at);
+  const text = findText(state.project, textId);
+  if (!halves || !text) return state;
+
+  const created = nextTextId(state);
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      texts: project.texts.map((row) =>
+        row.slices.some((candidate) => candidate.id === textId)
+          ? {
+              ...row,
+              slices: row.slices
+                .flatMap((candidate) =>
+                  candidate.id === textId
+                    ? [
+                        { ...candidate, ...halves.first },
+                        {
+                          ...candidate,
+                          id: created,
+                          ...halves.second,
+                          // Structurally cloned, as a cut clip's overrides are:
+                          // sharing the styles would make retyping one half
+                          // silently retype the other.
+                          fields: candidate.fields.map((field) => ({
+                            ...field,
+                            style: { ...field.style },
+                          })),
+                        },
+                      ]
+                    : [candidate],
+                )
+                .sort((a, b) => a.at - b.at),
+            }
+          : row,
+      ),
+    })),
+    selectedTextId: created,
+    selectedSliceId: null,
+    selectedZoomId: null,
+  };
 }
 
 /**

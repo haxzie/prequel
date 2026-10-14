@@ -362,6 +362,97 @@ describe("copying a text by dragging", () => {
   });
 });
 
+describe("slicing a text", () => {
+  /** One three-second title, a second in. */
+  const one = () => run(start(), { type: "addText", track: 0, at: S });
+  const id = (state: EditorState) => state.project.texts[0]!.slices[0]!.id;
+
+  it("cuts it in two where the blade landed", () => {
+    const state = one();
+    const after = run(state, { type: "splitText", textId: id(state), at: 2 * S });
+
+    expect(spans(after)).toEqual([
+      [S, 2 * S],
+      [2 * S, 4 * S],
+    ]);
+  });
+
+  it("loses no time across the cut, and leaves no gap", () => {
+    // The halves are measured on the finished video's clock and the anchor is
+    // on the recording's, so the second half's start is a conversion. One that
+    // rounded or fell through would show as a title blinking out at the cut.
+    const state = one();
+    const before = spanOf(state, 0, 0);
+    const after = run(state, { type: "splitText", textId: id(state), at: 2 * S });
+    const [first, second] = after.project.texts[0]!.slices;
+
+    expect(spanOf(after, 0, 0).start).toBe(before.start);
+    expect(spanOf(after, 0, 1).end).toBe(before.end);
+    expect(first!.length + second!.length).toBe(before.end - before.start);
+  });
+
+  it("gives the far half its own words to change, and selects it", () => {
+    // Sharing the fields would make retyping one half silently retype the
+    // other, which is the whole reason anybody cuts a title in two.
+    const state = one();
+    const after = run(state, { type: "splitText", textId: id(state), at: 2 * S });
+    const [first, second] = after.project.texts[0]!.slices;
+
+    expect(second!.id).not.toBe(first!.id);
+    expect(second!.fields).toEqual(first!.fields);
+    expect(second!.fields[0]).not.toBe(first!.fields[0]);
+    expect(second!.fields[0]!.style).not.toBe(first!.fields[0]!.style);
+    expect(after.selectedTextId).toBe(second!.id);
+  });
+
+  it("stays on its own row", () => {
+    const state = one();
+    const after = run(state, { type: "splitText", textId: id(state), at: 2 * S });
+
+    expect(after.project.texts).toHaveLength(1);
+    expect(after.project.texts[0]!.slices).toHaveLength(2);
+  });
+
+  it("declines a cut on either edge of it, or outside it", () => {
+    const state = one();
+    expect(run(state, { type: "splitText", textId: id(state), at: S })).toBe(state);
+    expect(run(state, { type: "splitText", textId: id(state), at: 4 * S })).toBe(state);
+    expect(run(state, { type: "splitText", textId: id(state), at: 7 * S })).toBe(state);
+  });
+
+  it("declines a cut that would leave a half nobody could read", () => {
+    // The same floor a text is added against: below it the entrance is the
+    // whole of it.
+    const state = one();
+    expect(run(state, { type: "splitText", textId: id(state), at: S + 0.2 * S })).toBe(state);
+    expect(run(state, { type: "splitText", textId: id(state), at: 4 * S - 0.2 * S })).toBe(state);
+  });
+
+  it("is one undo step", () => {
+    const state = one();
+    const after = run(state, { type: "splitText", textId: id(state), at: 2 * S });
+    expect(run(after, { type: "undo" }).project.texts[0]!.slices).toHaveLength(1);
+  });
+
+  it("pins the far half to the footage the cut landed on", () => {
+    // A title spanning a cut is measured in the finished video, so the second
+    // half's anchor is wherever that moment of the *recording* now is. Taken
+    // as a project time it would point at footage several seconds away.
+    // 10s with 2s–4s removed, and a title laid across the join.
+    const trimmed = run(start(), { type: "split", at: 2 * S }, { type: "split", at: 4 * S });
+    const middle = slicesOf(trimmed.project)[1]!;
+    const cut = run(trimmed, { type: "deleteSlice", sliceId: middle.id });
+
+    const state = run(cut, { type: "addText", track: 0, at: S });
+    const after = run(state, { type: "splitText", textId: id(state), at: 3 * S });
+    const [, second] = after.project.texts[0]!.slices;
+
+    // Three seconds into an edit missing 2s–4s is five seconds into the take.
+    expect(second!.at).toBe(5 * S);
+    expect(spanOf(after, 0, 1)).toEqual({ start: 3 * S, end: 4 * S });
+  });
+});
+
 describe("selection", () => {
   it("shows one thing at a time", () => {
     const state = run(start(), { type: "addText", track: 0, at: S });

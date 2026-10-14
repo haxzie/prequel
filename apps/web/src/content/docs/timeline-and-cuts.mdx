@@ -7,14 +7,18 @@ export const faq = [
       "Move the playhead to where the cut should start and press S, do the same where it should end, then click the clip in between and press Backspace. The clips either side close up.",
   },
   {
+    question: "Can I split a zoom or a text?",
+    answer:
+      "Yes. Press C for the slice tool, then click the zoom or the text where the cut should be. Both halves keep the look of the original.",
+  },
+  {
     question: "How do I trim the start or end?",
     answer:
       "Drag the clip's edge. The filmstrip moves with it so you can see the frame you are cutting to.",
   },
   {
     question: "Can I zoom in on the timeline?",
-    answer:
-      "Yes. Hold Command and scroll, or pinch on the trackpad.",
+    answer: "Yes. Hold Command and scroll, or pinch on the trackpad.",
   },
 ];
 
@@ -28,7 +32,7 @@ Hold **Command** and scroll, or pinch on the trackpad, to zoom the timeline in a
 
 **Space** plays and pauses. The transport also has **Go to start** and **Go to end**, and the time shows the playhead against the edited length, which shrinks as you cut.
 
-![The transport: time, playback, and the add zoom, undo, split and delete verbs](/docs/playback-controls.webp)
+![The transport: the select and slice tools, the time, playback, and the things you can add](/docs/playback-controls.webp)
 
 ## Trimming
 
@@ -37,10 +41,18 @@ Drag either end of a clip to trim it. The filmstrip moves with the edge so you c
 ## Splitting and removing
 
 1. Move the playhead to where the cut should be.
-2. Press **S**, or click the scissors, to split the clip there.
+2. Press **S** to split the clip there, or use the slice tool below.
 3. Click the part you want gone and press **Backspace**.
 
 The clips either side close up, and the finished video runs straight through. Right-clicking a clip offers **Split here** at the pointer and **Delete clip**.
+
+## The slice tool
+
+The timeline starts out on the select tool, which is everything above: pick a clip up, drag an edge, scrub inside it.
+
+Press **C**, or click the scissors at the far left of the transport, to pick up the slice tool instead. Every bar on the timeline is then cut where you click it — a clip, a zoom, or a text. The bar under the pointer shows the cut before you make it: the part that would come away is washed red, and nothing lights up where the cut would leave a piece too short to be worth having.
+
+Press **V** or **Esc** to put it down and go back to selecting.
 
 ## Cutting by the words
 
