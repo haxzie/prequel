@@ -60,10 +60,17 @@ const SHAPE_STAGGER_CAP = 18;
  * into a wash that says only that something happened, where an outline keeps
  * each one legible as its own shape. Thin, because this is a report and not a
  * selection — what the user is about to get is drawn at twice the weight.
+ *
+ * Lit rather than coloured in, and only here. The blue is the colour of a
+ * choice — it marks the shape under the pointer and the region that has been
+ * settled — so forty blue rectangles say forty things are selected. A shine
+ * that crosses each outline and leaves says what the sweep is actually for:
+ * these were found, and none of them is yours yet.
  */
-const SHAPE_FOUND =
-  "pointer-events-none absolute rounded-[5px] border border-selected/70 " +
-  "animate-shape-found [box-shadow:0_0_12px_rgba(0,0,0,0.25)]";
+const SHAPE_FOUND = "pointer-events-none absolute rounded-[5px] foil animate-shape-found";
+
+/** The light that crosses it, and the only thing on screen with any colour. */
+const SHAPE_SHEEN = "foil-sheen animate-shape-sheen";
 
 /**
  * The shape under the pointer, which a click would take.
@@ -840,7 +847,9 @@ function ShapesFound({ shapes }: { shapes: Region[] }) {
               "--shape-delay": `${String(Math.min(index, SHAPE_STAGGER_CAP) * SHAPE_STAGGER_MS)}ms`,
             } as CSSProperties
           }
-        />
+        >
+          <span className={SHAPE_SHEEN} />
+        </span>
       ))}
     </>
   );

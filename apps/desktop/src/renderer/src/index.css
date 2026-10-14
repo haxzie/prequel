@@ -155,6 +155,10 @@
      at full strength until its turn comes, which is the whole set at once and
      exactly what the stagger is for. */
   --animate-shape-found: shape-found 620ms ease-out var(--shape-delay, 0ms) both;
+  /* The shine itself, on the same clock and the same delay as the outline it
+     crosses. `linear`, because a shimmer that eased would read as something
+     being pointed at rather than light passing over it. */
+  --animate-shape-sheen: shape-sheen 620ms linear var(--shape-delay, 0ms) both;
 
   @keyframes view-in {
     from {
@@ -209,6 +213,18 @@
     }
     100% {
       opacity: 0;
+    }
+  }
+
+  /* The shine crossing one outline. Off both edges at either end, so the shape
+     is lit on the way past and bare before and after rather than parked with a
+     band of colour sitting on one side of it. */
+  @keyframes shape-sheen {
+    from {
+      transform: translateX(-110%);
+    }
+    to {
+      transform: translateX(185%);
     }
   }
 
@@ -349,6 +365,59 @@ body {
     var(--sunrise-warm),
     var(--sunrise-mid) 52%,
     var(--sunrise-cool)
+  );
+}
+
+/* The hairline each shape the area picker found is drawn with.
+
+   A ring and not a fill: `mask-composite: exclude` punches the padding box out
+   of the element, so forty overlapping rectangles stay forty legible outlines
+   instead of stacking into a wash. The ring has to be painted into the border
+   box for that to leave anything behind — `background-clip: padding-box` would
+   clip away the only part that survives the mask. The mask takes a drop shadow
+   with it for the same reason, which is why this is lit rather than shadowed.
+
+   Neutral and faint on its own. The colour arrives as `foil-sheen` passes over
+   it and leaves with it; an outline that held the full spectrum the whole time
+   would read as forty selections, and the selection blue is the colour of a
+   choice. */
+@utility foil {
+  border: 1.5px solid transparent;
+  background: linear-gradient(rgba(255, 255, 255, 0.34) 0 0) border-box;
+  mask:
+    linear-gradient(#000 0 0) padding-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* The light crossing one of those outlines: the shine on a foil sticker.
+
+   A child rather than a moving background, and `transform` rather than
+   `background-position`. Both draw the same band, but a background that moves
+   repaints the element every frame — and the largest shape on a busy screen is
+   the size of the screen, forty of them are on at once, and this runs while the
+   app is still handing the overlay its shapes. A transform is composited and
+   costs the paint once.
+
+   It is laid over the border, because the parent's mask keeps nothing else.
+   Narrower than the shape so the band has somewhere to travel from and to:
+   185% of its own width carries it from just off one edge to just past the
+   other. */
+@utility foil-sheen {
+  position: absolute;
+  top: -1.5px;
+  bottom: -1.5px;
+  left: -1.5px;
+  width: 55%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    #ff5fb7 18%,
+    #ffd166 36%,
+    #7bff9e 52%,
+    #3fd8ff 68%,
+    #a07cff 84%,
+    transparent
   );
 }
 
