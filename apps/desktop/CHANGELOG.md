@@ -1,5 +1,19 @@
 # @prequel/desktop
 
+## 0.4.0
+
+### Minor Changes
+
+- 9ba104b: Selecting an area now finds the panels and cards on screen, so you can click one instead of dragging it out.
+
+  <!-- highlight: Click a shape to select it -->
+
+### Patch Changes
+
+- c42294a: An area recording captures exactly the rectangle you drew, and the outlines in the picker sit on what they name.
+- 6080ff2: Exports finish about three times faster, and the files they write are smaller.
+- 9ba104b: The picker's highlight lines up with the window, screen or shape it is pointing at.
+
 ## 0.3.0
 
 ### Minor Changes
