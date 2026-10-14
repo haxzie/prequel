@@ -958,7 +958,11 @@ function SelectionCard({
       <button
         type="button"
         className={
-          "pointer-events-auto mt-4 flex h-[34px] items-center gap-[7px] rounded-lg " +
+          // A pill, like the dock's own controls: this button and the bar that
+          // replaces it the moment it is pressed are the same object as far as
+          // anybody using them is concerned, and a rounded square handing over
+          // to a pill reads as two apps.
+          "pointer-events-auto mt-4 flex h-[34px] items-center gap-[7px] rounded-full " +
           "bg-[#e5484d] px-4 text-[13px] font-semibold whitespace-nowrap text-white " +
           "shadow-[0_4px_14px_rgba(0,0,0,0.45)] [text-shadow:none] hover:brightness-[1.12]"
         }

@@ -68,6 +68,7 @@
   --color-dock-mode-fg: var(--dock-mode-fg);
   --color-dock-meter: var(--dock-meter);
   --color-dock-record: var(--dock-record);
+  --color-dock-record-lit: var(--dock-record-lit);
   --color-dock-warn: var(--dock-warn);
   --color-dot-on: var(--dot-on);
   --color-dot-off: var(--dot-off);
@@ -122,6 +123,13 @@
   --animate-island-in: island-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-island-out: island-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  /* The light crossing the recording light's dot matrix. The same 1.6s the
+     pulse it replaces ran at — a take can run for an hour beside somebody
+     working, and that cadence is already known to sit at the edge of
+     attention rather than in it. Linear, because a sweep that eased would
+     read as a thing arriving and leaving rather than as something turning
+     over. */
+  --animate-matrix-sweep: matrix-sweep 1.6s linear infinite;
   /* A tooltip's entrance. No fill mode, on purpose: the bubble fades out
      through a transition on the same property, and a `forwards` fill would
      hold `opacity: 1` over it and leave every label stuck on screen. */
@@ -188,6 +196,20 @@
     }
     to {
       transform: translateX(220%) skewX(-12deg);
+    }
+  }
+
+  /* The sheen's gesture at the size of a button, and skewed harder: across
+     30px a 12° lean is a pixel and a half of diagonal, which reads as a flat
+     bar passing. At 24° the light runs corner to corner and the dots light up
+     in a wave rather than a column at a time. `transform` only, like
+     everything else that moves in this file. */
+  @keyframes matrix-sweep {
+    from {
+      transform: translateX(-140%) skewX(-24deg);
+    }
+    to {
+      transform: translateX(140%) skewX(-24deg);
     }
   }
 
@@ -329,6 +351,31 @@ body {
 
 @utility no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* The recording light: twenty-one dots, as a mask.
+   A hole punched per dot rather than dots drawn on top, which is what lets one
+   plain rectangle sweep past underneath and come out as a wave crossing a
+   matrix. Drawing them as children instead would be twenty-one elements and
+   twenty-one staggered animations to keep in step.
+   Placed rather than tiled, and that is the whole reason this is an SVG and
+   not a repeating radial-gradient. A tile fills the square and the four
+   corners have to be cut off it, which cannot be done cleanly: the ring of
+   dots the light keeps is 11.2 out, the corners are 14.1, and a dot is wider
+   than the 2.9 between them — every circle that removes all four corners
+   also shaves the ring, and every circle that spares the ring leaves four
+   crescents in the corners. Naming the dots is the only way to end on whole
+   ones.
+   The grid is 5×5 on a 4px pitch with the corners left out, in a 22-unit box
+   scaled to whatever the element is. 1.35 of radius leaves 1.3 between one
+   dot and the next: enough that they read as separate lamps rather than as a
+   dotted fill, and not so little that the gaps close up as the light crosses
+   them. */
+@utility dot-matrix {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22' fill='%23fff'%3E%3Ccircle cx='7' cy='3' r='1.35'/%3E%3Ccircle cx='11' cy='3' r='1.35'/%3E%3Ccircle cx='15' cy='3' r='1.35'/%3E%3Ccircle cx='3' cy='7' r='1.35'/%3E%3Ccircle cx='7' cy='7' r='1.35'/%3E%3Ccircle cx='11' cy='7' r='1.35'/%3E%3Ccircle cx='15' cy='7' r='1.35'/%3E%3Ccircle cx='19' cy='7' r='1.35'/%3E%3Ccircle cx='3' cy='11' r='1.35'/%3E%3Ccircle cx='7' cy='11' r='1.35'/%3E%3Ccircle cx='11' cy='11' r='1.35'/%3E%3Ccircle cx='15' cy='11' r='1.35'/%3E%3Ccircle cx='19' cy='11' r='1.35'/%3E%3Ccircle cx='3' cy='15' r='1.35'/%3E%3Ccircle cx='7' cy='15' r='1.35'/%3E%3Ccircle cx='11' cy='15' r='1.35'/%3E%3Ccircle cx='15' cy='15' r='1.35'/%3E%3Ccircle cx='19' cy='15' r='1.35'/%3E%3Ccircle cx='7' cy='19' r='1.35'/%3E%3Ccircle cx='11' cy='19' r='1.35'/%3E%3Ccircle cx='15' cy='19' r='1.35'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-position: center;
+  mask-repeat: no-repeat;
 }
 
 /* A superellipse rather than a rounded square: the curvature runs continuously
@@ -776,7 +823,13 @@ body {
      blue than red — and read as cold next to anything on screen that was not.
      Every grey in here is now within a unit or two of its own luminance, so the
      panel has a tone rather than a cast: the hue moved, the weight did not. */
-  --dock-bg: rgba(32, 32, 33, 0.96);
+  /* Darker than the (32, 32, 33) it was. That grey sat close enough to the
+     grey of a macOS window to be read as one, and the panel is not a window —
+     it floats over whatever is on screen and has to be the darkest thing in
+     front of it. Low enough now to hold its own over a bright wallpaper, and
+     short of black so that it still reads as an object lying on the desktop
+     rather than as a hole cut in it. */
+  --dock-bg: rgba(19, 19, 20, 0.97);
   /* Every line the panel draws: the dividers inside it, and its own outer rim —
      `Dock.tsx` reaches for this rather than carrying a second figure of its
      own, so the two cannot drift apart the next time either is adjusted.
@@ -830,6 +883,16 @@ body {
   --dock-mode-fg: #202021;
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
+  /* The crest of the wave crossing the recording light, where `--dock-record`
+     is the light at rest.
+     Full chroma at the top of its value, not a tint. Lifting this towards
+     white is the obvious way to make a thing brighter and the wrong one here:
+     red loses its hue long before it loses its brightness, so a crest a third
+     of the way to white — #ff8f93, which this was — comes across the dots as
+     a pale band and reads as a reflection passing over them rather than as
+     the lamps themselves coming up. Same hue as the resting red, nothing
+     taken out of it, as far up in value as it goes. */
+  --dock-record-lit: #ff2d3b;
   /* A missing permission, and now the panel's only amber: a device that is on
      is green whichever it is, so the one warm colour left in here means
      something is wrong and nothing else. */

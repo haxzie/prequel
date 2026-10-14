@@ -30,7 +30,12 @@ import { DockMenuPopup } from "./dock-menu.js";
  */
 const SIZES: Record<DockView, { width: number; height: number }> = {
   setup: { width: 420, height: PANEL_HEIGHT },
-  recording: { width: 196, height: PANEL_HEIGHT },
+  // Eleven wider than it was, which is what the recording light gained going
+  // from a 9px dot to a 22px matrix, less the two the row gave back when its
+  // left inset came down to match the band above that light. The pill is
+  // clipped to this figure, so the two have to move together or the light
+  // loses its last column.
+  recording: { width: 207, height: PANEL_HEIGHT },
 };
 
 /**

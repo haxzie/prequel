@@ -111,7 +111,11 @@ export function IconButton({
         onBlur?.(event);
       }}
       className={cn(
-        "no-drag grid size-[30px] place-items-center rounded-lg disabled:opacity-35 [&_svg]:size-[18px]",
+        // A circle, like every other control on the bar. The panel is a pill
+        // and its trays are pills; a rounded square inside one leaves two
+        // corners pointing at an arc that is nowhere near them, and on a 34px
+        // tray that gap is most of what the eye has to go on.
+        "no-drag grid size-[30px] place-items-center rounded-full disabled:opacity-35 [&_svg]:size-[18px]",
         // Only one of these three is ever emitted. `selected` keeps its fill on
         // hover and brightens instead, and appending a plain hover class here
         // would leave that outcome down to stylesheet order.

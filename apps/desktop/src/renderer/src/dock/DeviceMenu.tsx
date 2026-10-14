@@ -164,7 +164,7 @@ export function DeviceMenu({
       ref={triggerRef}
       type="button"
       className={cn(
-        "no-drag flex h-[30px] items-center gap-1 rounded-lg px-1.5 text-dock-fg",
+        "no-drag flex h-[30px] items-center gap-1 rounded-full px-1.5 text-dock-fg",
         "disabled:opacity-35 [&_svg]:flex-none",
         open ? "bg-dock-hover" : "not-disabled:hover:bg-dock-hover",
       )}

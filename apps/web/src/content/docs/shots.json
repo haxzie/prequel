@@ -16,23 +16,23 @@
     "height": 520
   },
   "dock-teleprompter": {
-    "width": 716,
+    "width": 450,
     "height": 100
   },
   "dock-setup": {
-    "width": 716,
+    "width": 450,
     "height": 100
   },
   "dock-setup-window": {
-    "width": 716,
+    "width": 450,
     "height": 100
   },
   "dock-permissions": {
-    "width": 760,
+    "width": 494,
     "height": 100
   },
   "dock-recording": {
-    "width": 266,
+    "width": 276,
     "height": 100
   },
   "welcome-permissions": {

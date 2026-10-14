@@ -57,7 +57,7 @@ export function UpdateButton() {
       // group; a filled pill with a word in it cannot be mistaken for a fourth
       // device control, and a rule beside it only adds a line to the panel.
       className={
-        "no-drag flex h-[30px] flex-none items-center gap-1.5 rounded-lg bg-dock-selected px-2 " +
+        "no-drag flex h-[30px] flex-none items-center gap-1.5 rounded-full bg-dock-selected px-2 " +
         "text-[11px] font-medium text-white hover:brightness-110 [&_svg]:size-[14px]"
       }
       onClick={() => void window.prequel.update.open()}

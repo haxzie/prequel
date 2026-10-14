@@ -187,7 +187,16 @@ export function SetupPanel({ state }: { state: DockState }) {
     // opt back out.
     <div
       data-panel="setup"
-      className="drag flex h-full w-max animate-view-in items-center gap-1.5 px-1.5"
+      // The two ends are inset by whatever the control there already has above
+      // and below it, so each one sits in an even band of panel rather than
+      // closer to the pill's arc than to its edge.
+      //
+      // They differ because the controls do, and both figures are off the
+      // panel's *inner* height rather than its 44: the rim is drawn inside the
+      // box, so there are 42 to divide. A 34px tray leaves four, and the 30px
+      // close button leaves six. One figure for both would be right at one end
+      // of the row and wrong at the other.
+      className="drag flex h-full w-max animate-view-in items-center gap-1.5 pr-[6px] pl-[4px]"
     >
       {/* On their own surface rather than fenced off by a rule either side.
           Three buttons between two dividers read as three things that happen to
@@ -208,8 +217,14 @@ export function SetupPanel({ state }: { state: DockState }) {
           three buttons there pick *what* is captured and these two pick what
           capturing means — one tray of five would read as five alternatives,
           and the two halves are not alternatives to each other. */}
+      {/* A pill, where the tray beside it is a rounded square. This one sits
+          against the left end of the panel, which is now a semicircle, and a
+          rounded square inside it left two corners aimed at an arc several
+          pixels away. Its chips are circles for the same reason — the tray is
+          2px larger than they are, so a square corner on either of them would
+          be the shape the tray had just stopped being. */}
       <div
-        className="flex items-center gap-0.5 rounded-lg bg-dock-group p-0.5"
+        className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"
         role="radiogroup"
         aria-label="Record or screenshot"
       >
@@ -232,7 +247,7 @@ export function SetupPanel({ state }: { state: DockState }) {
       </div>
 
       <div
-        className="flex items-center gap-0.5 rounded-lg bg-dock-group p-0.5"
+        className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"
         role="radiogroup"
         aria-label="What to record"
       >
