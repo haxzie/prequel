@@ -1006,8 +1006,8 @@ describe("adding a recording to a project", () => {
     flow.close();
 
     expect(workspace.resumed).toEqual([dir]);
-    // And the flag is clear, so the next Add Recording is not refused.
-    expect(flow.state().extending).toBe(false);
+    // And it is clear, so the next Add Recording is not refused.
+    expect(flow.state().extending).toBeNull();
   });
 
   it("refuses a second addition while one is in flight", async () => {
@@ -1023,10 +1023,35 @@ describe("adding a recording to a project", () => {
   });
 
   it("says nothing of an addition when there is none", async () => {
-    // The flag is what makes the panel's copy and its dismiss read differently,
-    // so it must be false for an ordinary take.
+    // This is what makes the panel's copy and its dismiss read differently and
+    // what puts a clip count where the capture switch is, so it must be null
+    // for an ordinary take.
     const { flow } = makeFlow();
-    expect(flow.state().extending).toBe(false);
+    expect(flow.state().extending).toBeNull();
+  });
+
+  it("counts the clips the recording already has, for the panel to show", async () => {
+    // What is on disk, not what this take will make it: the addition can be
+    // discarded, and a badge that counted ahead would have been wrong for as
+    // long as the panel was up.
+    const { flow, dir } = await recorded();
+
+    await flow.extendRecording(dir);
+
+    expect(flow.state().extending).toEqual({ takes: 1 });
+  });
+
+  it("puts the panel back on video, so an addition cannot be a screenshot", async () => {
+    // A still is a session of its own and `shoot` knows nothing about an
+    // extend: a panel left on Photo by the last capture would take a shot,
+    // open a card on it, and leave the addition in flight for the next stop to
+    // merge something unrelated into this recording.
+    const { flow, preferences, dir } = await recorded();
+
+    flow.setCaptureMode("photo");
+    await flow.extendRecording(dir);
+
+    expect(preferences().captureMode).toBe("video");
   });
 });
 

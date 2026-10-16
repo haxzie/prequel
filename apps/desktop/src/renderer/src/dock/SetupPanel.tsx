@@ -24,6 +24,7 @@ import {
   VideoIcon,
   WindowIcon,
 } from "./icons";
+import { RecordingsIcon } from "../workspace/icons";
 import { DeviceMenu } from "./DeviceMenu";
 import { IconButton } from "./IconButton";
 import { PermissionMenu } from "./PermissionMenu";
@@ -59,6 +60,51 @@ const CAPTURE_MODES: { mode: CaptureMode; label: string; Icon: typeof ScreenIcon
   { mode: "video", label: "Record a video", Icon: VideoIcon },
   { mode: "photo", label: "Take a screenshot", Icon: PhotoIcon },
 ];
+
+/**
+ * What stands where the capture switch does while a clip is being added.
+ *
+ * The switch cannot be offered: a screenshot is a session of its own and
+ * cannot be a clip of a recording, so one of its two choices would abandon the
+ * addition — see `extendRecording`, which also forces the mode. Something has
+ * to be in its place, though, because the panel is otherwise identical to the
+ * one that starts a fresh take and nothing on screen would say that the next
+ * press appends to a project rather than making one.
+ *
+ * So: the clips the project already has, as a count beside the mark the app
+ * window's sidebar uses for a recording — the same glyph, because this is the
+ * same thing being counted. Blue, which is this panel's colour for a choice
+ * that has been made, and a badge behind the number so it reads as a quantity
+ * rather than as a label.
+ *
+ * Not a button. There is nothing to pick here — it is the one thing on the
+ * strip that only tells you something — so it takes no hover and no focus.
+ */
+function ClipCount({ takes }: { takes: number }) {
+  return (
+    <div
+      className={
+        // The same tray the switch it replaces sits in, so the row does not
+        // change shape when an addition starts: one pill, 34px tall, holding
+        // something 30px tall at the same 2px padding.
+        "flex h-[34px] flex-none items-center gap-1.5 rounded-full bg-dock-group " +
+        "pr-2 pl-2.5 text-dock-selected"
+      }
+      title={`Adding a clip to a recording of ${String(takes)} ${takes === 1 ? "clip" : "clips"}`}
+    >
+      <span className="[&>svg]:size-4">
+        <RecordingsIcon />
+      </span>
+      {/* Tabular, so a count going from 9 to 10 does not shift the glyph
+          beside it, and `min-w` so a single digit is as wide a badge as two —
+          a badge that changed width with the number would move the whole row
+          under the pointer while somebody is reaching for Record. */}
+      <span className="min-w-[18px] rounded-full bg-dock-selected/20 px-1 py-px text-center text-[11px] font-semibold tabular-nums">
+        {takes}
+      </span>
+    </div>
+  );
+}
 
 export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
@@ -223,28 +269,32 @@ export function SetupPanel({ state }: { state: DockState }) {
           pixels away. Its chips are circles for the same reason — the tray is
           2px larger than they are, so a square corner on either of them would
           be the shape the tray had just stopped being. */}
-      <div
-        className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"
-        role="radiogroup"
-        aria-label="Record or screenshot"
-      >
-        {CAPTURE_MODES.map(({ mode, label, Icon }) => {
-          const active = preferences.captureMode === mode;
-          return (
-            <IconButton
-              key={mode}
-              role="radio"
-              aria-checked={active}
-              selected={active}
-              tone="mode"
-              title={label}
-              onClick={() => void window.prequel.dock.setCaptureMode(mode)}
-            >
-              <Icon />
-            </IconButton>
-          );
-        })}
-      </div>
+      {state.extending ? (
+        <ClipCount takes={state.extending.takes} />
+      ) : (
+        <div
+          className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"
+          role="radiogroup"
+          aria-label="Record or screenshot"
+        >
+          {CAPTURE_MODES.map(({ mode, label, Icon }) => {
+            const active = preferences.captureMode === mode;
+            return (
+              <IconButton
+                key={mode}
+                role="radio"
+                aria-checked={active}
+                selected={active}
+                tone="mode"
+                title={label}
+                onClick={() => void window.prequel.dock.setCaptureMode(mode)}
+              >
+                <Icon />
+              </IconButton>
+            );
+          })}
+        </div>
+      )}
 
       <div
         className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"

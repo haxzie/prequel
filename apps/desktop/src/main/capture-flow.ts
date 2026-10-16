@@ -300,7 +300,7 @@ export class CaptureFlow {
    * writes into a subdirectory, the stop merges instead of opening an editor, and
    * a cancel goes back to the editor rather than to the grid.
    */
-  private extending: { dir: string; takeDir: string } | null = null;
+  private extending: { dir: string; takeDir: string; takes: number } | null = null;
   /**
    * Whether the take running was asked for with its UI kept off the screen.
    *
@@ -378,7 +378,9 @@ export class CaptureFlow {
       // would go stale on all three paths.
       openMenu: this.deps.dock.menu.openKind,
       cameraError: this.cameraError,
-      extending: this.extending !== null,
+      // The clip count goes with it, for the badge the panel draws in place of
+      // the capture switch while an addition is being set up.
+      extending: this.extending && { takes: this.extending.takes },
       // While the panel is up, or while a recording is running — and at no
       // other time. The devices belong to the setup UI and to the capture, and
       // holding them open past both is what leaves the camera light on with
@@ -540,9 +542,17 @@ export class CaptureFlow {
     // more than once for one extend — the picker starts it, a hotkey or the
     // panel may ask again — and a directory reserved per attempt would leave
     // empty numbered folders behind and discard the wrong one.
-    this.extending = { dir, takeDir: newTakePath(dir) };
+    this.extending = { dir, takeDir: newTakePath(dir), takes: manifest.takes.length };
     track("recording_extend_started");
     log("info", "adding a recording", { dir, takes: manifest.takes.length });
+
+    // Never a still. A screenshot is a session of its own and `shoot` knows
+    // nothing about an extend, so a panel left on Photo by the last capture
+    // would take a shot, open a card on it, and leave this flag set for the
+    // next stop to merge something unrelated into this recording. The switch
+    // is hidden while an addition is being set up — see `SetupPanel` — and
+    // this is what makes hiding it true rather than cosmetic.
+    this.deps.preferences.update({ captureMode: "video" });
 
     this.showDock();
 

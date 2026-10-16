@@ -1560,6 +1560,25 @@ export interface QuickExportOutcome {
   needsUpgrade: boolean;
 }
 
+/**
+ * The recording a take is being added to, as the panel needs to show it.
+ *
+ * Deliberately not the directory. The panel is broadcast to every window
+ * inside `DockState`, and a path there would be the user's home directory and
+ * the name of whatever they recorded — the same reasoning that keeps the
+ * install id out of `RecordingPreferences`.
+ */
+export interface ExtendingState {
+  /**
+   * Clips the recording already has, before this one.
+   *
+   * What is on disk rather than what this take will make it, because a take
+   * can be discarded: a badge that counted ahead would have been wrong for as
+   * long as the panel was up.
+   */
+  takes: number;
+}
+
 /** The panel's full state, pushed from main. */
 export interface DockState {
   view: DockView;
@@ -1598,13 +1617,15 @@ export interface DockState {
    */
   cameraError: string | null;
   /**
-   * Whether this take is being added to a recording that already exists.
+   * The recording this take is being added to, or null for a new one.
    *
-   * The panel's primary action and its dismiss both read differently then: the
-   * take is going into an open project, and cancelling returns to the editor
-   * rather than to the grid.
+   * The panel's primary action and its dismiss both read differently when
+   * there is one: the take is going into an open project, and cancelling
+   * returns to the editor rather than to the grid. It carries the clip count
+   * rather than being a flag, because the panel says which project it is
+   * adding to the only way it can on a 44pt bar — a number.
    */
-  extending: boolean;
+  extending: ExtendingState | null;
   /**
    * Whether the renderer should be holding the camera and microphone open.
    *

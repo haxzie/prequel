@@ -276,6 +276,20 @@ export const SHOTS: readonly Shot[] = [
     pad: 28,
   },
   {
+    id: "dock-adding-clip",
+    frame: "dock",
+    // The panel as Add Clip leaves it. The capture switch is gone — a
+    // screenshot cannot be a clip — and in its place is what the panel is
+    // adding to: the clips the recording already has.
+    install: install((base) => ({
+      dock: { ...base.dock, extending: { takes: 2 } },
+    })),
+    render: () => <Dock />,
+    steps: [],
+    clip: "[data-view='setup']",
+    pad: 28,
+  },
+  {
     id: "dock-permissions",
     frame: "dock",
     install: install({ permissions: permissions({ accessibility: false }) }),

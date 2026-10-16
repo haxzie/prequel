@@ -16,8 +16,12 @@
  * item's glyph fills and brightens with its label rather than staying an
  * outline beside it.
  *
- * Nothing else in the app should use these. A duotone glyph on a toolbar button
- * beside stroked ones is the inconsistency this file's own argument is against.
+ * Nothing else in the app should use these, with one exception:
+ * `RecordingsIcon` is also the mark the recording bar shows while a clip is
+ * being added to a project. The argument above holds — it is not on a button
+ * there either. It is the one thing on that strip that cannot be pressed, and
+ * it means the same thing in both places, so it is imported rather than
+ * restated: two clapperboards would drift.
  */
 
 /** Lucide's stroke geometry, restated so this file stands on its own. */
