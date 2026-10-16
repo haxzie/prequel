@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import * as Sentry from "@sentry/electron/renderer";
 
-import { DOCK_HEADROOM, PANEL_INSET } from "../../shared/contract";
+import { DOCK_HEADROOM, PANEL_INSET, QUICK_VIEW_MARGIN } from "../../shared/contract";
 import { Root } from "./Root";
 import "./index.css";
 
@@ -29,6 +29,11 @@ document.documentElement.style.setProperty("--panel-inset", `${PANEL_INSET}px`);
 // for the same reason: main grows the window by it, and the panel has to sit
 // exactly that far down or the label is drawn over the panel or off the top.
 document.documentElement.style.setProperty("--dock-headroom", `${DOCK_HEADROOM}px`);
+
+// The quick view's own margin, which is `PANEL_INSET`'s job for that window
+// and wider: its shadow is a soft one cast across the desktop rather than the
+// dock's tight panel shadow. Published for the same reason as the two above.
+document.documentElement.style.setProperty("--quickview-margin", `${QUICK_VIEW_MARGIN}px`);
 
 // Hover any element and press ⌘C to copy it, with its component stack and
 // source locations, for an agent to read.

@@ -7,7 +7,7 @@
  * created afterwards will be recorded.
  */
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { dialog, screen, shell, type BrowserWindow } from "electron";
 
@@ -18,6 +18,7 @@ import type {
   DockState,
   DockView,
   PendingSelection,
+  QuickViewCapture,
   RecordingPreferences,
   ScreenMode,
   Target,
@@ -150,6 +151,19 @@ export interface CaptureFlowOptions {
      * go on showing a manifest one take out of date.
      */
     resumeEditing: (dir: string) => void;
+    /** The window itself, for the capture's exclusion list. */
+    browserWindow: () => BrowserWindow | null;
+  };
+  /**
+   * The card a finished capture lands in.
+   *
+   * Injected like the workspace and optional for the same reason: nothing
+   * about capture depends on it existing, and without one a finished take goes
+   * straight to the editor the way it always did.
+   */
+  quickView?: {
+    show: (capture: QuickViewCapture) => void;
+    hide: () => void;
     /** The window itself, for the capture's exclusion list. */
     browserWindow: () => BrowserWindow | null;
   };
@@ -390,6 +404,11 @@ export class CaptureFlow {
     // person with any use for an update.
     const opening = !this.deps.dock.isVisible && this.deps.session.snapshot().status === "idle";
 
+    // The last capture's card, if it is still up. Setting up the next one is
+    // the clearest statement there is that the previous one is finished with,
+    // and leaving it on screen would put it in the recording about to start.
+    this.deps.quickView?.hide();
+
     this.deps.dock.show();
     this.syncCamera();
     this.deps.teleprompter.sync(true);
@@ -451,7 +470,28 @@ export class CaptureFlow {
 
   /** Opens a recording for editing, hiding the recorder's floating UI. */
   openEditor(dir: string): void {
+    this.deps.quickView?.hide();
     this.deps.workspace?.open(dir);
+  }
+
+  /**
+   * Where a finished capture goes.
+   *
+   * The quick view, when there is one: a capture is far more often sent
+   * somewhere than edited, and an editor window opening by itself over the
+   * screen that was just recorded is the app deciding otherwise. Open in
+   * Studio on the card is the way through to the editor.
+   *
+   * Without one — a build with no quick view wired, and every test of this
+   * flow — the editor opens as it always did, so no capture can finish with
+   * nothing on screen to say it did.
+   */
+  private presentCapture(dir: string, still: boolean): void {
+    if (!this.deps.quickView) {
+      this.openEditor(dir);
+      return;
+    }
+    this.deps.quickView.show({ dir, name: basename(dir), still });
   }
 
   /** Opens the Projects grid, for the tray to reach through the flow. */
@@ -981,6 +1021,10 @@ export class CaptureFlow {
       } satisfies PendingSelection);
 
     const preferences = this.deps.preferences.get();
+    // Reached without the panel ever opening — the hotkey, or the tray — so the
+    // card from the last capture can still be up. Hidden rather than excluded:
+    // it is a picture of the previous take sitting over the next one.
+    this.deps.quickView?.hide();
     // Created before capture starts so its id exists to be excluded; showing it
     // afterwards would put the panel in the first frames of the video.
     const dock = this.deps.dock.prepare();
@@ -1049,6 +1093,9 @@ export class CaptureFlow {
             camera,
             teleprompter,
             this.deps.workspace?.browserWindow() ?? null,
+            // Belt and braces: it is hidden above, and a window on its way off
+            // screen is still a window for the frame the capture starts on.
+            this.deps.quickView?.browserWindow() ?? null,
           ]),
         },
         // Into a subdirectory of the recording being extended, so the take is
@@ -1132,6 +1179,9 @@ export class CaptureFlow {
     this.deps.dock.hide();
     this.deps.camera.hide();
     this.deps.teleprompter.sync(false);
+    // And the card from the last capture, which is over the very screen being
+    // shot — a screenshot with the previous screenshot in the corner of it.
+    this.deps.quickView?.hide();
 
     const dock = this.deps.dock.prepare();
     const camera = this.deps.camera.prepare();
@@ -1156,6 +1206,7 @@ export class CaptureFlow {
         camera,
         teleprompter,
         this.deps.workspace?.browserWindow() ?? null,
+        this.deps.quickView?.browserWindow() ?? null,
       ]),
       // Left out of the shot. See `StillOptions::show_cursor` for why this is
       // the opposite default from a recording's.
@@ -1176,11 +1227,11 @@ export class CaptureFlow {
     }
 
     try {
-      this.openEditor(shot.dir);
+      this.presentCapture(shot.dir, true);
     } catch (cause) {
-      // The shot itself is safe on disk; failing to open an editor for it is
-      // not worth treating as a failed screenshot.
-      console.warn("[flow] could not open the editor:", cause);
+      // The shot itself is safe on disk; failing to show it is not worth
+      // treating as a failed screenshot.
+      console.warn("[flow] could not show the screenshot:", cause);
     }
 
     return this.state();
@@ -1371,11 +1422,11 @@ export class CaptureFlow {
     if (options?.open === false) return;
 
     try {
-      this.openEditor(finished.outputPath);
+      this.presentCapture(finished.outputPath, false);
     } catch (cause) {
-      // The recording itself is safe on disk; failing to open an editor for it
-      // is not worth surfacing as a failed stop.
-      console.warn("[flow] could not open the editor:", cause);
+      // The recording itself is safe on disk; failing to show it is not worth
+      // surfacing as a failed stop.
+      console.warn("[flow] could not show the finished recording:", cause);
     }
   }
 

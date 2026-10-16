@@ -20,6 +20,9 @@ import { navigate, recordingInRoute, useRoute } from "./lib/route";
  */
 const Camera = lazy(() => import("./camera/Camera").then((m) => ({ default: m.Camera })));
 const Dock = lazy(() => import("./dock/Dock").then((m) => ({ default: m.Dock })));
+const QuickView = lazy(() =>
+  import("./quickview/QuickView").then((m) => ({ default: m.QuickView })),
+);
 const Selection = lazy(() =>
   import("./selection/Selection").then((m) => ({ default: m.Selection })),
 );
@@ -50,6 +53,9 @@ function view(route: string) {
       return <Selection />;
     case "/camera":
       return <Camera />;
+    // The card a finished capture lands in.
+    case "/quickview":
+      return <QuickView />;
     // The app window's library: the grid and Settings. The editor is
     // `/editor/<name>` above, so a reload lands back on the recording that was
     // open rather than on the grid.

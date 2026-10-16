@@ -15,6 +15,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import {
   DEFAULT_PREFERENCES,
   type CaptureMode,
+  type QuickViewCapture,
   type RecordingPreferences,
   type ScreenMode,
   type SelectionResult,
@@ -101,6 +102,11 @@ function makeFlow(
   picked: SelectionResult | null = null,
 ) {
   const dockCalls: DockCalls = { shown: 0, hidden: 0, visible: false };
+  /** What the card was asked to show, and how often it was dismissed. */
+  const quickView = {
+    shown: [] as QuickViewCapture[],
+    hidden: 0,
+  };
   const workspace = {
     opened: [] as (string | undefined)[],
     sections: [] as WorkspaceSection[],
@@ -217,6 +223,13 @@ function makeFlow(
       // null the way it skips a destroyed one.
       browserWindow: () => null,
     },
+    quickView: {
+      show: (capture: QuickViewCapture) => void quickView.shown.push(capture),
+      hide: () => (quickView.hidden += 1),
+      // No window in a test, which `excludedIds` skips the way it skips a
+      // destroyed one.
+      browserWindow: () => null,
+    },
     welcome: { close: () => (welcome.closed += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
   });
@@ -227,6 +240,7 @@ function makeFlow(
     teleprompter,
     selection,
     workspace,
+    quickView,
     welcome,
     dockCalls,
     updateChecks,
@@ -404,15 +418,68 @@ describe("starting a recording", () => {
 });
 
 describe("stopping a recording", () => {
-  it("opens an editor on the recording that just finished", async () => {
-    // The take is on disk and nothing else in the app would ever show it.
-    const { flow, workspace } = makeFlow();
+  it("shows the finished recording in the quick view", async () => {
+    // The take is on disk and nothing else in the app would ever show it. The
+    // card rather than the editor: most captures are sent somewhere rather
+    // than edited, and Open in Studio on the card is the way to the editor.
+    const { flow, workspace, quickView } = makeFlow();
 
     await flow.record();
     await flow.stop();
 
     // The directory the recorder actually wrote to, rather than a path built a
     // second time from the same rule — which would agree even if it drifted.
+    expect(quickView.shown.map((capture) => capture.dir)).toEqual([requests[0]!.outputPath]);
+    expect(quickView.shown[0]!.still).toBe(false);
+    // And no window opened over the screen that was just recorded.
+    expect(workspace.opened).toEqual([]);
+  });
+
+  it("shows no card for a take added to a recording", async () => {
+    // An extend ends in the editor the addition was started from — the card
+    // would be a picture of a recording the user is already looking at, and
+    // its Add Clip would start a third take into the same project.
+    const { flow, workspace, quickView } = makeFlow();
+
+    await flow.record();
+    await flow.stop();
+    const dir = quickView.shown[0]!.dir;
+    quickView.shown.length = 0;
+
+    await flow.extendRecording(dir);
+    await flow.record();
+    await flow.stop();
+
+    expect(quickView.shown).toEqual([]);
+    expect(workspace.resumed).toEqual([dir]);
+  });
+
+  it("dismisses the card from the last capture before starting another", async () => {
+    // The card is a window over the screen about to be recorded, and it is a
+    // picture of the previous take. Excluded from the capture as well, for the
+    // frame it is still on its way off screen for.
+    const { flow, quickView } = makeFlow();
+
+    await flow.record();
+    await flow.stop();
+    expect(quickView.shown).toHaveLength(1);
+
+    const before = quickView.hidden;
+    await flow.record();
+
+    expect(quickView.hidden).toBeGreaterThan(before);
+  });
+
+  it("opens the editor when there is no quick view to show it in", async () => {
+    // The fallback, which every build without a card wired takes: a capture
+    // that finished with nothing on screen to say so would be a take nobody
+    // could find.
+    const { flow, workspace } = makeFlow();
+    (flow as unknown as { deps: { quickView?: unknown } }).deps.quickView = undefined;
+
+    await flow.record();
+    await flow.stop();
+
     expect(workspace.opened).toEqual([requests[0]!.outputPath]);
   });
 
@@ -420,7 +487,7 @@ describe("stopping a recording", () => {
     // The seam between the two halves of this feature: the recorder writes the
     // manifest and the editor parses it. A shape either side does not agree on
     // would only show up as an editor that refuses to open a real recording.
-    const { flow, workspace } = makeFlow({
+    const { flow, quickView } = makeFlow({
       cameraId: "some-id",
       cameraLabel: "FaceTime HD Camera",
     });
@@ -429,7 +496,7 @@ describe("stopping a recording", () => {
     await flow.stop();
 
     const manifest = parseManifest(
-      readFileSync(join(workspace.opened[0]!, MANIFEST_FILE_NAME), "utf8"),
+      readFileSync(join(quickView.shown[0]!.dir, MANIFEST_FILE_NAME), "utf8"),
     );
 
     expect(manifest.version).toBe(MANIFEST_VERSION);
@@ -441,21 +508,22 @@ describe("stopping a recording", () => {
     expect(trackStart(findTrack(manifest, "camera")!)).toBeGreaterThan(0);
   });
 
-  it("opens no editor when there was nothing recording", async () => {
-    // A stop that recorded nothing leaves no result, and an editor pointed at a
-    // directory with no manifest in it would only fail on open.
-    const { flow, workspace } = makeFlow();
+  it("shows nothing when there was nothing recording", async () => {
+    // A stop that recorded nothing leaves no result, and a card pointed at a
+    // directory with no manifest in it would only fail when it was used.
+    const { flow, workspace, quickView } = makeFlow();
 
     await flow.stop();
 
     expect(workspace.opened).toEqual([]);
+    expect(quickView.shown).toEqual([]);
   });
 
-  it("still resets the panel when opening the editor throws", async () => {
-    // The recording is already safe on disk; a failure to open an editor for it
+  it("still resets the panel when showing the capture throws", async () => {
+    // The recording is already safe on disk; a failure to put it on screen
     // must not surface as a failed stop.
     const { flow } = makeFlow();
-    (flow as unknown as { deps: { workspace: { open: () => void } } }).deps.workspace.open = () => {
+    (flow as unknown as { deps: { quickView: { show: () => void } } }).deps.quickView.show = () => {
       throw new Error("no manifest");
     };
 
@@ -813,8 +881,9 @@ describe("adding a recording to a project", () => {
     const made = makeFlow();
     await recordFor(made.flow);
 
-    const dir = made.workspace.opened[0]!;
+    const dir = made.quickView.shown[0]!.dir;
     // Cleared so the extend's own effects are the only ones asserted on.
+    made.quickView.shown.length = 0;
     made.workspace.opened.length = 0;
     requests.length = 0;
 
@@ -1113,14 +1182,14 @@ describe("recording a target chosen from outside the app", () => {
     expect(workspace.opened).toEqual([]);
   });
 
-  it("still opens the editor for a stop that did not say", async () => {
+  it("still shows the capture for a stop that did not say", async () => {
     // The default is the button's behaviour, which must not change because the
     // command line wanted something else.
-    const { flow, workspace } = makeFlow();
+    const { flow, quickView } = makeFlow();
     await flow.recordTarget({ mode: "window", target: WINDOW, crop: null, label: "" });
     await flow.stop();
 
-    expect(workspace.opened).toHaveLength(1);
+    expect(quickView.shown).toHaveLength(1);
   });
 });
 
@@ -1150,7 +1219,7 @@ const CONFIRMED: SelectionResult = {
  */
 describe("the screenshot switch", () => {
   it("shoots rather than records when the picker confirms", async () => {
-    const { flow, workspace } = makeFlow({ captureMode: "photo" }, { ...CONFIRMED, start: true });
+    const { flow, quickView } = makeFlow({ captureMode: "photo" }, { ...CONFIRMED, start: true });
 
     await flow.chooseMode("screen");
 
@@ -1158,8 +1227,10 @@ describe("the screenshot switch", () => {
     // And nothing was recorded. This is the failure the whole switch exists to
     // avoid: a confirm that starts a take from a panel set up for a still.
     expect(requests).toHaveLength(0);
-    // The shot is on disk and nothing else in the app would ever show it.
-    expect(workspace.opened).toHaveLength(1);
+    // The shot is on disk and nothing else in the app would ever show it, and
+    // the card knows it is a still: no Add Clip, and Copy straight away.
+    expect(quickView.shown).toHaveLength(1);
+    expect(quickView.shown[0]!.still).toBe(true);
   });
 
   it("records when the switch is back on video", async () => {

@@ -29,6 +29,9 @@ const Library = lazy(() =>
 const EditorRoute = lazy(() =>
   import("../src/renderer/src/editor/EditorRoute").then((m) => ({ default: m.EditorRoute })),
 );
+const QuickView = lazy(() =>
+  import("../src/renderer/src/quickview/QuickView").then((m) => ({ default: m.QuickView })),
+);
 const Script = lazy(() =>
   import("../src/renderer/src/script/Script").then((m) => ({ default: m.Script })),
 );
@@ -53,6 +56,7 @@ export type ShotFrameKind =
   | "island"
   | "island-narrow"
   | "island-plain"
+  | "quickview"
   | "bare";
 
 /** One thing the capture script does before it takes the picture. */
@@ -853,5 +857,43 @@ export const SHOTS: readonly Shot[] = [
     ],
     clip: "[role='dialog'][aria-label='Upgrade to export']",
     pad: 40,
+  },
+
+  // ── The quick view ────────────────────────────────────────────────────────
+  //
+  // The card a finished capture lands in, in each of the three states it has.
+  // `dir` is the fixture recording's name rather than a path: the bridge
+  // resolves a composition by the last segment either way, and the card never
+  // shows a directory.
+  {
+    id: "quickview",
+    frame: "quickview",
+    install: install(() => ({ quickView: { dir: recording, name: recording, still: false } })),
+    render: () => <QuickView />,
+    steps: [{ kind: "settle", ms: 900 }],
+    clip: "frame",
+    pad: 10,
+  },
+  {
+    id: "quickview-still",
+    frame: "quickview",
+    install: install(() => ({ quickView: { dir: recording, name: recording, still: true } })),
+    render: () => <QuickView />,
+    steps: [{ kind: "settle", ms: 900 }],
+    clip: "frame",
+    pad: 10,
+  },
+  {
+    id: "quickview-exported",
+    frame: "quickview",
+    install: install(() => ({ quickView: { dir: recording, name: recording, still: false } })),
+    render: () => <QuickView />,
+    steps: [
+      { kind: "settle", ms: 900 },
+      { kind: "click", selector: "button[aria-label='Export']" },
+      { kind: "settle", ms: 600 },
+    ],
+    clip: "frame",
+    pad: 10,
   },
 ];

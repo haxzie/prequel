@@ -481,6 +481,40 @@ export const PANEL_INSET = 18;
 export const PANEL_HEIGHT = 44;
 
 /**
+ * The quick view's card, before its inset, in points.
+ *
+ * Wide enough that a 16:9 frame inside it is still readable at a glance — the
+ * question the card answers is "is that the take I meant", and nothing finer
+ * than that — and small enough to sit in the corner of a laptop screen
+ * without covering what was recorded. It was half as wide again, which is a
+ * window rather than a card: the capture is a whole screen, and at any size
+ * this side of a window it is a thumbnail of one either way.
+ *
+ * Here rather than in the window that uses it, for the reason `PANEL_HEIGHT`
+ * is here: the gallery draws the same card at the same size, and a second set
+ * of numbers would be a documentation screenshot of a window the app does not
+ * have.
+ */
+export const QUICK_VIEW_WIDTH = 288;
+export const QUICK_VIEW_HEIGHT = 192;
+
+/**
+ * The transparent margin around the quick view's card, in points.
+ *
+ * `PANEL_INSET`'s job for this one window, and more than twice the size,
+ * because the shadow is a different shadow: the dock's is a 8px blur that says
+ * "this is a panel", and the card's is a wide soft one that says "this is
+ * sitting on your desktop". macOS shapes a window's own shadow to its
+ * rectangle, so the shadow is drawn in CSS and this is the room it needs —
+ * short of it and the blur is cut off in a straight line down the side of the
+ * card, which reads as a rendering fault rather than as a cropped shadow.
+ *
+ * Main sizes the window with it, `overCard` measures the clickable rectangle
+ * with it, and the renderer insets the card by it.
+ */
+export const QUICK_VIEW_MARGIN = 40;
+
+/**
  * The transparent band above the dock's panel, replacing `PANEL_INSET` on
  * that one side.
  *
@@ -649,6 +683,35 @@ export const IPC_CHANNELS = {
   cameraHover: "camera:hover",
   /** Main → renderer broadcast. */
   dockChanged: "dock:changed",
+  /**
+   * The quick view: what it is showing, on request.
+   *
+   * Asked for rather than pushed on load, for the reason `workspaceReady`
+   * exists: the view is a `lazy()` chunk that is not listening when the page
+   * finishes loading, and a capture pushed then lands on nobody.
+   */
+  quickViewState: "quickview:state",
+  /** Main → the quick view: a different capture, or none. */
+  quickViewChanged: "quickview:changed",
+  /** Quick view → main: dismiss me. */
+  quickViewClose: "quickview:close",
+  /** Quick view → main: open this capture in the editor. */
+  quickViewEdit: "quickview:edit",
+  /** Quick view → main: bring the panel back to add another take to it. */
+  quickViewAddClip: "quickview:addClip",
+  /**
+   * Quick view → main: export this capture as it stands, into Downloads.
+   *
+   * No save sheet and no editor. A video is rendered with the first cut the
+   * editor would have made, a screenshot is the picture itself — see
+   * `main/quick-export.ts`. Progress arrives on `exportProgress` with every
+   * other export's.
+   */
+  quickViewExport: "quickview:export",
+  /** Quick view → main: put the capture on the pasteboard. */
+  quickViewCopy: "quickview:copy",
+  /** Quick view → main: show the finished file in Finder. */
+  quickViewReveal: "quickview:reveal",
   /** The prompter's script and listening state, on request. */
   teleprompterState: "teleprompter:state",
   /** Main → renderer broadcast: script, pause or listening changed. Rare. */
@@ -1467,6 +1530,34 @@ export interface SelectionResult {
    * microphone can be changed before the take begins.
    */
   start?: boolean;
+}
+
+/**
+ * What the quick view is showing, or null when it is showing nothing.
+ *
+ * The capture that has just been made, named by its folder the way every other
+ * route names one — never by path, so the window's address stays clear of the
+ * user's home directory.
+ */
+export interface QuickViewCapture {
+  /** The session directory, which is what every action here is performed on. */
+  dir: string;
+  /** The folder's name, for the editor route and for a label. */
+  name: string;
+  /** One frame rather than a take: no Add Clip, and Copy is the picture. */
+  still: boolean;
+}
+
+/**
+ * What a quick export did.
+ *
+ * `path` is the finished file. `needsUpgrade` is the one refusal that is not a
+ * failure — the licence does not cover exporting — and it carries no path,
+ * because nothing was written.
+ */
+export interface QuickExportOutcome {
+  path: string | null;
+  needsUpgrade: boolean;
 }
 
 /** The panel's full state, pushed from main. */

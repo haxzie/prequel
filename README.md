@@ -8,9 +8,9 @@ A macOS screen recorder and video editor. Electron shell over a native Rust
 core built on ScreenCaptureKit, AVFoundation, VideoToolbox and Metal.
 
 Record a screen, a window or a dragged region, with the webcam and both audio
-sources alongside it. Stop, and an editor opens on the take: composite the
-webcam over the screen against a background, cut, zoom, and export an MP4 or a
-GIF.
+sources alongside it. Stop, and the take lands in a card you can export, copy
+or open in the editor: composite the webcam over the screen against a
+background, cut, zoom, and export an MP4 or a GIF.
 
 **Apple Silicon, macOS 14+.**
 

@@ -5,6 +5,9 @@ import {
   DOCK_HEADROOM,
   PANEL_HEIGHT,
   PANEL_INSET,
+  QUICK_VIEW_HEIGHT,
+  QUICK_VIEW_MARGIN,
+  QUICK_VIEW_WIDTH,
   TELEPROMPTER_TOP_GAP,
   TELEPROMPTER_WIDTHS,
   teleprompterHeight,
@@ -76,7 +79,7 @@ function Index() {
 const WINDOW: Record<
   Exclude<
     ShotFrameKind,
-    "dock" | "dock-transparent" | "bare" | "island" | "island-narrow" | "island-plain"
+    "dock" | "dock-transparent" | "bare" | "island" | "island-narrow" | "island-plain" | "quickview"
   >,
   { width: number; height: number }
 > = {
@@ -159,6 +162,26 @@ function ShotFrame({ kind, children }: { kind: ShotFrameKind; children: ReactNod
               ) +
               PANEL_INSET +
               (notch ? 0 : PANEL_INSET),
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "quickview") {
+    // The quick view's window, over a wallpaper: the card plus the margin its
+    // shadow is cast into, as a flex column, because the card takes `flex-1`
+    // of it the way the dock's pill does.
+    return (
+      <div className="grid min-h-full place-items-center bg-cover bg-center p-16" style={wallpaper}>
+        <div
+          data-shot-frame
+          className="flex flex-col"
+          style={{
+            width: QUICK_VIEW_WIDTH + QUICK_VIEW_MARGIN * 2,
+            height: QUICK_VIEW_HEIGHT + QUICK_VIEW_MARGIN * 2,
           }}
         >
           {children}

@@ -1,15 +1,17 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { DOCK_HEADROOM, PANEL_INSET } from "../src/shared/contract";
+import { DOCK_HEADROOM, PANEL_INSET, QUICK_VIEW_MARGIN } from "../src/shared/contract";
 import { Gallery } from "./Gallery";
 import { SHOTS, configure } from "./shots";
 import "./gallery.css";
 
-// The same two custom properties `src/renderer/src/main.tsx` publishes, for
-// the same reason: the dock's panel sizes its margins from them.
+// The same custom properties `src/renderer/src/main.tsx` publishes, for the
+// same reason: the dock's panel and the quick view's card size their margins
+// from them.
 document.documentElement.style.setProperty("--panel-inset", `${PANEL_INSET}px`);
 document.documentElement.style.setProperty("--dock-headroom", `${DOCK_HEADROOM}px`);
+document.documentElement.style.setProperty("--quickview-margin", `${QUICK_VIEW_MARGIN}px`);
 
 /**
  * What the capture script reads and calls.

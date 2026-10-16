@@ -247,6 +247,31 @@ export async function openExport(path: string): Promise<void> {
 }
 
 /**
+ * Whether this path is a file the app wrote as an export.
+ *
+ * The question behind every guard here, exported because the quick view asks
+ * it too: its Copy and its Open in Finder are handed a path by a renderer, and
+ * the pasteboard and Finder are both reached from a click.
+ */
+export function isRecordedExport(path: string): boolean {
+  return read().some((entry) => entry.path === path);
+}
+
+/**
+ * Shows an export in Finder.
+ *
+ * `openExport`'s twin, guarded the same way and for the same reason: this is
+ * the quick view's "Open in Finder", and the path arrives from a window.
+ */
+export function revealExport(path: string): void {
+  if (!isRecordedExport(path)) {
+    console.warn(`[exports] refusing to reveal a path that is not a recorded export: ${path}`);
+    return;
+  }
+  shell.showItemInFolder(path);
+}
+
+/**
  * Caches a still the pane has just made.
  *
  * The renderer is the only process here that can decode video, so the pane

@@ -42,6 +42,7 @@ import { AppTray } from "./tray.js";
 import { checkForUpdates, checkForUpdatesIfDue, onUpdateChanged } from "./update.js";
 import { CameraWindow } from "./windows/camera.js";
 import { DockWindow } from "./windows/dock.js";
+import { QuickViewWindow } from "./windows/quickview.js";
 import { WorkspaceWindow } from "./windows/workspace.js";
 import { ScriptWindow } from "./windows/script.js";
 import { SelectionOverlay } from "./windows/selection.js";
@@ -98,6 +99,10 @@ const session = new RecordingSession();
 const dock = new DockWindow();
 const camera = new CameraWindow();
 const selection = new SelectionOverlay();
+// Where a finished capture lands. Created at module scope with the other
+// always-there windows, because the tray can stop a recording before anything
+// in `whenReady` has run.
+const quickView = new QuickViewWindow();
 // Reads `NSScreen` through the addon, which is loaded lazily; until it is, the
 // island falls back to inferring the notch from the menu bar's height.
 const island = new TeleprompterWindow({
@@ -246,6 +251,7 @@ void app.whenReady().then(() => {
     preferences,
     onChange: broadcastDockState,
     workspace,
+    quickView,
     welcome,
     updates,
     // Every time the panel opens, throttled inside `update.ts`. The launch
@@ -254,7 +260,7 @@ void app.whenReady().then(() => {
     checkForUpdates: checkForUpdatesIfDue,
   });
 
-  registerIpc({ flow, selection, workspace, teleprompter: prompter });
+  registerIpc({ flow, selection, workspace, quickView, teleprompter: prompter });
   tray = new AppTray(session, flow);
 
   // The command line, which is also how an agent drives the app. Started after
@@ -465,6 +471,7 @@ app.on("will-quit", () => {
     ["camera", () => camera.destroy()],
     ["teleprompter", () => island.destroy()],
     ["dock", () => dock.destroy()],
+    ["quick view", () => quickView.destroy()],
     ["workspace", () => workspace.close()],
     ["welcome", () => welcome.close()],
     ["updates", () => updates.close()],

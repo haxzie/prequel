@@ -122,6 +122,18 @@
      and the island must not reappear for the tick in between. */
   --animate-island-in: island-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-island-out: island-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+  /* The quick view's card arriving in the corner and leaving it. It comes in
+     from the right, because that is the edge it sits against and a card that
+     grew out of the middle of nothing reads as a dialog rather than as
+     something handed over.
+
+     The exit holds its end frame and is what the window waits on: the card
+     tells main to hide once the animation has ended, so there is no second
+     copy of this duration in TypeScript to drift from it. Quicker than the
+     entrance and on a sharper curve — an arrival is worth watching and a
+     dismissal is a thing already decided. */
+  --animate-quickview-in: quickview-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-quickview-out: quickview-out 170ms cubic-bezier(0.4, 0, 1, 1) both;
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
   /* The light crossing the recording light's dot matrix. The same 1.6s the
      pulse it replaces ran at — a take can run for an hour beside somebody
@@ -266,6 +278,23 @@
   @keyframes glow-out {
     to {
       opacity: 0;
+    }
+  }
+
+  /* `transform` and `opacity` only. The card carries a wide three-layer
+     shadow and a blurred pill over a video, and animating anything that lays
+     out would have the compositor redraw all of it every frame. */
+  @keyframes quickview-in {
+    from {
+      opacity: 0;
+      transform: translate3d(24px, 6px, 0) scale(0.94);
+    }
+  }
+
+  @keyframes quickview-out {
+    to {
+      opacity: 0;
+      transform: translate3d(14px, 4px, 0) scale(0.96);
     }
   }
 

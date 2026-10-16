@@ -29,6 +29,7 @@ import type {
   PermissionState,
   FontsCatalogue,
   ProjectSummary,
+  QuickViewCapture,
   TeleprompterPosition,
   TeleprompterState,
   UpdateState,
@@ -55,6 +56,8 @@ export interface Fixtures {
   exportPath: string;
   /** What the Exports pane lists. */
   exports: ExportSummary[];
+  /** What the quick view is showing, or null for a card with nothing in it. */
+  quickView: QuickViewCapture | null;
 }
 
 export const DEFAULT_FIXTURES: Fixtures = {
@@ -69,6 +72,7 @@ export const DEFAULT_FIXTURES: Fixtures = {
   loginItem: true,
   exportPath: "/Users/you/Desktop/Prequel demo.mp4",
   exports: fixtures.EXPORTS,
+  quickView: null,
 };
 
 /**
@@ -415,6 +419,29 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
 
     library: {
       reveal: noop("library.reveal"),
+    },
+
+    // The card a finished capture lands in. The export "runs" instantly and
+    // lands wherever `exportPath` says, which is enough for the three states
+    // the shots show; nothing here writes a file.
+    quickView: {
+      state: () => Promise.resolve(state.quickView),
+      onChanged: subscribe<QuickViewCapture | null>("quickView"),
+      close: noop("quickView.close"),
+      edit: noop("quickView.edit"),
+      addClip: () => {
+        console.warn("[bridge] quickView.addClip");
+        return ok(undefined);
+      },
+      export: () => ok({ path: state.exportPath, needsUpgrade: false }),
+      copy: (exported) => {
+        console.warn("[bridge] quickView.copy", exported);
+        return ok(undefined);
+      },
+      reveal: (path) => {
+        console.warn("[bridge] quickView.reveal", path);
+        return ok(undefined);
+      },
     },
 
     projects: {

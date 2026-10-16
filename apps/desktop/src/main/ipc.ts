@@ -61,6 +61,7 @@ import {
   dragExport as dragListedExport,
   listExports,
   openExport,
+  revealExport,
   saveExportThumbnail,
 } from "./exports.js";
 import { listProjects, renameProject, savePoster } from "./projects.js";
@@ -94,6 +95,8 @@ import {
   readSoundSample,
 } from "./editor-session.js";
 import type { SelectionOverlay } from "./windows/selection.js";
+import type { QuickViewWindow } from "./windows/quickview.js";
+import { copyCapture, quickExport } from "./quick-export.js";
 import type { WorkspaceWindow } from "./windows/workspace.js";
 import {
   checkForUpdates,
@@ -125,13 +128,27 @@ export interface IpcDeps {
    */
   workspace: WorkspaceWindow;
   /**
+   * The card a finished capture lands in.
+   *
+   * Reached directly for what it shows and dismisses; everything on it that
+   * leads back into capture — Open in Studio, Add Clip — goes through the flow,
+   * which is the one thing that knows what else has to move out of the way.
+   */
+  quickView: QuickViewWindow;
+  /**
    * The prompter, reached directly for the same reason the workspace is:
    * moving through a script is not a capture command.
    */
   teleprompter: Teleprompter;
 }
 
-export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDeps): void {
+export function registerIpc({
+  flow,
+  selection,
+  workspace,
+  quickView,
+  teleprompter,
+}: IpcDeps): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     name: env.NEXT_PUBLIC_APP_NAME,
     url: env.NEXT_PUBLIC_APP_URL,
@@ -577,6 +594,55 @@ export function registerIpc({ flow, selection, workspace, teleprompter }: IpcDep
 
   ipcMain.handle(IPC_CHANNELS.exportCopy, (_event, path: string) =>
     attempt(() => copyExport(path)),
+  );
+
+  // ── the quick view ───────────────────────────────────────────────────────
+  //
+  // Everything here is performed on the capture the card is showing rather
+  // than on a directory the window names. The renderer holds one either way,
+  // and reading it from main is what keeps the card's buttons from being a
+  // channel that exports, copies or reveals any path a window cares to send.
+  ipcMain.handle(IPC_CHANNELS.quickViewState, () => quickView.current());
+
+  ipcMain.handle(IPC_CHANNELS.quickViewClose, () => quickView.hide());
+
+  ipcMain.handle(IPC_CHANNELS.quickViewEdit, () => {
+    const capture = quickView.current();
+    if (capture) flow.openEditor(capture.dir);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.quickViewAddClip, () =>
+    attempt(async () => {
+      const capture = quickView.current();
+      // Never a screenshot: a still has no clock for a second take to land on,
+      // and the card does not offer it.
+      if (!capture || capture.still) return;
+      await flow.extendRecording(capture.dir);
+    }),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.quickViewExport, () =>
+    attempt(() => {
+      const capture = quickView.current();
+      if (!capture) return { path: null, needsUpgrade: false };
+      return quickExport(capture.dir, capture.still);
+    }),
+  );
+
+  // The finished file for a video, the picture itself for a shot — see
+  // `copyCapture`. The path comes from the renderer because it is the one that
+  // knows whether this card's export has finished.
+  ipcMain.handle(IPC_CHANNELS.quickViewCopy, (_event, exported: string | null) =>
+    attempt(() => {
+      const capture = quickView.current();
+      if (capture) copyCapture(capture.dir, capture.still, exported);
+    }),
+  );
+
+  // Only a path the app wrote, which `revealExport` is what checks: this is
+  // Finder reached from a click, and the path comes from a window.
+  ipcMain.handle(IPC_CHANNELS.quickViewReveal, (_event, path: string) =>
+    attempt(() => revealExport(path)),
   );
 
   ipcMain.handle(IPC_CHANNELS.transcribeStart, (_event, dir: string) =>

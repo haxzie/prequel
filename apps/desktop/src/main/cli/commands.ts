@@ -27,26 +27,14 @@ import {
   type Target,
   type TranscribeProgress,
 } from "../../shared/contract.js";
-import {
-  MANIFEST_FILE_NAME,
-  findTrack,
-  isStill,
-  parseManifest,
-  seamsOf,
-} from "../../shared/manifest.js";
-import { autoZooms, momentsOf } from "../../shared/autoedit.js";
-import {
-  PROJECT_FILE_NAME,
-  sanitiseProject,
-  sourceShape,
-  type Project,
-} from "../../shared/project.js";
+import { MANIFEST_FILE_NAME, seamsOf } from "../../shared/manifest.js";
+import { PROJECT_FILE_NAME, sanitiseProject } from "../../shared/project.js";
 import { TRANSCRIPT_FILE_NAME } from "../../shared/transcript.js";
 import { authState, beginSignIn, onAuthChanged, signOut } from "../auth.js";
 import { catalogue } from "../backgrounds.js";
 import { watch } from "../broadcast.js";
 import type { CaptureFlow } from "../capture-flow.js";
-import { loadProject, saveProject } from "../editor-project.js";
+import { firstCut, projectOf, readManifest } from "../first-cut.js";
 import { readEditorSession } from "../editor-session.js";
 import { log, logPath } from "../log.js";
 import { permissionStates } from "../permissions.js";
@@ -373,33 +361,6 @@ async function start(
 /** Milliseconds, from the manifest's nanoseconds. */
 function millis(nanoseconds: number): number {
   return Math.round(nanoseconds / 1_000_000);
-}
-
-function readManifest(dir: string) {
-  return parseManifest(readFileSync(join(dir, MANIFEST_FILE_NAME), "utf8"));
-}
-
-/**
- * A recording's project, loaded the way the editor loads it.
- *
- * Through `loadProject` rather than by reading the file, because a recording
- * nobody has edited has no `project.json` at all and the answer then is the
- * defaults the editor would have shown — not an error.
- */
-function projectOf(dir: string) {
-  const manifest = readManifest(dir);
-  const screenTrack = findTrack(manifest, "screen")?.segments?.[0];
-  return loadProject(
-    dir,
-    manifest.id,
-    manifest.duration,
-    sourceShape(
-      manifest.source,
-      screenTrack && { width: screenTrack.width ?? null, height: screenTrack.height ?? null },
-      isStill(manifest),
-    ),
-    seamsOf(manifest),
-  );
 }
 
 function accountOf(state: AuthState): unknown {
@@ -1000,44 +961,6 @@ export function cliHandlers(context: CliContext): Record<string, Handler> {
       return session_.transcript;
     },
   };
-}
-
-/**
- * Makes the first cut on a take the command line has just recorded.
- *
- * The zooms. They are the whole claim of the app — "zooms on every click" — and
- * until now a recording made from here had none of them: the pass runs when the
- * editor *opens* a recording for the first time, so a take recorded, rendered
- * and handed back without a window ever being opened came out flat. Nobody
- * would have seen that happen; they would only have seen a duller video than
- * the same recording makes by hand.
- *
- * Written to `project.json` rather than left in memory, so the editor agrees
- * with the file the command line rendered: the pass is guarded on a project
- * having no zooms of its own, and one that now has them is not run again.
- * Deleting them all still leaves them deleted — the app does not argue.
- */
-function firstCut(dir: string): Project {
-  const manifest = readManifest(dir);
-  const project = projectOf(dir);
-
-  if (project.zooms.length > 0) return project;
-
-  const moments = momentsOf(manifest);
-  if (moments.length === 0) return project;
-
-  const zooms = autoZooms(moments, {
-    duration: manifest.duration,
-    // Without a pointer track a `cursor` zoom has nothing to follow, and the
-    // pass makes fixed regions instead. The same question the editor asks.
-    hasCursor: (manifest.cursor?.length ?? 0) > 0 && manifest.cursor_baked !== true,
-  });
-  if (zooms.length === 0) return project;
-
-  const cut = { ...project, zooms };
-  saveProject(dir, cut);
-  log("info", `first cut: ${String(zooms.length)} zooms`, dir);
-  return cut;
 }
 
 /**

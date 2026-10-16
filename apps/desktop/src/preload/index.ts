@@ -24,6 +24,8 @@ import type {
   ProjectComposition,
   ProjectPage,
   ProjectSummary,
+  QuickExportOutcome,
+  QuickViewCapture,
   RecordingPreferences,
   ScreenMode,
   SelectionResult,
@@ -608,6 +610,52 @@ const api = {
   library: {
     reveal: (path?: string): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.revealRecordings, path),
+  },
+
+  /**
+   * The card a finished capture lands in.
+   *
+   * Every action is performed on whatever main says the card is showing, so
+   * nothing here takes a directory: a window that could name one would be a
+   * channel that exports and copies any path it liked.
+   */
+  quickView: {
+    /**
+     * What the card should be showing, asked for on mount.
+     *
+     * The push below arrives when the capture changes, which for the first one
+     * is before this chunk has finished loading — see `workspaceReady` for the
+     * same shape and the same reason.
+     */
+    state: (): Promise<QuickViewCapture | null> => ipcRenderer.invoke(IPC_CHANNELS.quickViewState),
+
+    onChanged: (listener: (capture: QuickViewCapture | null) => void): (() => void) =>
+      subscribe(IPC_CHANNELS.quickViewChanged, listener),
+
+    close: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.quickViewClose),
+
+    /** Opens the capture in the editor, and dismisses the card. */
+    edit: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.quickViewEdit),
+
+    /** Brings the panel back to record another take into this recording. */
+    addClip: (): Promise<IpcResult<void>> => ipcRenderer.invoke(IPC_CHANNELS.quickViewAddClip),
+
+    /**
+     * Exports the capture into Downloads, with the first cut already made.
+     *
+     * Resolves when the file is written. How far along it is arrives on
+     * `export.onProgress` with every other export's, which is what the card
+     * counts while this is in flight.
+     */
+    export: (): Promise<IpcResult<QuickExportOutcome>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.quickViewExport),
+
+    /** The picture for a shot, the finished file for a video. */
+    copy: (exported: string | null): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.quickViewCopy, exported),
+
+    reveal: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.quickViewReveal, path),
   },
 
   /**
