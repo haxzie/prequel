@@ -185,7 +185,7 @@ reflects it.
 
 **ScreenCaptureKit hands back YUV, not BGRA.** `SCScreenshotManager` returns a
 biplanar `420v` buffer unless the config asks otherwise, so `bytes_per_row` is
-the *luma plane's* stride — 1536 on a 1512-wide frame — and `plane_count` is 2.
+the _luma plane's_ stride — 1536 on a 1512-wide frame — and `plane_count` is 2.
 Read it as four bytes a pixel and each row swallows four, so the picture arrives
 tiled four times across and squashed to a quarter. Nothing fails: whatever
 consumes it returns honest results for a frame that was never on screen. Ask for
@@ -199,7 +199,7 @@ origin.** All of them `loadFile` the same `index.html`, so a stray ctrl-scroll
 over any surface rescales every surface, survives the quit, and returns on the
 next launch — written into `per_host_zoom_levels` in the profile's
 `Preferences` with nothing on screen to say so. The picker's overlays draw in
-CSS pixels that are meant to *be* screen points, so a level of −0.5 (a factor of
+CSS pixels that are meant to _be_ screen points, so a level of −0.5 (a factor of
 `1.2^-0.5` = 0.913) drew every window highlight, screen outline and found shape
 nine per cent small, anchored at the top left. It reads as a coordinate-space
 bug in every direction at once, and a fresh `BrowserWindow` on a `data:` URL
