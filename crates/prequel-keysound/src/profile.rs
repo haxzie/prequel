@@ -121,6 +121,14 @@ pub enum Mechanism {
     /// phone plays one sound per key. No stabiliser tick on long keys either;
     /// a long key is only a slightly lower strike.
     Tap,
+    /// One strike, like `Tap`, but struck rather than played: a gritty contact
+    /// and a variant-to-variant detune, which `Tap` has neither of because a
+    /// phone plays the same recording every time.
+    ///
+    /// Something hit once and let go — a stick on a board. A mouse's
+    /// excitation without a mouse's release, which no switch needs and
+    /// anything swung does.
+    Knock,
 }
 
 /// A held tone's end: it sustains until `hold_ms` past the press, then dies
@@ -251,12 +259,13 @@ pub enum ClickProfile {
     Tok,
     Pebble,
     Tink,
+    Blackboard,
     Pop,
     Quack,
 }
 
 impl ClickProfile {
-    pub const ALL: [ClickProfile; 10] = [
+    pub const ALL: [ClickProfile; 11] = [
         ClickProfile::Soft,
         ClickProfile::Mechanical,
         ClickProfile::Hush,
@@ -265,6 +274,7 @@ impl ClickProfile {
         ClickProfile::Tok,
         ClickProfile::Pebble,
         ClickProfile::Tink,
+        ClickProfile::Blackboard,
         ClickProfile::Pop,
         ClickProfile::Quack,
     ];
@@ -279,6 +289,7 @@ impl ClickProfile {
             ClickProfile::Tok => "tok",
             ClickProfile::Pebble => "pebble",
             ClickProfile::Tink => "tink",
+            ClickProfile::Blackboard => "blackboard",
             ClickProfile::Pop => "pop",
             ClickProfile::Quack => "quack",
         }
@@ -298,6 +309,7 @@ impl ClickProfile {
             ClickProfile::Tok => &CLICK_TOK,
             ClickProfile::Pebble => &CLICK_PEBBLE,
             ClickProfile::Tink => &CLICK_TINK,
+            ClickProfile::Blackboard => &CLICK_BLACKBOARD,
             ClickProfile::Pop => &CLICK_POP,
             ClickProfile::Quack => &CLICK_QUACK,
         }
@@ -648,6 +660,67 @@ static CLICK_TINK: Profile = Profile {
     ping: None,
     jacket: None,
     touch_db: 0.0,
+    release_db: -4.0,
+    release_delay_ms: (70.0, 90.0),
+    long_key_ratio: 1.0,
+    overrides: &[],
+};
+
+/// A wooden pointer tapped on a classroom blackboard.
+///
+/// The prop the pointer stick is, so it belongs with it — and it is the one
+/// click here that is not a switch being pressed. Two bodies are struck at
+/// once and the balance between them is the whole sound: the rod is what is
+/// *heard*, around five hundred hertz and dry, and the board is what is felt
+/// underneath it, a panel on battens with an air gap behind that moves with
+/// the air low down.
+///
+/// The low modes are deliberately not a harmonic series. A rectangular panel's
+/// go roughly 1 : 1.9 — the spacing widens, because a plate's frequencies go
+/// as the *squares* of its mode numbers. The three above them are the rod,
+/// which is a bar and spaced differently again.
+///
+/// The board used to be in charge here, at 96 Hz with all the gain on it, and
+/// the sound was the quietest in the list — not because it was small, but
+/// because the ear hears a hundred hertz some twenty decibels below a thousand
+/// and every bit of it was down there. Every voice is normalised to the same
+/// peak, so a sound that spends its headroom where nobody can hear it spends
+/// it for nothing. The peak is unchanged and the energy moved up: A-weighted
+/// this is nine and a half decibels louder, which puts it beside `Walnut` and
+/// `Soft` rather than below everything.
+///
+/// `Mechanism::Knock`, which nothing else uses: a stick comes off a board in
+/// silence, so there is no release — and wood on a painted panel is a gritty
+/// contact, which a `Tap` has no noise for.
+static CLICK_BLACKBOARD: Profile = Profile {
+    mechanism: Mechanism::Knock,
+    // A hard wooden tip, and a short one: the rod gives very little.
+    // Not as short as a stone's. A rod gives a little, and a contact sharp
+    // enough to spike takes the headroom the body needs — every voice is
+    // normalised to one peak, so a tall narrow tick is paid for by everything
+    // under it.
+    excite_tau_ms: 1.0,
+    // Dry rather than bright: a painted board takes the very top off the
+    // contact, which is the difference between wood on a board and wood on
+    // tile. At 2 600 it took the wood off with it.
+    contact_lowpass_hz: 3_800.0,
+    modes: &[
+        // The panel and the air behind it — what is felt rather than heard.
+        mode(118.0, 200.0, 0.3),
+        mode(235.0, 130.0, 0.3),
+        // The rod, and what the sound actually is.
+        mode(560.0, 70.0, 0.95),
+        mode(1_120.0, 38.0, 1.0),
+        // The tack of the tip. Short, and no higher: a mode up at three or
+        // four kilohertz is a spike on the peak and nothing in the body.
+        mode(2_300.0, 14.0, 0.45),
+    ],
+    ping: None,
+    jacket: None,
+    touch_db: 0.0,
+    // Read by neither: `Knock` strikes once and stops. Left at the table's
+    // usual figures rather than at nought, which would read as a release that
+    // was tuned to silence rather than one that does not exist.
     release_db: -4.0,
     release_delay_ms: (70.0, 90.0),
     long_key_ratio: 1.0,

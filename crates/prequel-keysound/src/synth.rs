@@ -115,7 +115,7 @@ pub fn render_voice(
     // like a different instrument, not a different finger.
     let detune = match profile.mechanism {
         Mechanism::Tap => TAP_DETUNE,
-        Mechanism::Keyboard | Mechanism::Mouse => DETUNE,
+        Mechanism::Keyboard | Mechanism::Mouse | Mechanism::Knock => DETUNE,
     };
     // The body is detuned once per variant and then struck several times, so
     // the touch, the hit and the release all ring the same keycap.
@@ -141,6 +141,8 @@ pub fn render_voice(
     let contact = Excite {
         tau_ms: tau,
         lowpass_hz: profile.contact_lowpass_hz,
+        // Everything struck has grit in the contact. Only the phone does not,
+        // because it is a recording being played rather than a body being hit.
         noisy: !matches!(profile.mechanism, Mechanism::Tap),
     };
 
@@ -242,6 +244,12 @@ pub fn render_voice(
             if let Some(gate) = custom.and_then(|sound| sound.gate) {
                 release(&mut out, onset, gate, rate);
             }
+        }
+        // The one strike a `Tap` makes, with none of the gating a phone's
+        // held note needs: nothing is being played, so there is nothing to
+        // let go of.
+        Mechanism::Knock => {
+            strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);
         }
         Mechanism::Mouse => {
             strike(&mut out, onset, 1.0, contact, &body, rate, &mut rng);

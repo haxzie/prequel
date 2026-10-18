@@ -1,4 +1,4 @@
-import { CURSOR_STYLES, cursorTag } from "../../../../shared/contract";
+import { CURSOR_STYLES, cursorSwatch, cursorTag } from "../../../../shared/contract";
 import { cn } from "../../lib/cn";
 
 /**
@@ -79,8 +79,11 @@ export function CursorPicker({
                 are five across where they were three, so the same fraction of a
                 smaller plate left the glyph too small to tell an arrow from a
                 circle. */}
+            {/* The style's own tile where it has one, which is the stick: its
+                sprite is almost all handle, and half a plate of it would be a
+                hairline across an empty square. See `cursorSwatch`. */}
             <img
-              src={imageUrl(style.shapes.arrow.file)}
+              src={imageUrl(cursorSwatch(style.id))}
               alt=""
               draggable={false}
               className="w-1/2 select-none"

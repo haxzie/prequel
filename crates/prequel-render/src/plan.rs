@@ -326,6 +326,7 @@ pub enum ClickEffect {
     Ink,
     Halo,
     Tap,
+    Chalk,
     /// Anything this build has never heard of. Drawn as no mark at all.
     #[serde(other)]
     Unknown,
@@ -353,6 +354,7 @@ impl ClickEffect {
             ClickEffect::Ink => 9,
             ClickEffect::Halo => 10,
             ClickEffect::Tap => 11,
+            ClickEffect::Chalk => 12,
             // An arm no switch has, so the shader draws nothing. The
             // compositor skips the draw before this is ever read.
             ClickEffect::Unknown => u32::MAX,
@@ -2460,6 +2462,7 @@ mod tests {
         assert_eq!(ClickEffect::Ink.index(), 9);
         assert_eq!(ClickEffect::Halo.index(), 10);
         assert_eq!(ClickEffect::Tap.index(), 11);
+        assert_eq!(ClickEffect::Chalk.index(), 12);
     }
 
     #[test]

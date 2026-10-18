@@ -152,7 +152,7 @@ fn writes_an_audition_of_every_profile() {
     write_wav(&path, &render(&Bank::keys(KeyProfile::Thock), &mechanical));
     eprintln!("wrote {}", path.display());
 
-    // Every click sound, on its own. Ten of them now, and the spectral tests
+    // Every click sound, on its own. Eleven of them now, and the spectral tests
     // only pin that they are far enough apart to be different sounds — whether
     // each is the sound it is named after is this file's job.
     for profile in ClickProfile::ALL {

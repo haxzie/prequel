@@ -1659,6 +1659,9 @@ export interface DockState {
  * cursor — so choosing white does not also mean choosing to lose the hand. The
  * circle has none: it is a marker for where the pointer is rather than a
  * pointer, and there is nothing for it to become.
+ *
+ * `reach` and `swatch` belong to one style between them and are documented
+ * where it is, at the bottom.
  */
 export const CURSOR_STYLES = [
   // First, and so the default: `cursorStyle` falls back to this entry for any
@@ -1727,6 +1730,62 @@ export const CURSOR_STYLES = [
     },
   },
 
+  // ── The pointer stick ─────────────────────────────────────────────────────
+  //
+  // A teacher's pointer: a small hand on the end of a black rod that runs off
+  // the bottom of the picture, so the handle never has an end anybody can see.
+  // One image, for the emoji's reason — a prop has no I-beam.
+  //
+  // Leaned onto the default pointer's own angle, which `make-cursor.mjs`
+  // measures off that glyph rather than picking: hand and handle share one
+  // axis, pointing up and to the left exactly as the arrow does. It is the
+  // same pointer with a handle on it, and at any other angle it would be a
+  // second pointer that happens to be in the same list. The lean is also why
+  // this style switches the pointer's own lean off — see `cursorItems`.
+  //
+  // The only style that carries `reach`, and it is why it is a style at all:
+  // the rod has to leave the frame from anywhere in the frame, which is a
+  // length nothing about the Size control can promise. `reach` is that length,
+  // as a multiple of the frame's shorter edge, and `cursorItems` sizes the
+  // whole sprite from it.
+  //
+  // 2.2 is the worst case with room to spare. The rod spans more than the
+  // sprite's own side, and the furthest a line at this lean travels inside a
+  // frame before leaving it is twice the shorter edge — a tall 9:16 frame,
+  // pointer in the top corner, leaving by the side rather than the bottom. The
+  // rest is for a tilted picture, which is drawn smaller at its far edge.
+  //
+  // Big, therefore: the sprite is twice the frame's shorter edge, which is a
+  // quad of some millions of fragments a frame on top of the picture's own.
+  // Noticeable in an export and nowhere else, and only for somebody who picked
+  // it.
+  {
+    id: "stick",
+    label: "Pointer stick",
+    reach: 2.2,
+    // The sprite is twenty parts handle to one part hand, so a tile cut from
+    // it is a hairline across an empty square. This is the same stick drawn at
+    // the proportions a forty-point tile can show — both come out of
+    // `make-cursor.mjs`, so they cannot drift into two different pointers.
+    swatch: "cursor-stick-swatch.png",
+    // The mark and the sound it arrives with. A stick is a prop rather than a
+    // pointer, and the two things a prop does — knock a puff of chalk off the
+    // board, and make the noise of doing it — are a click mark and a click
+    // sound this app already has somewhere else. Choosing the pointer and then
+    // hunting down two more settings to make it a pointer is a choice nobody
+    // would thank us for.
+    //
+    // Written on choosing it, like the colour a click mark arrives in: the
+    // three are the user's from then on, and picking the stick again puts them
+    // back. See `cursorArrivesWith`, and the panel's `CursorPicker`.
+    arrives: { mark: "chalk", sound: "blackboard" },
+    shapes: {
+      // The fingertip, placed rather than measured — `make-cursor.mjs` puts it
+      // here and prints it back.
+      arrow: { file: "cursor-stick.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+
   // ── The emoji set ─────────────────────────────────────────────────────────
   //
   // Finished artwork rather than drawn shapes, so these come from SVG through
@@ -1735,21 +1794,14 @@ export const CURSOR_STYLES = [
   // One image each, for the circle's reason above: an emoji is a marker for
   // where the pointer is, and there is no I-beam version of a frog. Everything
   // else follows for free — `cursorImages` draws the arrow for every kind the
-  // style does not ship, and `pressScale` gives every pointer the same dip on a
-  // click without any of them asking for it.
+  // style does not ship, and `pressScale` dips every pointer on a click without
+  // any of them asking for it.
   //
-  // Centred hotspots except where the artwork points at something. A picture of
-  // a fish has no tip, and the middle is the only place a reader would guess.
-  {
-    id: "point",
-    label: "Point",
-    // The one with somewhere to point from. Measured off the artwork: the
-    // fingertip is at the very top of the square and a fifth of the way across,
-    // where the centre every other emoji uses would put the hotspot in the fist.
-    shapes: {
-      arrow: { file: "cursor-point.png", hotspot: { x: 0.2227, y: 0.0156 } },
-    },
-  },
+  // Centred hotspots, because none of them points at anything: a picture of a
+  // fish has no tip, and the middle is the only place a reader would guess.
+  // The pointing-hand emoji that used to head this row is gone — the stick
+  // above is the same gesture drawn properly, and two pointing hands side by
+  // side was a choice with no answer.
   {
     id: "hammer",
     label: "Hammer",
@@ -1883,6 +1935,47 @@ export function cursorStyle(id: string): (typeof CURSOR_STYLES)[number] {
 }
 
 /**
+ * The image the picker shows for a style.
+ *
+ * Its own artwork where a style has one, and the pointer itself everywhere
+ * else. Answered here rather than by the picker reading `swatch` itself, for
+ * the reason `cursorTag` below is: it is one question, and a second place
+ * deciding what absent means is a second place to get it wrong.
+ */
+export function cursorSwatch(id: string): string {
+  const style = cursorStyle(id);
+  return "swatch" in style ? style.swatch : style.shapes.arrow.file;
+}
+
+/**
+ * The mark and the sound a style arrives with, or null for one that arrives
+ * with nothing — which is all of them but the stick.
+ *
+ * Ids rather than a mark and a voice: the catalogues they name live in
+ * `click-effects.ts` and `project.ts`, and this file knowing either of them
+ * would be a third place that has to be edited when one gains an entry.
+ * `cursors.test.ts` checks the names resolve, which is what stops a typo here
+ * being a pointer that silently arrives with nothing.
+ */
+export function cursorArrivesWith(id: string): { mark: string; sound: string } | null {
+  const style = cursorStyle(id);
+  return "arrives" in style ? style.arrives : null;
+}
+
+/**
+ * How far a style's pointer has to reach past the frame, or null for one that
+ * does not have to reach anywhere — which is all of them but the stick.
+ *
+ * The one question two places ask: `cursorItems`, to size the sprite, and the
+ * panel, to stop the Size slider below the length the sprite cannot go under.
+ * Answered here for `cursorTag`'s reason.
+ */
+export function cursorReach(id: string): number | null {
+  const style = cursorStyle(id);
+  return "reach" in style ? style.reach : null;
+}
+
+/**
  * The colour of a style's name tag, or null for a style that has none.
  *
  * The one question three places ask — the panel, to show the name field; the
@@ -1894,9 +1987,21 @@ export function cursorTag(id: string): string | null {
   return "tag" in style ? style.tag : null;
 }
 
-/** Every image any style may ask for, which is what has to reach a recording. */
+/**
+ * Every image any style may ask for, which is what has to reach a recording.
+ *
+ * The swatches too. They are never composited, but the picker draws them
+ * through the same `prequel-media:` url as everything else in the panel — it
+ * has no other way to reach a file — so a swatch left out of here is a tile
+ * that 404s.
+ */
 export const CURSOR_FILES: readonly string[] = [
-  ...new Set(CURSOR_STYLES.flatMap((style) => Object.values(style.shapes).map((s) => s.file))),
+  ...new Set(
+    CURSOR_STYLES.flatMap((style) => [
+      ...Object.values(style.shapes).map((shape) => shape.file),
+      ...("swatch" in style ? [style.swatch] : []),
+    ]),
+  ),
 ];
 
 /**
@@ -1910,7 +2015,7 @@ export const CURSOR_FILES: readonly string[] = [
  * no image of its own is drawn as the arrow, which is what every style did for
  * every kind before there were any.
  */
-export function cursorImages(id: string): Pick<CursorTrack, "shapes"> {
+export function cursorImages(id: string): Pick<CursorTrack, "shapes" | "reach"> {
   const style = cursorStyle(id);
 
   const shapes = Object.fromEntries(
@@ -1920,7 +2025,9 @@ export function cursorImages(id: string): Pick<CursorTrack, "shapes"> {
     ]),
   ) as CursorTrack["shapes"];
 
-  return { shapes };
+  // Absent for every style but the stick, which is what leaves the Size control
+  // meaning what it means everywhere else.
+  return "reach" in style ? { shapes, reach: style.reach } : { shapes };
 }
 
 /** The pointer track, ready for the editor to lay out. */

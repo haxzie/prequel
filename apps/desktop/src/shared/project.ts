@@ -626,6 +626,10 @@ export const KEY_SOUNDS = [
  * Ordered by how much of a recording they take up rather than by family: the
  * first five can be left on under a voiceover, and `Pop` and `Quack` are last
  * because they are jokes. Same id contract as `KEY_SOUNDS`.
+ *
+ * `Blackboard` sits where it does because it is the biggest of the serious
+ * ones: a knock on a board is below a hundred hertz and rings for a tenth of a
+ * second, where every other mouse here is a switch.
  */
 export const CLICK_SOUNDS = [
   { id: "hush", label: "Hush" },
@@ -636,6 +640,7 @@ export const CLICK_SOUNDS = [
   { id: "mechanical", label: "Mechanical" },
   { id: "pebble", label: "Pebble" },
   { id: "tink", label: "Tink" },
+  { id: "blackboard", label: "Blackboard" },
   { id: "pop", label: "Pop" },
   { id: "quack", label: "Quack" },
 ] as const;

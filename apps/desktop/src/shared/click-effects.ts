@@ -38,7 +38,8 @@ export type ClickEffectId =
   | "pixel-ring"
   | "ink"
   | "halo"
-  | "tap";
+  | "tap"
+  | "chalk";
 
 export interface ClickEffectSpec {
   label: string;
@@ -172,6 +173,17 @@ export const CLICK_EFFECTS: Record<ClickEffectId, ClickEffectSpec> = {
     // A fingertip on glass is colourless.
     color: "#ffffff",
     duration: 300 * MS,
+  },
+  chalk: {
+    label: "Chalk",
+    hint: "A knock on a board, and the dust it shakes loose.",
+    index: 12,
+    // Chalk.
+    color: "#ffffff",
+    // The longest in the table, and it has to be: the knock is over in a few
+    // frames and everything after it is dust hanging in the air. Cut to a
+    // ripple's length it reads as a puff of smoke being switched off.
+    duration: 650 * MS,
   },
 };
 

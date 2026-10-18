@@ -4524,6 +4524,15 @@ export interface CursorTrack {
   samples: readonly { at: number; x: number; y: number; kind?: CursorKind; hand?: boolean }[];
   /** Size setting, as a fraction of the frame's shorter edge. */
   size: number;
+  /**
+   * For a pointer that has to run off the frame: its drawn size, as a multiple
+   * of the frame's shorter edge.
+   *
+   * Set by `cursorImages` from the style, and absent for all but one of them —
+   * the pointer stick, whose handle is only a handle while its end is off the
+   * picture. See `CURSOR_STYLES`.
+   */
+  reach?: number;
   /** Seconds of stillness before it hides, or null to leave it on screen. */
   hideAfter: number | null;
   /**
@@ -4587,6 +4596,20 @@ const CLICK_NS = 180 * 1_000_000;
 const CLICK_DEPTH = 0.82;
 
 /**
+ * How far a *reaching* pointer dips on a press.
+ *
+ * Shallower, and the reason is arithmetic rather than taste. The dip is a
+ * scale about the hotspot, so every part of the sprite moves by that share of
+ * its own distance from the tip: on an arrow forty pixels long the tail moves
+ * a few pixels, and on a stick twice the frame's shorter edge, eighteen per
+ * cent slides the handle a third of a frame along itself. This moves the hand
+ * about as far as an arrow's tail moves, which is the amount the eye reads as
+ * a tap — and what the handle does with it is slide along its own line, where
+ * a straight rod shows almost nothing.
+ */
+const REACH_CLICK_DEPTH = 0.9;
+
+/**
  * Points sampled across a press.
  *
  * The dip has to be written into the track as points, because both rasterisers
@@ -4632,7 +4655,11 @@ const SMEAR_CAP = 1.5;
  * make the second click of a pair visibly deeper than the first, which is the
  * opposite of what happened.
  */
-export function pressScale(clicks: readonly number[] | undefined, at: number): number {
+export function pressScale(
+  clicks: readonly number[] | undefined,
+  at: number,
+  depth = CLICK_DEPTH,
+): number {
   if (!clicks?.length) return 1;
 
   let deepest = 1;
@@ -4647,7 +4674,7 @@ export function pressScale(clicks: readonly number[] | undefined, at: number): n
     // Smoothstep on each leg, so the turn at the bottom is not a corner.
     const eased = phase * phase * (3 - 2 * phase);
 
-    deepest = Math.min(deepest, 1 - (1 - CLICK_DEPTH) * eased);
+    deepest = Math.min(deepest, 1 - (1 - depth) * eased);
   }
 
   return deepest;
@@ -4836,6 +4863,35 @@ function smoothPath(samples: CursorTrack["samples"], strength: number): CursorTr
   return out;
 }
 
+/**
+ * The Size the pointer stick is drawn at its own natural length for.
+ *
+ * `DEFAULT_LAYOUT.cursorSize`, written out rather than imported: `project.ts`
+ * imports this file, and a value coming back the other way is a cycle. Pinned
+ * against the real default by `cursors.test.ts`, which can import both.
+ */
+const REACH_AT_SIZE = 0.035;
+
+/**
+ * How big a pointer is drawn, in output pixels.
+ *
+ * The Size control times the frame's shorter edge, for every pointer but one.
+ * A reaching pointer is sized from the frame instead, because what makes it
+ * one is a handle long enough to leave the frame from anywhere in it — and a
+ * length that comes out of a control is a length somebody can set to nothing,
+ * which lifts the end of the handle into the picture. A pointing stick with a
+ * visible end is a baton.
+ *
+ * So Size grows it and cannot shrink it. That is the honest half-answer: the
+ * control still does what it says above the default and does nothing below it,
+ * which is better than a control that works all the way down and breaks the
+ * pointer at the bottom of its travel.
+ */
+function reachingSize(cursor: CursorTrack, unit: number): number {
+  if (!cursor.reach) return cursor.size * unit;
+  return cursor.reach * unit * Math.max(1, cursor.size / REACH_AT_SIZE);
+}
+
 function cursorItems(
   cursor: CursorTrack,
   source: Size,
@@ -4862,6 +4918,13 @@ function cursorItems(
   // point at every motion key keeps the two in step.
   const times = new Set(path.samples.map((sample) => sample.at));
   for (const key of motion) times.add(key.at);
+
+  /**
+   * The dip a press puts in the pointer's size, shallower on a reaching one —
+   * see `REACH_CLICK_DEPTH`.
+   */
+  const dip = (at: number) =>
+    pressScale(path.clicks, at, path.reach ? REACH_CLICK_DEPTH : CLICK_DEPTH);
 
   // And across every press. The pointer is usually held still while it is
   // clicked, so its own samples are seconds apart there and the dip would be
@@ -4902,7 +4965,11 @@ function cursorItems(
         // size by this one number — `compositor.rs` and `webgl.ts`, a line each
         // — so a press drawn this way cannot come out differently in the
         // preview and the export.
-        scale: plane.placed.scale * pressScale(path.clicks, at),
+        //
+        // Shallower on a reaching pointer, which is the sprite being long
+        // rather than the press meaning anything different — see
+        // `REACH_CLICK_DEPTH`.
+        scale: plane.placed.scale * dip(at),
         // Placeholders. `withTilt` and `withSmear` fill these in at the end,
         // once the gaps are in and every point's real neighbours are known —
         // measuring here would use neighbours that are about to change.
@@ -4920,7 +4987,7 @@ function cursorItems(
   // overlapping ones.
   const quiet = withTypingGaps(points, path.keys, unit);
   const timed = path.hideAfter === null ? quiet : withIdleGaps(quiet, path.hideAfter);
-  const size = Math.max(1, path.size * unit);
+  const size = Math.max(1, reachingSize(path, unit));
   const shadow =
     shadowOpacity > 0
       ? {
@@ -4936,7 +5003,14 @@ function cursorItems(
   // Tilt before smear: both read the finished list's real neighbours, but the
   // lean is measured off the raw path while the streak is measured off the
   // list that is actually drawn — see `withSmear`.
-  const leaning = withTilt(timed, tilt, unit);
+  //
+  // Never on a reaching pointer. The lean turns the sprite about its hotspot,
+  // which on an arrow moves the tail by a few pixels and on a stick swings the
+  // far end of a handle two frames long right across the picture — and that
+  // handle is drawn at the one angle the artwork was leaned onto. A pointer
+  // that waves its own stick about is not holding it. The panel stops the
+  // control for the same reason, so this is not a setting being ignored.
+  const leaning = withTilt(timed, path.reach ? 0 : tilt, unit);
   const smeared = withSmear(leaning, motionBlur, size);
 
   // The image each point is drawn with, which is not the kind it was recorded
@@ -4978,7 +5052,7 @@ function cursorItems(
         onSprite(
           // Never leaned: a label is read as text, and text that tips over
           // with a fast move is harder to read at the exact moment it moves.
-          { ...point, scale: point.scale / pressScale(path.clicks, point.at), rotation: 0 },
+          { ...point, scale: point.scale / dip(point.at), rotation: 0 },
           planeAt(point.at),
           tag.hotspot,
           tagSize,

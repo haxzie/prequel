@@ -42,6 +42,7 @@ describe("the catalogue", () => {
     expect(CLICK_EFFECTS.ink.index).toBe(9);
     expect(CLICK_EFFECTS.halo.index).toBe(10);
     expect(CLICK_EFFECTS.tap.index).toBe(11);
+    expect(CLICK_EFFECTS.chalk.index).toBe(12);
   });
 
   it("gives every arm its own number, with no gaps", () => {

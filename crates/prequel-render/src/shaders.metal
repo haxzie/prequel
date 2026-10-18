@@ -1358,6 +1358,36 @@ static float4 click_tap(float2 p, float t, float px, float4 colour) {
     return float4(colour.rgb, colour.a * a);
 }
 
+// 12: a knock on a blackboard — a hard little mark, and the chalk dust it
+// shakes off. The dust is soft blobs rather than edged bits, which is the
+// whole difference between this and click_confetti: confetti is objects and
+// this is a cloud, and a cloud with an edge on it is a sticker.
+static float4 click_chalk(float2 p, float t, float px, float seed, float4 colour) {
+    float e = click_ease_out(t);
+    // The knock, gone in the first few frames. It is what gives the dust a
+    // cause: a cloud that arrives on its own reads as fog rolling in.
+    float hit = clamp(1.0 - t * 7.0, 0.0, 1.0);
+    float a = click_disc(p, 0.14 * hit, px) * hit;
+    for (int i = 0; i < 9; i++) {
+        float n = float(i) + seed * 9.0;
+        float h1 = click_hash(n);
+        float h2 = click_hash(n + 0.29);
+        float h3 = click_hash(n + 0.61);
+        float angle = h1 * CLICK_TAU;
+        // Flattened and then lifted. Dust knocked off a board leaves *along*
+        // the board rather than towards the room, and chalk is light enough to
+        // rise before it settles — thrown evenly in a circle it reads as an
+        // explosion.
+        float2 pos = float2(cos(angle), sin(angle) * 0.6) * (0.3 + 0.55 * h2) * e
+            - float2(0.0, 0.28 * e * (0.4 + h3));
+        float2 q = p - pos;
+        float grow = 0.055 + 0.13 * e * (0.4 + h3);
+        float puff = exp(-(q.x * q.x + q.y * q.y) * 1.6 / (grow * grow)) * (0.35 + 0.5 * h2);
+        a = max(a, puff * (1.0 - e));
+    }
+    return float4(colour.rgb, colour.a * a * (1.0 - smoothstep(0.6, 1.0, t)));
+}
+
 // The mark this quad draws, unpremultiplied. style is the arm — the same
 // numbers CLICK_EFFECTS in shared/click-effects.ts and ClickEffect::index
 // in plan.rs carry — and anything else draws nothing, which is what a mark
@@ -1376,6 +1406,7 @@ static float4 click_mark(float2 uv, float t, int style, float seed, float px, fl
     if (style == 9) return click_ink(p, t, px, seed, colour);
     if (style == 10) return click_halo(p, t, px, colour);
     if (style == 11) return click_tap(p, t, px, colour);
+    if (style == 12) return click_chalk(p, t, px, seed, colour);
     return float4(0.0);
 }
 

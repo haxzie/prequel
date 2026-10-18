@@ -469,8 +469,14 @@ export const SHOTS: readonly Shot[] = [
   // arms are the same arithmetic. Neither compiles the GLSL, and a preview
   // whose shader will not compile draws nothing at all.
   //
-  // The fraction is a press in the gallery's recording — 25.26s of 61.1s —
+  // The fraction is a press in the gallery's recording — 27.97s of 61.1s —
   // plus about a sixth of a second, inside Sonar's 700ms.
+  //
+  // Not the press at 25.26s this used to seek to. That one lands at y=0.974,
+  // a hair off the bottom of the recording, so the mark was drawn below the
+  // picture and the shot had been quietly empty: a shot of a mark with no mark
+  // in it looks like a mark that is subtle, which is the failure it exists to
+  // catch. This one is at (0.853, 0.282), well inside.
   {
     id: "click-effect",
     frame: "workspace",
@@ -480,9 +486,15 @@ export const SHOTS: readonly Shot[] = [
       ...EDITOR_READY,
       { kind: "click", selector: 'button[aria-label="Cursor"]' },
       { kind: "settle", ms: 300 },
-      { kind: "click", selector: 'button[aria-label^="Sonar"]' },
+      // The marks are at the foot of the panel, below the fold, and a click is
+      // dispatched at the element's coordinates — so without this it landed on
+      // the timeline and Sonar was never chosen at all. The shot had been of
+      // the default mark, which is none.
+      { kind: "scrollTo", selector: '[data-panel="inspector"] button[aria-label^="Sonar"]' },
+      { kind: "settle", ms: 200 },
+      { kind: "click", selector: '[data-panel="inspector"] button[aria-label^="Sonar"]' },
       { kind: "settle", ms: 300 },
-      { kind: "seek", fraction: 0.4162 },
+      { kind: "seek", fraction: 0.4605 },
       // Past the write, the plan rebuild and a draw or two.
       { kind: "settle", ms: 900 },
     ],
@@ -504,6 +516,53 @@ export const SHOTS: readonly Shot[] = [
       { kind: "click", selector: 'input[placeholder="Who is pointing"]' },
       { kind: "type", text: "Musthaq" },
       // Past the name's settle and the draw.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
+  // The chalk mark mid-puff, with the pointer stick that goes with it. The
+  // whole frame, because the point is the dust on the picture — and because
+  // this is the only place the preview's own GLSL arm is ever seen: the pixel
+  // test proves the Metal one draws, and nothing compiles the GLSL but a GPU.
+  //
+  // The same press `click-effect` seeks to, and for the reason named there it
+  // is not the nearest one: a mark at the bottom edge of the picture is drawn
+  // off it.
+  {
+    id: "click-chalk",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Cursor"]' },
+      { kind: "settle", ms: 300 },
+      // And nothing else: the mark is not chosen here because choosing the
+      // pointer chooses it. That is the other half of what this shot is for —
+      // a pairing that quietly stopped firing would show up as a shot with no
+      // dust in it.
+      { kind: "click", selector: 'button[aria-label="Pointer stick"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "seek", fraction: 0.4606 },
+      // Past the write, the plan rebuild and a draw or two.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
+  // The pointer stick on the picture. The whole frame, because the point of
+  // the shot is exactly what no test can assert: that the handle runs off the
+  // bottom-left edge rather than ending somewhere inside the picture.
+  {
+    id: "cursor-stick",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Cursor"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label="Pointer stick"]' },
+      // Past the write, the plan rebuild and a draw or two.
       { kind: "settle", ms: 900 },
     ],
     clip: "frame",

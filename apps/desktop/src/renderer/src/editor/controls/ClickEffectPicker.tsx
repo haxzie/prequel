@@ -203,4 +203,15 @@ const GLYPHS: Record<ClickEffectId, ReactNode> = {
       <circle cx="16" cy="16" r="9" {...stroke} />
     </svg>
   ),
+  // The knock as a solid dot and the dust as softer ones around it, lifted to
+  // one side the way the mark throws them.
+  chalk: (
+    <svg viewBox="0 0 32 32" className="h-full w-full">
+      <circle cx="16" cy="19" r="3" fill="currentColor" />
+      <circle cx="9" cy="14" r="3.4" fill="currentColor" opacity="0.4" />
+      <circle cx="22" cy="13" r="3" fill="currentColor" opacity="0.4" />
+      <circle cx="15" cy="9" r="2.4" fill="currentColor" opacity="0.25" />
+      <circle cx="24" cy="20" r="2" fill="currentColor" opacity="0.25" />
+    </svg>
+  ),
 };

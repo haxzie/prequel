@@ -1211,7 +1211,7 @@ fn smears_the_pointer_along_the_way_it_is_going() {
 /// Written out rather than derived, so a mark added to `ClickEffect` without
 /// an arm in `shaders.metal` — or an arm without a mark — is a line missing
 /// here, which is the kind of mistake that is read.
-const EVERY_CLICK: [ClickEffect; 12] = [
+const EVERY_CLICK: [ClickEffect; 13] = [
     ClickEffect::Ripple,
     ClickEffect::Sonar,
     ClickEffect::Orb,
@@ -1224,6 +1224,7 @@ const EVERY_CLICK: [ClickEffect; 12] = [
     ClickEffect::Ink,
     ClickEffect::Halo,
     ClickEffect::Tap,
+    ClickEffect::Chalk,
 ];
 
 #[test]

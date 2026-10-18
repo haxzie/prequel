@@ -4,7 +4,7 @@ import type { Annotation, AnnotationKind } from "../../../shared/annotations";
 import { MASK_STRENGTH } from "../../../shared/annotations";
 import { captionStyle } from "../../../shared/captions";
 import { clickEffect, clickEffectId } from "../../../shared/click-effects";
-import { cursorStyle, cursorTag } from "../../../shared/contract";
+import { cursorArrivesWith, cursorReach, cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
 import {
   FILTER_SCALE_MAX,
@@ -3126,7 +3126,24 @@ function CursorPanel({
                 value={cursorStyle(layout.cursorStyle).id}
                 imageUrl={cursorUrl}
                 disabled={off}
-                onChange={(value) => set("layout", "cursorStyle", value)}
+                // A style that arrives with a mark and a sound writes both
+                // with it — the stick is a prop, and a prop that lands on the
+                // picture in silence and leaves nothing behind is half of
+                // one. Same shape as the mark picker below, and for the same
+                // reasons: only on a *different* style, so pressing the tile
+                // already on does not undo a mark dialled in afterwards, and
+                // the mark's own colour goes with it the way choosing that
+                // mark directly would write it.
+                onChange={(value) => {
+                  if (value === cursorStyle(layout.cursorStyle).id) return;
+                  set("layout", "cursorStyle", value);
+                  const arrives = cursorArrivesWith(value);
+                  if (!arrives) return;
+                  set("layout", "clickEffect", arrives.mark);
+                  const spec = clickEffect(arrives.mark);
+                  if (spec) set("layout", "clickColor", spec.color);
+                  set("audio", "clickSound", arrives.sound);
+                }}
               />
             </Field>
 
@@ -3165,7 +3182,11 @@ function CursorPanel({
               label="Size"
               {...field("layout", "cursorSize")}
               value={layout.cursorSize}
-              min={0.015}
+              // The stick cannot be drawn smaller than the length that gets its
+              // handle off the frame — see `reachingSize` — so its slider stops
+              // where the drawing does. Left at 0.015 it would be half a
+              // control's travel with nothing on the other end of it.
+              min={cursorReach(layout.cursorStyle) === null ? 0.015 : 0.035}
               max={0.12}
               step={0.001}
               disabled={off}
@@ -3219,7 +3240,11 @@ function CursorPanel({
               min={0}
               max={1}
               step={0.05}
-              disabled={off}
+              // Off for the stick, which is drawn at one angle and leaned about
+              // its fingertip: a lean that nudges an arrow's tail swings two
+              // frames of handle across the picture. `cursorItems` drops it
+              // too — this is the control saying so rather than going quiet.
+              disabled={off || cursorReach(layout.cursorStyle) !== null}
               // A share of the small maximum angle rather than the angle itself,
               // shown the way Smoothing and Motion blur above are.
               format={(value) => (value === 0 ? "Off" : `${Math.round(value * 100)}%`)}

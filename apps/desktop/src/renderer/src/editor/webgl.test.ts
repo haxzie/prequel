@@ -561,6 +561,7 @@ describe("the click marks both rasterisers draw", () => {
     ["vec4 clickInk(", "static float4 click_ink("],
     ["vec4 clickHalo(", "static float4 click_halo("],
     ["vec4 clickTap(", "static float4 click_tap("],
+    ["vec4 clickChalk(", "static float4 click_chalk("],
     ["vec4 clickMark(", "static float4 click_mark("],
   ];
 

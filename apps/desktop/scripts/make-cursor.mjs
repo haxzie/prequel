@@ -549,18 +549,18 @@ function chunk(type, data) {
   return Buffer.concat([length, body, crc]);
 }
 
-function encodePng(rgba) {
+function encodePng(rgba, size = SIZE) {
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(SIZE, 0);
-  ihdr.writeUInt32BE(SIZE, 4);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; // bit depth
   ihdr[9] = 6; // colour type: truecolour + alpha
 
-  const raw = Buffer.alloc(SIZE * (1 + SIZE * 4));
+  const raw = Buffer.alloc(size * (1 + size * 4));
   let offset = 0;
-  for (let y = 0; y < SIZE; y++) {
+  for (let y = 0; y < size; y++) {
     raw[offset++] = 0; // filter: none
-    for (let x = 0; x < SIZE * 4; x++) raw[offset++] = rgba[y * SIZE * 4 + x];
+    for (let x = 0; x < size * 4; x++) raw[offset++] = rgba[y * size * 4 + x];
   }
 
   return Buffer.concat([
@@ -588,6 +588,371 @@ function hotspot(shape) {
   return { x: 0.5, y: 0.5 };
 }
 
+// ── The pointer stick ───────────────────────────────────────────────────────
+//
+// A teacher's pointer rather than a cursor: a small white hand on a black rod
+// that runs off the bottom of the picture, so the end of the handle is never on
+// screen. Drawn here because it is made of the same two ingredients as
+// everything above — the Font Awesome hand, and a shape with a hairline round
+// it — but it is built differently enough to be worth saying how.
+//
+// Two things set it apart. It is drawn far larger, because the rod has to leave
+// the frame from anywhere in it — `reach` in `contract.ts` sizes it against the
+// frame rather than against the Size control — and a 128px square resampled up
+// by that much is a blur. And it is a rod, a highlight and a hand rather than
+// one silhouette, so it is composited layer over layer instead of filled and
+// outlined in a single pass.
+
+/** A signed distance, in image pixels: negative inside, positive outside. */
+function signedDistance(rings, px, py) {
+  const away = distance(rings, px, py);
+  return inside(rings, px, py) ? -away : away;
+}
+
+/**
+ * A rod: everything within a radius of a segment, the radius growing along it.
+ *
+ * A segment rather than a polygon because that is what a rod is, and the ends
+ * come out round for free — which is what the butt of a foam grip looks like.
+ * The taper is the real reason, though: a handle of one width reads as a wire.
+ */
+function rodAt([ax, ay], [bx, by], near, far) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const length = dx * dx + dy * dy;
+
+  return (px, py) => {
+    const t =
+      length === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / length));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy)) - (near + (far - near) * t);
+  };
+}
+
+/**
+ * The hand glyph scaled, leaned and placed so its fingertip lands on `tip`.
+ *
+ * The fingertip is picked on the glyph before it is turned, and then followed
+ * through the transform, rather than picked again afterwards. They are the same
+ * point at this lean and would stop being at a steeper one — and the hotspot
+ * `contract.ts` carries is this point, so "whichever corner is highest" is not
+ * what it may mean.
+ */
+function leaningHand(size, { hand, tilt, tip }) {
+  const rings = outline(GLYPHS.hand);
+  const all = rings.flat();
+  const left = Math.min(...all.map(([x]) => x));
+  const top = Math.min(...all.map(([, y]) => y));
+  const width = Math.max(...all.map(([x]) => x)) - left;
+  const height = Math.max(...all.map(([, y]) => y)) - top;
+
+  // Fitted on its longer edge, the way every other glyph here is, so `hand`
+  // means the same thing it would in `fitted`.
+  const scale = (hand * size) / Math.max(width, height);
+  const angle = (tilt * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const place = ([x, y]) => {
+    const px = (x - left) * scale;
+    const py = (y - top) * scale;
+    return [px * cos - py * sin, px * sin + py * cos];
+  };
+
+  // The fingertip: the highest point of the glyph as drawn, which is the crown
+  // of the index finger's arc — `TIPS.hand`, on the outer ring, which every
+  // glyph here writes first.
+  const finger = rings[0].reduce(TIPS.hand);
+  const [fx, fy] = place(finger);
+  const dx = tip[0] * size - fx;
+  const dy = tip[1] * size - fy;
+
+  const rings_ = rings.map((ring) =>
+    ring.map((point) => {
+      const [x, y] = place(point);
+      return [x + dx, y + dy];
+    }),
+  );
+
+  // The fist's middle, which is where the handle has to pass through. Not the
+  // fingertip: that is off to one side of the hand, and a rod run from it comes
+  // out of the edge of the fist rather than out of the grip.
+  const placed = rings_.flat();
+  const xs = placed.map(([x]) => x);
+  const ys = placed.map(([, y]) => y);
+  const centre = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+
+  return { rings: rings_, centre };
+}
+
+/**
+ * The area centroid of a closed ring, which a vertex average is not.
+ *
+ * Every curve in these glyphs is sampled into sixteen points, so the vertices
+ * crowd the rounded corners — an average of them is pulled towards whichever
+ * corner happens to be roundest.
+ */
+function centroid(ring) {
+  let twiceArea = 0;
+  let x = 0;
+  let y = 0;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    twiceArea += cross;
+    x += (ring[j][0] + ring[i][0]) * cross;
+    y += (ring[j][1] + ring[i][1]) * cross;
+  }
+
+  return [x / (3 * twiceArea), y / (3 * twiceArea)];
+}
+
+/**
+ * How far the default pointer leans, in radians right of straight down.
+ *
+ * Measured off `GLYPHS.pointer` rather than chosen, because the number it has
+ * to agree with is that glyph: the stick is the pointer with a handle on it,
+ * and a handle at some other angle makes it a second pointer that happens to
+ * be in the same list. From the tip to the shape's own centroid, which for an
+ * arrow is the line down its shaft.
+ */
+function pointerLean() {
+  const ring = outline(GLYPHS.pointer)[0];
+  const tip = ring.reduce(TIPS.pointer);
+  const middle = centroid(ring);
+  return Math.atan2(middle[0] - tip[0], middle[1] - tip[1]);
+}
+
+/**
+ * How far below the fist's middle the handle starts, as a share of the hand.
+ *
+ * Inside the fist rather than at the wrist, so the two are one object: a rod
+ * that begins where the hand ends meets it at a seam, and a seam between a
+ * hand and a stick is a hand balanced on the end of one. The overlap is never
+ * seen — the hand is drawn last, over the rod.
+ */
+const ROD_GRIP = 0.2;
+
+/**
+ * One pointer stick: the grip, the light down it, and the hand, in that order.
+ *
+ * Every length is a fraction of the image, so the big sprite and the small
+ * swatch are the same drawing at two sizes rather than two drawings.
+ */
+function stick(size, spec) {
+  const { rings: hand, centre } = leaningHand(size, spec);
+  // One axis for both, which is the whole of what holds them together: the
+  // hand is turned onto the pointer's lean and the handle runs straight on
+  // down it. Two angles — a hand at one lean on a rod at another — is the kink
+  // at the wrist that reads as the two being separate things.
+  const lean = (spec.tilt * Math.PI) / 180;
+  const along = [-Math.sin(lean), Math.cos(lean)];
+  const from = [
+    centre[0] + along[0] * spec.hand * ROD_GRIP * size,
+    centre[1] + along[1] * spec.hand * ROD_GRIP * size,
+  ];
+  const at = (span) => [from[0] + along[0] * span * size, from[1] + along[1] * span * size];
+  // The rod's two sides, as unit normals, and the lit one — the upper, light
+  // being above here for the same reason every shadow drops downwards. Picked
+  // rather than written out, so the lean can change sign without the highlight
+  // quietly moving onto the shaded side.
+  const across = along[0] > 0 ? [along[1], -along[0]] : [-along[1], along[0]];
+  /** The same point moved across the rod, onto the lit side. */
+  const shift = ([x, y], by) => [x + across[0] * by, y + across[1] * by];
+
+  /** Where a part can possibly reach, so `drawLayers` can skip the rest. */
+  const around = (points, margin) => [
+    Math.min(...points.map(([x]) => x)) - margin,
+    Math.min(...points.map(([, y]) => y)) - margin,
+    Math.max(...points.map(([x]) => x)) + margin,
+    Math.max(...points.map(([, y]) => y)) + margin,
+  ];
+
+  const hairline = spec.hairline * size;
+  const rod = spec.rod.map((share) => share * size);
+  const ends = [at(spec.grip[0]), at(spec.grip[1])];
+
+  return [
+    // The grip, in one piece from under the fist to past the image's own edge.
+    // A rounded butt drawn inside the square would be an end the frame can
+    // show, and a pointing stick with a visible end is a baton.
+    //
+    // No hairline. Every other pointer here carries one because it is a flat
+    // silhouette that would otherwise vanish into its own tone, and a rod is
+    // not: it has a length of shading down it, and an outline on something
+    // that long draws two parallel lines the eye reads before the handle
+    // between them. The cost is honest — a black handle over black content is
+    // its highlight and nothing else.
+    {
+      shape: rodAt(ends[0], ends[1], rod[0], rod[1]),
+      hairline: 0,
+      bounds: around(ends, rod[1]),
+      fill: [26, 26, 28],
+      stroke: [26, 26, 28],
+    },
+    // The light down the grip's upper side. Foam catches it there, and it is
+    // what keeps the handle a handle rather than a gap in the picture now that
+    // there is no outline round it.
+    {
+      shape: rodAt(
+        shift(ends[0], rod[0] * 0.42),
+        shift(ends[1], rod[1] * 0.42),
+        rod[0] * 0.26,
+        rod[1] * 0.26,
+      ),
+      hairline: 0,
+      bounds: around(ends, rod[1]),
+      fill: [92, 92, 100],
+      stroke: [92, 92, 100],
+    },
+    // The hand keeps its outline: it is a flat white silhouette, and white on
+    // white is the case every pointer here is outlined for.
+    {
+      shape: (px, py) => signedDistance(hand, px, py),
+      hairline,
+      bounds: around(hand.flat(), hairline + 1),
+      fill: [255, 255, 255],
+      stroke: [36, 36, 40],
+    },
+  ];
+}
+
+/**
+ * Layers composited in order, each antialiased with its own outline.
+ *
+ * Source-over per layer rather than one accumulation over all three, which is
+ * the opposite of what `draw` does above and right for the opposite reason:
+ * there the fill and its outline are two parts of one shape, and averaging them
+ * together is what stops a grey seam appearing between them. Here they are
+ * separate objects, one lying on another, and a hand averaged into the rod
+ * beneath it would come out grey where it overlaps.
+ *
+ * Supersampled only along the edges. The sprite is four million pixels and the
+ * hand is a polygon of several hundred edges, so sixteen samples of everything
+ * is minutes of wall clock for an image that is almost entirely either solid or
+ * empty. A layer's distance at the pixel's centre says which: more than a pixel
+ * either side of its own boundary and the answer is the same at every subsample
+ * — so only the hairline of pixels the boundary actually crosses is sampled
+ * sixteen times, and the rest cost one distance each.
+ */
+function drawLayers(size, layers) {
+  const rgba = new Uint8Array(size * size * 4);
+  const total = SAMPLES * SAMPLES;
+  // Half a pixel reaches every subsample; the extra half is the slack that
+  // stops a boundary grazing the corner of a cell being called solid.
+  const edge = Math.SQRT1_2 + 0.5;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Premultiplied while it is composited, and divided back out at the end:
+      // a PNG carries straight alpha, and both rasterisers multiply it in
+      // themselves after they sample.
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let alpha = 0;
+
+      for (const layer of layers) {
+        const [left, top, right, bottom] = layer.bounds;
+        if (x + 1 < left || x > right || y + 1 < top || y > bottom) continue;
+
+        const centre = layer.shape(x + 0.5, y + 0.5);
+        if (centre > layer.hairline + edge) continue;
+
+        let fill = 0;
+        let stroke = 0;
+
+        if (centre < -edge) {
+          fill = total;
+        } else {
+          for (let sy = 0; sy < SAMPLES; sy++) {
+            for (let sx = 0; sx < SAMPLES; sx++) {
+              const away = layer.shape(x + (sx + 0.5) / SAMPLES, y + (sy + 0.5) / SAMPLES);
+              if (away <= 0) fill++;
+              else if (away <= layer.hairline) stroke++;
+            }
+          }
+        }
+
+        const covered = fill + stroke;
+        if (covered === 0) continue;
+
+        const cover = covered / total;
+        const tone = (channel) =>
+          (fill * layer.fill[channel] + stroke * layer.stroke[channel]) / covered;
+        red = tone(0) * cover + red * (1 - cover);
+        green = tone(1) * cover + green * (1 - cover);
+        blue = tone(2) * cover + blue * (1 - cover);
+        alpha = cover + alpha * (1 - cover);
+      }
+
+      if (alpha <= 0) continue;
+      const at = (y * size + x) * 4;
+      rgba[at] = Math.round(red / alpha);
+      rgba[at + 1] = Math.round(green / alpha);
+      rgba[at + 2] = Math.round(blue / alpha);
+      rgba[at + 3] = Math.round(alpha * 255);
+    }
+  }
+
+  return rgba;
+}
+
+/**
+ * The hand's lean, in degrees, which is the default pointer's own.
+ *
+ * Negative because `leaningHand` turns clockwise and the pointer leans the
+ * other way: it points up and to the left, so everything hanging off it —
+ * the fist and the grip — hangs down and to the right.
+ */
+const STICK_TILT = (-pointerLean() * 180) / Math.PI;
+
+/**
+ * The two pointer sticks: the one that is composited, and the one in the panel.
+ *
+ * Not one image used twice. The sprite is almost all handle — the hand is a
+ * twentieth of it — so a swatch cut from it is a hairline across an empty
+ * square, and the picker's tiles are the only caption a pointer has. The swatch
+ * is the same stick drawn at the proportions a forty-point tile can show.
+ *
+ * `size` is large for the sprite because it is drawn large: the rod spans more
+ * than a frame's diagonal, so 128px would be resampled up by better than ten.
+ */
+const STICKS = [
+  {
+    id: "stick",
+    size: 2048,
+    hand: 0.042,
+    tilt: STICK_TILT,
+    // The fingertip, a hair in from the top-left corner. It is also the hotspot
+    // `CURSOR_STYLES` carries, so moving it means changing that number — which
+    // is why this script prints it.
+    //
+    // Top *left*, because the handle now runs down and to the right: the
+    // pointer this is leaned onto points up and to the left, and a handle on
+    // the other side of it would be the arrow drawn back to front.
+    tip: [0.045, 0.025],
+    // Along the rod from under the fist, as fractions of the image. It runs
+    // past the bottom edge so the image's own edge cuts it.
+    grip: [0, 1.25],
+    // Near the hand and far down the handle. It comes to a narrow end where
+    // the hand holds it and swells towards the butt, which is the taper of a
+    // pointer rather than of a broom handle — and a rod of one width reads as
+    // a wire.
+    rod: [0.0055, 0.0122],
+    // The hand's, and the hand's only — see `stick`.
+    hairline: 0.0024,
+  },
+  {
+    id: "stick-swatch",
+    size: SIZE,
+    hand: 0.4,
+    tilt: STICK_TILT,
+    tip: [0.2, 0.06],
+    grip: [0, 0.95],
+    rod: [0.02, 0.042],
+    hairline: 0.016,
+  },
+];
+
 mkdirSync(OUT_DIR, { recursive: true });
 
 for (const style of STYLES) {
@@ -596,4 +961,17 @@ for (const style of STYLES) {
 
   const spot = hotspot(style.shape);
   console.log(`wrote ${file} (${SIZE}px, hotspot ${spot.x.toFixed(4)}, ${spot.y.toFixed(4)})`);
+}
+
+for (const spec of STICKS) {
+  const file = resolve(OUT_DIR, `cursor-${spec.id}.png`);
+  writeFileSync(file, encodePng(drawLayers(spec.size, stick(spec.size, spec)), spec.size));
+
+  // The fingertip is placed rather than measured, so the hotspot is the number
+  // that put it there — printed all the same, because `CURSOR_STYLES` copies it
+  // and the two have to be the same number.
+  console.log(
+    `wrote ${file} (${spec.size}px, hotspot ${spec.tip[0].toFixed(4)}, ${spec.tip[1].toFixed(4)},` +
+      ` lean ${STICK_TILT.toFixed(2)}°)`,
+  );
 }
