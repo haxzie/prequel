@@ -1,5 +1,21 @@
 # @prequel/desktop
 
+## 0.6.0
+
+### Minor Changes
+
+- ada9960: A new click mark, Chalk, and a new click sound, Blackboard, both chosen for you when you pick the pointer stick.
+- ada9960: A new pointer: a hand on a teacher's stick, with the handle running off the edge of the frame.
+- 5e74301: Every recording and screenshot lands in a card you can export, copy, add a clip to, or open in Studio.
+
+  <!-- highlight: A card for every finished capture -->
+
+- ada9960: The pointing-hand pointer is gone, and the pointer stick takes its place in the list.
+
+### Patch Changes
+
+- 79a8564: The bar shows how many clips a recording already has while you add another one to it.
+
 ## 0.5.0
 
 ### Minor Changes
