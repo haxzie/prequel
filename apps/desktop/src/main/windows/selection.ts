@@ -25,6 +25,19 @@ interface Pane {
   display: Display;
 }
 
+export interface SelectionOverlayOptions {
+  /**
+   * Holds Escape for as long as the overlay is up, calling back to cancel it.
+   *
+   * Handed in rather than registered here, so this class stays a window class
+   * and its tests never reach for `globalShortcut`. Why it is global and not
+   * per-window is in `bindEscape`.
+   */
+  grabEscape?: (cancel: () => void) => void;
+  /** Gives it back, once nothing is being picked. */
+  releaseEscape?: () => void;
+}
+
 export class SelectionOverlay {
   private panes: Pane[] = [];
   private pending: ((result: SelectionResult | null) => void) | null = null;
@@ -55,6 +68,8 @@ export class SelectionOverlay {
    * something else entirely on the monitor beside it.
    */
   private shapes: Map<number, Region[]> = new Map();
+
+  constructor(private readonly options: SelectionOverlayOptions = {}) {}
 
   get isOpen(): boolean {
     return this.panes.length > 0;
@@ -94,6 +109,11 @@ export class SelectionOverlay {
           display,
         });
       }
+      // Escape belongs to the picker from here until it closes, wherever it is
+      // pressed — see `bindEscape`. After the panes, so a grab is only ever
+      // held while something is on screen to cancel.
+      this.options.grabEscape?.(() => this.cancel());
+
       // Nowhere to draw would leave the promise hanging forever.
       if (this.panes.length === 0) this.settle(null);
     });
@@ -189,6 +209,10 @@ export class SelectionOverlay {
       if (!window.isDestroyed()) window.destroy();
     }
     this.panes = [];
+    // Every way out of the overlay comes through here, which is why the key is
+    // given back here: held past the last pane it would be Escape taken off
+    // every other app with nothing on screen to explain it.
+    this.options.releaseEscape?.();
   }
 
   browserWindows(): BrowserWindow[] {

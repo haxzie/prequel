@@ -115,6 +115,8 @@ function makeFlow(
   };
   /** How many times the panel opening has asked whether there is a new version. */
   const updateChecks = { count: 0 };
+  /** How often the update window was asked to open. */
+  const updates = { opened: 0 };
   const welcome = { closed: 0 };
   let stored: RecordingPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
   const selection = {
@@ -231,6 +233,7 @@ function makeFlow(
       browserWindow: () => null,
     },
     welcome: { close: () => (welcome.closed += 1) },
+    updates: { open: () => (updates.opened += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
   });
 
@@ -244,6 +247,7 @@ function makeFlow(
     welcome,
     dockCalls,
     updateChecks,
+    updates,
     preferences: () => stored,
   };
 }
@@ -841,6 +845,17 @@ describe("the update check behind the panel", () => {
     flow.showDock();
 
     expect(updateChecks.count).toBe(2);
+  });
+
+  it("closes the picker on the way to the update window", () => {
+    // The overlays sit at `screen-saver` level, so the window would open
+    // underneath one: unreachable, over a panel still claiming a source.
+    const { flow, selection, updates } = makeFlow();
+
+    flow.openUpdate();
+
+    expect(selection.cancelled).toBe(1);
+    expect(updates.opened).toBe(1);
   });
 
   it("stays quiet while a recording is running", async () => {

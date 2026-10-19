@@ -104,6 +104,31 @@ export function unbindTeleprompterKeys(): void {
   for (const chord of Object.values(TELEPROMPTER_SHORTCUTS)) globalShortcut.unregister(chord);
 }
 
+/** Escape, while a source picker is on screen. */
+const ESCAPE = "Escape";
+
+/**
+ * Takes Escape off the system for as long as the picker is up.
+ *
+ * The overlays listen for Escape themselves, but only one window can have the
+ * keyboard: the panel above them is a non-activating panel, a native drop-up
+ * popped from it takes the key window away, and the script window is focusable
+ * and often open — so which surface hears the key depends on what was last
+ * clicked, and each one that could hear it instead has needed a handler of its
+ * own (see `ScriptWindow.onEscape`). Bound globally for exactly as long as an
+ * overlay is on screen, the way the prompter's keys are, so that Escape cancels
+ * from wherever it is pressed. One that will not register is logged and left,
+ * which leaves the overlays' own handling as it was.
+ */
+export function bindEscape(onEscape: () => void): void {
+  if (globalShortcut.register(ESCAPE, onEscape)) return;
+  log("warn", "could not register Escape; the picker cancels only while it has the keyboard");
+}
+
+export function unbindEscape(): void {
+  globalShortcut.unregister(ESCAPE);
+}
+
 export function teardownShortcuts(): void {
   globalShortcut.unregisterAll();
   // An app that is not running has no business holding ⇧⌘5. Giving it back on

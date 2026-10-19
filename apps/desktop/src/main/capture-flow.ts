@@ -358,8 +358,17 @@ export class CaptureFlow {
     this.deps.workspace?.openSection("settings");
   }
 
-  /** Opens the update window, or focuses the one already open. */
+  /**
+   * Opens the update window, or focuses the one already open.
+   *
+   * Any picker goes first, the way it does when the app window takes over. The
+   * overlays sit at `screen-saver` level, so a window opened under one is a
+   * window the user can neither see nor reach — and the panel's mode button
+   * would go on reading as chosen for a source nobody is choosing any more.
+   * Pressing Update is leaving the recording being set up, not adding to it.
+   */
   openUpdate(): void {
+    this.deps.selection.cancel();
     this.deps.updates?.open();
   }
 

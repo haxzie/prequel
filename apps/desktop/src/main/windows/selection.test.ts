@@ -227,3 +227,51 @@ suite("an overlay that asks what to show", () => {
     expect(overlay.setupFor(contents)).toBeNull();
   });
 });
+
+/**
+ * Escape, held for exactly as long as a picker is up.
+ *
+ * The overlays listen for the key themselves, and that only works while one of
+ * them is the key window — which it often is not: the panel above them is
+ * clicked to change a camera, a native drop-up takes the keyboard, the script
+ * window is open. The key is taken from the whole system instead, and the half
+ * that fails silently is giving it back: Escape left bound after the picker has
+ * gone is a key taken off every other app with nothing on screen to say why.
+ */
+suite("the picker's hold on Escape", () => {
+  /** What the overlay grabbed, and how often it let go. */
+  function held() {
+    const keys = { grabs: 0, releases: 0, cancel: null as (() => void) | null };
+    const overlay = new SelectionOverlay({
+      grabEscape: (cancel) => {
+        keys.grabs += 1;
+        keys.cancel = cancel;
+      },
+      releaseEscape: () => (keys.releases += 1),
+    });
+    return { keys, overlay };
+  }
+
+  it("is taken while an overlay is on screen and cancels it", async () => {
+    const { keys, overlay } = held();
+
+    const opened = overlay.open("area", "video", []);
+    expect(keys.grabs).toBe(1);
+
+    keys.cancel?.();
+
+    await expect(opened).resolves.toBeNull();
+    expect(keys.releases).toBeGreaterThan(0);
+  });
+
+  it("is given back when the user picks something", async () => {
+    const { keys, overlay } = held();
+
+    const opened = overlay.open("screen", "video", []);
+    const setup = overlay.setupFor(panels[0]?.webContents as never);
+    overlay.choose({ target: setup?.screenTarget as never, label: "Entire screen" });
+
+    await opened;
+    expect(keys.releases).toBeGreaterThan(0);
+  });
+});

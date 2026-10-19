@@ -32,8 +32,10 @@ import { RecordingSession, SESSIONS_DIR } from "./session.js";
 import { recoverInterruptedTakes } from "./recover.js";
 import {
   applyShortcuts,
+  bindEscape,
   bindTeleprompterKeys,
   teardownShortcuts,
+  unbindEscape,
   unbindTeleprompterKeys,
 } from "./shortcuts.js";
 import { Teleprompter } from "./teleprompter/index.js";
@@ -98,7 +100,13 @@ registerDeepLinks();
 const session = new RecordingSession();
 const dock = new DockWindow();
 const camera = new CameraWindow();
-const selection = new SelectionOverlay();
+const selection = new SelectionOverlay({
+  // Escape cancels the picker from wherever it is pressed, for as long as one
+  // is on screen — the overlays' own handling only works while one of them has
+  // the keyboard. See `bindEscape`.
+  grabEscape: (cancel) => bindEscape(cancel),
+  releaseEscape: () => unbindEscape(),
+});
 // Where a finished capture lands. Created at module scope with the other
 // always-there windows, because the tray can stop a recording before anything
 // in `whenReady` has run.
