@@ -394,8 +394,21 @@ export class CaptureFlow {
       // other time. The devices belong to the setup UI and to the capture, and
       // holding them open past both is what leaves the camera light on with
       // nothing on screen to explain it.
-      devicesLive: this.deps.dock.isVisible || session.status !== "idle",
+      devicesLive: this.watching,
     };
+  }
+
+  /**
+   * Whether anything on screen is asking for a live device.
+   *
+   * The panel is up, or a recording is running. Named once because two things
+   * read it and they must not disagree: the bubble's renderer opens the camera
+   * only while this holds — see `devicesLive` — and `syncCamera` decides
+   * whether to put the bubble on screen at all. Shown without it, the window
+   * is a black circle over everything that nothing is able to fill.
+   */
+  private get watching(): boolean {
+    return this.deps.dock.isVisible || this.deps.session.snapshot().status !== "idle";
   }
 
   /**
@@ -716,7 +729,18 @@ export class CaptureFlow {
     }
 
     const preferences = this.deps.preferences.get();
-    if (preferences.cameraId && preferences.captureMode === "video") this.deps.camera.show();
+    // And only while there is somebody to preview *to*. The bubble cannot open
+    // the device with the panel closed and nothing recording — that is what
+    // keeps the camera light off — so putting it on screen then leaves a black
+    // circle floating over everything with no panel to dismiss it from.
+    //
+    // Which is what every launch that does not open the panel used to do: this
+    // runs when the flow is built, and an app started at login, or one that
+    // goes to the welcome flow for a missing permission, never opens one. The
+    // comment on that branch in `main/index.ts` names the bubble it was trying
+    // to avoid.
+    const wanted = preferences.cameraId !== null && preferences.captureMode === "video";
+    if (wanted && this.watching) this.deps.camera.show();
     else this.deps.camera.hide();
   }
 

@@ -77,6 +77,39 @@ describe("segmentAt", () => {
     expect(segmentAt(camera, 0)?.file).toBe("camera.mp4");
   });
 
+  it("does not reach past a seam for the tail of the take before it", () => {
+    // Every device stops a little before the take it was recorded in ends, and
+    // the few milliseconds that leaves are well inside the tolerance. Without
+    // the take, the lookup closes that gap with whatever starts next — so the
+    // last frames of a clip come out of the *next* take's file, which is the
+    // imported video still showing after it has been deleted from the edit.
+    const screen: TrackMedia[] = [
+      media({ duration: 10 * S - 40_000_000 }),
+      media({ segment: 1, file: "2/screen.mp4", offset: 10 * S, duration: 6 * S }),
+    ];
+    const first = { start: 0, end: 10 * S };
+
+    expect(segmentAt(screen, 10 * S - 20_000_000, first)?.file).toBe("screen.mp4");
+    // And the moment itself still belongs to the take that opens on it.
+    expect(segmentAt(screen, 10 * S, { start: 10 * S, end: 16 * S })?.file).toBe("2/screen.mp4");
+  });
+
+  it("gives an imported take no camera of its own take's", () => {
+    // A video brought in from outside has a screen and nothing else. The
+    // previous take's camera stops on the seam, which is zero milliseconds of
+    // gap and so inside the tolerance either way — so the imported clip was
+    // handed that camera and carried a frozen face for the whole of its length.
+    const camera: TrackMedia[] = [
+      media({ kind: "camera", file: "camera.mp4", offset: 200_000_000, duration: 10 * S }),
+    ];
+    const imported = { start: 10 * S, end: 16 * S };
+
+    expect(segmentAt(camera, 10 * S, imported)).toBeNull();
+    expect(segmentAt(camera, 13 * S, imported)).toBeNull();
+    // The take that did record it still has it, up to its own last frame.
+    expect(segmentAt(camera, 9 * S, { start: 0, end: 10 * S })?.file).toBe("camera.mp4");
+  });
+
   it("holds the last segment just past the end, and nothing beyond it", () => {
     // A microphone switched off for the second take stops at the seam. Holding
     // its last sample over the whole of the new footage would misrepresent the

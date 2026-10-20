@@ -514,6 +514,33 @@ export function seamsOf(manifest: Manifest): MediaTime[] {
 }
 
 /**
+ * The take a moment falls in, as the span it covers.
+ *
+ * What the per-slice segment lookup needs to know where it may not reach. A
+ * track stops a few milliseconds before the take it was recorded in ends —
+ * every device does — and the gap that leaves is inside `EDGE_TOLERANCE`, so
+ * `segmentAt` would close it with whatever segment lies on the other side of
+ * the seam. That is the next take's footage, drawn over the tail of this one.
+ *
+ * Half-open like everything else on this clock, so a seam belongs to the take
+ * it opens. Null for an empty table, which reads as "no boundary to respect"
+ * and leaves the lookup as it was.
+ */
+export function takeAt(takes: readonly Take[], at: MediaTime): Take | null {
+  // Backwards: the table is in clock order, so the last take that has begun is
+  // the one this moment is in.
+  for (let index = takes.length - 1; index >= 0; index -= 1) {
+    const take = takes[index]!;
+    if (at >= take.start) return take;
+  }
+
+  // Before the first take began, which only a negative moment can be. Its own
+  // span is still the right answer: the alternative is "no boundary", and that
+  // is the one answer that lets a lookup reach into the next take.
+  return takes[0] ?? null;
+}
+
+/**
  * The audio a transcription reads, in clock order.
  *
  * Every microphone file, which is the whole of it for a recording nobody has

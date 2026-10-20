@@ -47,15 +47,36 @@ export function matteKey(segment: number): MediaKey {
  * face over the new footage. Behind that, holding the previous segment's last
  * frame is what already happens for a camera that stopped a little early.
  *
+ * **The tolerance may not cross a seam.** It closes the gap a device leaves at
+ * the edges of its own take, and `take` is what says where that take ends —
+ * from `takeAt`, never from a segment boundary, because those disagree per
+ * track by however long each device took to open. Without it every track in a
+ * recording extended once reaches across the join: a screen that stopped ten
+ * milliseconds early is ten milliseconds inside the tolerance, so the last
+ * frames of a clip come out of the *next* take's file, and a take with no
+ * camera of its own — an imported video — borrows the previous take's face for
+ * the whole of its length. Both read as footage rather than as a bug.
+ *
+ * Omitted, the lookup is what it was: a recording with one take has no seam to
+ * respect.
+ *
  * `segments` must be in clock order, which is how the manifest writes them.
  */
 export function segmentAt<T extends TrackMedia>(
   segments: readonly T[],
   source: MediaTime,
+  take?: { start: MediaTime; end: MediaTime } | null,
 ): T | null {
   let before: T | null = null;
 
   for (const segment of segments) {
+    // Which take wrote a segment is decided by where it begins, and a segment
+    // another take wrote is not an answer to this moment at all — not as the
+    // one ahead, not as the one behind, and not even where it overran far
+    // enough to cover the moment outright. Skipped rather than weighed, so
+    // every rule below reads as it did against the take's own files.
+    if (take && (segment.offset < take.start || segment.offset >= take.end)) continue;
+
     const end = segment.offset + segment.duration;
     if (source >= segment.offset && source < end) return segment;
 

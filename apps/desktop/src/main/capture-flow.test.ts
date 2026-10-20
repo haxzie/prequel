@@ -402,6 +402,25 @@ describe("starting a recording", () => {
     expect(teleprompter.stopped).toBe(1);
   });
 
+  it("leaves the camera bubble off until there is somebody to preview to", () => {
+    // The flow is built at launch, and a launch that never opens the panel is
+    // ordinary: opened at login, or stopped at the welcome flow for a missing
+    // permission. The bubble cannot open the device with the panel closed —
+    // that is what keeps the camera light off — so putting it on screen left a
+    // black circle over everything with no panel to dismiss it from.
+    const { flow, camera, dockCalls } = makeFlow({
+      cameraId: "some-id",
+      cameraLabel: "MacBook Pro Camera",
+    });
+
+    expect(dockCalls.visible).toBe(false);
+    expect(camera.shown).toBe(false);
+
+    // And it arrives with the panel, which is the whole of what it previews for.
+    flow.open();
+    expect(camera.shown).toBe(true);
+  });
+
   it("prepares the camera window even when the bubble is hidden", async () => {
     // A window created after capture starts cannot be excluded, and the user
     // can switch the camera on mid-recording.
@@ -577,6 +596,9 @@ describe("the camera bubble", () => {
 
   it("follows the chosen device", () => {
     const { flow, camera } = makeFlow({ cameraId: null });
+    // With the panel up, which is where the device is chosen from — and the
+    // only state in which the bubble can open one. See the test above.
+    flow.open();
     expect(camera.shown).toBe(false);
 
     flow.updatePreferences({ cameraId: "some-id", cameraLabel: "MacBook Pro Camera" });
@@ -1320,6 +1342,9 @@ describe("the screenshot switch", () => {
 
   it("puts the camera bubble away without forgetting the camera", async () => {
     const { flow, camera, preferences } = makeFlow({ cameraId: "cam-1", cameraLabel: "FaceTime" });
+    // From the panel, which is the only place the switch exists and the only
+    // state the bubble shows in at all.
+    flow.open();
     expect(camera.shown).toBe(true);
 
     flow.setCaptureMode("photo");

@@ -159,6 +159,34 @@ export function toProjectTimeThrough(
 }
 
 /**
+ * Project time → source time, with a moment on a join landing on the clip that
+ * *ends* there.
+ *
+ * `toSourceTime`'s mirror of `toProjectTimeThrough`, and wanted for the same
+ * reason read the other way: the end of a span that runs exactly to a cut
+ * belongs to the clip it was over, not to the one starting there. Used when a
+ * dragged span's far edge is mapped back onto the recording — taken through
+ * `toSourceTime` instead, a zoom dropped flush against a cut would come back a
+ * clip later and several seconds long.
+ *
+ * Null past the end of the edit, which has no clip to belong to.
+ */
+export function toSourceTimeThrough(
+  placed: readonly PlacedSlice[],
+  time: MediaTime,
+): MediaTime | null {
+  for (const slice of placed) {
+    const end = slice.timelineStart + slice.duration;
+    if (time > slice.timelineStart && time <= end) {
+      return slice.source.start + (time - slice.timelineStart) * slice.speed;
+    }
+  }
+
+  // Only the very start of the edit is not inside any clip read this way.
+  return placed[0] && time <= placed[0].timelineStart ? placed[0].source.start : null;
+}
+
+/**
  * Where a track should be seeked to, for a moment in source time.
  *
  * Null when the track was not yet recording — the camera opens a few hundred

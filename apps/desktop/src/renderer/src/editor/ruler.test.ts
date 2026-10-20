@@ -111,7 +111,7 @@ describe("fitZoom", () => {
 });
 
 describe("openingZoom", () => {
-  /** Two `w-3` grips — `HANDLE_ROOM` in `TimelineStrip`. */
+  /** Two `HANDLE_WIDTH` targets — `HANDLE_ROOM` in `TimelineStrip`. */
   const GRIPS = 24;
   /** Both grips and a strip of bar between them — `GRAB_ROOM`. */
   const GRAB = GRIPS + 12;

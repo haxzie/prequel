@@ -35,7 +35,7 @@ import {
   type EditorAction,
   type EditorState,
 } from "./state";
-import { toSourceTime, totalDuration } from "./timeline";
+import { place, spanInProject, toProjectTime, toSourceTime, totalDuration } from "./timeline";
 
 const S = 1_000_000_000;
 const RECORDING = "2026-08-11T12-00-00";
@@ -843,6 +843,49 @@ describe("zooms", () => {
 
     expect(after!.source.start).toBe(2.5 * S);
     expect(after!.source.end - after!.source.start).toBe(length);
+  });
+
+  it("keeps a zoom the width it is drawn at while it is dragged over a cut", () => {
+    // A zoom is held against the recording and drawn against the edit. Moved
+    // by its source start, one crossing a cut keeps its length on the
+    // recording and loses it on screen: the part inside the cut is footage
+    // nobody can see, so the bar's head latches to the edge of the clip and
+    // the rest shrinks in behind it. Measured before this, a two-second zoom
+    // dragged over a two-second cut drew 2.00s, 1.00s, 0.00s, 1.00s, 2.00s
+    // while its source length never changed once.
+    const halved = run(start(), { type: "split", at: 5 * S });
+    // The second half now starts at 7s, so 5s-7s of the recording is gone.
+    const cut = run(halved, {
+      type: "trimSlice",
+      sliceId: slicesOf(halved.project)[1]!.id,
+      edge: "start",
+      source: 7 * S,
+    });
+    const sliced = slicesOf(cut.project);
+    expect(sliced).toHaveLength(2);
+    expect(sliced[1]!.source.start).toBe(7 * S);
+
+    const withZoom = run(cut, { type: "addZoom", at: 2 * S, to: 4 * S });
+    const [zoom] = zoomsOf(withZoom);
+    const drawn = (state: EditorState, id: string) => {
+      const placed = place(slicesOf(state.project));
+      const span = spanInProject(placed, zoomsOf(state).find((z) => z.id === id)!.source)!;
+      return span.end - span.start;
+    };
+    const width = drawn(withZoom, zoom!.id);
+
+    // Dragged across the join a step at a time, the bar is the same width at
+    // every one of them — including the step that lands astride the cut.
+    for (const at of [2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6]) {
+      const moved = run(withZoom, { type: "moveZoom", zoomId: zoom!.id, start: at * S });
+      expect(drawn(moved, zoom!.id)).toBeCloseTo(width, -3);
+    }
+
+    // And it follows the pointer rather than latching: dropped at 5s of the
+    // edit, it starts there.
+    const over = run(withZoom, { type: "moveZoom", zoomId: zoom!.id, start: 4.5 * S });
+    const placed = place(slicesOf(over.project));
+    expect(toProjectTime(placed, zoomsOf(over)[0]!.source.start)).toBeCloseTo(4.5 * S, -3);
   });
 
   it("stops a move against its neighbour rather than overlapping it", () => {

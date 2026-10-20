@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { EditorSession, SoundBank, SoundSample, TrackMedia } from "../../../shared/contract";
-import type { MediaTime, TrackKind } from "../../../shared/manifest";
+import { takeAt, type MediaTime, type TrackKind } from "../../../shared/manifest";
 import { AudioMixer, type MixBus, type TrackGain } from "./audio";
 import { matteKey, mediaKey, segmentAt, type MediaKey } from "./segments";
 import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
@@ -247,6 +247,14 @@ export function useEditorPlayback(
   }, [session]);
 
   /**
+   * The take table, for the bound the segment lookup may not reach past.
+   *
+   * Held beside `tracks` rather than read off the session inside the loop: the
+   * loop runs sixty times a second and this changes once a merge.
+   */
+  const takes = useMemo(() => session?.manifest.takes ?? [], [session]);
+
+  /**
    * Which element is showing each slot, rewritten by the loop.
    *
    * A ref because `getElement` is called from the compositor's own frame loop:
@@ -336,9 +344,12 @@ export function useEditorPlayback(
 
       const nowVisible = new Set<TrackKind>();
       const speed = activeSlice?.speed ?? 1;
+      // Which take this moment is in, so no track reaches across the seam for a
+      // frame of the next one — see `segmentAt`.
+      const take = source === null ? null : takeAt(takes, source);
 
       for (const [kind, segments] of tracks) {
-        const current = source === null ? null : segmentAt(segments, source);
+        const current = source === null ? null : segmentAt(segments, source, take);
         const fileTime = current && source !== null ? toFileTime(current, source) : null;
         if (fileTime !== null) nowVisible.add(kind);
 
@@ -494,7 +505,7 @@ export function useEditorPlayback(
       mixer.cancelScheduled();
       scheduler.reset();
     };
-  }, [session, placed, duration, playback, tracks, mixer, scheduler, cues]);
+  }, [session, placed, duration, playback, tracks, takes, mixer, scheduler, cues]);
 
   /**
    * Which element is showing what, forgotten when the recording changes.

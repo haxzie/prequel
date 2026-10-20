@@ -192,6 +192,15 @@ export interface InspectorProps {
   dispatch: Dispatch<EditorAction>;
   /** Which tracks the recording actually has, so absent ones are not offered. */
   present: Set<TrackKind>;
+  /**
+   * Whether the clip being edited has a camera of its own.
+   *
+   * Separate from `present`, which answers for the whole recording and is the
+   * right answer everywhere else. An imported video has no camera track, so the
+   * arrangements made of nothing but the camera are not offered on it — see
+   * `cameraOnClip` in `Editor.tsx`.
+   */
+  cameraOnClip: boolean;
   /** Whether the pointer is a layer here, or already part of the picture. */
   hasCursor: boolean;
   /**
@@ -1134,7 +1143,7 @@ function InspectorPanels(props: InspectorProps) {
                     settings={settings}
                     frame={props.frame}
                     cameraSource={props.cameraSource}
-                    cameraPresent={props.present.has("camera")}
+                    cameraPresent={props.cameraOnClip}
                     fileUrl={props.fileUrl}
                     field={field}
                     set={set}

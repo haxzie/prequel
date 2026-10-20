@@ -55,9 +55,11 @@ import type { TranscriptWord } from "../../../shared/transcript";
 import { presetFitsFrame } from "../../../shared/layout";
 import {
   place,
+  spanInProject,
   toProjectTime,
   toProjectTimeThrough,
   toSourceTime,
+  toSourceTimeThrough,
   totalDuration,
   type PlacedSlice,
 } from "./timeline";
@@ -331,6 +333,12 @@ export type EditorAction =
   /** Copies a zoom's look onto a fresh span, in the first gap after it. */
   | { type: "duplicateZoom"; zoomId: string }
   | { type: "setZoom"; zoomId: string; patch: Partial<ZoomSlice> }
+  /**
+   * Slides a zoom along the timeline, to a moment in *project* time.
+   *
+   * The one action on a zoom that is not in source time, and deliberately:
+   * what a drag preserves is the length on screen. See `moveZoom`.
+   */
   | { type: "moveZoom"; zoomId: string; start: MediaTime }
   | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime }
   /**
@@ -1760,28 +1768,67 @@ export function laneTrimmed(
 /**
  * Slides a whole zoom along the timeline.
  *
+ * **In project time, not source time.** A zoom is stored against the recording
+ * and drawn against the edit, and a cut takes a stretch out of the middle of
+ * the first. Moved by its source start, a zoom crossing a cut keeps the length
+ * it has on the *recording* and loses the length it has on screen: the part
+ * inside the cut is footage nobody can see, so the bar's head latches to the
+ * edge of the clip and the rest of it shrinks in behind — measured on a
+ * two-second zoom over a two-second cut, the bar drew 2.00s, 1.00s, 0.00s,
+ * 1.00s, 2.00s while its source length never changed once. It reads as a zoom
+ * resizing itself instead of moving, and it holds the bar at the join until
+ * the pointer is well past.
+ *
+ * So the drag preserves what is on screen. The bar keeps the width it had, the
+ * source span stretches to take in whatever was cut out underneath, and a zoom
+ * longer than the clips under it moves like any other — which the rule this
+ * replaced could not do, because it worked by fitting a zoom inside one clip
+ * and that one fits in none.
+ *
+ * Nothing is rendered differently for a zoom whose span covers a cut: the
+ * footage is not in the video, so neither is any of the shot over it.
+ *
  * Its length is preserved and its neighbours are not: a move that would collide
  * stops against them rather than pushing them along or overlapping, so the
  * invariant that no two zooms cover the same moment holds without the caller
- * having to know about it.
+ * having to know about it. Checked on screen as well, because that is where
+ * the move now happens.
  */
 function moveZoom(
   state: EditorState,
   action: Extract<EditorAction, { type: "moveZoom" }>,
 ): EditorState {
-  // The next zoom, else the last frame of the edit — and never past the media
-  // itself. `sourceEnd` is the furthest any *clip* reaches, so before clips
-  // were bounded above it inherited their overrun and let a zoom follow them
-  // off the end. Kept as the tighter of the two rather than replaced: a zoom
-  // over a stretch no clip covers is a zoom that renders nothing.
-  const limit = Math.min(sourceEnd(state.project), state.duration);
-  const source = laneMoved(state.project.zooms, action.zoomId, action.start, limit);
-  if (!source) return state;
+  const zooms = state.project.zooms;
+  const index = zooms.findIndex((candidate) => candidate.id === action.zoomId);
+  const zoom = zooms[index];
+  if (!zoom) return state;
+
+  const placed = place(slicesOf(state.project));
+  const span = spanInProject(placed, zoom.source);
+  // A zoom whose every moment was cut away has no bar to drag, and no length
+  // to preserve either.
+  if (!span) return state;
+
+  const length = span.end - span.start;
+  const reach = totalDuration(placed);
+  /** The neighbours, as they are drawn — the same clock this move is on. */
+  const floor = index > 0 ? (spanInProject(placed, zooms[index - 1]!.source)?.end ?? 0) : 0;
+  const ceiling =
+    index < zooms.length - 1
+      ? (spanInProject(placed, zooms[index + 1]!.source)?.start ?? reach)
+      : reach;
+
+  const at = clampTo(action.start, floor, Math.max(floor, Math.min(ceiling, reach) - length));
+  const from = toSourceTime(placed, at);
+  const to = toSourceTimeThrough(placed, at + length);
+  if (from === null || to === null || to <= from) return state;
 
   return edit(state, (project) => ({
     ...project,
     zooms: project.zooms.map((candidate) =>
-      candidate.id === action.zoomId ? { ...candidate, source } : candidate,
+      candidate.id === action.zoomId
+        ? { ...candidate, source: { start: from, end: to } }
+        : candidate,
     ),
   }));
 }

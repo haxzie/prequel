@@ -14,6 +14,7 @@ import {
 
 import type { MediaTime } from "../../../shared/manifest";
 import { MAX_TEXT_TRACKS, type ZoomSlice } from "../../../shared/project";
+import { zoomEnvelope, zoomSpans } from "../../../shared/layout";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
@@ -54,6 +55,7 @@ import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
 import { wavePath } from "./waveform";
+import { barCurve, zoomCeiling } from "./zoomCurve";
 
 const NS_PER_SECOND = 1_000_000_000;
 
@@ -145,11 +147,36 @@ const MAX_ZOOM = 800;
 const ZOOM_STEP = 1.3;
 
 /**
+ * How wide one end's hit area is, in pixels.
+ *
+ * The grip inside it is 2px. A target the size of its own artwork is one the
+ * pointer misses, and this is what `HANDLE_ROOM` measures two of.
+ */
+const HANDLE_WIDTH = 12;
+
+/**
+ * The most of a bar one end may take, as a fraction of its width.
+ *
+ * So a bar always keeps a middle to be picked up by. Half each was the obvious
+ * reading of "the ends are grabbable at any width" and it is the wrong one: a
+ * bar narrower than two handles became nothing *but* handles, so a zoom at a
+ * fitted timeline could be retimed and no longer moved at all. A quarter each
+ * leaves half the bar to drag by at every width, which is the half that has to
+ * survive — an end can always be reached by zooming the strip in, and a bar
+ * that cannot be picked up has nothing to fall back on.
+ */
+const HANDLE_SHARE = 0.25;
+
+/**
  * Room a bar needs before it is worth drawing grips on, in pixels.
  *
- * Two `w-3` handles, which is what they measure — see `Handle`. Below it they
- * would sit on top of each other, and the one drawn second wins the press: a
- * bar too narrow to trim is no reason for it to be impossible to *move*.
+ * Two `HANDLE_WIDTH` handles. Below it the two grips would sit a couple of
+ * pixels apart and read as noise rather than as the two ends of something.
+ *
+ * It no longer decides whether the ends can be *dragged*. They always can:
+ * `Handle` takes half the bar at most, so a short bar is tiled by its two ends
+ * instead of having them stacked on top of each other, and hovering either end
+ * resizes whether or not a grip is drawn there.
  */
 const HANDLE_ROOM = 24;
 
@@ -371,6 +398,19 @@ export function TimelineStrip({
   // below that closes over `placed`, every time.
   const slices = slicesOf(state.project);
   const placed = useMemo(() => place(slices), [slices]);
+
+  /**
+   * How far in the picture goes over the recording, and the top of the scale
+   * every bar on the zoom row is drawn against.
+   *
+   * Once for the row rather than once per bar: the ceiling is the row's own
+   * deepest zoom, so a bar worked out on its own would be measuring against
+   * itself and every bar would come out full height.
+   */
+  const envelope = useMemo(() => zoomEnvelope(state.project.zooms), [state.project.zooms]);
+  const ceiling = useMemo(() => zoomCeiling(envelope), [envelope]);
+  /** Each zoom's whole life, the moves included — what a bar draws. */
+  const reaches = useMemo(() => zoomSpans(state.project.zooms), [state.project.zooms]);
   const edited = totalDuration(placed);
 
   /** The blade is in hand, so every bar on the strip cuts instead of moving. */
@@ -1160,7 +1200,7 @@ export function TimelineStrip({
 
             <ZoomGhost ref={ghost} />
 
-            {state.project.zooms.map((zoom) => {
+            {state.project.zooms.map((zoom, index) => {
               // The whole span, not its two edges asked about separately. An
               // automatic zoom is placed against the recording and a later cut
               // can remove the moment it starts on — which used to leave the
@@ -1192,8 +1232,10 @@ export function TimelineStrip({
                   target={zoom.target}
                   method={zoom.method}
                   level={zoom.level}
+                  curve={barCurve(envelope, reaches[index]!, ceiling)}
                   sourceAt={(clientX) => sourceAt(timeAt(clientX))}
-                  start={zoom.source.start}
+                  timeAt={(clientX) => timeAt(clientX)}
+                  start={from}
                   onSelect={() => {
                     media.onInteract();
                     dispatch({ type: "selectZoom", zoomId: zoom.id });
@@ -1967,10 +2009,19 @@ function Clip({
  *
  * Wide enough to grab, and wider than it looks: the grip is 2px and this is
  * 12px, because a target the size of its own artwork is one the pointer misses.
+ *
+ * **The hit area is the edge, not the artwork.** The grip is drawn only where a
+ * bar is wide enough to carry one without the two meeting in the middle — see
+ * `grips` — and an end that draws nothing is still grabbed by hovering it. The
+ * two were one decision before, so a zoom shorter than 36 pixels had no way to
+ * be retimed at all: no grips, no targets, and no length field anywhere else in
+ * the editor to reach for.
  */
 function Handle({
   edge,
   grip,
+  grips = true,
+  room,
   selected,
   onPointerDown,
   onPointerMove,
@@ -1991,6 +2042,23 @@ function Handle({
    * resting made it the faintest thing on the bar it had just been summoned to.
    */
   grip: string;
+  /**
+   * Whether this end draws its grip, as opposed to merely being one.
+   *
+   * A judgement about crowding and nothing else: two 2px lines a few pixels
+   * apart read as noise rather than as two ends. What it must never decide is
+   * whether the end can be dragged.
+   */
+  grips?: boolean;
+  /**
+   * How wide the bar comes out, in pixels, where the caller knows.
+   *
+   * The target takes `HANDLE_SHARE` of it at most, so the two ends of a short
+   * bar never overlap each other and never meet in the middle: half the bar is
+   * always left to pick it up by, and the end drawn second stops winning every
+   * press — which is what made a drag at a short zoom trim it instead.
+   */
+  room?: number;
   selected: boolean;
   onPointerDown: (event: PointerEvent<HTMLSpanElement>) => void;
   onPointerMove: (event: PointerEvent<HTMLSpanElement>) => void;
@@ -2001,9 +2069,12 @@ function Handle({
   return (
     <span
       className={cn(
-        "absolute inset-y-0 grid w-3 cursor-ew-resize place-items-center",
+        "absolute inset-y-0 grid cursor-ew-resize place-items-center",
         edge === "start" ? "left-0" : "right-0",
       )}
+      style={{
+        width: room === undefined ? HANDLE_WIDTH : Math.min(HANDLE_WIDTH, room * HANDLE_SHARE),
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onRelease}
@@ -2012,13 +2083,15 @@ function Handle({
       {/* Faded rather than unmounted, and the hit area around it never fades at
           all: an edge that only becomes grabbable once it is visible is one the
           first drag at it always misses. */}
-      <span
-        className={cn(
-          "h-1/2 w-0.5 rounded-full transition-opacity",
-          grip,
-          selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-        )}
-      />
+      {grips && (
+        <span
+          className={cn(
+            "h-1/2 w-0.5 rounded-full transition-opacity",
+            grip,
+            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+        />
+      )}
     </span>
   );
 }
@@ -2379,12 +2452,17 @@ function TextBar({
       </span>
 
       {/* Gone with the blade in hand, for the reason a clip's are: the ends of
-          a bar are where a cut is aimed, and a grip there resizes instead. */}
+          a bar are where a cut is aimed, and a grip there resizes instead.
+
+          `room`, like the zoom row's: a short text bar had its two targets
+          stacked, so a press anywhere on it trimmed the end. */}
       {!blade && (
         <>
           <Handle
             edge="start"
             grip="bg-title-edge"
+            grips={pixels >= GRAB_ROOM}
+            room={pixels}
             selected={selected}
             onPointerDown={grabEdge()}
             onPointerMove={moveEdge("start")}
@@ -2392,6 +2470,8 @@ function TextBar({
           <Handle
             edge="end"
             grip="bg-title-edge"
+            grips={pixels >= GRAB_ROOM}
+            room={pixels}
             selected={selected}
             onPointerDown={grabEdge()}
             onPointerMove={moveEdge("end")}
@@ -2437,8 +2517,10 @@ function Zoom({
   target,
   method,
   level,
+  curve,
   start,
   sourceAt,
+  timeAt,
   onSelect,
   onContextMenu,
   onMove,
@@ -2457,6 +2539,14 @@ function Zoom({
   /** What the zoom follows, which is the one thing about it worth seeing from
       the strip — the level and the speed only mean anything next to a picture. */
   target: ZoomSlice["target"];
+  /**
+   * How far in this zoom goes, as the shape drawn inside the bar.
+   *
+   * Handed down rather than worked out here: the height is measured against
+   * the deepest zoom on the row, which is a question about the row. See
+   * `barCurve`.
+   */
+  curve: { line: string; area: string };
   /** Whether it is a camera move or a lens. Shown in place of what it follows,
       not beside it: the two glyphs would not fit on a short bar, and which of
       the two methods a bar is matters more than where it is aimed. */
@@ -2464,11 +2554,22 @@ function Zoom({
   /** How far in. The one number about a zoom worth reading from the strip —
       how long it runs is already its width. */
   level: number;
-  /** Where this zoom currently starts, in source time. */
+  /** Where the bar begins on the *edit*, which is what the grab offset is
+      measured against — see `timeAt`. */
   start: MediaTime;
   /** Source time under a client x, so a drag can be measured in the timeline's
       own units rather than in pixels that mean different things at each zoom. */
   sourceAt: (clientX: number) => MediaTime;
+  /**
+   * Where the pointer is on the *edit*, which is what a move is measured in.
+   *
+   * A zoom is stored against the recording and drawn against the edit, and the
+   * two run at different rates wherever a cut has taken something out. A drag
+   * has to preserve what is on screen — see `moveZoom` — so it is read, grabbed
+   * and reported here in project time, and turned back into source time once,
+   * in the reducer, where the clips are.
+   */
+  timeAt: (clientX: number) => MediaTime;
   onSelect: () => void;
   /** Right-clicked, with the pointer's position so a menu can open under it. */
   onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
@@ -2542,7 +2643,11 @@ function Zoom({
           return;
         }
         onSelect();
-        grab.current = sourceAt(event.clientX) - start;
+        // How far into the bar it was picked up, on the edit's clock — see
+        // `timeAt`. In source time this offset is wrong the moment the bar
+        // covers a cut, because the bar's two ends are then further apart on
+        // the recording than they are on screen.
+        grab.current = timeAt(event.clientX) - start;
         event.currentTarget.setPointerCapture(event.pointerId);
         onBeginEdit();
       }}
@@ -2552,17 +2657,47 @@ function Zoom({
           return;
         }
         if (grab.current === null) return;
-        onMove(sourceAt(event.clientX) - grab.current);
+        onMove(timeAt(event.clientX) - grab.current);
       }}
       onPointerLeave={blade ? (event) => aim(null, event, shade) : undefined}
       onPointerUp={() => {
         grab.current = null;
       }}
     >
+      {/* How far in this zoom goes, behind everything else in the bar.
+          Stretched to the bar by `preserveAspectRatio`, so it costs nothing
+          when the strip is zoomed and nothing when the bar is retimed.
+
+          The flat top is the hold, which is what a zoom's span is. It climbs
+          or falls only where a neighbour is close enough to morph, because
+          that move genuinely eats into this slice — see `betweenZooms`. */}
+      {curve.line && (
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full text-zoom-edge"
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <path d={curve.area} fill="currentColor" fillOpacity={0.18} stroke="none" />
+          <path
+            d={curve.line}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeOpacity={0.7}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            // Or the stroke is stretched with the box and comes out as a
+            // hairline on a long bar and a band on a short one.
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      )}
+
       {/* Truncated rather than wrapped: a zoom half a second long is a few
           pixels wide at a fitted timeline, and its label has to degrade to
           nothing without changing the row's height. */}
-      <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
+      <span className="pointer-events-none relative flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
         <ZoomIcon />
         {method === "loupe" ? (
           <GlassIcon />
@@ -2576,21 +2711,27 @@ function Zoom({
         <span className="truncate tabular-nums">{level.toFixed(1)}×</span>
       </span>
 
-      {/* Only where both fit with bar left between them. A zoom narrower than
-          its two grips draws them on top of each other and the second one wins
-          the press, so every drag trimmed the end of a short zoom instead of
-          moving it. Dropped rather than shrunk: a three-pixel grip is not
-          something anyone can aim at, and the bar stays draggable without
-          them. Trimming a zoom this short means zooming the strip in, which is
-          the bargain every other fine edit makes.
+      {/* Both ends, at every width. The grips are drawn only where there is
+          room for two of them with bar left between — below that they read as
+          noise — but the ends stay grabbable without them: a zoom drawn a few
+          pixels wide had no grips, no targets and no length field anywhere
+          else, so a shot made a touch too short could only be deleted and
+          drawn again.
 
-          And never with the blade in hand: the ends of the bar are where a cut
-          is aimed, and a grip there would trim instead. */}
-      {!blade && room >= GRAB_ROOM && (
+          `room` is what keeps them off each other and off the middle. Each
+          takes a quarter of the bar at most, so the one drawn second no longer
+          covers the first and there is always half a bar left to drag the
+          whole zoom by.
+
+          Never with the blade in hand: the ends of the bar are where a cut is
+          aimed, and a grip there would trim instead. */}
+      {!blade && (
         <>
           <Handle
             edge="start"
             grip="bg-zoom-edge"
+            grips={room >= GRAB_ROOM}
+            room={room}
             selected={selected}
             onPointerDown={grabEdge("start")}
             onPointerMove={moveEdge("start")}
@@ -2598,6 +2739,8 @@ function Zoom({
           <Handle
             edge="end"
             grip="bg-zoom-edge"
+            grips={room >= GRAB_ROOM}
+            room={room}
             selected={selected}
             onPointerDown={grabEdge("end")}
             onPointerMove={moveEdge("end")}

@@ -3256,6 +3256,114 @@ function zoomPresence(zooms: readonly ZoomSlice[]): { at: number; amount: number
   return track;
 }
 
+/**
+ * How far in the picture is over time, in the zooms' own levels.
+ *
+ * `zoomPresence` deliberately says nothing about `level` — what gets out of a
+ * zoom's way does so by the same amount whether it is a 2x or a 4x. This says
+ * the other half, for the one thing that has to show the difference: the
+ * timeline, which draws this as the line behind the zoom row.
+ *
+ * Built on the same stages that place the picture, so the curve on the strip is
+ * the curve the export performs — the moves sit where `betweenZooms` puts them,
+ * each on the easing its own slice carries, and two zooms close enough to morph
+ * read as one continuous move rather than two with a dip between. A second
+ * implementation of "how far in is it now" is exactly how a timeline comes to
+ * promise a shape the file does not have.
+ *
+ * 1 is the un-zoomed picture, which is where the track opens and closes.
+ *
+ * Every zoom in the list, lenses included. A lens leaves the frame where it is,
+ * so this is not where the *picture* is for one of those — but the glass
+ * magnifies on this curve, and a row that drew nothing over its lenses would be
+ * saying they do nothing.
+ */
+/**
+ * Each zoom's whole life, the moves either side included.
+ *
+ * A slice is the *hold* — where the picture is already in close — so the travel
+ * in and out belongs to no slice at all. This is what the timeline needs to
+ * draw a zoom as the shape it is: where the move begins, where it has arrived,
+ * and where it has finished leaving.
+ *
+ * Off the same stages everything else reads, so a zoom's reach cannot be one
+ * thing here and another where the picture is placed. Two zooms close enough to
+ * morph share the move between them, which lands in both their reaches: it is
+ * one move, and it belongs to the zoom being left and to the one arrived at.
+ *
+ * Indexed like the list handed in.
+ */
+export function zoomSpans(zooms: readonly ZoomSlice[]): { from: number; to: number }[] {
+  const reach = zooms.map((zoom) => ({
+    from: zoom.source.start as number,
+    to: zoom.source.end as number,
+  }));
+  if (zooms.length === 0) return reach;
+
+  for (const stage of stagesFor(zooms, betweenZooms(zooms))) {
+    for (const which of [stage.fromZoom, stage.toZoom]) {
+      if (which === null) continue;
+      const seen = reach[which]!;
+      seen.from = Math.min(seen.from, stage.from);
+      seen.to = Math.max(seen.to, stage.to);
+    }
+  }
+
+  return reach;
+}
+
+export function zoomEnvelope(zooms: readonly ZoomSlice[]): { at: number; level: number }[] {
+  if (zooms.length === 0) return [];
+
+  const stages = stagesFor(zooms, betweenZooms(zooms));
+  const track: { at: number; level: number }[] = [];
+  // The same floor `shotTrack` applies. A level below 1 is a zoom out, which
+  // nothing can do, and drawing one would put the line under its own baseline.
+  const levelOf = (index: number) => Math.max(1, zooms[index]!.level);
+
+  const push = (at: number, level: number) => {
+    // Stages meet exactly, so each one's first sample is the last of the one
+    // before, and they agree on the value there.
+    if (track.length > 0 && track[track.length - 1]!.at >= at) return;
+    track.push({ at, level });
+  };
+
+  for (const stage of stages) {
+    const span = stage.to - stage.from;
+
+    // A hold: fully in at its own level from end to end, which two samples say.
+    if (stage.fromZoom !== null && stage.fromZoom === stage.toZoom) {
+      push(Math.round(stage.from), levelOf(stage.fromZoom));
+      push(Math.round(stage.to), levelOf(stage.fromZoom));
+      continue;
+    }
+
+    const steps = Math.max(1, Math.ceil(span / ZOOM_SAMPLE_NS));
+
+    for (let step = 0; step <= steps; step += 1) {
+      const at = Math.round(stage.from + (span * step) / steps);
+      const u = span > 0 ? (at - stage.from) / span : 1;
+
+      // The three moves `shotAt` knows, read the same way it reads them — a
+      // move out is this zoom's own curve backwards rather than a second
+      // curve, and a move from one zoom to the next is eased on the one being
+      // arrived at, because how a move *arrives* is what is felt.
+      if (stage.fromZoom === null) {
+        const into = stage.toZoom!;
+        push(at, lerp(1, levelOf(into), easeAt(zooms[into]!, u)));
+      } else if (stage.toZoom === null) {
+        const leaving = stage.fromZoom;
+        push(at, lerp(1, levelOf(leaving), easeAt(zooms[leaving]!, 1 - u)));
+      } else {
+        const into = stage.toZoom;
+        push(at, lerp(levelOf(stage.fromZoom), levelOf(into), easeAt(zooms[into]!, u)));
+      }
+    }
+  }
+
+  return track;
+}
+
 /** The presence at one instant, interpolated. Zero outside the track. */
 function presenceAt(track: { at: number; amount: number }[], at: number): number {
   if (track.length === 0 || at <= track[0]!.at || at >= track[track.length - 1]!.at) return 0;
@@ -6693,8 +6801,11 @@ export function layoutBoxes(
 
   // Hidden by the toggle, or because the arrangement has no room for it. The
   // `camera-*` arrangements ignore the toggle: the camera is the whole picture
-  // there, and the arrangement is how it gets turned off.
-  const withCamera = layout.cameraVisible && sources.camera !== null;
+  // there, and the arrangement is how it gets turned off. What they cannot
+  // ignore is a clip with no camera at all — see `hasCamera` and the three
+  // cases that read it.
+  const hasCamera = sources.camera !== null;
+  const withCamera = layout.cameraVisible && hasCamera;
 
   switch (layout.preset) {
     // Fill honours the padding, through a box that keeps the frame's shape.
@@ -6783,17 +6894,31 @@ export function layoutBoxes(
         camera: null,
       };
 
+    // The three camera-only arrangements, each falling back to the screen
+    // framed the same way where this clip has no camera to show.
+    //
+    // A clip imported into a recording has no camera track of its own, and the
+    // arrangement is inherited from the project — so without this, picking
+    // "camera only" for a recording and then adding a video gave that video a
+    // frame holding nothing but the background. Degrading rather than ignoring
+    // the pick, the way `beside` and `stacked` already do: the one picture the
+    // clip does have is drawn where the camera would have been.
     case "camera-full":
-      return { screen: null, camera: { area: whole, fit: "cover", card: true } };
+      return hasCamera
+        ? { screen: null, camera: { area: whole, fit: "cover", card: true } }
+        : { screen: { area: filled, fit: "cover", card: true }, camera: null };
 
     case "camera-padded":
-      return { screen: null, camera: { area: padded, fit: "contain", card: true } };
+      return hasCamera
+        ? { screen: null, camera: { area: padded, fit: "contain", card: true } }
+        : { screen: { area: padded, fit: "contain", card: true }, camera: null };
 
-    case "camera-inset":
-      return {
-        screen: null,
-        camera: { area: inset(frame, gap + EXTRA_PADDING * unit), fit: "contain", card: true },
-      };
+    case "camera-inset": {
+      const back = inset(frame, gap + EXTRA_PADDING * unit);
+      return hasCamera
+        ? { screen: null, camera: { area: back, fit: "contain", card: true } }
+        : { screen: { area: back, fit: "contain", card: true }, camera: null };
+    }
 
     case "beside":
     case "beside-left": {

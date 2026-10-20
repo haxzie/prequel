@@ -19,6 +19,7 @@ import {
   isStill,
   seamsOf,
   speechSegments,
+  takeAt,
   type MediaTime,
   type TrackKind,
 } from "../../../shared/manifest";
@@ -61,7 +62,7 @@ import { Annotations } from "./Annotations";
 import { Preview, type Grab, type Picked } from "./Preview";
 import { asCard } from "./poster";
 import { previewReady } from "./ready";
-import { matteKey, mediaKey } from "./segments";
+import { matteKey, mediaKey, segmentAt, segmentsOf } from "./segments";
 import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
 import { useWallpapers } from "./useWallpapers";
@@ -1389,6 +1390,35 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // slice plays, in `Preview` and in `useExport`.
   const cameraSource = useMemo(() => sizeOf(session.media, "camera"), [session]);
 
+  /**
+   * Whether the clip being edited has a camera of its own.
+   *
+   * `present` answers for the *recording*, which is right for every panel and
+   * every timeline row — a camera recorded in one take is a camera this editor
+   * has. The arrangement is a per-clip decision, and a video imported into a
+   * recording brings no camera with it, so the arrangements that are nothing
+   * but the camera have no picture to draw on that clip.
+   *
+   * Through the same lookup the preview and the exporter resolve a clip's media
+   * with, bounded by the clip's own take, so "has this clip a camera" cannot be
+   * answered one way here and another where it is drawn.
+   *
+   * With nothing selected it is the recording's answer: the pick lands on the
+   * project defaults, which every clip reads.
+   */
+  const cameraOnClip = useMemo(() => {
+    const slice = slices.find((candidate) => candidate.id === state.selectedSliceId);
+    if (!slice) return present.has("camera");
+
+    return (
+      segmentAt(
+        segmentsOf(session.media, "camera"),
+        slice.source.start,
+        takeAt(session.manifest.takes, slice.source.start),
+      ) !== null
+    );
+  }, [session, slices, state.selectedSliceId, present]);
+
   const screenSource = useMemo(() => sizeOf(session.media, "screen"), [session]);
   /**
    * The screen's first segment, which for a still is the whole of it.
@@ -1759,6 +1789,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onPickPattern={pickPattern}
               frame={state.project.frame}
               cameraSource={cameraSource}
+              cameraOnClip={cameraOnClip}
               cameraMatte={cameraMatte}
               cameraBlobs={session.blobs !== null}
               tab={panelTab}

@@ -26,7 +26,7 @@ import {
   type Size,
 } from "../../../shared/layout";
 import { maskRegions } from "../../../shared/annotations";
-import { TRACK_KINDS, type TrackKind } from "../../../shared/manifest";
+import { TRACK_KINDS, takeAt, type TrackKind } from "../../../shared/manifest";
 import {
   captionLook,
   STILL_AT,
@@ -206,9 +206,14 @@ export function buildSlices(
  */
 function sliceMedia(session: EditorSession, slice: Slice): Partial<Record<TrackKind, TrackMedia>> {
   const found: Partial<Record<TrackKind, TrackMedia>> = {};
+  // The take the clip is in, so the lookup's tolerance cannot reach across the
+  // seam for a kind this take never recorded. Without it an imported clip is
+  // handed the previous take's camera and carries a frozen face for its whole
+  // length — in the export, where `file_time` has no end to stop at.
+  const take = takeAt(session.manifest.takes, slice.source.start);
 
   for (const kind of TRACK_KINDS) {
-    const segment = segmentAt(segmentsOf(session.media, kind), slice.source.start);
+    const segment = segmentAt(segmentsOf(session.media, kind), slice.source.start, take);
     if (segment) found[kind] = segment;
   }
 

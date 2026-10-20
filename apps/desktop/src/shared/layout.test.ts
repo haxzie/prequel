@@ -28,6 +28,7 @@ import {
   rectAt,
   shapeAspect,
   SHADOW_SPREAD,
+  zoomEnvelope,
   type CaptionWord,
   type CursorTrack,
   type PlanItem,
@@ -2903,6 +2904,46 @@ describe("the arrangements", () => {
     }
   });
 
+  it("draws the screen in a camera-only arrangement on a clip with no camera", () => {
+    // A video imported into a recording brings no camera with it, and the
+    // arrangement comes from the project — so a recording set to camera only
+    // gave the imported clip a frame holding nothing but the background. The
+    // pick degrades to the screen framed the same way, which is what every
+    // other arrangement without a camera already does.
+    const none = { screen: SCREEN, camera: null };
+    const at = (preset: LayoutPreset) =>
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset },
+        DEFAULT_SETTINGS.background,
+        none,
+      );
+
+    for (const preset of ["camera-full", "camera-padded", "camera-inset"] as LayoutPreset[]) {
+      expect(at(preset).camera).toBeNull();
+      expect(at(preset).screen).not.toBeNull();
+    }
+
+    // Framed the way the camera would have been: full bleed, padded, and
+    // standing further back again.
+    expect(at("camera-full").screen).toEqual(
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset: "screen-full" },
+        DEFAULT_SETTINGS.background,
+        none,
+      ).screen,
+    );
+    expect(at("camera-inset").screen).toEqual(
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset: "screen-inset" },
+        DEFAULT_SETTINGS.background,
+        none,
+      ).screen,
+    );
+  });
+
   it("keeps every box inside the frame, whatever shape the frame is", () => {
     for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
       for (const preset of PRESETS) {
@@ -3158,6 +3199,59 @@ describe("zooming", () => {
     if (item.kind !== "image") throw new Error("wrong item");
     return { keys: item.motion ?? [], base: item.dstRect, radius: item.shape.radius };
   };
+
+  describe("the level over time", () => {
+    // What the timeline draws behind the zoom row. It has to be the same move
+    // the picture performs, which is the whole reason it is read off the same
+    // stages: a strip promising a shape the export does not have is worse than
+    // a strip with nothing on it.
+    const levelAt = (track: { at: number; level: number }[], at: number) => {
+      const after = track.findIndex((sample) => sample.at >= at);
+      if (after <= 0) return track[Math.max(0, after)]?.level ?? 1;
+      const a = track[after - 1]!;
+      const b = track[after]!;
+      return a.level + ((b.level - a.level) * (at - a.at)) / (b.at - a.at);
+    };
+
+    it("rests at 1, holds at the level, and comes back", () => {
+      const track = zoomEnvelope([region({ level: 3 })]);
+
+      // The hold is the span itself, at the level it claims.
+      expect(levelAt(track, 3 * S)).toBeCloseTo(3, 5);
+      expect(levelAt(track, 5 * S)).toBeCloseTo(3, 5);
+      // And it opens and closes on the un-zoomed picture.
+      expect(track[0]!.level).toBeCloseTo(1, 5);
+      expect(track[track.length - 1]!.level).toBeCloseTo(1, 5);
+    });
+
+    it("moves in before the slice and out after it, never inside", () => {
+      // The one thing a bar cannot show on its own: the ramps are outside it.
+      const zoom = region({ level: 4, speed: 0.5 });
+      const track = zoomEnvelope([zoom]);
+
+      expect(levelAt(track, zoom.source.start - 250_000_000)).toBeGreaterThan(1);
+      expect(levelAt(track, zoom.source.start - 250_000_000)).toBeLessThan(4);
+      expect(levelAt(track, zoom.source.end + 250_000_000)).toBeGreaterThan(1);
+      expect(levelAt(track, zoom.source.end + 250_000_000)).toBeLessThan(4);
+    });
+
+    it("never returns to rest between two zooms close enough to morph", () => {
+      // They are one continuous move on screen — see `betweenZooms` — so the
+      // line has to stay up across the join rather than dipping to 1 and back.
+      const track = zoomEnvelope([
+        region({ id: "a", source: { start: 2 * S, end: 3 * S }, level: 2 }),
+        region({ id: "b", source: { start: 3.2 * S, end: 5 * S }, level: 4 }),
+      ]);
+
+      expect(levelAt(track, 3.1 * S)).toBeGreaterThan(1.5);
+      // And it arrives at the second zoom's own level.
+      expect(levelAt(track, 4.5 * S)).toBeCloseTo(4, 5);
+    });
+
+    it("says nothing about a recording with no zooms", () => {
+      expect(zoomEnvelope([])).toEqual([]);
+    });
+  });
 
   /** The key at the deepest point of the move, where the shot has fully arrived. */
   const deepest = (zooms: ZoomSlice[]) => {
