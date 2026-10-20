@@ -1,5 +1,21 @@
 # @prequel/desktop
 
+## 0.6.1
+
+### Patch Changes
+
+- b348cdf: A zoom dragged over a cut keeps the length it is drawn at and follows the pointer instead of shrinking.
+- b348cdf: Every zoom on the timeline draws how far in it goes, so a deep shot is told from a gentle one at a glance.
+
+  <!-- highlight: Zooms show how far in they go -->
+
+- b348cdf: The camera arrangements are offered only on a clip that has a camera, and a clip without one shows its screen.
+- 62c62c9: Escape closes the picker from anywhere, including while you are changing a camera or microphone.
+- b348cdf: An imported clip shows only its own picture, with no camera from the recording and no frames of its neighbour.
+- b348cdf: Drag either end of a zoom to retime it, however short it is and whether or not a grip is drawn.
+- b348cdf: The camera bubble appears with the panel instead of floating on the desktop after a launch nobody asked for.
+- 62c62c9: Pressing Update puts the picker away and brings the new version to the front of the screen.
+
 ## 0.6.0
 
 ### Minor Changes
