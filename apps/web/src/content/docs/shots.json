@@ -155,6 +155,10 @@
     "width": 1280,
     "height": 820
   },
+  "fisheye-applied": {
+    "width": 1280,
+    "height": 820
+  },
   "inspector-glass": {
     "width": 392,
     "height": 539

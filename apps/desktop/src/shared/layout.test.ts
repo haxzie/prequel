@@ -25,6 +25,7 @@ import {
   pictureMoved,
   placement,
   presetFitsFrame,
+  LOUPE_REACH,
   rectAt,
   shapeAspect,
   SHADOW_SPREAD,
@@ -6229,6 +6230,158 @@ describe("the loupe", () => {
     expect(glass.x).toBeCloseTo(picture.x, 6);
     expect(glass.y).toBeCloseTo(picture.y, 6);
     expect(glass.x).toBeLessThan(glass.radius);
+  });
+
+  it("holds a fisheye still and brings what it follows under it", () => {
+    // The whole of the method, and the half of it that fails quietly. A fisheye
+    // whose glass crept towards the pointer would still magnify the right thing
+    // — it would simply be a loupe, which is the method beside it in the panel.
+    const keys = glassOf([lens({ method: "fisheye", x: 0.25, y: 0.75 })])!;
+    const glass = loupeAt(keys, 4 * S)!;
+    const picture = image(planWith([]), "screen")!.dstRect;
+
+    expect(glass.x).toBeCloseTo(picture.x + picture.width / 2, 6);
+    expect(glass.y).toBeCloseTo(picture.y + picture.height / 2, 6);
+    // And looking a quarter of the way across the recording, which is where a
+    // loupe would have been sitting.
+    expect(glass.lookX).toBeCloseTo(loupeAt(glassOf([lens()])!, 4 * S)!.x, 6);
+    expect(glass.lookY).toBeCloseTo(loupeAt(glassOf([lens()])!, 4 * S)!.y, 6);
+  });
+
+  it("leaves a loupe looking at what it lies on", () => {
+    // The other half: the two points are one point for every lens that is not a
+    // fisheye, and a rasteriser handed a look that drifted off the glass would
+    // show the wrong patch of screen through a magnifier.
+    for (const glass of glassOf([lens()])!) {
+      expect(glass.lookX).toBe(glass.x);
+      expect(glass.lookY).toBe(glass.y);
+    }
+  });
+
+  it("smears a fisheye by what travels through it, not by the glass", () => {
+    // A fisheye never moves, so a streak measured off `x` and `y` is zero on
+    // every frame — and the contents are exactly what is flying across the
+    // screen. Unsmeared they step rather than travel.
+    const track = {
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
+      size: 0.035,
+      hideAfter: null,
+      // Sampled thickly, at the rate a recording's pointer is: a long gap
+      // between two samples is a pointer that sat still and then jumped, which
+      // `withHeldParks` holds — and a held pointer is the one case where a zero
+      // streak is the right answer.
+      samples: Array.from({ length: 81 }, (_, step) => ({
+        at: step * 0.1 * S,
+        x: 0.1 + step * 0.01,
+        y: 0.5,
+      })),
+    };
+    const keys = buildRenderPlan(FRAME, { screen: SCREEN, camera: null }, settings(), track, [
+      lens({ method: "fisheye", target: "cursor", loupeBlur: 1 }),
+    ]).items.flatMap((item) => (item.kind === "loupe" ? item.keys : []));
+
+    const moving = loupeAt(keys, 4 * S)!;
+    expect(moving.x).toBeCloseTo(loupeAt(keys, 3 * S)!.x, 6);
+    expect(Math.abs(moving.smearX)).toBeGreaterThan(0);
+  });
+
+  it("a fisheye's surroundings go soft and dark, and a loupe's do not", () => {
+    // The two halves of what makes the second lens a different object. Both
+    // fail quietly in the same direction — the fisheye ends up as the loupe
+    // parked in the middle, which is a look somebody might believe was
+    // intended until they put the two side by side.
+    const picture = (zooms: ZoomSlice[]) => image(planWith(zooms), "screen")!;
+
+    const fisheye = picture([lens({ method: "fisheye" })]);
+    const glass = loupeAt(glassOf([lens({ method: "fisheye" })])!, 4 * S)!;
+    const held = rectAt(fisheye.motion ?? [], 4 * S, fisheye.dstRect, 0);
+
+    expect(glass.shade).toBeGreaterThan(0);
+    expect(glass.halo).toBeGreaterThan(0);
+    expect(held.focus?.strength).toBeGreaterThan(0);
+    // Sharp well *inside* the rim, so the ramp past it finishes on the rim and
+    // everything anybody can see outside the glass is softened as hard as the
+    // setting allows. What is inside that radius is under the glass.
+    expect(held.focus?.safe).toBeLessThan(glass.radius);
+    expect(held.focus?.x).toBeCloseTo(glass.x, 6);
+
+    // The camera bubble too, which is as much "outside the lens" as the screen
+    // is — and the one item anybody would notice staying sharp while
+    // everything around it went soft.
+    const bubble = buildRenderPlan(FRAME, { screen: SCREEN, camera: CAMERA }, settings(), null, [
+      lens({ method: "fisheye" }),
+    ]).items.find((item) => item.kind === "image" && item.source === "camera");
+    const bubbled =
+      bubble?.kind === "image" ? rectAt(bubble.motion ?? [], 4 * S, bubble.dstRect, 0) : null;
+    expect(bubbled?.focus?.strength).toBeGreaterThan(0);
+
+    const loupe = picture([lens()]);
+    const still = loupeAt(glassOf([lens()])!, 4 * S)!;
+    expect(still.shade).toBe(0);
+    expect(still.halo).toBe(0);
+    // No track at all, which is the strongest form of "nothing was written":
+    // a loupe moves the picture nowhere and softens nothing.
+    expect(loupe.motion).toBeUndefined();
+  });
+
+  it("gives a fisheye a projection and a box to hold it", () => {
+    // The two halves of what a fisheye *is*, and both of them fail quietly: a
+    // half-angle of zero is the magnifier, which draws the same circle in the
+    // same place showing a quarter as much with every line in it straight; and
+    // a box left at the magnifier's own reach clamps the outermost taps to its
+    // edge and smears the wrong picture round the rim.
+    // The curvature the panel gives a fisheye, which on this lens is how wide
+    // it sees rather than how much of its rim is rolled over.
+    const bowed = loupeAt(
+      glassOf([lens({ method: "fisheye", level: 1, loupeCurvature: 0.8 })])!,
+      4 * S,
+    )!;
+    expect(bowed.fov).toBeGreaterThan(0);
+    // tan(fov)/fov is how much further out than a flat lens the rim samples,
+    // and the box has to be at least that.
+    expect(bowed.reach).toBeGreaterThanOrEqual(Math.tan(bowed.fov) / bowed.fov);
+    expect(bowed.reach).toBeGreaterThan(LOUPE_REACH);
+
+    // And a loupe keeps the surface and the box both rasterisers were built
+    // around, so nothing about one changes.
+    const flat = loupeAt(glassOf([lens()])!, 4 * S)!;
+    expect(flat.fov).toBe(0);
+    expect(flat.reach).toBe(LOUPE_REACH);
+  });
+
+  it("softens those surroundings three times as hard as a focus area does", () => {
+    // `FISHEYE_BLUR` is written out rather than derived from `FOCUS_BLUR`,
+    // which is further down the file than a `const` can be read from. This is
+    // what keeps the two in step: the same relationship, measured through two
+    // plans rather than asserted about two numbers nothing can see.
+    //
+    // Three, not two. A fisheye is a strong effect and the rest of the frame is
+    // dark under it; at the gentler figure the surroundings read as slightly
+    // mis-focused rather than as out of the picture.
+    const glass = loupeAt(glassOf([lens({ method: "fisheye" })])!, 4 * S)!;
+    const fisheye = image(planWith([lens({ method: "fisheye" })]), "screen")!;
+    const soft = rectAt(fisheye.motion ?? [], 4 * S, fisheye.dstRect, 0).focus!.strength;
+
+    const still = buildRenderPlan(
+      FRAME,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, focusMode: "lens", focusBlur: 1 },
+      }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { at: 0 },
+    );
+    const area = image(still, "screen")!.motion![0]!.focus!.strength;
+
+    // Through the glass's presence, which is 1 where this is sampled.
+    expect(glass.presence).toBeCloseTo(1, 6);
+    expect(soft).toBeCloseTo(3 * area, 6);
   });
 
   it("centres the glass on the pointer as it is drawn, not as it was sampled", () => {

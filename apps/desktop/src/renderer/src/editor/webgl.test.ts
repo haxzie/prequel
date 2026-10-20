@@ -256,11 +256,30 @@ describe("the outline both rasterisers draw", () => {
  * The spellings are the only difference allowed: `lensNormal` here,
  * `lens_normal` there.
  */
+/** The two spellings, and the two ways of reaching the sampled image. */
+const focusing = (source: string) =>
+  arithmetic(source)
+    .replaceAll(/\bsample_focused\b/g, "sampleFocused")
+    .replaceAll(/\bsample_enlarged\b/g, "sampleEnlarged")
+    .replaceAll(/\btexels_per_pixel\b/g, "texelsPerPixel")
+    .replaceAll(/\bimage\.sample\(smp, /g, "texture(u_image, ")
+    .replaceAll("texture2d<N> image, sampler smp, ", "")
+    .replaceAll("constant Uniforms &u, ", "")
+    // MSL is handed the pixel's place in the frame; the GLSL has it as a
+    // varying. Same value, different way of reaching it — which is the whole
+    // of what this has to see through.
+    .replaceAll("sampleFocused(N uv, N screen)", "sampleFocused(N uv)")
+    .replaceAll(/\bv_screen\b/g, "screen")
+    .replaceAll("texelsPerPixel(u, ", "texelsPerPixel(")
+    .replaceAll("sampleEnlarged(image, smp, u, ", "sampleEnlarged(");
+
 const lens = (source: string) =>
   arithmetic(source)
     .replaceAll(/\blens_normal\b/g, "lensNormal")
     .replaceAll(/\blens_bend\b/g, "lensBend")
     .replaceAll(/\blens_tap\b/g, "lensTap")
+    .replaceAll(/\bfisheye_normal\b/g, "fisheyeNormal")
+    .replaceAll(/\bfisheye_reach\b/g, "fisheyeReach")
     .replaceAll("texture2d<N> backdrop, sampler smp, ", "")
     .replaceAll(/\bbehind\(backdrop, smp, u, /g, "behind(")
     .replaceAll(/\blens_reach\b/g, "lensReach");
@@ -371,6 +390,44 @@ describe("the loupe both rasterisers draw", () => {
     expect(lens(glsl!)).toBe(lens(msl!));
   });
 
+  it("projects a fisheye the same way on each side", () => {
+    // Where a fisheye comes from at all, and the one place the two lenses
+    // genuinely differ: everything else about the glass — the parallax, the
+    // smear, the three channels, the quad — is shared. Two slightly different
+    // tangents is a preview that bows by a shade more than the export's, which
+    // is only ever noticed by exporting and putting the two side by side.
+    const glsl = body(SHADER_SOURCE().fragment, "float fisheyeReach(");
+    const msl = body(METAL, "static float fisheye_reach(");
+
+    expect(glsl, "fisheyeReach in the GLSL").not.toBeNull();
+    expect(msl, "fisheye_reach in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
+  it("has the same front element on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 fisheyeNormal(");
+    const msl = body(METAL, "static float3 fisheye_normal(");
+
+    expect(glsl, "fisheyeNormal in the GLSL").not.toBeNull();
+    expect(msl, "fisheye_normal in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
+  it("softens its surroundings the same way on each side", () => {
+    // The depth of field a fisheye writes onto the picture around it, and the
+    // ramp inside it that `FISHEYE_SAFE` in `shared/layout.ts` is worked
+    // backwards from — a sharp radius chosen so full blur lands exactly on the
+    // rim. Two different ramps is that arithmetic being right in one rasteriser
+    // and wrong in the other, which shows as a preview whose surroundings go
+    // soft at a different distance from the glass than the export's.
+    const glsl = body(SHADER_SOURCE().fragment, "vec4 sampleFocused(");
+    const msl = body(METAL, "static float4 sample_focused(");
+
+    expect(glsl, "sampleFocused in the GLSL").not.toBeNull();
+    expect(msl, "sample_focused in the MSL").not.toBeNull();
+    expect(focusing(glsl!)).toBe(focusing(msl!));
+  });
+
   it("refracts the same way on each side", () => {
     // Where the magnification actually comes from. A difference here is a lens
     // that joins the picture at the rim in one and leaves a seam in the other.
@@ -403,6 +460,14 @@ describe("the loupe both rasterisers draw", () => {
       "LOUPE_STRETCH = 0.42",
       "LOUPE_SMEAR_TAPS = 5",
       "LOUPE_SPREAD = 0.2",
+      // And the fisheye's, which decide the bow, the fringe and the falloff.
+      "FISHEYE_SPLIT = 0.2",
+      "FISHEYE_SCRIM = 0.8",
+      "FISHEYE_VIGNETTE = 0.55",
+      "FISHEYE_VIGNETTE_FROM = 0.45",
+      "FISHEYE_HALO_AT = 0.93",
+      "FISHEYE_HALO_WIDTH = 0.032",
+      "FISHEYE_HALO_TINT = 0.85",
     ]) {
       expect(lens(SHADER_SOURCE().fragment), `${declaration} in the GLSL`).toContain(declaration);
       expect(lens(METAL), `${declaration} in the MSL`).toContain(declaration);
@@ -473,6 +538,29 @@ describe("the camera's glass rim", () => {
     expect(glsl, "rimNormal in the GLSL").not.toBeNull();
     expect(msl, "rim_normal in the MSL").not.toBeNull();
     expect(rim(glsl!)).toBe(rim(msl!));
+  });
+
+  it("projects a fisheye the same way on each side", () => {
+    // Where a fisheye comes from at all, and the one place the two lenses
+    // genuinely differ: everything else about the glass — the parallax, the
+    // smear, the three channels, the quad — is shared. Two slightly different
+    // tangents is a preview that bows by a shade more than the export's, which
+    // is only ever noticed by exporting and putting the two side by side.
+    const glsl = body(SHADER_SOURCE().fragment, "float fisheyeReach(");
+    const msl = body(METAL, "static float fisheye_reach(");
+
+    expect(glsl, "fisheyeReach in the GLSL").not.toBeNull();
+    expect(msl, "fisheye_reach in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
+  });
+
+  it("has the same front element on each side", () => {
+    const glsl = body(SHADER_SOURCE().fragment, "vec3 fisheyeNormal(");
+    const msl = body(METAL, "static float3 fisheye_normal(");
+
+    expect(glsl, "fisheyeNormal in the GLSL").not.toBeNull();
+    expect(msl, "fisheye_normal in the MSL").not.toBeNull();
+    expect(lens(glsl!)).toBe(lens(msl!));
   });
 
   it("refracts the same way on each side", () => {

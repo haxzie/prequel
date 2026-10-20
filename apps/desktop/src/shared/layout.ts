@@ -332,6 +332,22 @@ export interface LoupeKey {
   /** The middle of the lens, in output pixels. */
   x: number;
   y: number;
+  /**
+   * The point the glass is looking at, in output pixels.
+   *
+   * The same as `x`, `y` for a loupe, which magnifies what it is lying on. A
+   * fisheye is the pair pulled apart: the glass is nailed to the middle of the
+   * picture and this is the pointer, so what is sampled is a box around *this*
+   * and it lands under the middle of the lens.
+   *
+   * Carried rather than derived because it is the one thing a rasteriser cannot
+   * work out: both of them draw the lens's contents by rendering the plan again
+   * over a small box, and the box is around this point. Two sides disagreeing
+   * about where that box is would be a preview and an export showing different
+   * parts of the screen through the same glass.
+   */
+  lookX: number;
+  lookY: number;
   /** The glass's radius in output pixels, already eased. */
   radius: number;
   /** How far in the lens is looking. 1 shows the picture at its own size. */
@@ -353,6 +369,57 @@ export interface LoupeKey {
   reflection: number;
   /** How much light it throws onto the frame beside it, 0 to 1. */
   light: number;
+  /**
+   * How hard the frame outside the glass is darkened, 0 to 1.
+   *
+   * Zero for a loupe, which only ever lays the whisper of a scrim around itself
+   * — the frame beside it has to stay readable, because that is the one reason
+   * to reach for a lens instead of a camera move. A fisheye is the opposite
+   * errand: it is the thing being looked through, and what is beside it is
+   * being looked past.
+   */
+  shade: number;
+  /**
+   * How far that darkening reaches, in radii — and with it, how big the quad
+   * the lens is drawn in has to be.
+   *
+   * `LOUPE_SCRIM_REACH` for a magnifier, whose scrim melts away within a couple
+   * of radii because what is beside it is still being read. A fisheye's does
+   * not melt: it holds to the corners of the frame, so this is however many
+   * radii away the furthest corner is. Drawn in a quad any smaller and the
+   * darkening stops on a straight line, which reads as a box around the lens.
+   */
+  scrim: number;
+  /**
+   * A fisheye's half-angle, in radians. Zero is the magnifier's surface.
+   *
+   * The whole of what makes the two lenses two lenses. A magnifier shows one
+   * patch evenly enlarged and bends only its rim; a fisheye maps the angle a
+   * ray comes in at to the distance from the middle of the circle, so every
+   * straight line in the picture bows and the compression grows all the way
+   * out. See `fisheyeReach` in `webgl.ts`, where the arithmetic lives.
+   */
+  fov: number;
+  /**
+   * How far around `lookX`, `lookY` the lens's own render has to reach, in
+   * radii.
+   *
+   * `LOUPE_REACH` for a magnifier, and more for a fisheye — whose rim samples
+   * far further out than the glass is wide, because that is what squeezing a
+   * room into the edge of a circle means. Worked out here like every other
+   * distance in a plan, so the box the rasterisers draw and the box their
+   * shaders sample cannot be two different boxes.
+   */
+  reach: number;
+  /**
+   * How bright the ring of light just inside the rim is, 0 to 1.
+   *
+   * What a lens in a mount actually shows: the last of the curve catches the
+   * light all the way round and draws a bright hairline where the glass meets
+   * its housing. Zero for a loupe — a hand magnifier has no housing to catch
+   * anything.
+   */
+  halo: number;
   /**
    * How far the picture inside the glass smears, as a vector in output pixels.
    *
@@ -1220,8 +1287,13 @@ export function buildRenderPlan(
   // where every zoom in the list contributes a rectangle, nor `zoomPresence`,
   // where it would shrink the camera bubble out of the way of a picture that
   // never came forward.
-  const shots = (zooms ?? []).filter((zoom) => zoom.method !== "loupe");
-  const lenses = (zooms ?? []).filter((zoom) => zoom.method === "loupe");
+  // Against `camera` rather than through `isLens` in `project.ts`: that module
+  // imports `placement` from this one, and a *value* imported back the other
+  // way is a cycle between the two at runtime. Types cross freely; functions do
+  // not. The two spellings are the same question and `sanitiseZoomLook` is what
+  // keeps the field to the three names.
+  const shots = (zooms ?? []).filter((zoom) => zoom.method === "camera");
+  const lenses = (zooms ?? []).filter((zoom) => zoom.method !== "camera");
   /** Filled in once the picture is placed; empty when there is no screen. */
   let glass: LoupeKey[] = [];
 
@@ -1414,6 +1486,11 @@ export function buildRenderPlan(
             const held = {
               x: focus.x,
               y: focus.y,
+              // A still's glass magnifies what it is lying on, which is what a
+              // loupe is. Nothing here is a fisheye — there is no pointer to
+              // bring under it.
+              lookX: focus.x,
+              lookY: focus.y,
               radius: focus.radius,
               magnify: Math.max(1, layout.focusMagnify),
               presence: 1,
@@ -1421,6 +1498,13 @@ export function buildRenderPlan(
               aberration: LOUPE_ABERRATION,
               reflection: LOUPE_REFLECTION,
               light: LOUPE_LIGHT,
+              // A loupe, so the frame beside it is left alone and the glass has
+              // no mount to catch the light on.
+              shade: 0,
+              scrim: LOUPE_SCRIM_REACH,
+              halo: 0,
+              fov: 0,
+              reach: LOUPE_REACH,
               // Nothing is moving, so there is nothing to smear.
               smearX: 0,
               smearY: 0,
@@ -1449,6 +1533,21 @@ export function buildRenderPlan(
             cursor,
           );
 
+    // The frame a fisheye is looking past, softened. Only the picture's own
+    // track: the border, the shadow and the pointer are left exactly as they
+    // were, because neither rasteriser reads a depth of field for any of them.
+    //
+    // Merged onto the picture rather than drawn as something of its own,
+    // because this is the depth of field a camera zoom already has — the same
+    // field, the same shader, the same two numbers — aimed at the glass instead
+    // of at the shot. A second way to soften a picture would be a second answer
+    // to how soft, and the two would drift.
+    const softened =
+      glass.some((key) => key.shade > 0) && sources.screen
+        ? withGlassFocus(motion, glass, dstRect, shape.radius, unit)
+        : motion;
+    const softly = softened.length > 0 ? { motion: softened } : {};
+
     if (background.shadowOpacity > 0) {
       items.push({
         kind: "shadow",
@@ -1473,7 +1572,7 @@ export function buildRenderPlan(
       dstRect,
       shape,
       mirror: false,
-      ...moving,
+      ...softly,
     });
 
     // Marks before the pointer, so the pointer sits on top of its own mark.
@@ -1759,6 +1858,20 @@ export function buildRenderPlan(
     );
 
     const moving = motion.length > 0 ? { motion } : {};
+    // And the bubble goes soft under a fisheye with everything else outside the
+    // glass. Its own call rather than the picture's track reused: the two items
+    // are at different places on different grids, and `withGlassFocus` reads
+    // each one's own rectangles back through `rectAt`. The field it writes is
+    // the same field, aimed at the same point.
+    //
+    // The border and the shadow are left alone, because neither rasteriser
+    // reads a depth of field for a stroke or a shadow — a ring and a shadow are
+    // the bubble's silhouette and sample nothing.
+    const softly = glass.some((key) => key.shade > 0)
+      ? ((track) => (track.length > 0 ? { motion: track } : {}))(
+          withGlassFocus(motion, glass, shown, shape.radius, unit),
+        )
+      : moving;
 
     if (!spilling && background.shadowOpacity > 0) {
       items.push({
@@ -1785,7 +1898,7 @@ export function buildRenderPlan(
       dstRect: shown,
       shape,
       mirror: layout.cameraMirror,
-      ...moving,
+      ...softly,
       ...(cutout ? { matte: true } : {}),
       ...(grade ? { grade } : {}),
       ...(rim > 0 ? { rim, fringe } : {}),
@@ -2658,6 +2771,117 @@ const LOUPE_SMEAR_CAP = 0.22;
 const LOUPE_ARRIVE = 0.72;
 
 /**
+ * How hard a fisheye darkens the frame around it, 0 to 1.
+ *
+ * All the way up, which is what the control is for: a loupe is a glass laid on
+ * a screen somebody is still reading, and a fisheye is the thing being looked
+ * through. How dark that actually comes out is `FISHEYE_SCRIM` in the two
+ * shaders, which stops short of black so the frame still says where on the
+ * screen this is happening.
+ */
+const FISHEYE_SHADE = 1;
+
+/**
+ * How bright the ring inside a fisheye's rim is, 0 to 1. See `LoupeKey.halo`.
+ *
+ * A tenth, which is a hairline you notice without looking at it. A mount
+ * catching the light is a thing the eye accepts and does not examine; drawn any
+ * stronger it stops being the edge of a lens and becomes a ring somebody has
+ * put on the picture — which is the first thing anybody looks at and the one
+ * thing it must not be.
+ */
+const FISHEYE_HALO = 0.1;
+
+/**
+ * The half-angle a fisheye sees out to, in radians, at each end of the
+ * Curvature control.
+ *
+ * The control the magnifier spends on how much of its radius is rolled over,
+ * because that is the only thing a magnifier's surface has to say. A fisheye
+ * has no rolled edge — it bows everywhere — so the same control says how wide
+ * it is, which is the one number anybody has an opinion about when they look at
+ * a fisheye photograph.
+ *
+ * The bottom is about thirty degrees, which bows just enough to read as a lens
+ * rather than a circle. The top is eighty, where a straight line across the
+ * picture arrives at the rim as most of a semicircle. Past that `tan` runs away
+ * and the rim would be sampling the far side of the frame.
+ */
+export const FISHEYE_FOV_MIN = 0.52;
+export const FISHEYE_FOV_MAX = 1.4;
+
+/**
+ * How far around the look point a fisheye's render has to reach, in radii.
+ *
+ * `tan(fov) / fov` is how much further out than a flat lens the rim samples —
+ * see `fisheyeReach` in `webgl.ts` — and the magnification divides it, because
+ * a lens held further in reaches less far for the same angle. A little over,
+ * for the streak: a travelling lens takes its taps along a line, and a tap off
+ * the end of the box clamps to its edge and draws as a smear of the wrong
+ * picture round the rim.
+ *
+ * Never below the magnifier's own: the scrim, the thrown light and the rim's
+ * reflection all sample outside the glass, and they are the same distances
+ * whichever lens this is.
+ */
+/** How far the furthest corner of the frame is from a point, in output pixels. */
+function farthestCorner(from: Point, frame: Size): number {
+  return Math.max(
+    Math.hypot(from.x, from.y),
+    Math.hypot(frame.width - from.x, from.y),
+    Math.hypot(from.x, frame.height - from.y),
+    Math.hypot(frame.width - from.x, frame.height - from.y),
+  );
+}
+
+function glassReach(fov: number, magnify: number): number {
+  if (fov <= 0) return LOUPE_REACH;
+  const rim = Math.tan(fov) / fov / Math.max(magnify, 1);
+  return Math.max(LOUPE_REACH, rim * (1 + LOUPE_SMEAR_CAP));
+}
+
+/**
+ * How far a ramp of depth of field runs past the radius that stays sharp, as a
+ * multiple of it.
+ *
+ * `sample_focused`'s, in both shaders, where the reason lives — and read here
+ * because `FISHEYE_SAFE` below is derived from it rather than guessed at. The
+ * two bodies are pinned to each other by `the loupe both rasterisers draw` in
+ * `webgl.test.ts`.
+ */
+const FOCUS_RAMP = 1.5;
+
+/**
+ * How far out from a fisheye's middle stays sharp, in radii.
+ *
+ * Worked backwards from where the softening has to be *finished*, which is the
+ * rim: the ramp runs `FOCUS_RAMP` times the sharp radius past it, so a sharp
+ * radius of 1/(1 + 1.5) of the glass puts full blur exactly on the edge of the
+ * circle. Every pixel of the frame anybody can actually see — which is all of
+ * it outside the glass — is then softened as hard as the setting allows,
+ * rather than sitting a third of the way up a ramp that only finishes three
+ * radii out, well off the frame.
+ *
+ * What is inside that sharp radius is under the glass and never drawn.
+ */
+const FISHEYE_SAFE = 1 / (1 + FOCUS_RAMP);
+
+/**
+ * How soft the frame around a fisheye gets, as a fraction of the shorter edge.
+ *
+ * Three times the figure a screenshot's focus area uses. A fisheye is a strong
+ * effect and the rest of the frame is dark under it; at the gentler figure the
+ * surroundings read as slightly mis-focused rather than as out of the picture.
+ * Near the ceiling of what `sample_focused` can spread its taps across without
+ * the gaps between them reading as grain.
+ *
+ * `FOCUS_BLUR` is further down the file and a `const` cannot be read before it,
+ * so the multiple is written out here and the two are pinned together by `a
+ * fisheye's surroundings` in `layout.test.ts`.
+ */
+const FISHEYE_BLUR = 0.072;
+
+/**
  * Turns the lens slices into one sampled track of where the glass is.
  *
  * The same shape as `zoomKeys`, deliberately: one track for every lens in the
@@ -2729,18 +2953,7 @@ function loupeKeys(
     : null;
 
   const glasses = loupes.map((loupe, index) =>
-    glassTrack(
-      loupe,
-      times,
-      reachOf[index]!,
-      base,
-      srcRect,
-      source,
-      motion,
-      radius,
-      Math.min(frame.width, frame.height),
-      drawn,
-    ),
+    glassTrack(loupe, times, reachOf[index]!, base, srcRect, source, motion, radius, frame, drawn),
   );
 
   const keys: LoupeKey[] = [];
@@ -2773,6 +2986,57 @@ function loupeKeys(
 }
 
 /**
+ * The picture's track with a fisheye's depth of field written onto it.
+ *
+ * A fisheye is the thing being looked through, so what is beside it is out of
+ * the picture: soft past the rim and dark, which is what tells the eye the lens
+ * is the subject rather than an ornament laid on one. The darkening is the
+ * glass's own — see `LoupeKey.shade` — and this is the softness.
+ *
+ * On the union of both grids, every key read back through `rectAt`. Not the
+ * glass's times alone: a project with a camera zoom elsewhere already has a
+ * track, and sampling only where the lens is would throw the zoom's own
+ * rectangles away — the picture would snap to rest for the length of the lens.
+ * `rectAt` answers with the whole key, quad and window included, so a merged
+ * key is the key that was already going to be drawn with one field added.
+ *
+ * Nothing is written where the glass is away: `loupeAt` answers with nothing at
+ * or beyond the ends of its track, and a key with no focus softens nothing.
+ */
+function withGlassFocus(
+  motion: readonly RectKey[],
+  glass: readonly LoupeKey[],
+  base: Rect,
+  radius: number,
+  /** The frame's shorter edge, which the softness is a fraction of. */
+  unit: number,
+): RectKey[] {
+  const times = [...new Set([...motion.map((key) => key.at), ...glass.map((key) => key.at)])].sort(
+    (a, b) => a - b,
+  );
+
+  return times.map((at) => {
+    const key = { ...rectAt(motion, at, base, radius), at };
+    const lens = loupeAt(glass, at);
+    if (!lens || lens.shade <= 0) return key;
+
+    return {
+      ...key,
+      focus: {
+        x: lens.x,
+        y: lens.y,
+        // Short, so the ramp past it finishes on the rim rather than three
+        // radii out. See `FISHEYE_SAFE`.
+        safe: lens.radius * FISHEYE_SAFE,
+        // Through the glass's own presence, so the frame comes back into focus
+        // as the lens lifts rather than snapping sharp on the frame it leaves.
+        strength: lens.presence * FISHEYE_BLUR * unit,
+      },
+    };
+  });
+}
+
+/**
  * How far the picture inside each glass smears, as a vector in output pixels.
  *
  * A near copy of `withSmear`, which does this for the pointer — the same
@@ -2797,8 +3061,12 @@ function withGlassSmear(keys: LoupeKey[], strength: number): LoupeKey[] {
     if (span <= 0) return key;
 
     const perShutter = (strength * SMEAR_SHUTTER_NS) / span;
-    const x = (after.x - before.x) * perShutter;
-    const y = (after.y - before.y) * perShutter;
+    // Off what the glass is *looking at*, not off where the glass is. The two
+    // are the same point for a loupe, and opposites for a fisheye: that lens
+    // never moves an inch while its contents fly across the screen, so a streak
+    // measured from `x`, `y` would be exactly zero on every frame it is needed.
+    const x = (after.lookX - before.lookX) * perShutter;
+    const y = (after.lookY - before.lookY) * perShutter;
 
     // Capped against the glass itself, so the longest streak is a fixed
     // fraction of the lens however big the lens is. Clamped by length rather
@@ -2816,12 +3084,20 @@ function withGlassSmear(keys: LoupeKey[], strength: number): LoupeKey[] {
 interface Glass {
   x: number;
   y: number;
+  /** What it is looking at. Equal to `x`, `y` for a loupe. See `LoupeKey`. */
+  lookX: number;
+  lookY: number;
   radius: number;
   magnify: number;
   curvature: number;
   aberration: number;
   reflection: number;
   light: number;
+  shade: number;
+  scrim: number;
+  halo: number;
+  fov: number;
+  reach: number;
   /** Always zero here. `withGlassSmear` fills it in once the track exists. */
   smearX: number;
   smearY: number;
@@ -2850,14 +3126,23 @@ function glassTrack(
   source: Size,
   motion: readonly RectKey[],
   radius: number,
-  /** The frame's shorter edge, which is what the lens is sized against. */
-  shorter: number,
+  /** The output frame, which the lens is sized against and whose corners its
+      darkening has to reach. */
+  frame: Size,
   /** The pointer on the path it is *drawn* on, already smoothed. */
   cursor: CursorTrack | null,
 ): GlassTrack {
   const at = times.slice(covers.first, covers.last + 1);
   const level = Math.max(1, loupe.level);
+  const shorter = Math.min(frame.width, frame.height);
   const glass = (loupe.loupeSize * shorter) / 2;
+  // How wide the fisheye sees, off the same control a magnifier spends on its
+  // rolled edge — the two surfaces have one number each to describe them, and
+  // it is not the same number. See `FISHEYE_FOV_MIN`.
+  const angle =
+    loupe.method === "fisheye"
+      ? lerp(FISHEYE_FOV_MIN, FISHEYE_FOV_MAX, clamp(loupe.loupeCurvature, 0, 1))
+      : 0;
 
   // How much of the capture the glass covers at full magnification, as fractions
   // of it — what `typingCentre` needs to know to frame the end of a field that
@@ -2910,29 +3195,95 @@ function glassTrack(
     };
   });
 
+  /**
+   * Where the glass itself sits, moment by moment.
+   *
+   * A loupe sits on the thing it is aimed at, so this is the aim. A fisheye is
+   * pinned to the middle of the picture and lets the picture come to it — which
+   * is the whole of the difference between the two, and the only field either
+   * one does not share.
+   *
+   * The picture's middle rather than the frame's: the lens lies on the
+   * recording, and on a padded or inset layout the frame's middle is a point on
+   * the background. Through `rectAt` for the reason the aim is — a fisheye
+   * alongside a camera zoom's move has to ride that move rather than hang over
+   * where the picture used to be.
+   */
+  const seats: Point[] =
+    loupe.method === "fisheye"
+      ? at.map((when) => {
+          const picture = rectAt(motion, when, base, radius);
+          return {
+            x: picture.x + picture.width / 2,
+            y: picture.y + picture.height / 2,
+          };
+        })
+      : aims;
+
   const away: Glass[] = [];
   const down: Glass[] = [];
 
   for (let step = 0; step < at.length; step += 1) {
-    const place = aims[step]!;
+    const look = aims[step]!;
+    // Where the glass itself sits. A loupe sits on what it is looking at; a
+    // fisheye is pinned to the middle of the picture and lets the picture come
+    // to it.
+    //
+    // The picture's middle rather than the frame's: the lens lies on the
+    // recording, and on a padded or offset layout the frame's middle is a point
+    // on the background. `rectAt` for the reason the aim uses it — a fisheye
+    // beside a camera zoom's move must ride that move rather than hang over
+    // where the picture used to be.
+    const place = seats[step]!;
 
     const optics = {
       curvature: loupe.loupeCurvature,
       aberration: loupe.loupeAberration,
       reflection: loupe.loupeReflection,
       light: loupe.loupeLight,
+      // Both of them the fisheye's and neither a control: they are what makes
+      // the second lens read as a different object from the first rather than
+      // as the same glass parked in the middle, which is what it looked like
+      // with the loupe's dressing on it.
+      shade: loupe.method === "fisheye" ? FISHEYE_SHADE : 0,
+      halo: loupe.method === "fisheye" ? FISHEYE_HALO : 0,
+      // The projection, and the box it needs behind it. Zero is the
+      // magnifier's own surface, which is what a loupe keeps.
+      fov: angle,
+      reach: glassReach(angle, level),
+      // Filled in per sample: the furthest corner of the frame is a different
+      // distance away depending on where the glass is standing.
+      scrim: LOUPE_SCRIM_REACH,
       // Filled in once the whole track exists — a streak is the difference
       // between neighbouring samples, and there are none yet.
       smearX: 0,
       smearY: 0,
     };
 
-    down.push({ ...place, radius: glass, magnify: level, ...optics });
+    const where = { x: place.x, y: place.y, lookX: look.x, lookY: look.y };
+    // How much room the darkening needs, which for a fisheye is the whole
+    // frame: the quad is what it is drawn in, and one any smaller stops the
+    // shade on a straight line somewhere across the picture.
+    const scrim =
+      optics.shade > 0
+        ? Math.max(LOUPE_SCRIM_REACH, farthestCorner(place, frame) / glass)
+        : LOUPE_SCRIM_REACH;
+
+    down.push({ ...where, radius: glass, magnify: level, ...optics, scrim });
     // Smaller, and showing the picture at its own size: the glass arrives with
     // its magnification rather than being set down already full, which is what
     // makes the move read as a lens being brought in and not as a circle being
     // switched on.
-    away.push({ ...place, radius: glass * LOUPE_ARRIVE, magnify: 1, ...optics });
+    away.push({
+      ...where,
+      radius: glass * LOUPE_ARRIVE,
+      magnify: 1,
+      ...optics,
+      // Against the full-size glass, not this one: the quad has to hold the
+      // darkening at every moment of the arrival, and the smaller glass is a
+      // smaller multiple of a larger number.
+      scrim: (scrim * glass) / (glass * LOUPE_ARRIVE),
+    });
   }
 
   return { first: covers.first, curve: loupe, away, down };
@@ -2961,12 +3312,19 @@ function glassAt(
       {
         x: lerp(a.x, b.x, t),
         y: lerp(a.y, b.y, t),
+        lookX: lerp(a.lookX, b.lookX, t),
+        lookY: lerp(a.lookY, b.lookY, t),
         radius: lerp(a.radius, b.radius, t),
         magnify: lerp(a.magnify, b.magnify, t),
         curvature: lerp(a.curvature, b.curvature, t),
         aberration: lerp(a.aberration, b.aberration, t),
         reflection: lerp(a.reflection, b.reflection, t),
         light: lerp(a.light, b.light, t),
+        shade: lerp(a.shade, b.shade, t),
+        scrim: lerp(a.scrim, b.scrim, t),
+        halo: lerp(a.halo, b.halo, t),
+        fov: lerp(a.fov, b.fov, t),
+        reach: lerp(a.reach, b.reach, t),
         smearX: 0,
         smearY: 0,
       },
@@ -2989,12 +3347,30 @@ function glassAt(
       // screen — a transition rather than a magnifier.
       x: full.x,
       y: full.y,
+      lookX: full.lookX,
+      lookY: full.lookY,
       radius: lerp(rest.radius, full.radius, t),
       magnify: lerp(rest.magnify, full.magnify, t),
       curvature: full.curvature,
       aberration: full.aberration,
       reflection: full.reflection,
       light: full.light,
+      // Eased with the glass, unlike the optics above: the frame goes dark
+      // *as* the lens comes down. Set at full strength from the first frame it
+      // would be the room's lights going out a beat before anything appeared.
+      shade: lerp(0, full.shade, t),
+      halo: lerp(0, full.halo, t),
+      // The quad does not ease, for the reason the projection does not: it is
+      // how much room the draw needs, and a quad that grew with the darkening
+      // would clip what it was drawing on the way in.
+      scrim: full.scrim,
+      // Neither eases. The projection is what the lens *is*, and a fisheye
+      // that opened as a magnifier and bowed into shape would be two lenses
+      // dissolving into one another. The box follows the projection for the
+      // same reason — it has to hold what the rim asks for from the first
+      // frame the rim is drawn.
+      fov: full.fov,
+      reach: full.reach,
       smearX: 0,
       smearY: 0,
     },
@@ -3140,7 +3516,7 @@ function easeNs(zoom: ZoomSlice): number {
   // Rust side, and serde refuses a float for one with an error naming a number
   // and nothing else. A speed is seconds from a slider, so this is the first
   // place a fraction can get in.
-  const seconds = Math.max(0, zoom.speed) * (zoom.method === "loupe" ? LOUPE_HASTE : 1);
+  const seconds = Math.max(0, zoom.speed) * (zoom.method === "camera" ? 1 : LOUPE_HASTE);
   return Math.round(seconds * 1_000_000_000);
 }
 
@@ -6188,6 +6564,8 @@ export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null 
     at,
     x: lerp(a.x, b.x, t),
     y: lerp(a.y, b.y, t),
+    lookX: lerp(a.lookX, b.lookX, t),
+    lookY: lerp(a.lookY, b.lookY, t),
     radius: lerp(a.radius, b.radius, t),
     magnify: lerp(a.magnify, b.magnify, t),
     presence,
@@ -6195,6 +6573,11 @@ export function loupeAt(keys: readonly LoupeKey[], at: number): LoupeKey | null 
     aberration: lerp(a.aberration, b.aberration, t),
     reflection: lerp(a.reflection, b.reflection, t),
     light: lerp(a.light, b.light, t),
+    shade: lerp(a.shade, b.shade, t),
+    scrim: lerp(a.scrim, b.scrim, t),
+    halo: lerp(a.halo, b.halo, t),
+    fov: lerp(a.fov, b.fov, t),
+    reach: lerp(a.reach, b.reach, t),
     smearX: lerp(a.smearX, b.smearX, t),
     smearY: lerp(a.smearY, b.smearY, t),
   };

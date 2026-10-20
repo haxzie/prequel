@@ -22,6 +22,7 @@ import {
   CameraIcon,
   CursorIcon,
   FillIcon,
+  FisheyeIcon,
   GlassIcon,
   ScreenIcon,
   TextIcon,
@@ -2701,6 +2702,8 @@ function Zoom({
         <ZoomIcon />
         {method === "loupe" ? (
           <GlassIcon />
+        ) : method === "fisheye" ? (
+          <FisheyeIcon />
         ) : target === "cursor" ? (
           <CursorIcon />
         ) : target === "typing" ? (

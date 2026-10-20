@@ -550,6 +550,21 @@ pub struct LoupeKey {
     /// The middle of the lens, in output pixels.
     pub x: f64,
     pub y: f64,
+    /// The point the glass is looking at, in output pixels.
+    ///
+    /// The same as `x`, `y` for a loupe, which magnifies what it is lying on. A
+    /// fisheye is the pair pulled apart: the glass is nailed to the middle of
+    /// the picture and this is the pointer, so the box `render_glass` draws is
+    /// around *this* and it lands under the middle of the lens.
+    ///
+    /// Optional rather than defaulted to zero, because zero is a real point —
+    /// the top-left corner of the frame. A plan written before the fisheye
+    /// existed carries neither, and `look` reads those back as the lens's own
+    /// centre, which is what every one of them was drawn as.
+    #[serde(default, rename = "lookX")]
+    pub look_x: Option<f64>,
+    #[serde(default, rename = "lookY")]
+    pub look_y: Option<f64>,
     /// The glass's radius in output pixels, already eased.
     pub radius: f64,
     /// How far in the lens is looking. 1 shows the picture at its own size.
@@ -568,6 +583,46 @@ pub struct LoupeKey {
     /// throws none, which is what those plans were drawn as.
     #[serde(default)]
     pub light: f64,
+    /// How hard the frame outside the glass is darkened, 0 to 1, and how bright
+    /// the ring just inside its rim is.
+    ///
+    /// Zero for a loupe, which leaves what is beside it readable and has no
+    /// mount to catch the light on — so a plan written before the fisheye
+    /// existed defaults to both and draws exactly what it drew.
+    #[serde(default)]
+    pub shade: f64,
+    /// How far that darkening reaches, in radii, and with it how big the quad
+    /// the lens is drawn in has to be.
+    ///
+    /// `LOUPE_SCRIM_REACH` for a magnifier, whose scrim melts away within a
+    /// couple of radii; however many radii away the furthest corner of the
+    /// frame is for a fisheye, whose darkening holds flat all the way to it.
+    ///
+    /// Optional, because zero is not a usable fallback — it would draw the lens
+    /// in a quad the size of the glass and clip its own scrim. A plan from
+    /// before the fisheye reads back at `LOUPE_SCRIM_REACH`, which is the quad
+    /// every one of them was drawn in.
+    #[serde(default)]
+    pub scrim: Option<f64>,
+    #[serde(default)]
+    pub halo: f64,
+    /// A fisheye's half-angle, in radians. Zero is the magnifier's own surface,
+    /// which is every lens written before the fisheye existed.
+    #[serde(default)]
+    pub fov: f64,
+    /// How far around the look point the lens's own render has to reach, in
+    /// radii.
+    ///
+    /// `LOUPE_REACH` for a magnifier, and more for a fisheye — whose rim samples
+    /// far further out than the glass is wide. Worked out in the plan like every
+    /// other distance, so the box the compositor draws and the box the shader
+    /// reads cannot be two different boxes.
+    ///
+    /// Optional, because zero is not a usable fallback: a plan from before the
+    /// fisheye carries none and reads back at `LOUPE_REACH`, which is the box
+    /// every one of them was drawn with.
+    #[serde(default)]
+    pub reach: Option<f64>,
     /// How far the picture inside the glass smears, as a vector in output
     /// pixels. The finished streak, not a speed — the same contract
     /// `CursorPoint` holds. Defaulted, so a plan written before the lens could
@@ -577,6 +632,45 @@ pub struct LoupeKey {
     #[serde(default, rename = "smearY")]
     pub smear_y: f64,
 }
+
+impl LoupeKey {
+    /// What the glass is looking at, falling back to where it sits.
+    ///
+    /// Every caller wants the point, never the absence of one — a plan from
+    /// before the fisheye is a loupe, and a loupe looks at what it lies on.
+    pub fn look(&self) -> (f64, f64) {
+        (self.look_x.unwrap_or(self.x), self.look_y.unwrap_or(self.y))
+    }
+
+    /// How far around that point the lens's own render reaches, in radii.
+    ///
+    /// Every caller wants the figure, never the absence of one — a plan from
+    /// before the fisheye is a magnifier, and a magnifier's box is the one both
+    /// rasterisers were built around.
+    pub fn reach(&self) -> f64 {
+        self.reach.unwrap_or(LOUPE_REACH)
+    }
+
+    /// How far its darkening reaches, in radii, which is also the quad it needs.
+    pub fn scrim(&self) -> f64 {
+        self.scrim.unwrap_or(LOUPE_SCRIM_REACH)
+    }
+}
+
+/// How far around the glass a magnifier's own render reaches, in radii.
+///
+/// Mirrors `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts`, which is where
+/// the reason lives. Only the fallback for a plan that carries no reach of its
+/// own: every plan written since the fisheye states it per key.
+pub const LOUPE_REACH: f64 = 1.75;
+
+/// How far a magnifier's scrim reaches around it, in radii.
+///
+/// Mirrors `LOUPE_SCRIM_REACH` in `shaders.metal` and `shared/layout.ts`. Only
+/// the fallback for a plan that carries no scrim of its own: every plan written
+/// since the fisheye states it per key, because a fisheye's holds to the
+/// corners of the frame rather than melting away.
+pub const LOUPE_SCRIM_REACH: f64 = 2.5;
 
 /// Where the lens is at one instant, or `None` when there is no glass to draw.
 ///
@@ -611,6 +705,8 @@ pub fn loupe_at(keys: &[LoupeKey], at: i64) -> Option<LoupeKey> {
         at,
         x: lerp(a.x, b.x),
         y: lerp(a.y, b.y),
+        look_x: Some(lerp(a.look().0, b.look().0)),
+        look_y: Some(lerp(a.look().1, b.look().1)),
         radius: lerp(a.radius, b.radius),
         magnify: lerp(a.magnify, b.magnify),
         presence,
@@ -618,6 +714,11 @@ pub fn loupe_at(keys: &[LoupeKey], at: i64) -> Option<LoupeKey> {
         aberration: lerp(a.aberration, b.aberration),
         reflection: lerp(a.reflection, b.reflection),
         light: lerp(a.light, b.light),
+        shade: lerp(a.shade, b.shade),
+        scrim: Some(lerp(a.scrim(), b.scrim())),
+        halo: lerp(a.halo, b.halo),
+        fov: lerp(a.fov, b.fov),
+        reach: Some(lerp(a.reach(), b.reach())),
         smear_x: lerp(a.smear_x, b.smear_x),
         smear_y: lerp(a.smear_y, b.smear_y),
     })
@@ -1579,6 +1680,9 @@ mod tests {
             at,
             x: 0.0,
             y: 0.0,
+            // A loupe, which looks at what it lies on.
+            look_x: None,
+            look_y: None,
             radius: 100.0,
             magnify: 2.0,
             presence,
@@ -1586,6 +1690,11 @@ mod tests {
             aberration: 0.0,
             reflection: 0.0,
             light: 0.0,
+            shade: 0.0,
+            halo: 0.0,
+            fov: 0.0,
+            reach: None,
+            scrim: None,
             smear_x: 0.0,
             smear_y: 0.0,
         };

@@ -139,6 +139,26 @@ struct Uniforms {
     float click_phase;
     uint click_style;
     float click_seed;
+    // What the lens is looking at, in output pixels. The same point as
+    // `loupe.xy` for a loupe, which magnifies what it lies on; the pointer for a
+    // fisheye, whose glass stays in the middle of the picture while what it
+    // shows travels. A row of its own, padded out by hand in `compositor.rs`.
+    float2 look;
+    // How far around the look point the lens's own render reaches, in radii —
+    // `LoupeKey.reach`. Carried rather than fixed at `LOUPE_REACH`, because a
+    // fisheye's rim samples far further out than a magnifier's and the box has
+    // to be grown to hold it.
+    float reach;
+    // The fisheye's half-angle, in radians. Zero is the magnifier's own surface
+    // and is every draw but a fisheye — see `fisheye_reach`.
+    float fov;
+    // How hard the frame outside the glass is darkened in x, and how bright the
+    // ring just inside its rim is in y. Both zero for a loupe, which leaves what
+    // is beside it readable and has no mount to catch the light on.
+    float2 fisheye;
+    // Padding to the next 16-byte boundary. MSL rounds the block up and Rust
+    // does not; `compositor.rs` writes this out by hand for that reason.
+    float2 _fisheye_align;
 };
 
 
@@ -294,6 +314,52 @@ constant float LOUPE_REACH = 1.75;
 constant float LOUPE_SCRIM_REACH = 2.5;
 constant float LOUPE_SCRIM = 0.1;
 
+// How dark the frame goes at the rim of a fisheye, at full strength. Mirrored in
+// `webgl.ts`.
+//
+// A different errand from the scrim above, which is why it is a different
+// number rather than the same one turned up: a loupe is laid on a screen
+// somebody is still reading, and a fisheye is the thing being looked through.
+// Short of black, because what is outside it still says where on the screen
+// this is happening.
+constant float FISHEYE_SCRIM = 0.8;
+
+// How much a fisheye's dispersion widens its angle, per unit of refractive
+// index either side of the glass's own.
+//
+// The lens above splits colour by giving each channel its own index and letting
+// Snell do the rest; nothing in a fisheye's projection reads an index, so the
+// same control is spent on the angle instead. A wider angle bends harder, which
+// is what a shorter wavelength does — so the three channels land apart by most
+// where the projection is steepest, which is the rim. Same control, same place,
+// different arithmetic.
+constant float FISHEYE_SPLIT = 0.2;
+
+// How dark a fisheye goes towards its own rim, and where the falloff starts in
+// radii.
+//
+// Not the scrim, which is outside the glass: this is inside it, and it is what
+// a fisheye photograph actually looks like — the corners of the circle fall away
+// because the projection is throwing a whole hemisphere at them. Without it the
+// disc is evenly lit to its edge and reads as a crop rather than as a lens.
+constant float FISHEYE_VIGNETTE = 0.55;
+constant float FISHEYE_VIGNETTE_FROM = 0.45;
+
+// Where the ring of light inside the rim sits, in radii, and how wide it is.
+//
+// What a lens in a mount actually shows: the last of the curve catches the light
+// all the way round and draws a bright hairline where the glass meets its
+// housing. Just inside the rolled edge, where the surface has turned far enough
+// to catch anything and not so far that the ring is cut off by the rim.
+constant float FISHEYE_HALO_AT = 0.93;
+constant float FISHEYE_HALO_WIDTH = 0.032;
+
+// How much of the colour it takes off what the lens is standing on, rather than
+// drawing a ring of flat white. Nearly all of it: the trace of white left is
+// what keeps a ring over a deeply saturated picture from reading as a band of
+// colour laid on it.
+constant float FISHEYE_HALO_TINT = 0.85;
+
 // The refractive index of the glass. Crown glass, which is what a loupe is
 // actually ground from.
 constant float LOUPE_IOR = 1.52;
@@ -375,12 +441,14 @@ constant float LOUPE_EDGE_FULL = 0.55;
 // The composition at a point in the frame, as the lens sees it.
 //
 // `backdrop` holds the lens's own render: the plan drawn a second time over a
-// box `LOUPE_REACH` radii around the glass, at the magnification. So this is not
+// box `u.reach` radii around the glass, at the magnification. So this is not
 // a copy of the finished frame — the picture in it comes off the recording at
 // the recording's own resolution, which is the only way a magnified lens can be
 // sharp. Enlarging output pixels can only ever blur what is already there.
 //
-// The box is the glass's own, so nothing extra has to be carried to find it.
+// The box is taken around `u.look` rather than around the glass, which is the
+// same point for a loupe and the whole of what makes a fisheye one: the lens
+// does not travel, the box does.
 //
 // `src` is how each rasteriser states its buffer's orientation: this one renders
 // into a texture that is top-down, so it passes (0, 0, 1, 1); the preview draws
@@ -389,8 +457,8 @@ constant float LOUPE_EDGE_FULL = 0.55;
 // only one of the two would ever get right.
 static float3 behind(texture2d<float> backdrop, sampler smp, constant Uniforms &u,
                      float2 screen) {
-    float span = 2.0 * LOUPE_REACH * u.loupe.z;
-    float2 at = (screen - (u.loupe.xy - LOUPE_REACH * u.loupe.z)) / span;
+    float span = 2.0 * u.reach * u.loupe.z;
+    float2 at = (screen - (u.look - u.reach * u.loupe.z)) / span;
     return backdrop.sample(smp, u.src.xy + at * u.src.zw).rgb;
 }
 
@@ -468,6 +536,59 @@ static float lens_reach(float2 offset, float edge, float magnify, float ior) {
     // Back to a multiplier on the offset. Never past the middle of the glass,
     // which is where a fold would start turning itself inside out.
     return max(1.0 / magnify - walk / max(r, 1e-3), 0.02);
+}
+
+// The surface of a fisheye's front element at a point on it, in lens radii.
+//
+// A hemisphere, where `lens_normal` is an aspheric — and that is the difference
+// between the two objects. A magnifier is flat across its working area because
+// it is a magnifier; a fisheye's front element bulges from the middle, which is
+// how it sees nearly a hemisphere at all.
+//
+// Verbatim as `fisheyeNormal` in `webgl.ts`.
+static float3 fisheye_normal(float2 offset) {
+    float r = min(length(offset), 1.0);
+    // Straight out from the middle, like the lens's, and stopping just short of
+    // vertical at the rim for the reason `LOUPE_ROLL` does.
+    float roll = r * LOUPE_ROLL;
+    float2 away = r > 1e-4 ? offset / r : float2(0.0);
+    return float3(away * roll, sqrt(max(1.0 - roll * roll, 1e-6)));
+}
+
+// How far from the middle of a fisheye to sample, as a fraction of how far this
+// pixel is from it.
+//
+// A real fisheye projection rather than the magnifier's rolled edge, and the
+// whole of why the two look nothing alike. A magnifier shows one patch evenly
+// enlarged and bends only its rim; a fisheye maps the *angle* a ray comes in at
+// to the distance from the middle of the circle, so every straight line in the
+// picture bows and the compression grows all the way out.
+//
+// The arithmetic is that equivalence written down. A pixel at `r` of the way to
+// the rim is looking out at an angle of `r * fov`. The picture being sampled is
+// flat — it is a screen — and a flat picture puts the point at that angle at
+// `tan(r * fov)` of the way across. So the sample is taken at the tangent, and
+// divided by the angle so the middle still magnifies by exactly what was asked
+// for: `tan(x)/x` is 1 at nothing and climbs from there.
+//
+// It climbs steeply. At a 70-degree half-angle the rim samples well over twice
+// as far out as a flat lens would, which is what squeezes the corners of a room
+// into the edge of the circle. `LoupeKey.reach` is that figure, worked out in
+// the plan so the box behind the glass is grown to hold what the rim asks for.
+//
+// Verbatim as `fisheyeReach` in `webgl.ts`.
+static float fisheye_reach(float2 offset, float magnify, float ior, float fov) {
+    // Dispersion, stated the way the lens above states it — as an index either
+    // side of the glass's own — and spent on the angle, which is the only thing
+    // this projection has to bend. See `FISHEYE_SPLIT`.
+    float wide = fov * (1.0 + (ior - LOUPE_IOR) * FISHEYE_SPLIT);
+    // Clamped to the disc: the quad runs out to the scrim's reach, and `tan`
+    // past the rim's own angle runs away to nothing useful — at a half-angle
+    // near ninety degrees it changes sign, which draws the surroundings
+    // mirrored inside the glass.
+    float r = min(length(offset), 1.0);
+    float angle = r * wide;
+    return (r > 1e-4 ? tan(angle) / max(angle, 1e-4) : 1.0) / magnify;
 }
 
 // A hue angle in turns, as a colour to add.
@@ -1071,8 +1192,13 @@ static inline float4 premultiplied(float3 rgb, float alpha) {
 // Verbatim as `lensTap` in `webgl.ts`.
 static float3 lens_tap(texture2d<float> backdrop, sampler smp, constant Uniforms &u,
                        float2 centre, float2 offset, float edge, float magnify, float ior,
-                       float radius, float2 smear, float along) {
-  float reach = lens_reach(offset, edge, magnify, ior);
+                       float radius, float2 smear, float along, float fov) {
+  // The two lenses are two projections and nothing else: everything below —
+  // the parallax, the smear, the three channels, the quad — is the same for
+  // both. A half-angle of zero is the magnifier, which is every draw but a
+  // fisheye.
+  float reach = fov > 0.0 ? fisheye_reach(offset, magnify, ior, fov)
+                          : lens_reach(offset, edge, magnify, ior);
   // Where this pixel's content has travelled to, which is not where the glass
   // has. Move the lens by d and the point it samples moves by d * (1 - reach):
   // the middle of a 2x glass drifts with the picture under it and smears half
@@ -1453,12 +1579,20 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // so this is the hue and none of the brightness — the same thing the rim's
         // tint does, and for the same reason: how bright the pool is was decided
         // above, and a dark picture must not put the light out.
-        float3 through = behind(backdrop, smp, u, u.loupe.xy + LOUPE_CAUSTIC_DIR * radius * LOUPE_CAUSTIC_SAMPLE);
+        float3 through = behind(backdrop, smp, u, u.look + LOUPE_CAUSTIC_DIR * radius * LOUPE_CAUSTIC_SAMPLE);
         float3 thrown = mix(float3(1.0), through / max(max_of(through), 1e-3), LOUPE_CAUSTIC_TINT);
         // The scrim stays — it has no direction and reaches two radii out, so it is
         // what sets the glass off a picture of its own colour rather than a shadow —
         // but the pool lifts it where it lands. Light does not fall on shade.
-        float shade = LOUPE_SCRIM * u.loupe.w * (1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r));
+        // A magnifier's scrim melts away within a couple of radii, because what
+        // is beside it is still being read. A fisheye's does not melt: it holds
+        // flat to the corners of the frame, which the quad has been grown to
+        // meet — see `LoupeKey.scrim`. A falloff here instead left the corners
+        // of the picture a third as dark as the part beside the lens, which
+        // reads as a glow around the glass rather than as a dark room.
+        float fall = u.fov > 0.0 ? 1.0 : 1.0 - smoothstep(1.0, LOUPE_SCRIM_REACH, r);
+        float shade = mix(LOUPE_SCRIM, FISHEYE_SCRIM, clamp(u.fisheye.x, 0.0, 1.0))
+          * u.loupe.w * fall;
         shade *= 1.0 - min(glow / max(LOUPE_CAUSTIC * u.glow, 1e-3), 1.0);
 
         // One pixel of feathering at the rim, in pixels, like every other edge.
@@ -1473,7 +1607,10 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
 
         // Flat almost to the rim at one end, half of it turned over at the other.
         float edge = mix(LOUPE_EDGE_FLAT, LOUPE_EDGE_FULL, clamp(u.glass.y, 0.0, 1.0));
-        float3 normal = lens_normal(offset, edge);
+        // A hemisphere for a fisheye and an aspheric for a magnifier, for the
+        // reason their projections differ: they are two objects, not one
+        // object with two settings.
+        float3 normal = u.fov > 0.0 ? fisheye_normal(offset) : lens_normal(offset, edge);
         float magnify = max(u.glass.x, 1.0);
         float split = clamp(u.glass.z, 0.0, 1.0) * LOUPE_SPREAD;
 
@@ -1487,19 +1624,19 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         for (int tap = 0; tap < moments; tap++) {
             float along = moments > 1 ? float(tap) / float(moments - 1) - 0.5 : 0.0;
             if (split <= 0.0) {
-                lit += lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify, LOUPE_IOR,
-                                radius, smear, along);
+                lit += lens_tap(backdrop, smp, u, u.look, offset, edge, magnify, LOUPE_IOR,
+                                radius, smear, along, u.fov);
             } else {
                 // Three taps rather than one blurred one: a fringe is each
                 // channel landing somewhere slightly different, not all of them
                 // being soft.
                 lit += float3(
-                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify,
-                             LOUPE_IOR - split, radius, smear, along).r,
-                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify, LOUPE_IOR,
-                             radius, smear, along).g,
-                    lens_tap(backdrop, smp, u, u.loupe.xy, offset, edge, magnify,
-                             LOUPE_IOR + split, radius, smear, along).b);
+                    lens_tap(backdrop, smp, u, u.look, offset, edge, magnify,
+                             LOUPE_IOR - split, radius, smear, along, u.fov).r,
+                    lens_tap(backdrop, smp, u, u.look, offset, edge, magnify, LOUPE_IOR,
+                             radius, smear, along, u.fov).g,
+                    lens_tap(backdrop, smp, u, u.look, offset, edge, magnify,
+                             LOUPE_IOR + split, radius, smear, along, u.fov).b);
             }
         }
         lit /= float(moments);
@@ -1520,7 +1657,7 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // of the frame, and that drew as a black cap over the top of every lens.
         float2 outward = offset / max(r, 1e-3);
         float3 around =
-            behind(backdrop, smp, u, u.loupe.xy + outward * radius * (1.1 + 0.3 * edge));
+            behind(backdrop, smp, u, u.look + outward * radius * (1.1 + 0.3 * edge));
 
         // And the room the glass is standing in, which is the half of the
         // reflection the frame cannot supply.
@@ -1540,6 +1677,30 @@ fragment float4 composite_fragment(Vertex in [[stage_in]],
         // lit at all, and without the second the first reads as a sticker.
         float facing = max(dot(normal, LOUPE_LIGHT), 0.0);
         lit += shine * (pow(facing, 40.0) * 0.7 + pow(facing, 4.0) * 0.08);
+
+        // The fisheye's own falloff towards its rim, inside the circle. A
+        // fisheye photograph darkens at its edges because the projection is
+        // throwing a whole hemisphere at them; without it the disc is evenly
+        // lit to its edge and reads as a crop rather than as a lens. Zero on a
+        // magnifier, which sees a patch and sees it evenly.
+        if (u.fov > 0.0) {
+            lit *= 1.0 - FISHEYE_VIGNETTE * smoothstep(FISHEYE_VIGNETTE_FROM, 1.0, r);
+        }
+
+        // The halo on the mount, all the way round rather than on the lit side:
+        // this is the housing the glass is seated in catching light off the
+        // whole of the curve, not a second highlight. A fisheye alone — the
+        // control is zero on a loupe, which is a glass in a hand.
+        //
+        // In the colour of what the lens is standing on, the way the thrown
+        // pool is: `around` divided by its own peak, so this is the hue and
+        // none of the brightness — how bright the ring is was decided by the
+        // control, and a dark picture must not put it out. A fixed white ring
+        // read as a hairline drawn on the frame rather than as a edge catching
+        // the light in the room it is actually in.
+        float3 edging = mix(float3(1.0), around / max(max_of(around), 1e-3), FISHEYE_HALO_TINT);
+        float ring = (r - FISHEYE_HALO_AT) / FISHEYE_HALO_WIDTH;
+        lit += edging * clamp(u.fisheye.y, 0.0, 1.0) * exp(-ring * ring);
 
         // The glass over the scrim, both premultiplied: what is left of the
         // scrim is the part the glass does not cover, and the pool is on that

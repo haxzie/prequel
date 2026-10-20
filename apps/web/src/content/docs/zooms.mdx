@@ -44,8 +44,8 @@ Selecting a zoom swaps the Inspector for the zoom's own tabs.
 ![The Zoom tab: follow cursor or region, area, level, speed and ease](/docs/inspector-zoom.webp)
 
 - **Follow**: **Cursor** keeps the pointer in view as the zoom moves with it; **Region** holds a fixed area you choose on the map.
-- **Method**: **Camera** pushes the whole picture in. **Loupe** lays a magnifying glass on the frame instead.
-- **Lens**, under Loupe, is how wide the glass is.
+- **Method**: **Camera** pushes the whole picture in. **Loupe** lays a magnifying glass on the frame instead. **Fisheye** holds that glass in the middle of the picture and brings what it follows under it.
+- **Lens**, under Loupe or Fisheye, is how wide the glass is.
 - **Level** is how far in to go.
 - **Speed** is how long the push in and pull out take.
 - **Ease**: **Smooth**, **Linear**, **Slow in** or **Slow out**, with a curve you can drag for anything in between.
@@ -60,13 +60,23 @@ It follows the cursor or holds a region, and takes its level, speed and ease fro
 
 ![The Glass tab: curvature, fringing and reflection](/docs/inspector-glass.webp)
 
-- **Curvature** is how much of the lens is edge: flat almost to the rim at the bottom, stretching the outer half of the picture round at the top.
+- **Curvature** is how much of the lens is edge: flat almost to the rim at the bottom, stretching the outer half of the picture round at the top. Under Fisheye it is **Angle** instead — how wide the lens sees.
 - **Fringing** splits colour at the edge, the way a real lens does.
 - **Reflection** is the shine on the glass and what its rim mirrors.
 
 **Motion blur**, on the Zoom tab, smears what is inside the glass as the lens travels. The glass itself stays sharp — what moves against the frame is what you are looking *through* it at.
 
 A loupe does not tilt and has no depth of field, so the Angle and Focus tabs below belong to the Camera method.
+
+## The Fisheye
+
+Set **Method** to **Fisheye** and the lens stops travelling. It sits in the middle of the picture and stays there, and what you are pointing at is brought under it — so the cursor is dead centre in the glass wherever it goes, and the screen bends away around it.
+
+![A fisheye in the middle of the recording, the pointer centred in the glass](/docs/fisheye-applied.webp)
+
+It is a real fisheye, not a magnifier in the middle: every straight line in the recording bows, and the edge of the circle squeezes in far more of the screen than the middle does. Everything outside the glass — the rest of the screen, the camera, the background — goes dark and out of focus while the lens is down, and a faint ring of light picks up the colour of whatever the lens is over where the glass meets its mount.
+
+It takes the same Follow, Level, Speed and Ease as any other zoom, and the same Glass tab as the Loupe — where **Curvature** becomes **Angle**, how wide the lens sees, from 60° to 160° across.
 
 ## The Angle tab
 

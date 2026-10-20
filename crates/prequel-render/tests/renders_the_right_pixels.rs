@@ -2373,6 +2373,9 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
         // A tenth of the frame to the right of the boundary at x = 160.
         x: 192.0,
         y: 120.0,
+        // A loupe, which looks at what it lies on.
+        look_x: None,
+        look_y: None,
         radius: 80.0,
         magnify: 2.0,
         presence: 1.0,
@@ -2380,6 +2383,11 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
         aberration: 0.0,
         reflection: 0.0,
         light: 0.0,
+        shade: 0.0,
+        halo: 0.0,
+        fov: 0.0,
+        reach: None,
+        scrim: None,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -2440,6 +2448,372 @@ fn a_lens_magnifies_what_is_under_it_and_leaves_the_rest_alone() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A fisheye shows where it is *looking*, not what it is lying on.
+///
+/// The whole of the method, and the one part of it a shape assertion cannot
+/// reach. A rasteriser that took its box off the glass's own centre — which is
+/// what both of them did before the fisheye existed — draws a lens that is in
+/// the right place, the right size and perfectly sharp, showing the wrong half
+/// of the screen. Nothing about that frame looks like a fault; it looks like a
+/// pointer that is somewhere else.
+///
+/// The glass sits deep in the red half and looks deep into the blue one, so the
+/// middle of the lens has to come back blue. `aberration` and `reflection` are
+/// off and the sample is taken from the flat middle, so what is measured is the
+/// mapping rather than the dressing.
+#[test]
+fn a_fisheye_shows_what_it_is_aimed_at_rather_than_what_is_under_it() {
+    let dir = scratch("prequel-pixels-fisheye");
+    // Blue left, red right, so the boundary lands at the middle of the output.
+    let source = split_frame(320, 240, [0, 0, 255], [255, 0, 0]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let output = dir.join("export.mp4");
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    let glass = |at: i64| LoupeKey {
+        at,
+        // Well into the red half, and well clear of the boundary at x = 160.
+        x: 240.0,
+        y: 120.0,
+        // Looking well into the blue half.
+        look_x: Some(60.0),
+        look_y: Some(120.0),
+        radius: 60.0,
+        magnify: 2.0,
+        presence: 1.0,
+        curvature: 0.34,
+        aberration: 0.0,
+        reflection: 0.0,
+        light: 0.0,
+        shade: 0.0,
+        halo: 0.0,
+        fov: 0.0,
+        reach: None,
+        scrim: None,
+        smear_x: 0.0,
+        smear_y: 0.0,
+    };
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 320.0,
+                    height: 240.0,
+                },
+                dst_rect: full,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                grade: None,
+                rim: 0.0,
+                fringe: 0.0,
+                motion: Vec::new(),
+            },
+            PlanItem::Loupe {
+                keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+            },
+        ],
+        filter: None,
+    };
+
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let frame = first_frame(&output);
+    // The flat middle of the glass, which is the look point itself: blue, on a
+    // part of the frame that is red.
+    near(frame.at(240, 120), (0, 0, 255), "the middle of the fisheye");
+    // And the frame it is lying on, untouched on both sides of the boundary. A
+    // fisheye moves the picture no more than a loupe does.
+    near(frame.at(40, 120), (0, 0, 255), "well clear of the glass");
+    near(frame.at(310, 8), (255, 0, 0), "above the glass");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A fisheye bows the picture; a magnifier of the same size does not.
+///
+/// The one thing that makes the second lens a fisheye at all, and the one that
+/// would regress without a sound: strip the projection out and what is left is
+/// the magnifier parked in the middle of the frame, which still draws a circle
+/// of picture in the right place at the right size. It simply shows a quarter
+/// of what a fisheye shows, with every straight line in it straight.
+///
+/// Measured where the two disagree. The boundary between the halves sits at
+/// x = 200 and the glass looks at x = 100, so a point eighty pixels right of
+/// the middle of the lens samples at 180 through a magnifier — still blue —
+/// and at about 219 through a fisheye, which is over the line and red. No
+/// amount of drawing a circle in the right place can produce that.
+///
+/// Dominance rather than an exact colour: a fisheye darkens towards its own rim
+/// and the sample is well out into that falloff, so what is being asserted is
+/// which side of the picture arrived, not how brightly.
+#[test]
+fn a_fisheye_bows_the_picture_and_a_magnifier_does_not() {
+    let dir = scratch("prequel-pixels-fisheye-bow");
+    // Blue left, red right. Drawn at twice the size and offset, so the boundary
+    // between them lands at x = 200 rather than at the middle of the frame —
+    // which is the one place a radial projection can never move it to.
+    let source = split_frame(320, 240, [0, 0, 255], [255, 0, 0]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let magnified = Rect {
+        x: -120.0,
+        y: -120.0,
+        width: 2.0 * OUT_W as f64,
+        height: 2.0 * OUT_H as f64,
+    };
+
+    let through = |fov: f64| {
+        // What the rim asks for, which is what `glassReach` works out in
+        // `shared/layout.ts`: a box too small clamps the outermost taps to its
+        // own edge and draws as a smear of the wrong picture round the rim.
+        let reach = if fov > 0.0 {
+            (fov.tan() / fov * 1.25).max(1.75)
+        } else {
+            1.75
+        };
+        let glass = move |at: i64| LoupeKey {
+            at,
+            x: (OUT_W / 2) as f64,
+            y: (OUT_H / 2) as f64,
+            // Looking a hundred pixels to the left of where it sits, which is
+            // the blue half whichever lens this is.
+            look_x: Some(100.0),
+            look_y: Some((OUT_H / 2) as f64),
+            radius: 100.0,
+            // One, so a magnifier's middle is the picture at its own size and
+            // the only thing that can move a sample is the projection.
+            magnify: 1.0,
+            presence: 1.0,
+            // Flat almost to its rim, so a magnifier has nothing to bend with.
+            curvature: 0.0,
+            aberration: 0.0,
+            reflection: 0.0,
+            light: 0.0,
+            shade: 0.0,
+            halo: 0.0,
+            fov,
+            reach: Some(reach),
+            scrim: None,
+            smear_x: 0.0,
+            smear_y: 0.0,
+        };
+
+        RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 320.0,
+                        height: 240.0,
+                    },
+                    dst_rect: magnified,
+                    shape: Shape {
+                        radius: 0.0,
+                        exponent: 2.0,
+                    },
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    grade: None,
+                    rim: 0.0,
+                    fringe: 0.0,
+                    motion: Vec::new(),
+                },
+                PlanItem::Loupe {
+                    keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+                },
+            ],
+            filter: None,
+        }
+    };
+
+    let run = |plan: RenderPlan, name: &str| -> Frame {
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+        first_frame(&output)
+    };
+
+    // Seventy degrees, which is what the Curvature control reaches near its top.
+    let bowed = run(through(1.22), "fisheye");
+    let flat = run(through(0.0), "magnifier");
+
+    let (x, y) = (OUT_W / 2 + 80, OUT_H / 2);
+    let (fr, _, fb) = flat.at(x, y);
+    let (br, _, bb) = bowed.at(x, y);
+
+    assert!(
+        fb > fr,
+        "a magnifier should still be showing the blue half here, got ({fr}, _, {fb})"
+    );
+    assert!(
+        br > bb,
+        "a fisheye should have reached past the boundary into the red, got ({br}, _, {bb})"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A fisheye puts the frame around it into shade, and a loupe does not.
+///
+/// The one thing that separates the two lenses once they are both on the frame,
+/// and it is a *number* rather than a shape: the same disc, the same falloff,
+/// one of them ten times the other. A rasteriser that read neither — which is
+/// every plan written before the fisheye, and the state both of them are in
+/// until told otherwise — draws a fisheye wearing the loupe's dressing, which
+/// looks like a loupe parked in the middle of the picture.
+///
+/// Measured well outside the glass and well inside the quad, on a flat grey
+/// picture so the only thing that can move between the two exports is the
+/// shade. The light is off: that is the other thing that touches the frame
+/// beside a lens, and it lands on one side.
+#[test]
+fn a_fisheye_puts_the_frame_around_it_into_shade() {
+    let dir = scratch("prequel-pixels-fisheye-shade");
+    let source = solid_wide(320, 240, [128, 128, 128]);
+    record(&dir, "screen.mp4", 320, 240, &source);
+
+    let full = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: OUT_W as f64,
+        height: OUT_H as f64,
+    };
+
+    let shaded = |shade: f64| {
+        let glass = move |at: i64| LoupeKey {
+            at,
+            x: (OUT_W / 2) as f64,
+            y: (OUT_H / 2) as f64,
+            look_x: None,
+            look_y: None,
+            radius: 50.0,
+            magnify: 2.0,
+            presence: 1.0,
+            curvature: 0.34,
+            aberration: 0.0,
+            reflection: 0.0,
+            light: 0.0,
+            shade,
+            // Off: the ring is inside the glass and nothing here samples it,
+            // but a bright hairline is the other thing that could move a pixel.
+            halo: 0.0,
+            // The magnifier's surface, so the only thing moving between the two
+            // exports is the shade. A fisheye's projection would move every
+            // pixel inside the glass as well.
+            fov: 0.0,
+            reach: None,
+            scrim: None,
+            smear_x: 0.0,
+            smear_y: 0.0,
+        };
+
+        RenderPlan {
+            frame: Size {
+                width: OUT_W as f64,
+                height: OUT_H as f64,
+            },
+            items: vec![
+                PlanItem::Image {
+                    source: PlanSource::Screen,
+                    src_rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 320.0,
+                        height: 240.0,
+                    },
+                    dst_rect: full,
+                    shape: Shape {
+                        radius: 0.0,
+                        exponent: 2.0,
+                    },
+                    mirror: false,
+                    matte: false,
+                    blobs: Vec::new(),
+                    grade: None,
+                    rim: 0.0,
+                    fringe: 0.0,
+                    motion: Vec::new(),
+                },
+                PlanItem::Loupe {
+                    keys: vec![glass(-(S as i64)), glass(2 * S as i64)],
+                },
+            ],
+            filter: None,
+        }
+    };
+
+    let run = |plan: RenderPlan, name: &str| -> Frame {
+        let output = dir.join(format!("{name}.mp4"));
+        export(
+            &request(&dir, &output, vec![slice(plan)]),
+            &CancelFlag::new(),
+            &mut |_| {},
+        )
+        .expect("export");
+        first_frame(&output)
+    };
+
+    let lens = run(shaded(0.0), "loupe");
+    let port = run(shaded(1.0), "fisheye");
+
+    // A radius and a half out from the middle: outside the glass, inside the
+    // quad, and on the opposite side of the lens from where any thrown light
+    // would land.
+    let (x, y) = (OUT_W / 2 - 75, OUT_H / 2);
+    let under_loupe = lens.at(x, y).0 as i32;
+    let under_fisheye = port.at(x, y).0 as i32;
+
+    // The loupe barely touches it — a whisper of a scrim, so the frame beside
+    // the glass is still read.
+    assert!(
+        under_loupe > 110,
+        "a loupe should hardly darken the frame beside it, got {under_loupe}"
+    );
+    // And the fisheye is unmistakably dark there, without being black: what is
+    // outside it still says where on the screen this is happening.
+    assert!(
+        (30..80).contains(&under_fisheye),
+        "a fisheye should put the frame into shade, got {under_fisheye}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The glass throws light onto the frame beside it, on the side away from the key.
 ///
 /// Which side is the whole claim. A lens that puts its pool on the lit side is
@@ -2471,6 +2845,9 @@ fn the_glass_throws_light_away_from_the_key() {
             at,
             x: centre.0,
             y: centre.1,
+            // A loupe, which looks at what it lies on.
+            look_x: None,
+            look_y: None,
             radius,
             magnify: 2.0,
             presence: 1.0,
@@ -2481,6 +2858,11 @@ fn the_glass_throws_light_away_from_the_key() {
             aberration: 0.0,
             reflection: 0.0,
             light,
+            shade: 0.0,
+            halo: 0.0,
+            fov: 0.0,
+            reach: None,
+            scrim: None,
             smear_x: 0.0,
             smear_y: 0.0,
         };
@@ -2595,6 +2977,9 @@ fn the_glass_splits_colour_at_its_edge() {
         at: 0,
         x: 190.0,
         y: 120.0,
+        // A loupe, which looks at what it lies on.
+        look_x: None,
+        look_y: None,
         radius: 80.0,
         magnify: 2.0,
         presence: 1.0,
@@ -2604,6 +2989,11 @@ fn the_glass_splits_colour_at_its_edge() {
         // put colour of their own near the rim being measured.
         reflection: 0.0,
         light: 0.0,
+        shade: 0.0,
+        halo: 0.0,
+        fov: 0.0,
+        reach: None,
+        scrim: None,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -2780,6 +3170,9 @@ fn magnifying_a_picture_keeps_its_edges() {
         at,
         x: (OUT_W / 2) as f64,
         y: (OUT_H / 2) as f64,
+        // A loupe, which looks at what it lies on.
+        look_x: None,
+        look_y: None,
         radius: 60.0,
         magnify: 2.0,
         presence: 1.0,
@@ -2787,6 +3180,11 @@ fn magnifying_a_picture_keeps_its_edges() {
         aberration: 0.0,
         reflection: 0.0,
         light: 0.0,
+        shade: 0.0,
+        halo: 0.0,
+        fov: 0.0,
+        reach: None,
+        scrim: None,
         smear_x: 0.0,
         smear_y: 0.0,
     };
@@ -3033,6 +3431,9 @@ fn a_travelling_lens_smears_what_is_inside_it() {
             at,
             x: 160.0,
             y: 120.0,
+            // A loupe, which looks at what it lies on.
+            look_x: None,
+            look_y: None,
             radius: 70.0,
             magnify: 2.0,
             presence: 1.0,
@@ -3042,6 +3443,11 @@ fn a_travelling_lens_smears_what_is_inside_it() {
             aberration: 0.0,
             reflection: 0.0,
             light: 0.0,
+            shade: 0.0,
+            halo: 0.0,
+            fov: 0.0,
+            reach: None,
+            scrim: None,
             // Across the edge, which is the direction that blurs it.
             smear_x: smear,
             smear_y: 0.0,

@@ -17,8 +17,9 @@ use cidre::{arc, cf, cv, mtl, ns};
 use prequel_session::MediaTime;
 
 use crate::plan::{
-    ClickEffect, LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size, blob_at,
-    caption_at, click_phase, crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at, rect_at,
+    ClickEffect, LOUPE_REACH, LoupeKey, Paint, PlanItem, PlanSource, Rect, RenderPlan, Rgba, Size,
+    blob_at, caption_at, click_phase, crop_to_frame, cursor_at, loupe_at, moved_blob, overlay_at,
+    rect_at,
 };
 use crate::{Error, Result};
 
@@ -190,6 +191,31 @@ struct Uniforms {
     click_style: u32,
     /// 0 to 1, so a scattered mark differs press to press.
     click_seed: f32,
+    /// What the lens is looking at, in output pixels. See `LoupeKey::look`.
+    ///
+    /// Its own row rather than folded into a spare pair of slots on `motion`:
+    /// that one is a streak and this is a place, and a position hiding in a
+    /// field named for a velocity is exactly the kind of thing the next person
+    /// reads straight past. Zero on every draw but a lens.
+    look: [f32; 2],
+    /// How far around the look point the lens's own render reaches, in radii.
+    /// See `LoupeKey::reach`.
+    reach: f32,
+    /// A fisheye's half-angle, in radians. Zero on every draw but a fisheye,
+    /// which is what picks the magnifier's projection instead.
+    ///
+    /// These two fill the row `look` opened, so nothing above them moves.
+    fov: f32,
+    /// How hard the frame outside the glass is darkened, and how bright the ring
+    /// inside its rim is — both 0 to 1, and both zero for a loupe.
+    fisheye: [f32; 2],
+    /// Padding to the next 16-byte boundary.
+    ///
+    /// MSL rounds the block up to a multiple of 16 and Rust does not, so without
+    /// this the two sides disagree about the size of a block whose every other
+    /// field is already in the right place — which compiles, runs, and renders
+    /// the wrong colour.
+    _fisheye_align: [f32; 2],
 }
 
 /// The video frames one output frame is drawn from.
@@ -212,18 +238,6 @@ const MODE_LOUPE: u32 = 5;
 /// screenshot masks, which have no arm in `shaders.metal`, and the two mode
 /// tables are kept numbered alike so a branch is never read differently.
 const MODE_CLICK: u32 = 8;
-
-/// How far around the glass the lens's own render reaches, in radii.
-///
-/// Mirrors `LOUPE_REACH` in `apps/desktop/src/shared/layout.ts` and in
-/// `shaders.metal`: the editor's is the one that documents it, this one sizes
-/// and places the render, and the shader's is what samples it.
-const LOUPE_REACH: f64 = 1.75;
-
-/// How far the scrim around the glass reaches, in radii. Mirrors
-/// `LOUPE_SCRIM_REACH` in `shaders.metal` and `shared/layout.ts`; the quad has
-/// to be this big or the scrim is cut off in a square.
-const LOUPE_SCRIM_REACH: f64 = 2.5;
 
 /**
  * A texture and everything that has to outlive it.
@@ -940,6 +954,15 @@ impl Compositor {
             // Drawn in its own colour unless the item asks otherwise, which
             // only a caption with nothing behind its glyphs does.
             adapt: 0.0,
+            // Nowhere unless a lens item says otherwise. Only the loupe's own
+            // branch reads it.
+            look: [0.0; 2],
+            // The magnifier's box and the magnifier's surface, which is every
+            // draw but a fisheye — and every draw but a lens never reads them.
+            reach: LOUPE_REACH as f32,
+            fov: 0.0,
+            fisheye: [0.0; 2],
+            _fisheye_align: [0.0; 2],
         };
 
         Ok(match item {
@@ -1210,7 +1233,7 @@ impl Compositor {
                 // The quad is the glass grown for its scrim, which is the
                 // furthest anything the lens draws reaches. Mirrors the same
                 // three lines in `webgl.ts`.
-                let reach = (glass.radius * LOUPE_SCRIM_REACH) as f32;
+                let reach = (glass.radius * glass.scrim()) as f32;
                 Some((
                     Uniforms {
                         rect: [
@@ -1237,6 +1260,10 @@ impl Compositor {
                             glass.reflection as f32,
                         ],
                         motion: [glass.smear_x as f32, glass.smear_y as f32, 0.0, 0.0],
+                        look: [glass.look().0 as f32, glass.look().1 as f32],
+                        reach: glass.reach() as f32,
+                        fov: glass.fov as f32,
+                        fisheye: [glass.shade as f32, glass.halo as f32],
                         glow: glass.light as f32,
                         // How this buffer is oriented, which is the one thing
                         // about the copy the two rasterisers do not share: the
@@ -1630,7 +1657,7 @@ impl Compositor {
         // when this returns would be freed while the GPU was still reading it.
         alive: &mut Vec<Held>,
     ) -> Result<()> {
-        let span = 2.0 * LOUPE_REACH * glass.radius;
+        let span = 2.0 * glass.reach() * glass.radius;
         if span <= 0.0 {
             return Ok(());
         }
@@ -1666,12 +1693,17 @@ impl Compositor {
             .ok_or_else(|| Error::Metal("could not create a lens encoder".to_owned()))?;
         encoder.set_render_ps(&self.pipeline);
 
-        // The box the pass covers, in frame pixels. `behind` in the shader takes
-        // the same box off the glass's own centre and radius, so nothing has to
-        // be carried between the two.
+        // The box the pass covers, in frame pixels. Around what the glass is
+        // *looking at*, not around the glass: for a loupe the two are the same
+        // point, and for a fisheye this is the whole trick — the lens stays in
+        // the middle of the picture and the box travels with the pointer, so
+        // what the pointer is over lands under the middle of the lens. `behind`
+        // in the shader takes the same box off `look` and the same radius, so
+        // nothing has to be carried between the two.
+        let (look_x, look_y) = glass.look();
         let view = [
-            (glass.x - LOUPE_REACH * glass.radius) as f32,
-            (glass.y - LOUPE_REACH * glass.radius) as f32,
+            (look_x - glass.reach() * glass.radius) as f32,
+            (look_y - glass.reach() * glass.radius) as f32,
             span as f32,
             span as f32,
         ];
@@ -1685,11 +1717,21 @@ impl Compositor {
                 continue;
             }
 
-            let (uniforms, texture) =
+            let (mut uniforms, texture) =
                 match self.uniforms_for(item, frame_px, view, sources, at, alive)? {
                     Some(pair) => pair,
                     None => continue,
                 };
+
+            // Sharp, whatever the frame outside is doing. A fisheye softens the
+            // picture around itself by writing a depth of field onto it, and
+            // that field is measured from the middle of the glass — so the one
+            // place it must not be read is here, where what is being drawn is
+            // the patch the lens is *looking at*, several hundred pixels away
+            // from the glass and therefore well outside what stays sharp. Left
+            // in, a fisheye blurs its own contents and reads as a lens that
+            // cannot focus.
+            uniforms.focus = [0.0, 0.0, 1.0, 0.0];
 
             let buffer = self
                 .device
@@ -2134,10 +2176,16 @@ mod tests {
         assert_eq!(offset_of!(Uniforms, click_phase), 436);
         assert_eq!(offset_of!(Uniforms, click_style), 440);
         assert_eq!(offset_of!(Uniforms, click_seed), 444);
+        // Where the lens looks, opening a fresh row of its own and padded out
+        // by hand, because Rust will not round the block up and MSL will.
+        assert_eq!(offset_of!(Uniforms, look), 448);
+        assert_eq!(offset_of!(Uniforms, reach), 456);
+        assert_eq!(offset_of!(Uniforms, fov), 460);
+        // And its own row for the two that were left, padded out by hand.
+        assert_eq!(offset_of!(Uniforms, fisheye), 464);
 
-        // The last row is full, so both sides are 448 with no padding at all.
         assert_eq!(align_of::<Uniforms>(), 4);
-        assert_eq!(size_of::<Uniforms>(), 448);
+        assert_eq!(size_of::<Uniforms>(), 480);
     }
 
     /// The filter block's layout has to match `FilterUniforms` in

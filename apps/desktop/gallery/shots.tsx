@@ -683,7 +683,31 @@ export const SHOTS: readonly Shot[] = [
     ],
     clip: "frame",
   },
-  // The lens's own controls, which only exist under Loupe.
+  // The same glass, nailed to the middle of the picture with the pointer under
+  // it. Its own shot rather than a variant of the one above: the fisheye is the
+  // one path where the lens and the box it samples are different places, and a
+  // preview that took the box off the glass draws a sharp lens showing the
+  // wrong half of the screen — which looks like a composition rather than a
+  // fault, and no test outside a pair of eyes would say otherwise.
+  {
+    id: "fisheye-applied",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "key", code: "KeyZ" },
+      { kind: "click", selector: 'button[aria-label="Fisheye"]' },
+      // Past the whole of the preview the editor plays once on every change to
+      // a zoom, not into the middle of it. Nine hundred caught whichever frame
+      // the playback happened to be on, so the shot came back showing a
+      // different second of the recording every run — a docs picture that
+      // changes each time it is taken is one nobody can review.
+      { kind: "settle", ms: 3200 },
+    ],
+    clip: "frame",
+  },
+  // The lens's own controls, which exist under either lens.
   {
     id: "inspector-glass",
     frame: "workspace",

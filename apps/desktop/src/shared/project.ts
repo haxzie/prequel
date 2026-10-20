@@ -899,18 +899,21 @@ export interface ZoomSlice {
    * `camera` pushes the whole frame in — the shot every field below describes.
    * `loupe` leaves the frame where it is and lays a glass lens on it, so the
    * area being looked at is magnified and the rest of the screen stays put and
-   * stays readable.
+   * stays readable. `fisheye` is the same glass nailed to the middle of the
+   * picture: it never travels, and what it is aimed at is brought *under* it,
+   * so the pointer sits dead centre in the lens however far across the screen
+   * it has wandered.
    *
-   * The two share `target`, `x`, `y`, `level`, `speed` and the ease, because
-   * those are the same questions for both: where is it, how far in, how long
+   * All three share `target`, `x`, `y`, `level`, `speed` and the ease, because
+   * those are the same questions for each: where is it, how far in, how long
    * does it take to get there. Nothing else crosses — a lens does not tilt and
    * has no depth of field, and `rotateX`, `vignette` and `blur` are ignored
-   * while this is `loupe`.
+   * while this is either lens.
    *
    * Absent in every project written before the lens existed, which reads back as
    * `camera` — so all of them look exactly as they did.
    */
-  method: "camera" | "loupe";
+  method: "camera" | "loupe" | "fisheye";
   /**
    * `cursor` keeps the pointer in the middle of the shot for the whole span;
    * `typing` frames whatever field has keyboard focus; `region` holds still on
@@ -1045,6 +1048,55 @@ export interface ZoomSlice {
 }
 
 /**
+ * Whether a zoom lays glass on the frame rather than moving the picture.
+ *
+ * Asked in a dozen places — which track the zoom joins, which tabs the panel
+ * shows, how quickly the move runs — and every one of them wants "is this a
+ * lens", not "is this a loupe". Written out at each site, adding the fisheye
+ * meant finding all of them, and the one that was missed would have been a
+ * fisheye quietly dragging the whole picture about.
+ */
+export function isLens(method: ZoomSlice["method"]): method is LensMethod {
+  return method === "loupe" || method === "fisheye";
+}
+
+/** The two methods that lay glass on the frame. */
+export type LensMethod = Exclude<ZoomSlice["method"], "camera">;
+
+/**
+ * How wide the glass is across and how hard it bows, for each of the two lenses.
+ *
+ * They are different objects. A loupe is held in a hand over one corner of the
+ * screen, so it is under half the frame; a fisheye is a port the whole picture
+ * is seen through, and covers the frame to its corners.
+ *
+ * Curvature says a different thing of each, because the two surfaces have one
+ * number each to describe them and it is not the same number: on a magnifier it
+ * is how much of the radius is rolled over at the rim, and on a fisheye it is
+ * how wide the thing sees. High on the fisheye, which is where a fisheye looks
+ * like one — straight lines arriving at the rim as most of a semicircle.
+ *
+ * Carried as a pair so switching between the two lenses in the panel can bring
+ * the other one's figures across. See `ZoomMotionPanel`.
+ */
+export const LENS_FIGURES = {
+  loupe: { loupeSize: 0.44, loupeCurvature: 0.4, loupeAberration: 0.45, loupeReflection: 0.5 },
+  // Barely reflective, where a hand magnifier is plain glass: a fisheye's front
+  // element is coated, and it has to be — it is pointing at a whole hemisphere,
+  // so an uncoated one would be looking at its own housing from every angle at
+  // once. Left at the magnifier's, the rim drew a thick white band of reflected
+  // room that read as a ring stuck on the picture.
+  fisheye: { loupeSize: 1.15, loupeCurvature: 0.8, loupeAberration: 0.15, loupeReflection: 0.18 },
+} as const;
+
+/** The widest each lens may be set, as a fraction of the frame's shorter edge. */
+export function maxLensSize(method: ZoomSlice["method"]): number {
+  // A loupe past this is doing a camera move's job badly. A fisheye is meant to
+  // run off the edges — the dark corners outside the circle are the look.
+  return method === "fisheye" ? 1.4 : 0.9;
+}
+
+/**
  * The part of a zoom that is a look rather than a shot.
  *
  * How the move feels, and nothing about where it goes. `target`, `x` and `y`
@@ -1087,20 +1139,19 @@ export const DEFAULT_ZOOM = {
   blurSafe: 0.28,
   blurStrength: 0.012,
   vignette: 0,
-  // A bit under half the shorter edge: large enough that what is inside it can
-  // be read at a glance, small enough that there is still a screen around it —
-  // which is the only reason to reach for a lens rather than a camera move.
-  loupeSize: 0.44,
-  // Enough bow to read as glass at the rim and leave the middle of the lens
-  // magnifying evenly. Further up it is a ball lens, which is a look rather
-  // than a magnifier.
-  loupeCurvature: 0.4,
+  // The loupe's own figures, because that is the lens a zoom dropped on the
+  // timeline becomes if it becomes one at all: a bit under half the shorter
+  // edge, and enough bow to read as glass at the rim while the middle magnifies
+  // evenly. Read from `LENS_FIGURES` rather than written again, so the opening
+  // value and the one the panel brings back cannot drift apart.
+  loupeSize: LENS_FIGURES.loupe.loupeSize,
+  loupeCurvature: LENS_FIGURES.loupe.loupeCurvature,
   // Present, and not slight. The rim is where a lens shows what it is — the
   // picture stretched and split into colour as the glass thickens — and with
   // this near zero the glass is a clean circle of picture, which reads as a
   // crop rather than as something resting on the screen.
-  loupeAberration: 0.45,
-  loupeReflection: 0.5,
+  loupeAberration: LENS_FIGURES.loupe.loupeAberration,
+  loupeReflection: LENS_FIGURES.loupe.loupeReflection,
   // Half. The top of the control is as much light as a lens this size can
   // plausibly gather, and anywhere near it the frame reads as lit from behind
   // the glass rather than as having a glass on it.
@@ -1837,11 +1888,19 @@ function zoomTarget(stored: unknown): ZoomSlice["target"] {
 export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomDefaults {
   const zoom = (stored ?? {}) as Record<string, unknown>;
 
+  // Only the two lenses by name; anything else is the camera move. A project
+  // from before either existed carries nothing here and reads back as the shot
+  // it was.
+  //
+  // Resolved before the object rather than inside it, because `loupeSize` is
+  // clamped against it: a fisheye is allowed to run off the frame and a loupe
+  // is not, and reading the raw field twice is how the two answers come to
+  // disagree.
+  const method: ZoomSlice["method"] =
+    zoom["method"] === "loupe" || zoom["method"] === "fisheye" ? zoom["method"] : "camera";
+
   return {
-    // Only the lens by name; anything else is the camera move. A project from
-    // before this existed carries nothing here and reads back as the shot it
-    // was.
-    method: zoom["method"] === "loupe" ? "loupe" : "camera",
+    method,
     level: clamp(number(zoom["level"], fallback.level), 1, 8),
     speed: clamp(number(zoom["speed"], fallback.speed), 0, 5),
     // Both to the unit square. x because a bézier whose control points run
@@ -1883,10 +1942,16 @@ export function sanitiseZoomLook(stored: unknown, fallback: ZoomDefaults): ZoomD
     blur: zoom["blur"] === true,
     blurSafe: clamp(number(zoom["blurSafe"], fallback.blurSafe), 0.05, 0.9),
     blurStrength: clamp(number(zoom["blurStrength"], fallback.blurStrength), 0, 0.04),
-    // The lens. Its floor is a glass big enough to hold a word of interface and
-    // its ceiling one that still leaves a screen around it; past that a lens is
-    // doing a camera move's job badly.
-    loupeSize: clamp(number(zoom["loupeSize"], fallback.loupeSize), 0.15, 0.9),
+    // The lens. Its floor is a glass big enough to hold a word of interface;
+    // its ceiling is the method's, which `maxLensSize` decides.
+    loupeSize: clamp(
+      number(zoom["loupeSize"], fallback.loupeSize),
+      0.15,
+      // Against the method this zoom just resolved to, not the stored one: a
+      // fisheye reads back at the width it was drawn at, and a loupe can never
+      // come back wider than a loupe may be dragged to.
+      maxLensSize(zoom["method"] === "fisheye" ? "fisheye" : "camera"),
+    ),
     loupeCurvature: clamp(number(zoom["loupeCurvature"], fallback.loupeCurvature), 0, 1),
     loupeAberration: clamp(number(zoom["loupeAberration"], fallback.loupeAberration), 0, 1),
     loupeReflection: clamp(number(zoom["loupeReflection"], fallback.loupeReflection), 0, 1),

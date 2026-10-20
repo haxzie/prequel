@@ -25,6 +25,9 @@ import {
   DEFAULT_LAYOUT,
   KEY_SOUNDS,
   keySoundId,
+  LENS_FIGURES,
+  isLens,
+  maxLensSize,
   MAX_SPEED,
   MIN_SPEED,
   SHAPE_RADIUS,
@@ -46,7 +49,7 @@ import {
   type ZoomSlice,
   WALLPAPER_FILE_NAME,
 } from "../../../shared/project";
-import { LOUPE_HASTE } from "../../../shared/layout";
+import { FISHEYE_FOV_MAX, FISHEYE_FOV_MIN, LOUPE_HASTE } from "../../../shared/layout";
 import type { WallpaperCatalogue, WallpaperSpec } from "../../../shared/wallpapers";
 import type { Backgrounds } from "./useBackgrounds";
 import { CameraLookPicker } from "./controls/CameraLookPicker";
@@ -68,6 +71,7 @@ import {
   AngleIcon,
   AudioIcon,
   GlassEdgeIcon,
+  FisheyeIcon,
   GlassIcon,
   GlassLightIcon,
   ImageIcon,
@@ -1556,7 +1560,7 @@ function zoomTabs(method: ZoomSlice["method"]): {
   label: string;
   Icon: () => React.ReactElement;
 }[] {
-  if (method === "loupe") {
+  if (isLens(method)) {
     return [
       { id: "motion", label: "Zoom", Icon: ZoomIcon },
       { id: "glass", label: "Glass", Icon: GlassIcon },
@@ -1568,6 +1572,34 @@ function zoomTabs(method: ZoomSlice["method"]): {
     { id: "perspective", label: "Angle", Icon: PerspectiveIcon },
     { id: "focus", label: "Focus", Icon: FocusIcon },
   ];
+}
+
+/**
+ * The method change, with the glass it implies.
+ *
+ * The two lenses are different objects — a loupe is held over a corner of the
+ * screen, a fisheye is a port the whole picture is seen through — so the size
+ * and the bow that make each read as itself come across with the choice.
+ *
+ * Only while the glass is still wearing the other one's figures, which is every
+ * zoom nobody has opened the Glass tab on, including the camera move a lens is
+ * usually picked from. Somebody who has dragged the size or the curvature has
+ * said what they want, and picking a method is not a reason to throw it away —
+ * only to bring it inside what the new method allows.
+ */
+function withLensFigures(zoom: ZoomSlice, method: ZoomSlice["method"]): Partial<ZoomSlice> {
+  if (!isLens(method)) return { method };
+
+  const other = LENS_FIGURES[method === "fisheye" ? "loupe" : "fisheye"];
+  const untouched =
+    zoom.loupeSize === other.loupeSize &&
+    zoom.loupeCurvature === other.loupeCurvature &&
+    zoom.loupeAberration === other.loupeAberration &&
+    zoom.loupeReflection === other.loupeReflection;
+
+  return untouched
+    ? { method, ...LENS_FIGURES[method] }
+    : { method, loupeSize: Math.min(zoom.loupeSize, maxLensSize(method)) };
 }
 
 /**
@@ -4952,8 +4984,14 @@ function ZoomMotionPanel({
               title: "Lay a glass lens on the frame and leave the rest readable",
               icon: <GlassIcon />,
             },
+            {
+              value: "fisheye",
+              label: "Fisheye",
+              title: "Hold the lens in the middle and bring what it follows under it",
+              icon: <FisheyeIcon />,
+            },
           ]}
-          onChange={(method) => onChange({ method })}
+          onChange={(method) => onChange(withLensFigures(zoom, method))}
         />
       </Field>
 
@@ -4985,13 +5023,16 @@ function ZoomMotionPanel({
       {/* Only under Loupe, and above Level for the same reason the Area map is
           where it is: how big the glass is comes before how far into it you are
           looking. A camera move has no size — it fills the frame. */}
-      {zoom.method === "loupe" && (
+      {isLens(zoom.method) && (
         <Slider
           icon={<GlassIcon />}
           label="Lens"
           value={zoom.loupeSize}
           min={0.15}
-          max={0.9}
+          // The fisheye's ceiling is past the frame, where the circle runs off
+          // the edges and only the corners are left outside it. That is the
+          // look; a loupe stops where there is still a screen around it.
+          max={maxLensSize(zoom.method)}
           step={0.01}
           // Against the frame's shorter edge, which is what the setting is a
           // fraction of — "a third of the frame across" is the thing anyone has
@@ -5010,7 +5051,7 @@ function ZoomMotionPanel({
         // a dead end on it; a lens at 1 is still a lens — the glass is there,
         // bending the picture at its rim — and it is the setting that reads
         // most like a piece of glass set down on the screen.
-        min={zoom.method === "loupe" ? 1 : 1.2}
+        min={isLens(zoom.method) ? 1 : 1.2}
         max={4}
         step={0.1}
         format={(value) => `${value.toFixed(1)}×`}
@@ -5030,9 +5071,7 @@ function ZoomMotionPanel({
         // control has to show the seconds it will really take, or the one number
         // on it would be the one thing about the move that is not true.
         format={(value) =>
-          value === 0
-            ? "Cut"
-            : `${(value * (zoom.method === "loupe" ? LOUPE_HASTE : 1)).toFixed(2)}s`
+          value === 0 ? "Cut" : `${(value * (isLens(zoom.method) ? LOUPE_HASTE : 1)).toFixed(2)}s`
         }
         onChange={(speed) => onChange({ speed })}
       />
@@ -5202,6 +5241,13 @@ function ZoomPerspectivePanel({
  * it smears when it moves. Every one of them is physical — the shader refracts,
  * disperses, reflects and casts rather than drawing an effect — which is why
  * none of them has an "amount".
+ *
+ * The first is renamed under a fisheye, and that is not cosmetic: the two
+ * surfaces have one number each to describe them and it is not the same number.
+ * On a magnifier it is how much of the radius is rolled over at the rim; on a
+ * fisheye there is no rolled rim at all and it is how wide the thing sees. One
+ * label over two meanings would be the panel saying something untrue about
+ * whichever lens was not selected.
  */
 function ZoomGlassPanel({
   zoom,
@@ -5213,16 +5259,26 @@ function ZoomGlassPanel({
   return (
     <Section>
       <Slider
-        icon={<GlassIcon />}
-        label="Curvature"
+        icon={zoom.method === "fisheye" ? <FisheyeIcon /> : <GlassIcon />}
+        label={zoom.method === "fisheye" ? "Angle" : "Curvature"}
         value={zoom.loupeCurvature}
         min={0}
         max={1}
         step={0.01}
-        // The two ends are what the control actually does, not numbers: at the
-        // bottom it is a flat pane that magnifies evenly and at the top a ball
-        // that bows the last third of the picture into its rim.
-        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
+        // Degrees on a fisheye, and the whole angle across rather than the half
+        // angle the shader works in: a fisheye is described by how wide it sees
+        // — "a 160" — and nothing in photography has ever been described as a
+        // percentage of a half angle.
+        // On a magnifier the two ends are what the control does rather than
+        // numbers at all: at the bottom a flat pane that magnifies evenly, at
+        // the top a ball that bows the last third of the picture into its rim.
+        format={(value) =>
+          zoom.method === "fisheye"
+            ? `${Math.round(((FISHEYE_FOV_MIN + value * (FISHEYE_FOV_MAX - FISHEYE_FOV_MIN)) * 360) / Math.PI)}°`
+            : value < 0.02
+              ? "Flat"
+              : percent(value)
+        }
         onChange={(loupeCurvature) => onChange({ loupeCurvature })}
       />
 

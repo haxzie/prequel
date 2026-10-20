@@ -1536,6 +1536,23 @@ export function GlassIcon() {
 }
 
 /**
+ * A circle with its middle bowed out: the fisheye.
+ *
+ * A meridian and an equator, both bent away from straight, which is the one
+ * thing anyone can see a fisheye doing. Not `GlassIcon` — that is the loupe's,
+ * and the two sit on the same row of the Method control, where the same circle
+ * twice would read as one of them being a mistake.
+ */
+export function FisheyeIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 4c2.5 2.2 2.5 13.8 0 16M4 12c2.2-2.5 13.8-2.5 16 0" />
+    </svg>
+  );
+}
+
+/**
  * Three offset arcs: one edge split into colours.
  *
  * What chromatic aberration looks like rather than what causes it — a prism
