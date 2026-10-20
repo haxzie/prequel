@@ -269,7 +269,12 @@ suite("the picker's hold on Escape", () => {
 
     const opened = overlay.open("screen", "video", []);
     const setup = overlay.setupFor(panels[0]?.webContents as never);
-    overlay.choose({ target: setup?.screenTarget as never, label: "Entire screen" });
+    overlay.choose({
+      target: setup?.screenTarget as never,
+      // A whole screen is never cropped, which is what the picker sends.
+      crop: null,
+      label: "Entire screen",
+    });
 
     await opened;
     expect(keys.releases).toBeGreaterThan(0);
