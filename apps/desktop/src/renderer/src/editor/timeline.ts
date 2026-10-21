@@ -334,3 +334,50 @@ export interface TrimGrab {
 export function trimmedTo(grab: TrimGrab, clientX: number): MediaTime {
   return grab.source + (clientX - grab.clientX) * grab.perPixel;
 }
+
+/**
+ * Where a clip marks the presses inside it, as fractions of its own width.
+ *
+ * Fractions rather than pixels because the clip's width is a percentage of the
+ * row, and a mark placed in pixels drifts off its press by whatever rounding
+ * the percentage picked up. Speed does not enter into it: a clip covers its
+ * whole source span however fast it plays it.
+ *
+ * Thinned to `gap` pixels apart rather than drawn one per press. A demo that is
+ * one continuous stream of clicking is several hundred presses inside a few
+ * pixels at the fit zoom: that is a solid bar saying nothing, and a node per
+ * press on every clip in the row. The first of a cluster keeps its mark, so a
+ * dot always sits on a real press rather than on the average of several.
+ *
+ * Half-open on the source range, like every other reader of a slice: a press
+ * exactly on a cut belongs to the clip that starts there, so splitting a clip
+ * under one does not give that click two dots.
+ *
+ * `clicks` is the manifest's own order, which is ascending — the thinning is
+ * one pass and relies on it.
+ */
+export function clickMarks(
+  clicks: readonly MediaTime[],
+  slice: Slice,
+  width: number,
+  gap: number,
+): number[] {
+  const span = slice.source.end - slice.source.start;
+  if (width <= 0 || span <= 0) return [];
+
+  const marks: number[] = [];
+  let last = -Infinity;
+
+  for (const at of clicks) {
+    if (at < slice.source.start || at >= slice.source.end) continue;
+
+    const fraction = (at - slice.source.start) / span;
+    const x = fraction * width;
+    if (x - last < gap) continue;
+
+    last = x;
+    marks.push(fraction);
+  }
+
+  return marks;
+}

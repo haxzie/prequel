@@ -1584,6 +1584,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [session],
   );
 
+  // Press times alone, for the clips to mark. The strip never asks where a
+  // click landed — that is the zooms' question — and a fresh array per render
+  // would miss every clip's memo on a row of fifty.
+  const clickTimes = useMemo(() => session.clicks.map((click) => click.at), [session.clicks]);
+
   // From the manifest rather than the video element: the inspector needs it to
   // shape the `wide` bubble before the element has necessarily loaded.
   // The first take's, for both. These shape the inspector's controls and the
@@ -2180,6 +2185,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               framesPending={frames.pending}
               cameraSpans={cameraSpans}
               captionRange={captionRange}
+              clicks={clickTimes}
             />
           </>
         )}

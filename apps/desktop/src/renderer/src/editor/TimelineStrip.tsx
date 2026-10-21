@@ -49,6 +49,7 @@ import {
   type EditorState,
 } from "./state";
 import {
+  clickMarks,
   place,
   spanInProject,
   toProjectTime,
@@ -222,6 +223,17 @@ const ZOOM_EDGE = 1;
 
 /** Clip row height: the picture, plus the band above and below it. */
 export const CLIP_H = CLIP_FRAME_H + CLIP_EDGE * 2;
+
+/**
+ * A click dot's size, and the least room between two of them.
+ *
+ * Three pixels is the smallest dot that still reads as round at every scale
+ * factor, and the gap is its width and a bit: two dots four pixels apart touch
+ * and read as one wide mark, which is the one thing the row must not say — a
+ * long press and two clicks have to look different.
+ */
+const CLICK_DOT = 3;
+const CLICK_GAP = 5;
 
 /**
  * A text row's height, and the gap between two of them.
@@ -561,6 +573,7 @@ export function TimelineStrip({
   framesPending,
   cameraSpans,
   captionRange,
+  clicks,
 }: {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
@@ -603,6 +616,14 @@ export function TimelineStrip({
    * timeline are visibly the same thing.
    */
   captionRange: { start: MediaTime; end: MediaTime } | null;
+  /**
+   * Every press the recording saw, in source time.
+   *
+   * Times alone: where each one landed in the frame is the zooms' business,
+   * and the strip only asks when. Empty for a recording made without the
+   * Accessibility grant, and for every one made before the tap existed.
+   */
+  clicks: readonly MediaTime[];
 }) {
   // Memoised on the slices, not rebuilt per render: `place` hands back new
   // objects every call, and this strip re-renders on every preview drag. Fresh
@@ -1342,6 +1363,7 @@ export function TimelineStrip({
                     framesPending={framesPending}
                     contentWidth={contentWidth}
                     cameraSpans={cameraSpans}
+                    clicks={clicks}
                     selected={slice.id === state.selectedSliceId}
                     carried={carrying?.sliceId === slice.id}
                     blade={
@@ -2098,6 +2120,7 @@ function Clip({
   framesPending,
   contentWidth,
   cameraSpans,
+  clicks,
   selected,
   blade,
   audio,
@@ -2120,6 +2143,8 @@ function Clip({
   /** The strip's full width in pixels, which is what the zoom actually sets. */
   contentWidth: number;
   cameraSpans: readonly { start: MediaTime; end: MediaTime }[];
+  /** Every press the recording saw, in source time — see `clickMarks`. */
+  clicks: readonly MediaTime[];
   selected: boolean;
   /** The blade, while it is held: a press cuts the clip instead of taking it
       up, and the two grips go with the gesture they belonged to. */
@@ -2224,6 +2249,13 @@ function Clip({
   const strip = useMemo(
     () => (filmstrip === null ? [] : thumbs(slice, widthPx, filmstrip.cadence)),
     [filmstrip, slice, widthPx],
+  );
+
+  // Thinned against the clip's current width, so zooming in parts a cluster
+  // into the presses it was made of rather than redrawing the same dot wider.
+  const marks = useMemo(
+    () => clickMarks(clicks, slice, widthPx, CLICK_GAP),
+    [clicks, slice, widthPx],
   );
 
   // Overlap rather than "was a camera recorded": a clip trimmed to the first
@@ -2407,6 +2439,37 @@ function Clip({
           <path d={wave} fill="currentColor" />
         </svg>
       )}
+
+      {/* A dot for every press the recording saw, along the top of the footage.
+
+          The raw signal the first cut was built from, which is why it is on the
+          clip and not on the zoom row: a zoom is a decision and can be moved or
+          deleted, while a press is something that happened to this footage and
+          travels with it through every trim and cut.
+
+          Along the top because the bottom is the waveform's and the middle is
+          the label's — and because the top edge is where the eye already is when
+          it is reading the ruler above. Thinned by `clickMarks`; a cluster is one
+          dot until the zoom gives it room to be several.
+
+          `clamp` so a press in the clip's first or last frames still draws a
+          whole dot: the dot is centred on its moment, the clip clips what
+          overflows, and a half dot against the frame reads as a rendering fault
+          rather than as a click right at the cut. */}
+      {marks.length > 0 &&
+        marks.map((fraction) => (
+          <span
+            key={fraction}
+            className="pointer-events-none absolute -translate-x-1/2 rounded-full bg-slice-ring/80"
+            style={{
+              left: `clamp(${String(CLICK_DOT)}px, ${String(fraction * 100)}%, calc(100% - ${String(CLICK_DOT)}px))`,
+              top: CLICK_DOT,
+              width: CLICK_DOT,
+              height: CLICK_DOT,
+            }}
+            aria-hidden="true"
+          />
+        ))}
 
       {/* The chip and how long the clip runs — the shape every other bar on
           the strip wears, so four rows of different things read as four of one

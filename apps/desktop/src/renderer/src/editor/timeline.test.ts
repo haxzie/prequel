@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackMedia } from "../../../shared/contract";
 import {
+  clickMarks,
   place,
   sliceAt,
   splitAt,
@@ -340,5 +341,51 @@ describe("trimmedTo", () => {
   it("puts the edge back when the pointer comes back", () => {
     trimmedTo(GRAB, 400);
     expect(trimmedTo(GRAB, GRAB.clientX)).toBe(GRAB.source);
+  });
+});
+
+describe("clickMarks", () => {
+  /** A hundred pixels of clip, and a dot every four at the most. */
+  const marks = (clicks: number[], slices = WHOLE) => clickMarks(clicks, slices[0]!, 100, 4);
+
+  it("places a press at its share of the clip", () => {
+    expect(marks([2.5 * S, 5 * S])).toEqual([0.25, 0.5]);
+  });
+
+  it("leaves out the presses this clip cut away", () => {
+    // The second clip of `CUT` begins at 4s, so a press at 3s is in the gap and
+    // one at 2s is the end of the clip before it.
+    expect(marks([2 * S, 3 * S, 5 * S], CUT)).toEqual([]);
+    expect(marks([2 * S, 3 * S, 5 * S], [CUT[1]!])).toEqual([1 / 6]);
+  });
+
+  it("gives a press on a cut one dot and not two", () => {
+    const halves = splitAt(WHOLE, 5 * S, () => "b");
+    const first = clickMarks([5 * S], halves[0]!, 100, 4);
+    const second = clickMarks([5 * S], halves[1]!, 100, 4);
+    expect([first.length, second.length]).toEqual([0, 1]);
+  });
+
+  it("thins a cluster to the first press in it", () => {
+    // Ten presses inside a tenth of a second — a double-click and a drag — are
+    // a tenth of a pixel apart at this scale.
+    const burst = Array.from({ length: 10 }, (_, index) => 5 * S + index * (S / 100));
+    expect(marks(burst)).toEqual([0.5]);
+  });
+
+  it("keeps a press the gap clears", () => {
+    // Half a second apart is five pixels at this scale, which clears four.
+    expect(marks([5 * S, 5.5 * S])).toEqual([0.5, 0.55]);
+  });
+
+  it("draws nothing for a clip with no width yet", () => {
+    expect(clickMarks([5 * S], WHOLE[0]!, 0, 4)).toEqual([]);
+  });
+
+  it("marks a sped-up clip by where the press is in the footage", () => {
+    // The clip plays its ten seconds in five, so half the source is still half
+    // the bar: speed changes how wide the clip is, not what is inside it.
+    const fast: Slice = { id: "a", source: { start: 0, end: 10 * S }, speed: 2 };
+    expect(clickMarks([5 * S], fast, 100, 4)).toEqual([0.5]);
   });
 });
