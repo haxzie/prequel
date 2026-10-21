@@ -25,12 +25,14 @@ import {
   canUndo,
   editorReducer,
   initialState,
+  laneMoved,
   MIN_SLICE_NS,
   musicSplitAt,
   projectDuration,
   selectedSlice,
   settingsOf,
   slicesOf,
+  snappedStart,
   placedSlices,
   zoomSpanNear,
   type EditorAction,
@@ -2120,5 +2122,52 @@ describe("cutting a bed in two", () => {
 
     expect(state.project.music).toHaveLength(1);
     expect(state.project.music[0]!.length).toBe(10 * S);
+  });
+});
+
+describe("snapping a dragged bar to its neighbours", () => {
+  const S = 1_000_000_000;
+
+  it("latches the head onto an edge it is near", () => {
+    // Three quarters of a second short of the edge, with a one-second reach.
+    expect(snappedStart(4 * S - 750_000_000, 2 * S, [4 * S], S)).toBe(4 * S);
+  });
+
+  it("latches the tail on as readily as the head", () => {
+    // A two-second bar dropped so that its *end* lands near 10s: the start it
+    // answers with is the one that puts the end exactly there.
+    expect(snappedStart(8 * S + 200_000_000, 2 * S, [10 * S], S)).toBe(8 * S);
+  });
+
+  it("leaves a drag alone outside the reach", () => {
+    // The failure a snap has to avoid: a bar that cannot be put *near* a
+    // neighbour because it is always put against it.
+    const start = 4 * S - 2 * S;
+    expect(snappedStart(start, 2 * S, [4 * S], S)).toBe(start);
+  });
+
+  it("takes the nearer of two edges", () => {
+    expect(snappedStart(4 * S + 300_000_000, S, [4 * S, 5 * S], S)).toBe(4 * S);
+    expect(snappedStart(4 * S + 700_000_000, S, [4 * S, 5 * S], S)).toBe(5 * S);
+  });
+
+  it("does nothing at all with no reach", () => {
+    // What every caller gets before a tolerance is passed — the old behaviour,
+    // exactly.
+    expect(snappedStart(4 * S + 1, 2 * S, [4 * S], 0)).toBe(4 * S + 1);
+  });
+
+  it("butts a bed against the one before it", () => {
+    // End to end through `laneMoved`, which is what the music row drags
+    // through: a bed let go just past its neighbour's tail lands on it.
+    const lane = [
+      { id: "a", source: { start: 0, end: 4 * S } },
+      { id: "b", source: { start: 6 * S, end: 10 * S } },
+    ];
+
+    expect(laneMoved(lane, "b", 4 * S + 400_000_000, 60 * S, S)).toEqual({
+      start: 4 * S,
+      end: 8 * S,
+    });
   });
 });

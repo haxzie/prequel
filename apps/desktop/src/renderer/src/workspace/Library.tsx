@@ -1,4 +1,8 @@
+import { useState } from "react";
+
 import type { WorkspaceSection } from "../../../shared/contract";
+import { FeedbackDialog } from "../editor/FeedbackDialog";
+import { BugIcon } from "../editor/icons";
 import { cn } from "../lib/cn";
 import { Exports } from "../exports/Exports";
 import { Projects } from "../projects/Projects";
@@ -55,11 +59,13 @@ export function Library({
   /** The recording being loaded, if a card has been clicked. */
   onOpen: (dir: string) => void;
 }) {
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   return (
     // `min-h-0 flex-1` rather than `h-full`: this is a flex child of `#root`,
     // and a flex item that cannot shrink below its content pushes the bottom of
     // the window out of view instead of letting the middle give way.
-    <div className="editor-theme flex min-h-0 flex-1 overflow-hidden bg-editor-glass text-editor-fg">
+    <div className="editor-theme relative flex min-h-0 flex-1 overflow-hidden bg-editor-glass text-editor-fg">
       {/* Dragging the sidebar moves the window, and the inset traffic lights
           need the room at the top of it. The buttons opt back out, or a press
           on one would move the window instead of switching the pane. */}
@@ -126,6 +132,29 @@ export function Library({
         {/* Everything below is anchored to the bottom of the sidebar. */}
         <span className="flex-1" />
 
+        {/* The same report the editor's bar carries, reachable without a
+            recording open. Something going wrong in the library — a card that
+            will not open, an export that is not listed — is exactly the moment
+            somebody looks for this, and until now the only way to it was to
+            open a recording first.
+
+            Quiet, like Shared Library above it: in the editor it wears a label
+            because it has to be noticed by somebody who was not looking for it
+            on a bar of glyphs, and here it is one row among rows that all read
+            as words. */}
+        <button
+          type="button"
+          onClick={() => setFeedbackOpen(true)}
+          className={cn(
+            "no-drag flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[13px] transition-colors",
+            "[&_svg]:size-4 [&_svg]:shrink-0",
+            "text-editor-fg/70 hover:bg-white/8 hover:text-editor-fg",
+          )}
+        >
+          <BugIcon />
+          Found a bug?
+        </button>
+
         <AccountMenu />
       </nav>
 
@@ -147,6 +176,11 @@ export function Library({
           <SettingsPane />
         )}
       </main>
+
+      {/* Over both columns rather than inside the sidebar, which is 15rem wide
+          and would squeeze the box this exists to be typed into. The root above
+          is `relative` for this one child. */}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }

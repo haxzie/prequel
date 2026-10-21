@@ -69,6 +69,21 @@ import { barCurve, zoomCeiling } from "./zoomCurve";
 const NS_PER_SECOND = 1_000_000_000;
 
 /**
+ * How near a bar has to come to an edge before it latches on, in pixels.
+ *
+ * Six, which is about what a hand holds a drag still to. Much more and a bar
+ * cannot be put *near* a neighbour without being put against it, which is the
+ * failure a snap has to avoid more than it has to catch every attempt — the
+ * one that misses is nudged again, and the one that latches when it was not
+ * wanted has to be fought.
+ *
+ * In pixels rather than in time on purpose: the strip zooms, and a tolerance
+ * written in milliseconds would be a different target on screen at every
+ * level.
+ */
+const SNAP_REACH = 6;
+
+/**
  * What one clip's two faders are set to, for the line across it.
  *
  * Resolved rather than read off the overrides: a clip that overrides nothing
@@ -282,10 +297,33 @@ const VOLUME_GRAB = 9;
  * every pixel of this would be behind a photograph — a gradient nobody can see
  * and one more thing on the heaviest row of the strip.
  */
-const EMBOSS =
-  "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
-  "before:bg-gradient-to-b before:from-white/[0.11] before:to-transparent before:to-[65%] " +
-  "shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]";
+const EMBOSS = [
+  // The wash, as the bar's own background-image rather than as a child.
+  //
+  // It was a `::before` for a long time, and that is what put the glass over
+  // the selection ring: an outline is painted with the element, and every
+  // descendant is painted after it — so the layer carrying the edges sat on
+  // top of the ring and ate its outer pixel, which read as the ring having
+  // gone thin. A background-image is part of the element, so the ring lands
+  // over it the way it should.
+  //
+  // `background-color` underneath is untouched: the two are different
+  // properties, and the gradient runs to transparent so the fill shows
+  // through.
+  "bg-gradient-to-b from-white/[0.11] to-transparent to-[65%]",
+  // Three lines and a drop, which is what a macOS control wears: a dark
+  // hairline all the way round, which is what separates one bar from the next;
+  // the lit top edge over it, because light comes from above; a dark line
+  // along the bottom, which is the shadow that edge implies; and a short fall
+  // under the whole thing, so the bar sits *on* the row.
+  //
+  // **One string literal per class, however long it gets.** Tailwind scans the
+  // source for class names, so a class split across a `+` is two fragments it
+  // recognises as neither — no rule is generated, nothing appears on screen,
+  // and nothing anywhere says why. That is exactly how this shipped twice
+  // looking identical to the version before it.
+  "shadow-[inset_0_0_0_1px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(0,0,0,0.35),0_1px_3px_rgba(0,0,0,0.45)]",
+].join(" ");
 
 /**
  * How wide the level's bubble is, in pixels.
@@ -682,6 +720,11 @@ export function TimelineStrip({
   // recording at all. An empty ruler over a full-width strip.
   const pxPerSecond = Math.max(zoom ?? openingZoom(duration, timelineWidth, OPENING_ZOOM), fit);
   const contentWidth = Math.max(timelineWidth, (duration / NS_PER_SECOND) * pxPerSecond);
+
+  // What a snap is worth here. Pixels on the way in, because what the hand is
+  // doing is aiming at a line on screen; nanoseconds on the way out, because
+  // that is what the edit is in — see `snappedStart`.
+  const snap = (SNAP_REACH / pxPerSecond) * NS_PER_SECOND;
 
   // Pushed in on change rather than measured inside the playback loop, which
   // would have to flush layout to read them — every frame, while also writing
@@ -1248,7 +1291,7 @@ export function TimelineStrip({
                         }}
                         onBeginEdit={() => dispatch({ type: "beginEdit" })}
                         onMove={(start, onto) =>
-                          dispatch({ type: "moveText", textId: text.id, start, track: onto })
+                          dispatch({ type: "moveText", textId: text.id, start, track: onto, snap })
                         }
                         onDrop={() => dispatch({ type: "tidyTexts" })}
                         onCopyPreview={(over) =>
@@ -1490,7 +1533,7 @@ export function TimelineStrip({
                       });
                     }}
                     onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                    onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
+                    onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start, snap })}
                     onTrim={(edge, clientX) =>
                       dispatch({
                         type: "trimZoom",
@@ -1633,7 +1676,7 @@ export function TimelineStrip({
                       });
                     }}
                     onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                    onMove={(at) => dispatch({ type: "moveMusic", musicId: bed.id, at })}
+                    onMove={(at) => dispatch({ type: "moveMusic", musicId: bed.id, at, snap })}
                     onTrim={(edge, clientX) =>
                       dispatch({ type: "trimMusic", musicId: bed.id, edge, at: timeAt(clientX) })
                     }

@@ -355,7 +355,7 @@ export type EditorAction =
    * The one action on a zoom that is not in source time, and deliberately:
    * what a drag preserves is the length on screen. See `moveZoom`.
    */
-  | { type: "moveZoom"; zoomId: string; start: MediaTime }
+  | { type: "moveZoom"; zoomId: string; start: MediaTime; snap?: MediaTime }
   | { type: "trimZoom"; zoomId: string; edge: "start" | "end"; source: MediaTime }
   /**
    * Lays a text on a row. `track` may be one past the last row, which makes
@@ -412,7 +412,7 @@ export type EditorAction =
    */
   | { type: "setMusicFile"; musicId: string; source: MusicFile }
   | { type: "setMusic"; musicId: string; patch: Partial<Omit<MusicSlice, "id" | "file">> }
-  | { type: "moveMusic"; musicId: string; at: MediaTime }
+  | { type: "moveMusic"; musicId: string; at: MediaTime; snap?: MediaTime }
   | { type: "trimMusic"; musicId: string; edge: "start" | "end"; at: MediaTime }
   | { type: "splitMusic"; musicId: string; at: MediaTime }
   | { type: "deleteMusic"; musicId: string }
@@ -473,7 +473,7 @@ export type EditorAction =
    * at that moment declines the move and the text stays where it was,
    * which is what a drag that has not found a home should look like.
    */
-  | { type: "moveText"; textId: string; start: MediaTime; track?: number }
+  | { type: "moveText"; textId: string; start: MediaTime; track?: number; snap?: MediaTime }
   /**
    * Drops the empty rows above the last text, once a drag between rows has
    * ended. Not part of `moveText` itself: a row pruned the moment it empties
@@ -901,7 +901,7 @@ function apply(
     }
 
     case "moveMusic":
-      return moveMusic(state, action.musicId, action.at);
+      return moveMusic(state, action.musicId, action.at, action.snap ?? 0);
 
     case "trimMusic":
       return trimMusic(state, action.musicId, action.edge, action.at);
@@ -1538,7 +1538,7 @@ function moveText(
     // the two paths had drifted. Zooms still go by `laneMoved`: they are
     // anchored to the footage under them, and `project.zooms` is held sorted.
     const others = lanedTexts(placed, lane).filter((entry) => entry.id !== action.textId);
-    const span = laneRoom(others, text.length, action.start, limit);
+    const span = laneRoom(others, text.length, action.start, limit, action.snap ?? 0);
     const place = span && pinned(placed, span);
     if (!place) return state;
 
@@ -1594,8 +1594,23 @@ export function laneRoom(
   length: MediaTime,
   start: MediaTime,
   limit: MediaTime,
+  /** How near an edge has to be before the span latches onto it. */
+  snap: MediaTime = 0,
 ): { start: MediaTime; end: MediaTime } | null {
-  const at = clampTo(start, 0, limit);
+  // Before the test below, not after. A bar let go a few pixels *inside* a
+  // neighbour is somebody aiming at its edge, and refusing the drop and then
+  // snapping what is left would be a bar that springs back from the one place
+  // it was being put.
+  const at = clampTo(
+    snappedStart(
+      start,
+      length,
+      [...lane.flatMap((entry) => [entry.source.start, entry.source.end]), 0, limit],
+      snap,
+    ),
+    0,
+    limit,
+  );
   if (lane.some((entry) => at >= entry.source.start && at < entry.source.end)) return null;
 
   const floor = lane.reduce(
@@ -1991,9 +2006,14 @@ function setMusicFile(state: EditorState, musicId: string, source: MusicFile): E
  * offset is left alone. That is the difference between this and trimming the
  * left edge, which is the other way to make a bed start later.
  */
-function moveMusic(state: EditorState, musicId: string, at: MediaTime): EditorState {
+function moveMusic(
+  state: EditorState,
+  musicId: string,
+  at: MediaTime,
+  snap: MediaTime,
+): EditorState {
   const duration = projectDuration(state.project);
-  const span = laneMoved(musicLane(state.project.music), musicId, at, duration);
+  const span = laneMoved(musicLane(state.project.music), musicId, at, duration, snap);
   if (!span) return state;
 
   return edit(state, (project) => ({
@@ -2167,11 +2187,56 @@ function nextMusicId(state: EditorState): string {
   return id;
 }
 
+/**
+ * Pulls a dragged span onto a neighbouring edge when it comes close to one.
+ *
+ * Both of its own edges are offered to every edge in `edges`: a bar's head can
+ * land on a neighbour's tail, and its tail on a neighbour's head, and which of
+ * the two somebody meant is whichever they got nearer to. The answer is still
+ * a *start*, because that is what every mover here takes.
+ *
+ * The tolerance arrives in nanoseconds and is worked out from pixels at the
+ * strip — see `SNAP_REACH`. It has to be, or a snap would be a different
+ * distance on screen at every zoom level: generous at the wide end and
+ * unshakeable at the narrow one, where a frame is several pixels across.
+ *
+ * Ties go to the first edge offered, so the answer does not depend on the
+ * order two equally close candidates happened to be built in. Nothing is
+ * clamped here — the callers all bound the result against their own lane, and
+ * a candidate that lands outside is simply one they refuse.
+ */
+export function snappedStart(
+  start: MediaTime,
+  length: MediaTime,
+  edges: readonly MediaTime[],
+  snap: MediaTime,
+): MediaTime {
+  if (snap <= 0) return start;
+
+  let best = start;
+  let distance = snap;
+
+  for (const edge of edges) {
+    // The head on this edge, and the tail on it.
+    for (const candidate of [edge, edge - length]) {
+      const away = Math.abs(start - candidate);
+      if (away < distance) {
+        distance = away;
+        best = candidate;
+      }
+    }
+  }
+
+  return best;
+}
+
 export function laneMoved(
   lane: readonly Laned[],
   id: string,
   start: MediaTime,
   limit: MediaTime,
+  /** How near an edge has to be before the span latches onto it. */
+  snap: MediaTime = 0,
 ): { start: MediaTime; end: MediaTime } | null {
   const index = lane.findIndex((entry) => entry.id === id);
   const entry = lane[index];
@@ -2181,7 +2246,13 @@ export function laneMoved(
   const floor = lane[index - 1]?.source.end ?? 0;
   const ceiling = Math.min(lane[index + 1]?.source.start ?? limit, limit);
 
-  const from = clampTo(start, floor, Math.max(floor, ceiling - length));
+  // The two neighbours and the two ends of the edit. Butting a bar against the
+  // one before it is the whole point; the start of the film and its end are
+  // here because they are edges somebody aims at just as often, and landing a
+  // frame short of either is the same miss.
+  const at = snappedStart(start, length, [floor, ceiling, 0, limit], snap);
+
+  const from = clampTo(at, floor, Math.max(floor, ceiling - length));
   return { start: from, end: from + length };
 }
 
@@ -2263,7 +2334,17 @@ function moveZoom(
       ? (spanInProject(placed, zooms[index + 1]!.source)?.start ?? reach)
       : reach;
 
-  const at = clampTo(action.start, floor, Math.max(floor, Math.min(ceiling, reach) - length));
+  // Snapped before it is bounded, against the two neighbours and the two ends
+  // of the edit — the same edges a bed latches onto, on the same clock the bar
+  // is drawn on. See `snappedStart`.
+  const wanted = snappedStart(
+    action.start,
+    length,
+    [floor, Math.min(ceiling, reach), 0, reach],
+    action.snap ?? 0,
+  );
+
+  const at = clampTo(wanted, floor, Math.max(floor, Math.min(ceiling, reach) - length));
   const from = toSourceTime(placed, at);
   const to = toSourceTimeThrough(placed, at + length);
   if (from === null || to === null || to <= from) return state;
