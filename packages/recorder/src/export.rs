@@ -19,8 +19,8 @@ use napi_derive::napi;
 use prequel_keysound::{ClickProfile, KeyProfile};
 use prequel_render::sound::SoundPlan;
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, OutputFormat, RenderPlan, SegmentRef, SliceMedia,
-    SliceRender,
+    AudioMix, CancelFlag, ExportRequest, MusicBed, OutputFormat, RenderPlan, SegmentRef,
+    SliceMedia, SliceRender,
 };
 
 use crate::sound::SoundCues;
@@ -70,6 +70,30 @@ pub struct ExportSlice {
     pub system: Option<SegmentMedia>,
 }
 
+/// One bed on the music row, as the editor describes it.
+///
+/// Project time at both ends, unlike everything else in a request: a bed is
+/// laid under the finished video rather than pinned to a moment of the
+/// recording, so it crosses whatever cuts it reaches. See `MusicSlice` in the
+/// desktop app's `shared/music.ts`.
+#[napi(object)]
+#[derive(Debug)]
+pub struct MusicClip {
+    /// A file inside the recording's directory.
+    pub file: String,
+    /// Project time it begins at, in nanoseconds.
+    pub start: f64,
+    /// Project time it ends at.
+    pub end: f64,
+    /// Nanoseconds into the file that `start` plays.
+    pub offset: f64,
+    pub volume: f64,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    /// Whether the file starts again when it runs out.
+    pub repeat: bool,
+}
+
 #[napi(object)]
 #[derive(Debug)]
 pub struct ExportOptions {
@@ -84,6 +108,8 @@ pub struct ExportOptions {
     /// The recording's sound plan, exactly as `sound_cues` handed it to the
     /// editor. Omit for a recording with no presses and no clicks.
     pub sound: Option<SoundCues>,
+    /// The music row. Omit, or send an empty list, for a video with no music.
+    pub music: Option<Vec<MusicClip>>,
 }
 
 #[napi(object)]
@@ -248,6 +274,27 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
         sound: options.sound.map(|cues| SoundPlan {
             cues: cues.to_cues(),
         }),
+        music: options
+            .music
+            .unwrap_or_default()
+            .into_iter()
+            .map(|clip| {
+                Ok(MusicBed {
+                    // Checked as relative like every other file name in a
+                    // request: the renderer is the least-trusted process in
+                    // the app, and this string is joined onto the recording's
+                    // path before it is opened.
+                    file: relative(clip.file)?,
+                    start: clip.start.max(0.0) as u64,
+                    end: clip.end.max(0.0) as u64,
+                    offset: clip.offset.max(0.0) as u64,
+                    volume: clip.volume.max(0.0) as f32,
+                    fade_in: clip.fade_in.max(0.0) as u64,
+                    fade_out: clip.fade_out.max(0.0) as u64,
+                    repeat: clip.repeat,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
     })
 }
 

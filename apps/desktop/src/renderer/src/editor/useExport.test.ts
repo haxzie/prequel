@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import { MANIFEST_VERSION, type Manifest } from "../../../shared/manifest";
 import { newProject, type Project } from "../../../shared/project";
+import { buildMusic } from "./exportSlices";
 import { buildSlices } from "./useExport";
 
 const S = 1_000_000_000;
@@ -134,5 +135,65 @@ describe("buildSlices", () => {
       expect(slice.media.microphone).toBeUndefined();
       expect(slice.media.system_audio).toBeUndefined();
     }
+  });
+});
+
+/**
+ * The music row, as the exporter is told it.
+ *
+ * Two failures, both silent. A fractional nanosecond fails the whole export
+ * with `invalid type: floating point, expected i64` — nothing renders, and the
+ * message names a number rather than a field. And a bed naming a file the
+ * project does not list would reach the exporter as a path it cannot resolve,
+ * where silence is the honest answer and is better decided here.
+ */
+describe("buildMusic", () => {
+  const SONG = { file: "wander.m4a", label: "Wander", duration: 60 * S };
+
+  function withMusic(music: Project["music"], files = [SONG]): Project {
+    return { ...project(), music, musicFiles: files };
+  }
+
+  function bed(patch: Partial<Project["music"][number]> = {}): Project["music"][number] {
+    return {
+      id: "music-0",
+      at: 0,
+      length: 8 * S,
+      file: SONG.file,
+      offset: 0,
+      volume: 1,
+      muted: false,
+      fadeIn: S,
+      fadeOut: S,
+      repeat: false,
+      ...patch,
+    };
+  }
+
+  it("sends a bed as a project-time span", () => {
+    const [sent] = buildMusic(withMusic([bed({ at: 2 * S })]));
+
+    expect(sent).toMatchObject({ file: SONG.file, start: 2 * S, end: 10 * S, repeat: false });
+  });
+
+  it("rounds every time to a whole nanosecond", () => {
+    // Trimming maps pixels to time through a division, so a dragged bed is
+    // saved as something like `3827788613.0812`.
+    const [sent] = buildMusic(
+      withMusic([bed({ at: 2.5, length: 8 * S + 0.25, offset: 1.75, fadeIn: 0.5, fadeOut: 0.5 })]),
+    );
+
+    for (const value of [sent!.start, sent!.end, sent!.offset, sent!.fadeIn, sent!.fadeOut]) {
+      expect(Number.isInteger(value)).toBe(true);
+    }
+  });
+
+  it("leaves out a bed that cannot be heard", () => {
+    expect(buildMusic(withMusic([bed({ muted: true })]))).toEqual([]);
+    expect(buildMusic(withMusic([bed({ volume: 0 })]))).toEqual([]);
+  });
+
+  it("leaves out a bed whose file the project does not list", () => {
+    expect(buildMusic(withMusic([bed()], []))).toEqual([]);
   });
 });

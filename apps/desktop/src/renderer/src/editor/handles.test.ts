@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { cornerAt, handleAt, keepsAspect, pulled, type Handle } from "./handles";
+import {
+  cornerAt,
+  handleAt,
+  keepsAspect,
+  pulled,
+  radiusAt,
+  radiusDot,
+  radiusFrom,
+  radiusInset,
+  type Handle,
+} from "./handles";
 
 /** 200 × 100, so a held ratio is obvious in the numbers rather than inferred. */
 const BOX = { x: 100, y: 50, width: 200, height: 100 };
@@ -107,5 +117,50 @@ describe("finding a handle under the pointer", () => {
     const small = { x: 0, y: 0, width: 24, height: 24 };
     expect(cornerAt(small, { x: 12, y: 12 }, 12)).toBeNull();
     expect(handleAt(small, { x: 12, y: 12 }, 12, true)).toBeNull();
+  });
+});
+
+describe("the radius dot", () => {
+  const box = { x: 100, y: 50, width: 400, height: 200 };
+
+  it("sits at the radius, in from each corner", () => {
+    expect(radiusDot(box, "nw", 40, 10)).toEqual({ x: 140, y: 90 });
+    expect(radiusDot(box, "se", 40, 10)).toEqual({ x: 460, y: 210 });
+  });
+
+  it("is held off a square corner, where the resize handle is", () => {
+    // At a radius of zero the dot would sit on the corner, under the handle
+    // that resizes the picture — so the only gesture that could reach it
+    // would be the other one.
+    expect(radiusDot(box, "nw", 0, 12)).toEqual({ x: 112, y: 62 });
+  });
+
+  it("stops at the roundest a rectangle goes", () => {
+    // Half the shorter edge. Past it the arcs meet and more radius is a
+    // number that changes no pixels.
+    expect(radiusInset(box, 500, 12)).toBe(100);
+  });
+
+  it("answers a pull on its own corner and not on its neighbour's", () => {
+    const dot = radiusDot(box, "ne", 30, 12);
+
+    expect(radiusAt(box, dot, 8, 30, 12)).toBe("ne");
+    expect(radiusAt(box, { x: dot.x + 40, y: dot.y }, 8, 30, 12)).toBeNull();
+  });
+
+  it("reads a diagonal pull as the distance it came in", () => {
+    expect(radiusFrom(box, "nw", { x: 130, y: 80 })).toBe(30);
+    expect(radiusFrom(box, "se", { x: 470, y: 220 })).toBe(30);
+  });
+
+  it("goes on answering a drag that leaves the diagonal", () => {
+    // Straight across from the corner: the mean of the two axes still moves,
+    // where a distance along the diagonal would stop following the pointer.
+    expect(radiusFrom(box, "nw", { x: 160, y: 50 })).toBe(30);
+  });
+
+  it("never asks for a radius a rectangle cannot hold", () => {
+    expect(radiusFrom(box, "nw", { x: 100 + 400, y: 50 + 200 })).toBe(100);
+    expect(radiusFrom(box, "nw", { x: 50, y: 0 })).toBe(0);
   });
 });

@@ -11,6 +11,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { EditorSession, SoundBank, SoundSample, TrackMedia } from "../../../shared/contract";
 import { takeAt, type MediaTime, type TrackKind } from "../../../shared/manifest";
+import {
+  musicAt,
+  musicFileTime,
+  musicGain,
+  type MusicFile,
+  type MusicSlice,
+} from "../../../shared/music";
 import { AudioMixer, type MixBus, type TrackGain } from "./audio";
 import { matteKey, mediaKey, segmentAt, type MediaKey } from "./segments";
 import { CLICK_KIND, CueScheduler, decodeCues, type PlacedCue } from "./keysound";
@@ -82,6 +89,14 @@ export interface EditorPlayback {
   /** Ref callback for one segment's media element. */
   register: (key: MediaKey) => (element: HTMLMediaElement | null) => void;
   /**
+   * Ref callback for one music file's `<audio>`.
+   *
+   * Keyed by the file and not by the bed: there is one element per file in the
+   * DOM, and two beds cut from the same song are two spans driving it. Which
+   * of them is playing is decided per frame — see the loop.
+   */
+  registerMusic: (file: string) => (element: HTMLMediaElement | null) => void;
+  /**
    * The live element showing a slot right now, or null.
    *
    * Read per frame by the compositor, which draws from the element directly —
@@ -136,7 +151,7 @@ export interface EditorPlayback {
    * same frame as writing `scrollLeft` thrashes it — the single worst thing to
    * do sixty times a second.
    */
-  setTrackMetrics: (contentWidth: number, viewWidth: number) => void;
+  setTrackMetrics: (contentWidth: number, viewWidth: number, offset?: number) => void;
   /**
    * Where the playhead is in *source* time, which is what the media and the
    * pointer track are both indexed by.
@@ -190,6 +205,20 @@ export interface EditorPlayback {
 export function useEditorPlayback(
   session: EditorSession | null,
   slices: readonly Slice[],
+  /**
+   * The music row, and the files it names.
+   *
+   * Taken as a parameter rather than read off the project, like the slices:
+   * this hook knows nothing about `EditorState`, and the beds are the only
+   * thing in it measured on the clock this hook keeps.
+   *
+   * Read through a ref inside the loop rather than closed over, so the caller
+   * may hand in a fresh object on every render. The alternative is this in the
+   * loop's dependencies, where dragging a fade slider — a 60 Hz stream of
+   * edits — would tear the loop down and build it again on every step, and the
+   * teardown throws away every armed typing sound.
+   */
+  music: { beds: readonly MusicSlice[]; files: readonly MusicFile[] } = { beds: [], files: [] },
 ): EditorPlayback {
   const playback = useMemo(() => new Playback(), []);
   const mixer = useMemo(() => new AudioMixer(), []);
@@ -202,12 +231,27 @@ export function useEditorPlayback(
     clicks: null,
   }));
 
+  /** The music row, as the loop reads it. See the parameter. */
+  const beds = useRef(music);
+  beds.current = music;
+
   const elements = useRef(new Map<MediaKey, HTMLMediaElement>());
+  /** The music elements, by file name. */
+  const musicElements = useRef(new Map<string, HTMLMediaElement>());
+  /** Which file each was last driving a bed of, so a change counts as a jump. */
+  const musicBeds = useRef(new Map<string, string>());
   const timecode = useRef<HTMLElement | null>(null);
   const headTime = useRef<HTMLElement | null>(null);
   const playhead = useRef<HTMLElement | null>(null);
   const scroller = useRef<HTMLElement | null>(null);
-  const metrics = useRef({ content: 0, view: 0 });
+  /**
+   * `offset` is what the strip's own chrome takes off the left — the rail of
+   * glyphs, which is pinned inside the scroller. The playhead is positioned
+   * inside the timeline and knows nothing about it; only the scroll that
+   * follows the playhead is in the scroller's coordinates, and that is where
+   * it has to be added back.
+   */
+  const metrics = useRef({ content: 0, view: 0, offset: 0 });
   /** Where the last tick landed in source time, so a jump can be told from playing on. */
   const lastSource = useRef<MediaTime | null>(null);
   /**
@@ -402,6 +446,42 @@ export function useEditorPlayback(
         sink,
       });
 
+      // The music row, on the project clock and nothing else.
+      //
+      // Not `showing`: hovering the timeline previews a *frame*, and music
+      // that jumped about under the pointer while the playhead stood still
+      // would be the editor scrubbing something nobody asked it to.
+      for (const [file, element] of musicElements.current) {
+        const known = beds.current.files.find((entry) => entry.file === file);
+        // The bed over this moment, if it is one of this file's. Beds never
+        // overlap, so there is at most one to ask about — and a file with no
+        // bed over this moment is paused rather than silenced, which costs
+        // nothing to decode.
+        const over = musicAt(beds.current.beds, at);
+        const bed = over?.file === file ? over : undefined;
+
+        const into = bed && known ? musicFileTime(bed, at, known.duration) : null;
+
+        // A different bed of the same file is a different moment of the song:
+        // the element has never been near it, so it is a seek rather than a
+        // drift however small the difference looks.
+        const crossed = musicBeds.current.get(file) !== bed?.id;
+        if (bed) musicBeds.current.set(file, bed.id);
+        else musicBeds.current.delete(file);
+
+        // Set on the element rather than handled by seeking it back: a bed
+        // that repeats wraps *inside* the decoder, so the loop is seamless
+        // rather than a hard seek on the frame the song runs out.
+        if (element.loop !== (bed?.repeat ?? false)) element.loop = bed?.repeat ?? false;
+
+        syncElement(element, into, playback.isPlaying, {
+          seek: projectJumped || crossed,
+        });
+        // Zero where there is no bed, so a file whose element is still winding
+        // down cannot be heard past the end of its own bar.
+        mixer.setMusicGain(file, bed ? musicGain(bed, at) : 0);
+      }
+
       // The matte follows the camera *element* rather than the clock: it has
       // to show the mask for the picture the camera is showing, and two
       // elements corrected against the clock on their own can sit a quarter
@@ -438,7 +518,7 @@ export function useEditorPlayback(
       );
 
       const fraction = duration > 0 ? at / duration : 0;
-      const { content, view: viewWidth } = metrics.current;
+      const { content, view: viewWidth, offset } = metrics.current;
       const x = fraction * content;
 
       if (playhead.current) {
@@ -455,8 +535,9 @@ export function useEditorPlayback(
         const margin = Math.min(FOLLOW_MARGIN, viewWidth / 3);
         const left = view.scrollLeft;
 
-        if (x < left + margin || x > left + viewWidth - margin) {
-          view.scrollLeft = x - viewWidth / 2;
+        const head = x + offset;
+        if (head < left + margin || head > left + viewWidth - margin) {
+          view.scrollLeft = head - viewWidth / 2;
         }
       }
 
@@ -549,6 +630,19 @@ export function useEditorPlayback(
     [mixer],
   );
 
+  const registerMusic = useCallback(
+    (file: string) => (element: HTMLMediaElement | null) => {
+      if (!element) {
+        musicElements.current.delete(file);
+        musicBeds.current.delete(file);
+        return;
+      }
+      musicElements.current.set(file, element);
+      mixer.connectMusic(file, element);
+    },
+    [mixer],
+  );
+
   const getElement = useCallback((slot: MediaSlot) => {
     const key = active.current.get(slot);
     if (!key) return null;
@@ -574,8 +668,8 @@ export function useEditorPlayback(
     scroller.current = element;
   }, []);
 
-  const setTrackMetrics = useCallback((content: number, view: number) => {
-    metrics.current = { content, view };
+  const setTrackMetrics = useCallback((content: number, view: number, offset = 0) => {
+    metrics.current = { content, view, offset };
   }, []);
 
   // Hover-aware for the same reason the loop is: the compositor draws the cursor
@@ -647,6 +741,7 @@ export function useEditorPlayback(
       playing,
       duration,
       register,
+      registerMusic,
       getElement,
       sliceId,
       timecodeRef,
@@ -669,6 +764,7 @@ export function useEditorPlayback(
       playing,
       duration,
       register,
+      registerMusic,
       getElement,
       sliceId,
       timecodeRef,

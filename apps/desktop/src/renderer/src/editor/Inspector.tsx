@@ -63,6 +63,7 @@ import { CursorPicker } from "./controls/CursorPicker";
 import { EasingPad } from "./controls/EasingPad";
 import { FontPicker } from "./controls/FontPicker";
 import { Field, Section } from "./controls/Field";
+import { MusicPanel, type MusicState } from "./MusicPanel";
 import { LayoutPicker } from "./controls/LayoutPicker";
 import { PerspectivePad } from "./controls/PerspectivePad";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
@@ -111,6 +112,7 @@ import {
   HighlighterToolIcon,
   LineToolIcon,
   MicIcon,
+  MusicIcon,
   WandIcon,
   MirrorIcon,
   OffsetIcon,
@@ -161,6 +163,7 @@ import {
   Slider,
   SLIDE_MS,
   Tabs,
+  PlaySampleButton,
   ToggleField,
   useTravelling,
 } from "./controls/inputs";
@@ -173,6 +176,7 @@ import { FLOATING } from "./surfaces";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import {
   activeSettings,
+  findMusic,
   findText,
   selectedSlice,
   slicesOf,
@@ -353,6 +357,14 @@ export interface InspectorProps {
    * and threading six props for one panel would put that knowledge here.
    */
   presets: PresetsState;
+  /**
+   * The music library, and what the music panel may do with it.
+   *
+   * Bundled for the reason `presets` is: every one of its callbacks reaches
+   * something outside the reducer — the library over IPC, a file dialog, the
+   * recording's own directory.
+   */
+  music: MusicState;
   /**
    * The words, and what the captions editor may do to them.
    *
@@ -577,6 +589,64 @@ function InspectorPanels(props: InspectorProps) {
                   {showingZoomTab.id === "perspective" && <ZoomPerspectivePanel {...panel} />}
                   {showingZoomTab.id === "focus" && <ZoomFocusPanel {...panel} />}
                   {showingZoomTab.id === "glass" && <ZoomGlassPanel {...panel} />}
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    );
+  }
+
+  // A selected bed takes the panel over the way a zoom and a text do, and for
+  // the same reason: none of a clip's questions apply to a piece of music.
+  const bed = findMusic(state.project, state.selectedMusicId);
+  if (bed) {
+    return (
+      <div className={SHELL}>
+        {/* One tab, and it gets a rail anyway — see the note on the mark path.
+            There is one question here and the rail is the panel's left edge on
+            every other path. */}
+        <Rail
+          items={[{ id: "music" as const, label: "Audio", Icon: MusicIcon }]}
+          value="music"
+          onChange={() => undefined}
+        />
+
+        <aside className={PANEL}>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* The slot the file list is portalled into. Without it the
+                dropdown's trigger does nothing at all — see the note on the
+                zoom path. */}
+            {pushed.id !== null && (
+              <PushedPanel
+                icon={<MusicIcon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+            )}
+
+            <div
+              className={cn("flex min-h-0 min-w-0 flex-1 flex-col", pushed.id !== null && "hidden")}
+            >
+              <PanelHeader
+                title="Audio"
+                icon={<MusicIcon />}
+                clips={slicesOf(state.project).length}
+                onClose={props.onClose}
+              />
+              <div
+                key={bed.id}
+                className="sleek-scrollbar flex min-w-0 flex-1 flex-col overflow-y-auto"
+              >
+                <div className="flex min-w-0 flex-1 flex-col animate-view-in">
+                  <MusicPanel
+                    bed={bed}
+                    files={state.project.musicFiles}
+                    music={props.music}
+                    onChange={(patch) => dispatch({ type: "setMusic", musicId: bed.id, patch })}
+                    onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                  />
                 </div>
               </div>
             </div>
@@ -3010,22 +3080,6 @@ function WatermarkPanel({
       </Section>
 
       <Section title="Placement">
-        <Field icon={<PlaceIcon />} {...field("watermark", "watermarkX")}>
-          <CameraMap
-            frame={{ width: 16, height: 9 }}
-            shape="rounded"
-            size={mark.watermarkWidth}
-            aspect={mark.watermarkWidth / Math.max(mark.watermarkHeight, 0.001)}
-            x={mark.watermarkX}
-            y={mark.watermarkY}
-            disabled={off}
-            onChange={(x, y) => {
-              set("watermark", "watermarkX", x);
-              set("watermark", "watermarkY", y);
-            }}
-          />
-        </Field>
-
         <Slider
           icon={<SizeIcon />}
           label="Size"
@@ -3061,6 +3115,85 @@ function WatermarkPanel({
           disabled={off}
           onChange={(value) => set("watermark", "watermarkRadius", value)}
         />
+
+        <Slider
+          icon={<OpacityIcon />}
+          label="Opacity"
+          {...field("watermark", "watermarkOpacity")}
+          value={mark.watermarkOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("watermark", "watermarkOpacity", value)}
+        />
+
+        {/* The logo's ring. Zero by default, like its radius — a mark drawn to
+            the edges of its own file wants neither, and both are here for the
+            one that is a card or a screenshot. */}
+        <Slider
+          icon={<BorderIcon />}
+          label="Border"
+          {...field("watermark", "watermarkBorderWidth")}
+          value={mark.watermarkBorderWidth}
+          min={0}
+          // The camera's ceiling, and for the same reason: this is a fraction
+          // of the frame, and two per cent of it is already a heavy line.
+          max={0.02}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("watermark", "watermarkBorderWidth", value)}
+        />
+
+        {/* Greyed at zero width rather than taken away, the way the camera's
+            is: hidden, the section changes height as the slider crosses zero
+            and nothing is left to say the edge has a colour at all. */}
+        <ColorField
+          icon={<DropletIcon />}
+          label="Border colour"
+          {...field("watermark", "watermarkBorderColor")}
+          value={mark.watermarkBorderColor}
+          disabled={off || mark.watermarkBorderWidth === 0}
+          onChange={(value) => set("watermark", "watermarkBorderColor", value)}
+        />
+
+        {/* One control, not the background's three. How dark it is is the only
+            part anybody has an opinion about under a logo; the blur and the
+            drop are worked out from the mark's own size — see
+            `WATERMARK_SHADOW_BLUR`. */}
+        <Slider
+          icon={<ShadowIcon />}
+          label="Shadow"
+          {...field("watermark", "watermarkShadow")}
+          value={mark.watermarkShadow}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={off}
+          onChange={(value) => set("watermark", "watermarkShadow", value)}
+        />
+
+        {/* The map at the foot of the group rather than the head of it. Every
+            other panel leads with one because position is the first thing
+            asked of a picture the recording placed; a logo is dropped in and
+            then *tuned* — how big, how round, how present — and the corner it
+            sits in is usually the one it was put in. Reading order follows the
+            work rather than the geometry. */}
+        <Field icon={<PlaceIcon />} {...field("watermark", "watermarkX")}>
+          <CameraMap
+            frame={{ width: 16, height: 9 }}
+            shape="rounded"
+            size={mark.watermarkWidth}
+            aspect={mark.watermarkWidth / Math.max(mark.watermarkHeight, 0.001)}
+            x={mark.watermarkX}
+            y={mark.watermarkY}
+            disabled={off}
+            onChange={(x, y) => {
+              set("watermark", "watermarkX", x);
+              set("watermark", "watermarkY", y);
+            }}
+          />
+        </Field>
       </Section>
     </>
   );
@@ -4342,31 +4475,6 @@ const FRAME_KEYS: (keyof BackgroundSettings)[] = [
  * neither selects the row nor closes the list — a list of keyboards is meant
  * to be tried one after another before one is settled on.
  */
-function PlaySampleButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      title={`Play ${label}`}
-      aria-label={`Play ${label}`}
-      // Round, like every other thing that fills in under the pointer here.
-      // It sits inside a row of a list that is itself a column of pills, so a
-      // rounded square lighting up inside one was the odd shape out.
-      className={cn(
-        "mr-1 grid size-6 flex-none place-items-center rounded-full text-editor-muted",
-        "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3.5",
-      )}
-      onClick={onClick}
-    >
-      {/* A loudspeaker, not a play triangle. At twelve pixels a triangle is a
-          wedge, and it sat on every row of a list whose own chevrons point the
-          same way — two arrowheads a few pixels apart meaning different things.
-          A speaker says the one thing this does that nothing else on the row
-          does: it makes a sound without choosing anything. */}
-      <SpeakerIcon />
-    </button>
-  );
-}
-
 function AudioPanel({
   settings,
   present,

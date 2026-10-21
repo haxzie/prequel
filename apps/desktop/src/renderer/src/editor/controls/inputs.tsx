@@ -1,10 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { useTooltip } from "../../components/Tooltip";
 import { cn } from "../../lib/cn";
-import { ChevronDownIcon, ChevronRightIcon } from "../icons";
+import { ChevronDownIcon, ChevronRightIcon, PauseIcon, SpeakerIcon } from "../icons";
 import { ColorPicker } from "./ColorPicker";
 import { PushedView, usePushed } from "./PushedView";
 
@@ -767,6 +767,57 @@ export function percent(value: number): string {
 }
 
 /**
+ * The play button on a row of a picker — a sound, or a piece of music.
+ *
+ * In the controls rather than beside either picker: `Inspector.tsx` had it,
+ * and the music panel is a module `Inspector.tsx` imports, so reaching back
+ * for it would be a cycle between the two.
+ *
+ * `playing` is for the lists whose rows do not stop on their own. A keyboard's
+ * demo is over in a second and the button never changes; a song runs for
+ * minutes, and a button that still says "play" while the thing is playing is a
+ * button nobody can use to stop it.
+ */
+export function PlaySampleButton({
+  label,
+  playing,
+  onClick,
+}: {
+  label: string;
+  playing?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={playing ? `Stop ${label}` : `Play ${label}`}
+      aria-label={playing ? `Stop ${label}` : `Play ${label}`}
+      // Round, like every other thing that fills in under the pointer here.
+      // It sits inside a row of a list that is itself a column of pills, so a
+      // rounded square lighting up inside one was the odd shape out.
+      className={cn(
+        "mr-1 grid size-6 flex-none place-items-center rounded-full",
+        "transition-colors hover:bg-white/15 hover:text-editor-fg [&_svg]:size-3.5",
+        playing ? "bg-white/15 text-editor-fg" : "text-editor-muted",
+      )}
+      onClick={(event) => {
+        // The row behind it chooses; this one only makes a sound. Without
+        // this, auditioning a track also selected it.
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      {/* A loudspeaker, not a play triangle. At twelve pixels a triangle is a
+          wedge, and it sat on every row of a list whose own chevrons point the
+          same way — two arrowheads a few pixels apart meaning different things.
+          A speaker says the one thing this does that nothing else on the row
+          does: it makes a sound without choosing anything. */}
+      {playing ? <PauseIcon /> : <SpeakerIcon />}
+    </button>
+  );
+}
+
+/**
  * One choice from a list, opened beside the panel.
  *
  * It opened in the flow for a long time, on the grounds that the inspector is
@@ -787,6 +838,7 @@ export function Dropdown<T extends string>({
   label,
   value,
   options,
+  header,
   disabled,
   icon,
   action,
@@ -801,7 +853,28 @@ export function Dropdown<T extends string>({
    */
   label: string;
   value: T;
-  options: { value: T; label: string; style?: CSSProperties }[];
+  /**
+   * The rows, in the order they are shown.
+   *
+   * `group` puts a heading above the first row carrying it. Optional because
+   * most lists here are one kind of thing — the weights of a face, the
+   * keyboards — and a heading over a list that has only one group is a label
+   * for the whole list, which the header already is.
+   */
+  options: { value: T; label: string; group?: string; style?: CSSProperties }[];
+  /**
+   * A row above the list that is not one of the choices — the music picker's
+   * Import, which opens a file dialog rather than choosing anything.
+   *
+   * Outside the `radiogroup`, because it is not a radio: a row that closes the
+   * list by opening a sheet is not one of the values being chosen between.
+   *
+   * Above rather than below. The list is as long as the catalogue and scrolls;
+   * a row at the bottom of it is a row that has to be found, and "none of
+   * these, use my own" is the one choice somebody arrives already knowing they
+   * want.
+   */
+  header?: ReactNode;
   disabled?: boolean;
   /**
    * The glyph at the left-hand end of each open row.
@@ -852,55 +925,69 @@ export function Dropdown<T extends string>({
       </button>
 
       <PushedView open={open && !disabled}>
+        {/* Outside the group below, and separated from it: it is the one row
+            that does not choose a value. */}
+        {header !== undefined && (
+          <div className="mb-1 border-b border-editor-line pb-1">{header}</div>
+        )}
         <div className="flex flex-col gap-0.5" role="radiogroup">
-          {options.map((option) => (
-            // The row's surface, rather than the radio itself, so an `action`
-            // beside the radio is inside the same highlight. With no action
-            // the radio fills the row and this is the shape it always was.
-            <div
-              key={option.value}
-              className={cn(
-                "group flex items-center rounded-full transition-colors",
-                option.value === value ? "bg-white/12" : "hover:bg-white/6",
+          {options.map((option, index) => (
+            <Fragment key={option.value}>
+              {/* Only where it changes, so a run of rows in one group carries
+                  one heading. */}
+              {option.group !== undefined && option.group !== options[index - 1]?.group && (
+                <h4 className="px-2.5 pt-2 pb-0.5 text-[10px] font-medium tracking-wide text-editor-muted uppercase">
+                  {option.group}
+                </h4>
               )}
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={option.value === value}
+              {/* The row's surface, rather than the radio itself, so an
+                  `action` beside the radio is inside the same highlight. With
+                  no action the radio fills the row and this is the shape it
+                  always was. */}
+              <div
                 className={cn(
-                  "flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-[13px]",
-                  CONTROL_H,
-                  option.value === value
-                    ? "text-editor-fg"
-                    : "text-editor-muted group-hover:text-editor-fg",
+                  "group flex items-center rounded-full transition-colors",
+                  option.value === value ? "bg-white/12" : "hover:bg-white/6",
                 )}
-                style={option.style}
-                onClick={() => {
-                  onChange(option.value);
-                  close();
-                }}
               >
-                {icon && (
-                  // Dimmer than the name, in the chosen row as much as the
-                  // rest: it is the same picture all the way down, and at the
-                  // label's strength a column of identical glyphs pulls harder
-                  // than the names that are what actually differ.
-                  //
-                  // `flex-none` with the truncation moved onto the label, or a
-                  // long family name squeezes the glyph to nothing instead of
-                  // ellipsing itself.
-                  <span
-                    className="flex-none text-editor-muted opacity-70 [&_svg]:size-3.5"
-                    aria-hidden
-                  >
-                    {icon(option)}
-                  </span>
-                )}
-                <span className="truncate">{option.label}</span>
-              </button>
-              {action?.(option)}
-            </div>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={option.value === value}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left text-[13px]",
+                    CONTROL_H,
+                    option.value === value
+                      ? "text-editor-fg"
+                      : "text-editor-muted group-hover:text-editor-fg",
+                  )}
+                  style={option.style}
+                  onClick={() => {
+                    onChange(option.value);
+                    close();
+                  }}
+                >
+                  {icon && (
+                    // Dimmer than the name, in the chosen row as much as the
+                    // rest: it is the same picture all the way down, and at the
+                    // label's strength a column of identical glyphs pulls harder
+                    // than the names that are what actually differ.
+                    //
+                    // `flex-none` with the truncation moved onto the label, or a
+                    // long family name squeezes the glyph to nothing instead of
+                    // ellipsing itself.
+                    <span
+                      className="flex-none text-editor-muted opacity-70 [&_svg]:size-3.5"
+                      aria-hidden
+                    >
+                      {icon(option)}
+                    </span>
+                  )}
+                  <span className="truncate">{option.label}</span>
+                </button>
+                {action?.(option)}
+              </div>
+            </Fragment>
           ))}
         </div>
       </PushedView>

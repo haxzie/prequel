@@ -61,6 +61,82 @@ export function normalised(peaks: Float32Array, buckets: number): Float32Array {
 }
 
 /**
+ * The same peaks, stretched between what is quiet and what is loud *for this
+ * file* rather than against its single loudest moment.
+ *
+ * For music, which is the one thing on this timeline that has been mastered.
+ * A recording of somebody talking spends half its time near silence, so
+ * dividing by the loudest sample leaves a shape full of gaps and peaks; a
+ * finished track is compressed to sit between about two-thirds and full the
+ * whole way through, and the same arithmetic draws it as a flat slab with a
+ * ripple on top. The beat is in there — it is simply in the top third of the
+ * box, where a 40-pixel bar gives it four pixels to show in.
+ *
+ * So the floor and the ceiling come from the file's own distribution. Below
+ * `QUIET` is drawn as nothing and above `LOUD` as full, and everything between
+ * is spread across the whole height. A percentile rather than the minimum and
+ * maximum: one silent moment at the top of the song and one clipped drum hit
+ * would otherwise set both ends and leave the rest as flat as before.
+ *
+ * Stable for the whole file, which is what matters once a bed has been cut in
+ * two: both halves are drawn against the same pair of numbers, so the same
+ * music is the same height on both sides of the join. Scaling to whatever
+ * happens to be on screen would make a cut change the shape of the music
+ * either side of it.
+ */
+export function normalisedRange(peaks: Float32Array, buckets: number): Float32Array {
+  const out = normalised(peaks, buckets);
+  if (out.length === 0) return out;
+
+  const sorted = Float32Array.from(out).sort();
+  const lo = sorted[Math.floor((sorted.length - 1) * QUIET)]!;
+  const hi = sorted[Math.floor((sorted.length - 1) * LOUD)]!;
+  const span = hi - lo;
+
+  // Nothing to stretch: a file that really is flat — a sine, a silence, a
+  // tone — is drawn as the flat thing it is rather than as amplified noise.
+  if (span < FLAT) return out;
+
+  for (let bucket = 0; bucket < out.length; bucket += 1) {
+    const value = out[bucket]!;
+
+    out[bucket] =
+      value <= lo
+        ? // Under the quiet mark, ramped down to nothing rather than cut off
+          // there. Silence has to draw as silence — a bed with a gap in it
+          // must show the gap — and a quiet intro has to be *low* rather than
+          // absent, which is what a hard floor at `lo` would make of the first
+          // ten seconds of most songs.
+          (value / Math.max(lo, 1e-6)) * LOWEST
+        : LOWEST + (1 - LOWEST) * Math.min(1, (value - lo) / span);
+  }
+
+  return out;
+}
+
+/** Where the floor and the ceiling are taken from, as fractions of the file. */
+const QUIET = 0.05;
+const LOUD = 0.98;
+
+/** Below this much difference between the two there is nothing to stretch. */
+const FLAT = 0.05;
+
+/**
+ * Where the quiet end of a file lands, as a fraction of the box.
+ *
+ * Not the floor. Stretching the quietest part of a song down to nothing
+ * leaves a bar with no wave in it wherever that part is on screen — which for
+ * most tracks is the intro, and so is exactly the stretch somebody is looking
+ * at when they first lay the bed down.
+ *
+ * Close to half, which is higher than it looks: the wave is drawn into the
+ * room under the level line, so at an ordinary volume this is 45% of half the
+ * bar — nine pixels of forty. A quarter was tried and a quiet intro came out
+ * as a five-pixel sliver that read as a bar with nothing in it.
+ */
+const LOWEST = 0.45;
+
+/**
  * Lays a track's peaks onto the session timeline.
  *
  * A track that opened late starts partway along — the same offset the manifest
@@ -105,6 +181,29 @@ export function mergePeaks(tracks: Float32Array[]): Float32Array {
 }
 
 /**
+ * One file's peaks, tiled to fill `buckets`.
+ *
+ * For a music bed that repeats. The wrap is deliberately the same one
+ * `musicFileTime` makes — past the end, the file starts again from its own
+ * beginning rather than from wherever the bed was trimmed to — so the wave
+ * drawn on the bar is the sound that will come out of it. A second rule here
+ * would be a bar whose shape does not match what it plays, which is worse
+ * than no wave at all.
+ *
+ * Returns the peaks unchanged when there is nothing to fill.
+ */
+export function repeated(peaks: Float32Array, buckets: number): Float32Array {
+  if (peaks.length === 0 || buckets <= peaks.length) return peaks;
+
+  const out = new Float32Array(buckets);
+  for (let bucket = 0; bucket < buckets; bucket += 1) {
+    out[bucket] = peaks[bucket % peaks.length]!;
+  }
+
+  return out;
+}
+
+/**
  * How many points a path is drawn with, however wide the clip.
  *
  * Deliberately coarse. At one point per 50ms bucket a half-minute clip is 600
@@ -137,6 +236,21 @@ export function wavePath(
   from: MediaTime,
   to: MediaTime,
   resolution = RESOLUTION,
+  /**
+   * How several buckets become one drawn point.
+   *
+   * `"peak"` for a recording: a word is a transient, and the loudest bucket in
+   * a step is the thing that has to survive being drawn at a lower resolution
+   * than it was measured at.
+   *
+   * `"mean"` for music, where that rule inverts. A track has a beat in it
+   * every half second, so at any zoom where a step covers more than one beat
+   * *every* step contains one — the maximum is the same number the whole way
+   * along, and a four-minute song draws as a flat slab however it is
+   * normalised. The average keeps what actually varies over a bed's length:
+   * the quiet intro, the chorus, the breakdown.
+   */
+  reduce: "peak" | "mean" = "peak",
 ): string {
   if (peaks.length === 0 || to <= from) return "";
 
@@ -157,11 +271,16 @@ export function wavePath(
     const end = Math.max(start + 1, first + Math.floor(((step + 1) * span) / steps));
 
     let peak = 0;
+    let total = 0;
+    let counted = 0;
     for (let bucket = start; bucket < end && bucket < peaks.length; bucket += 1) {
-      if (bucket >= 0 && peaks[bucket]! > peak) peak = peaks[bucket]!;
+      if (bucket < 0) continue;
+      if (peaks[bucket]! > peak) peak = peaks[bucket]!;
+      total += peaks[bucket]!;
+      counted += 1;
     }
 
-    heights[step] = peak;
+    heights[step] = reduce === "mean" && counted > 0 ? total / counted : peak;
   }
 
   const eased = smooth(heights);

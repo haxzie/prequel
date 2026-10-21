@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isImageExport, type EditorSession, type ExportProgress } from "../../../shared/contract";
 import type { RenderedCue, RenderedText, Size } from "../../../shared/layout";
 import { outputFrame, type OutputSettings, type Project } from "../../../shared/project";
-import { buildSlices } from "./exportSlices";
+import { buildMusic, buildSlices } from "./exportSlices";
 import { slicesOf } from "./state";
 import { renderStillPng } from "./stillPng";
 import { tagFor, type CursorTags } from "./useCursorTags";
@@ -252,6 +252,7 @@ export function useExport(
         (layout) => tagFor(layout, bitmaps.current.tags),
       ),
       sound: session.sound,
+      music: buildMusic(project),
     });
 
     if (!result.ok) {

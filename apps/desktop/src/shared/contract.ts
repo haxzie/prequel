@@ -849,6 +849,14 @@ export const IPC_CHANNELS = {
   editorPickWatermark: "editor:pickWatermark",
   editorPresetImage: "editor:presetImage",
   /**
+   * Copies an audio file the user chose into the recording, for the music row.
+   *
+   * Beside the image pickers rather than with the music catalogue below: this
+   * one opens a dialog and touches no network, which is the opposite of what
+   * the two `music:*` channels do.
+   */
+  editorPickAudio: "editor:pickAudio",
+  /**
    * Caption bitmaps, drawn in the renderer and written by main.
    *
    * The renderer is the only side with a font engine and main is the only side
@@ -871,6 +879,14 @@ export const IPC_CHANNELS = {
    * other picture here. A drawing needs a rasteriser and main has none; a file
    * needs a filesystem and a window has none.
    */
+  /**
+   * The hosted music library, and the files in it.
+   *
+   * Here for the reason the backgrounds are: the renderer cannot reach the API,
+   * so it asks over IPC and plays the result back through `prequel-media:`.
+   */
+  musicCatalogue: "music:catalogue",
+  musicEnsure: "music:ensure",
   wallpapersCatalogue: "wallpapers:catalogue",
   wallpapersWrite: "wallpapers:write",
   fontsCatalogue: "fonts:catalogue",
@@ -1188,6 +1204,39 @@ export interface ExportRequest {
    * at the same moments. Null for a recording with nothing to play.
    */
   sound: SoundCues | null;
+  /**
+   * The music row, already on the finished video's clock.
+   *
+   * Flat, and in project time, because that is what a bed is — unlike every
+   * other field here it is not resolved per slice. The exporter walks the mix
+   * in output samples, which *is* project time, so a bed is mixed in wherever
+   * the two overlap and crosses as many cuts as it reaches.
+   */
+  music: ExportMusic[];
+}
+
+/** One bed on the music row, as the exporter needs it. */
+export interface ExportMusic {
+  /**
+   * Its name inside the recording's directory.
+   *
+   * The second renderer-supplied string in an export request that names a file
+   * on disk, and checked as relative by the addon before it is joined — see
+   * `ExportSliceMedia.file`.
+   */
+  file: string;
+  /** Project time it begins at, in nanoseconds. */
+  start: MediaTime;
+  /** Project time it ends at. */
+  end: MediaTime;
+  /** Nanoseconds into the file that `start` plays. */
+  offset: MediaTime;
+  /** A plain multiply, the same arithmetic the preview's gain node does. */
+  volume: number;
+  fadeIn: MediaTime;
+  fadeOut: MediaTime;
+  /** Whether the file starts again when it runs out. */
+  repeat: boolean;
 }
 
 export interface ExportProgress {
@@ -1266,6 +1315,54 @@ export interface BackgroundListing {
   blurhash: string;
   thumbnail: string;
   raw: string;
+}
+
+/**
+ * One track in the hosted music library, as the API describes it.
+ *
+ * Re-declared here rather than imported from `@prequel/api`, as the
+ * backgrounds and the fonts are: the HTTP shape is the contract, and a shared
+ * package spanning the three apps would be the second reason to change
+ * `shared/` that the rule exists to prevent.
+ */
+export interface MusicListing {
+  id: string;
+  label: string;
+  category: string;
+  /** The file name, which is what a project stores and a recording holds. */
+  file: string;
+  md5: string;
+  bytes: number;
+  /**
+   * How long the track is, in nanoseconds.
+   *
+   * In the catalogue so the picker can show a length, and so a bed can be
+   * placed at the right width the moment it is chosen — before the file has
+   * finished downloading. The alternative is a bar that resizes itself under
+   * the pointer a second after it appears.
+   */
+  duration: MediaTime;
+  /** Who made it, where the licence asks for a credit. Empty where it does not. */
+  attribution: string;
+  /** A path on the API rather than a URL the renderer could use. */
+  raw: string;
+}
+
+export interface MusicCatalogue {
+  version: number;
+  updated: string;
+  categories: { id: string; label: string }[];
+  tracks: MusicListing[];
+}
+
+/** An audio file copied into a recording, as the music picker needs it. */
+export interface ImportedAudio {
+  /** Its name inside the recording's directory. */
+  file: string;
+  /** The name it had on disk, which is what the picker shows. */
+  label: string;
+  /** Nanoseconds, from the probe. */
+  duration: MediaTime;
 }
 
 export interface BackgroundsCatalogue {

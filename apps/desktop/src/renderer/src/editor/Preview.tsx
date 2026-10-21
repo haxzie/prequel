@@ -35,6 +35,10 @@ import {
 import {
   cornerAt,
   handleAt,
+  radiusAt,
+  radiusDot,
+  radiusFrom,
+  radiusInset,
   keepsAspect,
   type Corner,
   type Handle,
@@ -303,7 +307,7 @@ export function Preview({
    * settings are their own section — and the caller writes one key at a time,
    * so it has to be told where each one goes.
    */
-  onDrag: (section: "layout" | "watermark", patch: Record<string, unknown>) => void;
+  onDrag: (section: "layout" | "watermark" | "background", patch: Record<string, unknown>) => void;
   /** A text was clicked, so it becomes the selection and its panel shows. */
   onPickText: (textId: string) => void;
   /**
@@ -823,14 +827,21 @@ export function Preview({
    * Through the element's measured rectangle rather than `fitted`: the two
    * agree, but only one of them is what the user actually clicked on.
    */
-  const framePoint = (event: PointerEvent<HTMLCanvasElement>) => {
+  const framePoint = (event: PointerEvent<HTMLElement>) => {
     // Measured on entry and on press rather than here. This runs on every
     // `pointermove` across the picture — not only during a drag, because a
     // hover has to decide which cursor to show — and on top of the rectangle it
     // resolves the layout twice through `find`. The canvas cannot move under a
     // pointer that is already on it: it is sized in an effect, and the window
     // behind it does not scroll.
-    const rect = canvasBox.current ?? event.currentTarget.getBoundingClientRect();
+    const rect = canvasBox.current ?? canvas.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+
+    // Deliberately unclamped. The point can land outside the frame, because
+    // the surface the gestures are taken on is larger than the picture — see
+    // the hit layer. A picture resized past the frame's edge keeps its handles
+    // out there, and they have to be grabbable or the only way back is the
+    // panel.
     return {
       x: ((event.clientX - rect.left) / rect.width) * frame.width,
       y: ((event.clientY - rect.top) / rect.height) * frame.height,
@@ -919,6 +930,45 @@ export function Preview({
   /** How many output pixels a point on screen is worth, for hit tolerances. */
   const grain = () => (fitted.width > 0 ? frame.width / fitted.width : 1);
 
+  /** This picture's radius, with the component's own settings and frame. */
+  const radiusOf = (target: Grabbable, box: Rect): number | null =>
+    pictureRadius(target, box, frame, settings);
+
+  /** The same, as the patch a drag of the dot writes. */
+  const radiusPatch = (
+    target: Grabbable,
+    box: Rect,
+    radius: number,
+  ): { section: "layout" | "watermark" | "background"; patch: Record<string, unknown> } => {
+    if (target === "screen") {
+      const unit = Math.min(frame.width, frame.height);
+      // The slider's own ceiling. A dot that could write past it would set a
+      // number the panel cannot show and cannot undo.
+      return {
+        section: "background",
+        patch: { cornerRadius: Math.min(radius / Math.max(unit, 1), MAX_SCREEN_RADIUS) },
+      };
+    }
+
+    const unit = Math.min(box.width, box.height);
+
+    // Both of these are fractions of their own shorter edge, which is why they
+    // share the division — the leaf and the ceiling are what differ.
+    if (target === "watermark") {
+      return {
+        section: "watermark",
+        patch: { watermarkRadius: Math.min(radius / Math.max(unit, 1), MAX_WATERMARK_RADIUS) },
+      };
+    }
+
+    return {
+      section: "layout",
+      patch: {
+        cameraCornerRadius: Math.min(radius / Math.max(unit, 1), MAX_CAMERA_RADIUS),
+      },
+    };
+  };
+
   /**
    * Whether a caption is under the pointer.
    *
@@ -998,9 +1048,12 @@ export function Preview({
    * Edge fractions rather than the shorter edge's, because that is what an
    * annotation's points are — see `shared/annotations.ts`.
    */
+  // Clamped, because the surface the gesture is taken on is larger than the
+  // frame — see the hit layer. A stroke begun on the board beside the picture
+  // would otherwise be stored at a negative fraction and drawn off the film.
   const markPoint = (point: Point): MarkPoint => ({
-    x: point.x / Math.max(frame.width, 1),
-    y: point.y / Math.max(frame.height, 1),
+    x: Math.min(Math.max(point.x / Math.max(frame.width, 1), 0), 1),
+    y: Math.min(Math.max(point.y / Math.max(frame.height, 1), 0), 1),
   });
 
   /** A mark's own corners in output pixels, which is the box a resize pulls. */
@@ -1102,6 +1155,17 @@ export function Preview({
       const box = boxes[selected];
       const handle = box ? handleAt(box, point, near, true) : null;
       if (box && handle) return { kind: "resize", target: selected, handle, box, from: point };
+
+      // Then the radius dots, which sit inside the corners the handles are on.
+      // After them, deliberately: the dot is held clear of the corner by
+      // `RADIUS_DOT` so the two are never the same target, and where the
+      // tolerances still meet — a picture only a few dots across — resizing is
+      // the gesture more likely to have been meant.
+      const radius = box ? radiusOf(selected, box) : null;
+      if (box && radius !== null) {
+        const corner = radiusAt(box, point, near, radius, RADIUS_DOT * grain());
+        if (corner) return { kind: "radius", target: selected, corner, box, from: point };
+      }
     }
 
     // Then bodies, top down. The logo is drawn over both pictures, and the
@@ -1271,7 +1335,7 @@ export function Preview({
    * Named rather than written inline because two events reach it — see the
    * note at the call site.
    */
-  const release = (event: PointerEvent<HTMLCanvasElement>) => {
+  const release = (event: PointerEvent<HTMLElement>) => {
     grab.current = null;
     event.currentTarget.style.cursor = "";
     hideGuides();
@@ -1453,17 +1517,11 @@ export function Preview({
         paddingBottom: footroom ?? "1.5rem",
         ...(inset ? { paddingRight: `calc(1.5rem + ${inset})` } : {}),
       }}
-      // The dotted surround. A click that lands out here is the same "nothing"
-      // the canvas already treats as a deselect, and without it a ring put on
-      // the camera could only be taken off by finding an empty patch of the
-      // composition itself — which a full-bleed arrangement does not have.
-      //
-      // `currentTarget` only. The picture, the ring and the handles all sit in
-      // the box below this one, so anything with a target of its own is left to
-      // the canvas, where the hit testing lives.
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) setSelected(null);
-      }}
+      // No gestures here. The dotted surround is covered by the hit layer at
+      // the bottom of this box, which takes every press on the board — a click
+      // out here lands outside the frame, which `find` reads as a miss and so
+      // as a deselect. It used to deselect on `currentTarget` itself, and that
+      // only worked while the hit testing was on the canvas.
     >
       {/* Two layers, not one with a transition on it. A gradient in
           `background-image` is not interpolated — Chromium treats it as a
@@ -1539,7 +1597,12 @@ export function Preview({
           // enough to read against plain board disappears into a lit one. A
           // long, soft, mostly-downward fall is what separates the two — the
           // picture is the thing in front, and the glow is behind it.
-          className="block rounded-lg shadow-[0_28px_70px_-16px_rgba(0,0,0,0.8),0_6px_18px_-6px_rgba(0,0,0,0.5)]"
+          // `pointer-events-none`: every gesture is taken on the hit layer
+          // below, which is the whole stage rather than this box. A picture
+          // enlarged past the frame hangs its handles out over the board, and
+          // on the canvas there was nothing out there listening — the handle
+          // was drawn, had a cursor, and could not be grabbed.
+          className="pointer-events-none block rounded-lg shadow-[0_28px_70px_-16px_rgba(0,0,0,0.8),0_6px_18px_-6px_rgba(0,0,0,0.5)]"
           // Explicit pixels rather than a percentage: see the note above on why
           // `max-h-full` cannot be relied on here.
           style={{
@@ -1547,14 +1610,138 @@ export function Preview({
             height: fitted.height,
             visibility: ready ? "visible" : "hidden",
           }}
-          onPointerEnter={(event) => {
-            canvasBox.current = event.currentTarget.getBoundingClientRect();
+        />
+
+        {/* Between the picture and the ring. A mark is part of the picture —
+            it is written into the file — so it goes over the composition; the
+            ring is chrome and stays on top of both. */}
+        {overlay?.(drawing)}
+
+        {/* Drawn over the picture, never in it: the canvas is the composition
+            and this is a note about it, so it must not reach the export or the
+            grabbed poster frame. `pointer-events-none` leaves every gesture
+            with the canvas underneath, which is where the hit testing that put
+            the ring here lives — two things listening for a drag on the same
+            corner is how a handle comes to disagree with what it moves. */}
+        <div
+          ref={outline}
+          aria-hidden
+          className="group/ring pointer-events-none absolute top-0 left-0 border border-selected"
+          // Hidden inline rather than with `hidden`, because the loop below
+          // shows it by writing `display` — and an inline property cleared
+          // against a class that also sets `display: none` never comes back.
+          // The first rAF is after the first paint, so without this the ring
+          // spends a frame collapsed at the top left corner.
+          style={{ display: "none" }}
+        >
+          {CORNERS.map((corner) => (
+            <span
+              key={corner}
+              className={cn(
+                // Centred on the corner rather than tucked inside it, so the
+                // handle marks the point the drag actually pivots about. The
+                // half pixel that costs is in `HANDLE_AT`.
+                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                HANDLE_AT[corner],
+              )}
+            />
+          ))}
+          {/* The radius dots, inside the corners the handles sit on.
+
+              A dot per corner, all four writing the same number: a picture has
+              one radius, not four, and which corner you reach for should be
+              the one nearest the rounding you are looking at.
+
+              Placed from `--radius-dot`, which the draw loop writes once a
+              frame — so the dot sits exactly where the rounding begins and
+              travels with it as the drag happens. Hollow rather than solid, so
+              it reads as a different kind of control from the eight filled
+              handles around it, and hidden on anything with no radius to pull.
+
+              `pointer-events-none` like everything else in here: the canvas
+              underneath does the hit testing, and two things listening for a
+              drag on the same dot is how a control comes to disagree with what
+              it moves. */}
+          {CORNERS.map((corner) => (
+            <span
+              key={`radius-${corner}`}
+              className={cn(
+                "absolute size-[7px] rounded-full border-[1.5px] border-selected bg-white/90 shadow-sm",
+                "group-data-[radius=none]/ring:hidden",
+                RADIUS_AT[corner],
+              )}
+            />
+          ))}
+
+          {/* The four side handles, drawn the same as the corners because they
+              do the same job — the difference is in which axes move, and the
+              cursor says that before the drag starts.
+
+              Hidden on a text, which has no second axis to pull. `ring` sets
+              the attribute each frame, from the same answer that decides what
+              the box is around, so what is drawn and what can be grabbed
+              cannot disagree. */}
+          {EDGES.map((edge) => (
+            <span
+              key={edge}
+              className={cn(
+                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                "group-data-[handles=corners]/ring:hidden",
+                HANDLE_AT[edge],
+              )}
+            />
+          ))}
+        </div>
+
+        {/* The alignment guides, over the picture and under nothing. Drawn here
+            rather than into the canvas for the reason the ring is: this is a
+            note about the composition, not part of it, and it must not reach
+            the export or the frame a saved preset takes its card from.
+
+            Full span rather than a segment between the two pictures: what the
+            line says is "this edge is on the frame's middle", and a stub would
+            leave the eye to finish it. */}
+        <div
+          ref={guideX}
+          aria-hidden
+          className="pointer-events-none absolute top-0 bottom-0 w-px bg-guide"
+          style={{ display: "none" }}
+        />
+        <div
+          ref={guideY}
+          aria-hidden
+          className="pointer-events-none absolute right-0 left-0 h-px bg-guide"
+          style={{ display: "none" }}
+        />
+      </div>
+      {/* The hit layer: every pointer gesture on the stage, taken on a box
+          that covers the whole board rather than the picture.
+
+          It was the canvas itself, and that is the bug it fixes. The canvas
+          is exactly the fitted picture, so a screen or camera enlarged past
+          the frame put its ring and its handles outside the canvas's box,
+          over the dotted surround — which listens for nothing but a
+          deselect. The handles drew, lit a resize cursor on the way past,
+          and did nothing when pressed, leaving the panel as the only way to
+          make the picture smaller again.
+
+          `framePoint` still maps against the canvas's own rectangle, so
+          frame coordinates are unchanged and a point outside the picture is
+          simply outside the frame — which `find` already reads as a miss and
+          a deselect. Only while `ready`, because the canvas used to be
+          `visibility: hidden` until then and a drag on a picture nobody can
+          see yet would move it. */}
+      {ready && (
+        <div
+          className="absolute inset-0"
+          onPointerEnter={() => {
+            canvasBox.current = canvas.current?.getBoundingClientRect() ?? null;
           }}
           onPointerDown={(event) => {
             // Re-read on press: a drag can start after the picture has been
             // resized by the inspector opening, with the pointer never having
             // left the canvas.
-            canvasBox.current = event.currentTarget.getBoundingClientRect();
+            canvasBox.current = canvas.current?.getBoundingClientRect() ?? null;
 
             const point = framePoint(event);
 
@@ -1675,11 +1862,20 @@ export function Preview({
               const found = find(point);
               event.currentTarget.style.cursor = !found
                 ? ""
-                : found.kind === "resize" || found.kind === "sizeText" || found.kind === "sizeMark"
-                  ? HANDLE_CURSOR[found.handle]
-                  : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
-                    ? "move"
-                    : "grab";
+                : found.kind === "radius"
+                  ? // The corner's own resize cursor, which is the diagonal the
+                    // dot travels on. A hand was here for a while, on the
+                    // reasoning that nothing is being resized — but a hand is
+                    // what a link and a button wear, and on a dot you drag it
+                    // says press rather than pull.
+                    HANDLE_CURSOR[found.corner]
+                  : found.kind === "resize" ||
+                      found.kind === "sizeText" ||
+                      found.kind === "sizeMark"
+                    ? HANDLE_CURSOR[found.handle]
+                    : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
+                      ? "move"
+                      : "grab";
               return;
             }
 
@@ -1712,6 +1908,16 @@ export function Preview({
               return;
             }
 
+            if (grab.current.kind === "radius") {
+              const { section, patch } = radiusPatch(
+                grab.current.target,
+                grab.current.box,
+                radiusFrom(grab.current.box, grab.current.corner, point),
+              );
+              onDrag(section, patch);
+              return;
+            }
+
             if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
             // Before the guides are drawn: `patchFor` is what works out which
             // lines were caught, and it leaves them in `caught`.
@@ -1732,82 +1938,7 @@ export function Preview({
             hideGuides();
           }}
         />
-
-        {/* Between the picture and the ring. A mark is part of the picture —
-            it is written into the file — so it goes over the composition; the
-            ring is chrome and stays on top of both. */}
-        {overlay?.(drawing)}
-
-        {/* Drawn over the picture, never in it: the canvas is the composition
-            and this is a note about it, so it must not reach the export or the
-            grabbed poster frame. `pointer-events-none` leaves every gesture
-            with the canvas underneath, which is where the hit testing that put
-            the ring here lives — two things listening for a drag on the same
-            corner is how a handle comes to disagree with what it moves. */}
-        <div
-          ref={outline}
-          aria-hidden
-          className="group/ring pointer-events-none absolute top-0 left-0 border border-selected"
-          // Hidden inline rather than with `hidden`, because the loop below
-          // shows it by writing `display` — and an inline property cleared
-          // against a class that also sets `display: none` never comes back.
-          // The first rAF is after the first paint, so without this the ring
-          // spends a frame collapsed at the top left corner.
-          style={{ display: "none" }}
-        >
-          {CORNERS.map((corner) => (
-            <span
-              key={corner}
-              className={cn(
-                // Centred on the corner rather than tucked inside it, so the
-                // handle marks the point the drag actually pivots about. The
-                // half pixel that costs is in `HANDLE_AT`.
-                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
-                HANDLE_AT[corner],
-              )}
-            />
-          ))}
-          {/* The four side handles, drawn the same as the corners because they
-              do the same job — the difference is in which axes move, and the
-              cursor says that before the drag starts.
-
-              Hidden on a text, which has no second axis to pull. `ring` sets
-              the attribute each frame, from the same answer that decides what
-              the box is around, so what is drawn and what can be grabbed
-              cannot disagree. */}
-          {EDGES.map((edge) => (
-            <span
-              key={edge}
-              className={cn(
-                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
-                "group-data-[handles=corners]/ring:hidden",
-                HANDLE_AT[edge],
-              )}
-            />
-          ))}
-        </div>
-
-        {/* The alignment guides, over the picture and under nothing. Drawn here
-            rather than into the canvas for the reason the ring is: this is a
-            note about the composition, not part of it, and it must not reach
-            the export or the frame a saved preset takes its card from.
-
-            Full span rather than a segment between the two pictures: what the
-            line says is "this edge is on the frame's middle", and a stub would
-            leave the eye to finish it. */}
-        <div
-          ref={guideX}
-          aria-hidden
-          className="pointer-events-none absolute top-0 bottom-0 w-px bg-guide"
-          style={{ display: "none" }}
-        />
-        <div
-          ref={guideY}
-          aria-hidden
-          className="pointer-events-none absolute right-0 left-0 h-px bg-guide"
-          style={{ display: "none" }}
-        />
-      </div>
+      )}
     </div>
   );
 }
@@ -1832,6 +1963,51 @@ function textAt(
  * derived some other way would be a second answer to "where is the camera", and
  * the handles would end up somewhere the picture is not.
  */
+/**
+ * A picture's corner radius in output pixels, or null for one with none.
+ *
+ * Two settings, in two sections, measured against two different edges — and
+ * the dot has to present both as one gesture, so the difference is resolved
+ * here and nowhere else. The draw loop reads it to place the dots and the hit
+ * test reads it to find them; two answers would be a dot you can see in one
+ * place and grab in another.
+ *
+ * The screen's is a fraction of the *frame's* shorter edge, because it is the
+ * picture's dressing and has to hold its look as the picture is resized. The
+ * camera's is a fraction of *its own*, because the bubble is resized far more
+ * often and a radius off the frame would go nearly circular at one size and
+ * nearly square at another — the note on `cameraCornerRadius` spells it out.
+ *
+ * A watermark has none: it is somebody's own file, drawn as it is, with no
+ * setting behind a dot to write to. Nor has a person cut out of their
+ * background — there is no edge there to round, which is why the shape control
+ * greys the slider out for it.
+ */
+function pictureRadius(
+  target: Grabbable,
+  box: Rect,
+  frame: Size,
+  settings: SliceSettings,
+): number | null {
+  // The logo's, against its own shorter edge rather than the frame's — see
+  // `watermarkRadius`, which is the one geometry leaf measured that way, and
+  // `watermarkRect`, which is the box this is handed. The same clamp the
+  // compositor applies, so the dot sits where the rounding is drawn.
+  if (target === "watermark") {
+    return (
+      Math.min(settings.watermark.watermarkRadius, MAX_WATERMARK_RADIUS) *
+      Math.min(box.width, box.height)
+    );
+  }
+
+  if (target === "screen") {
+    return settings.background.cornerRadius * Math.min(frame.width, frame.height);
+  }
+
+  if (settings.layout.cameraShape === "blob") return null;
+  return settings.layout.cameraCornerRadius * Math.min(box.width, box.height);
+}
+
 function ring(
   element: HTMLDivElement | null,
   selected: Grabbable | null,
@@ -1900,6 +2076,25 @@ function ring(
   // nothing else — see the text branch of `find`, which refuses to hand back
   // an edge for one.
   element.dataset["handles"] = text ? "corners" : "all";
+
+  // The radius dots: how far in they sit, and whether there are any. Written
+  // as one custom property the four of them read, rather than four elements
+  // positioned one by one — this runs every frame, and the dots are the same
+  // distance in on every corner by definition.
+  //
+  // In screen pixels, because that is the box they are drawn in. The floor is
+  // applied here rather than in the writer: `radiusInset` works in output
+  // pixels, and a floor in those would be a different distance on screen at
+  // every zoom — so the dot would wander off the corner as the window grew.
+  // A text and a mark have none: both are drawn as they are, and there is no
+  // setting behind a dot on them. The logo does — its own leaf, against its own
+  // edge — so it gets the dots like the two pictures.
+  const radius =
+    text || mark || selected === null ? null : pictureRadius(selected, box, frame, settings);
+
+  const inset = radius === null ? 0 : radiusInset(box, radius, RADIUS_DOT / scale) * scale;
+  element.dataset["radius"] = radius === null ? "none" : "shown";
+  element.style.setProperty("--radius-dot", `${inset}px`);
   // Transform rather than `left`/`top`: this runs every frame, and through a
   // drag it runs on every frame that also lays the canvas out.
   element.style.transform = `translate(${x * scale}px, ${y * scale}px)`;
@@ -1929,6 +2124,21 @@ const EDGES = ["n", "e", "s", "w"] as const;
  * transform, because the ring itself is moved with `transform` every frame and
  * a second one on a child is a separate property that reads as the same thing.
  */
+/**
+ * Where each radius dot sits on the ring.
+ *
+ * `--radius-dot` in from both of its corner's edges, which is where the arc
+ * that rounds that corner has its centre — so the dot is on the rounding
+ * rather than near it. Centred on that point by a transform, as the corner
+ * handles are centred on theirs.
+ */
+const RADIUS_AT: Record<Corner, string> = {
+  nw: "top-[var(--radius-dot)] left-[var(--radius-dot)] -translate-x-1/2 -translate-y-1/2",
+  ne: "top-[var(--radius-dot)] right-[var(--radius-dot)] translate-x-1/2 -translate-y-1/2",
+  se: "bottom-[var(--radius-dot)] right-[var(--radius-dot)] translate-x-1/2 translate-y-1/2",
+  sw: "bottom-[var(--radius-dot)] left-[var(--radius-dot)] -translate-x-1/2 translate-y-1/2",
+};
+
 const HANDLE_AT: Record<Handle, string> = {
   nw: "-top-[4.5px] -left-[4.5px]",
   ne: "-top-[4.5px] -right-[4.5px]",
@@ -1951,6 +2161,9 @@ const HANDLE_AT: Record<Handle, string> = {
 type Grip =
   | { kind: "move"; target: Grabbable; box: Rect; from: Point }
   | { kind: "resize"; target: Grabbable; handle: Handle; box: Rect; from: Point }
+  // Pulling a corner's radius dot. The box is the picture's, not the dot's:
+  // what the drag measures is how far in from the corner the pointer has come.
+  | { kind: "radius"; target: Grabbable; corner: Corner; box: Rect; from: Point }
   // Panning is the two video sources only: it slides a crop window over
   // footage, and a watermark has no crop — the whole file is the picture.
   | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number }
@@ -1995,6 +2208,33 @@ interface Drawing {
 
 /** How close to a corner counts as grabbing it, in points on screen. */
 const HANDLE = 12;
+
+/**
+ * How far in from a corner a radius dot is held, in points on screen.
+ *
+ * Far enough that a square corner's dot is clear of the handle that resizes
+ * the picture, which sits exactly on the corner — without it the two would be
+ * the same target at a radius of zero, and the resize would always win.
+ *
+ * In screen points rather than output pixels, like `SLACK`: what it is about
+ * is two things a hand has to aim at separately, and that does not change when
+ * the same picture is shown larger.
+ */
+const RADIUS_DOT = 14;
+
+/**
+ * The roundest each picture goes, matching the sliders in the panel.
+ *
+ * Held here as well as there because a drag has to stop where the slider
+ * stops: a number past the end of a control is one nobody can see or put back.
+ * A tenth of the frame for the screen, which is a window's corner and not much
+ * more; half of its own shorter edge for the camera, which is a circle, and the
+ * same for the logo, which turns a square mark into one and a wide one into a
+ * pill.
+ */
+const MAX_SCREEN_RADIUS = 0.1;
+const MAX_CAMERA_RADIUS = 0.5;
+const MAX_WATERMARK_RADIUS = 0.5;
 
 /**
  * How far off a mark still counts as on it, in points on screen.

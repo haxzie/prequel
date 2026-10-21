@@ -118,6 +118,8 @@ function makeFlow(
   /** How often the update window was asked to open. */
   const updates = { opened: 0 };
   const welcome = { closed: 0 };
+  /** Escape: how often it was taken off the system, and given back. */
+  const escape = { grabs: 0, releases: 0, press: null as (() => void) | null };
   let stored: RecordingPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
   const selection = {
     opened: 0,
@@ -235,6 +237,14 @@ function makeFlow(
     welcome: { close: () => (welcome.closed += 1) },
     updates: { open: () => (updates.opened += 1) },
     checkForUpdates: () => (updateChecks.count += 1),
+    grabEscape: (onEscape) => {
+      escape.grabs += 1;
+      escape.press = onEscape;
+    },
+    releaseEscape: () => {
+      escape.releases += 1;
+      escape.press = null;
+    },
   });
 
   return {
@@ -246,6 +256,7 @@ function makeFlow(
     quickView,
     welcome,
     dockCalls,
+    escape,
     updateChecks,
     updates,
     preferences: () => stored,
@@ -1379,5 +1390,64 @@ describe("the screenshot switch", () => {
     // No reopen. The switch is pressed by a radio group that re-reports the
     // current value on every render of the panel.
     expect(selection.opened).toBe(0);
+  });
+});
+
+describe("Escape, while the panel is up", () => {
+  it("is held for as long as the panel is, and no longer", () => {
+    const { flow, escape } = makeFlow();
+
+    // Nothing on screen, nothing taken: Escape held with no panel up is Escape
+    // taken off every other app with nothing to explain it.
+    expect(escape.grabs).toBe(0);
+
+    flow.showDock();
+    expect(escape.grabs).toBe(1);
+
+    flow.close();
+    expect(escape.releases).toBe(1);
+  });
+
+  it("cancels the picker first", async () => {
+    const { flow, selection, escape, dockCalls } = makeFlow();
+    flow.showDock();
+    selection.isOpen = true;
+
+    escape.press?.();
+
+    expect(selection.cancelled).toBe(1);
+    // The panel stays. One press, one step back.
+    expect(dockCalls.visible).toBe(true);
+  });
+
+  it("then unchooses the source, leaving the panel up", async () => {
+    const { flow, escape, dockCalls } = makeFlow(
+      {},
+      {
+        target: { kind: "Display", id: 1, title: "Built-in" } as never,
+        crop: null,
+        label: "Built-in",
+      },
+    );
+    flow.showDock();
+    await flow.chooseMode("screen");
+    expect(flow.state().selection).not.toBeNull();
+
+    escape.press?.();
+
+    // Unchosen rather than dismissed: a camera, a microphone and a mode are all
+    // still set up, and only the target has been taken back.
+    expect(flow.state().selection).toBeNull();
+    expect(flow.state().activeMode).toBeNull();
+    expect(dockCalls.visible).toBe(true);
+  });
+
+  it("and then dismisses the panel", async () => {
+    const { flow, escape, dockCalls } = makeFlow();
+    flow.showDock();
+
+    escape.press?.();
+
+    expect(dockCalls.visible).toBe(false);
   });
 });

@@ -13,6 +13,7 @@
 import {
   cursorImages,
   type EditorSession,
+  type ExportMusic,
   type ExportSlice,
   type TrackMedia,
 } from "../../../shared/contract";
@@ -249,4 +250,45 @@ function refsFor(media: Partial<Record<TrackKind, TrackMedia>>): ExportSlice["me
  */
 function sizeOf(track: TrackMedia | undefined): { width: number; height: number } | null {
   return track?.width && track.height ? { width: track.width, height: track.height } : null;
+}
+
+/**
+ * The music row, as the exporter needs it.
+ *
+ * Beside `buildSlices` and not inside it, because it is not per slice: a bed
+ * lives in project time and crosses as many cuts as it reaches, so it is one
+ * flat list on the request. Here rather than in the export hook for the reason
+ * the slices are — a headless `prequel render` builds the same request, and a
+ * second implementation is how a preview and a file come to disagree.
+ *
+ * A bed whose file this project does not list is dropped. `sanitiseProject`
+ * already drops those on the way in, so this only catches a project edited
+ * since — and a bed with no file is silence either way, which is better said
+ * here than by an exporter failing on a name it cannot resolve.
+ */
+export function buildMusic(project: Project): ExportMusic[] {
+  return project.music.flatMap((bed) => {
+    if (!project.musicFiles.some((file) => file.file === bed.file)) return [];
+    // Muted beds never reach the exporter. It would multiply every sample by
+    // zero and throw them away, and the decode is the expensive half of that
+    // — the same reasoning `open_slot` skips a muted track.
+    if (bed.muted || bed.volume <= 0) return [];
+
+    // Whole nanoseconds, for the reason the slices' times are rounded: these
+    // cross as `i64`, and a fraction fails the whole export with `invalid
+    // type: floating point, expected i64` — nothing renders, and the message
+    // names a number rather than a field.
+    return [
+      {
+        file: bed.file,
+        start: Math.round(bed.at),
+        end: Math.round(bed.at + bed.length),
+        offset: Math.round(bed.offset),
+        volume: bed.volume,
+        fadeIn: Math.round(bed.fadeIn),
+        fadeOut: Math.round(bed.fadeOut),
+        repeat: bed.repeat,
+      },
+    ];
+  });
 }

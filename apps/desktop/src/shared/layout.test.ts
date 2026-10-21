@@ -1162,6 +1162,7 @@ describe("decoration", () => {
       { screen: SCREEN, camera: CAMERA },
       settings({
         watermark: {
+          ...DEFAULT_SETTINGS.watermark,
           watermark: "watermark-abc.png",
           watermarkX: 0.5,
           watermarkY: 0.25,
@@ -1183,6 +1184,55 @@ describe("decoration", () => {
     expect(mark.dstRect.x + mark.dstRect.width / 2).toBeCloseTo(LANDSCAPE.width * 0.5);
     expect(mark.dstRect.y + mark.dstRect.height / 2).toBeCloseTo(LANDSCAPE.height * 0.25);
     expect(mark.opacity).toBeCloseTo(0.5);
+  });
+
+  it("dresses the logo with nothing by default", () => {
+    // Both off, and off for the same reason: a mark usually carries its own
+    // shape in its alpha, and a ring or a shadow drawn round its box is a
+    // rectangle somebody can see behind a transparent picture.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: { ...DEFAULT_SETTINGS.watermark, watermark: "watermark-abc.png" },
+      }),
+    );
+
+    const at = plan.items.findIndex((item) => item.kind === "watermark");
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(plan.items[at - 1]?.kind).not.toBe("shadow");
+    expect(plan.items[at + 1]?.kind).not.toBe("stroke");
+  });
+
+  it("casts the logo's shadow behind it and puts its ring over it", () => {
+    // Order is what this is about: the list is drawn in it, so a shadow after
+    // the mark is a dark rectangle laid on the logo, and a ring before it is a
+    // border half hidden under its own picture.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        watermark: {
+          ...DEFAULT_SETTINGS.watermark,
+          watermark: "watermark-abc.png",
+          watermarkWidth: 0.2,
+          watermarkHeight: 0.2,
+          watermarkBorderWidth: 0.01,
+          watermarkShadow: 0.5,
+        },
+      }),
+    );
+
+    const at = plan.items.findIndex((item) => item.kind === "watermark");
+    expect(plan.items[at - 1]?.kind).toBe("shadow");
+    expect(plan.items[at + 1]?.kind).toBe("stroke");
+
+    // The ring stands outside the mark — both rasterisers stroke inside the
+    // shape they are handed, so a stroke on the mark's own box would eat the
+    // logo rather than frame it.
+    const mark = plan.items[at] as Extract<PlanItem, { kind: "watermark" }>;
+    const ring = plan.items[at + 1] as Extract<PlanItem, { kind: "stroke" }>;
+    expect(ring.rect.width).toBeCloseTo(mark.dstRect.width + ring.width * 2);
   });
 
   it("resolves the logo's radius against its own shorter edge, not the frame's", () => {

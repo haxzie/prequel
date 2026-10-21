@@ -932,6 +932,65 @@ export function ImportVideoIcon() {
 }
 
 /**
+ * Lucide `music`: the music row, and the transport's Add Audio button.
+ *
+ * A quaver rather than a speaker or a waveform. The two sliders in the sound
+ * panel are already about *level*, and a waveform is what the clips above the
+ * row draw their own sound as — so a note is the only one of the three that
+ * says "music" rather than "audio".
+ */
+export function MusicIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </svg>
+  );
+}
+
+/**
+ * `MusicIcon` with a plus beside it: the transport's Add Audio button.
+ *
+ * Built like `AddTextIcon` — the row's own glyph, shrunk, with the plus in the
+ * corner the drawing leaves empty. The pill beside it carries the word as
+ * well, so this only has to say which row is being added to.
+ */
+export function AddAudioIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M8 15V4l9-1.5V10" />
+      <circle cx="5.5" cy="15.5" r="2.5" />
+      <circle cx="14.5" cy="13.5" r="2.5" />
+      <path d="M19 16v5" />
+      <path d="M16.5 18.5h5" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `file-audio` with an arrow into it: Import Audio.
+ *
+ * The same pairing `ImportVideoIcon` makes against `AddRecordingIcon`: in a
+ * menu of two, what has to differ at a glance is where the sound comes from,
+ * and a file with an arrow going in says "one of mine" against the library's
+ * note.
+ */
+export function ImportAudioIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v5" />
+      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+      <path d="M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1" />
+      <path d="M2 14h7" />
+      <path d="m6 11-3 3 3 3" />
+      <path d="M15 12v4" />
+      <path d="M12 13v2" />
+    </svg>
+  );
+}
+
+/**
  * Lucide `chevron-down`, upside down: the Add Clip menu opens upwards.
  *
  * Drawn pointing the way the menu goes rather than the way a select's arrow
@@ -1367,6 +1426,46 @@ export function SpeakerIcon() {
     <svg {...STROKE} aria-hidden="true">
       <path d="M4 9v6h4l5 4V5L8 9z" />
       <path d="M17 9a4 4 0 0 1 0 6" />
+    </svg>
+  );
+}
+
+/**
+ * A ramp going up, for a bed's fade in. `FadeOutIcon` is its mirror.
+ *
+ * Not `FadeIcon`, which is the dashed circle a *text* fades with: these two
+ * sliders sit next to each other and have to differ at a glance, and one glyph
+ * on both rows would make the labels the only thing telling them apart.
+ */
+export function FadeInIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 19h18" />
+      <path d="M4 19 20 6" />
+      <path d="M20 6v13" />
+    </svg>
+  );
+}
+
+/** A ramp going down: a bed's fade out. */
+export function FadeOutIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M3 19h18" />
+      <path d="M4 6 20 19" />
+      <path d="M4 6v13" />
+    </svg>
+  );
+}
+
+/** Lucide `repeat`: a bed that starts again when its file runs out. */
+export function RepeatIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
     </svg>
   );
 }

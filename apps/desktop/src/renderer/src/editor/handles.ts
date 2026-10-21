@@ -158,3 +158,77 @@ export function pulled(rect: Rect, handle: Handle, point: Point, keepAspect: boo
     height,
   };
 }
+
+/**
+ * How far in from a corner the radius dot sits, in output pixels.
+ *
+ * The radius itself, held away from the corner by a floor and in from the
+ * middle by a ceiling.
+ *
+ * The floor is what makes a square corner adjustable at all: at a radius of
+ * zero the dot would sit exactly on the corner, under the handle that resizes
+ * the picture — so the one gesture that reaches it would be the other one. The
+ * ceiling is half the shorter edge, which is the roundest a rectangle goes:
+ * past it the arcs meet and more radius changes nothing.
+ */
+export function radiusInset(rect: Rect, radius: number, least: number): number {
+  const most = Math.min(rect.width, rect.height) / 2;
+  return Math.min(Math.max(radius, least), Math.max(most, least));
+}
+
+/** Where the dot for one corner is, in output pixels. */
+export function radiusDot(rect: Rect, corner: Corner, radius: number, least: number): Point {
+  const inset = radiusInset(rect, radius, least);
+  const west = corner === "nw" || corner === "sw";
+  const north = corner === "nw" || corner === "ne";
+
+  return {
+    x: west ? rect.x + inset : rect.x + rect.width - inset,
+    y: north ? rect.y + inset : rect.y + rect.height - inset,
+  };
+}
+
+/**
+ * Which radius dot the pointer is on, if any.
+ *
+ * Every corner carries one and all four set the same number — there is one
+ * radius per picture, not four. Four dots rather than one because a corner is
+ * reached for by where it is: somebody rounding the bottom of a bubble should
+ * not have to go to the top left to do it.
+ */
+export function radiusAt(
+  rect: Rect,
+  point: Point,
+  near: number,
+  radius: number,
+  least: number,
+): Corner | null {
+  for (const corner of ["nw", "ne", "se", "sw"] as const) {
+    const dot = radiusDot(rect, corner, radius, least);
+    if (Math.abs(point.x - dot.x) <= near && Math.abs(point.y - dot.y) <= near) return corner;
+  }
+  return null;
+}
+
+/**
+ * The radius a pointer at this position is asking for, in output pixels.
+ *
+ * The mean of how far in it has come on each axis, rather than its distance
+ * along the diagonal. They agree on a diagonal drag, which is how the dot is
+ * usually pulled; where they differ is a drag straight down or straight
+ * across, and the mean goes on answering there — the distance would have the
+ * dot stop following the pointer the moment it left the diagonal.
+ *
+ * Clamped the same way the dot is drawn, so what is under the pointer and what
+ * is written cannot disagree at either end.
+ */
+export function radiusFrom(rect: Rect, corner: Corner, point: Point): number {
+  const west = corner === "nw" || corner === "sw";
+  const north = corner === "nw" || corner === "ne";
+
+  const x = west ? point.x - rect.x : rect.x + rect.width - point.x;
+  const y = north ? point.y - rect.y : rect.y + rect.height - point.y;
+
+  const most = Math.min(rect.width, rect.height) / 2;
+  return Math.min(Math.max((x + y) / 2, 0), most);
+}

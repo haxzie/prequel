@@ -1,0 +1,8 @@
+{
+  "categories": [
+    { "id": "ambient", "label": "Ambient" },
+    { "id": "upbeat", "label": "Upbeat" },
+    { "id": "cinematic", "label": "Cinematic" },
+    { "id": "lofi", "label": "Lo-fi" }
+  ]
+}

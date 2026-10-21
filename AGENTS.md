@@ -154,6 +154,15 @@ mixer only place those samples. The renderer never synthesises and never picks a
 variant. Same rule as geometry, same failure: a preview and an export that
 disagree, noticed after the file is written.
 
+**The music row lives in project time.** Zooms and texts are pinned to the
+recording, because they are about a moment of footage; a bed is about the
+finished film, so both its ends are on the edit's clock and it crosses whatever
+cuts it reaches. Its arithmetic — which second of the file plays here, how loud
+it is — is in `shared/music.ts`, and `crates/prequel-render/src/music.rs` is a
+hand-kept mirror of it with the same numbers in both sets of tests. The failure
+is a fade that is different in the exported file from the one on screen, which
+is only ever noticed after the video is written.
+
 **Settings are flat leaves.** `cameraShape`, `cameraHeight` — never a nested
 `camera: {…}`. "Is this overridden?" is `key in overrides[section]`, and a
 nested group would make that mean "something in this group", so every

@@ -2075,16 +2075,57 @@ export function buildRenderPlan(
   const mark = settings.watermark;
   const markRect = watermarkRect(frame, mark);
   if (mark.watermark && markRect && mark.watermarkOpacity > 0) {
+    // Against the mark's own shorter edge, so the same logo looks the same
+    // at any size — and clamped to half of it, where the shape has run out
+    // of corner to round and any more would start eating the middle.
+    const markShort = Math.min(markRect.width, markRect.height);
+    const radius = Math.min(mark.watermarkRadius, 0.5) * markShort;
+
+    // The ring stands outside the mark, like the picture's: both rasterisers
+    // stroke *inside* the shape they are handed, so the band between the logo
+    // and this rectangle is where it lands.
+    const border = mark.watermarkBorderWidth * Math.min(frame.width, frame.height);
+    const outer = grow(markRect, border);
+    const outerShape: Shape = { radius: radius + border, exponent: 2 };
+
+    // The shadow first: it is behind the logo, and the list is drawn in order.
+    //
+    // Sized against the mark rather than the frame, for the reason the camera
+    // bubble's is — a small object casts a small tight shadow, and a blur sized
+    // for the screen is one a logo would simply vanish into. Cast by the mark
+    // and its ring together, so a bordered logo reads as one object standing
+    // off the picture rather than a ring painted on it.
+    if (mark.watermarkShadow > 0) {
+      const blur = WATERMARK_SHADOW_BLUR * markShort;
+      items.push({
+        kind: "shadow",
+        rect: grow(outer, (blur / 2) * SHADOW_SPREAD),
+        shape: outerShape,
+        blur,
+        dy: WATERMARK_SHADOW_DROP * markShort,
+        color: rgba("#000000", mark.watermarkShadow),
+      });
+    }
+
     items.push({
       kind: "watermark",
       path: mark.watermark,
       dstRect: markRect,
       opacity: mark.watermarkOpacity,
-      // Against the mark's own shorter edge, so the same logo looks the same
-      // at any size — and clamped to half of it, where the shape has run out
-      // of corner to round and any more would start eating the middle.
-      radius: Math.min(mark.watermarkRadius, 0.5) * Math.min(markRect.width, markRect.height),
+      radius,
     });
+
+    // And the ring over it, so a border sits on the logo's edge rather than
+    // being half hidden under it.
+    if (border > 0 && mark.watermarkBorderOpacity > 0) {
+      items.push({
+        kind: "stroke",
+        rect: outer,
+        shape: outerShape,
+        width: border,
+        color: rgba(mark.watermarkBorderColor, mark.watermarkBorderOpacity),
+      });
+    }
   }
 
   // Over the pictures and the mark, under the captions: a title is placed on
@@ -2561,6 +2602,19 @@ const MAX_PAN = 0.9;
  * moves the shadow relative to the thing casting it.
  */
 export const SHADOW_SPREAD = 3;
+
+/**
+ * The logo's shadow, as fractions of the mark's own shorter edge.
+ *
+ * Fixed rather than two more sliders. The panel's one Shadow control says how
+ * dark it is; how far it spreads and how far it drops are what make a shadow
+ * look like light rather than a smudge, and under an object this small there
+ * is one pair of numbers that reads right. A quarter of the mark for the blur
+ * and a twelfth for the drop is a soft shadow sitting just under it — the
+ * picture's own, scaled down to something a logo can stand on.
+ */
+const WATERMARK_SHADOW_BLUR = 0.25;
+const WATERMARK_SHADOW_DROP = 0.08;
 
 /**
  * How much of the picture's shadow the camera bubble gets.

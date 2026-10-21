@@ -192,6 +192,20 @@ export interface CaptureFlowOptions {
    * quiet about what it finds.
    */
   checkForUpdates?: () => void;
+  /**
+   * Takes Escape off the system, and gives it back.
+   *
+   * Held for exactly as long as the panel is up and nothing is recording — see
+   * `syncEscape`. Globally, because the panel is a non-activating panel and
+   * never has the keyboard: a key it cannot hear is a key it cannot act on, and
+   * every other surface that could hear it instead would need a handler saying
+   * what the panel meant.
+   *
+   * Injected rather than imported so the flow stays testable without Electron,
+   * like everything else here.
+   */
+  grabEscape?: (onEscape: () => void) => void;
+  releaseEscape?: () => void;
 }
 
 /**
@@ -273,6 +287,8 @@ export class CaptureFlow {
   private selecting = false;
   private cameraError: string | null = null;
   private activeMode: ScreenMode | null = null;
+  /** Whether Escape is currently ours. See `syncEscape`. */
+  private escapeHeld = false;
   private refreshing = false;
   /** Whether a shape scan is in flight. See `findShapes`. */
   private scanning = false;
@@ -668,7 +684,7 @@ export class CaptureFlow {
     return this.state();
   }
 
-  /** Brings up the script window, for the tray and the island. */
+  /** Brings up the script window, for the panel and the island. */
   openScript(): void {
     this.deps.teleprompter.openScript();
   }
@@ -1592,7 +1608,55 @@ export class CaptureFlow {
   }
 
   private emit(): void {
+    // Before the state goes out, so the key and the panel can never disagree:
+    // every path that shows, hides, records or stops ends here.
+    this.syncEscape();
     this.deps.onChange(this.state());
+  }
+
+  /**
+   * Keeps Escape in step with the panel.
+   *
+   * Ours for as long as the panel is up and nothing is recording, and nobody
+   * else's the rest of the time — held past that it would be Escape taken off
+   * every other app with nothing on screen to explain it. During a take it is
+   * deliberately let go: the panel is a pill with a stop button by then, and
+   * backing out of a recording is not what the key means anywhere else.
+   */
+  private syncEscape(): void {
+    const wanted = this.deps.dock.isVisible && this.deps.session.snapshot().status === "idle";
+    if (wanted === this.escapeHeld) return;
+
+    this.escapeHeld = wanted;
+    if (wanted) this.deps.grabEscape?.(() => this.escape());
+    else this.deps.releaseEscape?.();
+  }
+
+  /**
+   * What Escape means while the panel is up: one step back, each press.
+   *
+   * The picker first, then the source it chose, then the panel itself. Each
+   * press undoes the last thing that happened rather than all of it — pressing
+   * it over a chosen window used to dismiss the whole panel, which threw away a
+   * camera, a microphone and a mode to take back a target.
+   */
+  escape(): void {
+    if (this.deps.selection.isOpen) {
+      this.deps.selection.cancel();
+      return;
+    }
+
+    // A source already chosen, with no overlay up. Unchosen, and the panel
+    // stays exactly as it is — `chooseMode` is one press away and every other
+    // control on it is untouched.
+    if (this.pending || this.activeMode) {
+      this.pending = null;
+      this.activeMode = null;
+      this.emit();
+      return;
+    }
+
+    this.close();
   }
 
   /**

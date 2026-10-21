@@ -286,6 +286,74 @@ describe("sanitiseProject", () => {
     expect(sanitiseProject(stored(), RECORDING, 10 * S)).toEqual(newProject(RECORDING, 10 * S));
   });
 
+  it("reads back a project saved before the music row existed", () => {
+    const project = stored() as Record<string, unknown>;
+    delete project.music;
+    delete project.musicFiles;
+
+    const read = sanitiseProject(project, RECORDING, 10 * S)!;
+    // Empty, which is exactly what those projects sounded like.
+    expect(read.music).toEqual([]);
+    expect(read.musicFiles).toEqual([]);
+  });
+
+  it("drops a bed whose file the project does not list", () => {
+    // A bar on the row that can never make a sound is worse than no bar: it
+    // takes up the one lane and plays nothing, with nothing to say why.
+    const project = stored() as Record<string, unknown>;
+    project.music = [{ id: "music-0", at: 0, length: 5 * S, file: "gone.m4a", offset: 0 }];
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.music).toEqual([]);
+  });
+
+  it("refuses a file name that is not a bare audio name", () => {
+    // The one string in a project that is joined onto a path. A name that is
+    // not one of ours is not a name to be cleaned up.
+    const project = stored() as Record<string, unknown>;
+    project.musicFiles = [
+      { file: "../../etc/passwd", label: "no", duration: S },
+      { file: "track.ogg", label: "no", duration: S },
+      { file: "wander.m4a", label: "Wander", duration: 60 * S },
+    ];
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.musicFiles.map((f) => f.file)).toEqual([
+      "wander.m4a",
+    ]);
+  });
+
+  it("drops the later of two beds that overlap", () => {
+    // Settled here, unlike the texts': a bed is measured in project time at
+    // both ends, so nothing about the edit is needed to see the collision.
+    const project = stored() as Record<string, unknown>;
+    project.musicFiles = [{ file: "wander.m4a", label: "Wander", duration: 60 * S }];
+    project.music = [
+      { id: "a", at: 0, length: 6 * S, file: "wander.m4a", offset: 0 },
+      { id: "b", at: 3 * S, length: 6 * S, file: "wander.m4a", offset: 0 },
+    ];
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.music.map((bed) => bed.id)).toEqual(["a"]);
+  });
+
+  it("holds a bed's offset inside its own song", () => {
+    // An offset past the end plays as silence with the bar still on the row.
+    const project = stored() as Record<string, unknown>;
+    project.musicFiles = [{ file: "wander.m4a", label: "Wander", duration: 4 * S }];
+    project.music = [{ id: "a", at: 0, length: 4 * S, file: "wander.m4a", offset: 30 * S }];
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.music[0]!.offset).toBeLessThan(4 * S);
+  });
+
+  it("keeps a bed that reaches past the end of the edit", () => {
+    // Clamping it would silently shorten somebody's music the first time they
+    // trimmed the last clip and reopened the recording. It simply stops being
+    // heard where the video stops.
+    const project = stored() as Record<string, unknown>;
+    project.musicFiles = [{ file: "wander.m4a", label: "Wander", duration: 60 * S }];
+    project.music = [{ id: "a", at: 8 * S, length: 30 * S, file: "wander.m4a", offset: 0 }];
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.music[0]!.length).toBe(30 * S);
+  });
+
   it("keeps cursor shadows off in projects written before they existed", () => {
     const project = stored() as { defaults: { layout: Record<string, unknown> } };
     delete project.defaults.layout.cursorShadowOpacity;

@@ -100,13 +100,12 @@ registerDeepLinks();
 const session = new RecordingSession();
 const dock = new DockWindow();
 const camera = new CameraWindow();
-const selection = new SelectionOverlay({
-  // Escape cancels the picker from wherever it is pressed, for as long as one
-  // is on screen — the overlays' own handling only works while one of them has
-  // the keyboard. See `bindEscape`.
-  grabEscape: (cancel) => bindEscape(cancel),
-  releaseEscape: () => unbindEscape(),
-});
+// No Escape hooks of its own. The key is held by the flow for as long as the
+// panel is up, overlay or no overlay, because what it means there is a chain —
+// the picker, then the source it chose, then the panel — and two owners
+// registering the same accelerator is one of them silently winning. See
+// `CaptureFlow.escape`.
+const selection = new SelectionOverlay();
 // Where a finished capture lands. Created at module scope with the other
 // always-there windows, because the tray can stop a recording before anything
 // in `whenReady` has run.
@@ -266,6 +265,23 @@ void app.whenReady().then(() => {
     // check below is the only other one, and a menu-bar app can go weeks
     // between launches.
     checkForUpdates: checkForUpdatesIfDue,
+    // Escape, for as long as the panel is up — see `bindEscape` for why it has
+    // to be taken off the system rather than listened for in a window.
+    //
+    // Except while the script window has the keyboard. That one is focusable
+    // and often open beside the panel, and Escape pressed into a script being
+    // written belongs to the script — it has its own handler for the picker
+    // (`onEscape` above), which is the only part of the chain that makes sense
+    // from in there.
+    grabEscape: (onEscape) =>
+      bindEscape(() => {
+        if (script.isFocused) {
+          flow?.cancelSelection();
+          return;
+        }
+        onEscape();
+      }),
+    releaseEscape: () => unbindEscape(),
   });
 
   registerIpc({ flow, selection, workspace, quickView, teleprompter: prompter });

@@ -12,6 +12,8 @@ import type {
   DockState,
   Entitlement,
   ExportSummary,
+  MusicCatalogue,
+  MusicListing,
   PermissionState,
   RecordingPreferences,
   Target,
@@ -160,6 +162,43 @@ export const EXPORTS: ExportSummary[] = [
   url: exportUrl(String(index), entry.name),
   thumbnail: exportThumbnailUrl(String(index)),
 }));
+
+/**
+ * A music library, so the music row can be shot without a network.
+ *
+ * Four tracks over two groups, which is what the picker's headings need to be
+ * worth drawing. The files are not on this Mac — `music.ensure` in the bridge
+ * answers yes without fetching anything — so a bed laid from one of these
+ * draws its bar and plays nothing, which is exactly what a screenshot needs.
+ */
+export const MUSIC: MusicCatalogue = {
+  version: 1,
+  updated: "2026-10-20T00:00:00Z",
+  categories: [
+    { id: "ambient", label: "Ambient" },
+    { id: "upbeat", label: "Upbeat" },
+  ],
+  tracks: [
+    track("slow-wander", "Slow Wander", "ambient", 142),
+    track("still-air", "Still Air", "ambient", 98),
+    track("first-light", "First Light", "upbeat", 121),
+    track("paper-planes", "Paper Planes", "upbeat", 167),
+  ],
+};
+
+function track(id: string, label: string, category: string, seconds: number): MusicListing {
+  return {
+    id,
+    label,
+    category,
+    file: `${id}.m4a`,
+    md5: "0".repeat(32),
+    bytes: seconds * 20_000,
+    duration: seconds * 1_000_000_000,
+    attribution: "",
+    raw: `/v1/music/raw/${id}.m4a`,
+  };
+}
 
 export const APP_INFO: AppInfo = {
   name: "Prequel",

@@ -42,6 +42,17 @@ export class ScriptWindow {
     return this.window !== null && !this.window.isDestroyed();
   }
 
+  /**
+   * Whether this window has the keyboard.
+   *
+   * Asked by whoever holds Escape globally: a key pressed into a script being
+   * written belongs to the script, and the panel's own chain must not back out
+   * of a recording somebody is still writing the words for.
+   */
+  get isFocused(): boolean {
+    return this.isOpen && this.window!.isFocused();
+  }
+
   /** Opens it, or brings the one already open to the front. */
   open(): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) {

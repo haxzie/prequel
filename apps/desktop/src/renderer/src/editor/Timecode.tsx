@@ -171,10 +171,25 @@ function Character({
     });
 
     return () => {
-      window.clearTimeout(settle.current);
       ref(null);
     };
   }, [ref]);
+
+  /**
+   * The blur is cleared on unmount, and only on unmount.
+   *
+   * Its own effect because the one above re-runs on *every* render of the
+   * readout — `ref` is an arrow made in a `map`, so it is a new function each
+   * time — and a cleanup that cancelled the pending settle left the digit
+   * soft for good: the timer that would have taken the blur off had been
+   * thrown away, and nothing else ever removes it.
+   *
+   * It needs a render to go wrong, which is why it showed up here and not on
+   * the playhead. That one re-renders when the *shape* of the time changes,
+   * once a minute at the very most; a level being dragged crosses 100 and 99
+   * over and over, and every crossing is a render.
+   */
+  useEffect(() => () => window.clearTimeout(settle.current), []);
 
   if (!sliding || !/\d/.test(character)) {
     return (

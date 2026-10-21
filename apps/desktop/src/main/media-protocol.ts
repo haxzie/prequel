@@ -92,8 +92,16 @@ export const MEDIA_SCHEME_PRIVILEGES = {
   },
 } as const;
 
-/** Only what a session directory can legitimately contain. */
-const ALLOWED = /\.(mp4|m4a|gif|png|jpg|jpeg)$/i;
+/**
+ * Only what a session directory can legitimately contain.
+ *
+ * The four audio extensions past `.m4a` are the music row's: a bed somebody
+ * imported is copied in under its own name rather than re-encoded — see
+ * `music-import.ts` — and a file this list does not serve is a bar on the
+ * timeline that plays nothing, in a packaged build, with no console to say
+ * `ERR_UNKNOWN_URL_SCHEME`.
+ */
+const ALLOWED = /\.(mp4|m4a|mp3|wav|aiff|aif|flac|gif|png|jpg|jpeg)$/i;
 
 /**
  * A take's subdirectory inside a recording, as `newTakePath` names them.
@@ -314,6 +322,10 @@ const CORS = {
 function contentType(path: string): string {
   if (path.endsWith(".mp4")) return "video/mp4";
   if (path.endsWith(".m4a")) return "audio/mp4";
+  if (path.endsWith(".mp3")) return "audio/mpeg";
+  if (path.endsWith(".wav")) return "audio/wav";
+  if (path.endsWith(".aiff") || path.endsWith(".aif")) return "audio/aiff";
+  if (path.endsWith(".flac")) return "audio/flac";
   if (path.endsWith(".gif")) return "image/gif";
   if (path.endsWith(".png")) return "image/png";
   if (path.endsWith(".woff2")) return "font/woff2";

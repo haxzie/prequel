@@ -17,7 +17,9 @@ import type {
   ExportProgress,
   ExportRequest,
   ExportSummary,
+  ImportedAudio,
   IpcResult,
+  MusicCatalogue,
   PermissionId,
   PermissionState,
   PermissionStatus,
@@ -391,6 +393,15 @@ const api = {
     pickWatermark: (dir: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPickWatermark, dir),
 
+    /**
+     * Opens a file picker and copies the chosen audio into the recording.
+     *
+     * Null when the sheet was dismissed, and also when the file turned out to
+     * have no sound in it — see `pickAudioFile`.
+     */
+    pickAudio: (dir: string): Promise<IpcResult<ImportedAudio | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.editorPickAudio, dir),
+
     /** Copies one of the shipped wallpapers into the recording. */
     presetImage: (dir: string, presetId: string): Promise<IpcResult<BackgroundImage | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorPresetImage, dir, presetId),
@@ -498,6 +509,19 @@ const api = {
       /** Puts the full picture inside the recording, so it can be drawn. */
       ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
         ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
+    },
+
+    music: {
+      /**
+       * The hosted library, or null when there is neither a cache nor a
+       * network — the picker then offers only what this recording holds.
+       */
+      catalogue: (): Promise<IpcResult<MusicCatalogue | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.musicCatalogue),
+
+      /** Puts one track inside the recording, so it can be played. */
+      ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.musicEnsure, dir, file),
     },
 
     wallpapers: {

@@ -68,6 +68,8 @@ import { listProjects, renameProject, savePoster } from "./projects.js";
 import { readComposition } from "./project-composition.js";
 import { RECORDINGS_DIR, recordingPath, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
+import { catalogue as musicCatalogue, ensureMusic } from "./music.js";
+import { pickAudioFile } from "./music-import.js";
 import { wallpapers, writeWallpaper } from "./wallpapers.js";
 import { catalogue as fontsCatalogue, ensureFont } from "./fonts.js";
 import {
@@ -327,6 +329,10 @@ export function registerIpc({
     attempt(() => copyPresetBackground(dir, presetId)),
   );
 
+  ipcMain.handle(IPC_CHANNELS.editorPickAudio, (_event, dir: string) =>
+    attempt(() => pickAudioFile(dir)),
+  );
+
   // ── backgrounds ──────────────────────────────────────────────────────────
   //
   // The renderer cannot fetch these itself: its CSP is
@@ -339,6 +345,12 @@ export function registerIpc({
 
   ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, dir: string, file: string) =>
     attempt(() => ensureBackground(dir, file)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.musicCatalogue, () => attempt(() => musicCatalogue()));
+
+  ipcMain.handle(IPC_CHANNELS.musicEnsure, (_event, dir: string, file: string) =>
+    attempt(() => ensureMusic(dir, file)),
   );
 
   ipcMain.handle(IPC_CHANNELS.wallpapersCatalogue, () => attempt(() => wallpapers()));

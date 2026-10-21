@@ -197,6 +197,7 @@ fn request(dir: &Path, output: &Path, slices: Vec<SliceRender>) -> ExportRequest
         format: OutputFormat::Mp4,
         slices,
         sound: None,
+        music: vec![],
     }
 }
 

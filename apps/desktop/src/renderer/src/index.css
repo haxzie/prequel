@@ -103,6 +103,9 @@
   --color-title-fill: var(--title-fill);
   --color-title-edge: var(--title-edge);
   --color-title-ring: var(--title-ring);
+  --color-music-fill: var(--music-fill);
+  --color-music-edge: var(--music-edge);
+  --color-music-ring: var(--music-ring);
   --color-wave: var(--wave);
   --color-indicator: var(--indicator);
   --color-indicator-deep: var(--indicator-deep);
@@ -752,14 +755,43 @@ body {
   --zoom-edge: #f0d06f;
   --zoom-ring: #ffe9a8;
   /* The text rows, in the same three roles as a zoom's and for the same
-     reasons — a wash, an opaque edge, a ring — in a teal that is neither the
-     clips' purple nor the zooms' amber, so three kinds of bar on one strip
-     read as three kinds. Named `--title-*` rather than `--text-*`: a
-     `--color-text-fill` would generate `text-text-fill`, which is a colour
-     utility that reads like a typo, and `title` collides with nothing. */
-  --title-fill: #3cb8b0;
-  --title-edge: #7fdcd4;
-  --title-ring: #b8f1ec;
+     reasons — a wash, an opaque edge, a ring.
+
+     A rose, which is neither the clips' purple nor the zooms' amber nor the
+     music row's teal, so four kinds of bar on one strip read as four kinds.
+     Magenta rather than scarlet, and deliberately: `--cut` is an orange-red
+     and is drawn *on* these bars while the blade is held, so the two have to
+     be tellable apart at the moment they are on top of each other.
+
+     Named `--title-*` rather than `--text-*`: a `--color-text-fill` would
+     generate `text-text-fill`, which is a colour utility that reads like a
+     typo, and `title` collides with nothing.
+
+     Named by the row rather than by the colour, which is what lets the palette
+     be rearranged here and nowhere else — these three and the `--music-*`
+     three below have swapped hues once already, and no component knew. */
+  --title-fill: #c25fa8;
+  --title-edge: #e493d2;
+  --title-ring: #f6c9ec;
+  /* The music row, in the same three roles again.
+
+     A deep green. It was a teal first, on the reasoning that `--play`,
+     `--export` and `--toggle` are all one green and a green bar under a green
+     play button would read as the two being related — which is a worry about a
+     *bright* green and not about this one. At the teal's lightness the bed was
+     the loudest thing on the strip: a solid bar the length of a song, brighter
+     than the clips it plays under.
+
+     So: darker than `--play` rather than a different hue from it. Two greens
+     that far apart in weight do not read as the same thing, and the strip gets
+     a row that sits under the footage instead of over it.
+
+     Dark enough to carry white at 5:1, which the label and the waveform both
+     need — the wave is white at a third over the fill, and the name is white
+     outright. */
+  --music-fill: #2a8159;
+  --music-edge: #5fbe8d;
+  --music-ring: #a2dfbe;
   /* An alignment guide in the preview, and the snap it stands for.
 
      Its own token rather than `--cut` below, which happens to be the same

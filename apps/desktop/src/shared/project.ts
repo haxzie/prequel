@@ -14,6 +14,14 @@ import type { ExportFormat } from "./contract.js";
 import { filterId } from "./filters.js";
 import { placement } from "./layout.js";
 import type { MediaTime, SourceInfo } from "./manifest.js";
+import {
+  MAX_MUSIC_FADE,
+  MAX_MUSIC_VOLUME,
+  MIN_MUSIC_LENGTH,
+  MUSIC_FILE_NAME,
+  type MusicFile,
+  type MusicSlice,
+} from "./music.js";
 import { DEFAULT_PRESET_ID, evenSize } from "./presets.js";
 import { textMotion, type TextMotionId } from "./text-motion.js";
 import { isTranscriptWord, type TranscriptWord } from "./transcript.js";
@@ -771,6 +779,35 @@ export interface WatermarkSettings {
    * card, which is what asked for it.
    */
   watermarkRadius: number;
+  /**
+   * A ring around the mark, as a fraction of the *frame's* shorter edge.
+   *
+   * The frame's and not the mark's, unlike the radius above: a border is a
+   * line of a chosen weight, and one measured against the mark would get
+   * heavier every time the logo was made bigger — which is the one thing a
+   * hairline must not do.
+   *
+   * Zero by default. Drawn around the mark's box, so it is for a logo that is
+   * a card or a screenshot; one that carries its own shape in its alpha wants
+   * nothing here, which is why nobody is given one by default.
+   */
+  watermarkBorderWidth: number;
+  watermarkBorderColor: string;
+  /** How opaque the ring is, 0 to 1 — a tinted edge rather than a solid one. */
+  watermarkBorderOpacity: number;
+  /**
+   * How dark the mark's drop shadow is, 0 to 1. Zero draws none.
+   *
+   * One leaf rather than the background's three. Its blur and its drop are
+   * worked out from the mark's own size in `buildRenderPlan`, because a logo is
+   * a small thing standing on a big picture — the two numbers that look right
+   * under it are a function of how big it is, and nobody wants to find that out
+   * twice with two sliders.
+   *
+   * Cast by the box, like the border above, and zero by default for the same
+   * reason: a shadow behind a transparent mark is a rectangle somebody can see.
+   */
+  watermarkShadow: number;
 }
 
 /**
@@ -1458,6 +1495,93 @@ function sanitiseTexts(stored: unknown, duration: Ns): TextTrack[] {
   return tracks;
 }
 
+/**
+ * Repairs the stored list of audio files.
+ *
+ * A file whose name is not a bare audio name is dropped rather than repaired:
+ * it is the one string in a project that is joined onto a path, and a name
+ * that is not one of ours is not a name to be cleaned up. One entry per file,
+ * so a project hand-edited into listing the same song twice offers it once.
+ */
+function sanitiseMusicFiles(stored: unknown): MusicFile[] {
+  if (!Array.isArray(stored)) return [];
+
+  const seen = new Set<string>();
+  const files: MusicFile[] = [];
+
+  for (const value of stored as unknown[]) {
+    const entry = (value ?? {}) as Record<string, unknown>;
+    const file = typeof entry["file"] === "string" ? entry["file"] : "";
+    if (!MUSIC_FILE_NAME.test(file) || seen.has(file)) continue;
+    seen.add(file);
+
+    const duration = number(entry["duration"], 0);
+    files.push({
+      file,
+      label: typeof entry["label"] === "string" && entry["label"] !== "" ? entry["label"] : file,
+      duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
+      ...(typeof entry["libraryId"] === "string" ? { libraryId: entry["libraryId"] } : {}),
+    });
+  }
+
+  return files;
+}
+
+/**
+ * Repairs the stored music row.
+ *
+ * Sorted, and anything overlapping what came before it dropped — the same rule
+ * the zoom row follows, and for the same reason: two beds over one moment is
+ * two songs at once, which no control in the editor could put right.
+ *
+ * Unlike the texts, the overlap *can* be settled here: a bed is measured in
+ * project time at both ends, so nothing about the edit is needed to know
+ * whether two of them collide.
+ *
+ * Not clamped against the edit's duration. A bed hanging past the end of the
+ * video simply stops being heard, and clamping it would silently shorten
+ * somebody's music the first time they trimmed the last clip and reopened.
+ */
+function sanitiseMusic(stored: unknown, files: readonly MusicFile[]): MusicSlice[] {
+  if (!Array.isArray(stored)) return [];
+
+  const beds = (stored as unknown[])
+    .map((value, index): MusicSlice | null => {
+      const bed = (value ?? {}) as Record<string, unknown>;
+      const file = typeof bed["file"] === "string" ? bed["file"] : "";
+      // A bed whose file this project does not list has nothing to play. It is
+      // dropped rather than silenced: a bar on the row that can never make a
+      // sound is worse than no bar at all.
+      const known = files.find((entry) => entry.file === file);
+      if (!known) return null;
+
+      const at = Math.max(0, number(bed["at"], 0));
+      const length = Math.max(MIN_MUSIC_LENGTH, number(bed["length"], known.duration));
+      if (!Number.isFinite(at) || !Number.isFinite(length)) return null;
+
+      return {
+        id: typeof bed["id"] === "string" ? bed["id"] : `music-${String(index)}`,
+        at,
+        length,
+        file,
+        // Held inside the file, so a bed cannot begin past the end of its own
+        // song — which plays as silence with the bar still on the row.
+        offset: clamp(number(bed["offset"], 0), 0, Math.max(0, known.duration - 1)),
+        volume: clamp(number(bed["volume"], 1), 0, MAX_MUSIC_VOLUME),
+        muted: bed["muted"] === true,
+        fadeIn: clamp(number(bed["fadeIn"], 0), 0, MAX_MUSIC_FADE),
+        fadeOut: clamp(number(bed["fadeOut"], 0), 0, MAX_MUSIC_FADE),
+        repeat: bed["repeat"] === true,
+      };
+    })
+    .filter((bed): bed is MusicSlice => bed !== null)
+    .sort((a, b) => a.at - b.at);
+
+  return beds.filter(
+    (bed, index) => index === 0 || bed.at >= beds[index - 1]!.at + beds[index - 1]!.length,
+  );
+}
+
 export interface OutputSettings {
   fps: number;
   format: ExportFormat;
@@ -1551,6 +1675,28 @@ export interface Project {
    * row draws over a lower one.
    */
   texts: TextTrack[];
+  /**
+   * The music row: beds laid under the finished film, in project time.
+   *
+   * Sorted by where each begins, and never overlapping — one row, because one
+   * bed at a time is what a bed is. Empty on every project saved before the
+   * row existed, which is exactly what they sounded like.
+   */
+  music: MusicSlice[];
+  /**
+   * Every audio file this recording has had brought into it, by name.
+   *
+   * Kept beside the beds rather than derived from them, so the picker can
+   * still offer a file after the bed that referenced it has been pointed
+   * somewhere else — "the other things I imported for this video" is the list
+   * somebody is looking for, and a list that forgot a file the moment it
+   * stopped being used would not be it.
+   *
+   * It is also where a file's length and its name live: a bed stores neither,
+   * because two beds cut from one song must not be able to disagree about how
+   * long the song is.
+   */
+  musicFiles: MusicFile[];
   /**
    * Marks drawn over a screenshot — arrows, boxes, freehand, highlighter.
    *
@@ -1796,6 +1942,12 @@ export const DEFAULT_WATERMARK: WatermarkSettings = {
   // Square. See the note on the field: rounding a logo that is already the
   // shape it wants to be is the damaging default, not the safe one.
   watermarkRadius: 0,
+  // All three off. A mark is the picture in its file until somebody says
+  // otherwise — see the fields.
+  watermarkBorderWidth: 0,
+  watermarkBorderColor: "#ffffff",
+  watermarkBorderOpacity: 1,
+  watermarkShadow: 0,
 };
 
 export const DEFAULT_AUDIO: AudioSettings = {
@@ -2128,6 +2280,8 @@ export function newProject(
     defaults,
     zooms: [],
     texts: [],
+    music: [],
+    musicFiles: [],
     annotations: [],
     zoomDefaults: { ...DEFAULT_ZOOM_LOOK },
     tracks: [
@@ -2337,6 +2491,10 @@ export function sanitiseProject(
   // whole length, which reads as the new footage never having been added.
   const whole = cutAtSeams(slices, seams);
 
+  // The files before the beds: a bed naming a file this project does not list
+  // has nothing to play, and `sanitiseMusic` needs the list to say so.
+  const musicFiles = sanitiseMusicFiles(stored.musicFiles);
+
   return {
     version: PROJECT_VERSION,
     recordingId,
@@ -2350,6 +2508,8 @@ export function sanitiseProject(
     zooms: sanitiseZooms(stored.zooms, duration),
     zoomDefaults: sanitiseZoomLook(stored.zoomDefaults, DEFAULT_ZOOM),
     texts: sanitiseTexts(stored.texts, duration),
+    musicFiles,
+    music: sanitiseMusic(stored.music, musicFiles),
     annotations: sanitiseAnnotations(stored.annotations),
     defaults: {
       layout: {

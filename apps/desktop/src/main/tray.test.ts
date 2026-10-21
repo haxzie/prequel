@@ -380,32 +380,19 @@ describe("the menu icons", () => {
   });
 });
 
-describe("the teleprompter items", () => {
-  const item = (menu: MenuTemplate, label: string) => menu.find((entry) => entry.label === label)!;
-
-  it("shows the switch as the preference has it, and flips it through the flow", () => {
-    const patches: object[] = [];
+describe("the teleprompter", () => {
+  it("is not in this menu at all", () => {
+    // Its switch and its script live on the panel, beside the microphone they
+    // depend on. They were here too, gated on a microphone being chosen, and
+    // the menu is not where anybody looked for them.
     const menu = openMenu({
       state: () => ({
         preferences: { ...DEFAULT_PREFERENCES, micId: "mic-1", teleprompter: true },
       }),
-      updatePreferences: (patch: object) => patches.push(patch),
     });
 
-    expect(item(menu, "Teleprompter")).toMatchObject({ type: "checkbox", checked: true });
-    item(menu, "Teleprompter").click?.();
-    expect(patches).toEqual([{ teleprompter: false }]);
-  });
-
-  it("is not offered without a microphone", () => {
-    const menu = openMenu({ state: () => ({ preferences: DEFAULT_PREFERENCES }) });
     expect(menu.find((entry) => entry.label === "Teleprompter")).toBeUndefined();
-  });
-
-  it("opens the script through the flow, never a window class", () => {
-    let opened = false;
-    item(openMenu({ openScript: () => (opened = true) }), "Edit Teleprompter Script…").click?.();
-    expect(opened).toBe(true);
+    expect(menu.find((entry) => entry.label === "Edit Teleprompter Script…")).toBeUndefined();
   });
 });
 

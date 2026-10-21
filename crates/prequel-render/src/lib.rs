@@ -18,9 +18,13 @@
 //! does the camera sit" is how a preview and an export come to disagree.
 //!
 //! **Audio is mixed by hand.** A per-source multiply on `f32`, which is exactly
-//! what WebAudio does in the preview — see [`mixer`].
+//! what WebAudio does in the preview — see [`mixer`]. Four sources: the
+//! microphone, the system audio, the synthesised typing and clicks, and the
+//! music row — the last of which is on the finished video's clock rather than
+//! the recording's, because that is what a bed is. See [`music`].
 
 pub mod mixer;
+pub mod music;
 pub mod peaks;
 pub mod plan;
 pub mod sound;
@@ -52,6 +56,7 @@ pub use plan::{
     OverlayKey, Paint, PlanFilter, PlanItem, PlanSource, Point, Rect, RectKey, RenderPlan, Shape,
     Size, Span,
 };
+pub use music::MusicBed;
 pub use timeline::{AudioMix, SegmentRef, SliceMedia, SliceRender, Timeline};
 
 pub type Result<T> = std::result::Result<T, Error>;

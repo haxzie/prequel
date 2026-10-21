@@ -249,6 +249,7 @@ fn render(name: &str, filter: Option<PlanFilter>) -> (PathBuf, Frame) {
             },
         }],
         sound: None,
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");

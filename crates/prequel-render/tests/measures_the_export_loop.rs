@@ -200,6 +200,7 @@ fn measure(label: &str, width: u32, height: u32) {
             },
         }],
         sound: None,
+        music: vec![],
     };
 
     // Three runs, best reported: the first pays for shader compilation and a

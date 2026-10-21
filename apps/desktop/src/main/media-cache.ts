@@ -22,6 +22,9 @@ export const TIMEOUT_MS = 15_000;
 /** Bare names only, so there is no path in a name and nothing to traverse. */
 export const BARE_JPEG = /^[a-z0-9][a-z0-9-]*\.jpg$/i;
 
+/** The same rule for a track from the music library, which is always `.m4a`. */
+export const BARE_M4A = /^[a-z0-9][a-z0-9-]*\.m4a$/i;
+
 /**
  * Whether these bytes are actually a JPEG.
  *
@@ -50,13 +53,27 @@ export function isFont(head: Buffer): boolean {
   return tag === "wOF2" || tag === "wOFF" || tag === "OTTO" || tag === "\0\u0001\0\0";
 }
 
+/**
+ * Whether these bytes are an MP4 — which is what an `.m4a` is.
+ *
+ * `ftyp` at offset four, the box every ISO base-media file opens with. The
+ * same reason `isJpeg` exists: an HTML page saved under a track's name would
+ * be "there" for ever, and `existsSync` would never fetch it again — so the
+ * bed would sit on the timeline playing nothing, with nothing in any log.
+ */
+export function isAudioMp4(head: Buffer): boolean {
+  return head.length >= 8 && head.subarray(4, 8).toString("latin1") === "ftyp";
+}
+
 /** The same check against a file already on disk. */
 export function fileIs(path: string, check: (head: Buffer) => boolean): boolean {
   let handle: number | undefined;
   try {
     handle = openSync(path, "r");
-    const head = Buffer.alloc(4);
-    const read = readSync(handle, head, 0, 4, 0);
+    // Eight rather than four: an MP4's `ftyp` sits at offset four, and the two
+    // checks that only need the first word read a prefix of this quite happily.
+    const head = Buffer.alloc(8);
+    const read = readSync(handle, head, 0, 8, 0);
     return check(head.subarray(0, read));
   } catch {
     return false;

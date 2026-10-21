@@ -17,6 +17,7 @@ use prequel_session::MediaTime;
 
 use crate::compositor::{Compositor, Output};
 use crate::mixer::{self, CHANNELS, Gain};
+use crate::music::{MusicBed, MusicTrack};
 use crate::reader::{AudioReader, VideoReader};
 use crate::sound::{SoundPlan, SoundTrack};
 use crate::timeline::{MAX_SPEED, MIN_SPEED, SegmentRef, SliceRender, Timeline};
@@ -165,6 +166,13 @@ pub struct ExportRequest {
     /// Planned once, outside this crate, and the same plan the preview played
     /// — see `sound.rs`. `None` for a recording with no presses and no clicks.
     pub sound: Option<SoundPlan>,
+    /// The music row, already on the finished video's clock.
+    ///
+    /// Flat rather than per slice, because a bed is not a property of a clip:
+    /// it is laid under the whole edit and crosses every cut it reaches. Empty
+    /// for a recording with no music, which is every one saved before the row
+    /// existed.
+    pub music: Vec<MusicBed>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -736,6 +744,9 @@ struct AudioStream<'a> {
     /// The synthesised sounds, and which of their cues fall in this slice.
     sound: Option<SoundTrack>,
     cue_range: std::ops::Range<usize>,
+    /// The music row, which is indexed by `produced` rather than by `slot`:
+    /// a bed is on the finished video's clock and knows nothing about slices.
+    music: Option<MusicTrack>,
     /// Samples this slice owes, and how many of them have been mixed.
     owed: usize,
     done: usize,
@@ -763,6 +774,7 @@ impl<'a> AudioStream<'a> {
     /// all" — a pair of `exists` calls and some arithmetic.
     fn open(request: &'a ExportRequest) -> Option<Self> {
         let sound = SoundTrack::prepare(request.sound.as_ref(), &request.slices, SAMPLE_RATE);
+        let music = MusicTrack::prepare(&request.music, &request.session_dir, SAMPLE_RATE);
 
         // Every audio file any slice names, that is really there. Named and
         // there are different questions: a slice names whatever segment covers
@@ -778,11 +790,12 @@ impl<'a> AudioStream<'a> {
             .collect();
 
         // A recording with no microphone and no system audio still gets a
-        // sound track if there is typing to hear. Before the sounds existed
-        // "no files" meant "no audio", and keeping that rule would have
-        // dropped every synthesised press from a silent take without a word —
-        // the writer is created without an audio input and never asks again.
-        if present.is_empty() && sound.is_none() {
+        // sound track if there is typing to hear, or music under it. Before
+        // the sounds existed "no files" meant "no audio", and keeping that
+        // rule would have dropped every synthesised press from a silent take
+        // without a word — the writer is created without an audio input and
+        // never asks again.
+        if present.is_empty() && sound.is_none() && music.is_none() {
             return None;
         }
 
@@ -805,6 +818,7 @@ impl<'a> AudioStream<'a> {
             gains: [Gain(0.0), Gain(0.0)],
             sound,
             cue_range: 0..0,
+            music,
             owed: 0,
             done: 0,
             produced: 0,
@@ -932,6 +946,14 @@ impl<'a> AudioStream<'a> {
                 run / CHANNELS,
                 chunk,
             );
+        }
+
+        // The music last, and off `produced` rather than `done`: a bed is
+        // placed in the finished video, so what it needs to know is how much
+        // of that video has been written — which is exactly what `produced`
+        // counts, and is the same number however many cuts it has crossed.
+        if let Some(music) = &mut self.music {
+            music.fill(self.produced / CHANNELS, chunk, scratch);
         }
 
         // Per chunk rather than once over the whole mix, which is the same

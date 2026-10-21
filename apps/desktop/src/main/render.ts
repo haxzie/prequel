@@ -22,7 +22,7 @@ import {
 import type { CliProgress } from "../shared/cli.js";
 import { findPreset } from "../shared/presets.js";
 import { outputFrame, resolveSettings, type Project } from "../shared/project.js";
-import { buildSlices } from "../renderer/src/editor/exportSlices.js";
+import { buildMusic, buildSlices } from "../renderer/src/editor/exportSlices.js";
 import { watch } from "./broadcast.js";
 import { readEditorSession, withBackground } from "./editor-session.js";
 import { renderedDurationMs, startExport } from "./export.js";
@@ -228,6 +228,7 @@ export async function renderRecording(
       () => undefined,
     ),
     sound: session.sound,
+    music: buildMusic(project),
   });
 
   return finished;

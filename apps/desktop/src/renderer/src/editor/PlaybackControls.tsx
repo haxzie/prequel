@@ -4,11 +4,13 @@ import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
 import { Timecode } from "./Timecode";
 import {
+  AddAudioIcon,
   AddRecordingIcon,
   AddTextIcon,
   AddZoomIcon,
-  ChevronUpIcon,
+  ImportAudioIcon,
   ImportVideoIcon,
+  MusicIcon,
   PauseIcon,
   PlayIcon,
   PointerToolIcon,
@@ -71,11 +73,15 @@ export function PlaybackControls({
   tool,
   canAddZoom,
   canAddText,
+  canAddMusic,
+  hasLibrary,
   canAddClip,
   canDelete,
   canUndo,
   onAddZoom,
   onAddText,
+  onAddAmbient,
+  onImportAudio,
   onAddRecording,
   onImportVideo,
   onDelete,
@@ -89,6 +95,15 @@ export function PlaybackControls({
   canAddZoom: boolean;
   /** Some row of texts has room for one. */
   canAddText: boolean;
+  /** The music row has a gap big enough to hold a bed. */
+  canAddMusic: boolean;
+  /**
+   * Whether the hosted library could be reached, so there is a track to lay
+   * down. False on a machine that has never been online, where Import Audio is
+   * still the way in — so the menu opens with one row dead rather than the
+   * whole pill.
+   */
+  hasLibrary: boolean;
   /** Nothing else has the recording busy, so another clip can be added. */
   canAddClip: boolean;
   /** A clip or a zoom is selected, so there is something to remove. */
@@ -97,6 +112,9 @@ export function PlaybackControls({
   canUndo: boolean;
   onAddZoom: () => void;
   onAddText: () => void;
+  /** A track from the library — which one is asked on the bed itself. */
+  onAddAmbient: () => void;
+  onImportAudio: () => void;
   onAddRecording: () => void;
   onImportVideo: () => void;
   onDelete: () => void;
@@ -250,16 +268,23 @@ export function PlaybackControls({
 
       <div className="flex items-center justify-self-end gap-2">
         {/* On its own, at the other end of the row from the verbs. Those act on
-            what you have already picked — cut, delete, undo — and these two act
-            on the playhead instead, so sharing a box said they were more of the
-            same kind. They are also the ones with a word on them: a bare
-            magnifier next to a pair of scissors reads as a search box. */}
+            what you have already picked — cut, delete, undo — and these act on
+            the playhead instead, so sharing a box said they were more of the
+            same kind.
+
+            Glyphs alone, like every other group in this row. They carried their
+            words for a while, on the argument that a bare magnifier beside a
+            pair of scissors reads as a search box — which is true of a bare
+            magnifier and not of these: every one of the four has a plus built
+            into it, so the group reads as *adding* four kinds of thing rather
+            than as four unrelated tools. Four words also made this group twice
+            the width of the other three and pushed the transport off the
+            middle of the row. The names are in the tooltips. */}
         <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <Action
             label="Add Zoom"
             shortcut="Z"
             Icon={AddZoomIcon}
-            text
             // Only ever off when the zoom row is full — every gap is already
             // taken or too small to grab. Not tied to the playhead: the button
             // finds the nearest gap itself, so where the head is does not
@@ -273,15 +298,22 @@ export function PlaybackControls({
             label="Add Text"
             shortcut="T"
             Icon={AddTextIcon}
-            text
             disabled={!canAddText}
             onClick={onAddText}
           />
-          {/* Third in the pill, and the only one of the three that asks a
-              question first: footage can come from the screen or from a file,
-              and both arrive the same way — as another clip at the end. Here
-              rather than beside Split and Delete because it adds something to
-              the timeline, which is what this group is for. */}
+          {/* Beside the other two, and a menu for the reason Add Clip is one:
+              a bed comes from the library or from a file, and both arrive the
+              same way — as a bar on the music row. */}
+          <AddAudio
+            disabled={!canAddMusic}
+            hasLibrary={hasLibrary}
+            onAddAmbient={onAddAmbient}
+            onImportAudio={onImportAudio}
+          />
+          {/* Last in the pill: footage can come from the screen or from a
+              file, and both arrive the same way — as another clip at the end.
+              Here rather than beside Split and Delete because it adds
+              something to the timeline, which is what this group is for. */}
           <AddClip
             disabled={!canAddClip}
             onAddRecording={onAddRecording}
@@ -300,9 +332,6 @@ export function PlaybackControls({
  * on the end of the timeline — and spelling both out put three words on a row
  * whose other two controls are one word each, which read as three unrelated
  * things rather than as one with a choice in it.
- *
- * Upwards, because the transport sits above the timeline at the bottom of the
- * window and a menu dropped downwards would open off the screen.
  */
 function AddClip({
   disabled,
@@ -313,12 +342,109 @@ function AddClip({
   onAddRecording: () => void;
   onImportVideo: () => void;
 }) {
+  return (
+    <Menu label="Add Clip" Icon={AddRecordingIcon} disabled={disabled}>
+      {(choose) => (
+        <>
+          {/* The shortcut lives here rather than on the trigger: R records, it
+              does not open this menu, and a key listed on a button it does not
+              press is worse than one nobody finds. */}
+          <MenuItem
+            label="New Recording"
+            shortcut="R"
+            Icon={AddRecordingIcon}
+            onClick={() => choose(onAddRecording)}
+          />
+          <MenuItem
+            label="Import Video"
+            Icon={ImportVideoIcon}
+            onClick={() => choose(onImportVideo)}
+          />
+        </>
+      )}
+    </Menu>
+  );
+}
+
+/**
+ * Add Audio, and the two places a bed comes from.
+ *
+ * `AddClip`'s twin, deliberately: the same shape, the same menu, the same
+ * reasoning. One verb — music under the video — with a choice of where it
+ * comes from.
+ *
+ * Neither row asks *which* track. Ambient Music lays a bed down and the panel
+ * that opens on it is where the song is chosen, so the menu stays two rows
+ * long however big the library grows — and the control that changes the song
+ * is the same one whether the bed came from the library or from a file, which
+ * is the whole point of there being one panel for both.
+ */
+function AddAudio({
+  disabled,
+  hasLibrary,
+  onAddAmbient,
+  onImportAudio,
+}: {
+  disabled: boolean;
+  hasLibrary: boolean;
+  onAddAmbient: () => void;
+  onImportAudio: () => void;
+}) {
+  return (
+    <Menu label="Add Audio" Icon={AddAudioIcon} disabled={disabled}>
+      {(choose) => (
+        <>
+          {/* Dead rather than absent when the library could not be reached, the
+              way Undo is with nothing to undo: a row that is not there cannot
+              be found, and "where has the music gone" costs more than a greyed
+              one ever did. */}
+          <MenuItem
+            label="Add Ambient Music"
+            Icon={MusicIcon}
+            disabled={!hasLibrary}
+            onClick={() => choose(onAddAmbient)}
+          />
+          <MenuItem
+            label="Import Audio"
+            Icon={ImportAudioIcon}
+            onClick={() => choose(onImportAudio)}
+          />
+        </>
+      )}
+    </Menu>
+  );
+}
+
+/**
+ * A pill in the add group with a menu behind it.
+ *
+ * Opens upwards, because the transport sits above the timeline at the bottom
+ * of the window and a menu dropped downwards would open off the screen.
+ *
+ * One component for both of the pills that have one. They had a copy each for
+ * a while, and the pair drifted the first time the stacking was fixed: the
+ * inspector floats over the board at `z-30`, so a menu at `z-20` opened
+ * *behind* the panel beside it, and only one of the two was raised.
+ */
+function Menu({
+  label,
+  Icon,
+  disabled,
+  children,
+}: {
+  /** The words on the pill, and what the menu is announced as. */
+  label: string;
+  Icon: () => React.JSX.Element;
+  disabled: boolean;
+  /** The rows. `choose` closes the menu and then acts. */
+  children: (choose: (action: () => void) => void) => React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
 
-  // Closed the moment it cannot be used. Both choices leave the editor — one
-  // for the panel, one for a file dialog — and a menu left standing over the
-  // window they come back to is a menu nobody asked for.
+  // Closed the moment it cannot be used. Every choice leaves the editor — for
+  // a panel, or a file dialog — and a menu left standing over the window they
+  // come back to is a menu nobody asked for.
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
@@ -333,13 +459,13 @@ function AddClip({
       <button
         ref={trigger}
         type="button"
-        title="Add Clip"
-        aria-label="Add Clip"
+        title={label}
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] [&_svg]:size-[15px]",
+          "flex h-7 w-7 items-center justify-center rounded-md [&_svg]:size-[15px]",
           disabled
             ? "text-editor-muted/40"
             : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
@@ -347,14 +473,11 @@ function AddClip({
         )}
         onClick={() => setOpen(!open)}
       >
-        <AddRecordingIcon />
-        <span>Add Clip</span>
-        {/* Smaller and dimmer than the glyph on the other side: it says the
-            button has more behind it, and it is not one of the two things being
-            chosen between. */}
-        <span className="text-editor-muted/60 [&_svg]:size-3">
-          <ChevronUpIcon />
-        </span>
+        {/* The glyph alone. The chevron that used to sit beside it said "there
+            is more behind this" — worth a few pixels next to a word, and half
+            the button's width without one. What is behind it arrives on the
+            first press, and the tooltip names it before that. */}
+        <Icon />
       </button>
 
       {open && (
@@ -386,20 +509,7 @@ function AddClip({
               trigger.current?.focus();
             }}
           >
-            {/* The shortcut lives here rather than on the trigger: R records,
-                it does not open this menu, and a key listed on a button it does
-                not press is worse than one nobody finds. */}
-            <MenuItem
-              label="New Recording"
-              shortcut="R"
-              Icon={AddRecordingIcon}
-              onClick={() => choose(onAddRecording)}
-            />
-            <MenuItem
-              label="Import Video"
-              Icon={ImportVideoIcon}
-              onClick={() => choose(onImportVideo)}
-            />
+            {children(choose)}
           </ul>
         </>
       )}
@@ -411,11 +521,13 @@ function MenuItem({
   label,
   shortcut,
   Icon,
+  disabled,
   onClick,
 }: {
   label: string;
   shortcut?: string;
   Icon: () => React.JSX.Element;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -423,10 +535,12 @@ function MenuItem({
       <button
         type="button"
         role="menuitem"
-        className={
-          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs " +
-          "text-editor-fg hover:bg-white/10 [&_svg]:size-[15px] [&_svg]:text-editor-muted"
-        }
+        disabled={disabled}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs",
+          "[&_svg]:size-[15px] [&_svg]:text-editor-muted",
+          disabled ? "text-editor-muted/40" : "text-editor-fg hover:bg-white/10",
+        )}
         onClick={onClick}
       >
         <Icon />
@@ -440,15 +554,15 @@ function MenuItem({
 /**
  * One of the verbs, with its shortcut in the tooltip.
  *
- * A square glyph by default; with `text` it grows into a pill with the word
- * beside the glyph, the same height, so the two shapes sit on one baseline in
- * the same group without looking like two kinds of control.
+ * A square glyph, and only that. It could grow a word beside it once, which is
+ * how the add group was drawn for a while — see the note there for why all
+ * four are bare now. One shape means every button in this row is the same
+ * size, which is what lets the transport sit on the middle of it.
  */
 function Action({
   label,
   shortcut,
   Icon,
-  text,
   held,
   disabled,
   onClick,
@@ -456,8 +570,6 @@ function Action({
   label: string;
   shortcut: string;
   Icon: () => React.JSX.Element;
-  /** Whether the label is written out beside the glyph. */
-  text?: boolean;
   /** A tool rather than a verb, and this one is the tool in hand. */
   held?: boolean;
   disabled: boolean;
@@ -473,8 +585,7 @@ function Action({
       aria-pressed={held}
       disabled={disabled}
       className={cn(
-        "flex h-7 items-center gap-1.5 rounded-md text-[11px] [&_svg]:size-[15px]",
-        text ? "px-2" : "w-7 justify-center",
+        "flex h-7 w-7 items-center justify-center rounded-md [&_svg]:size-[15px]",
         disabled
           ? "text-editor-muted/40"
           : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
@@ -483,7 +594,6 @@ function Action({
       onClick={onClick}
     >
       <Icon />
-      {text && <span>{label}</span>}
     </button>
   );
 }

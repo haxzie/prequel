@@ -17,7 +17,7 @@ use prequel_encode::{AudioWriter, AudioWriterConfig, VideoWriter, VideoWriterCon
 use prequel_keysound::{ClickProfile, KeyProfile, cues};
 use prequel_render::sound::SoundPlan;
 use prequel_render::{
-    AudioMix, CancelFlag, ExportRequest, OutputFormat, Paint, PlanItem, Rect, RenderPlan,
+    AudioMix, CancelFlag, ExportRequest, MusicBed, OutputFormat, Paint, PlanItem, Rect, RenderPlan,
     SegmentRef, Shape, SliceMedia, SliceRender, export,
 };
 use prequel_session::{KeyClass, KeyPress, TrackKind};
@@ -116,6 +116,30 @@ fn record_audio(dir: &Path) {
         .append_pcm(&samples, 48_000.0)
         .expect("append the source audio");
     writer.finish().expect("finish the source audio");
+}
+
+/// Writes a four-second music file into `dir`, as the music row's picker would.
+///
+/// `record_audio`'s twin at a different pitch, so a bed mixed into a take that
+/// already has sound can be told from the take's own tone by ear as well as by
+/// level.
+fn record_music(dir: &Path, name: &str) {
+    let mut writer = AudioWriter::create(
+        &dir.join(name),
+        &AudioWriterConfig::new(48_000.0, 2).offline(),
+    )
+    .expect("create the music writer");
+
+    let frames = 4 * 48_000;
+    let mut samples = Vec::with_capacity(frames * 2);
+    for index in 0..frames {
+        let value = ((index as f64 / 48_000.0) * 220.0 * std::f64::consts::TAU).sin() as f32 * 0.5;
+        samples.push(value);
+        samples.push(value);
+    }
+
+    writer.append_pcm(&samples, 48_000.0).expect("append music");
+    writer.finish().expect("finish the music");
 }
 
 /// A plan that fills the frame and draws the screen inside a margin.
@@ -264,6 +288,7 @@ fn exports_only_the_slices_that_were_kept() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S), slice(2 * S, 3 * S)],
         sound: None,
+        music: vec![],
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -311,6 +336,7 @@ fn the_whole_take_exports_at_its_full_length() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
         sound: None,
+        music: vec![],
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -344,6 +370,7 @@ fn reports_progress_as_it_goes() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
         sound: None,
+        music: vec![],
     };
 
     let mut stages = Vec::new();
@@ -375,6 +402,7 @@ fn cancelling_leaves_no_output_behind() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 4 * S)],
         sound: None,
+        music: vec![],
     };
 
     // Cancelled before a single frame is rendered.
@@ -406,6 +434,7 @@ fn refuses_an_edit_with_nothing_in_it() {
         format: OutputFormat::Mp4,
         slices: vec![],
         sound: None,
+        music: vec![],
     };
 
     assert!(matches!(
@@ -439,6 +468,7 @@ fn re_exporting_replaces_the_previous_file() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 2 * S)],
         sound: None,
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("first export");
@@ -480,6 +510,7 @@ fn a_failed_export_leaves_nothing_behind() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, S)],
         sound: None,
+        music: vec![],
     };
 
     assert!(export(&request, &CancelFlag::new(), &mut |_| {}).is_err());
@@ -511,6 +542,7 @@ fn exports_the_sound_inside_the_video_file() {
         format: OutputFormat::Mp4,
         slices: vec![slice(0, 2 * S)],
         sound: None,
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with audio");
@@ -646,6 +678,7 @@ fn typing_is_heard_in_a_recording_with_no_audio_track() {
         sound: Some(SoundPlan {
             cues: cues(&presses, &[], "typing-test"),
         }),
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with typing");
@@ -703,6 +736,7 @@ fn sounds_switched_off_write_no_audio_track_for_a_silent_take() {
                 "off",
             ),
         }),
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -748,6 +782,7 @@ fn a_press_in_a_cut_is_not_heard() {
         sound: Some(SoundPlan {
             cues: cues(&presses, &[], "cut"),
         }),
+        music: vec![],
     };
 
     export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -782,6 +817,7 @@ fn exports_a_gif_that_loops_and_carries_no_audio() {
         format: OutputFormat::Gif,
         slices: vec![slice(0, S)],
         sound: None,
+        music: vec![],
     };
 
     let summary = export(&request, &CancelFlag::new(), &mut |_| {}).expect("export");
@@ -810,4 +846,120 @@ fn exports_a_gif_that_loops_and_carries_no_audio() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn music_is_heard_where_its_bed_is_and_nowhere_else() {
+    // The end-to-end claim for the music row: a bed is placed on the *finished
+    // video's* clock, so it has to land where the bar on the timeline says it
+    // does rather than where the slice it happens to overlap begins. The two
+    // slices here are cut out of the middle of the take, so a bed mixed
+    // against source time instead of project time would be heard somewhere
+    // other than one second in — and would still produce a perfectly valid
+    // file, which is why this is an assertion about samples.
+    //
+    // No `record_audio`: a take with no sound of its own, so what is heard is
+    // the bed and nothing else.
+    let dir = scratch("prequel-export-music");
+    record(&dir);
+    record_music(&dir, "wander.m4a");
+
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        // Two one-second slices out of a four-second take: two seconds of
+        // video, with a cut in the middle that the bed runs straight over.
+        slices: vec![slice(0, S), slice(2 * S, 3 * S)],
+        sound: None,
+        music: vec![MusicBed {
+            file: "wander.m4a".into(),
+            start: S / 2,
+            end: 2 * S,
+            offset: 0,
+            volume: 1.0,
+            // Straight in, so the test is about *where* the bed is rather than
+            // about the ramp — the envelope has its own tests either side of
+            // the language boundary.
+            fade_in: 0,
+            fade_out: 0,
+            repeat: false,
+        }],
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with music");
+
+    let audio = probe_stream(&output, "a:0", "stream=codec_type");
+    assert!(
+        audio.contains("codec_type=audio"),
+        "a silent take with music must still get a sound track, got: {audio:?}"
+    );
+
+    let heard = decode_audio(&output);
+    let before = loudness(&heard, 0.05, 0.4);
+    let under = loudness(&heard, 0.6, 0.9);
+    // Past the cut, which the bed crosses without noticing.
+    let after_cut = loudness(&heard, 1.2, 1.8);
+
+    assert!(
+        under > 10.0 * before,
+        "music under its bed {under} vs before it {before}"
+    );
+    assert!(
+        after_cut > 10.0 * before,
+        "music past the cut {after_cut} vs before the bed {before}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn music_fades_up_over_its_fade_in() {
+    // The envelope, in the file rather than in the arithmetic. The unit tests
+    // either side of the language boundary agree about the number; this is
+    // what says the number reaches the samples — a fade applied per *chunk*
+    // instead of per frame, or dropped entirely, still exports a bed that is
+    // loud in the middle and would pass the test above.
+    let dir = scratch("prequel-export-music-fade");
+    record(&dir);
+    record_music(&dir, "wander.m4a");
+
+    let output = dir.join("export.mp4");
+    let request = ExportRequest {
+        session_dir: dir.clone(),
+        output: output.clone(),
+        width: OUT_W,
+        height: OUT_H,
+        fps: OUT_FPS,
+        format: OutputFormat::Mp4,
+        slices: vec![slice(0, 2 * S)],
+        sound: None,
+        music: vec![MusicBed {
+            file: "wander.m4a".into(),
+            start: 0,
+            end: 2 * S,
+            offset: 0,
+            volume: 1.0,
+            fade_in: S,
+            fade_out: 0,
+            repeat: false,
+        }],
+    };
+
+    export(&request, &CancelFlag::new(), &mut |_| {}).expect("export with a fade");
+
+    let heard = decode_audio(&output);
+    let opening = loudness(&heard, 0.0, 0.1);
+    let quarter = loudness(&heard, 0.2, 0.3);
+    let full = loudness(&heard, 1.2, 1.8);
+
+    assert!(opening < quarter, "the bed opened at {opening}, not below");
+    assert!(
+        quarter < full / 2.0,
+        "a quarter of the way up {quarter} is not below half of {full}"
+    );
 }

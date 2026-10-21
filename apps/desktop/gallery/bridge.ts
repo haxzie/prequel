@@ -294,6 +294,9 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       pickImage: () => ok(null),
       pickWatermark: () => ok(null),
       presetImage: () => ok(null),
+      // No dialogs in the gallery: a shot of an open file sheet is a shot of
+      // macOS. The music row's own picker is populated by the fixture below.
+      pickAudio: () => ok(null),
 
       export: {
         choose: () => ok(state.exportPath),
@@ -361,6 +364,14 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
           );
           return { ok: true as const, value: response.ok };
         },
+      },
+
+      music: {
+        catalogue: () => ok(fixtures.MUSIC),
+        // Yes without fetching anything. A bed laid from the fixture library
+        // draws its bar and plays nothing, which is what a shot of the row
+        // needs — and the only alternative is shipping a song in the repo.
+        ensure: () => ok(true),
       },
 
       wallpapers: {

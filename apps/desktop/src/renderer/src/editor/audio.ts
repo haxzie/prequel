@@ -12,6 +12,13 @@
  * sources at the moments the plan says — nothing in the renderer decides what
  * a keystroke sounds like or which one plays, for the reason nothing in it
  * decides where the camera sits.
+ *
+ * The music row is a gain per *file* rather than a bus. A bed's level moves
+ * inside itself — it fades up and down, and the playback loop writes the
+ * envelope sixty times a second — so the level belongs to the thing being
+ * played rather than to a mix the user sets once. The arithmetic is still a
+ * plain multiply, and `shared/music.ts` is what works out the number on both
+ * sides.
  */
 import type { SoundBank, SoundSample } from "../../../shared/contract";
 import type { TrackKind } from "../../../shared/manifest";
@@ -49,6 +56,10 @@ export class AudioMixer {
   private readonly live = new Set<AudioBufferSourceNode>();
   /** The picker's demo, while one is playing. A second press replaces it. */
   private preview: AudioBufferSourceNode | null = null;
+  /** One gain per music file, so two beds of different songs are two levels. */
+  private readonly musicGains = new Map<string, GainNode>();
+  /** The last level written to each, so an unchanged frame costs nothing. */
+  private readonly musicLevels = new Map<string, number>();
 
   /**
    * Routes an element through its own gain.
@@ -74,6 +85,59 @@ export class AudioMixer {
 
     context.createMediaElementSource(element).connect(gain);
     this.connected.add(element);
+  }
+
+  /**
+   * Routes one music file's element through a gain of its own.
+   *
+   * Keyed by the file rather than by the bed: two beds cut from the same song
+   * share one `<audio>` element — there is only one of each file in the DOM —
+   * and a gain per bed would leave the element on whichever was wired last.
+   */
+  connectMusic(file: string, element: HTMLMediaElement): void {
+    if (this.connected.has(element)) return;
+
+    const context = this.ensureContext();
+
+    let gain = this.musicGains.get(file);
+    if (!gain) {
+      gain = context.createGain();
+      // Silent until the loop says otherwise. A bed is almost always fading in
+      // from nothing, and a graph that started at full level would open with a
+      // click on the first frame of playback.
+      gain.gain.value = 0;
+      gain.connect(context.destination);
+      this.musicGains.set(file, gain);
+    }
+
+    context.createMediaElementSource(element).connect(gain);
+    this.connected.add(element);
+  }
+
+  /**
+   * Sets one music file's level, as the playback loop works it out per frame.
+   *
+   * Only on a change, and the comparison is not a micro-optimisation:
+   * `setTargetAtTime` schedules an automation event on the parameter, and
+   * sixty a second for the length of a song is a queue of them that never
+   * empties.
+   *
+   * The same short ramp every other level change here uses: a fade written as
+   * sixty steps a second is already smooth, and the ramp only covers the
+   * distance between two of them.
+   */
+  setMusicGain(file: string, level: number): void {
+    const context = this.context;
+    const gain = this.musicGains.get(file);
+    if (!context || !gain) return;
+
+    const target = Math.max(0, level);
+    // A hundredth, which is well below what anybody can hear and far above the
+    // step a fade takes between two frames.
+    if (Math.abs((this.musicLevels.get(file) ?? -1) - target) < 0.005) return;
+
+    this.musicLevels.set(file, target);
+    gain.gain.setTargetAtTime(target, context.currentTime, RAMP_SECONDS);
   }
 
   /** Applies a bus's volume, ramped so the change cannot click. */
@@ -273,6 +337,8 @@ export class AudioMixer {
     void this.context?.close();
     this.context = null;
     this.gains.clear();
+    this.musicGains.clear();
+    this.musicLevels.clear();
     this.banks.clear();
     this.onsets.clear();
   }

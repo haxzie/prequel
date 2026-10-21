@@ -26,6 +26,7 @@ import {
   editorReducer,
   initialState,
   MIN_SLICE_NS,
+  musicSplitAt,
   projectDuration,
   selectedSlice,
   settingsOf,
@@ -1825,5 +1826,299 @@ describe("marks on a screenshot", () => {
     // Appended, because the list *is* the order they are drawn in: a mark made
     // now goes over everything already there.
     expect(state.project.annotations.map((mark) => mark.kind)).toEqual(["rect", "arrow"]);
+  });
+});
+
+/**
+ * The music row.
+ *
+ * Two invariants carry the lot, and both are the sort that fails quietly: no
+ * two beds may cover the same moment — two songs at once, which no control in
+ * the editor could put right — and dragging a bed's left edge has to take the
+ * song's own offset with it, or the bar reveals the beginning of the music
+ * while the music slides about underneath it.
+ */
+describe("the music row", () => {
+  const SONG = { file: "wander.m4a", label: "Wander", duration: 60 * S };
+  const SHORT = { file: "music-abc.mp3", label: "Short", duration: 4 * S };
+
+  /** A ten-second edit with one bed laid at the playhead's start. */
+  function withBed(): EditorState {
+    return run(start(), { type: "addMusic", at: 0, source: SONG, duration: 10 * S });
+  }
+
+  it("lays a bed no longer than the edit it is laid in", () => {
+    const state = withBed();
+    const bed = state.project.music[0]!;
+
+    expect(bed.at).toBe(0);
+    // A minute of music under a ten-second video is cut off at the end, not
+    // stretched and not refused.
+    expect(bed.length).toBe(10 * S);
+    // And the file it names is registered, or the bar would have nothing to
+    // play and `sanitiseProject` would drop it on the next open.
+    expect(state.project.musicFiles).toEqual([SONG]);
+  });
+
+  it("arrives selected, with both ends shaped", () => {
+    const state = withBed();
+
+    expect(state.selectedMusicId).toBe(state.project.music[0]!.id);
+    // Selected *instead of* the clip: the panel shows one thing at a time.
+    expect(state.selectedSliceId).toBeNull();
+    expect(state.project.music[0]!.fadeIn).toBeGreaterThan(0);
+    expect(state.project.music[0]!.fadeOut).toBeGreaterThan(0);
+  });
+
+  it("will not lay a second bed over the first", () => {
+    // The row is full, so there is nowhere for another to go.
+    const state = run(withBed(), {
+      type: "addMusic",
+      at: 5 * S,
+      source: SHORT,
+      duration: 10 * S,
+    });
+
+    expect(state.project.music).toHaveLength(1);
+  });
+
+  it("lays a second bed in the gap beside the first", () => {
+    const first = run(start(), { type: "addMusic", at: 0, source: SHORT, duration: 10 * S });
+    const state = run(first, { type: "addMusic", at: 8 * S, source: SONG, duration: 10 * S });
+
+    expect(state.project.music).toHaveLength(2);
+    const [a, b] = state.project.music;
+    expect(b!.at).toBeGreaterThanOrEqual(a!.at + a!.length);
+  });
+
+  it("stops a dragged bed against its neighbour rather than overlapping it", () => {
+    const two = run(run(start(), { type: "addMusic", at: 0, source: SHORT, duration: 10 * S }), {
+      type: "addMusic",
+      at: 6 * S,
+      source: SHORT,
+      duration: 10 * S,
+    });
+    const later = two.project.music[1]!;
+
+    // Dragged hard left, over the first bed entirely.
+    const state = run(two, { type: "moveMusic", musicId: later.id, at: 0 });
+    const [first, second] = state.project.music;
+
+    expect(second!.at).toBe(first!.at + first!.length);
+    expect(second!.length).toBe(later.length);
+  });
+
+  it("takes the song's offset with the left edge", () => {
+    const state = run(withBed(), {
+      type: "trimMusic",
+      musicId: withBed().project.music[0]!.id,
+      edge: "start",
+      at: 3 * S,
+    });
+    const bed = state.project.music[0]!;
+
+    expect(bed.at).toBe(3 * S);
+    // Three seconds later on the timeline is three seconds further into the
+    // song, so the music under the playhead is unchanged by the drag. Without
+    // this the bar reveals the start of the song while the song slides.
+    expect(bed.offset).toBe(3 * S);
+  });
+
+  it("leaves the offset alone when the right edge moves", () => {
+    const state = run(withBed(), {
+      type: "trimMusic",
+      musicId: withBed().project.music[0]!.id,
+      edge: "end",
+      at: 6 * S,
+    });
+    const bed = state.project.music[0]!;
+
+    expect(bed.length).toBe(6 * S);
+    expect(bed.offset).toBe(0);
+  });
+
+  it("will not drag the left edge past the beginning of the song", () => {
+    // Nothing before the first sample to reveal: the bar stops rather than
+    // growing with the offset stuck at zero, which looks like the drag has
+    // stopped working.
+    const state = run(withBed(), {
+      type: "trimMusic",
+      musicId: withBed().project.music[0]!.id,
+      edge: "start",
+      at: -5 * S,
+    });
+
+    expect(state.project.music[0]!.offset).toBe(0);
+    expect(state.project.music[0]!.at).toBe(0);
+  });
+
+  it("starts a new song from the top, and no longer than it is", () => {
+    const state = run(withBed(), {
+      type: "setMusicFile",
+      musicId: withBed().project.music[0]!.id,
+      source: SHORT,
+    });
+    const bed = state.project.music[0]!;
+
+    expect(bed.file).toBe(SHORT.file);
+    // An offset into one file means nothing in another.
+    expect(bed.offset).toBe(0);
+    // And a ten-second bar over a four-second song would be six seconds of
+    // silence with the bar still on the row.
+    expect(bed.length).toBe(SHORT.duration);
+    // Both files are kept, so the picker can offer the first one back.
+    expect(state.project.musicFiles.map((file) => file.file)).toEqual([SONG.file, SHORT.file]);
+  });
+
+  it("keeps the length of a bed that repeats", () => {
+    const looped = run(withBed(), {
+      type: "setMusic",
+      musicId: withBed().project.music[0]!.id,
+      patch: { repeat: true },
+    });
+    const state = run(looped, {
+      type: "setMusicFile",
+      musicId: looped.project.music[0]!.id,
+      source: SHORT,
+    });
+
+    expect(state.project.music[0]!.length).toBe(10 * S);
+  });
+
+  it("keeps a deleted bed's file, so the picker can offer it again", () => {
+    const state = run(withBed(), {
+      type: "deleteMusic",
+      musicId: withBed().project.music[0]!.id,
+    });
+
+    expect(state.project.music).toHaveLength(0);
+    expect(state.project.musicFiles).toEqual([SONG]);
+    expect(state.selectedMusicId).toBeNull();
+  });
+
+  it("steps back over a bed being laid down", () => {
+    const state = run(withBed(), { type: "undo" });
+
+    expect(state.project.music).toHaveLength(0);
+    expect(canUndo(state)).toBe(false);
+  });
+});
+
+describe("a clip's volume, from the timeline", () => {
+  it("writes both levels onto the clip it names, not the selected one", () => {
+    // The whole reason this action takes an id: the line is dragged on a clip,
+    // and the clip under the pointer is not always the one selected.
+    const cut = run(start(), { type: "split", at: 5 * S });
+    const [first, second] = slicesOf(cut.project);
+    const state = run(
+      cut,
+      { type: "select", sliceId: first!.id },
+      {
+        type: "setSliceAudio",
+        sliceId: second!.id,
+        mic: 0.5,
+        system: 0.25,
+      },
+    );
+
+    expect(settingsOf(state.project, second!.id).audio.micVolume).toBe(0.5);
+    expect(settingsOf(state.project, second!.id).audio.systemVolume).toBe(0.25);
+    // The selected clip is untouched, and still inheriting.
+    expect(overriddenKeys(slicesOf(state.project)[0]!.overrides, "audio").size).toBe(0);
+  });
+
+  it("holds a level inside the range the faders use", () => {
+    const only = slicesOf(start().project)[0]!;
+    const state = run(start(), {
+      type: "setSliceAudio",
+      sliceId: only.id,
+      mic: 9,
+      system: -3,
+    });
+
+    expect(settingsOf(state.project, only.id).audio.micVolume).toBe(2);
+    expect(settingsOf(state.project, only.id).audio.systemVolume).toBe(0);
+  });
+});
+
+describe("cutting a bed in two", () => {
+  const SONG = { file: "wander.m4a", label: "Wander", duration: 60 * S };
+
+  function withBed(): EditorState {
+    return run(start(), { type: "addMusic", at: 0, source: SONG, duration: 10 * S });
+  }
+
+  it("carries the song through the join", () => {
+    // The point of the cut is what comes after it: the two halves play exactly
+    // what the one bed played, so the cut itself cannot be heard. A second
+    // half that started the song again would be a cut that is audible, which
+    // is not what a blade means anywhere else on the strip.
+    const state = run(withBed(), {
+      type: "splitMusic",
+      musicId: withBed().project.music[0]!.id,
+      at: 4 * S,
+    });
+    const [first, second] = state.project.music;
+
+    expect(first!.at).toBe(0);
+    expect(first!.length).toBe(4 * S);
+    expect(second!.at).toBe(4 * S);
+    expect(second!.length).toBe(6 * S);
+    // Where the first half left the song.
+    expect(second!.offset).toBe(first!.offset + first!.length);
+    expect(second!.file).toBe(first!.file);
+  });
+
+  it("keeps the offset of a bed that was already trimmed", () => {
+    const trimmed = run(withBed(), {
+      type: "trimMusic",
+      musicId: withBed().project.music[0]!.id,
+      edge: "start",
+      at: 2 * S,
+    });
+    const state = run(trimmed, {
+      type: "splitMusic",
+      musicId: trimmed.project.music[0]!.id,
+      at: 5 * S,
+    });
+    const [first, second] = state.project.music;
+
+    expect(first!.offset).toBe(2 * S);
+    expect(second!.offset).toBe(5 * S);
+  });
+
+  it("refuses a cut that would leave a stub either side", () => {
+    const bed = withBed().project.music[0]!;
+
+    expect(musicSplitAt(withBed().project, bed.id, 10_000_000)).toBeNull();
+    expect(musicSplitAt(withBed().project, bed.id, 10 * S - 10_000_000)).toBeNull();
+    // And the reducer declines it rather than making one.
+    expect(
+      run(withBed(), { type: "splitMusic", musicId: bed.id, at: 10_000_000 }).project.music,
+    ).toHaveLength(1);
+  });
+
+  it("leaves the far half selected, so the next thing acts on it", () => {
+    const state = run(withBed(), {
+      type: "splitMusic",
+      musicId: withBed().project.music[0]!.id,
+      at: 4 * S,
+    });
+
+    expect(state.selectedMusicId).toBe(state.project.music[1]!.id);
+  });
+
+  it("steps back over the cut", () => {
+    const state = run(
+      run(withBed(), {
+        type: "splitMusic",
+        musicId: withBed().project.music[0]!.id,
+        at: 4 * S,
+      }),
+      { type: "undo" },
+    );
+
+    expect(state.project.music).toHaveLength(1);
+    expect(state.project.music[0]!.length).toBe(10 * S);
   });
 });

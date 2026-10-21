@@ -13,10 +13,13 @@ import {
 } from "react";
 
 import type { MediaTime } from "../../../shared/manifest";
-import { MAX_TEXT_TRACKS, type ZoomSlice } from "../../../shared/project";
+import { MAX_TEXT_TRACKS, type Project, type ZoomSlice } from "../../../shared/project";
+import { musicFileOf } from "../../../shared/music";
 import { zoomEnvelope, zoomSpans } from "../../../shared/layout";
 import { cn } from "../lib/cn";
 import { formatTimecode } from "../lib/format";
+import { writeTicker } from "../lib/ticker";
+import { percent } from "./controls/inputs";
 import { Timecode } from "./Timecode";
 import {
   CameraIcon,
@@ -24,7 +27,9 @@ import {
   FillIcon,
   FisheyeIcon,
   GlassIcon,
+  MusicIcon,
   ScreenIcon,
+  SpeakerIcon,
   TextIcon,
   TypingIcon,
   ZoomIcon,
@@ -36,6 +41,8 @@ import {
   textCopySpan,
   textSpanAt,
   textSplitAt,
+  musicSplitAt,
+  settingsOf,
   zoomSpanAt,
   zoomSplitAt,
   type EditorAction,
@@ -55,10 +62,32 @@ import {
 import { HEAD_LABEL_W, type EditorPlayback } from "./useEditorPlayback";
 import { thumbs, THUMB_WIDTH } from "./filmstrip";
 import type { Filmstrip } from "./useFilmstrip";
-import { wavePath } from "./waveform";
+import { bucketCount, repeated, wavePath } from "./waveform";
+import { levelAt, levelY, scaledAudio, waveHeight } from "./volumeLine";
 import { barCurve, zoomCeiling } from "./zoomCurve";
 
 const NS_PER_SECOND = 1_000_000_000;
+
+/**
+ * What one clip's two faders are set to, for the line across it.
+ *
+ * Resolved rather than read off the overrides: a clip that overrides nothing
+ * plays the project's defaults, and a line drawn from an empty override would
+ * sit at unity on a project turned down to a quarter.
+ *
+ * Mute is deliberately not folded in. Reading a muted track as zero would be
+ * truer to what comes out of the speakers, and it would make the line
+ * destructive: the drag writes both faders back, so one pass over a clip with
+ * its microphone switched off would overwrite that microphone's level with
+ * zero — and switching it back on afterwards would give silence, with the
+ * number it used to hold gone. The line is the fader; the switch is the
+ * switch, and it stays in the panel.
+ */
+function clipAudio(project: Project, sliceId: string): { mic: number; system: number } {
+  const { audio } = settingsOf(project, sliceId);
+
+  return { mic: audio.micVolume, system: audio.systemVolume };
+}
 
 /**
  * How far the pointer must travel before a press is drawing a zoom out rather
@@ -84,6 +113,61 @@ const RULER_H = 24;
 const RULER_PAD = 12;
 /** Space under the ruler, so its labels do not sit on top of the clips. */
 const TRACK_GAP = 10;
+
+/**
+ * The width of the rail down the left of the strip.
+ *
+ * It holds one glyph per band — what each row *is*, which the rows themselves
+ * can only say once something is on them: an empty zoom row and an empty music
+ * row are two identical stretches of nothing.
+ *
+ * The rail is inside the scroller and pinned to its left edge, so it stays put
+ * as the strip scrolls sideways. Everything timed sits to the right of it and
+ * is scrolled under it, which is why it is opaque — and why the time mapping
+ * takes it off a client x before working out where it landed.
+ *
+ * Sixty-four is three numbers: twenty-four of gutter, the sixteen-pixel glyph,
+ * twenty-four more. The two gaps are the same on purpose — the rail is the
+ * only column where one of them is the window's edge and the other is the
+ * first clip, and a wider left than right read as the strip sagging away from
+ * the side of the window.
+ *
+ * Half of it is thirty-two, which is where the transport's first glyph sits:
+ * its row is padded by four and its group by half of one, and the button is
+ * seven. That only holds while the strip itself is *not* padded on the left —
+ * the padding is in this number instead, which is why the container below
+ * carries `pr-4` rather than `px-4`.
+ */
+const RAIL_W = 64;
+
+/**
+ * The bands down the strip, in the order they are drawn, for the rail.
+ *
+ * The one place the strip's vertical layout is written down as data. The rows
+ * themselves still lay themselves out — each one is a different thing — so the
+ * heights here have to agree with the markup below, and `TRACK_GAP` between
+ * every band is stated once in both. A disagreement is a glyph sitting beside
+ * the wrong row, which is visible the moment it happens rather than silent.
+ *
+ * The text group is the one that varies: it grows a row as rows are used, so
+ * its height is asked for rather than stated.
+ */
+const BANDS: {
+  id: string;
+  label: string;
+  Icon: () => React.JSX.Element;
+  height: (textRows: number) => number;
+}[] = [
+  {
+    id: "texts",
+    label: "Text",
+    Icon: TextIcon,
+    height: (rows) => rows * TEXT_H + (rows - 1) * TEXT_GAP,
+  },
+  { id: "clips", label: "Recording", Icon: ScreenIcon, height: () => CLIP_H },
+  { id: "zooms", label: "Zoom", Icon: ZoomIcon, height: () => CLIP_H },
+  { id: "music", label: "Audio", Icon: MusicIcon, height: () => MUSIC_H },
+];
 /**
  * The frame a clip is drawn in, on all four sides.
  *
@@ -137,6 +221,19 @@ const TEXT_H = 24;
 const TEXT_GAP = 4;
 
 /**
+ * The music row's height: the clips' and the zooms'.
+ *
+ * A title's height was the first answer, on the argument that a bed is a level
+ * rather than a shot. It is the wrong one, for the reason the zoom row is not
+ * half-height either: the bar carries its own waveform, and a wave in
+ * twenty-four pixels with a label over it is a texture rather than a shape
+ * anybody can read a song's structure out of. The three tall rows are the ones
+ * with something drawn inside them; the titles stay thin because a title is a
+ * word and a span.
+ */
+const MUSIC_H = CLIP_H;
+
+/**
  * Zoom range, in pixels per second.
  *
  * The real floor is the fit zoom, computed per render — see `pxPerSecond`.
@@ -154,6 +251,62 @@ const ZOOM_STEP = 1.3;
  * pointer misses, and this is what `HANDLE_ROOM` measures two of.
  */
 const HANDLE_WIDTH = 12;
+
+/**
+ * How tall the volume line's hit band is, in pixels.
+ *
+ * The line is a hairline; a target the size of its own artwork is one the
+ * pointer misses, which is the same reason `HANDLE_WIDTH` is twelve and the
+ * grip inside it is two.
+ */
+const VOLUME_GRAB = 9;
+
+/**
+ * The light that makes a bar read as raised rather than painted on.
+ *
+ * A wash of white falling off from the top, and a hairline of it along the
+ * very top edge. Together they are the one thing a solid rectangle needs to
+ * stop looking like a hole: light comes from above, so the top of a raised
+ * thing catches it and the bottom does not.
+ *
+ * A tenth, not a fifth. The wash lifts the whole bar as well as shaping it,
+ * and these bars were turned *down* for being the brightest thing on the strip
+ * — an emboss that undid that would be trading one complaint for the other.
+ *
+ * On `::before` rather than as a child, so a bar does not grow an element for
+ * a highlight — `rounded-[inherit]` keeps it inside whatever corner the bar
+ * has, and being the first child in paint order puts it under the wave and the
+ * label rather than over them.
+ *
+ * Deliberately not on the clips. They are covered by their own filmstrip, so
+ * every pixel of this would be behind a photograph — a gradient nobody can see
+ * and one more thing on the heaviest row of the strip.
+ */
+const EMBOSS =
+  "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] " +
+  "before:bg-gradient-to-b before:from-white/[0.11] before:to-transparent before:to-[65%] " +
+  "shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]";
+
+/**
+ * How wide the level's bubble is, in pixels.
+ *
+ * Fixed, like `HEAD_LABEL_W`, and for the same reason: the number inside it is
+ * rewritten continuously while the line is dragged, and an auto-width box
+ * would resize under the pointer as the digits changed. Wide enough for the
+ * glyph and the longest reading there is, which is `200%`.
+ */
+const VOLUME_LABEL_W = 60;
+
+/**
+ * How far a bar's own label is held off its ends, in pixels.
+ *
+ * Clear of the grips. A grip is a 2px line centred in its `HANDLE_WIDTH`, so
+ * it occupies the fifth to the seventh pixel of the bar; a label flush to the
+ * edge sat on top of it, and the one thing that says an end can be dragged
+ * was drawn underneath a chip. Ten leaves three pixels of air either side of
+ * the grip, on both ends, on every row.
+ */
+const LABEL_INSET = 10;
 
 /**
  * The most of a bar one end may take, as a fraction of its width.
@@ -364,6 +517,8 @@ export function TimelineStrip({
   dispatch,
   media,
   peaks,
+  musicPeaks,
+  onAddMusic,
   filmstrip,
   framesPending,
   cameraSpans,
@@ -374,6 +529,24 @@ export function TimelineStrip({
   media: EditorPlayback;
   /** The recording's audio, for the clips to draw. Null while it decodes. */
   peaks: Float32Array | null;
+  /**
+   * Each music file's own peaks, by name — see `useMusicPeaks`.
+   *
+   * Per file rather than merged onto the session's clock, as the recording's
+   * are: a bed draws the stretch of its *file* between its offset and its end,
+   * and where that sits on the timeline is a different question.
+   */
+  musicPeaks: ReadonlyMap<string, Float32Array>;
+  /**
+   * Lays a bed at this project time, with whichever track is the default.
+   *
+   * A callback rather than an action, because the file has to be in the
+   * recording before the reducer can be told about it — fetching or copying it
+   * is main's, and the editor is what knows how to ask. Absent while there is
+   * no track to lay, which is a machine that has never been online *and* has
+   * had nothing imported.
+   */
+  onAddMusic?: (at: MediaTime) => void;
   /** Frame thumbnails for the whole recording, or null while they are built. */
   filmstrip: Filmstrip | null;
   /** Whether a sheet is still coming — see `FilmstripState`. */
@@ -497,20 +670,27 @@ export function TimelineStrip({
     return () => observer.disconnect();
   }, []);
 
-  const fit = fitZoom(duration, width);
+  // Against the room the rail leaves, not the whole scrollport: the strip has
+  // to *fit* in what is left, or fitting it would leave the last second of the
+  // recording permanently under the rail.
+  const timelineWidth = Math.max(0, width - RAIL_W);
+  const fit = fitZoom(duration, timelineWidth);
   // Never below fit. Zooming out past it cannot shrink the strip — the content
   // is already as narrow as the visible width — so the only thing a smaller
   // number changed was the ruler, which went on choosing its tick interval for
   // a zoom the layout was not using and ended up with no ticks inside the
   // recording at all. An empty ruler over a full-width strip.
-  const pxPerSecond = Math.max(zoom ?? openingZoom(duration, width, OPENING_ZOOM), fit);
-  const contentWidth = Math.max(width, (duration / NS_PER_SECOND) * pxPerSecond);
+  const pxPerSecond = Math.max(zoom ?? openingZoom(duration, timelineWidth, OPENING_ZOOM), fit);
+  const contentWidth = Math.max(timelineWidth, (duration / NS_PER_SECOND) * pxPerSecond);
 
   // Pushed in on change rather than measured inside the playback loop, which
   // would have to flush layout to read them — every frame, while also writing
   // `scrollLeft`.
   const { setTrackMetrics } = media;
-  useEffect(() => setTrackMetrics(contentWidth, width), [setTrackMetrics, contentWidth, width]);
+  useEffect(
+    () => setTrackMetrics(contentWidth, width, RAIL_W),
+    [setTrackMetrics, contentWidth, width],
+  );
 
   // One stable callback rather than an inline arrow: a fresh identity each
   // render makes React tear the ref down and set it up again every time, and a
@@ -531,7 +711,9 @@ export function TimelineStrip({
       const element = scroller.current;
       if (!element || contentWidth <= 0) return 0;
 
-      const into = clientX - edge.current + element.scrollLeft;
+      // The rail comes off: it is pinned to the scrollport's left edge, so the
+      // first pixel of *timeline* is `RAIL_W` into the content.
+      const into = clientX - edge.current - RAIL_W + element.scrollLeft;
       return Math.min(Math.max(0, into / contentWidth), 1) * duration;
     },
     [contentWidth, duration],
@@ -731,6 +913,7 @@ export function TimelineStrip({
     | { x: number; y: number; kind: "clip"; sliceId: string; at: MediaTime }
     | { x: number; y: number; kind: "zoom"; zoomId: string }
     | { x: number; y: number; kind: "text"; textId: string }
+    | { x: number; y: number; kind: "music"; musicId: string }
     | null
   >(null);
 
@@ -815,6 +998,15 @@ export function TimelineStrip({
   const pressed = useRef<{ sliceId: string; clientX: number } | null>(null);
 
   /**
+   * Where a press on the empty music row landed, or null.
+   *
+   * Held from the press rather than read off the release, so a release that
+   * merely *ended* over the row — the end of a trim on one of its bars — lays
+   * nothing down. See the row itself.
+   */
+  const addAt = useRef<MediaTime | null>(null);
+
+  /**
    * Which gap a pointer at `clientX` is over.
    *
    * By midpoint rather than by edge: a clip is dropped *in front of* whichever
@@ -882,9 +1074,11 @@ export function TimelineStrip({
   };
 
   return (
-    // Padded to match the transport above it, now that there is no track
-    // column holding the strip off the window edge.
-    <div className="flex flex-none flex-col bg-editor-veil px-4 pb-4" data-panel="timeline">
+    // Padded on the right to match the transport above it, and not on the left:
+    // the gutter that side is inside `RAIL_W`, so the glyphs line up with the
+    // transport's own and the rail's veil reaches the window's edge rather than
+    // leaving four pixels of scrolling timeline beside it.
+    <div className="flex flex-none flex-col bg-editor-veil pr-4 pb-4" data-panel="timeline">
       <div
         ref={attachScroller}
         // The cursor on the whole scrollport rather than on the bars: the blade
@@ -911,361 +1105,552 @@ export function TimelineStrip({
             than there is of the strip. A timeline that ignores a press has no
             way of saying why, so it reads as the app having missed the click. */}
         <div
-          className="relative"
-          style={{ width: contentWidth }}
+          className="relative flex"
+          style={{ width: RAIL_W + contentWidth }}
           onPointerDown={(event) => {
             media.onInteract();
             media.playback.seek(timeAt(event.clientX));
           }}
         >
-          <Ruler
-            duration={duration}
-            pxPerSecond={pxPerSecond}
-            onSeek={(clientX) => {
-              media.onInteract();
-              media.playback.seek(timeAt(clientX));
-            }}
-          />
+          {/* Pinned to the scrollport's left edge while the strip scrolls under
+              it. `sticky` on a flex item rather than an absolute overlay: an
+              absolute one would cover the first `RAIL_W` of timeline, and the
+              start of a recording is exactly the part nobody can afford to
+              lose. Opaque, so what passes behind it is hidden rather than
+              showing through the glyphs. */}
+          <div
+            className="sticky left-0 z-20 flex-none bg-editor-veil"
+            style={{ width: RAIL_W }}
+            // A press on the rail is not a seek. Without this it falls through
+            // to the strip, which maps it to a negative time and clamps it —
+            // so clicking a glyph sent the playhead to zero.
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div style={{ height: RULER_H + RULER_PAD }} />
+            {BANDS.map((band) => (
+              <Fragment key={band.id}>
+                <div style={{ height: TRACK_GAP }} />
+                <div
+                  className="grid place-items-center text-editor-muted [&_svg]:size-4"
+                  style={{ height: band.height(textRows) }}
+                  title={band.label}
+                  aria-hidden
+                >
+                  <band.Icon />
+                </div>
+              </Fragment>
+            ))}
+          </div>
 
-          <div style={{ height: TRACK_GAP }} />
+          <div className="relative flex-none" style={{ width: contentWidth }}>
+            <Ruler
+              duration={duration}
+              pxPerSecond={pxPerSecond}
+              onSeek={(clientX) => {
+                media.onInteract();
+                media.playback.seek(timeAt(clientX));
+              }}
+            />
 
-          {/* Text rows, highest first, so the row nearest the clips is the
+            <div style={{ height: TRACK_GAP }} />
+
+            {/* Text rows, highest first, so the row nearest the clips is the
               first and a text drawn on the spare row above lands over the
               others in the frame too. The bars are not inside the rows: they
               sit in one layer over the group, placed by row, so a bar dragged
               onto another row moves rather than being torn down and remade
               under a pointer that has captured it. */}
-          <div className="relative" ref={textGroup}>
-            {Array.from({ length: textRows }, (_, index) => textRows - 1 - index).map((track) => (
-              <Fragment key={track}>
-                <TextRow
-                  track={track}
-                  empty={(state.project.texts[track]?.slices.length ?? 0) === 0}
-                  spare={track === state.project.texts.length}
-                  invite={track === 0 || (state.project.texts[track - 1]?.slices.length ?? 0) > 0}
-                  width={width}
-                  duration={duration}
-                  spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
-                  slicing={slicing}
-                  timeAt={timeAt}
-                  onInteract={media.onInteract}
-                  dispatch={dispatch}
-                />
-                {track > 0 && <div style={{ height: TEXT_GAP }} />}
-              </Fragment>
-            ))}
-
-            <div className="pointer-events-none absolute inset-0">
-              <div
-                ref={copyGhost}
-                className={cn(
-                  "pointer-events-none absolute flex items-center overflow-hidden rounded-md px-2",
-                  "border border-dashed border-title-ring/80 bg-title-fill/20 opacity-0 transition-opacity duration-75",
-                )}
-                style={{ height: TEXT_H, borderWidth: ZOOM_EDGE }}
-              >
-                <span
-                  ref={copyGhostLabel}
-                  className="truncate text-[11px] font-medium text-white/80"
-                />
-              </div>
-
-              {state.project.texts.flatMap((row, track) =>
-                row.slices.map((text) => {
-                  // Its own width on the strip, not the surviving part of a
-                  // source span: a text is measured in the finished video, so
-                  // it begins where its anchor lands and runs for as long as it
-                  // runs — across a cut if that is where it reaches.
-                  const from = toProjectTime(placed, text.at);
-                  if (from === null) return null;
-                  const to = from + text.length;
-
-                  return (
-                    <TextBar
-                      key={text.id}
-                      top={(textRows - 1 - track) * (TEXT_H + TEXT_GAP)}
-                      left={(from / Math.max(duration, 1)) * 100}
-                      width={((to - from) / Math.max(duration, 1)) * 100}
-                      pixels={((to - from) / Math.max(duration, 1)) * contentWidth}
-                      selected={text.id === state.selectedTextId}
-                      blade={
-                        slicing
-                          ? {
-                              legal: (clientX) =>
-                                textSplitAt(state.project, text.id, timeAt(clientX)) !== null,
-                              cut: (clientX) => {
-                                media.onInteract();
-                                dispatch({
-                                  type: "splitText",
-                                  textId: text.id,
-                                  at: timeAt(clientX),
-                                });
-                              },
-                            }
-                          : null
-                      }
-                      label={text.fields.map((field) => field.text).join(" — ")}
-                      start={from}
-                      timeAt={timeAt}
-                      trackAt={trackAt}
-                      onSelect={() => {
-                        media.onInteract();
-                        dispatch({ type: "selectText", textId: text.id });
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setMenu({
-                          x: event.clientX,
-                          y: event.clientY,
-                          kind: "text",
-                          textId: text.id,
-                        });
-                      }}
-                      onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                      onMove={(start, onto) =>
-                        dispatch({ type: "moveText", textId: text.id, start, track: onto })
-                      }
-                      onDrop={() => dispatch({ type: "tidyTexts" })}
-                      onCopyPreview={(over) =>
-                        showCopy(
-                          over && {
-                            textId: text.id,
-                            ...over,
-                            label: text.fields.map((field) => field.text).join(" — "),
-                          },
-                        )
-                      }
-                      onCopy={(start, onto) => {
-                        showCopy(null);
-                        dispatch({ type: "copyText", textId: text.id, start, track: onto });
-                      }}
-                      onTrim={(edge, clientX) =>
-                        dispatch({
-                          type: "trimText",
-                          textId: text.id,
-                          edge,
-                          at: timeAt(clientX),
-                        })
-                      }
-                    />
-                  );
-                }),
-              )}
-            </div>
-          </div>
-
-          <div style={{ height: TRACK_GAP }} />
-
-          <div className="flex gap-px" style={{ height: CLIP_H }}>
-            {placed.map((slice) => (
-              <Fragment key={slice.id}>
-                {slack > 0 && trim?.edge === "start" && trim.sliceId === slice.id && (
-                  <div
-                    className="flex-none"
-                    style={{ width: `${String((slack / Math.max(duration, 1)) * 100)}%` }}
+            <div className="relative" ref={textGroup}>
+              {Array.from({ length: textRows }, (_, index) => textRows - 1 - index).map((track) => (
+                <Fragment key={track}>
+                  <TextRow
+                    track={track}
+                    empty={(state.project.texts[track]?.slices.length ?? 0) === 0}
+                    spare={track === state.project.texts.length}
+                    invite={track === 0 || (state.project.texts[track - 1]?.slices.length ?? 0) > 0}
+                    width={timelineWidth}
+                    duration={duration}
+                    spanAt={(at, to) => textSpanAt(state.project, track, at, to)}
+                    slicing={slicing}
+                    timeAt={timeAt}
+                    onInteract={media.onInteract}
+                    dispatch={dispatch}
                   />
-                )}
-                {carrying !== null && carrying.before === slice.id && <DropLine />}
-                <Clip
-                  slice={slice}
-                  duration={duration}
-                  peaks={peaks}
-                  filmstrip={filmstrip}
-                  framesPending={framesPending}
-                  contentWidth={contentWidth}
-                  cameraSpans={cameraSpans}
-                  selected={slice.id === state.selectedSliceId}
-                  carried={carrying?.sliceId === slice.id}
-                  blade={
-                    slicing
-                      ? {
-                          legal: (clientX) => splitPointAt(state.project, timeAt(clientX)) !== null,
-                          cut: (clientX) => {
-                            media.onInteract();
-                            dispatch({ type: "split", at: timeAt(clientX) });
-                          },
+                  {track > 0 && <div style={{ height: TEXT_GAP }} />}
+                </Fragment>
+              ))}
+
+              <div className="pointer-events-none absolute inset-0">
+                <div
+                  ref={copyGhost}
+                  className={cn(
+                    "pointer-events-none absolute flex items-center overflow-hidden rounded-md px-2",
+                    "border border-dashed border-title-ring/80 bg-title-fill/20 opacity-0 transition-opacity duration-75",
+                  )}
+                  style={{ height: TEXT_H, borderWidth: ZOOM_EDGE }}
+                >
+                  <span
+                    ref={copyGhostLabel}
+                    className="truncate text-[11px] font-medium text-white/80"
+                  />
+                </div>
+
+                {state.project.texts.flatMap((row, track) =>
+                  row.slices.map((text) => {
+                    // Its own width on the strip, not the surviving part of a
+                    // source span: a text is measured in the finished video, so
+                    // it begins where its anchor lands and runs for as long as it
+                    // runs — across a cut if that is where it reaches.
+                    const from = toProjectTime(placed, text.at);
+                    if (from === null) return null;
+                    const to = from + text.length;
+
+                    return (
+                      <TextBar
+                        key={text.id}
+                        top={(textRows - 1 - track) * (TEXT_H + TEXT_GAP)}
+                        left={(from / Math.max(duration, 1)) * 100}
+                        width={((to - from) / Math.max(duration, 1)) * 100}
+                        pixels={((to - from) / Math.max(duration, 1)) * contentWidth}
+                        selected={text.id === state.selectedTextId}
+                        blade={
+                          slicing
+                            ? {
+                                legal: (clientX) =>
+                                  textSplitAt(state.project, text.id, timeAt(clientX)) !== null,
+                                cut: (clientX) => {
+                                  media.onInteract();
+                                  dispatch({
+                                    type: "splitText",
+                                    textId: text.id,
+                                    at: timeAt(clientX),
+                                  });
+                                },
+                              }
+                            : null
                         }
-                      : null
-                  }
-                  onDrag={(event) => onClipDrag(slice, event)}
-                  onDrop={onClipDrop}
-                  onPointerDown={(event) => onClipPointerDown(slice, event)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    // The source time under the pointer, so Split here means
-                    // *here* — the same conversion a click on the ruler makes.
-                    setMenu({
-                      x: event.clientX,
-                      y: event.clientY,
-                      kind: "clip",
-                      sliceId: slice.id,
-                      at: sourceAt(timeAt(event.clientX)) ?? 0,
-                    });
-                  }}
-                  onBeginEdit={(edge) => {
-                    dispatch({ type: "beginEdit" });
-                    setTrim({ sliceId: slice.id, edge, span: edited });
-                  }}
-                  onEndEdit={() => setTrim(null)}
-                  onTrim={(edge, source) =>
-                    dispatch({ type: "trimSlice", sliceId: slice.id, edge, source })
-                  }
-                />
-              </Fragment>
-            ))}
-            {carrying !== null && carrying.before === null && <DropLine />}
-          </div>
+                        label={text.fields.map((field) => field.text).join(" — ")}
+                        start={from}
+                        timeAt={timeAt}
+                        trackAt={trackAt}
+                        onSelect={() => {
+                          media.onInteract();
+                          dispatch({ type: "selectText", textId: text.id });
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setMenu({
+                            x: event.clientX,
+                            y: event.clientY,
+                            kind: "text",
+                            textId: text.id,
+                          });
+                        }}
+                        onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                        onMove={(start, onto) =>
+                          dispatch({ type: "moveText", textId: text.id, start, track: onto })
+                        }
+                        onDrop={() => dispatch({ type: "tidyTexts" })}
+                        onCopyPreview={(over) =>
+                          showCopy(
+                            over && {
+                              textId: text.id,
+                              ...over,
+                              label: text.fields.map((field) => field.text).join(" — "),
+                            },
+                          )
+                        }
+                        onCopy={(start, onto) => {
+                          showCopy(null);
+                          dispatch({ type: "copyText", textId: text.id, start, track: onto });
+                        }}
+                        onTrim={(edge, clientX) =>
+                          dispatch({
+                            type: "trimText",
+                            textId: text.id,
+                            edge,
+                            at: timeAt(clientX),
+                          })
+                        }
+                      />
+                    );
+                  }),
+                )}
+              </div>
+            </div>
 
-          <div style={{ height: TRACK_GAP }} />
+            <div style={{ height: TRACK_GAP }} />
 
-          {/* Zooms, on their own row and the same height as the clips: a row
+            <div className="flex gap-px" style={{ height: CLIP_H }}>
+              {placed.map((slice) => (
+                <Fragment key={slice.id}>
+                  {slack > 0 && trim?.edge === "start" && trim.sliceId === slice.id && (
+                    <div
+                      className="flex-none"
+                      style={{ width: `${String((slack / Math.max(duration, 1)) * 100)}%` }}
+                    />
+                  )}
+                  {carrying !== null && carrying.before === slice.id && <DropLine />}
+                  <Clip
+                    slice={slice}
+                    duration={duration}
+                    peaks={peaks}
+                    filmstrip={filmstrip}
+                    framesPending={framesPending}
+                    contentWidth={contentWidth}
+                    cameraSpans={cameraSpans}
+                    selected={slice.id === state.selectedSliceId}
+                    carried={carrying?.sliceId === slice.id}
+                    blade={
+                      slicing
+                        ? {
+                            legal: (clientX) =>
+                              splitPointAt(state.project, timeAt(clientX)) !== null,
+                            cut: (clientX) => {
+                              media.onInteract();
+                              dispatch({ type: "split", at: timeAt(clientX) });
+                            },
+                          }
+                        : null
+                    }
+                    // The clip's own levels, resolved: its overrides over the
+                    // project's defaults, which is what it actually plays at.
+                    audio={clipAudio(state.project, slice.id)}
+                    onVolume={(level, from) =>
+                      dispatch({
+                        type: "setSliceAudio",
+                        sliceId: slice.id,
+                        ...scaledAudio(from.mic, from.system, level),
+                      })
+                    }
+                    onDrag={(event) => onClipDrag(slice, event)}
+                    onDrop={onClipDrop}
+                    onPointerDown={(event) => onClipPointerDown(slice, event)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      // The source time under the pointer, so Split here means
+                      // *here* — the same conversion a click on the ruler makes.
+                      setMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        kind: "clip",
+                        sliceId: slice.id,
+                        at: sourceAt(timeAt(event.clientX)) ?? 0,
+                      });
+                    }}
+                    onBeginEdit={(edge) => {
+                      dispatch({ type: "beginEdit" });
+                      setTrim({ sliceId: slice.id, edge, span: edited });
+                    }}
+                    onEndEdit={() => setTrim(null)}
+                    onTrim={(edge, source) =>
+                      dispatch({ type: "trimSlice", sliceId: slice.id, edge, source })
+                    }
+                  />
+                </Fragment>
+              ))}
+              {carrying !== null && carrying.before === null && <DropLine />}
+            </div>
+
+            <div style={{ height: TRACK_GAP }} />
+
+            {/* Zooms, on their own row and the same height as the clips: a row
               half the size reads as less important than the thing it is
               changing, which is backwards. */}
-          <div
-            className="relative"
-            style={{ height: CLIP_H }}
-            // Nothing is drawn or added while the blade is held. A row that
-            // offered to add a zoom where the pointer is, under a cursor that
-            // says it is about to cut one, is the row contradicting itself —
-            // and the press below would lay a zoom down rather than cut the one
-            // being aimed at.
-            onPointerMove={(event) => {
-              if (slicing) return;
-              const drawing = draw.current;
-              if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
-                drawing.drawn = true;
-              }
-              showGhost(event.clientX);
-            }}
-            // Not while a zoom is being drawn out: the pointer is captured, so
-            // the drag continues over the bars and past the ends of the row,
-            // and taking the outline down there would hide the one thing
-            // saying how long the zoom is going to be.
-            onPointerLeave={() => {
-              if (!draw.current) showGhost(null);
-            }}
-            // The press is one edge of the zoom; the release is the other, and
-            // a press that never travels is the click this row has always
-            // taken. Nothing is added until then, so a drag is one thing in the
-            // undo history rather than an add followed by a resize.
-            //
-            // Deliberately let through to the strip, which seeks: the playhead
-            // belongs on the zoom being added, and where the gap is too small
-            // to hold one the press has to still do something.
-            onPointerDown={(event) => {
-              if (slicing) return;
-              draw.current = {
-                at: sourceAt(timeAt(event.clientX)),
-                x: event.clientX,
-                drawn: false,
-              };
-              event.currentTarget.setPointerCapture(event.pointerId);
-            }}
-            onPointerUp={(event) => {
-              const drawing = draw.current;
-              draw.current = null;
-              if (!drawing) return;
+            <div
+              className="relative"
+              style={{ height: CLIP_H }}
+              // Nothing is drawn or added while the blade is held. A row that
+              // offered to add a zoom where the pointer is, under a cursor that
+              // says it is about to cut one, is the row contradicting itself —
+              // and the press below would lay a zoom down rather than cut the one
+              // being aimed at.
+              onPointerMove={(event) => {
+                if (slicing) return;
+                const drawing = draw.current;
+                if (drawing && !drawing.drawn && Math.abs(event.clientX - drawing.x) >= DRAW_SLOP) {
+                  drawing.drawn = true;
+                }
+                showGhost(event.clientX);
+              }}
+              // Not while a zoom is being drawn out: the pointer is captured, so
+              // the drag continues over the bars and past the ends of the row,
+              // and taking the outline down there would hide the one thing
+              // saying how long the zoom is going to be.
+              onPointerLeave={() => {
+                if (!draw.current) showGhost(null);
+              }}
+              // The press is one edge of the zoom; the release is the other, and
+              // a press that never travels is the click this row has always
+              // taken. Nothing is added until then, so a drag is one thing in the
+              // undo history rather than an add followed by a resize.
+              //
+              // Deliberately let through to the strip, which seeks: the playhead
+              // belongs on the zoom being added, and where the gap is too small
+              // to hold one the press has to still do something.
+              onPointerDown={(event) => {
+                if (slicing) return;
+                draw.current = {
+                  at: sourceAt(timeAt(event.clientX)),
+                  x: event.clientX,
+                  drawn: false,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerUp={(event) => {
+                const drawing = draw.current;
+                draw.current = null;
+                if (!drawing) return;
 
-              event.currentTarget.releasePointerCapture(event.pointerId);
-              media.onInteract();
-              dispatch({
-                type: "addZoom",
-                at: drawing.at,
-                ...(drawing.drawn ? { to: sourceAt(timeAt(event.clientX)) } : {}),
-              });
-              // The zoom itself is now drawn where the outline was, and the
-              // project this closure can see is the one from before it existed
-              // — so the outline would sit exactly on top of the new bar until
-              // the pointer moved again.
-              showGhost(null);
-            }}
-            onPointerCancel={() => {
-              draw.current = null;
-              showGhost(null);
-            }}
-          >
-            {/* Stuck to the left edge of the scrollport and as wide as it, so
+                event.currentTarget.releasePointerCapture(event.pointerId);
+                media.onInteract();
+                dispatch({
+                  type: "addZoom",
+                  at: drawing.at,
+                  ...(drawing.drawn ? { to: sourceAt(timeAt(event.clientX)) } : {}),
+                });
+                // The zoom itself is now drawn where the outline was, and the
+                // project this closure can see is the one from before it existed
+                // — so the outline would sit exactly on top of the new bar until
+                // the pointer moved again.
+                showGhost(null);
+              }}
+              onPointerCancel={() => {
+                draw.current = null;
+                showGhost(null);
+              }}
+            >
+              {/* Stuck to the left edge of the scrollport and as wide as it, so
                 the invitation stays in the middle of what is on screen however
                 far the timeline is scrolled. */}
-            {state.project.zooms.length === 0 && (
-              <div
-                className="pointer-events-none sticky left-0 flex h-full items-center justify-center"
-                style={{ width }}
-              >
-                <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
-                  <ZoomIcon />
-                  Click or drag to add a zoom effect
-                </span>
-              </div>
-            )}
+              {state.project.zooms.length === 0 && (
+                <div
+                  className="pointer-events-none sticky z-10 flex h-full items-center justify-center"
+                  // Held clear of the rail rather than at the scrollport's own
+                  // edge: `sticky` pins to the scroller, and the rail is the
+                  // first forty pixels of it.
+                  style={{ left: RAIL_W, width: timelineWidth }}
+                >
+                  <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
+                    <ZoomIcon />
+                    Click or drag to add a zoom effect
+                  </span>
+                </div>
+              )}
 
-            <ZoomGhost ref={ghost} />
+              <ZoomGhost ref={ghost} />
 
-            {state.project.zooms.map((zoom, index) => {
-              // The whole span, not its two edges asked about separately. An
-              // automatic zoom is placed against the recording and a later cut
-              // can remove the moment it starts on — which used to leave the
-              // bar undrawn while the zoom still occupied its source range, so
-              // those seconds took clicks and did nothing at all.
-              const span = spanInProject(placed, zoom.source);
-              if (span === null) return null;
-              const { start: from, end: to } = span;
+              {state.project.zooms.map((zoom, index) => {
+                // The whole span, not its two edges asked about separately. An
+                // automatic zoom is placed against the recording and a later cut
+                // can remove the moment it starts on — which used to leave the
+                // bar undrawn while the zoom still occupied its source range, so
+                // those seconds took clicks and did nothing at all.
+                const span = spanInProject(placed, zoom.source);
+                if (span === null) return null;
+                const { start: from, end: to } = span;
 
-              return (
-                <Zoom
-                  key={zoom.id}
-                  left={(from / Math.max(duration, 1)) * 100}
-                  width={((to - from) / Math.max(duration, 1)) * 100}
-                  room={((to - from) / NS_PER_SECOND) * pxPerSecond}
-                  selected={zoom.id === state.selectedZoomId}
-                  blade={
-                    slicing
-                      ? {
-                          legal: (clientX) =>
-                            zoomSplitAt(state.project, sourceAt(timeAt(clientX))) !== null,
-                          cut: (clientX) => {
-                            media.onInteract();
-                            dispatch({ type: "splitZoom", at: sourceAt(timeAt(clientX)) });
-                          },
-                        }
-                      : null
-                  }
-                  target={zoom.target}
-                  method={zoom.method}
-                  level={zoom.level}
-                  curve={barCurve(envelope, reaches[index]!, ceiling)}
-                  sourceAt={(clientX) => sourceAt(timeAt(clientX))}
-                  timeAt={(clientX) => timeAt(clientX)}
-                  start={from}
-                  onSelect={() => {
-                    media.onInteract();
-                    dispatch({ type: "selectZoom", zoomId: zoom.id });
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setMenu({ x: event.clientX, y: event.clientY, kind: "zoom", zoomId: zoom.id });
-                  }}
-                  onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                  onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
-                  onTrim={(edge, clientX) =>
-                    dispatch({
-                      type: "trimZoom",
-                      zoomId: zoom.id,
-                      edge,
-                      source: sourceAt(timeAt(clientX)),
-                    })
-                  }
-                />
-              );
-            })}
+                return (
+                  <Zoom
+                    key={zoom.id}
+                    left={(from / Math.max(duration, 1)) * 100}
+                    width={((to - from) / Math.max(duration, 1)) * 100}
+                    room={((to - from) / NS_PER_SECOND) * pxPerSecond}
+                    selected={zoom.id === state.selectedZoomId}
+                    blade={
+                      slicing
+                        ? {
+                            legal: (clientX) =>
+                              zoomSplitAt(state.project, sourceAt(timeAt(clientX))) !== null,
+                            cut: (clientX) => {
+                              media.onInteract();
+                              dispatch({ type: "splitZoom", at: sourceAt(timeAt(clientX)) });
+                            },
+                          }
+                        : null
+                    }
+                    target={zoom.target}
+                    method={zoom.method}
+                    level={zoom.level}
+                    curve={barCurve(envelope, reaches[index]!, ceiling)}
+                    sourceAt={(clientX) => sourceAt(timeAt(clientX))}
+                    timeAt={(clientX) => timeAt(clientX)}
+                    start={from}
+                    onSelect={() => {
+                      media.onInteract();
+                      dispatch({ type: "selectZoom", zoomId: zoom.id });
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        kind: "zoom",
+                        zoomId: zoom.id,
+                      });
+                    }}
+                    onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                    onMove={(start) => dispatch({ type: "moveZoom", zoomId: zoom.id, start })}
+                    onTrim={(edge, clientX) =>
+                      dispatch({
+                        type: "trimZoom",
+                        zoomId: zoom.id,
+                        edge,
+                        source: sourceAt(timeAt(clientX)),
+                      })
+                    }
+                  />
+                );
+              })}
+            </div>
+
+            <div style={{ height: TRACK_GAP }} />
+
+            {/* The music row, under the zooms and above the caption band.
+
+              Last of the four, because it is the only one that is not about
+              the picture: the clips are the footage, the zooms and the titles
+              change what is seen, and this is what is heard underneath all of
+              it.
+
+              One `TRACK_GAP` above it, like every other band on the strip. It
+              went in without one at first and the row read as part of the zoom
+              row rather than as a row of its own — four bands with three gaps
+              between them, one of which was missing.
+
+              Pressing an empty stretch lays a bed down, the way the zoom and
+              text rows do — with the default track, because a bed needs a file
+              and a click that opened a file dialog out of an empty row would
+              be a press with a sheet on the end of it. Which song it is is
+              then one press away, in the panel the new bed opens.
+
+              Not a drag, though. The other two rows draw a span out because
+              their length is the whole of what is being asked for; a bed's
+              length comes from the song, and the first thing anybody does to
+              one is trim it anyway. */}
+            <div
+              className="relative"
+              style={{ height: MUSIC_H }}
+              // Where the press landed, and only a press that landed *here*.
+              //
+              // A bar stops the event, so this never fires for one — but the
+              // release at the end of a drag on a bar's handle does bubble up
+              // here, and acting on that release laid a fresh bed down every
+              // time a bed was trimmed. It went into the nearest gap, which is
+              // nowhere near the handle being dragged, so it read as a bed
+              // appearing out of nothing.
+              onPointerDown={(event) => {
+                addAt.current = timeAt(event.clientX);
+              }}
+              onPointerUp={() => {
+                const at = addAt.current;
+                addAt.current = null;
+                if (at === null || slicing || !onAddMusic) return;
+                onAddMusic(at);
+              }}
+              // The system can take a gesture — a three-finger swipe over the
+              // trackpad — and the release never arrives. Without this the
+              // next release anywhere on the row would lay a bed at a position
+              // the pointer left minutes ago.
+              onPointerCancel={() => {
+                addAt.current = null;
+              }}
+              onPointerLeave={() => {
+                addAt.current = null;
+              }}
+            >
+              {state.project.music.length === 0 && (
+                <div
+                  className="pointer-events-none sticky z-10 flex h-full items-center justify-center"
+                  // Held clear of the rail rather than at the scrollport's own
+                  // edge: `sticky` pins to the scroller, and the rail is the
+                  // first forty pixels of it.
+                  style={{ left: RAIL_W, width: timelineWidth }}
+                >
+                  <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
+                    <MusicIcon />
+                    Add Audio for background music
+                  </span>
+                </div>
+              )}
+
+              {state.project.music.map((bed) => {
+                // Already in project time at both ends — see `MusicSlice`. No
+                // `spanInProject` here, which is the whole difference between
+                // this row and the two above it.
+                const pixels = (bed.length / Math.max(duration, 1)) * contentWidth;
+
+                return (
+                  <MusicBar
+                    key={bed.id}
+                    left={(bed.at / Math.max(duration, 1)) * 100}
+                    width={(bed.length / Math.max(duration, 1)) * 100}
+                    pixels={pixels}
+                    selected={bed.id === state.selectedMusicId}
+                    muted={bed.muted || bed.volume <= 0}
+                    blade={
+                      slicing
+                        ? {
+                            legal: (clientX) =>
+                              musicSplitAt(state.project, bed.id, timeAt(clientX)) !== null,
+                            cut: (clientX) => {
+                              media.onInteract();
+                              dispatch({
+                                type: "splitMusic",
+                                musicId: bed.id,
+                                at: timeAt(clientX),
+                              });
+                            },
+                          }
+                        : null
+                    }
+                    volume={bed.volume}
+                    onVolume={(volume) =>
+                      dispatch({ type: "setMusic", musicId: bed.id, patch: { volume } })
+                    }
+                    label={musicFileOf(state.project.musicFiles, bed)?.label ?? bed.file}
+                    // The stretch of the *file* the bar shows, which is not where
+                    // it sits on the timeline: the wave has to move under the bar
+                    // as the left edge is dragged, because that is what trimming
+                    // a bed does — see `trimMusic`.
+                    peaks={musicPeaks.get(bed.file) ?? null}
+                    from={bed.offset}
+                    to={bed.offset + bed.length}
+                    repeat={bed.repeat}
+                    start={bed.at}
+                    timeAt={timeAt}
+                    onSelect={() => {
+                      media.onInteract();
+                      dispatch({ type: "selectMusic", musicId: bed.id });
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        kind: "music",
+                        musicId: bed.id,
+                      });
+                    }}
+                    onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                    onMove={(at) => dispatch({ type: "moveMusic", musicId: bed.id, at })}
+                    onTrim={(edge, clientX) =>
+                      dispatch({ type: "trimMusic", musicId: bed.id, edge, at: timeAt(clientX) })
+                    }
+                  />
+                );
+              })}
+            </div>
+
+            <div style={{ height: TRACK_GAP }} />
+
+            <CaptionBand
+              span={captionRange && spanInProject(placed, captionRange)}
+              duration={duration}
+            />
+            <Shadow ref={shadow} labelRef={shadowTime} />
+            <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
           </div>
-
-          <CaptionBand
-            span={captionRange && spanInProject(placed, captionRange)}
-            duration={duration}
-          />
-          <Shadow ref={shadow} labelRef={shadowTime} />
-          <Playhead ref={media.playheadRef} labelRef={media.headTimeRef} />
         </div>
       </div>
 
@@ -1328,7 +1713,7 @@ export function TimelineStrip({
                   }}
                 />
               </>
-            ) : (
+            ) : menu.kind === "text" ? (
               <>
                 <MenuItem
                   label="Duplicate"
@@ -1346,6 +1731,18 @@ export function TimelineStrip({
                   }}
                 />
               </>
+            ) : (
+              /* No Duplicate. A second copy of a bed would land on top of the
+                 first, and the row holds one bed at a time — so the row would
+                 either refuse it or put it somewhere nobody pointed at. */
+              <MenuItem
+                danger
+                label="Delete audio"
+                onClick={() => {
+                  dispatch({ type: "deleteMusic", musicId: menu.musicId });
+                  setMenu(null);
+                }}
+              />
             )}
           </ul>
         </>
@@ -1660,6 +2057,8 @@ function Clip({
   cameraSpans,
   selected,
   blade,
+  audio,
+  onVolume,
   onPointerDown,
   onDrag,
   onDrop,
@@ -1682,6 +2081,23 @@ function Clip({
   /** The blade, while it is held: a press cuts the clip instead of taking it
       up, and the two grips go with the gesture they belonged to. */
   blade: Blade | null;
+  /**
+   * This clip's two track volumes, resolved — its own overrides over the
+   * project's defaults.
+   *
+   * Both, because the line shows the louder and moves them together; see
+   * `scaledAudio` for why it is not simply the one number.
+   */
+  audio: { mic: number; system: number };
+  /**
+   * The line has been dragged to a level. Both tracks move with it.
+   *
+   * `from` is the pair as they were when the drag started, not as they are
+   * now. Scaling against the live values compounds: dragged to silence, the
+   * ratio between the two is gone, and dragging back up brings them up equal
+   * — a balance set in the panel, lost to one gesture that looked reversible.
+   */
+  onVolume: (level: number, from: { mic: number; system: number }) => void;
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
   /** The body is being dragged along the row, to put the clip somewhere else. */
   onDrag: (event: PointerEvent<HTMLDivElement>) => void;
@@ -1705,6 +2121,9 @@ function Clip({
    * would rebuild its filmstrip and wave for no visible change.
    */
   const grabbed = useRef<TrimGrab | null>(null);
+
+  /** The two levels as the volume drag found them — see `onVolume`. */
+  const before = useRef(audio);
 
   /** The wash over the part a cut would separate off — see `CutShade`. */
   const shade = useRef<HTMLSpanElement>(null);
@@ -1752,6 +2171,9 @@ function Clip({
   // would need a layout flush per clip per zoom step, and the number is already
   // known — a clip's share of `contentWidth`.
   const widthPx = duration > 0 ? (slice.duration / duration) * contentWidth : 0;
+  // Room for a chip and something beside it — the same threshold the three bar
+  // rows use, so every row on the strip loses its chips at the same width.
+  const roomy = widthPx >= 110;
 
   // Recomputed on zoom, which is the point: more room means more frames. Cheap
   // enough to do in render — it is one loop over the columns that will be drawn,
@@ -1929,7 +2351,12 @@ function Clip({
           // them — CSS resolves the width from the ratio and anchors it left.
           // The wave then draws into a box as wide as it is tall, bunched in
           // the corner, with `preserveAspectRatio` never getting a say.
-          className="pointer-events-none absolute bottom-0 left-0 h-3/5 w-full text-wave opacity-40"
+          className="pointer-events-none absolute bottom-0 left-0 w-full text-wave opacity-40"
+          // As tall as the volume line is high. The line is the ceiling of the
+          // sound, so the wave under it has to be drawn against that ceiling —
+          // a clip pulled down to a quarter whose wave kept its full height
+          // would be a bar saying two different things about the same number.
+          style={{ height: `${String(waveHeight(Math.max(audio.mic, audio.system)))}%` }}
           viewBox="0 0 1 1"
           preserveAspectRatio="none"
           aria-hidden="true"
@@ -1938,28 +2365,54 @@ function Clip({
         </svg>
       )}
 
-      {/* One row along the top: what the clip holds, and how long it runs. Both
-          up here because the wave owns the bottom now, and a label sitting over
-          a wave is legible in the quiet passages and not in the loud ones.
+      {/* The chip and how long the clip runs — the shape every other bar on
+          the strip wears, so four rows of different things read as four of one
+          kind. Centred and held off both ends by `LABEL_INSET`, like the rest.
 
-          The screen icon is always there — a take without one is not something
-          this app records — so it reads as the anchor the camera icon appears
-          beside rather than as news in itself. Tinted off the clip rather than
-          off the panel: `--editor-muted` is picked to sit on a near-black
-          surface and all but disappears on purple.
+          The chip is darker here than on the flat bars. Those are one colour
+          and a quarter-black square reads against them; this one sits over
+          frames of somebody's recording, which can be any colour at all, so it
+          carries its own contrast rather than borrowing the bar's.
 
-          Padded clear of the edge bands rather than tucked to the box: the
-          bands are opaque, so a smaller inset does not crowd the icon, it
-          buries it. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-1.5 px-3.5 py-1 text-white/70">
-        <span className="flex flex-none items-center gap-1 [&_svg]:size-3">
-          <ScreenIcon />
-          {hasCamera && <CameraIcon />}
-        </span>
-        <span className="truncate text-[10px] leading-none tabular-nums">
-          {formatTimecode(slice.duration)}
-        </span>
+          The screen glyph is always the one in the chip — a take without one
+          is not something this app records — and the camera appears beside the
+          words when there is one, which is the only part that is news.
+
+          Nothing is `truncate`d away before the chip: on a clip too narrow for
+          the words the glyph is what is left, and it is the half that still
+          says what the row holds. */}
+      <div
+        className="pointer-events-none absolute inset-0 flex items-center gap-1.5 text-[11px] font-medium text-white"
+        style={{ paddingInline: LABEL_INSET }}
+      >
+        {roomy && (
+          <span className="grid size-6 flex-none place-items-center rounded-lg bg-black/40 [&_svg]:size-3.5">
+            <ScreenIcon />
+          </span>
+        )}
+        {!roomy && (
+          <span className="flex-none [&_svg]:size-3">
+            <ScreenIcon />
+          </span>
+        )}
+        {hasCamera && (
+          <span className="flex-none [&_svg]:size-3">
+            <CameraIcon />
+          </span>
+        )}
+        <span className="truncate tabular-nums">{formatTimecode(slice.duration)}</span>
       </div>
+
+      {/* No line while the blade is out: the two gestures are both a press on
+          the body of the clip, and the one that cuts has to win. */}
+      {!blade && (
+        <VolumeLine
+          level={Math.max(audio.mic, audio.system)}
+          colour="bg-slice-ring"
+          onBegin={() => (before.current = audio)}
+          onChange={(level) => onVolume(level, before.current)}
+        />
+      )}
 
       {/* Shown with the pointer, not at rest. The clip is already framed on
           every side, so a cap is a trim target rather than the edge itself —
@@ -2018,6 +2471,295 @@ function Clip({
  * be retimed at all: no grips, no targets, and no length field anywhere else in
  * the editor to reach for.
  */
+/**
+ * The level line across a clip or a bed, dragged up and down.
+ *
+ * Where every editor people arrive from puts volume: on the thing itself,
+ * rather than only in a panel. The panel's faders still exist and are the only
+ * way to set the two tracks of a clip apart — see `scaledAudio` — and this is
+ * the coarse one, for "that is too loud" while looking at the strip.
+ *
+ * Drawn at rest only when the level is not unity. A quiet clip has to *look*
+ * quiet, and a line across every bar on the timeline all the time would be a
+ * second horizon on a row that already has a waveform. Hovering brings it up
+ * whatever the level, which is what makes it findable.
+ *
+ * The hit band is thicker than the line and is what takes the press. It stops
+ * the event: the bar underneath picks itself up when pressed, and a drag meant
+ * for the level would otherwise carry the whole clip sideways.
+ */
+function VolumeLine({
+  level,
+  colour,
+  onBegin,
+  onChange,
+}: {
+  /** 0 to `MAX_LEVEL`, where 1 is the sound as it was recorded. */
+  level: number;
+  /** The bar's own edge colour, so the line reads as part of it. */
+  colour: string;
+  /**
+   * A drag is starting, so the edit before it is the one undo comes back to.
+   *
+   * Only where the change is banked at all. A bed's level is, and without this
+   * a drag of the line and a drag of the panel's fader would coalesce into one
+   * step; a clip's volumes are an appearance setting and are not banked, like
+   * every other setting on a clip.
+   */
+  onBegin?: () => void;
+  onChange: (level: number) => void;
+}) {
+  const box = useRef<HTMLSpanElement>(null);
+  /** The bubble, moved by hand — see `follow`. */
+  const bubble = useRef<HTMLSpanElement>(null);
+  /** Where the pointer last was, for the frame the bubble appears on. */
+  const at = useRef(0);
+  /** The sliding readout, written to rather than rendered — see `Timecode`. */
+  const readout = useRef<HTMLElement | null>(null);
+  /**
+   * The bar's box, read once a gesture rather than once a move.
+   *
+   * `getBoundingClientRect` flushes layout, and this used to be called twice
+   * per `pointermove` — once to turn the pointer into a level, once to place
+   * the bubble — in between two writes to the DOM. A layout read next to a
+   * layout write is the one thing the editor's own rules say never to do in a
+   * loop, and a trackpad sends moves at 120 a second.
+   *
+   * Safe to hold for the length of a drag: the pointer is captured, so nothing
+   * can scroll the strip under it, and the bar itself cannot move while it is
+   * being dragged. Re-read on every hover move, where there is one read and no
+   * write and the strip may well have scrolled since.
+   */
+  const bar = useRef<DOMRect | null>(null);
+  /**
+   * The level waiting to be committed, and the frame that will commit it.
+   *
+   * One edit per frame rather than one per move. Each one rewrites the project
+   * and re-renders the strip — the clip's filmstrip columns are recomputed,
+   * the waves are rebuilt — and at 120 moves a second that is twice the work
+   * anybody can see, which is what made the drag feel like it was catching.
+   */
+  const pending = useRef<number | null>(null);
+  const frame = useRef(0);
+
+  const [dragging, setDragging] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  /** The bar's box, from the cache while a drag holds it. */
+  const barBox = (): DOMRect | null => {
+    if (bar.current) return bar.current;
+
+    const rect = box.current?.parentElement?.getBoundingClientRect() ?? null;
+    return rect;
+  };
+
+  const levelFrom = (clientY: number, rect: DOMRect): number =>
+    levelAt(rect.height > 0 ? (clientY - rect.top) / rect.height : 0);
+
+  const commit = () => {
+    frame.current = 0;
+    const level = pending.current;
+    pending.current = null;
+    if (level !== null) onChange(level);
+  };
+
+  /** Holds the newest level for the next frame, and asks for one. */
+  const queue = (next: number) => {
+    pending.current = next;
+    frame.current ||= requestAnimationFrame(commit);
+  };
+
+  // Nothing left in flight when the bar goes — a frame that fires after the
+  // clip it belonged to has been cut would write a level onto a slice that is
+  // no longer there.
+  useEffect(
+    () => () => {
+      if (frame.current) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
+
+  /**
+   * Puts the bubble over the pointer, on the line.
+   *
+   * Written straight to the element rather than through state, for the reason
+   * the strip's own hover line is: `pointermove` fires far more often than a
+   * frame, and a render per move would rebuild the clip's filmstrip and wave
+   * to move a label.
+   *
+   * Client coordinates, because the bubble is `fixed`. Every bar on the strip
+   * is `overflow-hidden` — it has a filmstrip and a wave to keep inside itself
+   * — and a bubble positioned within one would be cut off by it: there is not
+   * room above the line for a label and its tail at any level below about
+   * three-quarters. Fixed is also what the timeline's context menu does, and
+   * for the same reason.
+   *
+   * The y is worked out from the bar's box and the level rather than read off
+   * the band, which moves as the level changes — and reading a box that is
+   * mid-move is a read of where it was a frame ago.
+   */
+  const follow = (clientX: number, rect: DOMRect | null, shown: number) => {
+    at.current = clientX;
+
+    const element = bubble.current;
+    if (!element || !rect) return;
+
+    element.style.left = `${String(clientX)}px`;
+    element.style.top = `${String(rect.top + levelY(shown) * rect.height)}px`;
+  };
+
+  const showing = dragging || hovering;
+
+  // Placed the moment it appears, not on the next move. The pointer entering
+  // is what mounts it, and the ref is still null inside that handler — so
+  // without this the bubble draws once at wherever the layout happened to put
+  // it, which is the left-hand end of the bar, and only snaps to the pointer
+  // if the pointer moves again.
+  useLayoutEffect(() => {
+    if (showing) follow(at.current, barBox(), level);
+  });
+
+  // The level, into the readout. Through `writeTicker` because the digits are
+  // a column of ten that slides, and a column cannot be re-rendered into place
+  // — the component owns the DOM under it and asks to be written to instead.
+  //
+  // An *ordinary* effect, deliberately. `Timecode` registers its writer in one
+  // of these, and React runs a child's effects before its parent's — so a
+  // layout effect here runs first, finds no writer, and falls back to setting
+  // `textContent`. That replaces the column of digits with a text node: the
+  // reading then shows the level it had when it opened and never changes
+  // again, because every later write goes to cells that are no longer in the
+  // document. Nothing throws; the number simply stops moving.
+  useEffect(() => {
+    if (readout.current) writeTicker(readout.current, percent(level));
+  }, [level]);
+
+  return (
+    <span
+      ref={box}
+      className={cn(
+        "absolute inset-x-0 z-10 flex cursor-ns-resize items-center",
+        // Only while the pointer is on the bar, or holding the line. A line
+        // across every bar at rest is a second horizon on a row that already
+        // has a waveform, and the wave is drawn to the level anyway — a quiet
+        // clip still looks quiet with nothing to hover.
+        "opacity-0 transition-opacity group-hover:opacity-100",
+        showing && "opacity-100",
+      )}
+      // Centred on the level by arithmetic rather than by `-translate-y-1/2`.
+      // A transform on this span would make it the containing block for the
+      // `fixed` bubble inside it — which stops being viewport-relative and
+      // starts being clipped by the bar's `overflow-hidden`, so the reading
+      // simply never appears. Nothing says so; it is just not there.
+      style={{
+        top: `calc(${String(levelY(level) * 100)}% - ${String(VOLUME_GRAB / 2)}px)`,
+        height: VOLUME_GRAB,
+      }}
+      onPointerLeave={() => setHovering(false)}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        // The one read of the gesture. See `bar`.
+        bar.current = box.current?.parentElement?.getBoundingClientRect() ?? null;
+        setDragging(true);
+        onBegin?.();
+      }}
+      onPointerMove={(event) => {
+        // The move rather than the enter. `pointerenter` is one event at the
+        // edge of the band, and a React state update hung off it is lost the
+        // moment anything re-renders the bar under a pointer that has not
+        // moved since — which the hover itself causes, because the preview
+        // follows it. A move is sent continuously and puts it back.
+        setHovering(true);
+
+        const rect = barBox();
+        if (!event.currentTarget.hasPointerCapture(event.pointerId) || !rect) {
+          follow(event.clientX, rect, level);
+          return;
+        }
+
+        event.stopPropagation();
+        const next = levelFrom(event.clientY, rect);
+        // The bubble goes with the pointer now rather than a frame later: it
+        // is a DOM write of two numbers, and waiting for the commit would
+        // leave the label trailing the line it is pinned to.
+        follow(event.clientX, rect, next);
+        queue(next);
+      }}
+      onPointerUp={() => {
+        bar.current = null;
+        setDragging(false);
+      }}
+      onPointerCancel={() => {
+        bar.current = null;
+        setDragging(false);
+      }}
+    >
+      <span className={cn("pointer-events-none h-px w-full", colour)} />
+
+      {/* The reading, on the line under the pointer.
+
+          The playhead's shape and the playhead's size — a pill with a tail
+          curving out of its own edge, twenty pixels tall, its digits sliding
+          as they change. It answers the same kind of question in the same
+          place, and a second kind of bubble on one strip is a second thing to
+          learn. Near-black rather than the playhead's blue: that blue is the
+          playhead's identity, and this one has to sit over a purple clip and a
+          teal bed without becoming either.
+
+          Fixed width, for the reason the playhead's label has one: the number
+          is rewritten continuously while the line is dragged, and a box that
+          resized as the digits changed would shimmy around the pointer it is
+          meant to be pinned to.
+
+          Always mounted, and hidden by opacity. It has to animate *out* as
+          well as in, and an element React has already removed cannot.
+          `pointer-events-none` throughout, so an invisible one over the strip
+          catches nothing. */}
+      <span
+        ref={bubble}
+        className={cn(
+          "pointer-events-none fixed z-50 origin-bottom -translate-x-1/2 -translate-y-full pb-[7px]",
+          // Out of the line and back into it: the box's bottom edge is the tip
+          // of the tail, which sits on the line, so scaling about it is the
+          // bubble growing out of the line rather than appearing over it.
+          "transition-[opacity,transform] duration-150 ease-out",
+          showing ? "scale-100 opacity-100" : "scale-75 opacity-0",
+        )}
+      >
+        <span
+          className="flex h-5 items-center justify-center gap-1 rounded-full bg-black/85 text-[11px] leading-5 font-medium tabular-nums text-white [&_svg]:size-3 [&_svg]:text-white/70"
+          style={{ width: VOLUME_LABEL_W }}
+        >
+          <SpeakerIcon />
+          {/* The playhead's own readout, so the digits turn rather than
+              swapping — see `Timecode`. Written through `writeTicker` from the
+              effect below rather than rendered, because that is the one way in
+              that a sliding column understands. */}
+          <Timecode
+            elementRef={(element) => {
+              readout.current = element;
+            }}
+            initial={percent(level)}
+          />
+        </span>
+
+        {/* The tail, hanging off the pill onto the line. Curved rather than
+            a triangle: the sides ease out of the pill's own rounded edge,
+            where a straight taper reads as a second shape stuck underneath
+            it. The playhead's own path, at the playhead's size. */}
+        <svg
+          aria-hidden
+          viewBox="0 0 12 7"
+          className="absolute bottom-0 left-1/2 h-[7px] w-3 -translate-x-1/2 text-black/85"
+        >
+          <path d="M0 0C3.2 0 4.4 7 6 7C7.6 7 8.8 0 12 0Z" fill="currentColor" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
 function Handle({
   edge,
   grip,
@@ -2231,8 +2973,8 @@ function TextRow({
     >
       {empty && invite && (
         <div
-          className="pointer-events-none sticky left-0 flex h-full items-center justify-center"
-          style={{ width }}
+          className="pointer-events-none sticky z-10 flex h-full items-center justify-center"
+          style={{ left: RAIL_W, width }}
         >
           <span
             className={cn(
@@ -2354,12 +3096,14 @@ function TextBar({
         //
         // `pointer-events-auto`: the layer these sit in lets every press
         // through to the rows beneath, and a bar has to catch its own.
-        "group pointer-events-auto absolute flex items-center overflow-hidden rounded-md border px-2",
+        "group pointer-events-auto absolute overflow-hidden rounded-md",
         "transition-[background-color,outline-color]",
-        // The zoom bar's wash-in-an-outline, in the row's own colour and for
-        // the same reasons.
-        "border-title-edge",
-        selected ? "bg-title-fill/45" : "bg-title-fill/25",
+        EMBOSS,
+        // Solid and unframed, like the zoom and the bed below it: three rows of
+        // bars that are three kinds of thing read as three kinds through their
+        // colour, and an outline on one of the three only says that that row is
+        // different in some way nobody can name.
+        selected ? "bg-title-fill" : "bg-title-fill/85",
         "outline-2 -outline-offset-2",
         // The blade's ring in place of the selection's, as a clip's is — see
         // the note on `Clip`.
@@ -2370,13 +3114,7 @@ function TextBar({
             : "outline-transparent hover:outline-title-ring/40",
         !blade && "cursor-grab active:cursor-grabbing",
       )}
-      style={{
-        top,
-        height: TEXT_H,
-        left: `${String(left)}%`,
-        width: `${String(width)}%`,
-        borderWidth: ZOOM_EDGE,
-      }}
+      style={{ top, height: TEXT_H, left: `${String(left)}%`, width: `${String(width)}%` }}
       onContextMenu={onContextMenu}
       onPointerDown={(event) => {
         // Stops the strip underneath seeking on a press meant for the bar.
@@ -2444,11 +3182,30 @@ function TextBar({
         copying.current = false;
       }}
     >
-      {/* The text itself, truncated: it is the one thing that tells two bars
-          on a row apart, and it degrades a letter at a time on a short bar
+      {/* The chip and the words — a bed's shape and a zoom's, on a row half
+          their height.
+
+          The chip is `size-5` rather than `size-6`, which is the one number
+          that differs: at the bars' own size it would be the whole row with
+          nothing above or below it, and a chip that fills its bar reads as a
+          button rather than as a label on one. Its radius is scaled with it
+          rather than shared — a `rounded-lg` on a smaller square is a rounder
+          chip, and the three have to look like one chip at three sizes.
+          Everything else — the dark square, the glyph inside it, the words
+          beside it — is the same.
+
+          The words are truncated: they are the one thing that tells two bars
+          on a row apart, and they degrade a letter at a time on a short bar
           without changing the row's height. */}
-      <span className="pointer-events-none flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-white/90 [&_svg]:size-3 [&_svg]:flex-none">
-        {roomy && <TextIcon />}
+      <span
+        className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-white [&_svg]:flex-none"
+        style={{ paddingInline: LABEL_INSET }}
+      >
+        {roomy && (
+          <span className="grid size-5 flex-none place-items-center rounded-[7px] bg-black/25 [&_svg]:size-3">
+            <TextIcon />
+          </span>
+        )}
         <span className="truncate">{label.replace(/\n+/g, " ")}</span>
       </span>
 
@@ -2471,6 +3228,266 @@ function TextBar({
           <Handle
             edge="end"
             grip="bg-title-edge"
+            grips={pixels >= GRAB_ROOM}
+            room={pixels}
+            selected={selected}
+            onPointerDown={grabEdge()}
+            onPointerMove={moveEdge("end")}
+          />
+        </>
+      )}
+
+      {blade && <CutShade ref={shade} />}
+    </div>
+  );
+}
+
+/**
+ * One bed on the music row.
+ *
+ * `TextBar` with less on it. Two of the things a title's bar can do are
+ * missing, and each for a reason rather than for want of writing them:
+ *
+ * - **No rows.** There is one music row, because one bed at a time is what a
+ *   bed is — two songs over one moment is not something any control in the
+ *   editor could put right.
+ * - **No option-drag copy.** A copy would land on top of the original on a row
+ *   that holds one bar per moment.
+ *
+ * It does take the blade. That was written off at first on the grounds that
+ * the two halves play the same song back to back, so the cut cannot be heard —
+ * which is true and beside the point: a cut is made for what comes after it,
+ * and the halves can then be deleted, moved or levelled apart. It also made
+ * this the one row on the strip that ignored a tool the cursor said was in
+ * hand, which reads as broken rather than as deliberate.
+ *
+ * What it keeps is the pair of handles, and they do more here than on the rows
+ * above: the left one takes the song's own offset with it — see `trimMusic`.
+ */
+function MusicBar({
+  left,
+  width,
+  pixels,
+  selected,
+  muted,
+  blade,
+  volume,
+  onVolume,
+  label,
+  peaks,
+  from,
+  to,
+  repeat,
+  start,
+  timeAt,
+  onSelect,
+  onContextMenu,
+  onMove,
+  onTrim,
+  onBeginEdit,
+}: {
+  left: number;
+  width: number;
+  /** How wide the bar is on screen, so the glyph can step aside for the name. */
+  pixels: number;
+  selected: boolean;
+  /** Muted, or at zero: drawn faint, because it is on the row and silent. */
+  muted: boolean;
+  /** The blade, while it is held: a press cuts the bed in two instead of
+      picking it up, and the grips and the level line go with it. */
+  blade: Blade | null;
+  /** The bed's own level, for the line across it. */
+  volume: number;
+  /** A drag of the line, in the same 0–2 the panel's fader uses. */
+  onVolume: (volume: number) => void;
+  /** The song's name, which is what tells two beds apart. */
+  label: string;
+  /** The file's own peaks, from its own zero. Null until they are made. */
+  peaks: Float32Array | null;
+  /** The stretch of the file the bar shows, in the file's own time. */
+  from: MediaTime;
+  to: MediaTime;
+  /** Whether the file starts again where it runs out, which the wave shows. */
+  repeat: boolean;
+  start: MediaTime;
+  /** Project time under a client x. A bed is measured on the edit's clock at
+      both ends, so this is the only question it ever asks. */
+  timeAt: (clientX: number) => MediaTime;
+  onSelect: () => void;
+  onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onMove: (at: MediaTime) => void;
+  onTrim: (edge: "start" | "end", clientX: number) => void;
+  onBeginEdit: () => void;
+}) {
+  const grab = useRef<MediaTime | null>(null);
+  /** The wash over the part a cut would separate off — see `CutShade`. */
+  const shade = useRef<HTMLSpanElement>(null);
+  const roomy = pixels >= 110;
+
+  const grabEdge = () => (event: PointerEvent<HTMLSpanElement>) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onBeginEdit();
+  };
+
+  const moveEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    onTrim(edge, event.clientX);
+  };
+
+  // Rebuilt only when the stretch of the file on show moves — a trim, or the
+  // song being swapped. Zooming and scrolling do not touch it: the path is
+  // drawn in a unit box and the SVG stretches it, which is the same bargain a
+  // clip's wave makes. A bed that repeats has its file tiled first, so the
+  // wave past the end of the song is the song again — exactly what will be
+  // heard there.
+  const wave = useMemo(
+    () =>
+      peaks === null
+        ? ""
+        : wavePath(
+            repeat ? repeated(peaks, bucketCount(to)) : peaks,
+            from,
+            to,
+            undefined,
+            // The average rather than the loudest of each step — see
+            // `wavePath`. A song has a beat every half second, and taking the
+            // peak draws every one of them at the same height.
+            "mean",
+          ),
+    [peaks, from, to, repeat],
+  );
+
+  return (
+    <div
+      className={cn(
+        "group absolute inset-y-0 overflow-hidden rounded-lg",
+        "transition-[background-color,outline-color]",
+        EMBOSS,
+        // Solid, where the zoom and title bars are a wash inside an outline.
+        // Those two sit *over* the picture and have to stay see-through; a bed
+        // is not over anything, and the row reads as a thing you can pick up
+        // rather than as a highlight on an empty row.
+        selected ? "bg-music-fill" : "bg-music-fill/85",
+        "outline-2 -outline-offset-2",
+        // The blade's ring in place of the selection's, as a clip's is — see
+        // the note on `Clip`.
+        blade
+          ? "outline-transparent data-[cut=true]:outline-cut"
+          : selected
+            ? "outline-music-ring"
+            : "outline-transparent hover:outline-music-ring/50",
+        !blade && "cursor-grab active:cursor-grabbing",
+        // Faint rather than hidden or struck through: the bar still says where
+        // the music would be, which is what somebody needs to see before
+        // turning it back on.
+        muted && "opacity-50",
+      )}
+      style={{ left: `${String(left)}%`, width: `${String(width)}%` }}
+      onContextMenu={onContextMenu}
+      onPointerDown={(event) => {
+        // Stops the strip underneath seeking on a press meant for the bar.
+        event.stopPropagation();
+        // The blade instead of the whole gesture, as a clip's press is: no
+        // selection, no grab, and no pointer capture — the press is over as
+        // soon as the cut is made.
+        if (blade) {
+          blade.cut(event.clientX);
+          return;
+        }
+        onSelect();
+        grab.current = timeAt(event.clientX) - start;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onBeginEdit();
+      }}
+      onPointerMove={(event) => {
+        if (blade) {
+          aim(blade, event, shade);
+          return;
+        }
+        if (grab.current === null) return;
+        onMove(timeAt(event.clientX) - grab.current);
+      }}
+      onPointerLeave={blade ? (event) => aim(null, event, shade) : undefined}
+      onPointerUp={(event) => {
+        if (grab.current !== null) onMove(timeAt(event.clientX) - grab.current);
+        grab.current = null;
+      }}
+      onPointerCancel={() => {
+        grab.current = null;
+      }}
+    >
+      {/* The song, standing on the bar's floor.
+
+          The same filled curve a clip draws, in white over the solid fill
+          rather than in the row's own colour — a lighter teal on teal is the
+          same colour twice, which is the trap the zoom curve fell into.
+
+          `preserveAspectRatio="none"` is the whole trick: the path is built
+          once in a 0–1 box and the browser stretches it to whatever width the
+          zoom has given the bar, so scrubbing the zoom does not rebuild a path
+          per bar per frame. */}
+      {wave && (
+        <svg
+          className="pointer-events-none absolute bottom-0 left-0 w-full text-white/35"
+          // Against the bed's own line, for the reason a clip's wave is — see
+          // `waveHeight`.
+          style={{ height: `${String(waveHeight(volume))}%` }}
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d={wave} fill="currentColor" />
+        </svg>
+      )}
+
+      {/* The chip and the name, along the top. The wave owns the bottom, and a
+          name laid over one is legible in the quiet passages and not in the
+          loud ones.
+
+          The chip is what makes the bar say *what kind of thing* it is at a
+          glance, with the name saying which one — a glyph inline with the
+          words read as a bullet point. Darker than the fill rather than
+          lighter: it is a hole in the bar, not a light on it. */}
+      <span
+        className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-2 text-[11px] font-medium text-white [&_svg]:size-3.5 [&_svg]:flex-none"
+        style={{ paddingInline: LABEL_INSET }}
+      >
+        {roomy && (
+          <span className="grid size-6 flex-none place-items-center rounded-lg bg-black/25 text-white/90">
+            <MusicIcon />
+          </span>
+        )}
+        <span className="truncate">{label}</span>
+      </span>
+
+      {/* Gone with the blade in hand, all three: the level line is nine pixels
+          of the bar where a press changes the volume, and the grips are twelve
+          at each end where one resizes — and the ends are exactly where
+          somebody aiming a blade means to land. A clip's grips go for the same
+          reason. */}
+      {!blade && (
+        <>
+          <VolumeLine
+            level={volume}
+            colour="bg-music-ring"
+            onBegin={onBeginEdit}
+            onChange={onVolume}
+          />
+
+          <Handle
+            edge="start"
+            grip="bg-music-edge"
+            grips={pixels >= GRAB_ROOM}
+            room={pixels}
+            selected={selected}
+            onPointerDown={grabEdge()}
+            onPointerMove={moveEdge("start")}
+          />
+          <Handle
+            edge="end"
+            grip="bg-music-edge"
             grips={pixels >= GRAB_ROOM}
             room={pixels}
             selected={selected}
@@ -2583,6 +3600,10 @@ function Zoom({
   const grab = useRef<MediaTime | null>(null);
   /** The wash over the part a cut would separate off — see `CutShade`. */
   const shade = useRef<HTMLSpanElement>(null);
+  // Room for a chip and something beside it. The same threshold a bed uses, so
+  // the two rows lose their chips at the same width rather than one row's bars
+  // going bare while the other's are still dressed.
+  const roomy = room >= 110;
 
   const grabEdge = (edge: "start" | "end") => (event: PointerEvent<HTMLSpanElement>) => {
     event.stopPropagation();
@@ -2599,24 +3620,22 @@ function Zoom({
   return (
     <div
       className={cn(
-        "group absolute inset-y-0 flex items-center justify-center overflow-hidden rounded-lg border px-3.5",
+        "group absolute inset-y-0 overflow-hidden rounded-lg",
         "transition-[background-color,outline-color]",
-        // A wash inside an outline, filling in solid when it is selected.
+        EMBOSS,
+        // Solid, like the bars on the two rows below it.
         //
-        // The outline is opaque in both states and the fill is the only thing
-        // that changes, so "which zoom am I editing" is one question answered
-        // once. A clip says it with a step between two solid purples because a
-        // clip is opaque either way — it carries a filmstrip. A zoom has
-        // nothing behind it, so it says the same thing with a step in how
-        // see-through it is.
+        // It was a wash inside an outline for a long time, on the argument
+        // that a zoom sits *over* the picture and a solid block the length of
+        // a shot pulls the eye off the filmstrip above it. What changed is
+        // what is inside the bar: the curve is now drawn in white rather than
+        // in a lighter amber, so it reads against a solid fill — and once it
+        // does, a translucent zoom beside a solid title and a solid bed is the
+        // one row that looks unfinished.
         //
-        // A step, not a fill. Selected used to be the solid colour, which made
-        // the chosen zoom the heaviest thing in the row — a bar the length of a
-        // shot, in full amber, under the clips it is supposed to be annotating.
-        // The outline already says which one is held; the fill only has to say
-        // it a little louder.
-        "border-zoom-edge",
-        selected ? "bg-zoom-fill/45" : "bg-zoom-fill/25",
+        // A step between two solids says which one is held, the way a clip
+        // does, rather than a step in how see-through it is.
+        selected ? "bg-zoom-fill" : "bg-zoom-fill/85",
         // Split the same way a clip's is, and for the same reason — see the
         // outline note on `Clip`. This row had the identical bug.
         "outline-2 -outline-offset-2",
@@ -2629,11 +3648,7 @@ function Zoom({
             : "outline-transparent hover:outline-zoom-ring/40",
         !blade && "cursor-grab active:cursor-grabbing",
       )}
-      style={{
-        left: `${left}%`,
-        width: `${width}%`,
-        borderWidth: ZOOM_EDGE,
-      }}
+      style={{ left: `${left}%`, width: `${width}%` }}
       onContextMenu={onContextMenu}
       onPointerDown={(event) => {
         // Stops the row underneath adding a second zoom on top of this one.
@@ -2672,34 +3687,57 @@ function Zoom({
           The flat top is the hold, which is what a zoom's span is. It climbs
           or falls only where a neighbour is close enough to morph, because
           that move genuinely eats into this slice — see `betweenZooms`. */}
-      {curve.line && (
+      {curve.area && (
         <svg
-          className="pointer-events-none absolute inset-0 h-full w-full text-zoom-edge"
+          // White rather than `--zoom-edge`, which was a lighter amber chosen
+          // to carry against a wash of the same hue. Over a solid fill it is
+          // the same colour twice and the curve disappears — the one thing in
+          // the bar that says how far in the shot goes.
+          className="pointer-events-none absolute inset-0 h-full w-full text-white"
           viewBox="0 0 1 1"
           preserveAspectRatio="none"
           aria-hidden
         >
-          <path d={curve.area} fill="currentColor" fillOpacity={0.18} stroke="none" />
-          <path
-            d={curve.line}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeOpacity={0.7}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            // Or the stroke is stretched with the box and comes out as a
-            // hairline on a long bar and a band on a short one.
-            vectorEffect="non-scaling-stroke"
-          />
+          {/* The fill alone. `barCurve` still draws the outline — the tests
+              read the shape's heights off it — but the bar does not: a stroked
+              edge on this one and a plain fill on the wave below it made two
+              rows that are the same idea look like two different ones. At a
+              third opacity the shape reads on its own, which is the weight the
+              bed's wave carries. */}
+          <path d={curve.area} fill="currentColor" fillOpacity={0.35} stroke="none" />
         </svg>
       )}
 
-      {/* Truncated rather than wrapped: a zoom half a second long is a few
+      {/* The chip and the reading, along the top — the shape a bed wears, so
+          the three rows of bars read as three of the same kind of thing.
+
+          Truncated rather than wrapped: a zoom half a second long is a few
           pixels wide at a fitted timeline, and its label has to degrade to
-          nothing without changing the row's height. */}
-      <span className="pointer-events-none relative flex min-w-0 items-center gap-1.5 text-[10px] text-white/85 [&_svg]:size-3 [&_svg]:flex-none">
-        <ZoomIcon />
+          nothing without changing the row's height. The chip goes first,
+          because it is the part that still says "zoom" when there is no room
+          left for the number.
+
+          Centred when there is no chip. A bar a few pixels wide has its one
+          glyph in the middle of it, which is where the eye goes on something
+          that small — the same reading the row had before it had chips. */}
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-0 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-white",
+          !roomy && "justify-center",
+          "[&_svg]:size-3 [&_svg]:flex-none",
+        )}
+        // Held off both ends, so neither grip is drawn under the label — see
+        // `LABEL_INSET`. A bar too narrow for a chip keeps a little of it: the
+        // glyph is centred, but the grips still need somewhere to be.
+        style={{ paddingInline: roomy ? LABEL_INSET : 4 }}
+      >
+        {roomy ? (
+          <span className="grid size-6 flex-none place-items-center rounded-lg bg-black/25 [&_svg]:size-3.5">
+            <ZoomIcon />
+          </span>
+        ) : (
+          <ZoomIcon />
+        )}
         {method === "loupe" ? (
           <GlassIcon />
         ) : method === "fisheye" ? (

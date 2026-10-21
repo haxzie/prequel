@@ -49,6 +49,14 @@ import {
   HIGHLIGHT_COLOUR,
   newAnnotation,
 } from "../../../shared/annotations";
+import {
+  DEFAULT_MUSIC_FADE,
+  MAX_MUSIC_FADE,
+  MAX_MUSIC_VOLUME,
+  MIN_MUSIC_LENGTH,
+  type MusicFile,
+  type MusicSlice,
+} from "../../../shared/music";
 import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
@@ -108,6 +116,14 @@ export interface EditorState {
   selectedZoomId: string | null;
   /** Which text is selected, or null. Separate for the reason the zoom is. */
   selectedTextId: string | null;
+  /**
+   * Which bed on the music row is selected, or null.
+   *
+   * Its own field for the reason the zoom's and the text's are: a bed is not a
+   * clip, and none of a clip's questions — what does it override, what does it
+   * inherit — apply to a piece of music.
+   */
+  selectedMusicId: string | null;
   /**
    * Which mark on a screenshot is selected, or null.
    *
@@ -363,6 +379,43 @@ export type EditorAction =
   | { type: "selectText"; textId: string | null }
   | { type: "deleteText"; textId: string }
   /** Picks up a drawing tool, or puts it down with null. */
+  /**
+   * Lays a bed on the music row, at the nearest gap to `at`.
+   *
+   * The file comes in whole rather than by name: it has just been fetched or
+   * copied into the recording, and registering it and placing the bed in one
+   * action is what keeps a single press of Add Audio a single step of undo.
+   * A file already listed is not listed twice.
+   *
+   * `duration` is the edit's own length, which the reducer does not hold —
+   * `state.duration` is the *recording's*, and a bed is measured against the
+   * finished video. See `MusicSlice`.
+   */
+  | { type: "addMusic"; at: MediaTime; source: MusicFile; duration: MediaTime }
+  /**
+   * Sets one clip's two track volumes, by id.
+   *
+   * By id rather than through `setSetting`, which writes to whatever is
+   * selected: the volume line is dragged on a clip, and a line that wrote to
+   * the *selected* clip would quietly change a different one whenever the two
+   * were not the same. Both levels at once because the line is one line — see
+   * `scaledAudio`.
+   */
+  | { type: "setSliceAudio"; sliceId: string; mic: number; system: number }
+  | { type: "selectMusic"; musicId: string | null }
+  /**
+   * Points a bed at a different file — the dropdown at the top of its panel.
+   *
+   * Its own action rather than a `setMusic` patch because it is not only the
+   * name that changes: the bed starts again from the top of the new song, and
+   * a bed longer than it is no longer plays silence at the end.
+   */
+  | { type: "setMusicFile"; musicId: string; source: MusicFile }
+  | { type: "setMusic"; musicId: string; patch: Partial<Omit<MusicSlice, "id" | "file">> }
+  | { type: "moveMusic"; musicId: string; at: MediaTime }
+  | { type: "trimMusic"; musicId: string; edge: "start" | "end"; at: MediaTime }
+  | { type: "splitMusic"; musicId: string; at: MediaTime }
+  | { type: "deleteMusic"; musicId: string }
   | { type: "pickTool"; tool: AnnotationKind | null }
   /** Picks up the pointer or the blade — see `TimelineTool`. */
   | { type: "pickTimelineTool"; tool: TimelineTool }
@@ -457,6 +510,7 @@ export function initialState(
     selectedSliceId: project.tracks[0]?.slices[0]?.id ?? null,
     selectedZoomId: null,
     selectedTextId: null,
+    selectedMusicId: null,
     selectedAnnotationId: null,
     // Pointer, not a tool. Opening a screenshot is for looking at it first;
     // somebody who wants to draw reaches for the tool that does.
@@ -520,6 +574,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         ? state.selectedZoomId
         : null,
       selectedTextId: findText(previous, state.selectedTextId) ? state.selectedTextId : null,
+      selectedMusicId: previous.music.some((bed) => bed.id === state.selectedMusicId)
+        ? state.selectedMusicId
+        : null,
       selectedAnnotationId: previous.annotations.some(
         (mark) => mark.id === state.selectedAnnotationId,
       )
@@ -573,9 +630,10 @@ function selectionSurvives(project: Project, sliceId: string | null): boolean {
 function undoStep(action: EditorAction): { coalesce: string | null } | null {
   switch (action.type) {
     case "split":
-    // One press of the blade each, on the other two rows.
+    // One press of the blade each, on the other three rows.
     case "splitZoom":
     case "splitText":
+    case "splitMusic":
     case "deleteSlice":
     // One drop, however far it was dragged: the order is only read when the
     // clip is let go, so there is no stream of them to bury the history under.
@@ -597,6 +655,10 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     // only read when the pointer is let go, so there is no stream of them.
     case "addAnnotation":
     case "deleteAnnotation":
+    // One press each, on the music row.
+    case "addMusic":
+    case "setMusicFile":
+    case "deleteMusic":
       return { coalesce: null };
 
     // Dragged, so they stream: one entry per mark per gesture rather than one
@@ -638,6 +700,14 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
       return { coalesce: `moveText:${action.textId}` };
     case "trimText":
       return { coalesce: `trimText:${action.textId}:${action.edge}` };
+    case "moveMusic":
+      return { coalesce: `moveMusic:${action.musicId}` };
+    case "trimMusic":
+      return { coalesce: `trimMusic:${action.musicId}:${action.edge}` };
+    // A slider, so it streams — and keyed by the bed, so shaping two in turn
+    // is two steps rather than one that puts both back.
+    case "setMusic":
+      return { coalesce: `setMusic:${action.musicId}` };
     // Typing into a field is a stream, like the transcript. Only the words:
     // a style change through the same action is a slider, and is not banked.
     case "setTextField":
@@ -742,6 +812,7 @@ function apply(
         selectedSliceId: action.sliceId,
         selectedZoomId: null,
         selectedTextId: null,
+        selectedMusicId: null,
         selectedAnnotationId: null,
       };
 
@@ -751,6 +822,7 @@ function apply(
         selectedZoomId: action.zoomId,
         selectedSliceId: null,
         selectedTextId: null,
+        selectedMusicId: null,
         selectedAnnotationId: null,
       };
 
@@ -760,8 +832,85 @@ function apply(
         selectedTextId: action.textId,
         selectedSliceId: null,
         selectedZoomId: null,
+        selectedMusicId: null,
         selectedAnnotationId: null,
       };
+
+    case "setSliceAudio":
+      return edit(state, (project) => ({
+        ...project,
+        tracks: project.tracks.map((track) => ({
+          ...track,
+          slices: track.slices.map((slice) =>
+            slice.id === action.sliceId
+              ? {
+                  ...slice,
+                  // Through `setOverride` rather than written flat, so the
+                  // panel's "is this overridden" dot and its reset button go on
+                  // meaning what they say — a volume dragged on the timeline is
+                  // an override on that clip like any other.
+                  overrides: setOverride(
+                    setOverride(slice.overrides, "audio", "micVolume", clampTo(action.mic, 0, 2)),
+                    "audio",
+                    "systemVolume",
+                    clampTo(action.system, 0, 2),
+                  ),
+                }
+              : slice,
+          ),
+        })),
+      }));
+
+    case "selectMusic":
+      return {
+        ...state,
+        selectedMusicId: action.musicId,
+        selectedSliceId: null,
+        selectedZoomId: null,
+        selectedTextId: null,
+        selectedAnnotationId: null,
+      };
+
+    case "addMusic":
+      return addMusic(state, action.at, action.source, action.duration);
+
+    case "setMusicFile":
+      return setMusicFile(state, action.musicId, action.source);
+
+    case "setMusic": {
+      const bed = state.project.music.find((entry) => entry.id === action.musicId);
+      if (!bed) return state;
+
+      return edit(state, (project) => ({
+        ...project,
+        music: project.music.map((entry) =>
+          entry.id === action.musicId
+            ? {
+                ...entry,
+                ...action.patch,
+                // Through the same clamps the file's sanitiser uses, so a
+                // control with a bad range cannot write a project that will
+                // not load the way it was saved.
+                volume: clampTo(action.patch.volume ?? entry.volume, 0, MAX_MUSIC_VOLUME),
+                fadeIn: clampTo(action.patch.fadeIn ?? entry.fadeIn, 0, MAX_MUSIC_FADE),
+                fadeOut: clampTo(action.patch.fadeOut ?? entry.fadeOut, 0, MAX_MUSIC_FADE),
+              }
+            : entry,
+        ),
+      }));
+    }
+
+    case "moveMusic":
+      return moveMusic(state, action.musicId, action.at);
+
+    case "trimMusic":
+      return trimMusic(state, action.musicId, action.edge, action.at);
+
+    case "splitMusic":
+      return splitMusic(state, action.musicId, action.at);
+
+    case "deleteMusic":
+      return deleteMusic(state, action.musicId);
 
     case "selectAnnotation":
       return {
@@ -770,6 +919,7 @@ function apply(
         selectedSliceId: null,
         selectedZoomId: null,
         selectedTextId: null,
+        selectedMusicId: null,
       };
 
     case "pickTool":
@@ -1722,6 +1872,301 @@ export function laneSpanNear(
  * so the invariant that no two cover the same moment holds without the
  * caller having to know about it. `limit` is the furthest the end may reach.
  */
+/**
+ * The music row as a lane, so the three rows share one set of rules.
+ *
+ * A bed is stored as a start and a length in project time; `Laned` wants a
+ * span. The conversion is here and nowhere else, because the thing being
+ * protected is the same invariant on all three rows — no two entries cover the
+ * same moment — and a second implementation of "may this move here" is how a
+ * row comes to allow an overlap the file format says cannot exist.
+ */
+function musicLane(music: readonly MusicSlice[]): Laned[] {
+  return music.map((bed) => ({
+    id: bed.id,
+    source: { start: bed.at, end: bed.at + bed.length },
+  }));
+}
+
+/** One bed by id, or undefined. */
+export function findMusic(project: Project, musicId: string | null): MusicSlice | undefined {
+  return musicId === null ? undefined : project.music.find((bed) => bed.id === musicId);
+}
+
+/**
+ * Where a bed of `want` would go if one were added at `at`, or null.
+ *
+ * The same call answers both questions Add Audio asks: whether the row has
+ * room at all — which is what greys the menu out — and, once a file has been
+ * fetched, where to put it. Project time throughout.
+ */
+export function musicSpanNear(
+  project: Project,
+  duration: MediaTime,
+  at: MediaTime,
+  want: MediaTime,
+): { start: MediaTime; end: MediaTime } | null {
+  return laneSpanNear(musicLane(project.music), duration, MIN_MUSIC_LENGTH, want, at);
+}
+
+/**
+ * Lays a bed down, registering its file if this project has not seen it.
+ *
+ * The bed is as long as the song, or as long as the gap it landed in, and no
+ * shorter than the floor — a file longer than the video is the ordinary case
+ * and is simply cut off at the end, which is what a bed under a video is.
+ *
+ * Both fades are on from the start. Music that begins at full level reads as a
+ * mistake rather than as a choice, and the one thing everybody does by hand to
+ * a bed they have just added is shape its ends.
+ */
+function addMusic(
+  state: EditorState,
+  at: MediaTime,
+  source: MusicFile,
+  duration: MediaTime,
+): EditorState {
+  const span = musicSpanNear(state.project, duration, at, source.duration);
+  if (!span) return state;
+
+  const bed: MusicSlice = {
+    id: nextMusicId(state),
+    at: span.start,
+    length: span.end - span.start,
+    file: source.file,
+    offset: 0,
+    volume: 1,
+    muted: false,
+    // Held to half the bed each, the way `musicGain` reads them: a bed shorter
+    // than two default fades would otherwise never reach its own level.
+    fadeIn: Math.min(DEFAULT_MUSIC_FADE, (span.end - span.start) / 2),
+    fadeOut: Math.min(DEFAULT_MUSIC_FADE, (span.end - span.start) / 2),
+    repeat: false,
+  };
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      musicFiles: withMusicFile(project.musicFiles, source),
+      music: [...project.music, bed].sort((a, b) => a.at - b.at),
+    })),
+    // Selected, so the panel that chooses a different song is already open on
+    // the one just added — which is the next thing somebody does.
+    selectedMusicId: bed.id,
+    selectedSliceId: null,
+    selectedZoomId: null,
+    selectedTextId: null,
+    selectedAnnotationId: null,
+  };
+}
+
+/**
+ * Points a bed at a different file.
+ *
+ * Back to the top of the new song — an offset into one file means nothing in
+ * another — and no longer than it, unless the bed repeats, in which case its
+ * length is what the person asked for and the file fills it.
+ */
+function setMusicFile(state: EditorState, musicId: string, source: MusicFile): EditorState {
+  const bed = findMusic(state.project, musicId);
+  if (!bed || bed.file === source.file) return state;
+
+  const length = bed.repeat
+    ? bed.length
+    : Math.max(MIN_MUSIC_LENGTH, Math.min(bed.length, source.duration));
+
+  return edit(state, (project) => ({
+    ...project,
+    musicFiles: withMusicFile(project.musicFiles, source),
+    music: project.music.map((entry) =>
+      entry.id === musicId ? { ...entry, file: source.file, offset: 0, length } : entry,
+    ),
+  }));
+}
+
+/**
+ * Slides a bed along the finished video.
+ *
+ * The song itself does not move inside it — only where it is heard — so the
+ * offset is left alone. That is the difference between this and trimming the
+ * left edge, which is the other way to make a bed start later.
+ */
+function moveMusic(state: EditorState, musicId: string, at: MediaTime): EditorState {
+  const duration = projectDuration(state.project);
+  const span = laneMoved(musicLane(state.project.music), musicId, at, duration);
+  if (!span) return state;
+
+  return edit(state, (project) => ({
+    ...project,
+    music: project.music.map((bed) =>
+      bed.id === musicId ? { ...bed, at: span.start, length: span.end - span.start } : bed,
+    ),
+  }));
+}
+
+/**
+ * Moves one end of a bed.
+ *
+ * Dragging the left edge takes the offset with it, so the music under the
+ * playhead does not change as the edge arrives at it — the bar reveals and
+ * hides the beginning of the song rather than sliding the whole of it. The
+ * right edge only shortens what is heard.
+ *
+ * The offset is held at zero: a bed dragged left past the start of its song
+ * grows no further, because there is nothing before the first sample to show.
+ */
+function trimMusic(
+  state: EditorState,
+  musicId: string,
+  edge: "start" | "end",
+  at: MediaTime,
+): EditorState {
+  const bed = findMusic(state.project, musicId);
+  if (!bed) return state;
+
+  const duration = projectDuration(state.project);
+  const limit =
+    edge === "start"
+      ? // No further left than the song has music before the bed's current
+        // start. Without this the edge keeps travelling and the offset sticks
+        // at zero, so the bar grows while the music inside it slides — which
+        // reads as the drag having stopped working.
+        Math.max(at, bed.at - bed.offset)
+      : at;
+
+  const span = laneTrimmed(
+    musicLane(state.project.music),
+    musicId,
+    edge,
+    limit,
+    duration,
+    MIN_MUSIC_LENGTH,
+  );
+  if (!span) return state;
+
+  return edit(state, (project) => ({
+    ...project,
+    music: project.music.map((entry) =>
+      entry.id === musicId
+        ? {
+            ...entry,
+            at: span.start,
+            length: span.end - span.start,
+            offset: Math.max(0, entry.offset + (span.start - entry.at)),
+          }
+        : entry,
+    ),
+  }));
+}
+
+/**
+ * Where a cut would fall inside a bed, or null if it would not.
+ *
+ * Project time at both ends, like everything about a bed. The halves are what
+ * the two beds become: the first keeps the start and the offset it had, and
+ * the second picks the song up exactly where the first left it — that is the
+ * whole reason a cut here is not audible until something is done with one of
+ * the halves.
+ *
+ * Null where either half would be shorter than a bed may be, which is the same
+ * answer "may the blade land here" wants.
+ */
+export function musicSplitAt(
+  project: Project,
+  musicId: string,
+  at: MediaTime,
+): { first: Partial<MusicSlice>; second: Partial<MusicSlice> } | null {
+  const bed = findMusic(project, musicId);
+  if (!bed) return null;
+
+  const into = at - bed.at;
+  if (into < MIN_MUSIC_LENGTH) return null;
+  if (bed.length - into < MIN_MUSIC_LENGTH) return null;
+
+  return {
+    first: { length: into },
+    second: { at, length: bed.length - into, offset: bed.offset + into },
+  };
+}
+
+/**
+ * Cuts a bed in two.
+ *
+ * The sound does not change: the second half starts where the first stopped,
+ * so the song plays through the join. What changes is what can be done next —
+ * delete the tail so the music stops partway, move one half somewhere else,
+ * give the two different levels. That is the same bargain a cut clip makes.
+ *
+ * The fades are not divided between the halves. Each keeps the pair it had, so
+ * a bed that faded in and out now does both twice; `musicGain` holds each to
+ * half its own bed, so nothing can go louder than it was, and shaping the join
+ * afterwards is two drags of controls that are already there. Splitting them
+ * by hand would be this function deciding what somebody meant.
+ */
+function splitMusic(state: EditorState, musicId: string, at: MediaTime): EditorState {
+  const halves = musicSplitAt(state.project, musicId, at);
+  if (!halves) return state;
+
+  const created = nextMusicId(state);
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      music: project.music
+        .flatMap((bed) =>
+          bed.id === musicId
+            ? [
+                { ...bed, ...halves.first },
+                { ...bed, id: created, ...halves.second },
+              ]
+            : [bed],
+        )
+        .sort((a, b) => a.at - b.at),
+    })),
+    selectedMusicId: created,
+    selectedSliceId: null,
+    selectedZoomId: null,
+    selectedTextId: null,
+  };
+}
+
+/**
+ * Takes a bed off the row.
+ *
+ * Its file stays in `musicFiles`. The list is what the picker offers, and a
+ * song that disappeared from it the moment its bar was deleted would be the
+ * one thing somebody wanted back.
+ */
+function deleteMusic(state: EditorState, musicId: string): EditorState {
+  if (!findMusic(state.project, musicId)) return state;
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      music: project.music.filter((bed) => bed.id !== musicId),
+    })),
+    selectedMusicId: null,
+  };
+}
+
+/** The list with `source` in it, replacing an entry of the same name. */
+function withMusicFile(files: readonly MusicFile[], source: MusicFile): MusicFile[] {
+  // Replaced rather than skipped: the same file re-imported has been probed
+  // again, and the fresher length is the one to keep.
+  return [...files.filter((entry) => entry.file !== source.file), source];
+}
+
+/** An id no bed on this row holds. The same counter the texts use. */
+function nextMusicId(state: EditorState): string {
+  let index = state.project.music.length;
+  let id = `music-${String(index)}`;
+  while (state.project.music.some((bed) => bed.id === id)) {
+    index += 1;
+    id = `music-${String(index)}`;
+  }
+  return id;
+}
+
 export function laneMoved(
   lane: readonly Laned[],
   id: string,

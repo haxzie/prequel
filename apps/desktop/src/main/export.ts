@@ -324,6 +324,9 @@ export async function startExport(request: ExportRequest): Promise<void> {
           system: slice.media.system_audio,
         })),
         sound: request.sound ?? undefined,
+        // Passed through as it stands: a bed is already on the finished
+        // video's clock, so there is nothing here to resolve per slice.
+        music: request.music,
       },
       (error, progress) => {
         if (error) {

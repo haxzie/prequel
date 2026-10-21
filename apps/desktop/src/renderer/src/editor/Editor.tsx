@@ -13,6 +13,7 @@ import {
   CURSOR_FILES,
   mayExport,
   type EditorSession,
+  type MusicListing,
   type TrackMedia,
 } from "../../../shared/contract";
 import {
@@ -65,6 +66,8 @@ import { previewReady } from "./ready";
 import { matteKey, mediaKey, segmentAt, segmentsOf } from "./segments";
 import { useScenePresets } from "./useScenePresets";
 import { useBackgrounds } from "./useBackgrounds";
+import { useMusic } from "./useMusic";
+import { useMusicPeaks } from "./useMusicPeaks";
 import { useWallpapers } from "./useWallpapers";
 import { ensureWallpaper } from "./wallpaper";
 import {
@@ -86,6 +89,7 @@ import {
   editorReducer,
   findText,
   initialState,
+  musicSpanNear,
   placedSlices,
   slicesOf,
   textInProject,
@@ -98,6 +102,7 @@ import {
 import { CLIP_FRAME_H, TimelineStrip } from "./TimelineStrip";
 import { place, spanInProject, toProjectTime, toSourceTime } from "./timeline";
 import { textOnClip, type PlacedText } from "../../../shared/layout";
+import { MIN_MUSIC_LENGTH, type MusicFile } from "../../../shared/music";
 import { useCleanMic } from "./useCleanMic";
 import { useEditorPlayback } from "./useEditorPlayback";
 import type { MediaKey } from "./segments";
@@ -341,7 +346,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * put that clip's settings somewhere the user could no longer reach, and the
    * click read as doing nothing at all.
    */
-  const selected = state.selectedSliceId ?? state.selectedZoomId ?? state.selectedTextId;
+  const selected =
+    state.selectedSliceId ?? state.selectedZoomId ?? state.selectedTextId ?? state.selectedMusicId;
   const [exportOpen, setExportOpen] = useState(false);
   /**
    * Whether the dialog is open *now*, for the licence reply to read.
@@ -404,7 +410,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // — see `useCleanMic`.
   const clean = useCleanMic(session, state.project.micDenoise);
   const heard = clean.session;
-  const media = useEditorPlayback(heard, slices);
+  // The music row. A fresh object every render is deliberately fine: the loop
+  // reads it through a ref rather than closing over it, precisely so that
+  // dragging a fade slider does not rebuild the loop on every step.
+  const media = useEditorPlayback(heard, slices, {
+    beds: state.project.music,
+    files: state.project.musicFiles,
+  });
 
   const present = useMemo(
     () => new Set<TrackKind>(session.media.map((track) => track.kind)),
@@ -678,6 +690,182 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const backgrounds = useBackgrounds();
   /** The background being downloaded, so its swatch can say so. */
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
+
+  const library = useMusic();
+  /** The track being fetched, so the row that was chosen can say so. */
+  const [pendingMusic, setPendingMusic] = useState<string | null>(null);
+
+  /**
+   * Puts one library track inside the recording, and describes it.
+   *
+   * Fetched before anything is applied, for the reason `onPickPreset`
+   * downloads first: a bed naming a file that is not there yet is a bar on the
+   * timeline that plays nothing, and a spinner on the row that was pressed is
+   * what says the choice was registered.
+   *
+   * The length comes from the catalogue rather than from a probe of the file.
+   * The two are the same number — the upload script reads it off the bytes it
+   * is about to write — and taking the catalogue's means a bed is laid at the
+   * right width without the renderer opening the file to find out.
+   */
+  const ensureTrack = useCallback(
+    async (track: MusicListing): Promise<MusicFile | null> => {
+      setPendingMusic(track.file);
+      const result = await window.prequel.editor.music.ensure(session.dir, track.file);
+      setPendingMusic((current) => (current === track.file ? null : current));
+
+      if (!result.ok || !result.value) {
+        // Nothing is applied. A track that cannot be fetched leaves whatever
+        // is already playing alone.
+        console.warn(`[editor] could not fetch ${track.file}`);
+        return null;
+      }
+
+      return {
+        file: track.file,
+        label: track.label,
+        duration: track.duration,
+        libraryId: track.id,
+      };
+    },
+    [session.dir],
+  );
+
+  /**
+   * The track Add Ambient Music lays down.
+   *
+   * The first of the library's first group, which the catalogue's own order
+   * decides — so which song that is stays a question about the library rather
+   * than about this file. Nothing is asked first: the bed arrives selected and
+   * the panel that opens on it is where the song is chosen, which is one press
+   * instead of a menu as long as the library.
+   */
+  const ambient = library.groups[0]?.items[0] ?? null;
+
+  const addMusic = useCallback(
+    (source: MusicFile, at?: MediaTime) =>
+      dispatch({
+        type: "addMusic",
+        // Where the row was pressed, or the playhead for the button in the
+        // transport — which has no position of its own to offer.
+        at: at ?? media.playback.position(),
+        source,
+        // The edit's own length, which is the clock a bed is measured on. The
+        // reducer holds the *recording's* duration and cannot work this out.
+        duration: media.duration,
+      }),
+    [media.playback, media.duration],
+  );
+
+  const addAmbient = useCallback(
+    async (at?: MediaTime) => {
+      if (!ambient) return;
+      const source = await ensureTrack(ambient);
+      if (source) addMusic(source, at);
+    },
+    [ambient, ensureTrack, addMusic],
+  );
+
+  const importAudio = useCallback(async () => {
+    const result = await window.prequel.editor.pickAudio(session.dir);
+    if (!result.ok) {
+      console.error("[editor] could not import audio:", result.message);
+      return;
+    }
+    // Null for a dismissed sheet, and for a file with no sound in it. Neither
+    // is worth saying out loud here — main has logged the second.
+    if (result.value) addMusic(result.value);
+  }, [session.dir, addMusic]);
+
+  /**
+   * The track being auditioned in the picker, and the element playing it.
+   *
+   * One element, made on demand rather than rendered: a preview is a thing
+   * that happens while a list is open, not a track of the edit, and giving it
+   * an `<audio>` in the tree would put a second decoder on every file in
+   * `musicFiles` whether or not anybody ever pressed play.
+   *
+   * Deliberately not routed through the mixer. Its music gains belong to the
+   * beds on the row — the playback loop writes their envelopes every frame —
+   * and an audition borrowing one would be faded by a bar it has nothing to do
+   * with, or silenced outright by a muted bed.
+   */
+  const audition = useRef<HTMLAudioElement | null>(null);
+  const [playingMusic, setPlayingMusic] = useState<string | null>(null);
+
+  const stopMusicPreview = useCallback(() => {
+    audition.current?.pause();
+    audition.current = null;
+    setPlayingMusic(null);
+  }, []);
+
+  // On the way out, and whenever the panel stops being about this bed. A
+  // preview left running behind a closed list is a song nobody can find to
+  // stop — the button that would stop it is in the list that has gone.
+  useEffect(() => stopMusicPreview, [stopMusicPreview, state.selectedMusicId]);
+
+  const previewMusic = useCallback(
+    async (file: string | null) => {
+      stopMusicPreview();
+      if (file === null) return;
+
+      // Fetched first where it has to be. A catalogue row has nothing on disk
+      // until somebody asks for it, and `prequel-media:` would answer the
+      // element with a 404 it reports as a decode failure.
+      if (!state.project.musicFiles.some((entry) => entry.file === file)) {
+        const track = library.groups.flatMap((group) => group.items).find((t) => t.file === file);
+        if (!track || !(await ensureTrack(track))) return;
+      }
+
+      const element = new Audio(mediaUrl(recordingName(session.dir), file));
+      // At its own level, not the bed's: this is being listened to as a song
+      // rather than as a bed, and a muted bar would audition in silence.
+      element.volume = 1;
+      element.onended = () => setPlayingMusic((current) => (current === file ? null : current));
+      element.onerror = () => {
+        console.warn(`[editor] could not play ${file}`);
+        setPlayingMusic((current) => (current === file ? null : current));
+      };
+
+      void element.play().catch(() => undefined);
+      audition.current = element;
+      setPlayingMusic(file);
+    },
+    [stopMusicPreview, state.project.musicFiles, library, ensureTrack, session.dir],
+  );
+
+  /**
+   * Points the selected bed at a different song.
+   *
+   * Both of these take the bed from the selection rather than as an argument:
+   * the control that calls them is the dropdown at the top of that bed's own
+   * panel, which is only on screen because it is selected.
+   */
+  const pickMusic = useCallback(
+    async (track: MusicListing) => {
+      const musicId = state.selectedMusicId;
+      if (!musicId) return;
+
+      // Whatever was being auditioned stops. The choice is made, and the bed
+      // itself is now the thing to listen to.
+      stopMusicPreview();
+      const source = await ensureTrack(track);
+      if (source) dispatch({ type: "setMusicFile", musicId, source });
+    },
+    [state.selectedMusicId, ensureTrack, stopMusicPreview],
+  );
+
+  const importForMusic = useCallback(async () => {
+    const musicId = state.selectedMusicId;
+    if (!musicId) return;
+
+    const result = await window.prequel.editor.pickAudio(session.dir);
+    if (!result.ok) {
+      console.error("[editor] could not import audio:", result.message);
+      return;
+    }
+    if (result.value) dispatch({ type: "setMusicFile", musicId, source: result.value });
+  }, [state.selectedMusicId, session.dir]);
 
   const wallpapers = useWallpapers();
   /** The pattern being drawn, so its swatch can say so. */
@@ -1017,7 +1205,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     // is exactly when somebody has just drawn something — and this took the
     // selection straight back off it: the ring vanished and the inspector
     // dropped to Layout the instant a mark landed.
-    if (state.selectedZoomId || state.selectedTextId || state.selectedAnnotationId) return;
+    //
+    // Nor a bed. A bed spans cuts by definition, so playing across one while
+    // its fades are being shaped would take the panel away mid-drag.
+    if (
+      state.selectedZoomId ||
+      state.selectedTextId ||
+      state.selectedMusicId ||
+      state.selectedAnnotationId
+    ) {
+      return;
+    }
 
     dispatch({ type: "select", sliceId: media.sliceId });
   }, [
@@ -1026,6 +1224,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     state.selectedSliceId,
     state.selectedZoomId,
     state.selectedTextId,
+    state.selectedMusicId,
     state.selectedAnnotationId,
   ]);
 
@@ -1359,6 +1558,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   // Against the recording's own length rather than the edit's: the peaks are
   // indexed by source time, so cutting the edit shorter must not move them.
   const peaks = useWaveforms(heard.dir, heard.media, heard.manifest.duration);
+  // Per file, and not merged into the line above: a music file has nothing to
+  // do with the session's clock — see `useMusicPeaks`.
+  const musicPeaks = useMusicPeaks(session.dir, state.project.musicFiles);
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
   //
@@ -1784,6 +1986,19 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               editing={editing}
               backgrounds={backgrounds}
               pendingBackground={pendingBackground}
+              music={{
+                library,
+                pending: pendingMusic,
+                onPick: (track) => void pickMusic(track),
+                onChoose: (source) => {
+                  stopMusicPreview();
+                  const musicId = state.selectedMusicId;
+                  if (musicId) dispatch({ type: "setMusicFile", musicId, source });
+                },
+                onImport: () => void importForMusic(),
+                onPreview: (file) => void previewMusic(file),
+                playing: playingMusic,
+              }}
               wallpapers={wallpapers}
               pendingPattern={pendingPattern}
               onPickPattern={pickPattern}
@@ -1903,13 +2118,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             <PlaybackControls
               media={media}
               tool={state.timelineTool}
-              // Whichever of the three is selected — they are mutually
+              // Whichever of the four is selected — they are mutually
               // exclusive, so there is never a question of which one Delete
               // means.
               canDelete={
                 state.selectedSliceId !== null ||
                 state.selectedZoomId !== null ||
-                state.selectedTextId !== null
+                state.selectedTextId !== null ||
+                state.selectedMusicId !== null
               }
               // Asked from the start rather than from the playhead, which is not
               // React state and could not re-enable the button as it moved. The
@@ -1917,6 +2133,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               // is the answer for all of them.
               canAddZoom={zoomSpanNear(state.project, 0) !== null}
               canAddText={textSpanNear(state.project, 0) !== null}
+              // Asked from the start, like the other two: the search covers
+              // every gap in the row, so one answer is the answer for all of
+              // them.
+              canAddMusic={
+                musicSpanNear(state.project, media.duration, 0, MIN_MUSIC_LENGTH) !== null
+              }
+              hasLibrary={ambient !== null}
               // Off while an export is running. Recording fights the exporter for
               // the same GPU and the same encoder, and either way of adding a clip
               // rewrites the project the running export is reading from.
@@ -1928,10 +2151,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 // And the playhead follows it — see the effect beside `previewText`.
                 added.current = true;
               }}
+              onAddAmbient={() => void addAmbient()}
+              onImportAudio={() => void importAudio()}
               onAddRecording={() => void addRecording()}
               onImportVideo={() => void importVideo()}
               onDelete={() => {
-                if (state.selectedTextId) {
+                if (state.selectedMusicId) {
+                  dispatch({ type: "deleteMusic", musicId: state.selectedMusicId });
+                } else if (state.selectedTextId) {
                   dispatch({ type: "deleteText", textId: state.selectedTextId });
                 } else if (state.selectedZoomId) {
                   dispatch({ type: "deleteZoom", zoomId: state.selectedZoomId });
@@ -1947,6 +2174,8 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               dispatch={dispatch}
               media={media}
               peaks={peaks}
+              musicPeaks={musicPeaks}
+              onAddMusic={ambient ? (at) => void addAmbient(at) : undefined}
               filmstrip={frames.strip}
               framesPending={frames.pending}
               cameraSpans={cameraSpans}
@@ -2032,6 +2261,37 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             />
           ),
         )}
+        {/* The music row's files, one element per file.
+
+            Per file and not per bed: two beds cut from one song are two spans
+            driving the same element, and a second element on the same file
+            would be a second decoder playing the same thing a frame apart.
+
+            Only the files some bed actually names. A song that was imported
+            and then swapped out stays in `musicFiles` so the picker can offer
+            it again, and keeping a decoder open for it would be a megabyte of
+            audio held for a list entry.
+
+            `crossOrigin` for the reason every element here carries it: without
+            it the element is tainted whatever headers come back, and a tainted
+            element routed through `createMediaElementSource` outputs silence
+            rather than failing. */}
+        {[...new Set(state.project.music.map((bed) => bed.file))].map((file) => (
+          <audio
+            key={file}
+            ref={media.registerMusic(file)}
+            src={mediaUrl(recordingName(session.dir), file)}
+            crossOrigin="anonymous"
+            preload="auto"
+            onError={(event) => {
+              const failure = event.currentTarget.error;
+              console.error(
+                `[editor] ${file} would not open:`,
+                failure ? `${String(failure.code)}: ${failure.message}` : "no reason given",
+              );
+            }}
+          />
+        ))}
         {mattes.map((track) => (
           <video
             key={matteKey(track.segment)}
@@ -2868,13 +3128,23 @@ function useShortcuts(
 
         case "Backspace":
         case "Delete": {
-          // Whichever of the four is selected — they are mutually exclusive,
+          // Whichever of the five is selected — they are mutually exclusive,
           // so there is never a question of which one Backspace means.
-          const { selectedSliceId, selectedZoomId, selectedTextId, selectedAnnotationId } =
-            latest.current;
+          const {
+            selectedSliceId,
+            selectedZoomId,
+            selectedTextId,
+            selectedMusicId,
+            selectedAnnotationId,
+          } = latest.current;
           if (selectedAnnotationId) {
             event.preventDefault();
             dispatch({ type: "deleteAnnotation", annotationId: selectedAnnotationId });
+            return;
+          }
+          if (selectedMusicId) {
+            event.preventDefault();
+            dispatch({ type: "deleteMusic", musicId: selectedMusicId });
             return;
           }
           if (selectedTextId) {
