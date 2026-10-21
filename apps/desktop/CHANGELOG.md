@@ -1,5 +1,37 @@
 # @prequel/desktop
 
+## 0.7.0
+
+### Minor Changes
+
+- 87b3259: A new Fisheye zoom holds a lens in the middle of the picture, centres what you point at in it, and darkens the rest.
+
+  <!-- highlight: A fisheye that follows the cursor -->
+
+- cb8cb49: Give the logo a border and a drop shadow, both off until you ask for them.
+- cb8cb49: Set how present the logo is with an Opacity slider, and pick its corner at the foot of the panel.
+- cb8cb49: Lay music under a recording from the built-in library or your own files, and fade it in and out.
+
+  <!-- highlight: Music under your recordings -->
+
+- cb8cb49: Drag the dot inside a corner of the screen, the camera or the logo to round it off by hand.
+
+### Patch Changes
+
+- cb8cb49: The buttons that add a zoom, a title, audio or a clip are icons now, so the transport sits in the middle of the row.
+- 7a0fc00: The timeline marks every click with a small dot, so the moments that matter are easy to find.
+- cb8cb49: Escape backs out a step at a time: the picker, then the source you chose, then the panel.
+- 2443018: The zoom, text and music bars catch the light along their edges, like the controls around them.
+- cb8cb49: Grab a handle on a picture enlarged past the frame, where a press used to do nothing.
+- 2443018: Report a bug from the library window, without opening a recording first.
+- cb8cb49: Background music now sits under the recording instead of over it, at the level a bed belongs at.
+- cb8cb49: The timeline's row glyphs line up with the tools above them, with even space either side.
+- cb8cb49: Clips, zooms, titles and audio now wear the same solid bar, each with its own icon, name and level.
+- cb8cb49: The timeline carries a rail of icons down its left, saying what each row holds even when the row is empty.
+- 2443018: Drag a zoom, a text or a bed near its neighbour and it lands flush against it.
+- cb8cb49: The menu bar no longer carries the teleprompter; its switch and script stay on the panel.
+- cb8cb49: Drag the line across a clip or a music bed up and down to set how loud it plays.
+
 ## 0.6.1
 
 ### Patch Changes
