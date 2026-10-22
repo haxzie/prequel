@@ -12,7 +12,7 @@ import type { FaqEntry } from "@/lib/faq";
 import { faqPageJsonLd, itemListJsonLd, pageMetadata } from "@/lib/seo";
 import { SITE } from "@/lib/site";
 
-/** Read off the registry, so a seventh competitor names itself here. */
+/** Read off the registry, so a new competitor names itself here. */
 const names = competitors.map((competitor) => competitor.name);
 const named = `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 

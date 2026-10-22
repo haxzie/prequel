@@ -93,10 +93,14 @@ export function Footer() {
 
         {/* `/compare` indexes these now, so this column is no longer the only
             path to them. It stays for the same reason the use cases do: a
-            link from every page is what keeps eleven-deep pages crawled, and
-            one index page linked from the header is not that. */}
-        <nav className="flex flex-col gap-3 text-sm">
-          <span className="font-medium text-fg">Alternatives</span>
+            link from every page is what keeps pages this deep crawled, and
+            one index page linked from the header is not that.
+
+            Two columns, like the use cases, and for the sharper version of
+            the same reason: there are twenty-six of these and a single run of
+            them stood four times the height of the column beside it. */}
+        <nav className="grid grid-cols-[auto_auto] content-start justify-start gap-x-8 gap-y-3 text-sm">
+          <span className="col-span-2 font-medium text-fg">Alternatives</span>
           {competitors.map((competitor) => (
             <Link
               key={competitor.slug}

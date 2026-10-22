@@ -1,0 +1,49 @@
+## What is OpenScreen, and what is it good at?
+
+OpenScreen is a free, MIT-licensed screen recorder and editor for macOS, Windows
+and Linux, and it is unusually complete for a project that costs nothing. Zooms
+are placed from your clicks by a fixed rule with no network call. Each zoom can
+stay flat or turn the screen in 3D with depth of field on the far side. The
+pointer is recorded apart from the pixels, so its size and style can change
+afterwards, and there are five cursor packs to change them to. Backgrounds,
+window and device frames, four camera layouts, a local segmentation model that
+cuts you out of the room, and captions from whisper.cpp running on your own
+machine.
+
+Export is MP4 from 720p up to the source size at 24, 30 or 60 frames a second in
+H.264, or a GIF. There are no paid tiers and no watermark.
+
+## Why do people look for an OpenScreen alternative?
+
+**It is an Electron app doing a native job.** That shows up in export time, in
+memory, and in how the app behaves next to everything else on a Mac.
+
+**Thirty, sixty, and that is the ceiling.** 60 frames a second at the source
+size is where it stops, and H.264 is the only codec out.
+
+**The pace is a maintainer's pace.** A free project ships when its author has an
+evening, and support is an issue tracker.
+
+## Is Prequel a good OpenScreen alternative?
+
+If the recording is work, yes.
+
+Prequel captures through ScreenCaptureKit and encodes through the Mac's own
+media engine, which is what 4K at 120 frames a second needs. Zooms land on every
+click and every burst of typing, tilted, with focus falling away from whatever
+they are aimed at. The camera is framed, shaped and cut out of its background.
+Seventeen colour looks sit over the picture, a loupe magnifies the work under
+the pointer, and Apple's sound isolation cleans the microphone. Captions are
+transcribed on device by Apple's own speech framework, with no model to
+download.
+
+It is $9 a month or $29 once, with a seven-day trial.
+
+## What do you give up by switching?
+
+Free, MIT, Windows and Linux, and the 3D camera move on a zoom, which is
+OpenScreen's own and is genuinely good. Prequel tilts the push-in and pulls
+focus; it does not orbit the screen.
+
+If the requirement is software you can read, fork and run anywhere, OpenScreen
+is the honest answer and this page is not arguing otherwise.
