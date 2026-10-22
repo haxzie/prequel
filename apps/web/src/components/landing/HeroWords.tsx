@@ -3,7 +3,7 @@
  *
  * The sentence is still written out in `page.tsx`; these are only how three of
  * its words are drawn. Each one quotes a piece of the app rather than being
- * decoration for its own sake — a title card, a clip on the timeline, the
+ * decoration for its own sake — a selected object, a clip on the timeline, the
  * Finder face — so the headline shows what the product is before the picture
  * below it starts playing.
  *
@@ -26,29 +26,33 @@
  * the word inside it.
  */
 /**
- * The title card.
+ * The word, selected.
  *
- * The accent, solid, with the word knocked out of it in white — the one filled
- * field above the fold and the one word the sentence is really about. Solid
- * rather than a tint of it: a chip carrying white text has to hold the contrast
- * on its own, and on paper a 25% wash of anything cannot. `--accent` is the
- * playhead in the icon and in the editor, so the loudest thing in the headline
+ * Nothing filled: the word in the heading's own ink, with a line of the accent
+ * around it and the eight handles a selected object wears in the editor, four
+ * on the corners and four on the edges. Empty rather than filled: a solid accent
+ * field with the word knocked out in white reads as a button above the fold,
+ * and the only button up there should be the one that downloads the app.
+ * `--accent` is the playhead in the icon and in the editor, so the selection
  * is the same blue as the thing that moves.
+
  *
  * `items-baseline` so the emoji sits on the same line as the word instead of
  * centring itself against a taller box.
  *
- * A pill, where the clip beside it is squared off to a small radius — the two
- * are quoting different things and should not read as one component in two
- * colours. The padding is wider than the clip's for the shape's sake: a full
- * round eats into the ends, and at the clip's 0.26em the first and last letters
- * sit in the curve.
+ * The border is in `em` like everything else here, and deliberately heavier
+ * than a hairline: at the 6rem setting a 1px line beside a 96px word is a
+ * thread, and the box stops reading as a selection at all.
+ *
+ * The handles are drawn as absolute children centred on the border rather than
+ * laid out in flow, so they add nothing to the box and the word stays where
+ * the sentence puts it. The padding is what keeps the letters off them.
  */
 export function HeroCard({ children }: { children: string }) {
   return (
     <span
       data-hero-chip
-      className="inline-flex -rotate-2 items-baseline gap-[0.16em] rounded-full bg-accent px-[0.4em] py-[0.09em] leading-[1] whitespace-nowrap text-white"
+      className="relative inline-flex -rotate-2 items-baseline gap-[0.16em] rounded-[0.1em] border-[0.055em] border-accent px-[0.26em] py-[0.02em] leading-[1] whitespace-nowrap"
     >
       {/* Aria-hidden so the heading is still read as its sentence. The glyph is
           drawn by the platform's own emoji font, which has no weight to match,
@@ -57,18 +61,40 @@ export function HeroCard({ children }: { children: string }) {
         🎬
       </span>
       {children}
+      {HANDLES.map((at) => (
+        <span
+          key={at}
+          aria-hidden="true"
+          className={`absolute size-[0.22em] rounded-[0.05em] border-[0.045em] border-accent bg-bg ${at}`}
+        />
+      ))}
     </span>
   );
 }
+
+/** Where the eight handles sit, each one centred on the border it is on, so
+    half of it is inside the box and half outside. Filled with the page's own
+    background rather than white: the border has to pass behind a handle and
+    not through it, and the hero is not drawn on white everywhere it is used. */
+const HANDLES = [
+  "top-0 left-0 -translate-x-1/2 -translate-y-1/2",
+  "top-0 left-1/2 -translate-x-1/2 -translate-y-1/2",
+  "top-0 right-0 translate-x-1/2 -translate-y-1/2",
+  "top-1/2 right-0 translate-x-1/2 -translate-y-1/2",
+  "bottom-0 right-0 translate-x-1/2 translate-y-1/2",
+  "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2",
+  "bottom-0 left-0 -translate-x-1/2 translate-y-1/2",
+  "top-1/2 left-0 -translate-x-1/2 -translate-y-1/2",
+];
 
 /**
  * A clip on the timeline, with the two grips that say its ends can be dragged.
  *
  * `--lilac`, which on the light site is a rich purple rather than the pale
  * handle colour it is in the artwork — it has to be, because it also sets inline
- * `code` in the prose. Filled, for the reason the card beside it is: the word
- * inside is white, and a tint of iris on paper leaves it at about two to one.
- * White on this holds 7:1. The demo timeline further down the page is
+ * `code` in the prose. Filled, and the one filled field above the fold: the
+ * word inside is white, and a tint of iris on paper leaves it at about two to
+ * one. White on this holds 7:1. The demo timeline further down the page is
  * deliberately not this colour — its slices are the accent, because there they
  * are lit by a playhead crossing them and the accent is what the playhead is.
  *
