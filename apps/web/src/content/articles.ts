@@ -305,7 +305,7 @@ const ENTRIES: Article[] = [
       {
         question: "Is there a Mac screen recorder with nothing to cancel?",
         answer:
-          "Prequel's lifetime licence is $29 once, with no renewal and nothing to cancel. The subscription is $9 a month, after a 7-day free trial with the whole app in it. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel's lifetime licence is $39 once, with no renewal and nothing to cancel. The subscription is $9 a month, after a 7-day free trial with the whole app in it. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -349,7 +349,7 @@ const ENTRIES: Article[] = [
       {
         question: "What can I use instead of Loom on a Mac?",
         answer:
-          "Prequel records your screen and camera, edits the take and exports an MP4 on your Mac, with a 7-day free trial and no watermark. After the trial it is $9 a month or $29 once. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel records your screen and camera, edits the take and exports an MP4 on your Mac, with a 7-day free trial and no watermark. After the trial it is $9 a month or $39 once. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -516,7 +516,7 @@ const ENTRIES: Article[] = [
       {
         question: "Is there a screen recorder with no time limit on a Mac?",
         answer:
-          "Yes. Prequel has no length cap on a recording and no watermark on exports, with a 7-day free trial and then $9 a month or $29 once. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Yes. Prequel has no length cap on a recording and no watermark on exports, with a 7-day free trial and then $9 a month or $39 once. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -667,7 +667,7 @@ const ENTRIES: Article[] = [
       {
         question: "What is a Mac screen recorder I can pay for once?",
         answer:
-          "Prequel's lifetime licence is $29 once, with no renewal and nothing to cancel, after a 7-day free trial with the whole app. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel's lifetime licence is $39 once, with no renewal and nothing to cancel, after a 7-day free trial with the whole app. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -754,7 +754,7 @@ const ENTRIES: Article[] = [
       {
         question: "Is there a screen recorder with nothing to cancel?",
         answer:
-          "Prequel's lifetime licence is $29 once, with no renewal and nothing to cancel, and exports to your own Mac are never counted and never expire. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel's lifetime licence is $39 once, with no renewal and nothing to cancel, and exports to your own Mac are never counted and never expire. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -867,7 +867,7 @@ const ENTRIES: Article[] = [
       {
         question: "What Mac screen recorder can I buy once?",
         answer:
-          "Prequel's lifetime licence is $29 once, with no renewal, and its subscription is $9 a month. Both include the whole app with no watermark, after a 7-day free trial. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel's lifetime licence is $39 once, with no renewal, and its subscription is $9 a month. Both include the whole app with no watermark, after a 7-day free trial. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -905,7 +905,7 @@ const ENTRIES: Article[] = [
       {
         question: "What does a lifetime licence mean for Prequel?",
         answer:
-          "Prequel's lifetime licence is one payment of $29 with no renewal and nothing to cancel. It includes the whole app and 5 GB of shared recordings. The price may change in future, and the pricing page always says what it is today.",
+          "Prequel's lifetime licence is one payment of $39 with no renewal and nothing to cancel. It includes the whole app and 5 GB of shared recordings. The price may change in future, and the pricing page always says what it is today.",
       },
     ],
   },
@@ -1104,7 +1104,7 @@ const ENTRIES: Article[] = [
       {
         question: "What can I use instead of Tella for free?",
         answer:
-          "Prequel has a 7-day free trial with the whole app and no watermark, then $9 a month or $29 once. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "Prequel has a 7-day free trial with the whole app and no watermark, then $9 a month or $39 once. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },

@@ -85,27 +85,27 @@ const ENTRIES: Post[] = [
       {
         question: "Which Mac screen recorders have no subscription?",
         answer:
-          "Prequel ($29 once), Cap ($58 once, or free for personal use), CleanShot X ($35 once with a year of updates), CursorClip ($70 once), Screen Charm ($99 once), ScreenFlow ($199 once) and FocuSee ($199.99 once for version 2) all sell a one-time licence. OBS Studio and QuickTime Player are free. Prices checked on 8 October 2026.",
+          "Prequel ($39 once), Cap ($58 once, or free for personal use), CleanShot X ($35 once with a year of updates), CursorClip ($70 once), Screen Charm ($99 once), ScreenFlow ($199 once) and FocuSee ($199.99 once for version 2) all sell a one-time licence. OBS Studio and QuickTime Player are free. Prices checked on 8 October 2026.",
       },
       {
         question: "What is the cheapest one-time purchase screen recorder for Mac?",
         answer:
-          "Prequel, at $29 once. That is the whole app: 4K export at up to 120 fps, no watermark on any export, no limit on the length of a take, and a seven-day trial that exports finished files. The next cheapest one-off licences are CleanShot X at $35 and Cap at $58.",
+          "Prequel, at $39 once. That is the whole app: 4K export at up to 120 fps, no watermark on any export, no limit on the length of a take, and a seven-day trial that exports finished files. The next cheapest one-off licences are CleanShot X at $35 and Cap at $58.",
       },
       {
         question: "Does Screen Studio still have a lifetime licence?",
         answer:
-          "No. Screen Studio withdrew its lifetime licence in 2025 and now sells a subscription only, at $29 a month or $9 a month billed yearly. If you want the same automatic zooms with a price you pay once, Prequel is $29 for a lifetime licence and also exports at 4K 120 fps against Screen Studio's 4K 60.",
+          "No. Screen Studio withdrew its lifetime licence in 2025 and now sells a subscription only, at $29 a month or $9 a month billed yearly. If you want the same automatic zooms with a price you pay once, Prequel is $39 for a lifetime licence and also exports at 4K 120 fps against Screen Studio's 4K 60.",
       },
       {
         question: "Can I buy Camtasia once?",
         answer:
-          "Not any more. TechSmith stopped selling perpetual Camtasia licences in early 2025, so Camtasia is subscription only and billed annually. The free version exports with a watermark. ScreenFlow is the closest timeline editor still sold as a one-off, at $199, and Prequel is $29 once if you want the editing done automatically.",
+          "Not any more. TechSmith stopped selling perpetual Camtasia licences in early 2025, so Camtasia is subscription only and billed annually. The free version exports with a watermark. ScreenFlow is the closest timeline editor still sold as a one-off, at $199, and Prequel is $39 once if you want the editing done automatically.",
       },
       {
         question: "Does a lifetime licence include updates?",
         answer:
-          "It depends on the tool, and it is the thing to check before paying. CleanShot X's $35 licence includes one year of updates and then charges $19 a year for more. FocuSee's $199.99 lifetime licence covers version 2 only, and version 3 is a paid upgrade. Screen Charm's $99 and CursorClip's $70 include future updates. Prequel's $29 lifetime licence is for the app, with no version in the name.",
+          "It depends on the tool, and it is the thing to check before paying. CleanShot X's $35 licence includes one year of updates and then charges $19 a year for more. FocuSee's $199.99 lifetime licence covers version 2 only, and version 3 is a paid upgrade. Screen Charm's $99 and CursorClip's $70 include future updates. Prequel's $39 lifetime licence is for the app, with no version in the name.",
       },
       {
         question: "Is there a free Mac screen recorder with no subscription and no watermark?",
@@ -128,12 +128,12 @@ const ENTRIES: Post[] = [
       {
         question: "Is Screen Charm a good Screen Studio alternative?",
         answer:
-          "For a Mac demo, yes, if one payment matters more than the extras. Screen Charm zooms on every click with motion blur, smooths the cursor, puts the window on a background or in a MacBook frame, and costs $99 once for three Macs. What it does not do is zoom on what you type, record an iPhone, reframe to vertical without cropping, or export above 4K 60. Prequel does the same automatic pass with a perspective tilt and focus falloff, exports at 4K 120, and is $29 once or $9 a month.",
+          "For a Mac demo, yes, if one payment matters more than the extras. Screen Charm zooms on every click with motion blur, smooths the cursor, puts the window on a background or in a MacBook frame, and costs $99 once for three Macs. What it does not do is zoom on what you type, record an iPhone, reframe to vertical without cropping, or export above 4K 60. Prequel does the same automatic pass with a perspective tilt and focus falloff, exports at 4K 120, and is $39 once or $9 a month.",
       },
       {
         question: "How much does Screen Charm cost compared to Screen Studio?",
         answer:
-          "Screen Charm is $99 once, covering up to three Macs, with updates included and a 14-day refund. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier and no lifetime licence since October 2025. Prequel is $29 once or $9 a month. Read off each vendor's own page on 3 and 8 October 2026.",
+          "Screen Charm is $99 once, covering up to three Macs, with updates included and a 14-day refund. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier and no lifetime licence since October 2025. Prequel is $39 once or $9 a month. Read off each vendor's own page on 3 and 8 October 2026.",
       },
       {
         question: "Can you try Screen Charm or Screen Studio before paying?",
@@ -219,7 +219,7 @@ const ENTRIES: Post[] = [
       {
         question: "How much does Screen Studio 4 cost?",
         answer:
-          "Screen Studio 4 costs $29 a month billed monthly, or $9 a month billed yearly, which is $108 paid up front. There is no free tier and no one-time licence, which was withdrawn in October 2025. Prequel, which does the same automatic zooms and exports at up to 4K 120, is $29 once or $9 a month.",
+          "Screen Studio 4 costs $29 a month billed monthly, or $9 a month billed yearly, which is $108 paid up front. There is no free tier and no one-time licence, which was withdrawn in October 2025. Prequel, which does the same automatic zooms and exports at up to 4K 120, is $39 once or $9 a month.",
       },
       {
         question: "Is Screen Studio 4 a free upgrade?",
@@ -239,7 +239,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best alternative to Screen Studio 4?",
         answer:
-          "On a Mac, Prequel. It has had editing by transcript since 6 September 2026 and a camera cutout since 13 September, and adds a loupe, typing sounds, filters, titles over the recording, a prompter that follows your voice and export at up to 4K 120. It costs $29 once or $9 a month. It needs an Apple Silicon Mac on macOS 14 or later.",
+          "On a Mac, Prequel. It has had editing by transcript since 6 September 2026 and a camera cutout since 13 September, and adds a loupe, typing sounds, filters, titles over the recording, a prompter that follows your voice and export at up to 4K 120. It costs $39 once or $9 a month. It needs an Apple Silicon Mac on macOS 14 or later.",
       },
     ],
   },
@@ -257,17 +257,17 @@ const ENTRIES: Post[] = [
       {
         question: "Should I upgrade to Screen Studio 4?",
         answer:
-          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription and adds a loupe, a camera cutout and editing by transcript. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $29 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
+          "If you already pay for Screen Studio and your renewal is months away, yes: version 4 is included in the subscription and adds a loupe, a camera cutout and editing by transcript. If your renewal is due or you are choosing a recorder for the first time, try Prequel first. It is $39 once or $9 a month, exports at 4K 120, and has a seven-day trial with export included.",
       },
       {
         question: "Is Screen Studio worth it in 2026?",
         answer:
-          "Screen Studio is still a polished Mac recorder, and version 4 is a large release. At $29 a month, or $108 a year up front, it is also among the most expensive tools in its category, and it still exports at 60 fps. Prequel has the same automatic zooms, a loupe, a camera cutout and transcript editing, and adds typing sounds, filters and titles for $29 once or $9 a month.",
+          "Screen Studio is still a polished Mac recorder, and version 4 is a large release. At $29 a month, or $108 a year up front, it is also among the most expensive tools in its category, and it still exports at 60 fps. Prequel has the same automatic zooms, a loupe, a camera cutout and transcript editing, and adds typing sounds, filters and titles for $39 once or $9 a month.",
       },
       {
         question: "Is Screen Studio a one-time purchase?",
         answer:
-          "Not any more. Screen Studio withdrew its one-time licence in October 2025 and now sells subscriptions only: $29 a month, or $9 a month billed yearly at $108. Screen Studio 4 did not change that. Prequel still sells a lifetime licence at $29 once, alongside a $9 monthly plan, and both are the same app.",
+          "Not any more. Screen Studio withdrew its one-time licence in October 2025 and now sells subscriptions only: $29 a month, or $9 a month billed yearly at $108. Screen Studio 4 did not change that. Prequel still sells a lifetime licence at $39 once, alongside a $9 monthly plan, and both are the same app.",
       },
       {
         question: "How often does Screen Studio update?",
@@ -282,7 +282,7 @@ const ENTRIES: Post[] = [
       {
         question: "What does a year of Screen Studio 4 cost compared to Prequel?",
         answer:
-          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $29 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 3 October 2026.",
+          "A year of Screen Studio 4 is $348 paid month by month, or $108 paid up front for the yearly plan. Prequel is $39 once for a lifetime licence, or $9 a month on the monthly plan, which can be cancelled any month. Prices checked on each vendor's page on 3 October 2026.",
       },
     ],
   },
@@ -299,7 +299,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best Screen Charm alternative?",
         answer:
-          "Prequel, if what sent you looking was the export sitting behind the $99 licence. It does the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps. It is $29 once or $9 a month, and the seven-day trial is the whole app with export included, so a video you make in that week is yours either way.",
+          "Prequel, if what sent you looking was the export sitting behind the $99 licence. It does the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps. It is $39 once or $9 a month, and the seven-day trial is the whole app with export included, so a video you make in that week is yours either way.",
       },
       {
         question: "How much does Screen Charm cost?",
@@ -329,7 +329,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the cheapest Screen Charm alternative?",
         answer:
-          "Free ones exist: OBS Studio is free and open source under GPL-2.0, QuickTime Player is built into macOS, and Cap is free for personal use. None of them edits the recording for you. The cheapest tool that does the automatic pass is Prequel at $29 once, or $9 a month, which is under a third of Screen Charm's $99 and under Screen Studio's $29 a month.",
+          "Free ones exist: OBS Studio is free and open source under GPL-2.0, QuickTime Player is built into macOS, and Cap is free for personal use. None of them edits the recording for you. The cheapest tool that does the automatic pass is Prequel at $39 once, or $9 a month, which is well under Screen Charm's $99 and under Screen Studio's $29 a month.",
       },
     ],
   },
@@ -346,7 +346,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best Cap alternative?",
         answer:
-          "On a Mac, Prequel. The editor opens with the pass already made, the zooms follow your typing as well as your clicks, and export runs at up to 4K and 120 fps where Cap stops at 4K 60. Both plans are the whole app with no personal-use clause, so a recording made for work needs nothing extra. It is $29 once or $9 a month, where Cap's $29 buys twelve months.",
+          "On a Mac, Prequel. The editor opens with the pass already made, the zooms follow your typing as well as your clicks, and export runs at up to 4K and 120 fps where Cap stops at 4K 60. Both plans are the whole app with no personal-use clause, so a recording made for work needs nothing extra. It is $39 once or $9 a month, where Cap's $29 buys twelve months.",
       },
       {
         question: "Is Cap free?",
@@ -371,7 +371,7 @@ const ENTRIES: Post[] = [
       {
         question: "How much does Cap cost compared to the alternatives?",
         answer:
-          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence, and $12 per user a month for Cap Pro. Screen Studio is $29 a month or $9 a month billed yearly. Loom is free up to five-minute videos, then $18 per user a month. Prequel is $29 once or $9 a month. Read off each vendor's page on 28 September 2026.",
+          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence, and $12 per user a month for Cap Pro. Screen Studio is $29 a month or $9 a month billed yearly. Loom is free up to five-minute videos, then $18 per user a month. Prequel is $39 once or $9 a month. Read off each vendor's page on 28 September 2026.",
       },
       {
         question: "Can I move my Cap recordings somewhere else?",
@@ -403,7 +403,7 @@ const ENTRIES: Post[] = [
       {
         question: "How much does Cap cost compared to Screen Studio?",
         answer:
-          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence that adds commercial rights, and $12 per user a month for Cap Pro. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier. Prequel is $29 once or $9 a month. Read off each vendor's own page on 28 September 2026.",
+          "Cap is free for personal use, $29 a year or $58 once for the Desktop Licence that adds commercial rights, and $12 per user a month for Cap Pro. Screen Studio is $29 a month billed monthly or $9 a month billed yearly, which is $108 a year, with no free tier. Prequel is $39 once or $9 a month. Read off each vendor's own page on 28 September 2026.",
       },
       {
         question: "Does Screen Studio have a free version?",
@@ -428,7 +428,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is there a lifetime licence for either?",
         answer:
-          "Cap sells one: $58 for a Desktop Licence that never renews, covering commercial use and unlimited local recording, with shares still capped at five minutes. Screen Studio withdrew its one-time licence in October 2025 and there is no way to buy one now. Prequel sells a $29 lifetime licence alongside the $9 monthly plan.",
+          "Cap sells one: $58 for a Desktop Licence that never renews, covering commercial use and unlimited local recording, with shares still capped at five minutes. Screen Studio withdrew its one-time licence in October 2025 and there is no way to buy one now. Prequel sells a $39 lifetime licence alongside the $9 monthly plan.",
       },
     ],
   },
@@ -445,12 +445,12 @@ const ENTRIES: Post[] = [
       {
         question: "Is Screen Studio better than Loom?",
         answer:
-          "For the recording itself, yes: Screen Studio adds automatic zooms, a smoothed cursor, a background and a framed camera, and Loom records the take as performed with a trim. For sharing, Loom is better: the link, comments, view counts and integrations are the product. Prequel does the Screen Studio edit and gives you a share link, for $29 once or $9 a month.",
+          "For the recording itself, yes: Screen Studio adds automatic zooms, a smoothed cursor, a background and a framed camera, and Loom records the take as performed with a trim. For sharing, Loom is better: the link, comments, view counts and integrations are the product. Prequel does the Screen Studio edit and gives you a share link, for $39 once or $9 a month.",
       },
       {
         question: "How much does Screen Studio cost compared to Loom?",
         answer:
-          "Screen Studio is $29 a month billed monthly or $9 a month billed yearly ($108 a year), with no free tier. Loom has a free Starter plan capped at five minutes a video, then $18 per user per month for Business and $24 with AI. Prequel is $29 once or $9 a month. Read off both pricing pages on 17 September 2026.",
+          "Screen Studio is $29 a month billed monthly or $9 a month billed yearly ($108 a year), with no free tier. Loom has a free Starter plan capped at five minutes a video, then $18 per user per month for Business and $24 with AI. Prequel is $39 once or $9 a month. Read off both pricing pages on 17 September 2026.",
       },
       {
         question: "Does Loom have automatic zoom like Screen Studio?",
@@ -470,7 +470,7 @@ const ENTRIES: Post[] = [
       {
         question: "Can I get a Screen Studio lifetime licence?",
         answer:
-          "Not any more. Screen Studio withdrew its one-time licence in October 2025 and sells subscriptions only. Prequel sells a $29 lifetime licence alongside the $9 monthly plan.",
+          "Not any more. Screen Studio withdrew its one-time licence in October 2025 and sells subscriptions only. Prequel sells a $39 lifetime licence alongside the $9 monthly plan.",
       },
     ],
   },
@@ -487,7 +487,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best Screen Studio alternative?",
         answer:
-          "Prequel, if the price was the problem and the video was not. It does the same automatic zoom-and-pan on clicks and typing, adds a perspective tilt and focus falloff that Screen Studio does not have, frames the camera after the take, and exports 4K at up to 120 fps against Screen Studio's 4K 60. It is $29 once or $9 a month, where Screen Studio is $29 a month or $108 a year with no one-off licence.",
+          "Prequel, if the price was the problem and the video was not. It does the same automatic zoom-and-pan on clicks and typing, adds a perspective tilt and focus falloff that Screen Studio does not have, frames the camera after the take, and exports 4K at up to 120 fps against Screen Studio's 4K 60. It is $39 once or $9 a month, where Screen Studio is $29 a month or $108 a year with no one-off licence.",
       },
       {
         question: "How much does Screen Studio cost?",
@@ -497,7 +497,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is there a free alternative to Screen Studio?",
         answer:
-          "OBS Studio is free and records anything on a Mac with no limits, but it has no editor and no automatic zoom, so the look Screen Studio is known for is work you do afterwards. Cap has a free tier capped at five minutes a recording. Prequel is not free but its seven-day trial is the whole app with clean exports, after that it is $29 once, and its source is on GitHub under the Functional Source License.",
+          "OBS Studio is free and records anything on a Mac with no limits, but it has no editor and no automatic zoom, so the look Screen Studio is known for is work you do afterwards. Cap has a free tier capped at five minutes a recording. Prequel is not free but its seven-day trial is the whole app with clean exports, after that it is $39 once, and its source is on GitHub under the Functional Source License.",
       },
       {
         question: "Is there a Screen Studio alternative for Windows?",
@@ -507,7 +507,7 @@ const ENTRIES: Post[] = [
       {
         question: "Can I still buy Screen Studio once?",
         answer:
-          "No. Screen Studio withdrew its one-off licence in October 2025 and sells subscriptions only. People who bought a lifetime licence before then keep it. If a one-off purchase is what you want, Prequel's $29 lifetime licence is the closest thing in the category, and CleanShot X sells a $35 licence that includes a year of updates.",
+          "No. Screen Studio withdrew its one-off licence in October 2025 and sells subscriptions only. People who bought a lifetime licence before then keep it. If a one-off purchase is what you want, Prequel's $39 lifetime licence is the closest thing in the category, and CleanShot X sells a $35 licence that includes a year of updates.",
       },
       {
         question: "Is Screen Studio still worth it?",
@@ -534,7 +534,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best CleanShot X alternative for screen recording?",
         answer:
-          "Prequel, if what you record is demos and walkthroughs. It was built around the video: when you stop recording, the editor opens with zooms on your clicks and typing, the camera framed, a background applied and the audio balanced. CleanShot X added a video editor in September 2026; Prequel has been one since day one, and its $29 licence never stops updating.",
+          "Prequel, if what you record is demos and walkthroughs. It was built around the video: when you stop recording, the editor opens with zooms on your clicks and typing, the camera framed, a background applied and the audio balanced. CleanShot X added a video editor in September 2026; Prequel has been one since day one, and its $39 licence never stops updating.",
       },
       {
         question: "How much does CleanShot X cost?",
@@ -549,12 +549,12 @@ const ENTRIES: Post[] = [
       {
         question: "Is there a free alternative to CleanShot X?",
         answer:
-          "For screenshots, macOS has Cmd+Shift+5 built in and Shottr is free. For recording, Kap is free and open source for short clips and GIFs, OBS Studio is free with no limits, and QuickTime Player is already installed. None of the free ones edit the video for you; Prequel does, for $29 once after a seven-day trial.",
+          "For screenshots, macOS has Cmd+Shift+5 built in and Shottr is free. For recording, Kap is free and open source for short clips and GIFs, OBS Studio is free with no limits, and QuickTime Player is already installed. None of the free ones edit the video for you; Prequel does, for $39 once after a seven-day trial.",
       },
       {
         question: "Do I have to renew CleanShot X every year?",
         answer:
-          "No. The $35 licence keeps working. It includes a year of updates, and after that you can keep the version you have or pay $19 a year for new ones. Prequel's $29 licence includes updates without a renewal.",
+          "No. The $35 licence keeps working. It includes a year of updates, and after that you can keep the version you have or pay $19 a year for new ones. Prequel's $39 licence includes updates without a renewal.",
       },
       {
         question: "Can CleanShot X record system audio?",
@@ -639,7 +639,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best screen recorder for Mac?",
         answer:
-          "It depends what the recording is for. OBS Studio if you want free and unlimited and do not mind half an hour of setup. QuickTime or Loom for something quick to a colleague. Prequel if the video is going in front of customers, because it hands back a recording that is already zoomed, framed and edited, at $29 once or $9 a month.",
+          "It depends what the recording is for. OBS Studio if you want free and unlimited and do not mind half an hour of setup. QuickTime or Loom for something quick to a colleague. Prequel if the video is going in front of customers, because it hands back a recording that is already zoomed, framed and edited, at $39 once or $9 a month.",
       },
       {
         question: "How do I record a long screen recording on a Mac?",
@@ -735,7 +735,7 @@ const ENTRIES: Post[] = [
       {
         question: "Which Mac screen recorders have no watermark?",
         answer:
-          "Prequel, OBS Studio, QuickTime Player and Cap never watermark exports. Prequel does not watermark on any plan or during its seven-day trial and costs $29 once. OBS Studio and QuickTime are free with no watermark and no time limit. Cap does not watermark but caps free recordings at five minutes.",
+          "Prequel, OBS Studio, QuickTime Player and Cap never watermark exports. Prequel does not watermark on any plan or during its seven-day trial and costs $39 once. OBS Studio and QuickTime are free with no watermark and no time limit. Cap does not watermark but caps free recordings at five minutes.",
       },
       {
         question: "Does Camtasia put a watermark on videos?",
@@ -816,7 +816,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best screen recorder with a facecam for Mac?",
         answer:
-          "Prequel, if the video is going in front of people. It records the camera as a separate file at full resolution, so its position, size and shape are decided after the take rather than before it, and it applies zooms, a perspective tilt and depth of field automatically. It is $29 once or $9 a month with seven days free.",
+          "Prequel, if the video is going in front of people. It records the camera as a separate file at full resolution, so its position, size and shape are decided after the take rather than before it, and it applies zooms, a perspective tilt and depth of field automatically. It is $39 once or $9 a month with seven days free.",
       },
       {
         question: "Can I move the webcam overlay after recording?",
@@ -848,7 +848,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best Loom alternative for Mac?",
         answer:
-          "Prequel, if you are sending video to customers rather than colleagues. It records locally and hands back a video that is already edited, with zooms on your clicks and typing, a perspective tilt and a camera you frame after the take. There is no cap on recording length on any plan, against Loom's five minutes on free, and it is $9 a month against Loom's $18, or $29 once.",
+          "Prequel, if you are sending video to customers rather than colleagues. It records locally and hands back a video that is already edited, with zooms on your clicks and typing, a perspective tilt and a camera you frame after the take. There is no cap on recording length on any plan, against Loom's five minutes on free, and it is $9 a month against Loom's $18, or $39 once.",
       },
       {
         question: "Is there a free alternative to Loom?",
@@ -916,7 +916,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is Prequel open source?",
         answer:
-          "No. Prequel is proprietary, priced at $29 once or $9 a month with a seven-day free trial. It is included in this comparison because it produces a finished, directed video rather than raw footage, which none of the open-source options do, but if an auditable licence is a hard requirement then OBS Studio, Cap, Screenity, QuickRecorder and Kap are the genuine options.",
+          "No. Prequel is proprietary, priced at $39 once or $9 a month with a seven-day free trial. It is included in this comparison because it produces a finished, directed video rather than raw footage, which none of the open-source options do, but if an auditable licence is a hard requirement then OBS Studio, Cap, Screenity, QuickRecorder and Kap are the genuine options.",
       },
       {
         question: "Can open source screen recorders export in 4K?",
@@ -939,7 +939,7 @@ const ENTRIES: Post[] = [
       {
         question: "Which Mac screen recorder has automatic mouse zoom?",
         answer:
-          "Prequel, Screen Studio, FocuSee, Cap and Tella all zoom automatically or semi-automatically on a Mac. Prequel is the only one that zooms on typing as well as clicks, and the only one that adds a perspective tilt and depth of field to the push-in. It is $29 once or $9 a month with seven days free.",
+          "Prequel, Screen Studio, FocuSee, Cap and Tella all zoom automatically or semi-automatically on a Mac. Prequel is the only one that zooms on typing as well as clicks, and the only one that adds a perspective tilt and depth of field to the push-in. It is $39 once or $9 a month with seven days free.",
       },
       {
         question: "How does automatic zoom in a screen recording work?",
@@ -959,7 +959,7 @@ const ENTRIES: Post[] = [
       {
         question: "Is there a free screen recorder with auto zoom?",
         answer:
-          "Cap is the only genuinely free one, and its free tier caps recordings at five minutes. FocuSee has a trial that watermarks exports. Prequel gives you seven days with the whole app and no watermark, then costs $29 once.",
+          "Cap is the only genuinely free one, and its free tier caps recordings at five minutes. FocuSee has a trial that watermarks exports. Prequel gives you seven days with the whole app and no watermark, then costs $39 once.",
       },
     ],
     pillar: "product-demo-videos",
@@ -1014,7 +1014,7 @@ const ENTRIES: Post[] = [
       {
         question: "What is the best screen recorder for Mac in 2026?",
         answer:
-          "Prequel, if the video is going in front of anyone. It records your screen and hands back a video that is already directed: zooms that follow your clicks and typing, a perspective tilt, focus falling away from the subject and a camera you frame after the take. It is $29 once or $9 a month, exports 4K at up to 120 fps with no watermark, and renders on your own Mac. Screen Studio is the closest alternative, Loom is faster for a quick link to a colleague, and OBS is the answer if free is a hard requirement.",
+          "Prequel, if the video is going in front of anyone. It records your screen and hands back a video that is already directed: zooms that follow your clicks and typing, a perspective tilt, focus falling away from the subject and a camera you frame after the take. It is $39 once or $9 a month, exports 4K at up to 120 fps with no watermark, and renders on your own Mac. Screen Studio is the closest alternative, Loom is faster for a quick link to a colleague, and OBS is the answer if free is a hard requirement.",
       },
       {
         question: "What is the best free screen recorder for Mac?",
@@ -1029,7 +1029,7 @@ const ENTRIES: Post[] = [
       {
         question: "How much does a Mac screen recorder cost?",
         answer:
-          "Anywhere from nothing to $199.99. OBS and QuickTime are free. Prequel is $29 once or $9 a month. Tella is $13 to $19 a month, Loom is $18 to $24 per user per month, Descript is $16 to $50 a month, and ScreenFlow and FocuSee both sell one-off licences at $199.99. Prices were checked against each vendor's own page on 2 September 2026.",
+          "Anywhere from nothing to $199.99. OBS and QuickTime are free. Prequel is $39 once or $9 a month. Tella is $13 to $19 a month, Loom is $18 to $24 per user per month, Descript is $16 to $50 a month, and ScreenFlow and FocuSee both sell one-off licences at $199.99. Prices were checked against each vendor's own page on 2 September 2026.",
       },
       {
         question: "Do I need a separate video editor?",

@@ -10,7 +10,7 @@ import { faqPageJsonLd, pageMetadata } from "@/lib/seo";
 export const metadata: Metadata = pageMetadata({
   title: "Pricing",
   description:
-    "Try Prequel free for 7 days. Buy it once for $29 if you record now and then, or $9 a month with unlimited storage if you record for work every week. Both are the whole app: automatic zooms, a perspective tilt, a framed camera, 4K export, transcripts and sharing, no watermark and no length limit.",
+    "Try Prequel free for 7 days. Buy it once for $39 if you record now and then, or $9 a month with unlimited storage if you record for work every week. Both are the whole app: automatic zooms, a perspective tilt, a framed camera, 4K export, transcripts and sharing, no watermark and no length limit.",
   path: "/pricing",
 });
 

@@ -26,7 +26,7 @@
  *  edit for every page. It does appear in the prose below, where a sentence
  *  needs it — grep for it there when it moves.
  *
- *  **Argue on the video, not on the price.** Prequel is $9 a month, or $29 once,
+ *  **Argue on the video, not on the price.** Prequel is $9 a month, or $39 once,
  *  which is at or under most of this category rather than over it. That makes
  *  the number safe to state — it did not use to be — but it is still not the
  *  argument these pages are built to make. A page that leads on being cheapest
@@ -141,7 +141,7 @@ export const PREQUEL_FEATURES: Record<FeatureKey, boolean | string> = {
   // every release; re-read it when it is bumped.
   downloadSize: "104 MB",
   platforms: "macOS 14+, Apple Silicon",
-  licence: "$9/month or $29 once, 7-day trial",
+  licence: "$9/month or $39 once, 7-day trial",
 };
 
 export type Competitor = {
@@ -276,16 +276,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Screen Studio alternative?",
-    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $29 once, which is the lifetime licence they stopped selling in 2025. Seven days free to judge the output before you pay.",
+    lede: "Screen Studio made this category, and Prequel is aimed squarely at the same finished video: automatic zooms, a perspective tilt on the push-in, focus falling away from the subject, and 4K at 120 fps against their 4K 60. $9 a month — the same as their yearly rate and well under their monthly one — or $39 once, which is the lifetime licence they stopped selling in 2025. Seven days free to judge the output before you pay.",
     title: "Screen Studio alternative for Mac",
     description:
-      "A Screen Studio alternative for macOS at $9 a month, or $29 once for a lifetime licence: the same automatic zooms, a perspective tilt and framed camera on top, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
+      "A Screen Studio alternative for macOS at $9 a month, or $39 once for a lifetime licence: the same automatic zooms, a perspective tilt and framed camera on top, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
     navLabel: "vs Screen Studio",
     faq: [
       {
         question: "What is the best Screen Studio alternative?",
         answer:
-          "It depends on what pushed you to look. If it was the video, Prequel is the closest thing to it — the same automatic zooms, plus a perspective tilt, focus falling away from whatever the zoom is aimed at, and export at 4K 120 where Screen Studio stops at 4K 60. If it was the price, be careful which number you are comparing: their $29 is the monthly rate and their yearly one works out at $9 a month, which is what Prequel charges monthly — so the two are level if you commit to a year with them, and Prequel is a third of the price if you do not. There is also a $29 lifetime licence here, which is the thing they withdrew in 2025. If it was macOS-only, neither of us has a Windows build and you want something cross-platform.",
+          "It depends on what pushed you to look. If it was the video, Prequel is the closest thing to it — the same automatic zooms, plus a perspective tilt, focus falling away from whatever the zoom is aimed at, and export at 4K 120 where Screen Studio stops at 4K 60. If it was the price, be careful which number you are comparing: their $29 is the monthly rate and their yearly one works out at $9 a month, which is what Prequel charges monthly — so the two are level if you commit to a year with them, and Prequel is a third of the price if you do not. There is also a $39 lifetime licence here, which is the thing they withdrew in 2025. If it was macOS-only, neither of us has a Windows build and you want something cross-platform.",
       },
       {
         question: "How much does Screen Studio cost?",
@@ -300,7 +300,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a free Screen Studio alternative?",
         answer:
-          "Not Prequel — it is $9 a month, or $29 once, after a seven-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
+          "Not Prequel — it is $9 a month, or $39 once, after a seven-day trial with the whole app in it. There are free recorders in this category and open-source ones among them, so if free is the hard requirement the answer is one of those rather than either of us. What you give up is the cinematic pass: they capture faithfully and leave the zooms, the tilt, the focus, the framing and the cuts to you.",
       },
       {
         question: "Is Prequel a good Screen Studio alternative?",
@@ -390,16 +390,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Loom alternative?",
-    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed over a background — then gives you a link if you want one, and a file you own either way. $9 a month against Loom's $18, or $29 once and never again.",
+    lede: "Loom uploads first and barely edits at all. Prequel directs first — zooms that follow the work, a perspective tilt, focus falling away from the subject, the camera framed over a background — then gives you a link if you want one, and a file you own either way. $9 a month against Loom's $18, or $39 once and never again.",
     title: "Loom alternative for Mac",
     description:
-      "A Loom alternative for macOS that records locally and hands back a cinematic MP4 — automatic zooms, a perspective tilt, a framed camera — with no upload and no account needed to watch it. $9 a month, or $29 once.",
+      "A Loom alternative for macOS that records locally and hands back a cinematic MP4 — automatic zooms, a perspective tilt, a framed camera — with no upload and no account needed to watch it. $9 a month, or $39 once.",
     navLabel: "vs Loom",
     faq: [
       {
         question: "What is the best Loom alternative?",
         answer:
-          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background — and still gives you a shareable link, at $9 a month against Loom's $18 — or $29 once, with nothing to renew. What Loom keeps is the analytics and the integrations.",
+          "Prequel, if the video itself matters. Loom is a recorder with sharing attached; the recording it makes is the one you performed, un-zoomed and uncut. Prequel does the edit — automatic zooms on every click, a perspective tilt, focus falling away from the subject, a framed camera over a background — and still gives you a shareable link, at $9 a month against Loom's $18 — or $39 once, with nothing to renew. What Loom keeps is the analytics and the integrations.",
       },
       {
         question: "How much does Loom cost?",
@@ -508,10 +508,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a lighter Camtasia alternative?",
-    lede: "Camtasia is a full video editor you drive by hand, sold as an annual subscription whose cheapest tier watermarks your exports. Prequel makes the cinematic pass for you — zooms on the work, a perspective tilt, focus falling away from the subject, a framed camera — then gets out of the way. $9 a month, or $29 once, with nothing held back and no watermark on anything.",
+    lede: "Camtasia is a full video editor you drive by hand, sold as an annual subscription whose cheapest tier watermarks your exports. Prequel makes the cinematic pass for you — zooms on the work, a perspective tilt, focus falling away from the subject, a framed camera — then gets out of the way. $9 a month, or $39 once, with nothing held back and no watermark on anything.",
     title: "Camtasia alternative for Mac",
     description:
-      "A Camtasia alternative for macOS at $9 a month or $29 once: automatic zooms and a perspective tilt instead of manual keyframes, and 4K export that is never watermarked — where Camtasia's cheapest tier still stamps one on.",
+      "A Camtasia alternative for macOS at $9 a month or $39 once: automatic zooms and a perspective tilt instead of manual keyframes, and 4K export that is never watermarked — where Camtasia's cheapest tier still stamps one on.",
     navLabel: "vs Camtasia",
     faq: [
       {
@@ -522,7 +522,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Camtasia's cheapest plan watermark exports?",
         answer:
-          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel never watermarks anything, on the trial or on either plan — $9 a month or $29 once, and the export is always the full file.",
+          "Yes. The Starter tier watermarks exported video until you move up a tier. Prequel never watermarks anything, on the trial or on either plan — $9 a month or $39 once, and the export is always the full file.",
       },
       {
         question: "Does Camtasia have automatic zoom?",
@@ -609,16 +609,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a ScreenFlow alternative?",
-    lede: "ScreenFlow is a deep manual editor that has not had a major version since June 2021. Prequel is built for the Macs that shipped since, and makes the cinematic pass itself — zooms from your clicks, a perspective tilt, focus falling away from the subject, 4K at 120 fps. $9 a month against their $199.99 once — or $29 once, which is the same kind of purchase for a seventh of the money.",
+    lede: "ScreenFlow is a deep manual editor that has not had a major version since June 2021. Prequel is built for the Macs that shipped since, and makes the cinematic pass itself — zooms from your clicks, a perspective tilt, focus falling away from the subject, 4K at 120 fps. $9 a month against their $199.99 once — or $39 once, which is the same kind of purchase for a fifth of the money.",
     title: "ScreenFlow alternative for Mac",
     description:
-      "A ScreenFlow alternative for macOS with automatic zooms, a perspective tilt and hardware 4K 120 export, at $9 a month or $29 once. What ScreenFlow costs, what version it is on, and where it has stalled.",
+      "A ScreenFlow alternative for macOS with automatic zooms, a perspective tilt and hardware 4K 120 export, at $9 a month or $39 once. What ScreenFlow costs, what version it is on, and where it has stalled.",
     navLabel: "vs ScreenFlow",
     faq: [
       {
         question: "How much does ScreenFlow cost?",
         answer:
-          "$199.99 for ScreenFlow 10, as a one-off licence tied to a single machine — moving between a laptop and a desktop means deactivating one to use the other. Historically, major upgrades were paid. Worth doing the arithmetic honestly, because it no longer runs their way: Prequel is $9 a month, so a ScreenFlow licence only becomes the cheaper of the two after about twenty-two months — and Prequel's own one-off licence is $29, a seventh of theirs and never overtaken. What you are weighing is a stalled editor you drive by hand against one that arrives directed. Checked on 21 August 2026.",
+          "$199.99 for ScreenFlow 10, as a one-off licence tied to a single machine — moving between a laptop and a desktop means deactivating one to use the other. Historically, major upgrades were paid. Worth doing the arithmetic honestly, because it no longer runs their way: Prequel is $9 a month, so a ScreenFlow licence only becomes the cheaper of the two after about twenty-two months — and Prequel's own one-off licence is $39, a fifth of theirs and never overtaken. What you are weighing is a stalled editor you drive by hand against one that arrives directed. Checked on 21 August 2026.",
       },
       {
         question: "Is ScreenFlow still being developed?",
@@ -710,10 +710,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Descript alternative for screen recording?",
-    lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen: automatic zooms, a perspective tilt, focus falling away from the subject, recorded and rendered on your own Mac and uploaded only when you ask. $9 a month, or $29 once — under every paid Descript tier either way.",
+    lede: "Descript is built around the transcript and keeps your media on its servers as a condition of working at all. Prequel is built around the screen: automatic zooms, a perspective tilt, focus falling away from the subject, recorded and rendered on your own Mac and uploaded only when you ask. $9 a month, or $39 once — under every paid Descript tier either way.",
     title: "Descript alternative for Mac screen recording",
     description:
-      "A Descript alternative for macOS screen recording at $9 a month or $29 once: automatic zooms, a perspective tilt, local-only processing and exports that are never watermarked or capped. Compared on price and features.",
+      "A Descript alternative for macOS screen recording at $9 a month or $39 once: automatic zooms, a perspective tilt, local-only processing and exports that are never watermarked or capped. Compared on price and features.",
     navLabel: "vs Descript",
     faq: [
       {
@@ -724,7 +724,7 @@ export const competitors: Competitor[] = [
       {
         question: "Does Descript watermark free exports?",
         answer:
-          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $9 a month, or $29 once, after a seven-day trial, and either is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
+          "Yes, and it caps them at 720p. Prequel has no free tier to compare against — it is $9 a month, or $39 once, after a seven-day trial, and either is under Descript's cheapest paid plan — but nothing it exports is ever watermarked or capped, on the trial or after it.",
       },
       {
         question: "Does Descript store my recordings in the cloud?",
@@ -806,16 +806,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Tella alternative?",
-    lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $9 a month, under both Tella's $13 Pro and its $19 Premium, or $29 once.",
+    lede: "Tella hosts your video and keeps 60 fps for its Premium tier. Prequel renders on your own Mac at up to 4K 120 — zooms that follow the work, a perspective tilt, focus falling away from the subject — and the export is a file you own rather than a page you rent. $9 a month, under both Tella's $13 Pro and its $19 Premium, or $39 once.",
     title: "Tella alternative for Mac",
     description:
-      "A Tella alternative for macOS with automatic zooms, a perspective tilt and 4K 120 export, recorded and rendered locally — $9 a month, or $29 once, against Tella's $13 Pro and $19 Premium.",
+      "A Tella alternative for macOS with automatic zooms, a perspective tilt and 4K 120 export, recorded and rendered locally — $9 a month, or $39 once, against Tella's $13 Pro and $19 Premium.",
     navLabel: "vs Tella",
     faq: [
       {
         question: "Does Tella have a free plan?",
         answer:
-          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, on the same seven days, and two ways to pay at the end of it — $9 a month or $29 once — neither of which decides what your export is allowed to be.",
+          "No. Tella's own help pages state it is a paid product with no forever-free plan — there is a seven-day trial, and exporting requires a subscription. Prequel works the same way, on the same seven days, and two ways to pay at the end of it — $9 a month or $39 once — neither of which decides what your export is allowed to be.",
       },
       {
         question: "How much does Tella cost?",
@@ -915,16 +915,16 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Screen Charm alternative?",
-    lede: "Screen Charm is free to record with and $99 to export from, paid once. Prequel is $29 once for the same kind of licence, or $9 a month, and the seven-day trial has the export in it. The difference is on screen: zooms on what you type as well as where you click, a perspective tilt, focus falling away from the subject, and 4K at 120 fps against their 4K 60.",
+    lede: "Screen Charm is free to record with and $99 to export from, paid once. Prequel is $39 once for the same kind of licence, or $9 a month, and the seven-day trial has the export in it. The difference is on screen: zooms on what you type as well as where you click, a perspective tilt, focus falling away from the subject, and 4K at 120 fps against their 4K 60.",
     title: "Screen Charm alternative for Mac",
     description:
-      "A Screen Charm alternative for macOS at $29 once or $9 a month, with the export in the trial: automatic zooms on clicks and typing, a perspective tilt and a framed camera, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
+      "A Screen Charm alternative for macOS at $39 once or $9 a month, with the export in the trial: automatic zooms on clicks and typing, a perspective tilt and a framed camera, exporting at 4K 120 against their 4K 60. Compared on price, features and licence.",
     navLabel: "vs Screen Charm",
     faq: [
       {
         question: "What is the best Screen Charm alternative?",
         answer:
-          "Prequel, if what sent you looking was finishing a video and finding the export behind the $99. It makes the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps where Screen Charm stops at 60. It is $29 once or $9 a month, and the seven-day trial is the whole app with the export in it, so the files you make in that week are yours either way.",
+          "Prequel, if what sent you looking was finishing a video and finding the export behind the $99. It makes the same automatic pass on a recording, adds a perspective tilt and focus falling away from the subject, zooms on what you type as well as where you click, and exports at up to 4K and 120 fps where Screen Charm stops at 60. It is $39 once or $9 a month, and the seven-day trial is the whole app with the export in it, so the files you make in that week are yours either way.",
       },
       {
         question: "How much does Screen Charm cost?",
@@ -1010,10 +1010,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a QuickTime alternative?",
-    lede: "QuickTime records the take and stops there: one distance, no camera, no system audio below macOS 27, and a trim at either end. Prequel opens the editor with the zooms placed, the camera framed and a background behind the window, then exports at 4K and 120 fps. $9 a month, or $29 once.",
+    lede: "QuickTime records the take and stops there: one distance, no camera, no system audio below macOS 27, and a trim at either end. Prequel opens the editor with the zooms placed, the camera framed and a background behind the window, then exports at 4K and 120 fps. $9 a month, or $39 once.",
     title: "QuickTime alternative for Mac",
     description:
-      "A QuickTime Player alternative for macOS that records screen, camera, microphone and system audio as separate tracks, then places the zooms, frames the camera and exports at 4K 120. $9 a month, or $29 once.",
+      "A QuickTime Player alternative for macOS that records screen, camera, microphone and system audio as separate tracks, then places the zooms, frames the camera and exports at 4K 120. $9 a month, or $39 once.",
     navLabel: "vs QuickTime",
     faq: [
       {
@@ -1034,7 +1034,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good QuickTime alternative?",
         answer:
-          "Yes, for anything anyone else is going to watch. QuickTime hands back the take; Prequel hands back a finished video, with zooms on the clicks and the typing, a perspective tilt, focus falling away from the subject, a framed camera, a background, a cleaned-up cursor and captions transcribed on your Mac. It is $9 a month or $29 once, after a seven-day trial. QuickTime is free and on every Mac, which is the argument on the other side.",
+          "Yes, for anything anyone else is going to watch. QuickTime hands back the take; Prequel hands back a finished video, with zooms on the clicks and the typing, a perspective tilt, focus falling away from the subject, a framed camera, a background, a cleaned-up cursor and captions transcribed on your Mac. It is $9 a month or $39 once, after a seven-day trial. QuickTime is free and on every Mac, which is the argument on the other side.",
       },
     ],
   },
@@ -1092,10 +1092,10 @@ export const competitors: Competitor[] = [
       { label: "OBS Studio on GitHub", url: "https://github.com/obsproject/obs-studio" },
     ],
     heading: "Looking for an OBS alternative?",
-    lede: "OBS is a broadcast desk, and a demo is not a broadcast. Prequel records a display, a window or a region with no setup, then opens the editor with the zooms placed, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $29 once.",
+    lede: "OBS is a broadcast desk, and a demo is not a broadcast. Prequel records a display, a window or a region with no setup, then opens the editor with the zooms placed, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $39 once.",
     title: "OBS Studio alternative for Mac",
     description:
-      "An OBS Studio alternative for macOS with nothing to configure: screen, camera, microphone and system audio on separate tracks, zooms placed automatically, and 4K 120 export. $9 a month, or $29 once.",
+      "An OBS Studio alternative for macOS with nothing to configure: screen, camera, microphone and system audio on separate tracks, zooms placed automatically, and 4K 120 export. $9 a month, or $39 once.",
     navLabel: "vs OBS",
     faq: [
       {
@@ -1106,7 +1106,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is OBS free?",
         answer:
-          "Yes. OBS Studio is free and open source under the GPL, with no account, no tier and no watermark, on macOS 13 or later, Windows and Linux. Prequel is $9 a month or $29 once after a seven-day trial, and what it sells is the finished video rather than the capture.",
+          "Yes. OBS Studio is free and open source under the GPL, with no account, no tier and no watermark, on macOS 13 or later, Windows and Linux. Prequel is $9 a month or $39 once after a seven-day trial, and what it sells is the finished video rather than the capture.",
       },
       {
         question: "Can OBS zoom in on clicks automatically?",
@@ -1186,10 +1186,10 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a CleanShot X alternative?",
-    lede: "CleanShot X is a screenshot tool that also records, and the recording half stops at a bubble and a trim. Prequel frames the camera, cuts it out of the room, puts a background behind the window and places the zooms, then exports at 4K and 120 fps. $9 a month, or $29 once with every update in it.",
+    lede: "CleanShot X is a screenshot tool that also records, and the recording half stops at a bubble and a trim. Prequel frames the camera, cuts it out of the room, puts a background behind the window and places the zooms, then exports at 4K and 120 fps. $9 a month, or $39 once with every update in it.",
     title: "CleanShot X alternative for Mac",
     description:
-      "A CleanShot X alternative for macOS aimed at the video: automatic zooms on clicks and typing, a framed camera cut out of its background, captions transcribed on your Mac and 4K 120 export. $9 a month, or $29 once.",
+      "A CleanShot X alternative for macOS aimed at the video: automatic zooms on clicks and typing, a framed camera cut out of its background, captions transcribed on your Mac and 4K 120 export. $9 a month, or $39 once.",
     navLabel: "vs CleanShot X",
     faq: [
       {
@@ -1210,7 +1210,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good CleanShot X alternative?",
         answer:
-          "For video, yes, and most people keep both: CleanShot for screenshots, Prequel for anything that has to be watched. Prequel records screen, camera, microphone and system audio as separate tracks, opens the editor with the first pass made, transcribes captions on your Mac and exports at up to 4K and 120 frames a second. It is $9 a month or $29 once, with updates for as long as you hold the licence.",
+          "For video, yes, and most people keep both: CleanShot for screenshots, Prequel for anything that has to be watched. Prequel records screen, camera, microphone and system audio as separate tracks, opens the editor with the first pass made, transcribes captions on your Mac and exports at up to 4K and 120 frames a second. It is $9 a month or $39 once, with updates for as long as you hold the licence.",
       },
     ],
   },
@@ -1267,16 +1267,16 @@ export const competitors: Competitor[] = [
       { label: "Cap on GitHub", url: "https://github.com/CapSoftware/Cap" },
     ],
     heading: "Looking for a Cap alternative?",
-    lede: "Cap records cleanly and shares fast, and free stops at personal use. Prequel directs the take: zooms on what you click and what you type, a perspective tilt, focus falling away from the subject, a camera cut out of the room. 4K at 120 fps against their 4K 60, $9 a month or $29 once.",
+    lede: "Cap records cleanly and shares fast, and free stops at personal use. Prequel directs the take: zooms on what you click and what you type, a perspective tilt, focus falling away from the subject, a camera cut out of the room. 4K at 120 fps against their 4K 60, $9 a month or $39 once.",
     title: "Cap alternative for Mac",
     description:
-      "A Cap alternative for macOS at $29 once, commercial use included: automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, and 4K 120 export against Cap's 4K 60.",
+      "A Cap alternative for macOS at $39 once, commercial use included: automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, and 4K 120 export against Cap's 4K 60.",
     navLabel: "vs Cap",
     faq: [
       {
         question: "What is the best Cap alternative?",
         answer:
-          "Prequel, if the finished video is the point. It makes the same kind of automatic pass and takes it further: zooms on what you type as well as where you click, a perspective tilt on the push-in, focus falling away from the subject, a camera cut out of the room behind you, seventeen colour looks and captions transcribed on your Mac. It exports at up to 4K and 120 frames a second where Cap stops at 4K 60, and it is $29 once with commercial use included.",
+          "Prequel, if the finished video is the point. It makes the same kind of automatic pass and takes it further: zooms on what you type as well as where you click, a perspective tilt on the push-in, focus falling away from the subject, a camera cut out of the room behind you, seventeen colour looks and captions transcribed on your Mac. It exports at up to 4K and 120 frames a second where Cap stops at 4K 60, and it is $39 once with commercial use included.",
       },
       {
         question: "Is Cap free?",
@@ -1291,7 +1291,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel cheaper than Cap?",
         answer:
-          "On the one-off licence, yes: $29 against $58, both covering commercial work. On a subscription, $9 a month against $12, or $8.16 if you pay Cap for a year up front. Cap is free for personal use and Prequel is not, so for recordings nobody is paid for, Cap is cheaper.",
+          "On the one-off licence, yes: $39 against $58, both covering commercial work. On a subscription, $9 a month against $12, or $8.16 if you pay Cap for a year up front. Cap is free for personal use and Prequel is not, so for recordings nobody is paid for, Cap is cheaper.",
       },
     ],
   },
@@ -1340,10 +1340,10 @@ export const competitors: Competitor[] = [
       { label: "Buy Snagit", url: "https://www.techsmith.com/store/snagit" },
     ],
     heading: "Looking for a Snagit alternative?",
-    lede: "Snagit documents a screen beautifully and records one plainly: no zooms, no framing, no background, no cursor work. Prequel opens the editor with all four already done and exports at 4K and 120 fps. $9 a month, or $29 once with nothing to renew.",
+    lede: "Snagit documents a screen beautifully and records one plainly: no zooms, no framing, no background, no cursor work. Prequel opens the editor with all four already done and exports at 4K and 120 fps. $9 a month, or $39 once with nothing to renew.",
     title: "Snagit alternative for Mac",
     description:
-      "A Snagit alternative for macOS aimed at video: automatic zooms on clicks and typing, a framed camera over a background, captions transcribed on your Mac, 4K 120 export. $9 a month, or $29 once.",
+      "A Snagit alternative for macOS aimed at video: automatic zooms on clicks and typing, a framed camera over a background, captions transcribed on your Mac, 4K 120 export. $9 a month, or $39 once.",
     navLabel: "vs Snagit",
     faq: [
       {
@@ -1364,7 +1364,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Snagit alternative?",
         answer:
-          "For anything that will be watched rather than read, yes. Prequel makes the cinematic pass automatically, cuts and retimes on a timeline, blurs anything private and exports at up to 4K and 120 frames a second for $9 a month or $29 once. It does not take screenshots, so a team writing documentation keeps Snagit for that half.",
+          "For anything that will be watched rather than read, yes. Prequel makes the cinematic pass automatically, cuts and retimes on a timeline, blurs anything private and exports at up to 4K and 120 frames a second for $9 a month or $39 once. It does not take screenshots, so a team writing documentation keeps Snagit for that half.",
       },
     ],
   },
@@ -1419,10 +1419,10 @@ export const competitors: Competitor[] = [
       { label: "ScreenPal screen recorder", url: "https://screenpal.com/screen-recorder" },
     ],
     heading: "Looking for a ScreenPal alternative?",
-    lede: "ScreenPal edits, hosts and quizzes, and every zoom in it is one you placed. Prequel places them from where you click and what you type, frames the camera, applies a background and exports at 4K and 120 fps on your own Mac. $9 a month, or $29 once.",
+    lede: "ScreenPal edits, hosts and quizzes, and every zoom in it is one you placed. Prequel places them from where you click and what you type, frames the camera, applies a background and exports at 4K and 120 fps on your own Mac. $9 a month, or $39 once.",
     title: "ScreenPal alternative for Mac",
     description:
-      "A ScreenPal alternative for macOS that finishes the video for you: automatic zooms, a framed camera cut out of the room, captions transcribed on your Mac and 4K 120 export, with nothing uploaded. $9 a month, or $29 once.",
+      "A ScreenPal alternative for macOS that finishes the video for you: automatic zooms, a framed camera cut out of the room, captions transcribed on your Mac and 4K 120 export, with nothing uploaded. $9 a month, or $39 once.",
     navLabel: "vs ScreenPal",
     faq: [
       {
@@ -1443,7 +1443,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good ScreenPal alternative?",
         answer:
-          "For making the video on a Mac, yes, and the work happens on your own machine: recording, editing and export never need the network, and captions are transcribed on device. It is $9 a month or $29 once. What it does not do is host your videos, put a quiz inside one, or run on a Chromebook.",
+          "For making the video on a Mac, yes, and the work happens on your own machine: recording, editing and export never need the network, and captions are transcribed on device. It is $9 a month or $39 once. What it does not do is host your videos, put a quiz inside one, or run on a Chromebook.",
       },
     ],
   },
@@ -1505,7 +1505,7 @@ export const competitors: Competitor[] = [
       { label: "Screencastify pricing", url: "https://www.screencastify.com/pricing" },
     ],
     heading: "Looking for a Screencastify alternative?",
-    lede: "Screencastify records in a tab, caps the free plan at ten videos and leaves the picture exactly as you performed it. Prequel records the Mac itself and opens the editor with the zooms placed, the camera framed and a background behind the window. $9 a month, or $29 once.",
+    lede: "Screencastify records in a tab, caps the free plan at ten videos and leaves the picture exactly as you performed it. Prequel records the Mac itself and opens the editor with the zooms placed, the camera framed and a background behind the window. $9 a month, or $39 once.",
     title: "Screencastify alternative for Mac",
     description:
       "A Screencastify alternative for macOS with no extension and no upload: screen, camera, microphone and system audio on separate tracks, automatic zooms, captions on your Mac, 4K 120 export.",
@@ -1529,7 +1529,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Screencastify alternative?",
         answer:
-          "If you are on a Mac and the video is a demo rather than a lesson, yes: automatic zooms, a perspective tilt, a framed camera, a background, a cleaned-up cursor, captions transcribed on device, and export at up to 4K and 120 frames a second for $9 a month or $29 once. It has no quizzing, no Google Drive integration and no Chromebook build.",
+          "If you are on a Mac and the video is a demo rather than a lesson, yes: automatic zooms, a perspective tilt, a framed camera, a background, a cleaned-up cursor, captions transcribed on device, and export at up to 4K and 120 frames a second for $9 a month or $39 once. It has no quizzing, no Google Drive integration and no Chromebook build.",
       },
     ],
   },
@@ -1582,16 +1582,16 @@ export const competitors: Competitor[] = [
       { label: "Vidyard pricing", url: "https://www.vidyard.com/pricing/" },
     ],
     heading: "Looking for a Vidyard alternative?",
-    lede: "Vidyard sells the analytics and charges $59 a seat for them. If what you need is the video, Prequel places the zooms, frames the camera, applies a background and exports at 4K and 120 fps on your own Mac, for $9 a month or $29 once.",
+    lede: "Vidyard sells the analytics and charges $59 a seat for them. If what you need is the video, Prequel places the zooms, frames the camera, applies a background and exports at 4K and 120 fps on your own Mac, for $9 a month or $39 once.",
     title: "Vidyard alternative for Mac",
     description:
-      "A Vidyard alternative for macOS at $9 a month or $29 once: automatic zooms on clicks and typing, a framed camera, captions transcribed on your Mac and 4K 120 export, with no seat to pay for.",
+      "A Vidyard alternative for macOS at $9 a month or $39 once: automatic zooms on clicks and typing, a framed camera, captions transcribed on your Mac and 4K 120 export, with no seat to pay for.",
     navLabel: "vs Vidyard",
     faq: [
       {
         question: "What is the best Vidyard alternative?",
         answer:
-          "It depends what you are buying. For the recording, Prequel: zooms placed on every click and every burst of typing, a perspective tilt, a camera framed and cut out of the room, and export at up to 4K and 120 frames a second, for $9 a month or $29 once. For viewer analytics written back into a CRM, Vidyard is the product and nothing here replaces it.",
+          "It depends what you are buying. For the recording, Prequel: zooms placed on every click and every burst of typing, a perspective tilt, a camera framed and cut out of the room, and export at up to 4K and 120 frames a second, for $9 a month or $39 once. For viewer analytics written back into a CRM, Vidyard is the product and nothing here replaces it.",
       },
       {
         question: "How much does Vidyard cost?",
@@ -1664,7 +1664,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Zoom alternative for recording?",
-    lede: "A recorded meeting looks like a recorded meeting: one distance, a rectangle in the corner, call-grade compression. Prequel records the screen and the camera as separate tracks, places the zooms, frames the camera and exports at 4K and 120 fps. $9 a month, or $29 once.",
+    lede: "A recorded meeting looks like a recorded meeting: one distance, a rectangle in the corner, call-grade compression. Prequel records the screen and the camera as separate tracks, places the zooms, frames the camera and exports at 4K and 120 fps. $9 a month, or $39 once.",
     title: "Zoom alternative for recording a Mac screen",
     description:
       "A Zoom alternative for recording on macOS: screen, camera, microphone and system audio on separate tracks, automatic zooms, a framed camera over a background, and 4K 120 export instead of a 1080p meeting file.",
@@ -1744,7 +1744,7 @@ export const competitors: Competitor[] = [
       { label: "Clipchamp", url: "https://clipchamp.com/en/" },
     ],
     heading: "Looking for a Clipchamp alternative on a Mac?",
-    lede: "Clipchamp has no Mac app, keeps 4K for Premium and leaves every zoom to you. Prequel records the Mac natively and opens the editor with the pass made: zooms placed, camera framed, background applied, cursor cleaned up. 4K at 120 fps, $9 a month or $29 once.",
+    lede: "Clipchamp has no Mac app, keeps 4K for Premium and leaves every zoom to you. Prequel records the Mac natively and opens the editor with the pass made: zooms placed, camera framed, background applied, cursor cleaned up. 4K at 120 fps, $9 a month or $39 once.",
     title: "Clipchamp alternative for Mac",
     description:
       "A Clipchamp alternative for macOS: a native recorder with automatic zooms on clicks and typing, a framed camera over a background, captions transcribed on your Mac, and 4K 120 export with no Premium tier.",
@@ -1768,7 +1768,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Clipchamp alternative?",
         answer:
-          "On a Mac, for screen recordings, yes: it records screen, camera, microphone and system audio as separate tracks, finishes the first pass automatically and exports at up to 4K and 120 frames a second for $9 a month or $29 once. It is not a general-purpose editor, so footage from a camera roll with stock music under it is Clipchamp's job, or iMovie's.",
+          "On a Mac, for screen recordings, yes: it records screen, camera, microphone and system audio as separate tracks, finishes the first pass automatically and exports at up to 4K and 120 frames a second for $9 a month or $39 once. It is not a general-purpose editor, so footage from a camera roll with stock music under it is Clipchamp's job, or iMovie's.",
       },
     ],
   },
@@ -1823,7 +1823,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Movavi alternative?",
-    lede: "Movavi captures the take, watermarks the trial and points at a second product for the editing. Prequel finishes the video where it recorded it: zooms placed, camera framed, background applied, cursor cleaned up, 4K at 120 fps. $9 a month, or $29 once.",
+    lede: "Movavi captures the take, watermarks the trial and points at a second product for the editing. Prequel finishes the video where it recorded it: zooms placed, camera framed, background applied, cursor cleaned up, 4K at 120 fps. $9 a month, or $39 once.",
     title: "Movavi Screen Recorder alternative for Mac",
     description:
       "A Movavi Screen Recorder alternative for macOS with no watermark in the trial: automatic zooms on clicks and typing, a framed camera over a background, captions on your Mac, 4K 120 export.",
@@ -1847,7 +1847,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Movavi alternative?",
         answer:
-          "On a Mac, yes, and for less: $29 once against $74.95, or $9 a month. It makes the cinematic pass automatically, cleans the microphone with Apple's own sound isolation and transcribes captions on device. What Movavi keeps is Windows, the recording scheduler and drawing on the screen while you record.",
+          "On a Mac, yes, and for less: $39 once against $74.95, or $9 a month. It makes the cinematic pass automatically, cleans the microphone with Apple's own sound isolation and transcribes captions on device. What Movavi keeps is Windows, the recording scheduler and drawing on the screen while you record.",
       },
     ],
   },
@@ -1900,7 +1900,7 @@ export const competitors: Competitor[] = [
       { label: "Buy Bandicam", url: "https://www.bandicam.com/buy/" },
     ],
     heading: "Looking for a Bandicam alternative on a Mac?",
-    lede: "Bandicam is Windows software, so moving to a Mac means choosing again. Prequel records a display, a window or a region with the camera and system audio, places the zooms, frames the camera and exports at 4K and 120 fps, with no watermark anywhere. $9 a month, or $29 once.",
+    lede: "Bandicam is Windows software, so moving to a Mac means choosing again. Prequel records a display, a window or a region with the camera and system audio, places the zooms, frames the camera and exports at 4K and 120 fps, with no watermark anywhere. $9 a month, or $39 once.",
     title: "Bandicam alternative for Mac",
     description:
       "A Bandicam alternative for macOS: screen, camera, microphone and system audio on separate tracks, automatic zooms on clicks and typing, no watermark at any point, and 4K 120 export.",
@@ -1973,7 +1973,7 @@ export const competitors: Competitor[] = [
       { label: "ShareX on GitHub", url: "https://github.com/ShareX/ShareX" },
     ],
     heading: "Looking for a ShareX alternative on a Mac?",
-    lede: "ShareX is Windows only, and the video half of it is capture with no zooms, no camera and no timeline. Prequel records the Mac, places the zooms, frames the camera over a background and exports at 4K and 120 fps, with a link when you want one. $9 a month, or $29 once.",
+    lede: "ShareX is Windows only, and the video half of it is capture with no zooms, no camera and no timeline. Prequel records the Mac, places the zooms, frames the camera over a background and exports at 4K and 120 fps, with a link when you want one. $9 a month, or $39 once.",
     title: "ShareX alternative for Mac",
     description:
       "A ShareX alternative for macOS on the video side: screen, camera, microphone and system audio on separate tracks, automatic zooms, a framed camera, 4K 120 export, and a shareable link in one click.",
@@ -1987,7 +1987,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a free ShareX alternative for Mac?",
         answer:
-          "The Screenshot app is already installed and records the screen, and OBS Studio is free and open source if you need more control. Prequel is $9 a month or $29 once after a seven-day trial, and what it sells is the finished video: zooms on clicks and typing, a framed camera, a background and a cleaned-up cursor.",
+          "The Screenshot app is already installed and records the screen, and OBS Studio is free and open source if you need more control. Prequel is $9 a month or $39 once after a seven-day trial, and what it sells is the finished video: zooms on clicks and typing, a framed camera, a background and a cleaned-up cursor.",
       },
       {
         question: "Does Prequel upload my recordings anywhere?",
@@ -2051,7 +2051,7 @@ export const competitors: Competitor[] = [
       { label: "FlashBack pricing", url: "https://www.flashbackrecorder.com/pricing" },
     ],
     heading: "Looking for a FlashBack alternative on a Mac?",
-    lede: "FlashBack is Windows software, and every zoom in it is one you place on a timeline. Prequel records the Mac and opens the editor with the zooms already there, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $29 once.",
+    lede: "FlashBack is Windows software, and every zoom in it is one you place on a timeline. Prequel records the Mac and opens the editor with the zooms already there, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $39 once.",
     title: "FlashBack alternative for Mac",
     description:
       "A FlashBack alternative for macOS: screen, camera, microphone and system audio on separate tracks, zooms placed automatically on clicks and typing, blur regions, captions on your Mac, 4K 120 export.",
@@ -2070,7 +2070,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is there a free screen recorder for Mac like FlashBack Starter?",
         answer:
-          "The Screenshot app is built into macOS and records with no watermark and no limit, and OBS Studio is free, open source and far more capable. Neither finishes the video: the zooms, the framing and the cuts are yours to make, which is what Prequel does for you at $9 a month or $29 once.",
+          "The Screenshot app is built into macOS and records with no watermark and no limit, and OBS Studio is free, open source and far more capable. Neither finishes the video: the zooms, the framing and the cuts are yours to make, which is what Prequel does for you at $9 a month or $39 once.",
       },
       {
         question: "Is Prequel a good FlashBack alternative?",
@@ -2130,7 +2130,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for an Icecream Screen Recorder alternative?",
-    lede: "Icecream watermarks the free version and trims the paid one. Prequel exports without a watermark from the first day of the trial, and opens the editor with the zooms placed, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $29 once.",
+    lede: "Icecream watermarks the free version and trims the paid one. Prequel exports without a watermark from the first day of the trial, and opens the editor with the zooms placed, the camera framed and a background behind the window. 4K at 120 fps, $9 a month or $39 once.",
     title: "Icecream Screen Recorder alternative for Mac",
     description:
       "An Icecream Screen Recorder alternative for macOS with no watermark anywhere: automatic zooms on clicks and typing, a framed camera over a background, captions on your Mac, and 4K 120 export.",
@@ -2149,7 +2149,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel a good Icecream Screen Recorder alternative?",
         answer:
-          "On a Mac, yes. It records screen, camera, microphone and system audio as separate tracks, makes the cinematic pass automatically, cuts and retimes on a timeline, transcribes captions on device and exports at up to 4K and 120 frames a second, for $9 a month or $29 once.",
+          "On a Mac, yes. It records screen, camera, microphone and system audio as separate tracks, makes the cinematic pass automatically, cuts and retimes on a timeline, transcribes captions on device and exports at up to 4K and 120 frames a second, for $9 a month or $39 once.",
       },
       {
         question: "Is Icecream better for anything?",
@@ -2207,16 +2207,16 @@ export const competitors: Competitor[] = [
       { label: "FocuSee pricing", url: "https://www.gemoo.com/focusee/pricing.htm" },
     ],
     heading: "Looking for a FocuSee alternative?",
-    lede: "FocuSee's lifetime licence is $199.99 and covers one version line. Prequel is $29 once, or $9 a month, and takes the pass further: zooms on what you type as well as where you click, a perspective tilt, focus falling away from the subject, and 4K at 120 fps.",
+    lede: "FocuSee's lifetime licence is $199.99 and covers one version line. Prequel is $39 once, or $9 a month, and takes the pass further: zooms on what you type as well as where you click, a perspective tilt, focus falling away from the subject, and 4K at 120 fps.",
     title: "FocuSee alternative for Mac",
     description:
-      "A FocuSee alternative for macOS at $29 once: automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, captions transcribed on your Mac and 4K 120 export.",
+      "A FocuSee alternative for macOS at $39 once: automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, captions transcribed on your Mac and 4K 120 export.",
     navLabel: "vs FocuSee",
     faq: [
       {
         question: "What is the best FocuSee alternative?",
         answer:
-          "On a Mac, Prequel. It does the same job, automatic zooms on a screen recording, and adds the parts that make a take read as directed: zooms on what you type as well as where you click, a perspective tilt on the push-in, focus falling away from the subject, a camera cut out of the room behind you, and export at up to 4K and 120 frames a second. It is $29 once against $199.99.",
+          "On a Mac, Prequel. It does the same job, automatic zooms on a screen recording, and adds the parts that make a take read as directed: zooms on what you type as well as where you click, a perspective tilt on the push-in, focus falling away from the subject, a camera cut out of the room behind you, and export at up to 4K and 120 frames a second. It is $39 once against $199.99.",
       },
       {
         question: "How much does FocuSee cost?",
@@ -2285,16 +2285,16 @@ export const competitors: Competitor[] = [
       { label: "Cursorful pricing", url: "https://cursorful.com/#pricing" },
     ],
     heading: "Looking for a Cursorful alternative?",
-    lede: "Cursorful zooms when two clicks land inside three seconds, and free stops at non-commercial use. Prequel zooms on every click and every burst of typing, tilts the push-in, pulls focus off the subject and exports at 4K and 120 fps. $9 a month, or $29 once against their $79.",
+    lede: "Cursorful zooms when two clicks land inside three seconds, and free stops at non-commercial use. Prequel zooms on every click and every burst of typing, tilts the push-in, pulls focus off the subject and exports at 4K and 120 fps. $9 a month, or $39 once against their $79.",
     title: "Cursorful alternative for Mac",
     description:
-      "A Cursorful alternative for macOS at $29 once: a native recorder with automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, and 4K 120 export.",
+      "A Cursorful alternative for macOS at $39 once: a native recorder with automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, and 4K 120 export.",
     navLabel: "vs Cursorful",
     faq: [
       {
         question: "What is the best Cursorful alternative?",
         answer:
-          "On a Mac, Prequel. It captures a display, a window or a region through ScreenCaptureKit rather than a browser tab, places zooms on every click and every burst of typing, tilts the push-in, pulls focus away from the subject and exports at up to 4K and 120 frames a second. It is $29 once against Cursorful's $79, or $9 a month.",
+          "On a Mac, Prequel. It captures a display, a window or a region through ScreenCaptureKit rather than a browser tab, places zooms on every click and every burst of typing, tilts the push-in, pulls focus away from the subject and exports at up to 4K and 120 frames a second. It is $39 once against Cursorful's $79, or $9 a month.",
       },
       {
         question: "Is Cursorful free?",
@@ -2362,7 +2362,7 @@ export const competitors: Competitor[] = [
       },
     ],
     heading: "Looking for a Recordly alternative?",
-    lede: "Recordly is free, open source and good at the basics of the cinematic pass. Prequel takes it further: zooms on what you type, a perspective tilt, focus falling away from the subject, a camera cut out of the room, captions on device, 4K at 120 fps. $9 a month, or $29 once.",
+    lede: "Recordly is free, open source and good at the basics of the cinematic pass. Prequel takes it further: zooms on what you type, a perspective tilt, focus falling away from the subject, a camera cut out of the room, captions on device, 4K at 120 fps. $9 a month, or $39 once.",
     title: "Recordly alternative for Mac",
     description:
       "A Recordly alternative for macOS: automatic zooms on clicks and typing, a perspective tilt, a camera cut out of its background, captions transcribed on your Mac, and 4K 120 export through the Mac's media engine.",
@@ -2371,7 +2371,7 @@ export const competitors: Competitor[] = [
       {
         question: "What is the best Recordly alternative?",
         answer:
-          "If you want another free one, OpenScreen is the closest: MIT-licensed, on three platforms, with click zooms, cursor packs and captions from whisper.cpp. If the video is going in front of customers, Prequel: zooms on clicks and typing, a perspective tilt, focus falling away from the subject, a camera cut out of the room, and export at up to 4K and 120 frames a second for $9 a month or $29 once.",
+          "If you want another free one, OpenScreen is the closest: MIT-licensed, on three platforms, with click zooms, cursor packs and captions from whisper.cpp. If the video is going in front of customers, Prequel: zooms on clicks and typing, a perspective tilt, focus falling away from the subject, a camera cut out of the room, and export at up to 4K and 120 frames a second for $9 a month or $39 once.",
       },
       {
         question: "Is Recordly free?",
@@ -2381,7 +2381,7 @@ export const competitors: Competitor[] = [
       {
         question: "Is Prequel worth paying for when Recordly is free?",
         answer:
-          "It depends how much the output matters. Recordly gives you auto-zoom, an animated cursor and a background, which is most of the look. Prequel adds zooms on what you type, a tilted push-in with focus falling away from it, a camera framed and cut out of the room, seventeen colour looks, captions transcribed on device, and export at 4K and 120 frames a second through the Mac's own media engine. For a launch video, that is $29. For a weekly clip for a team chat, Recordly is a good answer.",
+          "It depends how much the output matters. Recordly gives you auto-zoom, an animated cursor and a background, which is most of the look. Prequel adds zooms on what you type, a tilted push-in with focus falling away from it, a camera framed and cut out of the room, seventeen colour looks, captions transcribed on device, and export at 4K and 120 frames a second through the Mac's own media engine. For a launch video, that is $39. For a weekly clip for a team chat, Recordly is a good answer.",
       },
     ],
   },
@@ -2436,7 +2436,7 @@ export const competitors: Competitor[] = [
       { label: "OpenScreen on GitHub", url: "https://github.com/siddharthvaddem/openscreen" },
     ],
     heading: "Looking for an OpenScreen alternative?",
-    lede: "OpenScreen is free, MIT-licensed and stops at 60 frames a second in H.264. Prequel captures through ScreenCaptureKit and encodes on the Mac's own media engine: 4K at 120 fps, zooms on clicks and typing, a tilted push-in and focus falling away from the subject. $9 a month, or $29 once.",
+    lede: "OpenScreen is free, MIT-licensed and stops at 60 frames a second in H.264. Prequel captures through ScreenCaptureKit and encodes on the Mac's own media engine: 4K at 120 fps, zooms on clicks and typing, a tilted push-in and focus falling away from the subject. $9 a month, or $39 once.",
     title: "OpenScreen alternative for Mac",
     description:
       "An OpenScreen alternative for macOS: a native recorder with automatic zooms on clicks and typing, a perspective tilt, seventeen colour looks, captions from Apple's speech framework, and 4K 120 export.",
@@ -2445,7 +2445,7 @@ export const competitors: Competitor[] = [
       {
         question: "What is the best OpenScreen alternative?",
         answer:
-          "Another free one is Recordly, which is open source on the same three platforms. If the recording is work, Prequel: a native Mac app that captures through ScreenCaptureKit, places zooms on every click and every burst of typing, tilts the push-in, pulls focus away from the subject and exports at up to 4K and 120 frames a second. It is $9 a month or $29 once.",
+          "Another free one is Recordly, which is open source on the same three platforms. If the recording is work, Prequel: a native Mac app that captures through ScreenCaptureKit, places zooms on every click and every burst of typing, tilts the push-in, pulls focus away from the subject and exports at up to 4K and 120 frames a second. It is $9 a month or $39 once.",
       },
       {
         question: "Is OpenScreen free?",

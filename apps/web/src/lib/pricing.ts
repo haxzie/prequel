@@ -7,7 +7,7 @@
  *  and every comparison page follow.
  *
  *  **Two plans, and the app in both is the same app.** Pro is $9 a month, the
- *  lifetime licence is $29 once, and the only thing that differs is how much
+ *  lifetime licence is $39 once, and the only thing that differs is how much
  *  may be kept on the shareable-link side: unlimited against 5 GB. Nothing about
  *  recording, editing or exporting is held back on either — no watermark, no
  *  length cap, no resolution tier, no feature behind the more expensive one. So
@@ -22,15 +22,25 @@
  *  the quotas are written in decimal on both sides precisely so "5 GB" is the
  *  same string in the copy and in the dashboard.
  *
- *  **The price is stated, not sold — with one exception, the launch sale.**
- *  The lifetime licence lists at $36 and is $29 for the launch, and the card
- *  strikes the list price because for once there is a real one to strike. That
- *  is the only dressing: no countdown, and no promise that a licence bought
- *  today keeps this rate for life — that is a commitment to honour indefinitely
- *  on every licence sold at this price, and it is not something a page is
- *  allowed to invent on the way to a better conversion rate. The FAQ answers
- *  honestly if somebody asks whether it will rise. When the sale ends, clearing
- *  `PRICE_LIFETIME_WAS` and setting `PRICE_LIFETIME` back is the whole change.
+ *  **The price is stated, not sold.** The launch sale is over — the lifetime
+ *  licence is $39 and there is no struck price beside it, because there is no
+ *  longer a real one to strike. No countdown, and no promise that a licence
+ *  bought today keeps this rate for life: that is a commitment to honour
+ *  indefinitely on every licence sold at this price, and it is not something a
+ *  page is allowed to invent on the way to a better conversion rate. The FAQ
+ *  answers honestly if somebody asks whether it will rise, and it has risen
+ *  once already. To run another sale, set `PRICE_LIFETIME_WAS` to the list
+ *  price and `PRICE_LIFETIME` to the sale one: the strike, the badge and the
+ *  ticker above the nav all come back from those two, and clearing
+ *  `PRICE_LIFETIME_WAS` again takes all three away. The words in `SALE_LABEL`
+ *  and in the ticker still say "launch day" and are wrong for a second sale —
+ *  the numbers follow the constants, the sentence does not.
+ *
+ *  **The price Dodo charges is the price, and it is not in this repo.** The
+ *  amount lives on the lifetime product in Dodo's dashboard; nothing in
+ *  `apps/api` checks what was paid, only which product it was. So this file
+ *  disagreeing with Dodo is not caught by a test, a type or a webhook — it is
+ *  caught by somebody reaching checkout and seeing a different number.
  *
  *  **Write the month, and never annualise it.** `$9 a month` is what is
  *  charged. `$108 a year` is a number nobody is billed, and inventing a cadence
@@ -50,17 +60,18 @@
  */
 
 export const PRICE_MONTHLY = "$9";
-export const PRICE_LIFETIME = "$29";
+export const PRICE_LIFETIME = "$39";
 /**
- * The lifetime list price, struck through beside the sale price for the launch.
- * Set to `undefined` when the sale ends and the strike disappears everywhere it
- * is drawn; nothing else reads it.
+ * The list price to strike beside the live one during a sale, and `undefined`
+ * the rest of the time — which is now. Set it and the strike, the card's badge
+ * and the ticker above the nav all appear; clear it and they all go.
  */
-export const PRICE_LIFETIME_WAS: string | undefined = "$36";
+export const PRICE_LIFETIME_WAS: string | undefined = undefined;
 /**
  * The saving, written out rather than computed: the prices are strings with a
  * currency sign in them, and parsing them back to numbers to subtract is a
  * long way round for one figure that changes with the sale and nothing else.
+ * Read only while `PRICE_LIFETIME_WAS` is set, so it says nothing today.
  */
 export const SALE_LABEL = "Launch day sale · 20% off";
 export const TRIAL_DAYS = 7;
@@ -202,7 +213,10 @@ export const FAQ: { question: string; answer: string }[] = [
   },
   {
     question: "Will the price go up?",
-    answer: `The lifetime licence lists at ${PRICE_LIFETIME_WAS} and is ${PRICE_LIFETIME} for the launch, and Pro is ${PRICE_MONTHLY} a month. Those are what Prequel costs today, and we would rather say that plainly than dress it up with a countdown — the sale ends when it ends, and there is no claim that signing up today locks the rate in forever. If it rises, it rises, and the page will say the new number.`,
+    // "$29" written out rather than read from a constant: it is a price we
+    // charged and no longer do, so it is history rather than pricing, and a
+    // constant holding it would be one more number to keep true.
+    answer: `It has. The lifetime licence was $29 for the launch and is ${PRICE_LIFETIME} now, and Pro is ${PRICE_MONTHLY} a month. Those are what Prequel costs today, said plainly rather than dressed up with a countdown, and there is no claim that buying today locks the rate in forever. If it rises again, this page will say the new number. A licence you have already bought is not re-priced — it is one payment, and there is nothing to renew.`,
   },
   {
     question: "Is the lifetime licence really for life?",

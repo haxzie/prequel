@@ -36,7 +36,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "What is the best screen recorder for Mac?",
     answer:
-      "Prequel, if the recording has to look produced without an afternoon of editing. It records the screen, your camera and both audio tracks, then opens an editor with the zooms already placed on your clicks and typing, your camera framed and a background behind it. Export is 4K at 120 fps, on your Mac, with nothing uploaded. Seven days free, then $9 a month or $29 once.",
+      "Prequel, if the recording has to look produced without an afternoon of editing. It records the screen, your camera and both audio tracks, then opens an editor with the zooms already placed on your clicks and typing, your camera framed and a background behind it. Export is 4K at 120 fps, on your Mac, with nothing uploaded. Seven days free, then $9 a month or $39 once.",
   },
   {
     question: "Which Mac screen recorder has automatic zoom?",
@@ -46,7 +46,7 @@ const FAQ: FaqEntry[] = [
   {
     question: "What is the best Screen Studio alternative?",
     answer:
-      "Prequel is the closest to it: the same automatic zooms and cursor smoothing, plus the perspective tilt, the focus falloff, fourteen layouts and export at 4K 120 where Screen Studio stops at 4K 60. It is $9 a month, the same as Screen Studio's yearly rate and a third of its monthly one, and there is a $29 lifetime licence, which Screen Studio withdrew in 2025.",
+      "Prequel is the closest to it: the same automatic zooms and cursor smoothing, plus the perspective tilt, the focus falloff, fourteen layouts and export at 4K 120 where Screen Studio stops at 4K 60. It is $9 a month, the same as Screen Studio's yearly rate and a third of its monthly one, and there is a $39 lifetime licence, which Screen Studio withdrew in 2025.",
   },
   {
     question: "Which screen recorder does not upload my recordings?",
@@ -71,12 +71,12 @@ const FAQ: FaqEntry[] = [
   {
     question: "Is there a free screen recorder with automatic zoom for Mac?",
     answer:
-      "Prequel is free for seven days with the whole app in it, no card needed, and then $9 a month or $29 once. Screen Studio and Tella are paid too. The free recorders in this category capture faithfully and leave the zooms, the framing and the background to you.",
+      "Prequel is free for seven days with the whole app in it, no card needed, and then $9 a month or $39 once. Screen Studio and Tella are paid too. The free recorders in this category capture faithfully and leave the zooms, the framing and the background to you.",
   },
   {
     question: "Which screen recorder is cheapest?",
     answer:
-      "Prequel is $9 a month or $29 once, for everything. Screen Studio is $29 a month or $9 a month billed yearly; Loom Business is $18 a seat; Tella is $13 a seat; Descript's paid plans start at $16; Camtasia is an annual subscription; Screen Charm is $99 once and ScreenFlow is $199.99 once. Prices as checked on the dates under the grid.",
+      "Prequel is $9 a month or $39 once, for everything. Screen Studio is $29 a month or $9 a month billed yearly; Loom Business is $18 a seat; Tella is $13 a seat; Descript's paid plans start at $16; Camtasia is an annual subscription; Screen Charm is $99 once and ScreenFlow is $199.99 once. Prices as checked on the dates under the grid.",
   },
 ];
 

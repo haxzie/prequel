@@ -1,11 +1,16 @@
 import Link from "next/link";
 
+import { PRICE_LIFETIME, PRICE_LIFETIME_WAS } from "@/lib/pricing";
+
 import { SparkIcon } from "./icons";
 
-// The accessible name and the one place the words live. The visible copy
-// below strikes the old price; `<s>` is announced as "deleted" by some screen
-// readers and as nothing by others, so the label says it in words instead.
-const COPY = "Launch day sale, was $36, only $29 now";
+// The accessible name, built from the prices rather than typed beside them.
+// The strip used to carry its own copy of both numbers, which is how it went
+// on advertising a sale price the pricing page had already moved past. The
+// visible copy below strikes the old price; `<s>` is announced as "deleted" by
+// some screen readers and as nothing by others, so the label says it in words
+// instead.
+const COPY = `Launch day sale, was ${PRICE_LIFETIME_WAS}, only ${PRICE_LIFETIME} now`;
 
 // Enough repeats that one copy alone is wider than any viewport the site is
 // read on. The track is two copies and slides one copy's width per loop, so if
@@ -29,8 +34,15 @@ const REPEATS = 8;
  * loud and it should read as the product's own colour rather than a third-party
  * promo bar. Mounted in the marketing layout only — the dashboard and the sign-in
  * page have nothing to sell.
+ *
+ * Nothing at all when there is no sale on, which is the state today. The gate
+ * is here rather than in the layout so that ending a sale is one constant in
+ * `lib/pricing.ts` and not a constant plus an unmounting: a strip that keeps
+ * announcing a price the cards no longer charge is worse than no strip.
  */
 export function SaleBanner() {
+  if (!PRICE_LIFETIME_WAS) return null;
+
   return (
     <Link
       href="/pricing"
@@ -59,8 +71,8 @@ function Run({ hidden = false }: { hidden?: boolean }) {
                 not on the one that is gone. The strike is on the old price
                 alone: striking the dollar sign and the gap around it too reads
                 as a line through the sentence. */}
-            <s className="text-white/70">$36</s> only <strong className="font-semibold">$29</strong>{" "}
-            now
+            <s className="text-white/70">{PRICE_LIFETIME_WAS}</s> only{" "}
+            <strong className="font-semibold">{PRICE_LIFETIME}</strong> now
           </span>
           <SparkIcon className="size-3 shrink-0" />
         </span>
