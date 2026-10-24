@@ -1,3 +1,4 @@
+import { EmailNotifications } from "@/components/dashboard/EmailNotifications";
 import { ProfilePicture } from "@/components/dashboard/ProfilePicture";
 import { pageMetadata } from "@/lib/seo";
 import { requireTeam } from "@/lib/session";
@@ -12,12 +13,13 @@ export const metadata = pageMetadata({
 export const dynamic = "force-dynamic";
 
 /**
- * The account: the name, the address, and the picture.
+ * The account: the name, the address, the picture, and what we may send.
  *
  * The first two are read-only for now — both come from the provider that
  * signed the person in, and a name typed here would be overwritten by the
- * next Google sign-in with `overrideUserInfo` on. The picture is the one thing
- * that is ours to keep, and the one thing on this page that can be changed.
+ * next Google sign-in with `overrideUserInfo` on. The picture and the email
+ * switch are the two things that are ours to keep, and the two things on this
+ * page that can be changed.
  */
 export default async function AccountPage() {
   const { me } = await requireTeam();
@@ -37,6 +39,7 @@ export default async function AccountPage() {
       </dl>
 
       <ProfilePicture user={me.user} />
+      <EmailNotifications marketing={me.emails.marketing} />
     </div>
   );
 }

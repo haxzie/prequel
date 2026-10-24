@@ -63,6 +63,14 @@ export interface Me {
   /** Resolved against the active team, which is the one the dashboard renders. */
   trial: Trial;
   devices: Device[];
+  /**
+   * What this account has asked to be sent.
+   *
+   * Defaulted by the Worker rather than here — an account with no preference
+   * row is subscribed, and deciding that in two places is how a checkbox comes
+   * to disagree with the suppression list.
+   */
+  emails: { marketing: boolean };
 }
 
 /**

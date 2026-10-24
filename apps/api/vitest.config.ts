@@ -44,6 +44,14 @@ export default defineConfig({
           OPENAI_API_KEY: "",
           ANTHROPIC_API_KEY: "",
           MOONSHOT_API_KEY: "",
+          // Empty for the reason `OPENAI_API_KEY` is, and more sharply: the
+          // URL in `wrangler.jsonc` is the live Mails origin, so a suite that
+          // was handed a key would write to the real contact list on every
+          // run. `lib/mails.ts` makes no request without both, and the suite
+          // that wants the other path supplies its own pair and stubs `fetch`.
+          MAILS_API_URL: "",
+          MAILS_API_KEY: "",
+          MAILS_LIST_ID: "",
           // Billing, with nothing real behind it. Every suite that reaches a
           // billing route stubs `fetch`, so these only have to satisfy
           // `required()` — but they have to be here, or a suite that never

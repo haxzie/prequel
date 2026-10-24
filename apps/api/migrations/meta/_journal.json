@@ -64,6 +64,13 @@
       "when": 1790758527570,
       "tag": "0008_dark_carnage",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792858638711,
+      "tag": "0009_next_bastion",
+      "breakpoints": true
     }
   ]
 }

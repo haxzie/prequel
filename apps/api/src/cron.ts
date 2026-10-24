@@ -21,6 +21,7 @@ import { database } from "./db.ts";
 import type { Env } from "./env.ts";
 import { mirrorProviderPicture } from "./lib/avatars.ts";
 import { applyPlan } from "./lib/entitlement.ts";
+import { syncPlan } from "./lib/mails.ts";
 import { id } from "./lib/ids.ts";
 import { ensureTeam } from "./lib/teams.ts";
 
@@ -30,7 +31,7 @@ export async function scheduled(env: Env): Promise<void> {
   // Each step on its own. They are independent sweeps, and one throwing — a D1
   // hiccup, one bad row — would otherwise skip every step after it, hour after
   // hour, since the same row is still there next time.
-  await step("grace expiry", () => expireGrace(db));
+  await step("grace expiry", () => expireGrace(env, db));
   await step("team settlement", () => settleTeams(db));
   await step("account settlement", () => settleUsers(db));
   await step("avatar mirroring", () => mirrorAvatars(env, db));
@@ -63,7 +64,7 @@ type Database = ReturnType<typeof database>;
  * clears `graceUntil` through `subscription.renewed`, but a delivery that never
  * arrived would otherwise leave a paying team to be downgraded by this.
  */
-async function expireGrace(db: Database): Promise<void> {
+async function expireGrace(env: Env, db: Database): Promise<void> {
   const lapsed = await db
     .select({ id: schema.subscription.id, teamId: schema.subscription.teamId })
     .from(schema.subscription)
@@ -79,13 +80,13 @@ async function expireGrace(db: Database): Promise<void> {
     // One failure must not stop the sweep, as in `settleUsers`: the teams after
     // it would otherwise stay Pro past their grace for as long as it keeps
     // failing.
-    await expireOne(db, subscription).catch((error: unknown) => {
+    await expireOne(env, db, subscription).catch((error: unknown) => {
       console.error("grace expiry failed", subscription.teamId, error);
     });
   }
 }
 
-async function expireOne(db: Database, subscription: { id: string; teamId: string }) {
+async function expireOne(env: Env, db: Database, subscription: { id: string; teamId: string }) {
   await db
     .update(schema.subscription)
     .set({ graceUntil: null, updatedAt: new Date() })
@@ -97,6 +98,12 @@ async function expireOne(db: Database, subscription: { id: string; teamId: strin
   // Recomputed rather than set to `free`: a team that also holds the lifetime
   // licence falls back to that allowance, not to nothing.
   const plan = await applyPlan(db, subscription.teamId);
+
+  // Awaited rather than deferred, unlike the webhook's version. A scheduled run
+  // has no request waiting on it and no execution context to hang a promise
+  // off, and this is the one plan change no webhook announces — so it is the
+  // one Mails would otherwise never hear about.
+  await syncPlan(env, db, subscription.teamId, plan);
 
   console.warn("grace expired, team moved to", plan, subscription.teamId);
 }

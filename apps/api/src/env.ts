@@ -65,6 +65,30 @@ export interface Env {
   SLACK_EVENTS_WEBHOOK_URL?: string;
 
   /**
+   * Where Mails lives, and the key for it. See `lib/mails.ts`.
+   *
+   * The URL is a var and the key is a secret, the split `POSTHOG_HOST` and
+   * `SLACK_*_WEBHOOK_URL` already make: an API host is configuration a fork
+   * would want to change, and a bearer token that can rewrite every contact on
+   * the list is not something that belongs in `wrangler.jsonc`.
+   *
+   * Optional, and absent is a working state rather than a broken one: nothing
+   * is written to Mails at all without the key, the same way analytics goes
+   * quiet without a project token.
+   */
+  MAILS_API_URL?: string;
+  MAILS_API_KEY?: string;
+  /**
+   * The list new contacts are added to, if any.
+   *
+   * Unset means a contact is created and belongs to no list, which is still
+   * the whole of what this app needs — the properties are what segments are
+   * built on. A var rather than a secret: `lst_…` names a list, it does not
+   * grant anything.
+   */
+  MAILS_LIST_ID?: string;
+
+  /**
    * Which Dodo Payments environment this Worker talks to.
    *
    * A var rather than something inferred from the API key: Dodo serves test and

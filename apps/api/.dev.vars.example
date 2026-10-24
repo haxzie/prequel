@@ -74,3 +74,7 @@ DODOPAYMENT_LIFETIME_PRODUCT_ID=
 #
 SLACK_SIGNUPS_WEBHOOK_URL=
 SLACK_EVENTS_WEBHOOK_URL=
+
+# Mails. The key alone enables the integration; the API origin and the list id
+# are vars in wrangler.jsonc. Without this nothing is written to the list.
+MAILS_API_KEY=

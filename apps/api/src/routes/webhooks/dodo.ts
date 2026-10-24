@@ -33,6 +33,7 @@ import {
 } from "../../lib/dodo.ts";
 import { applyPlan, GRACE_MS } from "../../lib/entitlement.ts";
 import { id } from "../../lib/ids.ts";
+import { syncPlanLater } from "../../lib/mails.ts";
 import { describe, notify, personByTeam, type Deferrable } from "../../lib/slack.ts";
 
 const dodo = new Hono<{ Bindings: Env }>();
@@ -149,7 +150,7 @@ async function handle(
         return;
       }
 
-      await activate(db, teamId, subscription);
+      await activate(db, env, ctx, teamId, subscription);
       return;
     }
 
@@ -179,7 +180,7 @@ async function handle(
 
     case "subscription.cancelled":
     case "subscription.expired": {
-      await downgrade(db, subscription);
+      await downgrade(db, env, ctx, subscription);
       return;
     }
 
@@ -190,6 +191,8 @@ async function handle(
 
 async function activate(
   db: Database,
+  env: Env,
+  ctx: Deferrable,
   teamId: string,
   subscription: DodoSubscription,
 ): Promise<void> {
@@ -214,7 +217,11 @@ async function activate(
     .values({ id: id("sub"), ...row })
     .onConflictDoUpdate({ target: schema.subscription.teamId, set: row });
 
-  await applyPlan(db, teamId);
+  // The resolved plan, not the event's name for it. `applyPlan` recomputes from
+  // the tables, so a team that already held the lifetime licence comes back
+  // `lifetime` — and Mails is told what they are on rather than what they just
+  // bought, which are the same thing only for the common case.
+  syncPlanLater(env, ctx, db, teamId, await applyPlan(db, teamId));
 }
 
 /**
@@ -299,7 +306,7 @@ async function redeem(
     })
     .onConflictDoNothing({ target: schema.purchase.teamId });
 
-  await applyPlan(db, teamId);
+  syncPlanLater(env, ctx, db, teamId, await applyPlan(db, teamId));
 
   // After the row, not before: this is the only branch where a message could
   // announce a licence that was not granted, and the insert above is what
@@ -359,7 +366,12 @@ async function update(
  * would have nothing to come back to. What changes is the quota, so nothing new
  * goes up until the card does.
  */
-export async function downgrade(db: Database, subscription: DodoSubscription): Promise<void> {
+export async function downgrade(
+  db: Database,
+  env: Env,
+  ctx: Deferrable,
+  subscription: DodoSubscription,
+): Promise<void> {
   const [existing] = await db
     .select()
     .from(schema.subscription)
@@ -375,8 +387,10 @@ export async function downgrade(db: Database, subscription: DodoSubscription): P
 
   // Recomputed rather than set to `free`. A team that also holds the lifetime
   // licence falls back to that, not to nothing — they still own what they
-  // bought once, and this is the line that would otherwise take it away.
-  await applyPlan(db, existing.teamId);
+  // bought once, and this is the line that would otherwise take it away. Mails
+  // is told the same answer, so a win-back campaign cannot address somebody who
+  // still owns the app.
+  syncPlanLater(env, ctx, db, existing.teamId, await applyPlan(db, existing.teamId));
 }
 
 export default dodo;

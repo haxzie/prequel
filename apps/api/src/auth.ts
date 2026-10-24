@@ -14,6 +14,7 @@ import { schema } from "@prequel/db";
 import { database } from "./db.ts";
 import type { Env } from "./env.ts";
 import { mirrorProviderPicture } from "./lib/avatars.ts";
+import { createContact } from "./lib/mails.ts";
 import { emailShell, sendEmail } from "./lib/ses.ts";
 import { describe, post } from "./lib/slack.ts";
 import { ensureTeam } from "./lib/teams.ts";
@@ -64,6 +65,14 @@ export function createAuth(env: Env) {
             // gives up after five seconds, so the worst this costs a sign-up is
             // that — and only on a deployment that configured a webhook at all.
             await post(env, "signups", `*New sign-up* — ${describe(user)}`);
+
+            // The mailing list, for the same reason and on the same terms as
+            // the Slack post above: no execution context to defer onto, and
+            // `createContact` swallows its own failures and gives up after five
+            // seconds. This is the one place a contact is *created* rather than
+            // merged into — see the note in `lib/mails.ts` about why nothing
+            // else may use `POST /v1/contacts`.
+            await createContact(env, user);
 
             // The Google picture, copied while the URL is fresh. Swallows its
             // own failures for the reason above, and the cron's `mirrorAvatars`

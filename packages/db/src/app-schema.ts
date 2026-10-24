@@ -362,6 +362,40 @@ export const purchase = sqliteTable("purchase", {
  * The primary key is Dodo's `webhook-id` header, so the insert *is* the check:
  * a constraint violation means this event has been seen.
  */
+/**
+ * Whether this account wants the email that is not about something it did.
+ *
+ * A table of its own rather than a column on `user`, for the reason
+ * `subscription` and `purchase` are: `user` is Better Auth's, and a column
+ * added there has to be repeated in the plugin's `additionalFields` or the
+ * adapter drops it on write.
+ *
+ * **The suppression list in Mails is what actually stops a send; this row is
+ * our copy of it.** Kept because the settings screen has to render the current
+ * state, and doing that from Mails would put a third-party request in front of
+ * a page load — and show a spinner where a checkbox goes whenever they are
+ * slow. The write order in `routes/me.ts` is Mails first, then this, so a
+ * failure leaves the row saying what Mails is actually doing.
+ *
+ * No row means subscribed. That is what every account that predates this table
+ * is, and it is what a new one is — so the absence of a row is a real answer
+ * rather than something to backfill.
+ */
+export const emailPreference = sqliteTable("email_preference", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  /**
+   * Product news and tips. Not sign-in links, and not a share notification —
+   * those are the account working, they are sent by SES, and nothing here
+   * switches them off.
+   */
+  marketing: integer("marketing", { mode: "boolean" }).notNull().default(true),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export const webhookEvent = sqliteTable("webhook_event", {
   id: text("id").primaryKey(),
   type: text("type").notNull(),
@@ -386,3 +420,4 @@ export type NewVideo = typeof video.$inferInsert;
 export type DeviceToken = typeof deviceToken.$inferSelect;
 export type Subscription = typeof subscription.$inferSelect;
 export type Purchase = typeof purchase.$inferSelect;
+export type EmailPreference = typeof emailPreference.$inferSelect;

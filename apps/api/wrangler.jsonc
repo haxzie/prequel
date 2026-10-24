@@ -25,14 +25,14 @@
       // Where `wrangler d1 migrations apply` looks. Generated into this app by
       // packages/db's drizzle.config.ts, because wrangler resolves the path
       // relative to this file.
-      "migrations_dir": "migrations"
-    }
+      "migrations_dir": "migrations",
+    },
   ],
 
   "r2_buckets": [
     {
       "binding": "MEDIA",
-      "bucket_name": "prequel"
+      "bucket_name": "prequel",
       // Deliberately *not* `"remote": true`, tempting as it is. The tests read
       // this same file, and a remote binding would point them at the live
       // bucket — a test suite that writes to production storage, and one that
@@ -43,7 +43,7 @@
       // bucket while `complete` HEADs the local simulation, finds nothing, and
       // reports "the upload didn't finish". Use `pnpm dev:remote` to exercise
       // that path — see the README.
-    }
+    },
   ],
 
   "vars": {
@@ -86,10 +86,19 @@
     // host. The production block repeats them with the live ones: a named
     // environment inherits nothing, so leaving them out there would point live
     // traffic at products that do not exist.
+    // Mails. The origin only — `lib/mails.ts` appends `/v1/contacts` — and no
+    // trailing slash. The key is a secret and lives in `.dev.vars`, and
+    // without it nothing is written at all: that is what keeps development
+    // from rewriting contacts on the real list while still exercising the code
+    // path, the same call `POSTHOG_PROJECT_TOKEN` above makes in reverse.
+    "MAILS_API_URL": "https://mails-api.haxzie.com",
+    // Which list a new contact joins. Empty creates the contact and puts it on
+    // no list, which still carries every property segments are built from.
+    "MAILS_LIST_ID": "",
     "DODOPAYMENT_MODE": "test",
     "DODOPAYMENT_BRAND_ID": "",
     "DODOPAYMENT_PRO_PRODUCT_ID": "",
-    "DODOPAYMENT_LIFETIME_PRODUCT_ID": ""
+    "DODOPAYMENT_LIFETIME_PRODUCT_ID": "",
   },
 
   // Hourly, and for two things no webhook announces: a grace window closing
@@ -117,10 +126,14 @@
         // in production — which for these two is silence rather than an error.
         "POSTHOG_PROJECT_TOKEN": "phc_A4dtr8QH5LNujAGCTu9SANWvJLt6HUN5whqwsu3fGohc",
         "POSTHOG_HOST": "https://us.i.posthog.com",
+        // Repeated here for the reason the two above are: a named environment
+        // inherits none of the top-level vars, and an absent URL is silence.
+        "MAILS_API_URL": "https://mails-api.haxzie.com",
+        "MAILS_LIST_ID": "",
         "DODOPAYMENT_MODE": "live",
         "DODOPAYMENT_BRAND_ID": "brnd_0Nm8fKKuEmLeZdUchxYCx",
         "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
-        "DODOPAYMENT_LIFETIME_PRODUCT_ID": "pdt_0Nmfhrp46FPz4Y0C8ExmS"
+        "DODOPAYMENT_LIFETIME_PRODUCT_ID": "pdt_0Nmfhrp46FPz4Y0C8ExmS",
       },
       "triggers": { "crons": ["0 * * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
@@ -129,10 +142,10 @@
           "binding": "DB",
           "database_name": "prequel",
           "database_id": "bf36c554-42e2-4ee0-aae7-d8fbf600eb50",
-          "migrations_dir": "migrations"
-        }
+          "migrations_dir": "migrations",
+        },
       ],
-      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "prequel" }]
-    }
-  }
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "prequel" }],
+    },
+  },
 }
