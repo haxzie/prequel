@@ -6,14 +6,14 @@
  * which is the part that cannot be remade — so every failure here falls back to
  * defaults rather than throwing.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { newProject, PROJECT_FILE_NAME, PROJECT_VERSION } from "../shared/project.js";
-import { flushProject, loadProject, saveProject } from "./editor-project.js";
+import { flushProject, forgetProject, loadProject, saveProject } from "./editor-project.js";
 
 const S = 1_000_000_000;
 const RECORDING = "2026-08-11T12-00-00";
@@ -135,5 +135,49 @@ describe("flushProject", () => {
     flushProject(dir);
 
     expect(stored()).toMatchObject({ recordingId: RECORDING });
+  });
+});
+
+/**
+ * Deleting the recording you are editing.
+ *
+ * `projectsDelete` trashes the folder and then sends the window back to the
+ * grid, which flushes the project it was showing, and the renderer's own
+ * debounced save lands a few milliseconds after that. Both used to write an
+ * `ENOENT` with a stack into the log — "could not save project.json" twice,
+ * every time anybody discarded a take, in the one file a user sends us when
+ * something has gone wrong.
+ */
+describe("a recording that has gone to the Trash", () => {
+  it("does not recreate the folder on a flush", () => {
+    saveProject(dir, newProject(RECORDING, 10 * S));
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(() => flushProject(dir)).not.toThrow();
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("does not recreate the folder on a save that lands late", () => {
+    rmSync(dir, { recursive: true, force: true });
+
+    expect(() => saveProject(dir, newProject(RECORDING, 10 * S))).not.toThrow();
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("is not written back into it by a restore from the Trash", () => {
+    // What `forgetProject` is for. The edit is kept in memory until it is
+    // written, and the folder coming back — somebody putting the recording
+    // back from the Trash — is the one case where the directory check above
+    // passes again. Whatever is in that folder is then the recording as it was
+    // when it went in, and an edit from after it left must not be stamped over
+    // the top of it.
+    saveProject(dir, newProject(RECORDING, 10 * S));
+    rmSync(dir, { recursive: true, force: true });
+    forgetProject(dir);
+
+    mkdirSync(dir, { recursive: true });
+    flushProject(dir);
+
+    expect(() => readFileSync(join(dir, PROJECT_FILE_NAME))).toThrow();
   });
 });

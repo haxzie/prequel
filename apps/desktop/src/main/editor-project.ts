@@ -9,7 +9,7 @@
  * closing its window, which does not wait for a promise — so the last edit is
  * flushed synchronously on the way out rather than being raced by teardown.
  */
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Ns, Project, SourceShape } from "../shared/project.js";
@@ -76,6 +76,7 @@ export function loadProject(
  * still has something to flush.
  */
 export function saveProject(dir: string, project: Project): void {
+  if (gone(dir)) return;
   pending.set(dir, project);
   write(dir, project);
 }
@@ -84,8 +85,40 @@ export function saveProject(dir: string, project: Project): void {
 export function flushProject(dir: string): void {
   const project = pending.get(dir);
   if (!project) return;
-  write(dir, project);
+  if (!gone(dir)) write(dir, project);
   pending.delete(dir);
+}
+
+/**
+ * Drops what is held for a directory without writing it.
+ *
+ * For a recording on its way to the Trash. The check below already keeps the
+ * held edit from being written into a folder that has gone, so this is about
+ * the one case that defeats it: the folder coming back. A recording put back
+ * from the Trash is the recording as it was when it went in, and an edit made
+ * after that — still sitting in `pending`, waiting for a flush that may be
+ * minutes away — must not be stamped over the top of it.
+ */
+export function forgetProject(dir: string): void {
+  pending.delete(dir);
+}
+
+/**
+ * Whether a recording's directory has gone from under us.
+ *
+ * Deleting the recording you are editing reaches this twice, and used to write
+ * two `ENOENT` failures with stacks into the log every time: `projectsDelete`
+ * trashes the folder and then returns the window to the grid, which flushes the
+ * project it was showing, and the renderer's own debounced save lands a few
+ * milliseconds after that. Neither was a real failure — the file was meant to
+ * be gone — but both read as "could not save your edit" in the one file a user
+ * sends us when something goes wrong.
+ *
+ * A check before the write rather than a quieter `catch` around it: a write
+ * that fails for any other reason is still worth the warning it prints.
+ */
+function gone(dir: string): boolean {
+  return !existsSync(dir);
 }
 
 /**

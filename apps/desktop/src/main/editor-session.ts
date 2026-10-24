@@ -35,7 +35,7 @@ import type { Project } from "../shared/project.js";
 import { FALLBACK_BACKGROUND, sourceShape } from "../shared/project.js";
 import type { Transcript } from "../shared/transcript.js";
 import { TRANSCRIPT_FILE_NAME, parseTranscript } from "../shared/transcript.js";
-import { loadProject } from "./editor-project.js";
+import { forgetProject, loadProject } from "./editor-project.js";
 import { mergeUnmergedTakes, takeFocus } from "./session-merge.js";
 import { log } from "./log.js";
 import { mediaUrl } from "./media-protocol.js";
@@ -375,6 +375,10 @@ export async function deleteRecordings(
     try {
       await shell.trashItem(dir);
       deleted.push(dir);
+      // Before anything else can flush it. The edit is held in memory until it
+      // is written, so a project still held for a folder that has just gone
+      // would be written straight back into it — see `forgetProject`.
+      forgetProject(dir);
       log("info", `moved ${dir} to the Trash`);
     } catch (cause) {
       // One that would not go — a permission, a file open elsewhere — must not
