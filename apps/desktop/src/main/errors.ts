@@ -27,6 +27,7 @@ import { homedir } from "node:os";
 import { app } from "electron";
 
 import { track } from "./analytics.js";
+import { log } from "./log.js";
 
 /**
  * How many error events one run of the app may send.
@@ -185,6 +186,13 @@ export function redact(text: string): string {
  * log is written synchronously to a file that has to survive the process dying
  * in the next millisecond, and this queues a network request. Neither should be
  * able to stop the other happening.
+ *
+ * The last two are different: nothing else is listening for them, so this is
+ * also the only place they can reach the log. Without that line a renderer or
+ * GPU process dying left no mark whatever in `main.log` — the one file there is
+ * to read when somebody reports that the app broke, and the one they are asked
+ * to send. A crash that takes the editor's canvas with it then arrives as a
+ * report of the editor doing nothing, against a log in which nothing happened.
  */
 export function watchForErrors(): void {
   process.on("uncaughtException", (error) => reportError("main", error, { fatal: true }));
@@ -192,8 +200,11 @@ export function watchForErrors(): void {
 
   // A renderer going down is what somebody means when they say the app broke,
   // and it throws nothing on this side to catch. `reason` is Electron's own
-  // word — `crashed`, `oom`, `killed` — which is exactly the shape wanted here.
+  // word — `crashed`, `oom`, `launch-failed` — which is exactly the shape
+  // wanted here, and which `worthReporting` reads to tell a crash from a quit.
   app.on("render-process-gone", (_event, _contents, details) => {
+    if (!worthReporting(details.reason)) return;
+    log("error", `renderer gone: ${details.reason}`, { exit_code: details.exitCode });
     reportError("renderer", details.reason, { exit_code: details.exitCode });
   });
 
@@ -201,9 +212,38 @@ export function watchForErrors(): void {
   // crash takes the editor's canvas with it and looks to the user like the
   // editor failing rather than the machine.
   app.on("child-process-gone", (_event, details) => {
+    if (!worthReporting(details.reason)) return;
+    log("error", `${details.type} process gone: ${details.reason}`, {
+      exit_code: details.exitCode,
+    });
     reportError("child", details.reason, {
       child: details.type,
       exit_code: details.exitCode,
     });
   });
+}
+
+/**
+ * The reasons these two events carry that mean a process died, not that it was
+ * taken down.
+ *
+ * Both fire on an ordinary quit. Every window here is destroyed in `will-quit`
+ * and the GPU and utility processes go with the app, and Electron's word for a
+ * process that was ended from outside is `killed` — so a user choosing Quit
+ * from the tray raised one of these per process, every time, as an `error`.
+ * That was 91% of everything the project had ever received: 357 events of
+ * `Error: killed` against 37 of everything else, and spread across 25 separate
+ * issues, because the frames end in a minified name from our own bundle that
+ * changes with every build. Real crashes sat underneath it unread.
+ *
+ * `clean-exit` goes for the same reason and says so in the name.
+ *
+ * The cost is a renderer the OS kills under memory pressure, which also arrives
+ * as `killed` and is now silent. That is the right side to be wrong on: it has
+ * its own reason — `oom` — for the case Chromium recognises, and a machine
+ * short of memory announces itself in a dozen other ways. Being unable to see
+ * any crash at all does not.
+ */
+function worthReporting(reason: string): boolean {
+  return reason !== "killed" && reason !== "clean-exit";
 }

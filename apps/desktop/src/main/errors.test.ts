@@ -10,7 +10,22 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("electron", () => ({ app: { on: () => undefined } }));
+/**
+ * Electron's own events, captured rather than ignored.
+ *
+ * The two process-gone handlers decide whether a failure is reported at all,
+ * and that decision is only reachable through `app.on` — so the mock keeps the
+ * handlers instead of dropping them, and the tests at the bottom of this file
+ * fire them with the words Electron actually passes.
+ */
+const handlers = new Map<string, (...args: unknown[]) => void>();
+vi.mock("electron", () => ({
+  app: {
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+      handlers.set(event, handler);
+    },
+  },
+}));
 
 const sent: { event: string; properties?: Record<string, unknown> }[] = [];
 vi.mock("./analytics.js", () => ({
@@ -31,12 +46,49 @@ vi.mock("./analytics.js", () => ({
  */
 let redact: (text: string) => string;
 let reportError: (scope: string, cause: unknown, extra?: Record<string, unknown>) => void;
+let watchForErrors: () => void;
 
 beforeEach(async () => {
   sent.length = 0;
+  handlers.clear();
   vi.resetModules();
-  ({ redact, reportError } = await import("./errors.js"));
+  ({ redact, reportError, watchForErrors } = await import("./errors.js"));
 });
+
+/**
+ * Installs the listeners and hands back the two this file tests.
+ *
+ * `watchForErrors` also installs on `process`, and those must not outlive the
+ * test — vitest has its own `uncaughtException` handling, and a stray listener
+ * calling into a reset module is a failure attributed to whatever ran next. So
+ * anything this adds to `process` comes straight back off; only Electron's are
+ * kept, and they live in the mock.
+ */
+function watching(): {
+  renderer: (details: { reason: string; exitCode: number }) => void;
+  child: (details: { type: string; reason: string; exitCode: number }) => void;
+} {
+  const had = {
+    uncaught: process.listeners("uncaughtException"),
+    rejection: process.listeners("unhandledRejection"),
+  };
+
+  watchForErrors();
+
+  for (const listener of process.listeners("uncaughtException")) {
+    if (!had.uncaught.includes(listener)) process.off("uncaughtException", listener);
+  }
+  for (const listener of process.listeners("unhandledRejection")) {
+    if (!had.rejection.includes(listener)) process.off("unhandledRejection", listener);
+  }
+
+  return {
+    // The signatures Electron calls these with: the renderer's carries the
+    // `webContents` the tests have no use for, and the child's does not.
+    renderer: (details) => handlers.get("render-process-gone")?.({}, {}, details),
+    child: (details) => handlers.get("child-process-gone")?.({}, details),
+  };
+}
 
 describe("redact", () => {
   it("takes the account name out of a path", () => {
@@ -137,5 +189,60 @@ describe("reportError", () => {
     reportError("main", new Error("the real failure"), { message: "/Users/dana/whatever" });
 
     expect(sent[0]?.properties).toMatchObject({ message: "the real failure" });
+  });
+});
+
+/**
+ * Which deaths are worth reporting.
+ *
+ * Both of these events fire on an ordinary quit, and reporting those swamped
+ * everything else: 357 events of `Error: killed` against 37 of every real
+ * failure put together, across 25 issues, because the stack ends in a minified
+ * name that changes with each build. These are the tests that keep a user
+ * choosing Quit from looking like a crash.
+ */
+describe("watchForErrors", () => {
+  it("says nothing when a renderer is taken down with the app", () => {
+    watching().renderer({ reason: "killed", exitCode: 0 });
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it("says nothing about a clean exit", () => {
+    watching().child({ type: "GPU", reason: "clean-exit", exitCode: 0 });
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it("reports a renderer that actually crashed", () => {
+    watching().renderer({ reason: "crashed", exitCode: 139 });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.properties).toMatchObject({
+      scope: "renderer",
+      message: "crashed",
+      exit_code: 139,
+    });
+  });
+
+  it("reports a renderer that ran out of memory", () => {
+    // The one the editor reaches on a long timeline, and the reason `killed`
+    // can be dropped: Chromium has its own word for this.
+    watching().renderer({ reason: "oom", exitCode: 0 });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.properties).toMatchObject({ scope: "renderer", message: "oom" });
+  });
+
+  it("reports which child process went, so a GPU crash is not read as the editor", () => {
+    watching().child({ type: "GPU", reason: "crashed", exitCode: 5 });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.properties).toMatchObject({
+      scope: "child",
+      child: "GPU",
+      message: "crashed",
+      exit_code: 5,
+    });
   });
 });
