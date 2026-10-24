@@ -452,11 +452,24 @@ void app.whenReady().then(() => {
      * dismissed rather than read. The check still runs, so the tray item has
      * the answer; only the window waits for a launch somebody meant.
      *
+     * `wasOpenedAtLogin` and not `startedByItself`, which is the question the
+     * line above it asks and the wrong one here. That one is true whenever the
+     * login item is *enabled*, however the app was launched — deliberately, so
+     * the recording panel stays off the screen of somebody whose Prequel is
+     * always already running. Opening at login is on by default, so reusing it
+     * here meant the condition was never true on a default install: the window
+     * never opened for anyone, `autoDownload` is false, and the only remaining
+     * path to an update was noticing the tray's secondary menu. Users sat on
+     * the build they first installed — one support log has the updater finding
+     * eight newer versions over seven weeks and the app never leaving 0.0.13,
+     * which also put them behind the release that added crash reporting, so we
+     * had nothing from them but the log they sent by hand.
+     *
      * The welcome flow never reaches here at all, which is right: that user is
      * installing a fresh copy and has nothing to update.
      */
     const update = await checkForUpdates();
-    if (update.status === "available" && !startedByItself()) updates.open();
+    if (update.status === "available" && !wasOpenedAtLogin()) updates.open();
   })();
 
   // The tray title and the panel both show elapsed time, so it has to tick even
