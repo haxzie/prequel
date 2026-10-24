@@ -20,6 +20,7 @@ const VERB = {
   editor: "Editing",
   converter: "Converting",
   downloader: "Downloading",
+  pattern: "Drawing",
 } as const;
 
 export function ToolBody({ tool }: { tool: FreeTool }): ReactNode {

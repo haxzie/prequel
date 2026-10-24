@@ -13,7 +13,7 @@ import { itemListJsonLd, pageMetadata } from "@/lib/seo";
 export const metadata: Metadata = pageMetadata({
   title: "Free tools",
   description:
-    "Free browser tools from Prequel: record your screen, your webcam or your voice in a tab and download the file. No sign up, no upload, no watermark.",
+    "Free browser tools from Prequel: record your screen, mark up a screenshot, draw a background or convert a video, all in a tab. No sign up, no upload.",
   path: "/free-tools",
 });
 
@@ -21,9 +21,9 @@ export const metadata: Metadata = pageMetadata({
  * The index's own questions.
  *
  * About the set rather than about any one tool, which is what keeps them from
- * repeating the three pages below. "Is it free" is answered on every page
+ * repeating any one page below. "Is it free" is answered on every page
  * because it is the first thing anybody asks; it is answered differently here,
- * about all three at once.
+ * about the whole set at once.
  */
 const INDEX_FAQ: FaqEntry[] = [
   {
@@ -94,12 +94,17 @@ const BANDS: Record<ToolKind, { label: string; lede: string }> = {
     label: "Download",
     lede: "Paste a link to a post and save its video, fetched by your browser from where it already sits.",
   },
+  pattern: {
+    label: "Draw a background",
+    lede: "The seven patterns from Prequel's editor, drawn to the size you ask for and saved as a PNG or an SVG.",
+  },
 };
 
 /** The order the bands are shown in, which is the order they are wanted in. */
 const ORDER = [
   "recorder",
   "editor",
+  "pattern",
   "converter",
   "downloader",
 ] as const satisfies readonly ToolKind[];
@@ -130,14 +135,14 @@ export default function FreeTools() {
             level={1}
             eyebrow="Free tools"
             title="Free tools that run in your browser"
-            lede="Record, mark up and convert, all inside a tab. Your files are read and written on your own machine, so nothing is uploaded and nothing asks you to sign up."
+            lede="Record, mark up, draw and convert, all inside a tab. Your files are read and written on your own machine, so nothing is uploaded and nothing asks you to sign up."
             align="centre"
           />
         </Container>
       </section>
 
       {/* Grouped by what the tool is, the way `/usecases` bands its sixteen.
-          Thirteen cards in one grid is a wall, and the four groups are the four
+          Twenty cards in one grid is a wall, and the five groups are the five
           reasons somebody is on this page. The order is the order they are
           wanted in: recording first, because that is what Prequel is. */}
       {ORDER.map((kind) => (
@@ -197,7 +202,7 @@ export default function FreeTools() {
               },
               {
                 title: "Download something you can post",
-                body: "MP4 or WebM from the recorders, PNG from the editor, MP3 or MP4 from the converters, and no watermark on any of it.",
+                body: "MP4 or WebM from the recorders, PNG from the editor, PNG or SVG from the pattern pages, MP3 or MP4 from the converters, and no watermark on any of it.",
               },
             ].map((card) => (
               <div key={card.title} className="bg-bg p-7">

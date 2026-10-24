@@ -1,0 +1,35 @@
+## Contour lines, traced not filtered
+
+A contour map is a landscape read as lines of equal height. This page invents
+the landscape, samples its height on a grid, and traces where each level
+crosses that grid. Twenty-four levels, with every fifth one drawn heavier, the
+way an index contour is on a real map.
+
+The tracing is the reason it holds up at 6K. The obvious way to make a field
+like this is an SVG noise filter, which looks right in a thumbnail and falls
+apart at wallpaper size: the filter works in eight bits, so what comes out is
+blocky rectangles and staircase edges. Lines worked out as geometry have no
+precision to run out of, and they land on whole pixels at any size you pick.
+
+## One landscape, seen from different distances
+
+The heights come from the coordinates themselves, hashed, with no seed and no
+random numbers. The same size and the same relief give you the same map every
+time, and a bigger size shows you more of the same country rather than a new
+one.
+
+The Relief slider is how much of that country the frame holds. Low is a few
+broad hills with wide spacing. High is dense terrain with lines close together.
+
+## PNG or SVG
+
+The PNG is painted here, at the size in the dock, and saved to your downloads
+folder. The SVG is two paths, so it scales to any size afterwards and stays a
+few kilobytes. Both are yours, with no watermark on either.
+
+## Behind a recording
+
+Prequel ships this map as one of seven drawn backgrounds in its editor, where
+it is traced again at the export's own resolution. Record your Mac's screen,
+and the editor opens with the zooms already placed, your camera framed and a
+background behind it.

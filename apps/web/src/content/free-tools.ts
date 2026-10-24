@@ -23,11 +23,18 @@
 
 import {
   AudioLines,
+  Box,
   Crop,
   Download,
+  DraftingCompass,
   FileVideo,
+  Grid3x3,
+  Grip,
   Mic,
   Monitor,
+  Mountain,
+  Ruler,
+  Slash,
   Webcam,
   type LucideIcon,
 } from "lucide-react";
@@ -35,6 +42,7 @@ import {
 import type { FaqEntry } from "@/lib/faq";
 import type { FormatId } from "@/lib/free-tools/formats";
 import type { ToolMode } from "@/lib/free-tools/mode";
+import type { PatternStyleId } from "@/lib/free-tools/patterns";
 
 /**
  * Which thing a page renders, and what that thing needs to know.
@@ -56,7 +64,13 @@ export type ToolSurface =
    * second one is the service — and a bare `{ kind: "downloader" }` would put
    * that choice in the component instead, where the registry cannot see it.
    */
-  | { kind: "downloader"; source: "x" };
+  | { kind: "downloader"; source: "x" }
+  /**
+   * A tool that draws a background. `style` rather than a slug-to-style map in
+   * the component, because the component would then be the place a new pattern
+   * has to be registered and the registry is supposed to be the only one.
+   */
+  | { kind: "pattern"; style: PatternStyleId };
 
 export type FreeTool = {
   /** The MDX filename in `src/content/free-tools`, and the URL segment. */
@@ -1300,6 +1314,551 @@ export const freeTools: FreeTool[] = [
         question: "Is there a recorder that writes MP4 to start with?",
         answer:
           "Prequel records your Mac's screen straight to MP4, at up to 4K and 120 fps, with the zooms already placed and the camera framed when the editor opens.",
+      },
+    ],
+  },
+  /**
+   * The seven drawn patterns, one page each.
+   *
+   * One style per page and no style picker on any of them. Each of these is a
+   * thing people type by name, and a single "pattern generator" page would be
+   * one URL competing with itself for seven phrases. The rail links sideways to
+   * the other six, which is the same set of links a picker would have been.
+   */
+  {
+    slug: "cutting-mat-background",
+    surface: { kind: "pattern", style: "cutting-mat" },
+    icon: Ruler,
+    navLabel: "Cutting mat",
+    eyebrow: "Free browser tool",
+    heading: "Make a cutting mat background online",
+    name: "Free cutting mat background generator",
+    lede: "The green self-healing mat, with numbered rulers on all four edges and the angle fan in the corner. Drawn to the size you pick.",
+    description:
+      "Cutting mat background generator. Draw a self-healing mat with rulers and an angle fan, in eight colours, as a PNG up to 6K or an SVG.",
+    summary: "A self-healing mat with numbered rulers and an angle fan, at any size.",
+    steps: [
+      {
+        name: "Pick a colour",
+        text: "Eight palettes, each drawn as the mat itself so you can see what the rulers and the numbers do against the ground.",
+      },
+      {
+        name: "Set the size and the grid",
+        text: "Sizes run from 1080p to a 6K display, with phone and 9:16 among them. The slider sets how many cells fit across the short edge.",
+      },
+      {
+        name: "Download it",
+        text: "PNG for a wallpaper or a slide, SVG for anything that gets resized later. Both save straight to your downloads folder.",
+      },
+    ],
+    features: [
+      {
+        title: "Get an arc that is still an arc",
+        body: "The fan is drawn at the size you asked for. A photograph of a mat stretched from 16:9 to 9:16 turns its 45 degree ray into 51 degrees and its arcs into ellipses.",
+      },
+      {
+        title: "Count off any edge",
+        body: "Rulers on all four sides, numbered every five cells, with a long tick on the number. Zero sits in the corner the fan comes out of, so both rulers and the grid agree.",
+      },
+      {
+        title: "Fill a 6K display",
+        body: "Every line, tick and number is a fraction of the frame's short edge. The mat reads the same at 1920 across and at 6016.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "The mat is drawn in this tab and saved from this tab. Nothing is uploaded, there is no queue and there is no watermark.",
+      },
+    ],
+    faqHeading: "Colours, sizes and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer:
+          "Yes. No account, no card, no watermark and no limit on how many you make. The drawing happens in your browser, so a mat costs nothing to serve.",
+      },
+      {
+        question: "What is the angle fan for?",
+        answer:
+          "On a real mat it is for lining up a cut off true. Here it is the part of the picture that says cutting mat at a glance, and it is the reason the drawing is worked out per size rather than scaled.",
+      },
+      {
+        question: "Can I get it in a size that is not listed?",
+        answer:
+          "Download the SVG and resize that. It is paths and a flat fill, so Figma, Illustrator, Sketch and any browser will take it to any size with the hairlines intact.",
+      },
+      {
+        question: "Will it work as a desktop wallpaper?",
+        answer:
+          "That is what the sizes are for. Pick the one matching your display, download the PNG, and set it from System Settings. macOS does not rescale a wallpaper that already fits.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer:
+          "Yes. Use it in a video, a deck, a product shot or a client's site. There is no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have a cutting mat page?",
+        answer:
+          "Because the mat is the default background in Prequel's editor, where it is redrawn at the export's own resolution. This page is the same drawing with the download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "graph-paper-generator",
+    surface: { kind: "pattern", style: "graph" },
+    icon: Grid3x3,
+    navLabel: "Graph paper",
+    eyebrow: "Free browser tool",
+    heading: "Generate graph paper online for free",
+    name: "Free online graph paper generator",
+    lede: "A squared grid in eight colours, with every fifth line heavier. Pick a size and download it as a PNG or an SVG.",
+    description:
+      "Graph paper generator. Draw a squared grid in eight colours at any size and download it as a PNG up to 6K or an SVG. No sign up.",
+    summary: "A squared grid in eight colours, at any size, as a PNG or an SVG.",
+    steps: [
+      {
+        name: "Choose the colour",
+        text: "Eight palettes, each shown as the grid itself. Paper is the one where the lines are darker than the ground.",
+      },
+      {
+        name: "Set the squares",
+        text: "The slider sets how many squares fit across the short edge, from 14 to 72. The preview redraws as you move it.",
+      },
+      {
+        name: "Save the file",
+        text: "PNG at the size in the dock, or SVG if the grid will be scaled again somewhere else.",
+      },
+    ],
+    features: [
+      {
+        title: "Read a distance off it",
+        body: "Every fifth line is heavier, banded from the bottom left corner. Five small squares make one big one, the way engineering paper works.",
+      },
+      {
+        title: "Scale it again later",
+        body: "The SVG is two paths and a rectangle. Resize it to anything in Figma or Illustrator and the hairlines stay hairlines.",
+      },
+      {
+        title: "Fit any shape of frame",
+        body: "A 9:16 frame grows rows and keeps the pitch. Nothing is resampled, because the grid is worked out again at the size you asked for.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "The grid is drawn in this tab and saved from this tab. Nothing is uploaded and there is no watermark on the file.",
+      },
+    ],
+    faqHeading: "Squares, sizes and printing",
+    faq: [
+      {
+        question: "Is it free?",
+        answer: "Yes. No account, no card and no watermark. Make as many as you like.",
+      },
+      {
+        question: "What size are the squares?",
+        answer:
+          "They are a fraction of the frame's short edge, so the count is the setting and the millimetres follow from the size you picked. At 38 squares across a 1080p frame, each one is about 28 pixels.",
+      },
+      {
+        question: "Can I print it?",
+        answer:
+          "Yes, and the SVG is the file to print. It has no resolution of its own, so a printer renders the lines at its own dots rather than at the PNG's pixels.",
+      },
+      {
+        question: "PNG or SVG?",
+        answer:
+          "PNG for a wallpaper, a slide or the ground behind a screenshot. SVG for anything that will be resized or recoloured afterwards.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer:
+          "Yes. It is your file, there is no watermark on it and no attribution is asked for.",
+      },
+      {
+        question: "Why does Prequel have a graph paper page?",
+        answer:
+          "Because this grid is one of seven backgrounds in Prequel's editor, drawn at the export's own resolution. This page is the same drawing with a download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "dot-grid-generator",
+    surface: { kind: "pattern", style: "dot-grid" },
+    icon: Grip,
+    navLabel: "Dot grid",
+    eyebrow: "Free browser tool",
+    heading: "Generate a dot grid background online",
+    name: "Free dot grid pattern generator",
+    lede: "A dot at every crossing, bigger on every fifth, the way a bullet journal page is set out. Pick the colour, the pitch and the size.",
+    description:
+      "Dot grid generator. Draw a dotted grid in eight colours at any size and download it as a PNG up to 6K or an SVG. Free, no sign up.",
+    summary: "Dots on a grid in eight colours, at any size, as a PNG or an SVG.",
+    steps: [
+      {
+        name: "Pick the palette",
+        text: "Eight of them, drawn as the field itself. Carbon and Slate read as texture; Paper reads as a notebook page.",
+      },
+      {
+        name: "Set the pitch",
+        text: "The slider sets how many dots fit across the short edge. The dots are sized against that edge too, so a dense grid has small dots.",
+      },
+      {
+        name: "Download it",
+        text: "PNG at the size in the dock, or SVG for anything that gets scaled or recoloured later.",
+      },
+    ],
+    features: [
+      {
+        title: "Keep something on top readable",
+        body: "The dots give an alignment to work to and nothing else. Every fifth crossing is heavier in both directions, which is enough to count a distance off.",
+      },
+      {
+        title: "Fill a 6K display quickly",
+        body: "The whole field is two paths of round-capped strokes. A few thousand circle elements is a document a rasteriser spends real time on, and this is not that.",
+      },
+      {
+        title: "Match any frame",
+        body: "Phone, square, 4:5, 1080p or a 6K display. The pitch is a fraction of the short edge, so the field reads the same in all of them.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "Drawn in this tab, saved from this tab. Nothing is uploaded, nothing is queued and there is no watermark.",
+      },
+    ],
+    faqHeading: "Dots, spacing and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer:
+          "Yes. No account, no card, no watermark. The drawing runs in your browser, so there is nothing to charge for.",
+      },
+      {
+        question: "Can I use it as a bullet journal page?",
+        answer:
+          "Yes. Pick a square or portrait size, choose Paper, download the SVG and print that. The SVG has no pixels of its own, so your printer sets the resolution.",
+      },
+      {
+        question: "How far apart are the dots?",
+        answer:
+          "As far as the slider says, measured across the frame's short edge. The spacing is a proportion rather than a millimetre count, so the field survives being drawn at a different size.",
+      },
+      {
+        question: "Can I change the dot size on its own?",
+        answer:
+          "The dot size follows the spacing, because that proportion is what keeps a loose grid and a dense one both readable. Open the SVG and change the two stroke widths if you want something else.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer: "Yes. It is your file, with no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have a dot grid page?",
+        answer:
+          "Because this field is one of seven backgrounds in Prequel's editor, redrawn at the export's own resolution. This page is the same drawing with a download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "blueprint-background-generator",
+    surface: { kind: "pattern", style: "blueprint" },
+    icon: DraftingCompass,
+    navLabel: "Blueprint",
+    eyebrow: "Free browser tool",
+    heading: "Make a blueprint background online",
+    name: "Free blueprint background generator",
+    lede: "Drafting paper: coarse band lines, a cross at every crossing and a double border round the sheet. Drawn to the size you pick.",
+    description:
+      "Blueprint background generator. Draw drafting paper with registration crosses and a border, as a PNG up to 6K or an SVG. No sign up.",
+    summary: "Drafting paper with registration crosses and a border, at any size.",
+    steps: [
+      {
+        name: "Pick the blue, or another one",
+        text: "Eight palettes drawn as the sheet itself. Blueprint is the obvious one; Carbon and Slate sit behind a dark screenshot.",
+      },
+      {
+        name: "Set the size and the pitch",
+        text: "Sizes run to a 6K display. The slider sets the grid the band lines and the crosses are laid out on.",
+      },
+      {
+        name: "Download it",
+        text: "PNG at the size in the dock, or SVG for anything that gets resized or recoloured later.",
+      },
+    ],
+    features: [
+      {
+        title: "Get the border in the right place",
+        body: "A double rule set in from the edge, redrawn per size. On a tiled image that border lands wherever the tile happens to end.",
+      },
+      {
+        title: "Read it as a technical drawing",
+        body: "The crosses are the registration marks a drawing is set out against, on every fifth intersection in both directions. Band lines on their own read as a coarse grid.",
+      },
+      {
+        title: "Fit any shape of sheet",
+        body: "Landscape, portrait or square, with the pitch and the margin as fractions of the short edge. Nothing is stretched and nothing is cropped.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "Drawn in this tab and saved from this tab. Nothing is uploaded and there is no watermark on it.",
+      },
+    ],
+    faqHeading: "Colours, sizes and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer: "Yes. No account, no card, no watermark and no limit on how many sheets you draw.",
+      },
+      {
+        question: "Can I get white lines on blue, like a real blueprint?",
+        answer:
+          "The Blueprint palette is light lines on a deep blue ground, which is the look people mean. Paper inverts it into a sheet from a flat file, with dark lines on cream.",
+      },
+      {
+        question: "Can I use it behind a screenshot?",
+        answer:
+          "Yes, and Carbon or Slate are the palettes for it. The lines are hairlines at the size you pick, so they stay under the picture rather than competing with it.",
+      },
+      {
+        question: "PNG or SVG?",
+        answer:
+          "PNG for a wallpaper or a slide. SVG for anything that will be scaled, printed or recoloured, since it is five elements and a few kilobytes.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer: "Yes. It is your file, with no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have a blueprint page?",
+        answer:
+          "Because this sheet is one of seven backgrounds in Prequel's editor, redrawn at the export's own resolution. This page is the same drawing with a download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "isometric-grid-generator",
+    surface: { kind: "pattern", style: "isometric" },
+    icon: Box,
+    navLabel: "Isometric grid",
+    eyebrow: "Free browser tool",
+    heading: "Generate an isometric grid online",
+    name: "Free isometric grid generator",
+    lede: "Uprights and two families of lines at thirty degrees, which are the three axes of an isometric drawing. Pick a colour and a size.",
+    description:
+      "Isometric grid generator. Draw a 30 degree triangular grid at any size and download it as a PNG up to 6K or an SVG. Free, no sign up.",
+    summary: "A thirty degree triangular grid in eight colours, at any size.",
+    steps: [
+      {
+        name: "Pick the colour",
+        text: "Eight palettes, drawn as the grid itself so you can see how heavy the lines read against the ground.",
+      },
+      {
+        name: "Set the pitch and the size",
+        text: "The slider sets the spacing against the frame's short edge. Sizes run from 1080p to a 6K display.",
+      },
+      {
+        name: "Download it",
+        text: "PNG at the size in the dock, or SVG to sketch over in Figma or Illustrator.",
+      },
+    ],
+    features: [
+      {
+        title: "Draw a box in one minute",
+        body: "The three directions are the three axes of an isometric projection, at the angles they are meant to be. Sketch along them and the geometry is already right.",
+      },
+      {
+        title: "Get a field with no seam",
+        body: "Every line runs corner to corner across the whole frame. A tiled grid shows its joins wherever the tile does not divide the frame.",
+      },
+      {
+        title: "Keep the spacing you set",
+        body: "The pitch is measured perpendicular to the lines, which is the gap your eye reads, and it is a fraction of the short edge. Portrait and landscape read the same.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "Drawn in this tab, saved from this tab. Nothing is uploaded and there is no watermark.",
+      },
+    ],
+    faqHeading: "Angles, pitch and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer: "Yes. No account, no card and no watermark on the file.",
+      },
+      {
+        question: "Is it true isometric?",
+        answer:
+          "Yes. The two slanted families are at 30 and 150 degrees with uprights between them, which is the isometric convention. Lines drawn along them share one scale.",
+      },
+      {
+        question: "Can I sketch on it?",
+        answer:
+          "Take the SVG into Figma, Illustrator or Sketch, lock it as the bottom layer and draw over it. It is one path, so it selects and locks in one click.",
+      },
+      {
+        question: "Can I change the angle?",
+        answer:
+          "Not on this page. The SVG is one path of straight segments, so a rotation in any vector editor is a transform on a single object.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer: "Yes. It is your file, with no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have an isometric grid page?",
+        answer:
+          "Because this grid is one of seven backgrounds in Prequel's editor, redrawn at the export's own resolution. This page is the same drawing with a download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "hatch-pattern-generator",
+    surface: { kind: "pattern", style: "hatch" },
+    icon: Slash,
+    navLabel: "Hatch",
+    eyebrow: "Free browser tool",
+    heading: "Generate a hatch pattern online",
+    name: "Free diagonal hatch pattern generator",
+    lede: "Hairlines at forty-five degrees, with every fifth one picked out. Set the spacing, pick a colour and download it.",
+    description:
+      "Hatch pattern generator. Draw 45 degree diagonal lines at any spacing and size, as a PNG up to 6K or an SVG. Free, no sign up.",
+    summary: "Diagonal hairlines in eight colours, at any spacing and size.",
+    steps: [
+      {
+        name: "Pick the colour",
+        text: "Eight palettes drawn as the hatch itself, so you can see the heavy line against the fine ones before you commit.",
+      },
+      {
+        name: "Set the spacing",
+        text: "Tight at 72 and nearly solid, open at 14 and loose enough to put text over. The preview redraws as you move the slider.",
+      },
+      {
+        name: "Download it",
+        text: "PNG at the size in the dock, or SVG for anything that gets scaled or recoloured afterwards.",
+      },
+    ],
+    features: [
+      {
+        title: "Shade an area without a gradient",
+        body: "Hatching is tone made of lines, and lines survive a video encoder. A smooth ramp through H.264 comes out with visible steps in it.",
+      },
+      {
+        title: "Get a field with no seam",
+        body: "Every line crosses the whole frame corner to corner. A tiled hatch shows a join wherever the tile and the frame disagree.",
+      },
+      {
+        title: "Keep a rhythm at both ends",
+        body: "Every fifth line is heavier. That is what stops a tight hatch reading as a flat grey and an open one reading as noise.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "Drawn in this tab, saved from this tab. Nothing is uploaded and there is no watermark on it.",
+      },
+    ],
+    faqHeading: "Spacing, angles and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer: "Yes. No account, no card, no watermark, and no limit on how many you draw.",
+      },
+      {
+        question: "Can I change the angle?",
+        answer:
+          "Not on this page. The SVG is two paths, so rotating the whole thing in a vector editor is one transform on one object.",
+      },
+      {
+        question: "Can I use it as a CSS background?",
+        answer:
+          "The SVG is small enough to inline as a data URL, and it has no resolution of its own. It is drawn for the frame you asked for, so it is a background image rather than a repeating tile.",
+      },
+      {
+        question: "Why is the spacing a count instead of pixels?",
+        answer:
+          "Because it is measured across the frame's short edge. That is what makes the same setting look the same on a phone wallpaper and on a 6K one.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer: "Yes. It is your file, with no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have a hatch page?",
+        answer:
+          "Because this hatch is one of seven backgrounds in Prequel's editor, redrawn at the export's own resolution. This page is the same drawing with a download button attached.",
+      },
+    ],
+  },
+  {
+    slug: "topographic-map-generator",
+    surface: { kind: "pattern", style: "terrain" },
+    icon: Mountain,
+    navLabel: "Topographic map",
+    eyebrow: "Free browser tool",
+    heading: "Generate a topographic map background",
+    name: "Free topographic contour map generator",
+    lede: "Contour lines over a landscape nobody surveyed, with every fifth line drawn as an index contour. Pick a colour, a size and how much relief.",
+    description:
+      "Topographic map generator. Draw contour lines at any size and download them as a PNG up to 6K or an SVG. Free, in your browser.",
+    summary: "Contour lines in eight colours, traced to the size you ask for.",
+    steps: [
+      {
+        name: "Pick the colour",
+        text: "Eight palettes drawn as the map itself. Carbon and Slate are the quiet ones; Olive and Sand read as a paper map.",
+      },
+      {
+        name: "Set the relief",
+        text: "Low is a few broad hills with wide spacing. High is dense country with the lines close together.",
+      },
+      {
+        name: "Download it",
+        text: "PNG at the size in the dock, or SVG for anything that gets scaled or recoloured later.",
+      },
+    ],
+    features: [
+      {
+        title: "Get smooth contours at 6K",
+        body: "The lines are traced through the height field as geometry, and the sample grid scales with the frame. A tight bend has no facets on it at 6016 across.",
+      },
+      {
+        title: "Read it like a map",
+        body: "Twenty-four levels with every fifth one heavier. An index contour is what stops a field of lines reading as noise.",
+      },
+      {
+        title: "Get the same map twice",
+        body: "The heights come from the coordinates themselves, hashed, with no random numbers anywhere. The same settings give the same country every time.",
+      },
+      {
+        title: "Keep the file off a server",
+        body: "Traced in this tab and saved from this tab. Nothing is uploaded, nothing is queued and there is no watermark.",
+      },
+    ],
+    faqHeading: "The landscape, the sizes and the files",
+    faq: [
+      {
+        question: "Is it free?",
+        answer:
+          "Yes. No account, no card and no watermark. The tracing runs on your own processor, so there is nothing to charge for.",
+      },
+      {
+        question: "Is the landscape random?",
+        answer:
+          "No. Every height is hashed from its own coordinates, so the same size and the same relief give you the same map. A bigger size shows more of the same country.",
+      },
+      {
+        question: "Can I get a different landscape?",
+        answer:
+          "Move the relief slider or change the shape of the frame. Both change which part of the field the frame holds, and how much of it.",
+      },
+      {
+        question: "Why not use an SVG noise filter?",
+        answer:
+          "Because it breaks at wallpaper size. The filter works in eight bits, so a field large enough to read as a background comes out as blocky rectangles and staircase edges. Tracing the lines as geometry has no precision to run out of.",
+      },
+      {
+        question: "Can I use it commercially?",
+        answer: "Yes. It is your file, with no watermark and no attribution asked for.",
+      },
+      {
+        question: "Why does Prequel have a topographic map page?",
+        answer:
+          "Because this map is one of seven backgrounds in Prequel's editor, traced again at the export's own resolution. This page is the same drawing with a download button attached.",
       },
     ],
   },

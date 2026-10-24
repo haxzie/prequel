@@ -6,6 +6,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { Container } from "@/components/Section";
 import { Converter } from "@/components/free-tools/convert/Converter";
 import { Downloader } from "@/components/free-tools/download/Downloader";
+import { PatternStudio } from "@/components/free-tools/pattern/PatternStudio";
 import { ShotEditor } from "@/components/free-tools/shot/ShotEditor";
 import { Studio } from "@/components/free-tools/Studio";
 import { ToolBody } from "@/components/free-tools/ToolBody";
@@ -21,6 +22,7 @@ const FACTS: Record<FreeTool["surface"]["kind"], string[]> = {
   // "Nothing uploaded" would be a lie here, and the page is searched for under
   // two names, so the pill names neither of them.
   downloader: ["No sign up", "Direct download", "No watermark", "Up to 1080p"],
+  pattern: ["No sign up", "Nothing uploaded", "PNG or SVG", "Up to 6K"],
 };
 
 export function generateStaticParams() {
@@ -89,6 +91,8 @@ export default async function FreeToolPage({ params }: PageProps<"/free-tools/[s
             <Converter from={tool.surface.from} to={tool.surface.to} />
           ) : tool.surface.kind === "downloader" ? (
             <Downloader />
+          ) : tool.surface.kind === "pattern" ? (
+            <PatternStudio style={tool.surface.style} />
           ) : (
             <Studio mode={tool.surface.mode} />
           )}
