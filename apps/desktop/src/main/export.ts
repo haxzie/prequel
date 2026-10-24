@@ -23,7 +23,7 @@ import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/cont
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
 import { toEveryWindow } from "./broadcast.js";
-import { redact } from "./errors.js";
+import { redact, reportError } from "./errors.js";
 import { recordExport } from "./exports.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
@@ -200,6 +200,9 @@ export async function saveStill(
   // Zero, which `duration` reads as "no length" and reports as null. A picture
   // has none, and the Exports pane shows a dash rather than `0:00`.
   runningFps = 0;
+  // A still has no render to describe, and the shape left over from the last
+  // video would be reported against this one's failure as if it were its own.
+  runningShape = null;
 
   // Shapes and switches only, like every other event. No size: the bytes are
   // already encoded by the time they get here, so main does not know it — and a
@@ -253,6 +256,26 @@ let startedAt = 0;
 let runningFps = 0;
 
 /**
+ * The shape of the export in progress, for the report if it fails.
+ *
+ * Kept for the reason `startedAt` is: the request that named these is gone by
+ * the time a terminal progress event arrives, and a failure with no shape
+ * against it cannot be told from any other — "the export failed" forty times
+ * says nothing about whether it is one encoder, one frame size or one machine.
+ *
+ * Shapes and switches only, and no path. This goes out over the wire, and the
+ * rule the error sink exists to keep is that a property is never a file name.
+ */
+type ExportShape = {
+  format: ExportFormat;
+  frame: string;
+  fps: number;
+  slices: number;
+};
+
+let runningShape: ExportShape | null = null;
+
+/**
  * Starts an export.
  *
  * Rejects a second one rather than queueing: there is one GPU and one encoder,
@@ -272,6 +295,12 @@ export async function startExport(request: ExportRequest): Promise<void> {
   running = request.dir;
   startedAt = Date.now();
   runningFps = request.fps;
+  runningShape = {
+    format: request.format,
+    frame: `${String(request.width)}×${String(request.height)}`,
+    fps: request.fps,
+    slices: request.slices.length,
+  };
 
   track("export_started", {
     format: request.format,
@@ -435,8 +464,27 @@ function finish(update: ExportProgress): void {
   // Logged here rather than only shown in the editor: a failed export is the
   // one thing a user cannot investigate for themselves, and the message the
   // renderer displays is gone as soon as the window closes.
+  //
+  // Reported as well as logged, and this is the only place it can be: the
+  // failure arrives as a terminal progress event from the render thread rather
+  // than as a thrown error, so nothing above catches it. Without this the whole
+  // export path reached `track` and the log and never the error sink — every
+  // other failure in the app had a stack waiting for us and the renders did
+  // not, which is the one class of bug a user cannot work out for themselves.
+  //
+  // `scope` matches what the other four callers pass: a category, and the field
+  // the chart is broken down by. The message goes through `redact` inside
+  // `reportError`, which matters more here than anywhere — an encoder failure
+  // quotes the file it could not write.
   if (update.stage === "failed") {
     console.error(`export failed: ${update.error?.message ?? "no reason given"}`);
+    reportError("export", new Error(update.error?.message ?? "the export failed"), {
+      // Null for a still, which is the only other thing that finishes through
+      // here: a picture has no frame size, no rate and no slices to report.
+      ...(runningShape ?? { format: "png" }),
+      frames_done: update.framesDone,
+      frames_total: update.framesTotal,
+    });
   } else {
     log("info", `export ${update.stage}`, update.outputPath ?? undefined);
   }
