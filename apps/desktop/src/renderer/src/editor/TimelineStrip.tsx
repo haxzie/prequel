@@ -989,6 +989,21 @@ export function TimelineStrip({
    */
   const textRows = Math.min(state.project.texts.length + 1, MAX_TEXT_TRACKS);
 
+  /**
+   * Whether the strip carries a music row at all.
+   *
+   * Only once something is on it. The other three bands are the recording and
+   * what is done to it, so they are there whatever a project contains; a bed
+   * is the one thing most recordings never have, and an empty row for it was
+   * a permanent invitation taking a clip's worth of height off a strip that
+   * has none to spare.
+   *
+   * Add Audio in the transport is the way in — it lays a bed down, which is
+   * what brings this row with it. Deleting the last bed takes it away again,
+   * for the same reason it was not there to begin with.
+   */
+  const musicRow = state.project.music.length > 0;
+
   /** The group of text rows, measured for a vertical drag. */
   const textGroup = useRef<HTMLDivElement>(null);
 
@@ -1191,7 +1206,7 @@ export function TimelineStrip({
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div style={{ height: RULER_H + RULER_PAD }} />
-            {BANDS.map((band) => (
+            {BANDS.filter((band) => band.id !== "music" || musicRow).map((band) => (
               <Fragment key={band.id}>
                 <div style={{ height: TRACK_GAP }} />
                 <div
@@ -1569,9 +1584,10 @@ export function TimelineStrip({
               })}
             </div>
 
-            <div style={{ height: TRACK_GAP }} />
-
-            {/* The music row, under the zooms and above the caption band.
+            {/* The music row, under the zooms and above the caption band, and
+              only once a bed exists — see `musicRow`. The gap belongs to the
+              row rather than to the strip, or hiding one would leave the
+              other and the caption band would sit a clip's width too low.
 
               Last of the four, because it is the only one that is not about
               the picture: the clips are the footage, the zooms and the titles
@@ -1583,129 +1599,124 @@ export function TimelineStrip({
               row rather than as a row of its own — four bands with three gaps
               between them, one of which was missing.
 
-              Pressing an empty stretch lays a bed down, the way the zoom and
-              text rows do — with the default track, because a bed needs a file
-              and a click that opened a file dialog out of an empty row would
-              be a press with a sheet on the end of it. Which song it is is
-              then one press away, in the panel the new bed opens.
+              Pressing an empty stretch lays another bed down, the way the zoom
+              and text rows do — with the default track, because a bed needs a
+              file and a click that opened a file dialog out of a bare row
+              would be a press with a sheet on the end of it. Which song it is
+              is then one press away, in the panel the new bed opens.
 
               Not a drag, though. The other two rows draw a span out because
               their length is the whole of what is being asked for; a bed's
               length comes from the song, and the first thing anybody does to
               one is trim it anyway. */}
-            <div
-              className="relative"
-              style={{ height: MUSIC_H }}
-              // Where the press landed, and only a press that landed *here*.
-              //
-              // A bar stops the event, so this never fires for one — but the
-              // release at the end of a drag on a bar's handle does bubble up
-              // here, and acting on that release laid a fresh bed down every
-              // time a bed was trimmed. It went into the nearest gap, which is
-              // nowhere near the handle being dragged, so it read as a bed
-              // appearing out of nothing.
-              onPointerDown={(event) => {
-                addAt.current = timeAt(event.clientX);
-              }}
-              onPointerUp={() => {
-                const at = addAt.current;
-                addAt.current = null;
-                if (at === null || slicing || !onAddMusic) return;
-                onAddMusic(at);
-              }}
-              // The system can take a gesture — a three-finger swipe over the
-              // trackpad — and the release never arrives. Without this the
-              // next release anywhere on the row would lay a bed at a position
-              // the pointer left minutes ago.
-              onPointerCancel={() => {
-                addAt.current = null;
-              }}
-              onPointerLeave={() => {
-                addAt.current = null;
-              }}
-            >
-              {state.project.music.length === 0 && (
+            {musicRow && (
+              <>
+                <div style={{ height: TRACK_GAP }} />
                 <div
-                  className="pointer-events-none sticky z-10 flex h-full items-center justify-center"
-                  // Held clear of the rail rather than at the scrollport's own
-                  // edge: `sticky` pins to the scroller, and the rail is the
-                  // first forty pixels of it.
-                  style={{ left: RAIL_W, width: timelineWidth }}
+                  className="relative"
+                  style={{ height: MUSIC_H }}
+                  // Where the press landed, and only a press that landed *here*.
+                  //
+                  // A bar stops the event, so this never fires for one — but the
+                  // release at the end of a drag on a bar's handle does bubble up
+                  // here, and acting on that release laid a fresh bed down every
+                  // time a bed was trimmed. It went into the nearest gap, which is
+                  // nowhere near the handle being dragged, so it read as a bed
+                  // appearing out of nothing.
+                  onPointerDown={(event) => {
+                    addAt.current = timeAt(event.clientX);
+                  }}
+                  onPointerUp={() => {
+                    const at = addAt.current;
+                    addAt.current = null;
+                    if (at === null || slicing || !onAddMusic) return;
+                    onAddMusic(at);
+                  }}
+                  // The system can take a gesture — a three-finger swipe over the
+                  // trackpad — and the release never arrives. Without this the
+                  // next release anywhere on the row would lay a bed at a position
+                  // the pointer left minutes ago.
+                  onPointerCancel={() => {
+                    addAt.current = null;
+                  }}
+                  onPointerLeave={() => {
+                    addAt.current = null;
+                  }}
                 >
-                  <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-3 py-1.5 text-[11px] text-editor-muted [&_svg]:size-3.5">
-                    <MusicIcon />
-                    Add Audio for background music
-                  </span>
+                  {state.project.music.map((bed) => {
+                    // Already in project time at both ends — see `MusicSlice`. No
+                    // `spanInProject` here, which is the whole difference between
+                    // this row and the two above it.
+                    const pixels = (bed.length / Math.max(duration, 1)) * contentWidth;
+
+                    return (
+                      <MusicBar
+                        key={bed.id}
+                        left={(bed.at / Math.max(duration, 1)) * 100}
+                        width={(bed.length / Math.max(duration, 1)) * 100}
+                        pixels={pixels}
+                        selected={bed.id === state.selectedMusicId}
+                        muted={bed.muted || bed.volume <= 0}
+                        blade={
+                          slicing
+                            ? {
+                                legal: (clientX) =>
+                                  musicSplitAt(state.project, bed.id, timeAt(clientX)) !== null,
+                                cut: (clientX) => {
+                                  media.onInteract();
+                                  dispatch({
+                                    type: "splitMusic",
+                                    musicId: bed.id,
+                                    at: timeAt(clientX),
+                                  });
+                                },
+                              }
+                            : null
+                        }
+                        volume={bed.volume}
+                        onVolume={(volume) =>
+                          dispatch({ type: "setMusic", musicId: bed.id, patch: { volume } })
+                        }
+                        label={musicFileOf(state.project.musicFiles, bed)?.label ?? bed.file}
+                        // The stretch of the *file* the bar shows, which is not where
+                        // it sits on the timeline: the wave has to move under the bar
+                        // as the left edge is dragged, because that is what trimming
+                        // a bed does — see `trimMusic`.
+                        peaks={musicPeaks.get(bed.file) ?? null}
+                        from={bed.offset}
+                        to={bed.offset + bed.length}
+                        repeat={bed.repeat}
+                        start={bed.at}
+                        timeAt={timeAt}
+                        onSelect={() => {
+                          media.onInteract();
+                          dispatch({ type: "selectMusic", musicId: bed.id });
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setMenu({
+                            x: event.clientX,
+                            y: event.clientY,
+                            kind: "music",
+                            musicId: bed.id,
+                          });
+                        }}
+                        onBeginEdit={() => dispatch({ type: "beginEdit" })}
+                        onMove={(at) => dispatch({ type: "moveMusic", musicId: bed.id, at, snap })}
+                        onTrim={(edge, clientX) =>
+                          dispatch({
+                            type: "trimMusic",
+                            musicId: bed.id,
+                            edge,
+                            at: timeAt(clientX),
+                          })
+                        }
+                      />
+                    );
+                  })}
                 </div>
-              )}
-
-              {state.project.music.map((bed) => {
-                // Already in project time at both ends — see `MusicSlice`. No
-                // `spanInProject` here, which is the whole difference between
-                // this row and the two above it.
-                const pixels = (bed.length / Math.max(duration, 1)) * contentWidth;
-
-                return (
-                  <MusicBar
-                    key={bed.id}
-                    left={(bed.at / Math.max(duration, 1)) * 100}
-                    width={(bed.length / Math.max(duration, 1)) * 100}
-                    pixels={pixels}
-                    selected={bed.id === state.selectedMusicId}
-                    muted={bed.muted || bed.volume <= 0}
-                    blade={
-                      slicing
-                        ? {
-                            legal: (clientX) =>
-                              musicSplitAt(state.project, bed.id, timeAt(clientX)) !== null,
-                            cut: (clientX) => {
-                              media.onInteract();
-                              dispatch({
-                                type: "splitMusic",
-                                musicId: bed.id,
-                                at: timeAt(clientX),
-                              });
-                            },
-                          }
-                        : null
-                    }
-                    volume={bed.volume}
-                    onVolume={(volume) =>
-                      dispatch({ type: "setMusic", musicId: bed.id, patch: { volume } })
-                    }
-                    label={musicFileOf(state.project.musicFiles, bed)?.label ?? bed.file}
-                    // The stretch of the *file* the bar shows, which is not where
-                    // it sits on the timeline: the wave has to move under the bar
-                    // as the left edge is dragged, because that is what trimming
-                    // a bed does — see `trimMusic`.
-                    peaks={musicPeaks.get(bed.file) ?? null}
-                    from={bed.offset}
-                    to={bed.offset + bed.length}
-                    repeat={bed.repeat}
-                    start={bed.at}
-                    timeAt={timeAt}
-                    onSelect={() => {
-                      media.onInteract();
-                      dispatch({ type: "selectMusic", musicId: bed.id });
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setMenu({
-                        x: event.clientX,
-                        y: event.clientY,
-                        kind: "music",
-                        musicId: bed.id,
-                      });
-                    }}
-                    onBeginEdit={() => dispatch({ type: "beginEdit" })}
-                    onMove={(at) => dispatch({ type: "moveMusic", musicId: bed.id, at, snap })}
-                    onTrim={(edge, clientX) =>
-                      dispatch({ type: "trimMusic", musicId: bed.id, edge, at: timeAt(clientX) })
-                    }
-                  />
-                );
-              })}
-            </div>
+              </>
+            )}
 
             <div style={{ height: TRACK_GAP }} />
 
