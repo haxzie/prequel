@@ -1,5 +1,17 @@
 # @prequel/desktop
 
+## 0.7.1
+
+### Patch Changes
+
+- f767aef: Choose whether Prequel emails you product news from your account settings, and turn it off whenever you like.
+
+  <!-- highlight: Choose which emails Prequel sends you -->
+
+- 6637955: The export panel stays open when you click beside it, so a long render is never dismissed by accident.
+- d905b1f: Open Recordings in the tray opens the recordings grid, even when screenshots or settings were on screen last.
+- 9ee331d: Prequel tells you when there is a new version to install, including when it opens itself at login.
+
 ## 0.7.0
 
 ### Minor Changes
