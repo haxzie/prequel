@@ -534,12 +534,15 @@ export class CaptureFlow {
     this.deps.quickView.show({ dir, name: basename(dir), still });
   }
 
-  /** Opens the Projects grid, for the tray to reach through the flow. */
+  /**
+   * Opens the library on one of its panes, for the tray to reach through the
+   * flow.
+   *
+   * One call for all four rather than a branch for Projects. The branch sent
+   * Projects down a path that named no pane at all, which is how the grid came
+   * to be whichever pane the window was last closed on.
+   */
   openProjects(section: WorkspaceSection = "projects"): void {
-    if (section === "projects") {
-      this.deps.workspace?.open();
-      return;
-    }
     this.deps.workspace?.openSection(section);
   }
 

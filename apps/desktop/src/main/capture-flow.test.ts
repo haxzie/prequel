@@ -591,6 +591,18 @@ describe("editor windows", () => {
     expect(dockCalls.shown).toBe(1);
     expect(selection.opened).toBe(0);
   });
+
+  it("names the pane every time the library is opened", () => {
+    // Including the grid, which used to be the one row that asked for no pane
+    // at all — so Open Recordings after Open Screenshots opened the
+    // screenshots grid, the window having kept the last pane it was closed on.
+    const { flow, workspace } = makeFlow();
+
+    flow.openProjects("screenshots");
+    flow.openProjects();
+
+    expect(workspace.sections).toEqual(["screenshots", "projects"]);
+  });
 });
 
 describe("the camera bubble", () => {

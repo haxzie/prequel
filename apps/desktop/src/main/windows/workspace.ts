@@ -103,10 +103,11 @@ export class WorkspaceWindow {
    * Opens the window, or brings the one already open to the front.
    *
    * With a directory it lands on that recording's editor; without one it lands
-   * on the grid. Either way an already-open window navigates rather than
-   * spawning a second.
+   * on the pane it was asked for, which is Projects unless `openSection` named
+   * another. Either way an already-open window navigates rather than spawning
+   * a second.
    */
-  open(dir?: string): BrowserWindow {
+  open(dir?: string, section: WorkspaceSection = "projects"): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) {
       // A finished take lands in whichever window is already up, and closing it
       // afterwards should bring the panel back the way it would have from a
@@ -116,7 +117,7 @@ export class WorkspaceWindow {
       // Asked for by name, so it is what shows: the tray's Open Recordings is
       // not a request to focus whatever happens to be on screen already.
       if (dir) this.openRecording(dir);
-      else this.showProjects();
+      else this.showProjects(section);
 
       this.window.show();
       this.window.focus();
@@ -126,6 +127,12 @@ export class WorkspaceWindow {
     // Before the window exists, so an unopenable directory throws at the call
     // site rather than producing a window with nothing in it.
     this.current = dir ? verifyRecording(dir) : null;
+    // And the pane with it, for the same reason `ready` pushes it: `section`
+    // outlives the window while `current` does not, so a window created after
+    // Open Screenshots came back on the screenshots grid however it was asked
+    // for — the tray's Open Recordings included, which is a row that then did
+    // the same thing as the one under it.
+    this.section = section;
     this.fromCapture = dir !== undefined;
 
     const window = createWindow({
@@ -189,23 +196,14 @@ export class WorkspaceWindow {
   /**
    * Opens the window on one pane of the library, or moves the open one to it.
    *
-   * The pane is set before anything is created: a new window pushes its state
-   * on `did-finish-load`, and setting this afterwards would land it on the grid
-   * and move it to Settings a frame later.
+   * The pane travels into `open` rather than being set beside it: a new window
+   * pushes its state once the renderer mounts, and setting this afterwards
+   * would land it on the grid and move it to Settings a frame later. `open`
+   * takes the editor off the screen on its way, writing the edit it leaves —
+   * Settings is a pane of the library, and the two share this window.
    */
   openSection(section: WorkspaceSection): void {
-    this.section = section;
-
-    if (!this.isOpen) {
-      this.open();
-      return;
-    }
-
-    // Off the editor if one is showing, writing its edit on the way: Settings
-    // is a pane of the library, and the two share this window.
-    this.showProjects(section);
-    this.window?.show();
-    this.window?.focus();
+    this.open(undefined, section);
   }
 
   /**
