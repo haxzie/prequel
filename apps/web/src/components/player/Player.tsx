@@ -54,6 +54,13 @@ const FLASH_MS = 700;
  */
 const FRAME_S = 1 / 30;
 
+/**
+ * `HTMLMediaElement.HAVE_FUTURE_DATA`, written out because the constant is on
+ * the element and this is read before there is one. Anything less than this is
+ * a video that cannot advance a frame from where the head is.
+ */
+const HAVE_FUTURE_DATA = 3;
+
 const RATE_KEY = "prequel.player.rate";
 const VOLUME_KEY = "prequel.player.volume";
 
@@ -125,6 +132,26 @@ export function Player({
   const [buffering, setBuffering] = useState(false);
   /** Whether play has ever been pressed. The poster and the big button go on the first press. */
   const [started, setStarted] = useState(false);
+  /**
+   * Whether there are enough bytes to play from where the head is —
+   * `HAVE_FUTURE_DATA` or better.
+   *
+   * The first press used to land on a video that had only its metadata, and
+   * the wait that followed had nothing to show for it: the big button stayed
+   * put under the pointer for several seconds, which reads as a press that
+   * missed. The button becomes a spinner while this is false, so the page
+   * says "fetching" before anybody asks it to play.
+   */
+  const [ready, setReady] = useState(false);
+  /**
+   * Whether the element gave up on the file — a dead presigned URL, a format
+   * it cannot decode.
+   *
+   * Only ever read to stop the spinners. A spinner that turns for good is a
+   * worse answer than a play button that does nothing, because it says the
+   * wait is going somewhere.
+   */
+  const [failed, setFailed] = useState(false);
   const [duration, setDuration] = useState(durationMs / 1000);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -172,6 +199,19 @@ export function Player({
     }
   }, []);
 
+  /**
+   * Re-reads whether the element can play from here.
+   *
+   * `readyState` is the only honest answer; the media events are just the
+   * prompts to look again. Driving `ready` off the events alone gets it wrong
+   * on a file that was already in the cache, where `canplay` has fired before
+   * React attached a handler to listen for it.
+   */
+  const readState = useCallback(() => {
+    const element = video.current;
+    if (element) setReady(element.readyState >= HAVE_FUTURE_DATA);
+  }, []);
+
   // The loop. Started by `play`, stopped by `pause`, and every frame in
   // between writes to the DOM directly — see the component comment.
   useEffect(() => {
@@ -193,6 +233,8 @@ export function Player({
     const element = video.current;
     if (!element) return;
 
+    readState();
+
     const storedRate = Number(window.localStorage.getItem(RATE_KEY));
     if (RATES.includes(storedRate as (typeof RATES)[number])) {
       element.playbackRate = storedRate;
@@ -213,7 +255,7 @@ export function Player({
         "pictureInPictureEnabled" in document &&
         document.pictureInPictureEnabled,
     );
-  }, []);
+  }, [readState]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === frame.current);
@@ -528,6 +570,12 @@ export function Player({
     onPlay: () => {
       setPlaying(true);
       setStarted(true);
+      // `play` fires the moment the element is un-paused, which on a file that
+      // has not buffered yet is seconds before a frame moves. Saying so here
+      // rather than waiting for `waiting` is what keeps the spinner continuous
+      // across the press: the big button goes on this event, and without it
+      // there is a gap with nothing in it.
+      if (video.current!.readyState < HAVE_FUTURE_DATA) setBuffering(true);
     },
     onPause: () => {
       setPlaying(false);
@@ -539,29 +587,55 @@ export function Player({
       if (element.videoWidth > 0 && element.videoHeight > 0) {
         onFrame?.(element.videoWidth, element.videoHeight);
       }
+      readState();
       paint();
     },
+    onLoadedData: readState,
     // `progress` is how the buffered range grows while paused; the loop covers
-    // it otherwise.
-    onProgress: paint,
+    // it otherwise. It is also what turns the button from a spinner into a play
+    // arrow on a video nobody has touched yet.
+    onProgress: () => {
+      readState();
+      paint();
+    },
     onSeeked: () => {
       setBuffering(false);
+      readState();
       paint();
     },
+    // A scrub into a part of the file that never arrived is the same wait as
+    // the first press, and `waiting` is not guaranteed to follow it.
+    onSeeking: readState,
     // Waiting on the network, both of them: `waiting` is the decoder running
     // dry mid-play, `stalled` is the fetch itself going quiet. Either is the
     // viewer watching a still picture wondering whether to reload.
-    onWaiting: () => setBuffering(true),
-    onStalled: () => setBuffering(true),
+    onWaiting: () => {
+      setBuffering(true);
+      readState();
+    },
+    onStalled: () => {
+      setBuffering(true);
+      readState();
+    },
     // Cleared by anything that proves bytes arrived. `canplay` covers the
     // first press, `playing` a recovery mid-video, and `seeked` a scrub that
     // landed somewhere already buffered.
-    onCanPlay: () => setBuffering(false),
-    onPlaying: () => setBuffering(false),
+    onCanPlay: () => {
+      setBuffering(false);
+      readState();
+    },
+    onPlaying: () => {
+      setBuffering(false);
+      readState();
+    },
     onVolumeChange: () => {
       const element = video.current!;
       setMuted(element.muted);
       setVolume(element.volume);
+    },
+    onError: () => {
+      setFailed(true);
+      setBuffering(false);
     },
     onRateChange: () => setRate(video.current!.playbackRate),
     onEnded: () => setPlaying(false),
@@ -594,10 +668,14 @@ export function Player({
         src={src}
         poster={poster ?? undefined}
         playsInline
-        // `metadata` rather than `auto`: the browser fetches enough to draw the
-        // scrubber and no more, so opening a link does not pull a hundred
-        // megabytes down for somebody who never presses play.
-        preload="metadata"
+        // `auto` rather than `metadata`: a share link *is* the video, so the
+        // fetch starts with the page rather than with the press. On `metadata`
+        // the browser had only the index when play was pressed, and the first
+        // few seconds of every recording were spent watching a still frame —
+        // the press was free and the wait came after it, which is the wrong
+        // way round. It is a hint, not an order: the browser stops when it has
+        // enough and honours a metered connection itself.
+        preload="auto"
         // The box above decides the size; the picture fills it and is
         // letterboxed when the two disagree.
         className="block h-full w-full bg-black object-contain"
@@ -627,20 +705,27 @@ export function Player({
       {!started && (
         <button
           type="button"
-          aria-label="Play"
+          // A press before the bytes are in still plays — the browser starts as
+          // soon as it can — so the button stays live and only says what it is
+          // waiting for.
+          aria-label={ready || failed ? "Play" : "Loading"}
           className="absolute inset-0 grid place-items-center"
           onClick={toggle}
         >
           <span className="grid size-16 place-items-center rounded-full bg-white/90 text-black shadow-lg transition-transform group-hover/player:scale-105">
-            <Play className="ml-1 size-7 fill-current" />
+            {ready || failed ? (
+              <Play className="ml-1 size-7 fill-current" />
+            ) : (
+              // In the button rather than beside it: a spinner somewhere else
+              // on the picture would move the target the moment it was ready.
+              <span className="size-7 animate-spin rounded-full border-2 border-black/15 border-t-black/70" />
+            )}
           </span>
         </button>
       )}
 
-      {/* Only once play has been pressed. Before that the poster and the big
-          button are the whole interface, and a spinner over them would be the
-          player fretting about a download nobody has asked for — `preload` is
-          `metadata`, so it is barely fetching anything yet. */}
+      {/* Only once play has been pressed. Before that the wait is shown inside
+          the big button instead, which is where the eye already is. */}
       {started && buffering && (
         <div
           className="pointer-events-none absolute inset-0 grid place-items-center"
