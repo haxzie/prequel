@@ -151,14 +151,12 @@ export function ExportDialog({
   return (
     // `no-drag` throughout: the dialog floats over the title bar's drag region,
     // and without it every press inside the header would move the window.
-    <div
-      className="no-drag absolute inset-0 z-50 grid place-items-center bg-black/50 p-6"
-      onPointerDown={(event) => {
-        // Click-away, but only on the backdrop itself — a drag that starts on
-        // the preview and ends out here must not close what it came from.
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+    // No click-away. It used to close on a press on the backdrop, and a stray
+    // one during a render dismissed the only thing on screen that said an
+    // export was happening: the button behind this reports nothing, so the
+    // editor then looked idle with Add Clip greyed out for no stated reason.
+    // The cross and Escape are both still here, and both are deliberate.
+    <div className="no-drag absolute inset-0 z-50 grid place-items-center bg-black/50 p-6">
       <div
         role="dialog"
         aria-modal="true"
