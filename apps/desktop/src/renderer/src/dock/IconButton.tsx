@@ -20,7 +20,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * Which fill `selected` uses.
    *
    * `accent` is the panel's blue and means "this is the one you picked".
-   * `mode` is the white chip the capture switch wears, and means something
+   * `mode` is the grey chip the capture switch wears, and means something
    * else — see `--dock-mode`. A prop rather than a class the caller
    * appends, because utilities all carry the same specificity: an override
    * would be left to stylesheet order, which is exactly the note on the fills
@@ -121,11 +121,10 @@ export function IconButton({
         // would leave that outcome down to stylesheet order.
         selected
           ? tone === "mode"
-            ? // Down rather than up. The fill is all but white, so there is
-              // nothing above it for `brightness-110` to reach and the button
-              // would read as dead under the pointer; taking it the other way
-              // is the only move the chip has left.
-              "bg-dock-mode text-dock-mode-fg hover:brightness-95"
+            ? // Up, like the accent chip beside it. It went down while the
+              // fill was all but white and had nothing above it to reach; the
+              // chip is a dark grey now, so the pointer can simply lift it.
+              "bg-dock-mode text-dock-mode-fg hover:brightness-125"
             : "bg-dock-selected text-white hover:brightness-110"
           : off
             ? "text-dock-muted not-disabled:hover:bg-dock-hover"

@@ -59,6 +59,7 @@
 
   --color-dock-bg: var(--dock-bg);
   --color-dock-line: var(--dock-line);
+  --color-dock-rim: var(--dock-rim);
   --color-dock-group: var(--dock-group);
   --color-dock-fg: var(--dock-fg);
   --color-dock-muted: var(--dock-muted);
@@ -891,14 +892,28 @@ body {
      short of black so that it still reads as an object lying on the desktop
      rather than as a hole cut in it. */
   --dock-bg: rgba(19, 19, 20, 0.97);
-  /* Every line the panel draws: the dividers inside it, and its own outer rim —
-     `Dock.tsx` reaches for this rather than carrying a second figure of its
-     own, so the two cannot drift apart the next time either is adjusted.
+  /* Every line drawn inside the panel — the dividers between the trays.
 
-     Translucent white, so a rule inside the panel is the same light the rim
-     catches. A dark tone was tried here and reads as grime on a dark panel
-     rather than as a rule between two things. */
+     Translucent white: a dark tone was tried here and reads as grime on a dark
+     panel rather than as a rule between two things. The outer rim was this
+     same figure, for the sake of one light across the whole panel, and is
+     `--dock-rim` now — see what it says. */
   --dock-line: rgba(255, 255, 255, 0.1);
+  /* The pill's own outer edge.
+
+     Less than half the light of a rule inside it, which is the difference
+     between the two jobs: a divider separates two parts of one panel and has
+     the panel either side of it to be seen against, where the rim is the last
+     pixel before the desktop and only has to say where the panel stops. At the
+     dividers' value it read as a drawn outline around the pill — a bright ring
+     over a dark wallpaper, which the shadow is already doing better and more
+     softly.
+
+     Close to `--dock-bg` and a little above it, so the edge is the panel's own
+     fill catching the light rather than a second colour laid on top. Still
+     translucent white rather than a fixed tone, for the reason every lighter
+     value in here is: it has to stay lighter than whatever is behind it. */
+  --dock-rim: rgba(255, 255, 255, 0.06);
   /* The surface the three "what to record" buttons sit on, so they read as one
      control rather than three neighbours.
 
@@ -920,28 +935,30 @@ body {
      tone so it stays lighter whatever is behind it. */
   --dock-hover: rgba(255, 255, 255, 0.12);
   --dock-selected: var(--selected);
-  /* The capture switch — video or screenshot — which wears a white fill with a
-     dark glyph where the three source buttons beside it are solid blue.
+  /* The capture switch — video or screenshot — which wears a grey fill where
+     the three source buttons beside it are solid blue.
 
      The value is doing the separating, not a second hue: five icon buttons in
      a row read as one group of five whatever sits between them, and these
      answer two different questions — what you are making, and what it is of.
-     A blue chip beside a white one reads as two kinds of choice; two chips in
-     two colours read as two palettes.
+     A blue chip beside a grey one reads as two kinds of choice.
+
+     It was #e8eaed, all but white. That won the row outright: the panel's one
+     near-white surface sat beside the blue that marks the actual source, and
+     the switch you set once read as the loudest thing in the dock. A few steps
+     above the panel is enough to say "this one" in a tray of three.
 
      Opaque rather than translucent white. `--dock-group` and `--dock-hover`
      are both white over the panel, and a third at a higher alpha would be the
      same material one step further on — the selection has to be a different
-     thing, not a brighter version of the tray it sits in.
-
-     A unit short of pure, which is where the panel's own white stops:
-     `--dock-fg` is #eceef1, and a chip at #fff beside text at that figure
-     reads as the one blown-out thing in the strip. */
-  --dock-mode: #e8eaed;
-  /* The glyph on that fill. The panel's own near-black rather than a mid grey:
-     this chip is the brightest surface in the dock, so the mark on it wants
-     full contrast or the icon reads as disabled on a lit button. */
-  --dock-mode-fg: #202021;
+     thing, not a brighter version of the tray it sits in. Far enough above
+     `--dock-hover`, which lands near (47, 47, 47) over this fill, that a
+     pointer resting on the unpicked button does not match the picked one. */
+  --dock-mode: #3d3d3f;
+  /* The glyph on that fill. The panel's own foreground and not the 80% the
+     unpicked buttons are held to: on a chip this close to the panel the mark
+     is most of what says the chip is lit. */
+  --dock-mode-fg: var(--dock-fg);
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
   /* The crest of the wave crossing the recording light, where `--dock-record`

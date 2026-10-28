@@ -7,12 +7,23 @@ import { formatElapsed } from "../lib/format";
 import { PauseIcon, PlayIcon, PrompterIcon, PrompterOffIcon, StopIcon, TrashIcon } from "./icons";
 
 /** Smaller than the setup panel's 18px: this view is a pill, not a toolbar. */
-const BUTTON = "grid size-[30px] place-items-center rounded-full text-dock-fg [&_svg]:size-[14px]";
+const BUTTON =
+  "flex h-[30px] flex-none items-center justify-center rounded-full text-dock-fg [&_svg]:size-[14px]";
+
+/**
+ * What makes one of them round: every button but Stop is its icon and nothing
+ * else. The width alone rather than `size-[30px]`, which would set the height
+ * a second time and leave which of the two lands to stylesheet order — see
+ * `cn`.
+ */
+const ROUND = "w-[30px]";
 
 /** What the panel collapses into once recording starts. */
 export function RecordingView({ state }: { state: DockState }) {
   const paused = state.session.status === "paused";
   const { teleprompter, micId } = state.preferences;
+  const stop = state.extending ? "Add to the project" : "Stop recording";
+  const elapsed = formatElapsed(state.session.elapsedMs);
 
   return (
     // Each end inset by what the control there already has above and below it,
@@ -23,7 +34,7 @@ export function RecordingView({ state }: { state: DockState }) {
     // the setup row lands on four for the same reason and a taller tray.
     <div className="drag flex h-full animate-view-in items-center gap-1.5 pr-[6px] pl-[10px]">
       {/* Dragging the pill moves its window; the buttons opt back out. */}
-      <div className="drag flex h-full flex-1 items-center gap-2">
+      <div className="drag flex h-full min-w-0 flex-1 items-center">
         {/* The recording light. A dot matrix the size of the buttons beside
             it, with a wave of red crossing it, where this was a 9px dot that
             faded in and out.
@@ -76,12 +87,9 @@ export function RecordingView({ state }: { state: DockState }) {
             />
           )}
         </span>
-        <span className="text-[15px] font-semibold tabular-nums">
-          {formatElapsed(state.session.elapsedMs)}
-        </span>
       </div>
 
-      <div className="no-drag flex gap-1">
+      <div className="no-drag flex flex-none gap-1">
         {/* The prompter's switch, as on the setup row and for the same
             microphone rule. Hiding keeps the reader's place: the island comes
             back where it was, with the microphone reopened. Main sizes the
@@ -89,7 +97,7 @@ export function RecordingView({ state }: { state: DockState }) {
         {micId !== null && (
           <Control
             label={teleprompter ? "Hide the teleprompter" : "Show the teleprompter"}
-            className={cn("hover:bg-dock-hover", !teleprompter && "text-dock-muted")}
+            className={cn(ROUND, "hover:bg-dock-hover", !teleprompter && "text-dock-muted")}
             onClick={() =>
               void window.prequel.dock.updatePreferences({ teleprompter: !teleprompter })
             }
@@ -106,24 +114,38 @@ export function RecordingView({ state }: { state: DockState }) {
           // recording goes — where in fact only this addition does, and the
           // project is untouched.
           label={state.extending ? "Discard this addition" : "Discard recording"}
-          className="hover:bg-dock-record hover:text-white"
+          className={cn(ROUND, "hover:bg-dock-record hover:text-white")}
           onClick={() => void window.prequel.dock.discard()}
         >
           <TrashIcon />
         </Control>
         <Control
           label={paused ? "Resume" : "Pause"}
-          className="hover:bg-dock-hover"
+          className={cn(ROUND, "hover:bg-dock-hover")}
           onClick={() => void window.prequel.dock.togglePause()}
         >
           {paused ? <PlayIcon /> : <PauseIcon />}
         </Control>
+        {/* Stop carries the clock. The elapsed time used to sit beside the
+            recording light, at the far end of the pill from the button you
+            press to act on it — so deciding to stop meant reading one end and
+            aiming at the other. On the button, the number you are watching and
+            the thing you do about it are the same target.
+            The pill's width is fixed, so this button growing by a digit at ten
+            minutes and by an hours field at one hour is taken out of the drag
+            band to its left rather than out of the window — see `SIZES`. */}
         <Control
-          label={state.extending ? "Add to the project" : "Stop recording"}
-          className="bg-dock-record text-white hover:brightness-[1.12]"
+          label={stop}
+          // Spelt out for the label, because the clock is the readout here: a
+          // button named by its verb alone would take the one number on the
+          // pill out of the accessibility tree, where the plain text beside
+          // the light was in it.
+          ariaLabel={`${stop}, ${elapsed} so far`}
+          className="gap-[5px] bg-dock-record px-[10px] text-white hover:brightness-[1.12]"
           onClick={() => void window.prequel.dock.stop()}
         >
           <StopIcon />
+          <span className="text-[14px] font-semibold tabular-nums">{elapsed}</span>
         </Control>
       </div>
     </div>
@@ -140,11 +162,13 @@ export function RecordingView({ state }: { state: DockState }) {
  */
 function Control({
   label,
+  ariaLabel,
   className,
   onClick,
   children,
 }: {
   label: string;
+  ariaLabel?: string;
   className: string;
   onClick: () => void;
   children: ReactNode;
@@ -153,7 +177,7 @@ function Control({
   return (
     <button
       type="button"
-      aria-label={label}
+      aria-label={ariaLabel ?? label}
       className={cn(BUTTON, className)}
       onClick={onClick}
       {...tooltip}

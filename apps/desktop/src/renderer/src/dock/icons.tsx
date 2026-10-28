@@ -204,25 +204,30 @@ export function VideoIcon() {
 }
 
 /**
- * Screenshot: a stills camera.
+ * Screenshot: a picture — Jam's `picture`.
  *
  * Paired with `VideoIcon` and read against it at a glance, which on a 30px
- * button is the whole job: one is wider than it is tall with a lens on the
- * side, this one is square-ish with a lens in the middle and a hump on top.
+ * button is the whole job. It was a stills camera, which lost that: two
+ * cameras side by side differ only in their proportions and which end the lens
+ * is at, and the thing being chosen is not which camera but whether this is a
+ * film or a still. A picture is the still itself.
  *
- * The one icon here on a 56-unit grid rather than the 20 the rest share, and
- * the only one whose weight comes from a fill instead of a stroke. Drawn that
- * way where it came from, and rescaling the path to the shared box would
- * change the shape, not just the numbers — the outer rule it draws is about
- * a unit and a half wide at this size, which is where the `1.5` strokes
- * beside it land.
+ * The set's own box rather than the 20 the rest share, offsets and all: the
+ * shape is 20 by 16 with four units of air above and below, and squaring that
+ * up by hand would move the drawing rather than the numbers. It lands at the
+ * dock's weight anyway — the frame's rule is two units on a box of 24, which
+ * at 18px is the 1.5 the strokes beside it come out at.
+ *
+ * Filled rather than stroked, like the camera it replaces, so the counters in
+ * it — the sun, the hill — are the panel showing through and follow whatever
+ * is behind.
  */
 export function PhotoIcon() {
   return (
-    <svg viewBox="0 0 56 56" aria-hidden={true}>
+    <svg viewBox="-2 -4 24 24" aria-hidden={true}>
       <path
         fill="currentColor"
-        d="M7.809 50.348H48.19c4.875 0 7.36-2.438 7.36-7.266V18.543c0-4.828-2.485-7.242-7.36-7.242h-5.484c-1.828 0-2.39-.375-3.445-1.547l-1.899-2.11c-1.148-1.288-2.343-1.992-4.781-1.992h-9.328c-2.414 0-3.61.704-4.781 1.992l-1.899 2.11c-1.031 1.148-1.617 1.547-3.445 1.547h-5.32c-4.875 0-7.36 2.414-7.36 7.242v24.539c0 4.828 2.485 7.266 7.36 7.266m.07-3.774c-2.32 0-3.656-1.242-3.656-3.68v-24.14c0-2.438 1.336-3.68 3.656-3.68h6.187c2.11 0 3.235-.398 4.407-1.71l1.851-2.063c1.336-1.5 2.016-1.875 4.102-1.875h6.984c2.086 0 2.766.375 4.102 1.875l1.851 2.062c1.172 1.313 2.297 1.711 4.407 1.711h6.351c2.32 0 3.657 1.242 3.657 3.68v24.14c0 2.438-1.336 3.68-3.657 3.68Zm20.11-3.726a12.76 12.76 0 0 0 12.796-12.82c0-7.126-5.672-12.82-12.797-12.82c-7.078 0-12.773 5.694-12.773 12.82c0 7.124 5.695 12.82 12.773 12.82m16.851-18.54c1.594 0 2.906-1.288 2.906-2.882a2.906 2.906 0 1 0-5.812 0c0 1.594 1.312 2.883 2.906 2.883m-16.85 14.977c-5.086 0-9.234-4.125-9.234-9.258s4.125-9.257 9.234-9.257a9.247 9.247 0 0 1 9.258 9.257a9.247 9.247 0 0 1-9.258 9.258"
+        d="M18 8.503V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3.504l4.39-7.322a3 3 0 0 1 4.69-.582zm0 2.823l-3.828-3.814a1 1 0 0 0-1.563.195L8.836 14H17a1 1 0 0 0 1-1zM3 0h14a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H3a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3m3 9a3 3 0 1 1 0-6a3 3 0 0 1 0 6m0-2a1 1 0 1 0 0-2a1 1 0 0 0 0 2"
       />
     </svg>
   );

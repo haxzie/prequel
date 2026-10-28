@@ -30,12 +30,14 @@ import { DockMenuPopup } from "./dock-menu.js";
  */
 const SIZES: Record<DockView, { width: number; height: number }> = {
   setup: { width: 420, height: PANEL_HEIGHT },
-  // Eleven wider than it was, which is what the recording light gained going
-  // from a 9px dot to a 22px matrix, less the two the row gave back when its
-  // left inset came down to match the band above that light. The pill is
-  // clipped to this figure, so the two have to move together or the light
-  // loses its last column.
-  recording: { width: 207, height: PANEL_HEIGHT },
+  // Eight wider than it was, which is the clock moving onto the Stop button:
+  // the button gained the number and the band beside the recording light lost
+  // it, and the button also carries the padding around it. Sized for the
+  // longest reading a take reaches — an hours field — with the drag band left
+  // taking up the difference, so the window holds still as the digits grow
+  // instead of widening twice during a recording. The pill is clipped to this
+  // figure, so the two have to move together or Stop loses its last digit.
+  recording: { width: 215, height: PANEL_HEIGHT },
 };
 
 /**

@@ -87,13 +87,15 @@ export function Dock() {
         // grows, and a scrollbar flicks in and out across the bottom of the
         // pill while the window catches up. Clipped, the name is revealed as
         // the panel widens, which is what the animation is for.
-        // A rim, in `--dock-line` — the same light the rules inside the panel
-        // are drawn in, so the edge and the dividers are one material rather
-        // than two figures to keep in step. It was left off while the fill was
-        // a mid grey, on the grounds that a hairline beside a shadow is a seam
-        // where the two meet; the fill is near-black now, and without an edge
-        // the pill loses its own outline against anything dark behind it. The
-        // shadow still does the lifting. This says where the panel stops.
+        // A rim, in `--dock-rim`: the same translucent white the rules inside
+        // the panel are drawn in, at well under half their strength. At their
+        // figure the edge read as an outline drawn round the pill rather than
+        // as where the pill ends — see the token. It was left off while the
+        // fill was a mid grey, on the grounds that a hairline beside a shadow
+        // is a seam where the two meet; the fill is near-black now, and
+        // without an edge the pill loses its own outline against anything dark
+        // behind it. The shadow still does the lifting. This says where the
+        // panel stops.
         //
         // Close and shallow. A wide one reads as height, and the panel sits on
         // the desktop rather than above a window — at 14px of blur the dark
@@ -101,7 +103,7 @@ export function Dock() {
         // wallpaper. The offset stays below the blur so the edge the light
         // comes from is still the top one.
         "dock-theme m-(--panel-inset) mt-(--dock-headroom) flex-1 overflow-hidden rounded-full " +
-        "border border-dock-line bg-dock-bg text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
+        "border border-dock-rim bg-dock-bg text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
       }
     >
       {state.view === "setup" ? <SetupPanel state={state} /> : <RecordingView state={state} />}
