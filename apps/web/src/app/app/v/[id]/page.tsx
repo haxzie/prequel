@@ -120,6 +120,10 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
               ? { src: `/v/${playback.slug}/captions.vtt`, language: playback.captions.language }
               : null
           }
+          // The same conversation the share link shows, under the owner's own
+          // copy — what people said is most of what the dashboard is for
+          // visiting a recording to find out.
+          slug={playback.slug}
           panel="below"
         >
           <VideoActions url={url} className="mt-6" />

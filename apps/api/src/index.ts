@@ -14,6 +14,7 @@ import { createAuth } from "./auth.ts";
 import { scheduled } from "./cron.ts";
 import type { Env } from "./env.ts";
 import backgrounds from "./routes/backgrounds.ts";
+import conversation from "./routes/conversation.ts";
 import fonts from "./routes/fonts.ts";
 import billing from "./routes/billing.ts";
 import desktop from "./routes/desktop.ts";
@@ -113,6 +114,15 @@ app.route("/v1/x-video", xVideo);
 
 /** What `/v/<slug>` on the site reads. Public, and the only unauthenticated read of our own data. */
 app.route("/p", publicRoutes);
+
+/**
+ * The comments and reactions under a share link, on the same prefix.
+ *
+ * A second router rather than more handlers in `public.ts`: reading is as open
+ * as the page is and writing needs a session, and a file that is unauthenticated
+ * throughout is worth keeping that way — see `conversation.ts`.
+ */
+app.route("/p", conversation);
 
 app.get("/health", (c) => c.json({ ok: true }));
 

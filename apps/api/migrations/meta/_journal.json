@@ -71,6 +71,13 @@
       "when": 1792858638711,
       "tag": "0009_next_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793168648757,
+      "tag": "0010_video_comments",
+      "breakpoints": true
     }
   ]
 }

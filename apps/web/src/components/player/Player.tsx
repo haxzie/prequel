@@ -23,6 +23,8 @@ import {
   type Ref,
 } from "react";
 
+import type { Reaction } from "./conversation";
+import { ReactionTrack } from "./ReactionTrack";
 import { ScrubBar, type ScrubBarHandle } from "./ScrubBar";
 import { Shortcuts, shortcutFor, type Shortcut } from "./shortcuts";
 import {
@@ -39,6 +41,15 @@ import {
 export interface PlayerHandle {
   /** Goes there, and plays: seeking from a list is intent to watch. */
   seek(seconds: number): void;
+  /**
+   * Where the playhead is, in seconds, right now.
+   *
+   * A function rather than a prop, because the one caller is the reaction row
+   * and it needs the time at the moment of the press. Lifting the playhead
+   * into React state to hand it over would re-render the page sixty times a
+   * second to serve a value nobody reads until somebody clicks.
+   */
+  time(): number;
 }
 
 /** How long the controls stay after the pointer stops, while playing. */
@@ -60,6 +71,14 @@ const FRAME_S = 1 / 30;
  * a video that cannot advance a frame from where the head is.
  */
 const HAVE_FUTURE_DATA = 3;
+
+/**
+ * The default for `reactions`, hoisted.
+ *
+ * A fresh `[]` in the parameter list is a new array identity on every render,
+ * which would make the track below a new element every frame the loop runs.
+ */
+const EMPTY: readonly Reaction[] = [];
 
 const RATE_KEY = "prequel.player.rate";
 const VOLUME_KEY = "prequel.player.volume";
@@ -87,6 +106,7 @@ export function Player({
   width,
   height,
   chapters,
+  reactions = EMPTY,
   captions,
   onChapter,
   onFrame,
@@ -108,6 +128,13 @@ export function Player({
   width: number;
   height: number;
   chapters: readonly Chapter[];
+  /**
+   * The emoji people have left, drawn over the bar at the moment each was left.
+   *
+   * Empty on every surface that has no conversation under it — the dashboard's
+   * own player, and the free tools — so the row simply is not there.
+   */
+  reactions?: readonly Reaction[];
   /** The subtitle track, when the recording was transcribed. Null hides the toggle. */
   captions: { src: string; language: string } | null;
   /** The chapter now playing, or -1. Fired only when it changes. */
@@ -450,6 +477,9 @@ export function Player({
         seekTo(seconds);
         void video.current?.play().catch(() => undefined);
       },
+      time() {
+        return video.current?.currentTime ?? 0;
+      },
     }),
     [seekTo],
   );
@@ -763,6 +793,8 @@ export function Player({
         // click on the bottom of the picture lands on.
         style={{ pointerEvents: hidden ? "none" : "auto" }}
       >
+        <ReactionTrack reactions={reactions} duration={duration} onSeek={seekTo} />
+
         <ScrubBar
           ref={bar}
           chapters={chapters}

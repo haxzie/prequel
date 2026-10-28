@@ -6,4 +6,6 @@ export type {
   NewVideo,
   Subscription,
   Video,
+  VideoComment,
+  VideoReaction,
 } from "./app-schema.ts";

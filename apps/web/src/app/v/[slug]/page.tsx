@@ -185,6 +185,10 @@ export default async function SharedVideoPage({ params }: { params: Promise<{ sl
         height={shared.height}
         contentType={shared.contentType}
         chapters={shared.chapters ?? []}
+        // What the comments and the reactions hang off. The slug is already
+        // the permission to watch, and reading the conversation needs exactly
+        // that much — see `apps/api/src/routes/conversation.ts`.
+        slug={slug}
         // Through this site's own route rather than the API's — see
         // `captions.vtt/route.ts` for why the track cannot be cross-origin.
         captions={

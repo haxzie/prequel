@@ -402,6 +402,78 @@ export const webhookEvent = sqliteTable("webhook_event", {
   createdAt: createdAt(),
 });
 
+/**
+ * A comment somebody left under a shared recording.
+ *
+ * Written only by a signed-in account. A share link is unlisted-public to
+ * *watch* — anybody holding it sees every comment — but writing one needs a
+ * session, because a row with no identity behind it is a row nobody can be
+ * asked about and nothing anyone can take back.
+ *
+ * The body is markdown, stored exactly as it was typed. Nothing is rendered on
+ * this side and nothing is sanitised here: the renderer builds elements rather
+ * than HTML, so escaping is a property of how it draws rather than of what is
+ * kept — and a body mangled on the way in cannot be un-mangled later.
+ */
+export const videoComment = sqliteTable(
+  "video_comment",
+  {
+    id: text("id").primaryKey(),
+    videoId: text("video_id")
+      .notNull()
+      .references(() => video.id, { onDelete: "cascade" }),
+    /**
+     * Who wrote it.
+     *
+     * `set null` for the reason `video.ownerId` is: deleting an account must
+     * not delete the conversation around somebody else's recording. The comment
+     * survives attributed to nobody, and the page draws it as "Someone".
+     */
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+    /**
+     * Soft delete, so a reply reads as a conversation with a gap in it rather
+     * than as one that never made sense. The page draws a removed comment as
+     * "This comment was deleted" in place.
+     */
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (table) => [
+    // The panel's only query: this recording's comments, oldest first.
+    index("video_comment_video_created_idx").on(table.videoId, table.createdAt),
+  ],
+);
+
+/**
+ * An emoji somebody dropped at a moment of a recording.
+ *
+ * One row per press, not a count: two people reacting at 0:12 and at 1:40 is
+ * two marks in two places on the bar, and a tally would lose where they were —
+ * which is the whole of what this says that a comment does not.
+ *
+ * `atMs` is milliseconds into the finished file, the unit `durationMs` and
+ * `chapters` already use, so the player never converts.
+ */
+export const videoReaction = sqliteTable(
+  "video_reaction",
+  {
+    id: text("id").primaryKey(),
+    videoId: text("video_id")
+      .notNull()
+      .references(() => video.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    /** One of the palette the API offers. Never free text — see `lib/reactions.ts`. */
+    emoji: text("emoji").notNull(),
+    atMs: integer("at_ms").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // Read in timeline order, which is also how they are drawn.
+    index("video_reaction_video_at_idx").on(table.videoId, table.atMs),
+  ],
+);
+
 export const videoRelations = relations(video, ({ one }) => ({
   team: one(organization, { fields: [video.teamId], references: [organization.id] }),
   owner: one(user, { fields: [video.ownerId], references: [user.id] }),
@@ -421,3 +493,5 @@ export type DeviceToken = typeof deviceToken.$inferSelect;
 export type Subscription = typeof subscription.$inferSelect;
 export type Purchase = typeof purchase.$inferSelect;
 export type EmailPreference = typeof emailPreference.$inferSelect;
+export type VideoComment = typeof videoComment.$inferSelect;
+export type VideoReaction = typeof videoReaction.$inferSelect;
