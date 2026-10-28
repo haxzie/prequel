@@ -5,6 +5,7 @@
     { "id": "softlight", "label": "Soft Light" },
     { "id": "haze", "label": "Haze" },
     { "id": "glass", "label": "Glass" },
-    { "id": "anime", "label": "Anime" }
+    { "id": "anime", "label": "Anime" },
+    { "id": "retro", "label": "Retro" }
   ]
 }
